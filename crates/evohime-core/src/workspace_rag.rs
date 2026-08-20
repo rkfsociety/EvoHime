@@ -855,18 +855,20 @@ fn contains_secret_content(text: &str) -> bool {
             || (token.starts_with("sk-") && token.len() >= 24)
             || (token.starts_with("akia")
                 && token.len() == 20
-                && token.chars().all(|character| character.is_ascii_alphanumeric()))
+                && token
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric()))
             || (jwt_parts.len() == 3
                 && jwt_parts[0].starts_with("eyj")
                 && jwt_parts.iter().all(|part| part.len() >= 8))
             || (token.contains("://")
                 && token.contains('@')
-                && token
-                    .split_once("://")
-                    .is_some_and(|(_, authority)| authority
+                && token.split_once("://").is_some_and(|(_, authority)| {
+                    authority
                         .split('@')
                         .next()
-                        .is_some_and(|credentials| credentials.contains(':'))))
+                        .is_some_and(|credentials| credentials.contains(':'))
+                }))
     }) {
         return true;
     }
@@ -1907,14 +1909,18 @@ pub fn search_workspace_with_progress(
             reached_limits.push("token_budget".into());
         }
         let stop_reason = reached_limits[0].clone();
-        push_progress(&mut events, &mut progress, RetrievalProgress {
-            event_type: "loop.stopped".into(),
-            iteration: 0,
-            strategy: plan.strategy.clone(),
-            result_count: 0,
-            coverage_millis: 0,
-            reason_code: stop_reason.clone(),
-        });
+        push_progress(
+            &mut events,
+            &mut progress,
+            RetrievalProgress {
+                event_type: "loop.stopped".into(),
+                iteration: 0,
+                strategy: plan.strategy.clone(),
+                result_count: 0,
+                coverage_millis: 0,
+                reason_code: stop_reason.clone(),
+            },
+        );
         let expansion_request = expansion_request(&plan.filters, "bounded_limit");
         return Ok(SearchResult {
             query_id,
@@ -1939,14 +1945,18 @@ pub fn search_workspace_with_progress(
         });
     }
     if !plan.need_search {
-        push_progress(&mut events, &mut progress, RetrievalProgress {
-            event_type: "loop.stopped".into(),
-            iteration: 0,
-            strategy: plan.strategy.clone(),
-            result_count: 0,
-            coverage_millis: 0,
-            reason_code: "search_not_needed".into(),
-        });
+        push_progress(
+            &mut events,
+            &mut progress,
+            RetrievalProgress {
+                event_type: "loop.stopped".into(),
+                iteration: 0,
+                strategy: plan.strategy.clone(),
+                result_count: 0,
+                coverage_millis: 0,
+                reason_code: "search_not_needed".into(),
+            },
+        );
         return Ok(SearchResult {
             query_id,
             plan,
@@ -2071,32 +2081,40 @@ pub fn search_workspace_with_progress(
         for chunk in &mut evidence {
             chunk.checker_confidence = checker_confidence(&plan, chunk, coverage);
         }
-        push_progress(&mut events, &mut progress, RetrievalProgress {
-            event_type: "retrieval.updated".into(),
-            iteration: iterations,
-            strategy: plan.strategy.clone(),
-            result_count: evidence.len(),
-            coverage_millis: (coverage.clamp(0.0, 1.0) * 1000.0).round() as u16,
-            reason_code: if evidence.is_empty() {
-                "empty_result"
-            } else {
-                "retrieved"
-            }
-            .into(),
-        });
-        push_progress(&mut events, &mut progress, RetrievalProgress {
-            event_type: "checker.updated".into(),
-            iteration: iterations,
-            strategy: plan.strategy.clone(),
-            result_count: evidence.len(),
-            coverage_millis: (coverage.clamp(0.0, 1.0) * 1000.0).round() as u16,
-            reason_code: if coverage >= 0.8 {
-                "sufficient"
-            } else {
-                "low_coverage"
-            }
-            .into(),
-        });
+        push_progress(
+            &mut events,
+            &mut progress,
+            RetrievalProgress {
+                event_type: "retrieval.updated".into(),
+                iteration: iterations,
+                strategy: plan.strategy.clone(),
+                result_count: evidence.len(),
+                coverage_millis: (coverage.clamp(0.0, 1.0) * 1000.0).round() as u16,
+                reason_code: if evidence.is_empty() {
+                    "empty_result"
+                } else {
+                    "retrieved"
+                }
+                .into(),
+            },
+        );
+        push_progress(
+            &mut events,
+            &mut progress,
+            RetrievalProgress {
+                event_type: "checker.updated".into(),
+                iteration: iterations,
+                strategy: plan.strategy.clone(),
+                result_count: evidence.len(),
+                coverage_millis: (coverage.clamp(0.0, 1.0) * 1000.0).round() as u16,
+                reason_code: if coverage >= 0.8 {
+                    "sufficient"
+                } else {
+                    "low_coverage"
+                }
+                .into(),
+            },
+        );
         if evidence.is_empty() {
             stop_reason = "empty_result".into();
         } else if coverage >= 0.8 {
@@ -2105,14 +2123,18 @@ pub fn search_workspace_with_progress(
             stop_reason = "low_coverage".into();
         }
         if iterations < loop_config.max_iterations {
-            push_progress(&mut events, &mut progress, RetrievalProgress {
-                event_type: "rewrite.started".into(),
-                iteration: iterations + 1,
-                strategy: plan.strategy.clone(),
-                result_count: evidence.len(),
-                coverage_millis: (coverage.clamp(0.0, 1.0) * 1000.0).round() as u16,
-                reason_code: stop_reason.clone(),
-            });
+            push_progress(
+                &mut events,
+                &mut progress,
+                RetrievalProgress {
+                    event_type: "rewrite.started".into(),
+                    iteration: iterations + 1,
+                    strategy: plan.strategy.clone(),
+                    result_count: evidence.len(),
+                    coverage_millis: (coverage.clamp(0.0, 1.0) * 1000.0).round() as u16,
+                    reason_code: stop_reason.clone(),
+                },
+            );
             plan = rewrite_plan(&plan);
         }
     }
@@ -2163,23 +2185,31 @@ pub fn search_workspace_with_progress(
         .as_ref()
         .map(|_| expansion_request(&plan.filters, &stop_reason));
     if expansion_request.is_some() {
-        push_progress(&mut events, &mut progress, RetrievalProgress {
-            event_type: "expansion.requested".into(),
+        push_progress(
+            &mut events,
+            &mut progress,
+            RetrievalProgress {
+                event_type: "expansion.requested".into(),
+                iteration: iterations,
+                strategy: plan.strategy.clone(),
+                result_count,
+                coverage_millis: (coverage.clamp(0.0, 1.0) * 1000.0).round() as u16,
+                reason_code: stop_reason.clone(),
+            },
+        );
+    }
+    push_progress(
+        &mut events,
+        &mut progress,
+        RetrievalProgress {
+            event_type: "loop.stopped".into(),
             iteration: iterations,
             strategy: plan.strategy.clone(),
             result_count,
             coverage_millis: (coverage.clamp(0.0, 1.0) * 1000.0).round() as u16,
             reason_code: stop_reason.clone(),
-        });
-    }
-    push_progress(&mut events, &mut progress, RetrievalProgress {
-        event_type: "loop.stopped".into(),
-        iteration: iterations,
-        strategy: plan.strategy.clone(),
-        result_count,
-        coverage_millis: (coverage.clamp(0.0, 1.0) * 1000.0).round() as u16,
-        reason_code: stop_reason.clone(),
-    });
+        },
+    );
     Ok(SearchResult {
         query_id,
         plan,
@@ -2235,14 +2265,18 @@ fn retrieval_failure_result(
     reason: &str,
     progress: &mut impl FnMut(RetrievalProgress),
 ) -> SearchResult {
-    push_progress(&mut events, progress, RetrievalProgress {
-        event_type: "loop.stopped".into(),
-        iteration: iterations,
-        strategy: plan.strategy.clone(),
-        result_count: 0,
-        coverage_millis: 0,
-        reason_code: reason.into(),
-    });
+    push_progress(
+        &mut events,
+        progress,
+        RetrievalProgress {
+            event_type: "loop.stopped".into(),
+            iteration: iterations,
+            strategy: plan.strategy.clone(),
+            result_count: 0,
+            coverage_millis: 0,
+            reason_code: reason.into(),
+        },
+    );
     let expansion = expansion_request(&plan.filters, reason);
     SearchResult {
         query_id,
@@ -2925,10 +2959,14 @@ fn hybrid_retrieval(
     let language_filter = filters.language.as_deref().unwrap_or("");
     let mut vector_scores = statement
         .query_map(
-            params![index_id, workspace_key, generation, path_filter, language_filter],
-            |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
-            },
+            params![
+                index_id,
+                workspace_key,
+                generation,
+                path_filter,
+                language_filter
+            ],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
         )?
         .filter_map(Result::ok)
         .filter_map(|(id, blob)| {
@@ -3660,7 +3698,10 @@ mod tests {
         .is_err());
         assert!(plan_query(
             "needle",
-            QueryFilters { path: Some("src%".into()), language: None },
+            QueryFilters {
+                path: Some("src%".into()),
+                language: None
+            },
         )
         .is_err());
         let invalid = QueryPlan {
@@ -3736,14 +3777,20 @@ mod tests {
             fixture.database.connection(),
             &fixture.root,
             "bounded evidence",
-            QueryFilters { path: None, language: None },
+            QueryFilters {
+                path: None,
+                language: None,
+            },
             &RetrievalLimits::default(),
             &HybridConfig::default(),
             &LoopConfig::default(),
             |event| live_events.push(event.event_type),
         )
         .unwrap();
-        assert_eq!(live_events.first().map(String::as_str), Some("planner.started"));
+        assert_eq!(
+            live_events.first().map(String::as_str),
+            Some("planner.started")
+        );
         assert_eq!(live_events.last().map(String::as_str), Some("loop.stopped"));
     }
 
@@ -3868,8 +3915,14 @@ mod tests {
             "src/search.rs",
             "pub fn search_workspace() { /* lexical vector fusion */ }",
         );
-        fixture.write("src/cache.rs", "pub fn cache_entries() { /* unrelated cache */ }");
-        fixture.write("README.md", "# Guide\nUnrelated desktop setup instructions.");
+        fixture.write(
+            "src/cache.rs",
+            "pub fn cache_entries() { /* unrelated cache */ }",
+        );
+        fixture.write(
+            "README.md",
+            "# Guide\nUnrelated desktop setup instructions.",
+        );
         fixture.index();
         let config = HybridConfig {
             enabled: true,

@@ -149,7 +149,10 @@ impl ContextLedgerEntry {
 
         input.push_str("selected\n");
         for (index, item) in self.selected_items.iter().enumerate() {
-            input.push_str(&format!("  {index}:{}:{}\n", item.id, item.estimated_tokens));
+            input.push_str(&format!(
+                "  {index}:{}:{}\n",
+                item.id, item.estimated_tokens
+            ));
         }
 
         input.push_str("dropped\n");

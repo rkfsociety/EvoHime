@@ -1,9 +1,9 @@
 //! Integration tests for typed child contracts (03-1 plan).
 
 use evohime_core::child_contracts::{
-    ChildBudget, ContractError, ContractVersion, CorrelationContext, CorrelationId, Grant,
-    Provenance, Schema, TypedChildReport, TypedChildTaskRequest, TypedReportStatus,
-    accept_typed_report, validate_budget_subset, validate_grant_subset, CONTRACT_VERSION,
+    accept_typed_report, validate_budget_subset, validate_grant_subset, ChildBudget, ContractError,
+    ContractVersion, CorrelationContext, CorrelationId, Grant, Provenance, Schema,
+    TypedChildReport, TypedChildTaskRequest, TypedReportStatus, CONTRACT_VERSION,
 };
 
 fn create_child_correlation(parent_sequence: u64) -> CorrelationContext {
@@ -17,7 +17,7 @@ fn create_child_correlation(parent_sequence: u64) -> CorrelationContext {
 #[test]
 fn test_full_child_workflow() {
     let correlation = create_child_correlation(1);
-    
+
     let request = TypedChildTaskRequest::new(
         "child-task-456",
         "parent-task-123",
@@ -45,25 +45,21 @@ fn test_full_child_workflow() {
         .unwrap()
         .mark_completed();
 
-    let report = TypedChildReport::new(
-        "child-task-456",
-        "parent-task-123",
-        correlation,
-        provenance,
-    )
-    .unwrap()
-    .with_status(TypedReportStatus::Complete)
-    .with_summary("Found 5 modules".to_string())
-    .unwrap()
-    .with_findings(vec!["Module A".to_string()])
-    .unwrap()
-    .with_sources(vec!["src/lib.rs:1".to_string()])
-    .unwrap()
-    .with_confidence(95);
+    let report =
+        TypedChildReport::new("child-task-456", "parent-task-123", correlation, provenance)
+            .unwrap()
+            .with_status(TypedReportStatus::Complete)
+            .with_summary("Found 5 modules".to_string())
+            .unwrap()
+            .with_findings(vec!["Module A".to_string()])
+            .unwrap()
+            .with_sources(vec!["src/lib.rs:1".to_string()])
+            .unwrap()
+            .with_confidence(95);
 
     assert!(report.validate().is_ok());
     assert!(report.validate_against_request(&request).is_ok());
-    
+
     let accepted = accept_typed_report(&request, &report).unwrap();
     assert_eq!(accepted.child_task_id, "child-task-456");
 }
@@ -116,7 +112,7 @@ fn test_correlation_tracking() {
 #[test]
 fn test_contract_versioning() {
     assert_eq!(CONTRACT_VERSION, ContractVersion::new(1, 0));
-    
+
     let v1_0 = ContractVersion::new(1, 0);
     let v1_1 = ContractVersion::new(1, 1);
     assert!(v1_0.is_compatible_with(&v1_1));
@@ -127,35 +123,51 @@ fn test_contract_versioning() {
 fn test_provenance_hashing() {
     let hash = Provenance::compute_hash("test data");
     assert_eq!(hash.len(), 64);
-    
+
     let provenance = Provenance::new(1)
-        .with_input_hash(hash.clone()).unwrap()
-        .with_model_id("model-1".to_string()).unwrap();
-    
+        .with_input_hash(hash.clone())
+        .unwrap()
+        .with_model_id("model-1".to_string())
+        .unwrap();
+
     assert_eq!(provenance.input_hash, Some(hash));
 }
 
 #[test]
 fn test_nested_child_forbidden() {
     let mut request = TypedChildTaskRequest::new(
-        "child-1", "task-1", "researcher", "test", create_child_correlation(0),
+        "child-1",
+        "task-1",
+        "researcher",
+        "test",
+        create_child_correlation(0),
     )
     .unwrap();
-    
+
     assert!(request.validate().is_ok());
     request.parent_is_child = true;
-    assert!(matches!(request.validate(), Err(ContractError::NestedChildForbidden)));
+    assert!(matches!(
+        request.validate(),
+        Err(ContractError::NestedChildForbidden)
+    ));
 }
 
 #[test]
 fn test_task_mismatch() {
     let request = TypedChildTaskRequest::new(
-        "child-1", "task-1", "researcher", "test", create_child_correlation(0),
+        "child-1",
+        "task-1",
+        "researcher",
+        "test",
+        create_child_correlation(0),
     )
     .unwrap();
 
     let report = TypedChildReport::new(
-        "child-2", "task-1", create_child_correlation(0), Provenance::new(0),
+        "child-2",
+        "task-1",
+        create_child_correlation(0),
+        Provenance::new(0),
     )
     .unwrap();
 
@@ -175,10 +187,14 @@ fn test_schema_validation() {
 #[test]
 fn test_deterministic_serialization() {
     let request = TypedChildTaskRequest::new(
-        "child-1", "task-1", "researcher", "test", create_child_correlation(0),
+        "child-1",
+        "task-1",
+        "researcher",
+        "test",
+        create_child_correlation(0),
     )
     .unwrap();
-    
+
     let json1 = request.to_deterministic_json().unwrap();
     let json2 = request.to_deterministic_json().unwrap();
     assert_eq!(json1, json2);

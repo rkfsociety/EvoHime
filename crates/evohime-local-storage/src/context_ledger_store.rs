@@ -306,15 +306,16 @@ impl<'a> ContextLedgerStore<'a> {
              GROUP BY session_id ORDER BY MAX(created_at) DESC LIMIT ?1",
         )?;
         let recent_sessions: Vec<String> = statement
-            .query_map([i64::try_from(LEDGER_RETAINED_SESSIONS).unwrap_or(i64::MAX)], |row| {
-                row.get::<_, String>(0)
-            })?
+            .query_map(
+                [i64::try_from(LEDGER_RETAINED_SESSIONS).unwrap_or(i64::MAX)],
+                |row| row.get::<_, String>(0),
+            )?
             .collect::<Result<_, _>>()?;
         drop(statement);
 
-        let mut removable = self.connection.prepare(
-            "SELECT id, session_id FROM context_ledger WHERE created_at < ?1",
-        )?;
+        let mut removable = self
+            .connection
+            .prepare("SELECT id, session_id FROM context_ledger WHERE created_at < ?1")?;
         let candidates: Vec<(String, String)> = removable
             .query_map([age_cutoff], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -337,10 +338,14 @@ impl<'a> ContextLedgerStore<'a> {
                 continue;
             }
             // Запись удаляется целиком, вместе со строками usage.
-            self.connection
-                .execute("DELETE FROM context_ledger_usage WHERE ledger_id = ?1", [&id])?;
-            self.connection
-                .execute("DELETE FROM context_ledger_receipts WHERE ledger_id = ?1", [&id])?;
+            self.connection.execute(
+                "DELETE FROM context_ledger_usage WHERE ledger_id = ?1",
+                [&id],
+            )?;
+            self.connection.execute(
+                "DELETE FROM context_ledger_receipts WHERE ledger_id = ?1",
+                [&id],
+            )?;
             self.connection
                 .execute("DELETE FROM context_ledger WHERE id = ?1", [&id])?;
             removed += 1;
@@ -695,7 +700,11 @@ mod tests {
         let old = now - 40 * 24 * 60 * 60 * 1000;
         for index in 0..(LEDGER_RETAINED_SESSIONS + 1) {
             store
-                .append(&entry(&format!("fresh-{index}"), &format!("session-{index}"), now))
+                .append(&entry(
+                    &format!("fresh-{index}"),
+                    &format!("session-{index}"),
+                    now,
+                ))
                 .expect("append succeeds");
         }
         store
@@ -776,7 +785,13 @@ mod tests {
         let path = database.path().to_path_buf();
         drop(database);
         let entries: Vec<ContextLedgerEntry> = (0..8)
-            .map(|index| entry(&format!("ledger-{index}"), &format!("session-{index}"), 1_000))
+            .map(|index| {
+                entry(
+                    &format!("ledger-{index}"),
+                    &format!("session-{index}"),
+                    1_000,
+                )
+            })
             .collect();
         let expected: Vec<String> = entries
             .iter()

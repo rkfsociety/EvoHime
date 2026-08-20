@@ -3104,8 +3104,16 @@ mod tests {
         }
         let database = LocalDatabase::open(&path).expect("migration succeeds");
         assert_eq!(database.schema_version().unwrap(), SCHEMA_VERSION);
-        assert!(backup_path.exists(), "pre-migration backup must be written before schema 22 applies");
-        for table in ["receipt_records", "receipt_actions", "receipt_chain_heads", "receipt_checkpoints"] {
+        assert!(
+            backup_path.exists(),
+            "pre-migration backup must be written before schema 22 applies"
+        );
+        for table in [
+            "receipt_records",
+            "receipt_actions",
+            "receipt_chain_heads",
+            "receipt_checkpoints",
+        ] {
             let exists: i64 = database
                 .connection()
                 .query_row(

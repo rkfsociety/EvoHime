@@ -14,7 +14,9 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    let receipt_keys = std::sync::Arc::new(evohime_receipts::key_lifecycle::ReceiptKeyManager::new(&data_dir));
+    let receipt_keys = std::sync::Arc::new(
+        evohime_receipts::key_lifecycle::ReceiptKeyManager::new(&data_dir),
+    );
     {
         let mut database = journal.database().lock().await;
         if let Err(error) = receipt_keys.startup_with_database(database.connection_mut()) {
@@ -117,7 +119,9 @@ async fn main() {
         };
         let (coordinator, mut events) =
             evohime_core::TaskCoordinator::new_with_journal(256, Some(executor), journal);
-        coordinator.attach_routing_approvals(routing_approvals.clone()).await;
+        coordinator
+            .attach_routing_approvals(routing_approvals.clone())
+            .await;
         let task_id = uuid::Uuid::new_v4().to_string();
         if let Err(error) = coordinator
             .dispatch(evohime_core::CoreCommand::StartTask {
@@ -166,7 +170,9 @@ async fn main() {
     }
     let (coordinator, _events) =
         evohime_core::TaskCoordinator::new_with_journal(256, executor, journal.clone());
-    coordinator.attach_routing_approvals(routing_approvals).await;
+    coordinator
+        .attach_routing_approvals(routing_approvals)
+        .await;
     let bridge = evohime_core::IpcBridge::with_coordinator_and_approvals(
         journal,
         coordinator,
@@ -224,15 +230,24 @@ async fn probe_supervisor(
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::windows::named_pipe::ClientOptions;
 
-    let pipe = context.supervisor_pipe_name.as_deref().ok_or("supervisor channel unavailable")?;
-    let secret = context.supervisor_secret.as_ref().ok_or("supervisor secret unavailable")?;
+    let pipe = context
+        .supervisor_pipe_name
+        .as_deref()
+        .ok_or("supervisor channel unavailable")?;
+    let secret = context
+        .supervisor_secret
+        .as_ref()
+        .ok_or("supervisor secret unavailable")?;
     let client_id = format!("core-{}", std::process::id());
     let client = ClientOptions::new().open(pipe)?;
     let mut channel = BufReader::new(client);
     let mut line = Vec::new();
     channel.read_until(b'\n', &mut line).await?;
     let challenge: serde_json::Value = serde_json::from_slice(&line)?;
-    let nonce = challenge.get("nonce").and_then(serde_json::Value::as_str).ok_or("supervisor nonce missing")?;
+    let nonce = challenge
+        .get("nonce")
+        .and_then(serde_json::Value::as_str)
+        .ok_or("supervisor nonce missing")?;
     let proof = SessionSecret::parse(secret.expose())?.proof("core", &client_id, nonce);
     let user_sid = evohime_desktop_ipc::windows_security::current_user_sid()?;
     let logon_session = evohime_desktop_ipc::windows_security::current_logon_session()?;
@@ -243,7 +258,10 @@ async fn probe_supervisor(
         "proof": proof,
         "peer": {"user_sid": user_sid, "logon_session": logon_session},
     });
-    channel.get_mut().write_all(serde_json::to_string(&request)?.as_bytes()).await?;
+    channel
+        .get_mut()
+        .write_all(serde_json::to_string(&request)?.as_bytes())
+        .await?;
     channel.get_mut().write_all(b"\n").await?;
     line.clear();
     channel.read_until(b'\n', &mut line).await?;
@@ -335,9 +353,7 @@ fn console_request() -> Option<(String, std::path::PathBuf, bool)> {
 /// Каталог моделей провайдера. Без него имена моделей для ревью пришлось бы
 /// угадывать, а ключ провайдера в консоль не попадает и попасть не должен.
 #[cfg(windows)]
-async fn list_console_models(
-    gateway_config: Option<evohime_model_gateway::ModelGatewayConfig>,
-) {
+async fn list_console_models(gateway_config: Option<evohime_model_gateway::ModelGatewayConfig>) {
     let Some(config) = gateway_config else {
         eprintln!("evohime-core console: модель не настроена; проверьте .env");
         std::process::exit(1);
@@ -489,7 +505,10 @@ async fn run_console_review(
     let review_result = match review_result {
         Ok(result) => result,
         Err(error) => {
-            eprintln!("[{:>6.1}s] ✕ ревью не удалось: {error}", started.elapsed().as_secs_f32());
+            eprintln!(
+                "[{:>6.1}s] ✕ ревью не удалось: {error}",
+                started.elapsed().as_secs_f32()
+            );
             std::process::exit(1);
         }
     };
@@ -512,7 +531,9 @@ async fn run_console_review(
         review_markdown: review_result
             .final_markdown
             .split_once("\n---\n\n")
-            .map_or(review_result.final_markdown.clone(), |(_, body)| body.to_string()),
+            .map_or(review_result.final_markdown.clone(), |(_, body)| {
+                body.to_string()
+            }),
         model: request.synthesis.clone(),
         context_documents,
     };
@@ -521,20 +542,25 @@ async fn run_console_review(
         gateway,
         revision,
         tokio_util::sync::CancellationToken::new(),
-        std::sync::Arc::new(move |progress: evohime_core::plan_review::RevisionProgress| {
-            println!(
-                "[{:>6.1}s] revision.progress {} {}",
-                clock.elapsed().as_secs_f32(),
-                progress.status,
-                progress.model
-            );
-        }),
+        std::sync::Arc::new(
+            move |progress: evohime_core::plan_review::RevisionProgress| {
+                println!(
+                    "[{:>6.1}s] revision.progress {} {}",
+                    clock.elapsed().as_secs_f32(),
+                    progress.status,
+                    progress.model
+                );
+            },
+        ),
     )
     .await;
     let revised = match revised {
         Ok(result) => result,
         Err(error) => {
-            eprintln!("[{:>6.1}s] ✕ правка не удалась: {error}", started.elapsed().as_secs_f32());
+            eprintln!(
+                "[{:>6.1}s] ✕ правка не удалась: {error}",
+                started.elapsed().as_secs_f32()
+            );
             std::process::exit(1);
         }
     };

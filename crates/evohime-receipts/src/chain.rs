@@ -40,7 +40,10 @@ pub struct ExportedCheckpoint {
 /// the same signing scheme as receipts: Ed25519 over the SHA-256 digest of
 /// the canonical bytes. Returns `false` on any malformed or unverifiable
 /// input; it never partially trusts a checkpoint.
-pub fn verify_checkpoint_signature(checkpoint: &ExportedCheckpoint, signer_public_key: &[u8]) -> bool {
+pub fn verify_checkpoint_signature(
+    checkpoint: &ExportedCheckpoint,
+    signer_public_key: &[u8],
+) -> bool {
     let Some(canonical) = crate::decode_base64url(&checkpoint.canonical_checkpoint) else {
         return false;
     };
@@ -137,7 +140,10 @@ pub fn verify_chain(
         if let Ok(bytes) = crate::key_lifecycle::public_key_bytes(&transition.new_public_key) {
             public_keys.insert(transition.new_key_id.as_str(), bytes);
         }
-        boundary_reasons.insert(transition.new_key_id.as_str(), transition.continuity.as_str());
+        boundary_reasons.insert(
+            transition.new_key_id.as_str(),
+            transition.continuity.as_str(),
+        );
         if matches!(transition.continuity.as_str(), "compromised" | "broken") {
             if let Some(previous) = transition.previous_key_id.as_deref() {
                 stale_keys.insert(previous);
@@ -150,7 +156,10 @@ pub fn verify_chain(
     let mut verifications: Vec<ReceiptVerification> = Vec::with_capacity(rows.len());
     let mut overall = ChainStatus::Verified;
     let mut overall_code: Option<&'static str> = None;
-    let bump = |status: ChainStatus, code: &'static str, overall: &mut ChainStatus, overall_code: &mut Option<&'static str>| {
+    let bump = |status: ChainStatus,
+                code: &'static str,
+                overall: &mut ChainStatus,
+                overall_code: &mut Option<&'static str>| {
         if status < *overall {
             *overall = status;
             *overall_code = Some(code);
@@ -198,7 +207,9 @@ pub fn verify_chain(
             } else {
                 let previous_row = &rows[index - 1];
                 if previous_row.key_id == row.key_id {
-                    if row.previous_receipt_hash.as_deref() != Some(previous_row.receipt_hash.as_str()) {
+                    if row.previous_receipt_hash.as_deref()
+                        != Some(previous_row.receipt_hash.as_str())
+                    {
                         status = ChainStatus::Broken;
                         code = Some("receipts.previous_mismatch");
                     } else if row.sequence <= previous_row.sequence {
@@ -239,7 +250,12 @@ pub fn verify_chain(
             status = ChainStatus::VerifiedPruned;
         }
 
-        bump(status, code.unwrap_or("receipts.broken"), &mut overall, &mut overall_code);
+        bump(
+            status,
+            code.unwrap_or("receipts.broken"),
+            &mut overall,
+            &mut overall_code,
+        );
         verifications.push(ReceiptVerification {
             receipt_id: row.receipt_id.clone(),
             sequence: row.sequence,
@@ -256,42 +272,87 @@ pub fn verify_chain(
     for row in rows {
         if row.receipt_kind == "pre_action" {
             if pre_by_action.insert(row.action_id.as_str(), row).is_some() {
-                bump(ChainStatus::Broken, "receipts.chain_fork", &mut overall, &mut overall_code);
+                bump(
+                    ChainStatus::Broken,
+                    "receipts.chain_fork",
+                    &mut overall,
+                    &mut overall_code,
+                );
             }
         } else {
-            terminal_by_action.entry(row.action_id.as_str()).or_default().push(row);
+            terminal_by_action
+                .entry(row.action_id.as_str())
+                .or_default()
+                .push(row);
         }
     }
     for (action_id, terminals) in &terminal_by_action {
         if terminals.len() > 1 {
-            bump(ChainStatus::Broken, "receipts.chain_fork", &mut overall, &mut overall_code);
+            bump(
+                ChainStatus::Broken,
+                "receipts.chain_fork",
+                &mut overall,
+                &mut overall_code,
+            );
         }
         let Some(pre) = pre_by_action.get(action_id) else {
-            bump(ChainStatus::Unverified, "receipts.missing_receipt", &mut overall, &mut overall_code);
+            bump(
+                ChainStatus::Unverified,
+                "receipts.missing_receipt",
+                &mut overall,
+                &mut overall_code,
+            );
             continue;
         };
         for terminal in terminals {
             if terminal.sequence <= pre.sequence {
-                bump(ChainStatus::Broken, "receipts.previous_mismatch", &mut overall, &mut overall_code);
+                bump(
+                    ChainStatus::Broken,
+                    "receipts.previous_mismatch",
+                    &mut overall,
+                    &mut overall_code,
+                );
             }
             if terminal.approval_id.is_some() && terminal.approval_id != pre.approval_id {
-                bump(ChainStatus::Unverified, "receipts.approval_unverified", &mut overall, &mut overall_code);
+                bump(
+                    ChainStatus::Unverified,
+                    "receipts.approval_unverified",
+                    &mut overall,
+                    &mut overall_code,
+                );
             }
-            if terminal.approval_call_hash.is_some() && terminal.approval_call_hash != pre.approval_call_hash {
-                bump(ChainStatus::Unverified, "receipts.approval_unverified", &mut overall, &mut overall_code);
+            if terminal.approval_call_hash.is_some()
+                && terminal.approval_call_hash != pre.approval_call_hash
+            {
+                bump(
+                    ChainStatus::Unverified,
+                    "receipts.approval_unverified",
+                    &mut overall,
+                    &mut overall_code,
+                );
             }
         }
     }
     for (action_id, pre) in &pre_by_action {
         if !terminal_by_action.contains_key(action_id) {
-            bump(ChainStatus::Pending, "receipts.pending", &mut overall, &mut overall_code);
+            bump(
+                ChainStatus::Pending,
+                "receipts.pending",
+                &mut overall,
+                &mut overall_code,
+            );
             let _ = pre;
         }
     }
 
     let actual_verified_count = verifications
         .iter()
-        .filter(|entry| matches!(entry.status, ChainStatus::Verified | ChainStatus::VerifiedPruned))
+        .filter(|entry| {
+            matches!(
+                entry.status,
+                ChainStatus::Verified | ChainStatus::VerifiedPruned
+            )
+        })
         .count();
 
     ChainVerification {
@@ -315,17 +376,25 @@ mod tests {
     struct TestSigner(std::sync::Arc<ReceiptKeyManager>);
     impl ReceiptSigner for TestSigner {
         fn key_id(&self) -> Result<String, crate::runtime::RuntimeError> {
-            self.0.load_signer().map(|(metadata, _)| metadata.key_id)
+            self.0
+                .load_signer()
+                .map(|(metadata, _)| metadata.key_id)
                 .map_err(|_| crate::runtime::RuntimeError::SignerUnavailable)
         }
-        fn sign_payload_hash(&self, payload_hash: &str) -> Result<String, crate::runtime::RuntimeError> {
-            self.0.sign_payload_hash(payload_hash).map(|(_, signature)| signature)
+        fn sign_payload_hash(
+            &self,
+            payload_hash: &str,
+        ) -> Result<String, crate::runtime::RuntimeError> {
+            self.0
+                .sign_payload_hash(payload_hash)
+                .map(|(_, signature)| signature)
                 .map_err(|_| crate::runtime::RuntimeError::SignerUnavailable)
         }
     }
 
     fn make_signer() -> (TestSigner, KeyTransition) {
-        let root = std::env::temp_dir().join(format!("evohime-chain-test-{}", uuid::Uuid::now_v7()));
+        let root =
+            std::env::temp_dir().join(format!("evohime-chain-test-{}", uuid::Uuid::now_v7()));
         let manager = std::sync::Arc::new(ReceiptKeyManager::new(&root));
         manager.initialize().unwrap();
         let genesis = manager.load_history().unwrap().into_iter().next().unwrap();
@@ -362,7 +431,9 @@ mod tests {
         let request = action_request(action_id, "tool.read");
         runtime.prepare(request.clone()).unwrap();
         runtime.mark_started(action_id).unwrap();
-        runtime.complete(&request, "succeeded", &"a".repeat(64), None).unwrap();
+        runtime
+            .complete(&request, "succeeded", &"a".repeat(64), None)
+            .unwrap();
 
         let rows = load_rows(&db);
         let result = verify_chain(&rows, &[genesis], None, None);
@@ -380,7 +451,9 @@ mod tests {
         let request = action_request(action_id, "tool.read");
         runtime.prepare(request.clone()).unwrap();
         runtime.mark_started(action_id).unwrap();
-        runtime.complete(&request, "succeeded", &"a".repeat(64), None).unwrap();
+        runtime
+            .complete(&request, "succeeded", &"a".repeat(64), None)
+            .unwrap();
 
         let mut rows = load_rows(&db);
         rows[0].receipt_hash = "0".repeat(64);
@@ -395,7 +468,9 @@ mod tests {
         install(&db);
         let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
         let action_id = uuid::Uuid::now_v7();
-        runtime.prepare(action_request(action_id, "tool.read")).unwrap();
+        runtime
+            .prepare(action_request(action_id, "tool.read"))
+            .unwrap();
 
         let rows = load_rows(&db);
         let result = verify_chain(&rows, &[genesis], None, None);
@@ -412,7 +487,9 @@ mod tests {
         let request = action_request(action_id, "tool.read");
         runtime.prepare(request.clone()).unwrap();
         runtime.mark_started(action_id).unwrap();
-        runtime.complete(&request, "succeeded", &"a".repeat(64), None).unwrap();
+        runtime
+            .complete(&request, "succeeded", &"a".repeat(64), None)
+            .unwrap();
 
         let rows = load_rows(&db);
         let result = verify_chain(&rows, &[], None, None);
@@ -440,9 +517,8 @@ mod tests {
             })
             .unwrap();
         rows.filter_map(|row| row.ok())
-            .map(|(sequence, receipt_id, action_id, receipt_kind, action_status, key_id, receipt_hash, previous_receipt_hash, envelope_bytes)| {
-                let envelope: Envelope = serde_json::from_slice(&envelope_bytes).unwrap();
-                ChainRow {
+            .map(
+                |(
                     sequence,
                     receipt_id,
                     action_id,
@@ -451,11 +527,24 @@ mod tests {
                     key_id,
                     receipt_hash,
                     previous_receipt_hash,
-                    approval_id: None,
-                    approval_call_hash: None,
-                    envelope,
-                }
-            })
+                    envelope_bytes,
+                )| {
+                    let envelope: Envelope = serde_json::from_slice(&envelope_bytes).unwrap();
+                    ChainRow {
+                        sequence,
+                        receipt_id,
+                        action_id,
+                        receipt_kind,
+                        action_status,
+                        key_id,
+                        receipt_hash,
+                        previous_receipt_hash,
+                        approval_id: None,
+                        approval_call_hash: None,
+                        envelope,
+                    }
+                },
+            )
             .collect()
     }
 }

@@ -77,7 +77,9 @@ pub struct RoutingRequest {
     pub quality_delta: f64,
 }
 
-fn default_quality_delta() -> f64 { 0.05 }
+fn default_quality_delta() -> f64 {
+    0.05
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -278,7 +280,11 @@ mod tests {
             required_privacy: PrivacyClass::Internal,
             allow_fallback: true,
             preferred_route: None,
-            task_class: None, offline: false, allow_cloud: true, estimated_input_tokens: 0, quality_delta: 0.05,
+            task_class: None,
+            offline: false,
+            allow_cloud: true,
+            estimated_input_tokens: 0,
+            quality_delta: 0.05,
         };
         let mut expensive = candidate("expensive", 90, 200);
         expensive.fallback_rank = 1;
@@ -298,7 +304,11 @@ mod tests {
             required_privacy: PrivacyClass::Restricted,
             allow_fallback: false,
             preferred_route: None,
-            task_class: None, offline: false, allow_cloud: true, estimated_input_tokens: 0, quality_delta: 0.05,
+            task_class: None,
+            offline: false,
+            allow_cloud: true,
+            estimated_input_tokens: 0,
+            quality_delta: 0.05,
         };
         let mut route = candidate("cloud", 1, 1);
         route.available = false;
@@ -333,7 +343,11 @@ mod tests {
             required_privacy: PrivacyClass::Public,
             allow_fallback: true,
             preferred_route: None,
-            task_class: None, offline: false, allow_cloud: true, estimated_input_tokens: 0, quality_delta: 0.05,
+            task_class: None,
+            offline: false,
+            allow_cloud: true,
+            estimated_input_tokens: 0,
+            quality_delta: 0.05,
         };
         let routes: Vec<_> = (0..(MAX_FALLBACKS + 4))
             .map(|index| candidate(&format!("route-{index}"), index as u64, 1))

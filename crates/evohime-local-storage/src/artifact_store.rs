@@ -276,8 +276,10 @@ impl<'a> ArtifactStore<'a> {
                 // помечается `expired` с сохранением hash и размера.
                 self.set_ref_status(locator, ArtifactRefStatus::Expired)?;
             } else {
-                self.connection
-                    .execute("DELETE FROM task_artifact_refs WHERE locator = ?1", [locator])?;
+                self.connection.execute(
+                    "DELETE FROM task_artifact_refs WHERE locator = ?1",
+                    [locator],
+                )?;
             }
             let live_refs: i64 = self.connection.query_row(
                 "SELECT COUNT(*) FROM task_artifact_refs
@@ -416,11 +418,7 @@ impl<'a> ArtifactStore<'a> {
         Ok(())
     }
 
-    fn set_ref_status(
-        &self,
-        locator: &str,
-        status: ArtifactRefStatus,
-    ) -> Result<(), StorageError> {
+    fn set_ref_status(&self, locator: &str, status: ArtifactRefStatus) -> Result<(), StorageError> {
         self.connection.execute(
             "UPDATE task_artifact_refs SET status = ?2 WHERE locator = ?1",
             rusqlite::params![locator, status.as_str()],
@@ -551,10 +549,24 @@ mod tests {
         let database = database("dedup");
         let store = ArtifactStore::new(database.connection());
         let first = store
-            .offload(KIND, "task-a", "task-a", "одно и то же", Privacy::Workspace, 1_000)
+            .offload(
+                KIND,
+                "task-a",
+                "task-a",
+                "одно и то же",
+                Privacy::Workspace,
+                1_000,
+            )
             .expect("offload succeeds");
         let second = store
-            .offload(KIND, "task-b", "task-b", "одно и то же", Privacy::Workspace, 2_000)
+            .offload(
+                KIND,
+                "task-b",
+                "task-b",
+                "одно и то же",
+                Privacy::Workspace,
+                2_000,
+            )
             .expect("offload succeeds");
         assert!(!first.deduplicated);
         assert!(second.deduplicated);
@@ -583,7 +595,14 @@ mod tests {
         let database = database("access");
         let store = ArtifactStore::new(database.connection());
         let result = store
-            .offload(KIND, "parent", "parent", "содержимое", Privacy::Workspace, 1_000)
+            .offload(
+                KIND,
+                "parent",
+                "parent",
+                "содержимое",
+                Privacy::Workspace,
+                1_000,
+            )
             .expect("offload succeeds");
         assert!(store
             .read(&result.reference.locator, "parent", &[], KIND, 2_000)
@@ -607,7 +626,14 @@ mod tests {
         let database = database("corruption");
         let store = ArtifactStore::new(database.connection());
         let result = store
-            .offload(KIND, "task", "task", "исходное содержимое", Privacy::Workspace, 1_000)
+            .offload(
+                KIND,
+                "task",
+                "task",
+                "исходное содержимое",
+                Privacy::Workspace,
+                1_000,
+            )
             .expect("offload succeeds");
         // Подмена содержимого мимо store.
         database
@@ -642,7 +668,14 @@ mod tests {
         };
         let store = ArtifactStore::with_quota(database.connection(), quota);
         let first = store
-            .offload(KIND, "task", "task", &"a".repeat(90), Privacy::Workspace, 1_000)
+            .offload(
+                KIND,
+                "task",
+                "task",
+                &"a".repeat(90),
+                Privacy::Workspace,
+                1_000,
+            )
             .expect("offload succeeds");
         // Ссылка из confirmed scratchpad: удалять содержимое молча нельзя.
         database
@@ -659,11 +692,25 @@ mod tests {
             .expect("scratchpad link inserted");
 
         store
-            .offload(KIND, "task", "task", &"b".repeat(90), Privacy::Workspace, 2_000)
+            .offload(
+                KIND,
+                "task",
+                "task",
+                &"b".repeat(90),
+                Privacy::Workspace,
+                2_000,
+            )
             .expect("offload succeeds");
         // Третья выгрузка не помещается: сработает вытеснение.
         store
-            .offload(KIND, "task", "task", &"c".repeat(90), Privacy::Workspace, 5_000)
+            .offload(
+                KIND,
+                "task",
+                "task",
+                &"c".repeat(90),
+                Privacy::Workspace,
+                5_000,
+            )
             .expect("offload succeeds after eviction");
 
         let referenced = store
@@ -680,7 +727,14 @@ mod tests {
         let database = database("tombstone");
         let store = ArtifactStore::new(database.connection());
         let first = store
-            .offload(KIND, "task", "task", "содержимое", Privacy::Workspace, 1_000)
+            .offload(
+                KIND,
+                "task",
+                "task",
+                "содержимое",
+                Privacy::Workspace,
+                1_000,
+            )
             .expect("offload succeeds");
         store
             .forget_task_artifacts("task", 2_000, "forget memory")
@@ -692,7 +746,14 @@ mod tests {
         assert_eq!(tombstone.bytes, first.reference.bytes);
 
         let second = store
-            .offload(KIND, "task", "task", "содержимое", Privacy::Workspace, 3_000)
+            .offload(
+                KIND,
+                "task",
+                "task",
+                "содержимое",
+                Privacy::Workspace,
+                3_000,
+            )
             .expect("offload succeeds");
         assert!(
             !second.deduplicated,
@@ -725,7 +786,14 @@ mod tests {
         let database = database("expired-read");
         let store = ArtifactStore::new(database.connection());
         let result = store
-            .offload(KIND, "task", "task", "содержимое", Privacy::Workspace, 1_000)
+            .offload(
+                KIND,
+                "task",
+                "task",
+                "содержимое",
+                Privacy::Workspace,
+                1_000,
+            )
             .expect("offload succeeds");
         store
             .set_ref_status(&result.reference.locator, ArtifactRefStatus::Expired)
@@ -757,7 +825,14 @@ mod tests {
                         .expect("timeout set");
                     let store = ArtifactStore::new(database.connection());
                     store
-                        .offload(KIND, task, task, "общее содержимое", Privacy::Workspace, 1_000)
+                        .offload(
+                            KIND,
+                            task,
+                            task,
+                            "общее содержимое",
+                            Privacy::Workspace,
+                            1_000,
+                        )
                         .expect("offload succeeds");
                 })
             })

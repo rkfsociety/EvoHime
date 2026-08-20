@@ -29,22 +29,33 @@ fn main() -> ExitCode {
         return fail(&args.format, "broken", "key.history_incomplete", 2);
     }
     let mut history: Vec<KeyTransition> = Vec::new();
-    for line in raw_history.split(|byte| *byte == b'\n').filter(|line| !line.is_empty()) {
+    for line in raw_history
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+    {
         match serde_json::from_slice::<KeyTransition>(line) {
             Ok(item) => history.push(item),
             Err(_) => return fail(&args.format, "broken", "key.history_incomplete", 2),
         }
     }
-    let key_status = match evohime_receipts::key_lifecycle::verify_transitions(&history, args.trust.as_deref()) {
+    let key_status = match evohime_receipts::key_lifecycle::verify_transitions(
+        &history,
+        args.trust.as_deref(),
+    ) {
         Ok(status) => status,
         Err(error) => return fail(&args.format, "broken", &error.to_string(), 2),
     };
     if let Some(path) = args.checkpoint.as_deref() {
-        let checkpoint: KeyHistoryCheckpoint = match fs::read(path).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()) {
+        let checkpoint: KeyHistoryCheckpoint = match fs::read(path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        {
             Some(value) => value,
             None => return fail(&args.format, "broken", "key.history_incomplete", 2),
         };
-        if let Err(error) = verify_key_history_checkpoint(&checkpoint, &history, args.trust.as_deref()) {
+        if let Err(error) =
+            verify_key_history_checkpoint(&checkpoint, &history, args.trust.as_deref())
+        {
             return fail(&args.format, "broken", &error.to_string(), 2);
         }
     }
@@ -54,7 +65,11 @@ fn main() -> ExitCode {
 
     let public_keys: std::collections::HashMap<String, Vec<u8>> = history
         .iter()
-        .filter_map(|item| public_key_bytes(&item.new_public_key).ok().map(|key| (item.new_key_id.clone(), key)))
+        .filter_map(|item| {
+            public_key_bytes(&item.new_public_key)
+                .ok()
+                .map(|key| (item.new_key_id.clone(), key))
+        })
         .collect();
 
     // receipts.jsonl carries the 01.4 export-record wrapper (sequence,
@@ -69,15 +84,27 @@ fn main() -> ExitCode {
         return fail(&args.format, "broken", "receipts.non_canonical", 2);
     }
     let mut rows: Vec<ChainRow> = Vec::new();
-    for line in raw_receipts.split(|byte| *byte == b'\n').filter(|line| !line.is_empty()) {
+    for line in raw_receipts
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+    {
         let record: serde_json::Value = match serde_json::from_slice(line) {
             Ok(value) => value,
             Err(_) => return fail(&args.format, "broken", "receipts.invalid_json", 2),
         };
         if record.get("record_version").and_then(|v| v.as_u64()) != Some(1) {
-            return fail(&args.format, "unsupported", "receipts.unsupported_version", 4);
+            return fail(
+                &args.format,
+                "unsupported",
+                "receipts.unsupported_version",
+                4,
+            );
         }
-        let Some(sequence) = record.get("sequence").and_then(|v| v.as_str()).and_then(|v| v.parse::<i64>().ok()) else {
+        let Some(sequence) = record
+            .get("sequence")
+            .and_then(|v| v.as_str())
+            .and_then(|v| v.parse::<i64>().ok())
+        else {
             return fail(&args.format, "broken", "receipts.invalid_json", 2);
         };
         let Some(receipt_hash) = record.get("receipt_hash").and_then(|v| v.as_str()) else {
@@ -101,9 +128,18 @@ fn main() -> ExitCode {
         ) else {
             return fail(&args.format, "broken", "receipts.non_canonical", 2);
         };
-        let receipt_id = payload.get("receipt_id").and_then(|v| v.as_str()).unwrap_or_default();
-        let previous_receipt_hash = payload.get("previous_receipt_hash").and_then(|v| v.as_str()).map(str::to_string);
-        let approval_id = payload.get("approval_id").and_then(|v| v.as_str()).map(str::to_string);
+        let receipt_id = payload
+            .get("receipt_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let previous_receipt_hash = payload
+            .get("previous_receipt_hash")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        let approval_id = payload
+            .get("approval_id")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
         rows.push(ChainRow {
             sequence,
             receipt_id: receipt_id.to_string(),
@@ -129,7 +165,10 @@ fn main() -> ExitCode {
             Ok(value) => value,
             Err(_) => return fail(&args.format, "unsupported", "input.unreadable", 4),
         };
-        for line in raw.split(|byte| *byte == b'\n').filter(|line| !line.is_empty()) {
+        for line in raw
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+        {
             let checkpoint: ExportedCheckpoint = match serde_json::from_slice(line) {
                 Ok(value) => value,
                 Err(_) => return fail(&args.format, "broken", "receipts.invalid_json", 2),
@@ -151,10 +190,35 @@ fn main() -> ExitCode {
         }
     }
 
-    let verification = verify_chain(&rows, &history, args.trust.as_deref(), checkpoint_prefix_hash.as_deref());
+    let verification = verify_chain(
+        &rows,
+        &history,
+        args.trust.as_deref(),
+        checkpoint_prefix_hash.as_deref(),
+    );
     let (name, code) = match verification.status {
-        ChainStatus::Verified => ("verified", if matches!(key_status, evohime_receipts::key_lifecycle::VerificationStatus::Verified) { 0 } else { 3 }),
-        ChainStatus::VerifiedPruned => ("verified_pruned", if matches!(key_status, evohime_receipts::key_lifecycle::VerificationStatus::Verified) { 0 } else { 3 }),
+        ChainStatus::Verified => (
+            "verified",
+            if matches!(
+                key_status,
+                evohime_receipts::key_lifecycle::VerificationStatus::Verified
+            ) {
+                0
+            } else {
+                3
+            },
+        ),
+        ChainStatus::VerifiedPruned => (
+            "verified_pruned",
+            if matches!(
+                key_status,
+                evohime_receipts::key_lifecycle::VerificationStatus::Verified
+            ) {
+                0
+            } else {
+                3
+            },
+        ),
         ChainStatus::Pending => ("pending", 6),
         ChainStatus::StaleKey => ("stale_key", 5),
         ChainStatus::Unverified => ("unverified", 3),
@@ -202,11 +266,16 @@ fn parse_args() -> Option<Args> {
 fn verify_manifest(history: &str, items: &[KeyTransition]) -> Result<(), &'static str> {
     let manifest_path = Path::new(history).with_file_name("public-history-v1.manifest.json");
     let bytes = fs::read(manifest_path).map_err(|_| "key.history_incomplete")?;
-    let manifest: HistoryManifest = serde_json::from_slice(&bytes).map_err(|_| "key.history_incomplete")?;
+    let manifest: HistoryManifest =
+        serde_json::from_slice(&bytes).map_err(|_| "key.history_incomplete")?;
     if manifest.manifest_version != 1
         || manifest.status != "current"
         || manifest.exported_transition_count != items.len()
-        || manifest.active_key_id != items.last().map(|item| item.new_key_id.as_str()).unwrap_or("")
+        || manifest.active_key_id
+            != items
+                .last()
+                .map(|item| item.new_key_id.as_str())
+                .unwrap_or("")
     {
         return Err(if manifest.status == "key.history_export_failed" {
             "key.history_export_failed"
@@ -219,7 +288,9 @@ fn verify_manifest(history: &str, items: &[KeyTransition]) -> Result<(), &'stati
 
 fn decode_base64url(value: &str) -> Option<Vec<u8>> {
     use base64::Engine;
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(value).ok()
+    base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(value)
+        .ok()
 }
 
 fn usage() {
@@ -231,7 +302,11 @@ fn fail(format: &str, status: &str, error: &str, code: u8) -> ExitCode {
 }
 fn emit(format: &str, status: &str, error: &str) {
     if format == "json" {
-        println!("{{\"status\":\"{}\",\"error\":\"{}\"}}", status, error.replace('"', "\\\""));
+        println!(
+            "{{\"status\":\"{}\",\"error\":\"{}\"}}",
+            status,
+            error.replace('"', "\\\"")
+        );
     } else if error.is_empty() {
         println!("{status}");
     } else {

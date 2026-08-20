@@ -1408,8 +1408,10 @@ fn role_allows_capability(role: &str, capability: &str) -> bool {
             capability,
             "workspace.write" | "test.execute" | "git.commit" | "git.push"
         ),
-        _ => capability_name_is_bounded(capability)
-            && !matches!(capability, "workspace.write" | "test.execute"),
+        _ => {
+            capability_name_is_bounded(capability)
+                && !matches!(capability, "workspace.write" | "test.execute")
+        }
     }
 }
 

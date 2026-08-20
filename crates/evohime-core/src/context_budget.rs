@@ -12,7 +12,6 @@ use std::sync::Arc;
 
 use evohime_context_budget::{
     artifact::{ArtifactQuota, ArtifactRefStatus},
-    scratchpad::{ScratchpadCategory, ScratchpadEntry},
     budget::BudgetUnavailable,
     compression::{BoundedSummarizer, RawSummary, SummarizerConfig, SummaryModel},
     estimator::HeuristicEstimator,
@@ -26,6 +25,7 @@ use evohime_context_budget::{
     },
     planner::{ContextPlan, ContextPlanner, OwnedContent, PlanInput, PlanRequest},
     profile::ProfileCatalog,
+    scratchpad::{ScratchpadCategory, ScratchpadEntry},
 };
 use evohime_local_storage::artifact_store::ArtifactStore;
 use evohime_model_gateway::{
@@ -135,7 +135,8 @@ impl ModelContextProjection {
                     source_count: record.source_ids.len(),
                     compression_ratio_permille: (record.compression_ratio * 1000.0)
                         .round()
-                        .clamp(0.0, f64::from(u32::MAX)) as u32,
+                        .clamp(0.0, f64::from(u32::MAX))
+                        as u32,
                     summarizer_version: record.summarizer_version.clone(),
                     fallback: record.fallback,
                     fallback_reason: record
@@ -458,8 +459,7 @@ pub fn scratchpad_offload_candidates(
     let mut candidates: Vec<&ScratchpadEntry> = entries
         .iter()
         .filter(|entry| {
-            entry.category != ScratchpadCategory::OpenQuestions
-                && entry.artifact_locator.is_none()
+            entry.category != ScratchpadCategory::OpenQuestions && entry.artifact_locator.is_none()
         })
         .collect();
     candidates.sort_by(|left, right| {
@@ -553,24 +553,21 @@ fn plan_inputs(
                 ItemKind::ToolResult => 45,
                 _ => 40,
             };
-            let item = ContextItemBuilder::new(
-                message_item_id(index, message.role),
-                kind,
-                String::new(),
-            )
-            .task(task_id, session_id)
-            .source(message.role.as_str())
-            .priority(priority)
-            .trust(match message.role {
-                ChatRole::System => Trust::CoreOwned,
-                ChatRole::User => Trust::Confirmed,
-                ChatRole::Tool => Trust::External,
-                ChatRole::Assistant => Trust::External,
-            })
-            .privacy(Privacy::Workspace)
-            .created_at(now + index as i64)
-            .tool_pair_complete(pair_complete)
-            .build();
+            let item =
+                ContextItemBuilder::new(message_item_id(index, message.role), kind, String::new())
+                    .task(task_id, session_id)
+                    .source(message.role.as_str())
+                    .priority(priority)
+                    .trust(match message.role {
+                        ChatRole::System => Trust::CoreOwned,
+                        ChatRole::User => Trust::Confirmed,
+                        ChatRole::Tool => Trust::External,
+                        ChatRole::Assistant => Trust::External,
+                    })
+                    .privacy(Privacy::Workspace)
+                    .created_at(now + index as i64)
+                    .tool_pair_complete(pair_complete)
+                    .build();
             PlanInput::new(item, OwnedContent::Text(message.content.clone()))
         })
         .collect()
@@ -643,11 +640,7 @@ fn registry_from_specs(specs: &[ToolSpec]) -> Vec<ToolRegistryEntry> {
         .iter()
         .map(|spec| {
             let name = spec.function.name.clone();
-            let capability = name
-                .split('.')
-                .next()
-                .unwrap_or(name.as_str())
-                .to_string();
+            let capability = name.split('.').next().unwrap_or(name.as_str()).to_string();
             let mutation = is_mutation_tool(&name);
             let mandatory = MANDATORY_CAPABILITY_MARKERS
                 .iter()
@@ -790,11 +783,7 @@ impl OffloadSink for MessageOffload<'_> {
         if !item.privacy.allows_offload() {
             return Err(format!("privacy {} forbids offload", item.privacy.as_str()));
         }
-        let Some((_, content)) = self
-            .contents
-            .iter()
-            .find(|(id, _)| id == &item.id)
-            .cloned()
+        let Some((_, content)) = self.contents.iter().find(|(id, _)| id == &item.id).cloned()
         else {
             return Err(format!("content for {} is not available", item.id));
         };
@@ -1126,7 +1115,10 @@ mod tests {
             .iter()
             .map(|spec| spec.function.name.as_str())
             .collect();
-        assert!(names.contains(&"task.status"), "обязательные всегда в loadout");
+        assert!(
+            names.contains(&"task.status"),
+            "обязательные всегда в loadout"
+        );
         assert!(names.contains(&"filesystem.read"));
         assert!(
             !names.contains(&"filesystem.write"),
@@ -1298,7 +1290,11 @@ mod tests {
         assert!(payload.get("context").is_none());
     }
 
-    fn scratchpad_entry(id: &str, category: ScratchpadCategory, created_at: i64) -> ScratchpadEntry {
+    fn scratchpad_entry(
+        id: &str,
+        category: ScratchpadCategory,
+        created_at: i64,
+    ) -> ScratchpadEntry {
         let mut entry = ScratchpadEntry::draft(
             id,
             "task",
@@ -1575,16 +1571,16 @@ mod tests {
         assert!(assembled.is_ready());
         let compression = &assembled.ledger().compression;
         assert_eq!(compression.len(), 1);
-        assert!(compression[0].fallback, "без ответа модели работает fallback");
+        assert!(
+            compression[0].fallback,
+            "без ответа модели работает fallback"
+        );
         assert!(compression[0].fallback_reason.is_some());
     }
 
     #[test]
     fn an_empty_model_answer_is_treated_as_unavailable() {
-        let mut summarizer = model_summarizer(
-            SummarizerConfig::default(),
-            Some("   ".to_string()),
-        );
+        let mut summarizer = model_summarizer(SummarizerConfig::default(), Some("   ".to_string()));
         let items = vec![
             ContextItemBuilder::new("h1", ItemKind::History, "hash-1")
                 .sizes(300, 100)

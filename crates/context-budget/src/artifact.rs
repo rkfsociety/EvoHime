@@ -239,11 +239,7 @@ mod tests {
     fn locator_access_is_limited_to_the_owner_and_its_children() {
         let artifact = reference("artifact://a", "parent");
         assert!(access_allowed(&artifact, "parent", &[]));
-        assert!(access_allowed(
-            &artifact,
-            "child",
-            &["parent".to_string()]
-        ));
+        assert!(access_allowed(&artifact, "child", &["parent".to_string()]));
         assert!(!access_allowed(&artifact, "stranger", &[]));
         assert!(!access_allowed(
             &artifact,

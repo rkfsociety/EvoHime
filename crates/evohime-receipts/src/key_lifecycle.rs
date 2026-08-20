@@ -479,8 +479,12 @@ impl ReceiptKeyManager {
         self.root.join(ROTATION_CHECK_FILE)
     }
 
-    fn storage_key_path(&self) -> PathBuf { self.root.join(STORAGE_KEY_FILE) }
-    fn storage_key_history_path(&self) -> PathBuf { self.root.join(STORAGE_KEY_HISTORY_FILE) }
+    fn storage_key_path(&self) -> PathBuf {
+        self.root.join(STORAGE_KEY_FILE)
+    }
+    fn storage_key_history_path(&self) -> PathBuf {
+        self.root.join(STORAGE_KEY_HISTORY_FILE)
+    }
 
     pub fn initialize(&self) -> Result<String, KeyError> {
         if self.active_path().exists() {
@@ -609,7 +613,11 @@ impl ReceiptKeyManager {
     /// This is intentionally separate from the legacy contract helper above:
     /// changing its input would invalidate the already published vectors.
     pub fn sign_payload_hash(&self, payload_hash: &str) -> Result<(String, String), KeyError> {
-        if payload_hash.len() != 64 || !payload_hash.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+        if payload_hash.len() != 64
+            || !payload_hash
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        {
             return Err(KeyError::InvalidTransition);
         }
         let (metadata, signer) = self.load_signer()?;
@@ -617,29 +625,54 @@ impl ReceiptKeyManager {
         Ok((metadata.key_id, signer.sign(&bytes)))
     }
 
-    fn new_storage_metadata(&self) -> Result<(StorageKeyMetadata, [u8; STORAGE_KEY_BYTES]), KeyError> {
+    fn new_storage_metadata(
+        &self,
+    ) -> Result<(StorageKeyMetadata, [u8; STORAGE_KEY_BYTES]), KeyError> {
         fs::create_dir_all(&self.root)?;
         let mut key = [0u8; STORAGE_KEY_BYTES];
-        SystemRandom::new().fill(&mut key).map_err(|_| KeyError::DpapiFailed)?;
+        SystemRandom::new()
+            .fill(&mut key)
+            .map_err(|_| KeyError::DpapiFailed)?;
         let id = format!("{:x}", Sha256::digest(key));
-        let metadata = StorageKeyMetadata { storage_version: 1, key_id: id, protected_key: STANDARD.encode(protect(&key)?) };
+        let metadata = StorageKeyMetadata {
+            storage_version: 1,
+            key_id: id,
+            protected_key: STANDARD.encode(protect(&key)?),
+        };
         atomic_write_json(&self.storage_key_path(), &metadata)?;
         Ok((metadata, key))
     }
 
-    fn read_storage_metadata(&self, path: &Path) -> Result<(StorageKeyMetadata, [u8; STORAGE_KEY_BYTES]), KeyError> {
+    fn read_storage_metadata(
+        &self,
+        path: &Path,
+    ) -> Result<(StorageKeyMetadata, [u8; STORAGE_KEY_BYTES]), KeyError> {
         let metadata: StorageKeyMetadata = serde_json::from_slice(&fs::read(path)?)?;
-        if metadata.storage_version != 1 { return Err(KeyError::Corrupt); }
-        let protected = STANDARD.decode(&metadata.protected_key).map_err(|_| KeyError::Corrupt)?;
+        if metadata.storage_version != 1 {
+            return Err(KeyError::Corrupt);
+        }
+        let protected = STANDARD
+            .decode(&metadata.protected_key)
+            .map_err(|_| KeyError::Corrupt)?;
         let plain = unprotect(&protected)?;
-        if plain.len() != STORAGE_KEY_BYTES || format!("{:x}", Sha256::digest(&plain)) != metadata.key_id { return Err(KeyError::Corrupt); }
+        if plain.len() != STORAGE_KEY_BYTES
+            || format!("{:x}", Sha256::digest(&plain)) != metadata.key_id
+        {
+            return Err(KeyError::Corrupt);
+        }
         let mut key = [0u8; STORAGE_KEY_BYTES];
         key.copy_from_slice(&plain);
         Ok((metadata, key))
     }
 
-    fn active_storage_key(&self) -> Result<(StorageKeyMetadata, [u8; STORAGE_KEY_BYTES]), KeyError> {
-        if self.storage_key_path().exists() { self.read_storage_metadata(&self.storage_key_path()) } else { self.new_storage_metadata() }
+    fn active_storage_key(
+        &self,
+    ) -> Result<(StorageKeyMetadata, [u8; STORAGE_KEY_BYTES]), KeyError> {
+        if self.storage_key_path().exists() {
+            self.read_storage_metadata(&self.storage_key_path())
+        } else {
+            self.new_storage_metadata()
+        }
     }
 
     pub fn storage_key_id(&self) -> Result<String, KeyError> {
@@ -650,36 +683,59 @@ impl ReceiptKeyManager {
     /// key. The key itself is DPAPI-protected and never leaves this manager.
     pub fn protect_storage(&self, bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
         let (_, key) = self.active_storage_key()?;
-        let unbound = aead::UnboundKey::new(&aead::AES_256_GCM, &key).map_err(|_| KeyError::DpapiFailed)?;
+        let unbound =
+            aead::UnboundKey::new(&aead::AES_256_GCM, &key).map_err(|_| KeyError::DpapiFailed)?;
         let less = aead::LessSafeKey::new(unbound);
         let mut nonce = [0u8; STORAGE_NONCE_BYTES];
-        SystemRandom::new().fill(&mut nonce).map_err(|_| KeyError::DpapiFailed)?;
+        SystemRandom::new()
+            .fill(&mut nonce)
+            .map_err(|_| KeyError::DpapiFailed)?;
         let mut output = bytes.to_vec();
-        less.seal_in_place_append_tag(aead::Nonce::assume_unique_for_key(nonce), aead::Aad::empty(), &mut output).map_err(|_| KeyError::DpapiFailed)?;
+        less.seal_in_place_append_tag(
+            aead::Nonce::assume_unique_for_key(nonce),
+            aead::Aad::empty(),
+            &mut output,
+        )
+        .map_err(|_| KeyError::DpapiFailed)?;
         let mut envelope = nonce.to_vec();
         envelope.extend(output);
         Ok(envelope)
     }
 
     pub fn unprotect_storage(&self, bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
-        if bytes.len() < STORAGE_NONCE_BYTES + aead::AES_256_GCM.tag_len() { return Err(KeyError::Corrupt); }
+        if bytes.len() < STORAGE_NONCE_BYTES + aead::AES_256_GCM.tag_len() {
+            return Err(KeyError::Corrupt);
+        }
         let mut candidates = Vec::new();
         if self.storage_key_path().exists() {
-            if let Ok((_, key)) = self.read_storage_metadata(&self.storage_key_path()) { candidates.push(key); }
+            if let Ok((_, key)) = self.read_storage_metadata(&self.storage_key_path()) {
+                candidates.push(key);
+            }
         }
         if let Ok(raw) = fs::read(self.storage_key_history_path()) {
             if let Ok(history) = serde_json::from_slice::<Vec<StorageKeyMetadata>>(&raw) {
                 for metadata in history.into_iter().rev().take(8) {
-                    if let Ok((_, key)) = self.read_storage_metadata_from_value(&metadata) { candidates.push(key); }
+                    if let Ok((_, key)) = self.read_storage_metadata_from_value(&metadata) {
+                        candidates.push(key);
+                    }
                 }
             }
         }
-        let nonce_bytes: [u8; STORAGE_NONCE_BYTES] = bytes[..STORAGE_NONCE_BYTES].try_into().map_err(|_| KeyError::Corrupt)?;
+        let nonce_bytes: [u8; STORAGE_NONCE_BYTES] = bytes[..STORAGE_NONCE_BYTES]
+            .try_into()
+            .map_err(|_| KeyError::Corrupt)?;
         for key in candidates {
-            let unbound = aead::UnboundKey::new(&aead::AES_256_GCM, &key).map_err(|_| KeyError::Corrupt)?;
+            let unbound =
+                aead::UnboundKey::new(&aead::AES_256_GCM, &key).map_err(|_| KeyError::Corrupt)?;
             let less = aead::LessSafeKey::new(unbound);
             let mut ciphertext = bytes[STORAGE_NONCE_BYTES..].to_vec();
-            if let Ok(plain) = less.open_in_place(aead::Nonce::assume_unique_for_key(nonce_bytes), aead::Aad::empty(), &mut ciphertext) { return Ok(plain.to_vec()); }
+            if let Ok(plain) = less.open_in_place(
+                aead::Nonce::assume_unique_for_key(nonce_bytes),
+                aead::Aad::empty(),
+                &mut ciphertext,
+            ) {
+                return Ok(plain.to_vec());
+            }
         }
         Err(KeyError::DpapiFailed)
     }
@@ -695,32 +751,62 @@ impl ReceiptKeyManager {
     /// Rewraps a JSON recovery envelope while updating its bounded storage-key
     /// metadata. This keeps the row's authenticated key identifier aligned
     /// with the database index without exposing key bytes to Core.
-    pub fn rewrap_storage_with_key_id(&self, bytes: &[u8], key_id: &str) -> Result<Vec<u8>, KeyError> {
+    pub fn rewrap_storage_with_key_id(
+        &self,
+        bytes: &[u8],
+        key_id: &str,
+    ) -> Result<Vec<u8>, KeyError> {
         if key_id.is_empty() || key_id.len() > 128 || key_id.contains('\n') {
             return Err(KeyError::Corrupt);
         }
         let plaintext = self.unprotect_storage(bytes)?;
-        let mut value: serde_json::Value = serde_json::from_slice(&plaintext).map_err(|_| KeyError::Corrupt)?;
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&plaintext).map_err(|_| KeyError::Corrupt)?;
         let object = value.as_object_mut().ok_or(KeyError::Corrupt)?;
         object.insert("key_id".into(), serde_json::Value::String(key_id.into()));
         let updated = serde_json::to_vec(&value).map_err(|_| KeyError::Corrupt)?;
         self.protect_storage(&updated)
     }
 
-    fn read_storage_metadata_from_value(&self, metadata: &StorageKeyMetadata) -> Result<(StorageKeyMetadata, [u8; STORAGE_KEY_BYTES]), KeyError> {
-        if metadata.storage_version != 1 { return Err(KeyError::Corrupt); }
-        let protected = STANDARD.decode(&metadata.protected_key).map_err(|_| KeyError::Corrupt)?;
+    fn read_storage_metadata_from_value(
+        &self,
+        metadata: &StorageKeyMetadata,
+    ) -> Result<(StorageKeyMetadata, [u8; STORAGE_KEY_BYTES]), KeyError> {
+        if metadata.storage_version != 1 {
+            return Err(KeyError::Corrupt);
+        }
+        let protected = STANDARD
+            .decode(&metadata.protected_key)
+            .map_err(|_| KeyError::Corrupt)?;
         let plain = unprotect(&protected)?;
-        if plain.len() != STORAGE_KEY_BYTES || format!("{:x}", Sha256::digest(&plain)) != metadata.key_id { return Err(KeyError::Corrupt); }
-        let mut key = [0u8; STORAGE_KEY_BYTES]; key.copy_from_slice(&plain); Ok((metadata.clone(), key))
+        if plain.len() != STORAGE_KEY_BYTES
+            || format!("{:x}", Sha256::digest(&plain)) != metadata.key_id
+        {
+            return Err(KeyError::Corrupt);
+        }
+        let mut key = [0u8; STORAGE_KEY_BYTES];
+        key.copy_from_slice(&plain);
+        Ok((metadata.clone(), key))
     }
 
     pub fn rotate_storage_key(&self, authenticated_operator: bool) -> Result<String, KeyError> {
-        if !authenticated_operator { return Err(KeyError::TrustRequired); }
+        if !authenticated_operator {
+            return Err(KeyError::TrustRequired);
+        }
         let (old, _) = self.active_storage_key()?;
-        let mut history: Vec<StorageKeyMetadata> = fs::read(&self.storage_key_history_path()).ok().and_then(|raw| serde_json::from_slice(&raw).ok()).unwrap_or_default();
-        if !history.iter().any(|item: &StorageKeyMetadata| item.key_id == old.key_id) { history.push(old); }
-        if history.len() > 8 { history.drain(..history.len() - 8); }
+        let mut history: Vec<StorageKeyMetadata> = fs::read(&self.storage_key_history_path())
+            .ok()
+            .and_then(|raw| serde_json::from_slice(&raw).ok())
+            .unwrap_or_default();
+        if !history
+            .iter()
+            .any(|item: &StorageKeyMetadata| item.key_id == old.key_id)
+        {
+            history.push(old);
+        }
+        if history.len() > 8 {
+            history.drain(..history.len() - 8);
+        }
         atomic_write_json(&self.storage_key_history_path(), &history)?;
         Ok(self.new_storage_metadata()?.0.key_id)
     }
@@ -1825,7 +1911,10 @@ mod tests {
         let envelope = manager.protect_storage(b"bounded recovery").unwrap();
         let second_id = manager.rotate_storage_key(true).unwrap();
         assert_ne!(first_id, second_id);
-        assert_eq!(manager.unprotect_storage(&envelope).unwrap(), b"bounded recovery");
+        assert_eq!(
+            manager.unprotect_storage(&envelope).unwrap(),
+            b"bounded recovery"
+        );
         assert!(manager.rotate_storage_key(false).is_err());
         let _ = std::fs::remove_dir_all(root);
     }

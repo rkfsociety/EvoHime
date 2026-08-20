@@ -7,9 +7,7 @@
 
 use evohime_context_budget::{
     item::{Privacy, ScratchpadStatus, Trust},
-    scratchpad::{
-        ConfirmationBasis, RecoveryPolicy, ScratchpadCategory, ScratchpadEntry,
-    },
+    scratchpad::{ConfirmationBasis, RecoveryPolicy, ScratchpadCategory, ScratchpadEntry},
 };
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -102,9 +100,9 @@ impl<'a> ScratchpadStore<'a> {
         basis: ConfirmationBasis,
         now: i64,
     ) -> Result<ScratchpadEntry, StorageError> {
-        let mut entry = self
-            .get(id)?
-            .ok_or_else(|| StorageError::Context(ScratchpadError::NotFound(id.to_string()).to_string()))?;
+        let mut entry = self.get(id)?.ok_or_else(|| {
+            StorageError::Context(ScratchpadError::NotFound(id.to_string()).to_string())
+        })?;
         entry.confirm(basis, now);
         self.upsert(&entry)?;
         Ok(entry)
@@ -290,7 +288,12 @@ impl<'a> ScratchpadStore<'a> {
         limit: usize,
     ) -> Result<Vec<ScratchpadEntry>, StorageError> {
         Ok(self
-            .list(task_id, None, Some(ScratchpadStatus::Confirmed), SCRATCHPAD_READ_LIMIT)?
+            .list(
+                task_id,
+                None,
+                Some(ScratchpadStatus::Confirmed),
+                SCRATCHPAD_READ_LIMIT,
+            )?
             .into_iter()
             .filter(|entry| {
                 entry.category != ScratchpadCategory::OpenQuestions
@@ -364,7 +367,14 @@ mod tests {
     }
 
     fn draft(id: &str, category: ScratchpadCategory) -> ScratchpadEntry {
-        ScratchpadEntry::draft(id, "task", "session", category, format!("заметка {id}"), 1_000)
+        ScratchpadEntry::draft(
+            id,
+            "task",
+            "session",
+            category,
+            format!("заметка {id}"),
+            1_000,
+        )
     }
 
     #[test]
@@ -542,7 +552,9 @@ mod tests {
     fn clearing_a_task_removes_only_that_task() {
         let database = database("clear");
         let store = ScratchpadStore::new(database.connection());
-        store.upsert(&draft("s1", ScratchpadCategory::Facts)).expect("write");
+        store
+            .upsert(&draft("s1", ScratchpadCategory::Facts))
+            .expect("write");
         let mut other = draft("s2", ScratchpadCategory::Facts);
         other.task_id = "other-task".to_string();
         store.upsert(&other).expect("write");

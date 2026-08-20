@@ -121,7 +121,11 @@ fn normalize_query(text: &str) -> String {
 /// сопоставляет их с versioned таблицей capability keywords и применяет
 /// deny/approval rules. При конфликте правил выбирается более безопасный
 /// read-only результат.
-pub fn route_intent(rules: &IntentRules, prompt: &str, open_questions: &[String]) -> IntentDecision {
+pub fn route_intent(
+    rules: &IntentRules,
+    prompt: &str,
+    open_questions: &[String],
+) -> IntentDecision {
     let mut haystack = normalize_query(prompt);
     for question in open_questions {
         haystack.push(' ');
@@ -427,7 +431,11 @@ mod tests {
                 IntentRule {
                     id: "edit".to_string(),
                     intent: "edit".to_string(),
-                    keywords: vec!["измени".to_string(), "создай".to_string(), "проверь".to_string()],
+                    keywords: vec![
+                        "измени".to_string(),
+                        "создай".to_string(),
+                        "проверь".to_string(),
+                    ],
                     allows_mutation: true,
                     capabilities: vec!["filesystem".to_string()],
                 },
@@ -500,7 +508,10 @@ mod tests {
         assert!(!decision.allows_mutation);
 
         let loadout = build_loadout(&registry(), &rules(), decision, limits(), &estimator());
-        assert!(loadout.allows("task.status"), "обязательные всегда в loadout");
+        assert!(
+            loadout.allows("task.status"),
+            "обязательные всегда в loadout"
+        );
         assert!(loadout.allows("fs.read"));
         assert!(!loadout.allows("fs.write"), "fallback не даёт mutation");
         assert!(!loadout.tools.is_empty());
@@ -616,7 +627,8 @@ mod tests {
     #[test]
     fn loadout_record_carries_only_bounded_fields() {
         let decision = route_intent(&rules(), "проверь репозиторий", &[]);
-        let record = build_loadout(&registry(), &rules(), decision, limits(), &estimator()).to_record();
+        let record =
+            build_loadout(&registry(), &rules(), decision, limits(), &estimator()).to_record();
         assert_eq!(record.intent, "inspect");
         assert_eq!(record.rules_version, INTENT_RULES_VERSION);
         assert!(record.matched_rule.is_some());

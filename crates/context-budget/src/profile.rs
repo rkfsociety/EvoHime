@@ -136,8 +136,7 @@ impl ModelContextProfile {
             + retry_reserve;
 
         let target = percent(max, 60).min(soft.saturating_sub(reserves));
-        let absolute_mvc_max_limit =
-            percent(max, 40).min(hard.saturating_sub(reserves));
+        let absolute_mvc_max_limit = percent(max, 40).min(hard.saturating_sub(reserves));
 
         Self {
             schema_version: MODEL_CONTEXT_PROFILE_SCHEMA_VERSION,
@@ -168,9 +167,11 @@ impl ModelContextProfile {
         scaled.hard_limit_tokens = percent(self.hard_limit_tokens, 70);
         scaled.soft_limit_tokens = percent(self.soft_limit_tokens, 70);
         scaled.target_tokens = percent(self.target_tokens, 70);
-        scaled.absolute_mvc_max_limit = self
-            .absolute_mvc_max_limit
-            .min(scaled.hard_limit_tokens.saturating_sub(self.reserves_total()));
+        scaled.absolute_mvc_max_limit = self.absolute_mvc_max_limit.min(
+            scaled
+                .hard_limit_tokens
+                .saturating_sub(self.reserves_total()),
+        );
         scaled
     }
 
@@ -201,9 +202,9 @@ impl ModelContextProfile {
         next.absolute_mvc_max_limit = next
             .absolute_mvc_max_limit
             .min(next.hard_limit_tokens.saturating_sub(next.reserves_total()));
-        next.max_context_tokens = next.max_context_tokens.min(
-            provider_window.unwrap_or(next.max_context_tokens),
-        );
+        next.max_context_tokens = next
+            .max_context_tokens
+            .min(provider_window.unwrap_or(next.max_context_tokens));
         next
     }
 }
@@ -263,14 +264,10 @@ impl ProfileCatalog {
     /// заменяются, новые добавляются.
     pub fn overlay(&mut self, other: Self) {
         for entry in other.entries {
-            match self
-                .entries
-                .iter_mut()
-                .find(|slot| {
-                    slot.profile.provider == entry.profile.provider
-                        && slot.model_prefix == entry.model_prefix
-                })
-            {
+            match self.entries.iter_mut().find(|slot| {
+                slot.profile.provider == entry.profile.provider
+                    && slot.model_prefix == entry.model_prefix
+            }) {
                 Some(slot) => *slot = entry,
                 None => self.entries.push(entry),
             }
@@ -414,7 +411,10 @@ mod tests {
            "streaming_reserve":512,"retry_reserve":1024,
            "low_priority_cutoff":30,"offload_threshold_bytes":32768}]}"#;
         let catalog = ProfileCatalog::from_json(json).expect("json parses");
-        assert_eq!(catalog.resolve("p", "small-1", None).profile_version, "p-any");
+        assert_eq!(
+            catalog.resolve("p", "small-1", None).profile_version,
+            "p-any"
+        );
         assert_eq!(catalog.resolve("p", "big-1", None).profile_version, "p-big");
     }
 
@@ -475,8 +475,14 @@ mod tests {
     fn fallback_estimator_scaling_uses_seventy_percent_and_keeps_reserves() {
         let profile = ModelContextProfile::fallback("unknown", "model", 128_000);
         let scaled = profile.scaled_for_fallback_estimator();
-        assert_eq!(scaled.hard_limit_tokens, percent(profile.hard_limit_tokens, 70));
-        assert_eq!(scaled.soft_limit_tokens, percent(profile.soft_limit_tokens, 70));
+        assert_eq!(
+            scaled.hard_limit_tokens,
+            percent(profile.hard_limit_tokens, 70)
+        );
+        assert_eq!(
+            scaled.soft_limit_tokens,
+            percent(profile.soft_limit_tokens, 70)
+        );
         assert_eq!(scaled.target_tokens, percent(profile.target_tokens, 70));
         assert_eq!(scaled.reserves_total(), profile.reserves_total());
         assert_ne!(scaled.profile_version, profile.profile_version);
@@ -485,7 +491,9 @@ mod tests {
     #[test]
     fn user_catalog_overrides_the_builtin_entry() {
         let mut catalog = ProfileCatalog::builtin();
-        let before = catalog.resolve("literouter", "mystery-model", None).profile_version;
+        let before = catalog
+            .resolve("literouter", "mystery-model", None)
+            .profile_version;
         let user = ProfileCatalog::from_json(
             r#"{"entries":[{"provider":"literouter","model_prefix":"",
             "schema_version":1,"profile_version":"user-1","model":"",
@@ -498,7 +506,9 @@ mod tests {
         )
         .expect("json parses");
         catalog.overlay(user);
-        let after = catalog.resolve("literouter", "mystery-model", None).profile_version;
+        let after = catalog
+            .resolve("literouter", "mystery-model", None)
+            .profile_version;
         assert_ne!(before, after);
         assert_eq!(after, "user-1");
     }

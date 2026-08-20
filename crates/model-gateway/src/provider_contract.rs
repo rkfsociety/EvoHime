@@ -11,9 +11,9 @@
 //! - Deterministic retry with exponential backoff and jitter.
 //! - Trace serialization without secrets/prompt/raw output.
 
+use crate::routing_catalog::EvaluationCatalog;
 pub use crate::routing_policy::PrivacyClass;
 use crate::routing_policy::RoutingRequest;
-use crate::routing_catalog::EvaluationCatalog;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -121,7 +121,9 @@ impl CandidateHealthSnapshot {
     }
 
     /// Checks if this health observation is still valid (not stale).
-    pub fn is_fresh(&self) -> bool { self.is_fresh_at(current_time_ms()) }
+    pub fn is_fresh(&self) -> bool {
+        self.is_fresh_at(current_time_ms())
+    }
 
     pub fn is_fresh_at(&self, now: u64) -> bool {
         now < self.observed_at + self.ttl_ms
@@ -167,10 +169,7 @@ impl FailureCategory {
     pub fn opens_circuit(self) -> bool {
         matches!(
             self,
-            Self::Timeout
-                | Self::ConnectionRefused
-                | Self::ServerError
-                | Self::MalformedResponse
+            Self::Timeout | Self::ConnectionRefused | Self::ServerError | Self::MalformedResponse
         )
     }
 
@@ -286,7 +285,14 @@ impl RoutePolicySnapshot {
     ) -> Result<Self, SnapshotError> {
         validate_candidates(&candidates)?;
 
-        Self::new_at(run_id, candidates, policy_hashes, preference, budget_id, current_time_ms())
+        Self::new_at(
+            run_id,
+            candidates,
+            policy_hashes,
+            preference,
+            budget_id,
+            current_time_ms(),
+        )
     }
 
     pub fn new_at(
@@ -313,11 +319,13 @@ impl RoutePolicySnapshot {
 
     /// Computes round-trip hash: serialize → deserialize → re-serialize.
     pub fn round_trip_hash(&self) -> Result<String, SnapshotError> {
-        let json = serde_json::to_vec(self).map_err(|e| SnapshotError::Serialization(e.to_string()))?;
+        let json =
+            serde_json::to_vec(self).map_err(|e| SnapshotError::Serialization(e.to_string()))?;
         let parsed: Self = serde_json::from_slice(&json)
             .map_err(|e| SnapshotError::Deserialization(e.to_string()))?;
-        let json2 = serde_json::to_vec(&parsed).map_err(|e| SnapshotError::Serialization(e.to_string()))?;
-        
+        let json2 =
+            serde_json::to_vec(&parsed).map_err(|e| SnapshotError::Serialization(e.to_string()))?;
+
         let mut hasher = Sha256::new();
         hasher.update(&json2);
         Ok(hex::encode(hasher.finalize()))
@@ -453,7 +461,6 @@ impl RunHealthOverlay {
         config: &RetryConfig,
         now: u64,
     ) -> Result<u64, OverlayError> {
-
         // Update failure counters
         {
             let mut counters = self.failure_counters.write();
@@ -469,16 +476,23 @@ impl RunHealthOverlay {
                 .failure_counters
                 .read()
                 .get(route_id)
-                .map(|f| f.by_category.get(&FailureCategory::RateLimited).copied().unwrap_or(0))
+                .map(|f| {
+                    f.by_category
+                        .get(&FailureCategory::RateLimited)
+                        .copied()
+                        .unwrap_or(0)
+                })
                 .unwrap_or(0);
 
             if counter >= config.rate_limit_threshold {
                 let mut circuits = self.circuits.write();
-                let entry = circuits.entry(route_id.to_string()).or_insert_with(CircuitEntry::new);
+                let entry = circuits
+                    .entry(route_id.to_string())
+                    .or_insert_with(CircuitEntry::new);
                 entry.state = CircuitState::Cooldown;
                 entry.cooldown_until_ms = Some(now + config.cooldown_ms);
                 entry.last_failure_category = Some(category);
-                
+
                 let gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
                 return Ok(gen);
             }
@@ -495,7 +509,9 @@ impl RunHealthOverlay {
 
             if counter >= config.failure_threshold {
                 let mut circuits = self.circuits.write();
-                let entry = circuits.entry(route_id.to_string()).or_insert_with(CircuitEntry::new);
+                let entry = circuits
+                    .entry(route_id.to_string())
+                    .or_insert_with(CircuitEntry::new);
                 entry.state = CircuitState::Open;
                 entry.opened_at = Some(now);
                 entry.failure_count = counter;
@@ -559,7 +575,6 @@ impl RunHealthOverlay {
     }
 
     pub fn is_cooldown_expired_at(&self, route_id: &str, now: u64) -> bool {
-
         let circuits = self.circuits.read();
         match circuits.get(route_id) {
             Some(entry) if entry.state == CircuitState::Cooldown => {
@@ -662,7 +677,9 @@ impl RetryConfig {
     /// Computes deterministic backoff with jitter.
     pub fn compute_backoff(&self, attempt: u32, run_id: &str, route_id: &str) -> Duration {
         let exponent = attempt.saturating_sub(1).min(63);
-        let base = self.initial_backoff_ms.saturating_mul(2_u64.saturating_pow(exponent));
+        let base = self
+            .initial_backoff_ms
+            .saturating_mul(2_u64.saturating_pow(exponent));
         let capped = base.min(self.max_backoff_ms);
 
         // Deterministic jitter from hash
@@ -719,45 +736,129 @@ pub fn select_route_snapshot(
     }
     let mut decisions = Vec::with_capacity(snapshot.candidates.len());
     let mut eligible: Vec<&CandidateEntry> = Vec::new();
-    let unknown_class = request.task_class.as_deref().is_none_or(|class| class != "simple" && class != "complex");
+    let unknown_class = request
+        .task_class
+        .as_deref()
+        .is_none_or(|class| class != "simple" && class != "complex");
     for candidate in &snapshot.candidates {
         let mut reject = None;
         let health = &candidate.initial_health;
         let mut status = health.status;
         let circuit = overlay.get_circuit_state(&candidate.route_id);
-        if !health.is_fresh_at(now_ms) { status = HealthStatus::Stale; }
-        if candidate.privacy < request.required_privacy { reject = Some("privacy_violation"); }
-        else if request.offline && candidate.capabilities.execution_class != ExecutionClass::Local { reject = Some("offline_mode"); }
-        else if unknown_class && candidate.capabilities.execution_class == ExecutionClass::Cloud { reject = Some("classification_incomplete"); }
-        else if !request.allow_cloud && candidate.capabilities.execution_class != ExecutionClass::Local { reject = Some("classification_incomplete"); }
-        else if request.required_capabilities.iter().any(|cap| !candidate_supports_capability(candidate, cap)) { reject = Some("capability_missing"); }
-        else if candidate.capabilities.context_limit.is_some_and(|limit| request.estimated_input_tokens > limit) { reject = Some("context_limit_exceeded"); }
-        else if request.max_cost_micros_per_1k_tokens.is_some_and(|limit| candidate.cost_micros_per_1k_tokens > limit) { reject = Some("budget_exceeded"); }
-        else if request.max_latency_ms.is_some_and(|limit| candidate.p95_latency_ms > limit) { reject = Some("latency_exceeded"); }
-        else if candidate.capabilities.execution_class == ExecutionClass::Local && request.task_class.as_deref() == Some("simple") {
-            let large = snapshot.candidates.iter().find(|other| other.capabilities.execution_class == ExecutionClass::Cloud);
-            let gate_ok = large.and_then(|large| catalog.map(|cat| cat.small_route_allowed("simple", &large.route_id, &candidate.route_id, request.quality_delta, now_ms))).unwrap_or(false);
-            if !gate_ok { reject = Some("gate_unavailable"); }
+        if !health.is_fresh_at(now_ms) {
+            status = HealthStatus::Stale;
         }
-        if reject.is_none() && overlay.is_excluded(&candidate.route_id) { reject = Some("route_attempts_exhausted"); }
-        else if reject.is_none() && circuit != CircuitState::Closed { reject = Some("circuit_open"); }
-        else if reject.is_none() && status == HealthStatus::Unavailable { reject = Some("health_unavailable"); }
-        else if reject.is_none() && status == HealthStatus::Stale { reject = Some("health_stale"); }
-        decisions.push(SnapshotCandidateDecision { route_id: candidate.route_id.clone(), capability_epoch: candidate.capabilities.capability_epoch, health_status: status, circuit_state: circuit, reject_reason: reject.map(str::to_owned) });
-        if reject.is_none() { eligible.push(candidate); }
+        if candidate.privacy < request.required_privacy {
+            reject = Some("privacy_violation");
+        } else if request.offline && candidate.capabilities.execution_class != ExecutionClass::Local
+        {
+            reject = Some("offline_mode");
+        } else if unknown_class && candidate.capabilities.execution_class == ExecutionClass::Cloud {
+            reject = Some("classification_incomplete");
+        } else if !request.allow_cloud
+            && candidate.capabilities.execution_class != ExecutionClass::Local
+        {
+            reject = Some("classification_incomplete");
+        } else if request
+            .required_capabilities
+            .iter()
+            .any(|cap| !candidate_supports_capability(candidate, cap))
+        {
+            reject = Some("capability_missing");
+        } else if candidate
+            .capabilities
+            .context_limit
+            .is_some_and(|limit| request.estimated_input_tokens > limit)
+        {
+            reject = Some("context_limit_exceeded");
+        } else if request
+            .max_cost_micros_per_1k_tokens
+            .is_some_and(|limit| candidate.cost_micros_per_1k_tokens > limit)
+        {
+            reject = Some("budget_exceeded");
+        } else if request
+            .max_latency_ms
+            .is_some_and(|limit| candidate.p95_latency_ms > limit)
+        {
+            reject = Some("latency_exceeded");
+        } else if candidate.capabilities.execution_class == ExecutionClass::Local
+            && request.task_class.as_deref() == Some("simple")
+        {
+            let large = snapshot
+                .candidates
+                .iter()
+                .find(|other| other.capabilities.execution_class == ExecutionClass::Cloud);
+            let gate_ok = large
+                .and_then(|large| {
+                    catalog.map(|cat| {
+                        cat.small_route_allowed(
+                            "simple",
+                            &large.route_id,
+                            &candidate.route_id,
+                            request.quality_delta,
+                            now_ms,
+                        )
+                    })
+                })
+                .unwrap_or(false);
+            if !gate_ok {
+                reject = Some("gate_unavailable");
+            }
+        }
+        if reject.is_none() && overlay.is_excluded(&candidate.route_id) {
+            reject = Some("route_attempts_exhausted");
+        } else if reject.is_none() && circuit != CircuitState::Closed {
+            reject = Some("circuit_open");
+        } else if reject.is_none() && status == HealthStatus::Unavailable {
+            reject = Some("health_unavailable");
+        } else if reject.is_none() && status == HealthStatus::Stale {
+            reject = Some("health_stale");
+        }
+        decisions.push(SnapshotCandidateDecision {
+            route_id: candidate.route_id.clone(),
+            capability_epoch: candidate.capabilities.capability_epoch,
+            health_status: status,
+            circuit_state: circuit,
+            reject_reason: reject.map(str::to_owned),
+        });
+        if reject.is_none() {
+            eligible.push(candidate);
+        }
     }
     eligible.sort_by(|left, right| {
         let preferred = |candidate: &CandidateEntry| request.preference_rank(&candidate.route_id);
-        health_rank(left, now_ms).cmp(&health_rank(right, now_ms))
+        health_rank(left, now_ms)
+            .cmp(&health_rank(right, now_ms))
             .then(left.p95_latency_ms.cmp(&right.p95_latency_ms))
-            .then(left.cost_micros_per_1k_tokens.cmp(&right.cost_micros_per_1k_tokens))
+            .then(
+                left.cost_micros_per_1k_tokens
+                    .cmp(&right.cost_micros_per_1k_tokens),
+            )
             .then(preferred(left).cmp(&preferred(right)))
             .then(left.route_id.cmp(&right.route_id))
     });
     let selected_route = eligible.first().map(|candidate| candidate.route_id.clone());
-    let fallback_chain = eligible.iter().skip(1).take(16).map(|candidate| candidate.route_id.clone()).collect::<Vec<_>>();
-    let reason_code = if snapshot.candidates.is_empty() { "no_routes_configured" } else if selected_route.is_none() { "all_routes_excluded" } else if attempt_id > 0 { "fallback_selection" } else { "policy_selection" };
-    Ok(SnapshotRouteDecision { selected_route, fallback_chain, candidates: decisions, reason_code: reason_code.into() })
+    let fallback_chain = eligible
+        .iter()
+        .skip(1)
+        .take(16)
+        .map(|candidate| candidate.route_id.clone())
+        .collect::<Vec<_>>();
+    let reason_code = if snapshot.candidates.is_empty() {
+        "no_routes_configured"
+    } else if selected_route.is_none() {
+        "all_routes_excluded"
+    } else if attempt_id > 0 {
+        "fallback_selection"
+    } else {
+        "policy_selection"
+    };
+    Ok(SnapshotRouteDecision {
+        selected_route,
+        fallback_chain,
+        candidates: decisions,
+        reason_code: reason_code.into(),
+    })
 }
 
 fn candidate_supports_capability(candidate: &CandidateEntry, capability: &str) -> bool {
@@ -772,13 +873,28 @@ fn candidate_supports_capability(candidate: &CandidateEntry, capability: &str) -
 }
 
 fn health_rank(candidate: &CandidateEntry, now_ms: u64) -> u8 {
-    if !candidate.initial_health.is_fresh_at(now_ms) { return 3; }
-    match candidate.initial_health.status { HealthStatus::Ready => 0, HealthStatus::Degraded => 1, HealthStatus::Stale => 2, HealthStatus::Unavailable => 3 }
+    if !candidate.initial_health.is_fresh_at(now_ms) {
+        return 3;
+    }
+    match candidate.initial_health.status {
+        HealthStatus::Ready => 0,
+        HealthStatus::Degraded => 1,
+        HealthStatus::Stale => 2,
+        HealthStatus::Unavailable => 3,
+    }
 }
 
-trait PreferenceRank { fn preference_rank(&self, route_id: &str) -> usize; }
+trait PreferenceRank {
+    fn preference_rank(&self, route_id: &str) -> usize;
+}
 impl PreferenceRank for RoutingRequest {
-    fn preference_rank(&self, route_id: &str) -> usize { if self.preferred_route.as_deref() == Some(route_id) { 0 } else { 1 } }
+    fn preference_rank(&self, route_id: &str) -> usize {
+        if self.preferred_route.as_deref() == Some(route_id) {
+            0
+        } else {
+            1
+        }
+    }
 }
 
 fn current_time_ms() -> u64 {
@@ -995,7 +1111,9 @@ fn validate_candidates(candidates: &[CandidateEntry]) -> Result<(), SnapshotErro
         }
 
         if c.capabilities.schema_version.is_empty() {
-            return Err(SnapshotError::MissingField("capabilities.schema_version".into()));
+            return Err(SnapshotError::MissingField(
+                "capabilities.schema_version".into(),
+            ));
         }
     }
 
@@ -1017,9 +1135,16 @@ fn validate_identifier(value: &str, field: &str) -> Result<(), SnapshotError> {
         )));
     }
     let lower = value.to_ascii_lowercase();
-    if ["api_key", "apikey", "authorization", "bearer", "token", "secret"]
-        .iter()
-        .any(|m| lower.contains(m))
+    if [
+        "api_key",
+        "apikey",
+        "authorization",
+        "bearer",
+        "token",
+        "secret",
+    ]
+    .iter()
+    .any(|m| lower.contains(m))
     {
         return Err(SnapshotError::InvalidRouteId(format!(
             "{} contains secret-like marker",
@@ -1037,9 +1162,17 @@ fn bound_string(value: String) -> String {
 /// Redacts field names that look like secrets.
 fn redact_field_name(value: String) -> String {
     let lower = value.to_ascii_lowercase();
-    if ["api_key", "apikey", "authorization", "bearer", "password", "secret", "token"]
-        .iter()
-        .any(|m| lower.contains(m))
+    if [
+        "api_key",
+        "apikey",
+        "authorization",
+        "bearer",
+        "password",
+        "secret",
+        "token",
+    ]
+    .iter()
+    .any(|m| lower.contains(m))
     {
         String::new()
     } else {
@@ -1077,10 +1210,7 @@ mod tests {
 
     #[test]
     fn snapshot_creation_validates_candidates() {
-        let candidates = vec![
-            make_candidate("local-1", 1),
-            make_candidate("cloud-1", 2),
-        ];
+        let candidates = vec![make_candidate("local-1", 1), make_candidate("cloud-1", 2)];
         let hashes = PolicyHashes::from_canonical_json(b"{}", b"{}", b"{}", b"{}", b"{}");
         let snapshot = RoutePolicySnapshot::new(
             "run-123".to_string(),
@@ -1134,20 +1264,42 @@ mod tests {
         local.initial_health = CandidateHealthSnapshot::ready_at(1_000, 1_000);
         cloud.initial_health = CandidateHealthSnapshot::ready_at(1_000, 1_000);
         let snapshot = RoutePolicySnapshot::new_at(
-            "run-select".into(), vec![local, cloud],
+            "run-select".into(),
+            vec![local, cloud],
             PolicyHashes::from_canonical_json(b"p", b"a", b"t", b"s", b"r"),
-            UserPreference { preferred_order: vec!["cloud-1".into()], avoid: Vec::new() }, None, 1_000,
-        ).expect("snapshot");
+            UserPreference {
+                preferred_order: vec!["cloud-1".into()],
+                avoid: Vec::new(),
+            },
+            None,
+            1_000,
+        )
+        .expect("snapshot");
         let overlay = RunHealthOverlay::new("run-select");
         let request = RoutingRequest {
-            required_capabilities: vec!["chat".into()], max_cost_micros_per_1k_tokens: None,
-            max_latency_ms: None, required_privacy: PrivacyClass::Internal, allow_fallback: true,
-            preferred_route: Some("cloud-1".into()), task_class: Some("complex".into()), offline: true,
-            allow_cloud: true, estimated_input_tokens: 10, quality_delta: 0.05,
+            required_capabilities: vec!["chat".into()],
+            max_cost_micros_per_1k_tokens: None,
+            max_latency_ms: None,
+            required_privacy: PrivacyClass::Internal,
+            allow_fallback: true,
+            preferred_route: Some("cloud-1".into()),
+            task_class: Some("complex".into()),
+            offline: true,
+            allow_cloud: true,
+            estimated_input_tokens: 10,
+            quality_delta: 0.05,
         };
-        let decision = select_route_snapshot(&request, &snapshot, &overlay, None, 0, 1_050).expect("decision");
+        let decision =
+            select_route_snapshot(&request, &snapshot, &overlay, None, 0, 1_050).expect("decision");
         assert_eq!(decision.selected_route.as_deref(), Some("local-1"));
-        assert_eq!(decision.candidates.iter().find(|c| c.route_id == "cloud-1").and_then(|c| c.reject_reason.as_deref()), Some("offline_mode"));
+        assert_eq!(
+            decision
+                .candidates
+                .iter()
+                .find(|c| c.route_id == "cloud-1")
+                .and_then(|c| c.reject_reason.as_deref()),
+            Some("offline_mode")
+        );
     }
 
     #[test]
@@ -1202,7 +1354,11 @@ mod tests {
 
     #[test]
     fn trace_serialization_excludes_secrets() {
-        let mut trace = RunTrace::new("run-123".to_string(), "hash-abc".to_string(), SNAPSHOT_SCHEMA_VERSION.to_string());
+        let mut trace = RunTrace::new(
+            "run-123".to_string(),
+            "hash-abc".to_string(),
+            SNAPSHOT_SCHEMA_VERSION.to_string(),
+        );
         trace.add_field("safe_field", "safe_value");
         trace.add_field("api_key", "secret123");
         trace.add_field("another_token", "tok_abc");

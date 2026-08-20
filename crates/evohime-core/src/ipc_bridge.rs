@@ -1,7 +1,10 @@
 use evohime_desktop_ipc::{generated, transport, FrameError};
 use prost::Message;
 use serde::Serialize;
-use std::{collections::HashMap, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    collections::HashMap,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::sync::CancellationToken;
 
@@ -11,7 +14,10 @@ use crate::{
 use evohime_local_storage::WorkItemRecord;
 use evohime_model_gateway::ModelGatewayConfig;
 use evohime_permissions::{Permission, PermissionMode};
-use evohime_receipts::{key_lifecycle::{ReceiptKeyManager, VerificationStatus}, runtime::ProtectedActionRow};
+use evohime_receipts::{
+    key_lifecycle::{ReceiptKeyManager, VerificationStatus},
+    runtime::ProtectedActionRow,
+};
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -69,8 +75,7 @@ pub struct IpcBridge {
     review_tasks: Arc<tokio::sync::Mutex<HashMap<String, CancellationToken>>>,
     review_results: Arc<tokio::sync::Mutex<HashMap<String, crate::plan_review::ReviewResult>>>,
     revision_tasks: Arc<tokio::sync::Mutex<HashMap<String, CancellationToken>>>,
-    revision_results:
-        Arc<tokio::sync::Mutex<HashMap<String, crate::plan_review::RevisionResult>>>,
+    revision_results: Arc<tokio::sync::Mutex<HashMap<String, crate::plan_review::RevisionResult>>>,
 }
 
 fn runtime_identity() -> (String, u64) {
@@ -366,23 +371,35 @@ impl IpcBridge {
                 let mut status = self.receipt_status();
                 if let Ok(mut database) = self.journal.database().try_lock() {
                     let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                    if let Ok(runtime) = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer) {
+                    if let Ok(runtime) = evohime_receipts::runtime::ReceiptRuntime::new(
+                        database.connection_mut(),
+                        &signer,
+                    ) {
                         if let Ok(counts) = runtime.counts() {
                             if let Some(object) = status.as_object_mut() {
-                                object.insert("runtime_counts".into(), serde_json::json!({
-                                    "pending": counts.pending,
-                                    "pending_recovery": counts.pending_recovery,
-                                    "quarantined": counts.quarantined,
-                                    "approval_pending": counts.approval_pending,
-                                }));
+                                object.insert(
+                                    "runtime_counts".into(),
+                                    serde_json::json!({
+                                        "pending": counts.pending,
+                                        "pending_recovery": counts.pending_recovery,
+                                        "quarantined": counts.quarantined,
+                                        "approval_pending": counts.approval_pending,
+                                    }),
+                                );
                                 if let Ok((rate, version)) = runtime.audit_sampling_config() {
                                     object.insert("audit_sampling".into(), serde_json::json!({"rate": rate, "policy_version": version}));
                                 }
                                 if let Ok(metrics) = runtime.metrics() {
-                                    object.insert("runtime_metrics".into(), serde_json::json!(metrics.counters));
+                                    object.insert(
+                                        "runtime_metrics".into(),
+                                        serde_json::json!(metrics.counters),
+                                    );
                                 }
                                 if let Ok(diagnostics) = runtime.diagnostic_counts() {
-                                    object.insert("runtime_diagnostics".into(), serde_json::json!(diagnostics));
+                                    object.insert(
+                                        "runtime_diagnostics".into(),
+                                        serde_json::json!(diagnostics),
+                                    );
                                 }
                                 if let Ok(rotation) = runtime.storage_rotation_job() {
                                     object.insert("storage_rotation".into(), serde_json::json!(rotation.map(|job| serde_json::json!({"job_id": job.job_id, "old_key_id": job.old_key_id, "new_key_id": job.new_key_id, "cursor": job.cursor, "generation": job.generation, "state": job.state}))));
@@ -391,20 +408,21 @@ impl IpcBridge {
                         }
                     }
                 }
-                self.write_response(
-                    writer,
-                    "key.status",
-                    serde_json::to_vec(&status)?,
-                )
-                .await?;
+                self.write_response(writer, "key.status", serde_json::to_vec(&status)?)
+                    .await?;
             }
             Some(generated::command_envelope::Command::ClosePendingReceiptAction(request)) => {
-                if !request.operator_confirmed || request.action_id.is_empty() || request.input_json.len() > evohime_receipts::runtime::MAX_CALL_INPUT_BYTES {
+                if !request.operator_confirmed
+                    || request.action_id.is_empty()
+                    || request.input_json.len() > evohime_receipts::runtime::MAX_CALL_INPUT_BYTES
+                {
                     self.write_response(writer, "receipt.pending_close", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.schema_violation"}))?).await?;
                     return Ok(());
                 }
-                let action_id = uuid::Uuid::parse_str(&request.action_id).map_err(|error| FrameError::Io(error.to_string()))?;
-                let input: serde_json::Value = serde_json::from_str(&request.input_json).map_err(|error| FrameError::Io(error.to_string()))?;
+                let action_id = uuid::Uuid::parse_str(&request.action_id)
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                let input: serde_json::Value = serde_json::from_str(&request.input_json)
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
                 let mut database = self.journal.database().lock().await;
                 let (task_id, run_id, tool_name, normalized_scope, policy_id, decision, state, approval_id, parent_approval_ref): (String,String,String,String,String,String,String,Option<String>,Option<String>) = database.connection().query_row(
                     "SELECT task_id,run_id,tool_name,normalized_scope,policy_id,policy_decision,state,approval_id,parent_approval_ref FROM receipt_actions WHERE action_id=?1",
@@ -416,7 +434,9 @@ impl IpcBridge {
                 }
                 let policy_decision = match decision.as_str() {
                     "allow" => evohime_receipts::runtime::PolicyDecision::Allow,
-                    "approval_required" => evohime_receipts::runtime::PolicyDecision::ApprovalRequired,
+                    "approval_required" => {
+                        evohime_receipts::runtime::PolicyDecision::ApprovalRequired
+                    }
                     "deny" => evohime_receipts::runtime::PolicyDecision::Deny,
                     _ => {
                         self.write_response(writer, "receipt.pending_close", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.schema_violation"}))?).await?;
@@ -424,7 +444,12 @@ impl IpcBridge {
                     }
                 };
                 let receipt_request = evohime_receipts::runtime::ActionRequest {
-                    action_id, task_id, run_id, tool_name, policy_id, normalized_scope,
+                    action_id,
+                    task_id,
+                    run_id,
+                    tool_name,
+                    policy_id,
+                    normalized_scope,
                     input,
                     policy_decision,
                     approval_id: approval_id.and_then(|value| uuid::Uuid::parse_str(&value).ok()),
@@ -432,9 +457,13 @@ impl IpcBridge {
                     preview: "unknown result closure".into(),
                 };
                 let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
-                    .map_err(|error| FrameError::Io(error.to_string()))?;
-                let receipt_hash = runtime.refuse(&receipt_request, "recovery_pending")
+                let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(
+                    database.connection_mut(),
+                    &signer,
+                )
+                .map_err(|error| FrameError::Io(error.to_string()))?;
+                let receipt_hash = runtime
+                    .refuse(&receipt_request, "recovery_pending")
                     .map_err(|error| FrameError::Io(error.to_string()))?;
                 self.write_response(writer, "receipt.pending_close", serde_json::to_vec(&serde_json::json!({"ok":true,"action_id":request.action_id,"receipt_hash":receipt_hash,"completion_source":"reconciliation"}))?).await?;
             }
@@ -445,15 +474,33 @@ impl IpcBridge {
                 }
                 let mut database = self.journal.database().lock().await;
                 let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
-                    .map_err(|error| FrameError::Io(error.to_string()))?;
-                runtime.set_audit_sampling_rate(true, request.rate as u8)
+                let runtime = evohime_receipts::runtime::ReceiptRuntime::new(
+                    database.connection_mut(),
+                    &signer,
+                )
+                .map_err(|error| FrameError::Io(error.to_string()))?;
+                runtime
+                    .set_audit_sampling_rate(true, request.rate as u8)
                     .map_err(|error| FrameError::Io(error.to_string()))?;
                 self.write_response(writer, "receipt.sampling_rate", serde_json::to_vec(&serde_json::json!({"ok":true,"rate":request.rate,"policy_version":evohime_receipts::SAMPLING_POLICY_VERSION}))?).await?;
             }
             Some(generated::command_envelope::Command::ReconcilePendingReceiptAction(request)) => {
-                const MAX_RECONCILIATION_INPUT_BYTES: usize = evohime_receipts::runtime::MAX_CALL_INPUT_BYTES;
-                let read_only = matches!(request.tool_name.as_str(), "filesystem.read" | "filesystem.list" | "git.status" | "git.diff" | "git.log" | "git.show" | "git.blame" | "git.changed_files" | "workspace.list" | "workspace.read" | "workspace.search");
+                const MAX_RECONCILIATION_INPUT_BYTES: usize =
+                    evohime_receipts::runtime::MAX_CALL_INPUT_BYTES;
+                let read_only = matches!(
+                    request.tool_name.as_str(),
+                    "filesystem.read"
+                        | "filesystem.list"
+                        | "git.status"
+                        | "git.diff"
+                        | "git.log"
+                        | "git.show"
+                        | "git.blame"
+                        | "git.changed_files"
+                        | "workspace.list"
+                        | "workspace.read"
+                        | "workspace.search"
+                );
                 if request.old_action_id.is_empty()
                     || request.tool_name.len() > 128
                     || !read_only
@@ -488,11 +535,14 @@ impl IpcBridge {
                 };
                 let (task_id, old_state): (String, String) = {
                     let database = self.journal.database().lock().await;
-                    database.connection().query_row(
-                        "SELECT task_id,state FROM receipt_actions WHERE action_id=?1",
-                        [old_action_id.to_string()],
-                        |row| Ok((row.get(0)?, row.get(1)?)),
-                    ).map_err(|error| FrameError::Io(error.to_string()))?
+                    database
+                        .connection()
+                        .query_row(
+                            "SELECT task_id,state FROM receipt_actions WHERE action_id=?1",
+                            [old_action_id.to_string()],
+                            |row| Ok((row.get(0)?, row.get(1)?)),
+                        )
+                        .map_err(|error| FrameError::Io(error.to_string()))?
                 };
                 if old_state != "pending_recovery" {
                     self.write_response(writer, "receipt.reconciliation", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.pending_recovery"}))?).await?;
@@ -504,8 +554,13 @@ impl IpcBridge {
                     session_id: None,
                     progress_tx: None,
                 };
-                let (scope, preview) = match tools.preflight(&context, &request.tool_name, &input).await {
-                    Ok(evohime_tool_runtime::ToolPreflightDecision::Allowed { scope, preview }) => (scope, preview),
+                let (scope, preview) = match tools
+                    .preflight(&context, &request.tool_name, &input)
+                    .await
+                {
+                    Ok(evohime_tool_runtime::ToolPreflightDecision::Allowed { scope, preview }) => {
+                        (scope, preview)
+                    }
                     Ok(_) => {
                         self.write_response(writer, "receipt.reconciliation", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.policy_denied"}))?).await?;
                         return Ok(());
@@ -527,32 +582,72 @@ impl IpcBridge {
                     policy_decision: evohime_receipts::runtime::PolicyDecision::Allow,
                     approval_id: None,
                     parent_approval_ref: None,
-                    preview: serde_json::to_string(&preview).unwrap_or_else(|_| "read-only reconciliation".into()),
+                    preview: serde_json::to_string(&preview)
+                        .unwrap_or_else(|_| "read-only reconciliation".into()),
                 };
                 {
                     let mut database = self.journal.database().lock().await;
                     let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                    let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|error| FrameError::Io(error.to_string()))?;
-                    if !matches!(runtime.prepare(receipt_request.clone()).map_err(|error| FrameError::Io(error.to_string()))?, evohime_receipts::runtime::PrepareOutcome::Prepared { .. }) {
+                    let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(
+                        database.connection_mut(),
+                        &signer,
+                    )
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                    if !matches!(
+                        runtime
+                            .prepare(receipt_request.clone())
+                            .map_err(|error| FrameError::Io(error.to_string()))?,
+                        evohime_receipts::runtime::PrepareOutcome::Prepared { .. }
+                    ) {
                         self.write_response(writer, "receipt.reconciliation", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.precondition_failed"}))?).await?;
                         return Ok(());
                     }
-                    runtime.mark_started(new_action_id).map_err(|error| FrameError::Io(error.to_string()))?;
+                    runtime
+                        .mark_started(new_action_id)
+                        .map_err(|error| FrameError::Io(error.to_string()))?;
                 }
-                let result = tools.execute_with_cancellation(&context, &request.tool_name, input, CancellationToken::new()).await;
+                let result = tools
+                    .execute_with_cancellation(
+                        &context,
+                        &request.tool_name,
+                        input,
+                        CancellationToken::new(),
+                    )
+                    .await;
                 let (status, digest, error_category) = match &result {
-                    Ok(value) => ("succeeded", evohime_receipts::sha256_hex(value.output.as_bytes()), None),
-                    Err(_error) => ("failed", evohime_receipts::sha256_hex(b"reconciliation_tool_error"), Some("tool_error")),
+                    Ok(value) => (
+                        "succeeded",
+                        evohime_receipts::sha256_hex(value.output.as_bytes()),
+                        None,
+                    ),
+                    Err(_error) => (
+                        "failed",
+                        evohime_receipts::sha256_hex(b"reconciliation_tool_error"),
+                        Some("tool_error"),
+                    ),
                 };
                 let receipt_hash = {
                     let mut database = self.journal.database().lock().await;
                     let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                    let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|error| FrameError::Io(error.to_string()))?;
-                    runtime.mark_returned(new_action_id).map_err(|error| FrameError::Io(error.to_string()))?;
-                    match runtime.complete_reconciliation(&receipt_request, old_action_id, status, &digest, error_category) {
+                    let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(
+                        database.connection_mut(),
+                        &signer,
+                    )
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                    runtime
+                        .mark_returned(new_action_id)
+                        .map_err(|error| FrameError::Io(error.to_string()))?;
+                    match runtime.complete_reconciliation(
+                        &receipt_request,
+                        old_action_id,
+                        status,
+                        &digest,
+                        error_category,
+                    ) {
                         Ok(hash) => hash,
                         Err(_error) => {
-                            let _ = runtime.mark_pending_recovery(new_action_id, "signature_failed");
+                            let _ =
+                                runtime.mark_pending_recovery(new_action_id, "signature_failed");
                             self.write_response(writer, "receipt.reconciliation", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.pending_recovery","action_id":new_action_id.to_string()}))?).await?;
                             return Ok(());
                         }
@@ -573,16 +668,43 @@ impl IpcBridge {
                 }
                 let checkpoint_valid = std::fs::read(self.receipt_keys.checkpoint_path())
                     .ok()
-                    .and_then(|bytes| serde_json::from_slice::<evohime_receipts::key_lifecycle::KeyHistoryCheckpoint>(&bytes).ok())
+                    .and_then(|bytes| {
+                        serde_json::from_slice::<
+                            evohime_receipts::key_lifecycle::KeyHistoryCheckpoint,
+                        >(&bytes)
+                        .ok()
+                    })
                     .and_then(|checkpoint| {
-                        if checkpoint.checkpoint_id != request.checkpoint { return None; }
-                        if !self.receipt_keys.trusted_genesis(&checkpoint.genesis_key_id).ok()? { return Some(false); }
+                        if checkpoint.checkpoint_id != request.checkpoint {
+                            return None;
+                        }
+                        if !self
+                            .receipt_keys
+                            .trusted_genesis(&checkpoint.genesis_key_id)
+                            .ok()?
+                        {
+                            return Some(false);
+                        }
                         let history = self.receipt_keys.load_history().ok()?;
-                        Some(evohime_receipts::key_lifecycle::verify_checkpoint(&checkpoint, &history, Some(&checkpoint.genesis_key_id)).is_ok())
+                        Some(
+                            evohime_receipts::key_lifecycle::verify_checkpoint(
+                                &checkpoint,
+                                &history,
+                                Some(&checkpoint.genesis_key_id),
+                            )
+                            .is_ok(),
+                        )
                     })
                     .unwrap_or(false);
                 if !checkpoint_valid {
-                    self.write_response(writer, "receipt.unquarantine", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.key_untrusted"}))?).await?;
+                    self.write_response(
+                        writer,
+                        "receipt.unquarantine",
+                        serde_json::to_vec(
+                            &serde_json::json!({"ok":false,"error_code":"receipt.key_untrusted"}),
+                        )?,
+                    )
+                    .await?;
                     return Ok(());
                 }
                 let action_id = match uuid::Uuid::parse_str(&request.action_id) {
@@ -610,7 +732,9 @@ impl IpcBridge {
                 }
                 let policy_decision = match decision.as_str() {
                     "allow" => evohime_receipts::runtime::PolicyDecision::Allow,
-                    "approval_required" => evohime_receipts::runtime::PolicyDecision::ApprovalRequired,
+                    "approval_required" => {
+                        evohime_receipts::runtime::PolicyDecision::ApprovalRequired
+                    }
                     "deny" => evohime_receipts::runtime::PolicyDecision::Deny,
                     _ => {
                         self.write_response(writer, "receipt.unquarantine", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.schema_violation"}))?).await?;
@@ -631,82 +755,175 @@ impl IpcBridge {
                     preview: "manual quarantine closure".into(),
                 };
                 let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
-                    .map_err(|error| FrameError::Io(error.to_string()))?;
-                let receipt_hash = runtime.unquarantine(&receipt_request, true, &request.checkpoint)
+                let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(
+                    database.connection_mut(),
+                    &signer,
+                )
+                .map_err(|error| FrameError::Io(error.to_string()))?;
+                let receipt_hash = runtime
+                    .unquarantine(&receipt_request, true, &request.checkpoint)
                     .map_err(|error| FrameError::Io(error.to_string()))?;
                 self.write_response(writer, "receipt.unquarantine", serde_json::to_vec(&serde_json::json!({"ok":true,"action_id":request.action_id,"receipt_hash":receipt_hash,"state":"refused","dispatch_allowed":false}))?).await?;
             }
             Some(generated::command_envelope::Command::ListReceipts(request)) => {
-                let filter = match receipt_filter_from_request(&request.task_id, &request.run_id, &request.action_id, &request.from_rfc3339, &request.to_rfc3339) {
+                let filter = match receipt_filter_from_request(
+                    &request.task_id,
+                    &request.run_id,
+                    &request.action_id,
+                    &request.from_rfc3339,
+                    &request.to_rfc3339,
+                ) {
                     Ok(value) => value,
                     Err(code) => {
-                        self.write_response(writer, "receipts.listed", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":code}))?).await?;
+                        self.write_response(
+                            writer,
+                            "receipts.listed",
+                            serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":code}))?,
+                        )
+                        .await?;
                         return Ok(());
                     }
                 };
-                let limit = if request.limit == 0 { 100 } else { request.limit as i64 };
+                let limit = if request.limit == 0 {
+                    100
+                } else {
+                    request.limit as i64
+                };
                 let database = self.journal.database().lock().await;
-                match evohime_receipts::export::list_receipts(database.connection(), &filter, limit) {
+                match evohime_receipts::export::list_receipts(database.connection(), &filter, limit)
+                {
                     Ok(result) => {
-                        self.write_response(writer, "receipts.listed", serde_json::to_vec(&serde_json::json!({
-                            "ok": true,
-                            "snapshot_last_sequence": result.snapshot_last_sequence.to_string(),
-                            "rows": result.rows,
-                        }))?).await?;
+                        self.write_response(
+                            writer,
+                            "receipts.listed",
+                            serde_json::to_vec(&serde_json::json!({
+                                "ok": true,
+                                "snapshot_last_sequence": result.snapshot_last_sequence.to_string(),
+                                "rows": result.rows,
+                            }))?,
+                        )
+                        .await?;
                     }
                     Err(error) => {
-                        self.write_response(writer, "receipts.listed", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":error.to_string()}))?).await?;
+                        self.write_response(
+                            writer,
+                            "receipts.listed",
+                            serde_json::to_vec(
+                                &serde_json::json!({"ok":false,"error_code":error.to_string()}),
+                            )?,
+                        )
+                        .await?;
                     }
                 }
             }
             Some(generated::command_envelope::Command::VerifyReceipts(request)) => {
-                let filter = match receipt_filter_from_request(&request.task_id, &request.run_id, &request.action_id, &request.from_rfc3339, &request.to_rfc3339) {
+                let filter = match receipt_filter_from_request(
+                    &request.task_id,
+                    &request.run_id,
+                    &request.action_id,
+                    &request.from_rfc3339,
+                    &request.to_rfc3339,
+                ) {
                     Ok(value) => value,
                     Err(code) => {
-                        self.write_response(writer, "receipts.verified", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":code}))?).await?;
+                        self.write_response(
+                            writer,
+                            "receipts.verified",
+                            serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":code}))?,
+                        )
+                        .await?;
                         return Ok(());
                     }
                 };
-                let limit = if request.limit == 0 { 500 } else { request.limit as i64 };
-                let trust_key = if request.trust_key_id.is_empty() { None } else { Some(request.trust_key_id.as_str()) };
+                let limit = if request.limit == 0 {
+                    500
+                } else {
+                    request.limit as i64
+                };
+                let trust_key = if request.trust_key_id.is_empty() {
+                    None
+                } else {
+                    Some(request.trust_key_id.as_str())
+                };
                 let key_history = self.receipt_keys.load_history().unwrap_or_default();
                 let database = self.journal.database().lock().await;
-                match evohime_receipts::export::verify_receipts(database.connection(), &key_history, trust_key, &filter, limit) {
+                match evohime_receipts::export::verify_receipts(
+                    database.connection(),
+                    &key_history,
+                    trust_key,
+                    &filter,
+                    limit,
+                ) {
                     Ok(result) => {
-                        self.write_response(writer, "receipts.verified", serde_json::to_vec(&serde_json::json!({
-                            "ok": true,
-                            "status": result.verification.status,
-                            "code": result.verification.code,
-                            "requested_count": result.requested_count,
-                            "actual_verified_count": result.verification.actual_verified_count,
-                            "chain_start_hash": result.verification.chain_start_hash,
-                            "chain_end_hash": result.verification.chain_end_hash,
-                            "rows": result.verification.rows,
-                        }))?).await?;
+                        self.write_response(
+                            writer,
+                            "receipts.verified",
+                            serde_json::to_vec(&serde_json::json!({
+                                "ok": true,
+                                "status": result.verification.status,
+                                "code": result.verification.code,
+                                "requested_count": result.requested_count,
+                                "actual_verified_count": result.verification.actual_verified_count,
+                                "chain_start_hash": result.verification.chain_start_hash,
+                                "chain_end_hash": result.verification.chain_end_hash,
+                                "rows": result.verification.rows,
+                            }))?,
+                        )
+                        .await?;
                     }
                     Err(error) => {
-                        self.write_response(writer, "receipts.verified", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":error.to_string()}))?).await?;
+                        self.write_response(
+                            writer,
+                            "receipts.verified",
+                            serde_json::to_vec(
+                                &serde_json::json!({"ok":false,"error_code":error.to_string()}),
+                            )?,
+                        )
+                        .await?;
                     }
                 }
             }
             Some(generated::command_envelope::Command::ExportReceipts(request)) => {
-                if request.replace || request.destination_path.is_empty() || request.destination_path.len() > 4096 {
+                if request.replace
+                    || request.destination_path.is_empty()
+                    || request.destination_path.len() > 4096
+                {
                     self.write_response(writer, "receipts.exported", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":if request.replace { "receipts.unsupported_operation" } else { "receipts.invalid_filter" }}))?).await?;
                     return Ok(());
                 }
-                let filter = match receipt_filter_from_request(&request.task_id, &request.run_id, &request.action_id, &request.from_rfc3339, &request.to_rfc3339) {
+                let filter = match receipt_filter_from_request(
+                    &request.task_id,
+                    &request.run_id,
+                    &request.action_id,
+                    &request.from_rfc3339,
+                    &request.to_rfc3339,
+                ) {
                     Ok(value) => value,
                     Err(code) => {
-                        self.write_response(writer, "receipts.exported", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":code}))?).await?;
+                        self.write_response(
+                            writer,
+                            "receipts.exported",
+                            serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":code}))?,
+                        )
+                        .await?;
                         return Ok(());
                     }
                 };
-                let limit = if request.limit == 0 { 100_000 } else { request.limit as i64 };
+                let limit = if request.limit == 0 {
+                    100_000
+                } else {
+                    request.limit as i64
+                };
                 let destination = std::path::PathBuf::from(&request.destination_path);
                 let key_history = self.receipt_keys.load_history().unwrap_or_default();
                 let database = self.journal.database().lock().await;
-                match evohime_receipts::export::export_receipts(database.connection(), &key_history, &destination, &filter, limit) {
+                match evohime_receipts::export::export_receipts(
+                    database.connection(),
+                    &key_history,
+                    &destination,
+                    &filter,
+                    limit,
+                ) {
                     Ok(manifest) => {
                         let manifest_sha256 = std::fs::read(destination.join("manifest.json"))
                             .ok()
@@ -723,7 +940,14 @@ impl IpcBridge {
                         }))?).await?;
                     }
                     Err(error) => {
-                        self.write_response(writer, "receipts.exported", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":error.to_string()}))?).await?;
+                        self.write_response(
+                            writer,
+                            "receipts.exported",
+                            serde_json::to_vec(
+                                &serde_json::json!({"ok":false,"error_code":error.to_string()}),
+                            )?,
+                        )
+                        .await?;
                     }
                 }
             }
@@ -978,9 +1202,7 @@ impl IpcBridge {
             Some(generated::command_envelope::Command::SelectModel(request)) => {
                 // Bounded: a model identifier is a short single-line token.
                 let model = request.model.trim();
-                if model.len() > 128
-                    || model.contains(char::is_whitespace)
-                {
+                if model.len() > 128 || model.contains(char::is_whitespace) {
                     self.write_response(
                         writer,
                         "model.select.rejected",
@@ -995,14 +1217,30 @@ impl IpcBridge {
                     .as_ref()
                     .and_then(|config| config.routes.get(&config.default_route))
                 else {
-                    self.write_response(writer, "model.select.rejected", serde_json::to_vec(&serde_json::json!({ "reason": "provider_not_configured" })).unwrap_or_default()).await?;
+                    self.write_response(
+                        writer,
+                        "model.select.rejected",
+                        serde_json::to_vec(
+                            &serde_json::json!({ "reason": "provider_not_configured" }),
+                        )
+                        .unwrap_or_default(),
+                    )
+                    .await?;
                     return Ok(());
                 };
                 let available = evohime_model_gateway::fetch_model_catalog(route)
                     .await
                     .map_err(|error| FrameError::Io(error.to_string()))?;
                 if !available.iter().any(|entry| entry.id == model) {
-                    self.write_response(writer, "model.select.rejected", serde_json::to_vec(&serde_json::json!({ "reason": "model_not_returned_by_provider" })).unwrap_or_default()).await?;
+                    self.write_response(
+                        writer,
+                        "model.select.rejected",
+                        serde_json::to_vec(
+                            &serde_json::json!({ "reason": "model_not_returned_by_provider" }),
+                        )
+                        .unwrap_or_default(),
+                    )
+                    .await?;
                     return Ok(());
                 }
                 self.selected_model.set(model);
@@ -1867,7 +2105,8 @@ impl IpcBridge {
                     .await
                     .map_err(|_| FrameError::Io("routing decision response dropped".into()))?
                     .map_err(FrameError::Io)?;
-                self.write_response(writer, "routing.decision", result).await?;
+                self.write_response(writer, "routing.decision", result)
+                    .await?;
             }
             None => {}
         }
@@ -3486,42 +3725,120 @@ impl IpcBridge {
         input: serde_json::Value,
         cancellation: CancellationToken,
     ) -> Result<evohime_tool_runtime::ToolResult, evohime_tool_runtime::ToolError> {
-        match self.tools.as_ref().ok_or_else(|| evohime_tool_runtime::ToolError::Execution("Terminal tools are not configured".into()))?.preflight(context, "shell.execute", &input).await? {
+        match self
+            .tools
+            .as_ref()
+            .ok_or_else(|| {
+                evohime_tool_runtime::ToolError::Execution(
+                    "Terminal tools are not configured".into(),
+                )
+            })?
+            .preflight(context, "shell.execute", &input)
+            .await?
+        {
             evohime_tool_runtime::ToolPreflightDecision::Allowed { scope, preview } => {
-                let scope = self.tools.as_ref().unwrap().permissions().normalize_scope(&scope)
+                let scope = self
+                    .tools
+                    .as_ref()
+                    .unwrap()
+                    .permissions()
+                    .normalize_scope(&scope)
                     .map_err(evohime_tool_runtime::ToolError::Execution)?;
-                let request = evohime_receipts::runtime::ActionRequest { action_id: uuid::Uuid::now_v7(), task_id: context.task_id.to_string(), run_id: context.task_id.to_string(), tool_name: "shell.execute".into(), policy_id: "permission:ShellExecute".into(), normalized_scope: scope, input: input.clone(), policy_decision: evohime_receipts::runtime::PolicyDecision::Allow, approval_id: None, parent_approval_ref: None, preview: serde_json::to_string(&preview).unwrap_or_else(|_| "terminal".into()) };
+                let request = evohime_receipts::runtime::ActionRequest {
+                    action_id: uuid::Uuid::now_v7(),
+                    task_id: context.task_id.to_string(),
+                    run_id: context.task_id.to_string(),
+                    tool_name: "shell.execute".into(),
+                    policy_id: "permission:ShellExecute".into(),
+                    normalized_scope: scope,
+                    input: input.clone(),
+                    policy_decision: evohime_receipts::runtime::PolicyDecision::Allow,
+                    approval_id: None,
+                    parent_approval_ref: None,
+                    preview: serde_json::to_string(&preview).unwrap_or_else(|_| "terminal".into()),
+                };
                 let mut database = self.journal.database().lock().await;
                 let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
+                let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(
+                    database.connection_mut(),
+                    &signer,
+                )
+                .map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
                 let prepared = match runtime.prepare(request.clone()) {
                     Ok(value) => value,
                     Err(error) => {
-                        let marker = if error.to_string().contains("signer_unavailable") { "signer_unavailable" } else { "storage_key_unavailable" };
+                        let marker = if error.to_string().contains("signer_unavailable") {
+                            "signer_unavailable"
+                        } else {
+                            "storage_key_unavailable"
+                        };
                         let _ = runtime.store_unsigned_runtime_marker(request.action_id, marker);
-                        return Err(evohime_tool_runtime::ToolError::Execution(error.to_string()));
+                        return Err(evohime_tool_runtime::ToolError::Execution(
+                            error.to_string(),
+                        ));
                     }
                 };
-                if !matches!(prepared, evohime_receipts::runtime::PrepareOutcome::Prepared { .. }) { return Err(evohime_tool_runtime::ToolError::Execution("receipt.precondition_failed".into())); }
-                runtime.mark_started(request.action_id).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
+                if !matches!(
+                    prepared,
+                    evohime_receipts::runtime::PrepareOutcome::Prepared { .. }
+                ) {
+                    return Err(evohime_tool_runtime::ToolError::Execution(
+                        "receipt.precondition_failed".into(),
+                    ));
+                }
+                runtime
+                    .mark_started(request.action_id)
+                    .map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
                 drop(database);
-                let result = self.tools.as_ref().unwrap().execute_with_cancellation(context, "shell.execute", input, cancellation).await;
+                let result = self
+                    .tools
+                    .as_ref()
+                    .unwrap()
+                    .execute_with_cancellation(context, "shell.execute", input, cancellation)
+                    .await;
                 let mut database = self.journal.database().lock().await;
                 let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
+                let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(
+                    database.connection_mut(),
+                    &signer,
+                )
+                .map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
                 match &result {
-                    Ok(value) => { runtime.mark_returned(request.action_id).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?; let digest = evohime_receipts::sha256_hex(value.output.as_bytes()); runtime.complete(&request, "succeeded", &digest, None).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?; }
+                    Ok(value) => {
+                        runtime.mark_returned(request.action_id).map_err(|e| {
+                            evohime_tool_runtime::ToolError::Execution(e.to_string())
+                        })?;
+                        let digest = evohime_receipts::sha256_hex(value.output.as_bytes());
+                        runtime
+                            .complete(&request, "succeeded", &digest, None)
+                            .map_err(|e| {
+                                evohime_tool_runtime::ToolError::Execution(e.to_string())
+                            })?;
+                    }
                     Err(_error) => {
-                        runtime.mark_returned(request.action_id).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
+                        runtime.mark_returned(request.action_id).map_err(|e| {
+                            evohime_tool_runtime::ToolError::Execution(e.to_string())
+                        })?;
                         let failed_digest = evohime_receipts::sha256_hex(b"tool_error");
-                        if runtime.complete(&request, "failed", &failed_digest, Some("tool_error")).is_ok() {
+                        if runtime
+                            .complete(&request, "failed", &failed_digest, Some("tool_error"))
+                            .is_ok()
+                        {
                             return result;
                         }
                         let mut recovery_code = "signature_failed";
-                        let pre_hash = runtime.action(request.action_id).ok().flatten().and_then(|row| row.pre_receipt_hash).unwrap_or_default();
+                        let pre_hash = runtime
+                            .action(request.action_id)
+                            .ok()
+                            .flatten()
+                            .and_then(|row| row.pre_receipt_hash)
+                            .unwrap_or_default();
                         let key_id = match self.receipt_keys.storage_key_id() {
                             Ok(value) => value,
-                            Err(_) => { recovery_code = "storage_key_unavailable"; "unavailable".to_owned() }
+                            Err(_) => {
+                                recovery_code = "storage_key_unavailable";
+                                "unavailable".to_owned()
+                            }
                         };
                         let row = ProtectedActionRow {
                             schema_version: 1,
@@ -3536,19 +3853,36 @@ impl IpcBridge {
                         };
                         if let Ok(plain) = serde_json::to_vec(&row) {
                             if let Ok(envelope) = self.receipt_keys.protect_storage(&plain) {
-                                if runtime.store_protected_envelope(&row, envelope).is_err() { recovery_code = "storage_key_unavailable"; }
-                            } else { recovery_code = "storage_key_unavailable"; }
-                        } else { recovery_code = "storage_key_unavailable"; }
+                                if runtime.store_protected_envelope(&row, envelope).is_err() {
+                                    recovery_code = "storage_key_unavailable";
+                                }
+                            } else {
+                                recovery_code = "storage_key_unavailable";
+                            }
+                        } else {
+                            recovery_code = "storage_key_unavailable";
+                        }
                         if recovery_code == "storage_key_unavailable" {
-                            let _ = runtime.store_unsigned_runtime_marker(request.action_id, "storage_key_unavailable");
+                            let _ = runtime.store_unsigned_runtime_marker(
+                                request.action_id,
+                                "storage_key_unavailable",
+                            );
                         }
                         let _ = runtime.mark_pending_recovery(request.action_id, recovery_code);
                     }
                 }
                 result
             }
-            evohime_tool_runtime::ToolPreflightDecision::Denied(permission) => Err(evohime_tool_runtime::ToolError::PermissionDenied(permission)),
-            evohime_tool_runtime::ToolPreflightDecision::ApprovalRequired { .. } => self.tools.as_ref().unwrap().execute_with_cancellation(context, "shell.execute", input, cancellation).await,
+            evohime_tool_runtime::ToolPreflightDecision::Denied(permission) => Err(
+                evohime_tool_runtime::ToolError::PermissionDenied(permission),
+            ),
+            evohime_tool_runtime::ToolPreflightDecision::ApprovalRequired { .. } => {
+                self.tools
+                    .as_ref()
+                    .unwrap()
+                    .execute_with_cancellation(context, "shell.execute", input, cancellation)
+                    .await
+            }
         }
     }
 
@@ -3580,7 +3914,9 @@ impl IpcBridge {
         };
         let cancellation = tokio_util::sync::CancellationToken::new();
         let result = if request.approval_id.is_empty() {
-            match self.execute_terminal_with_receipt(&context, input.clone(), cancellation.clone()).await
+            match self
+                .execute_terminal_with_receipt(&context, input.clone(), cancellation.clone())
+                .await
             {
                 Ok(result) => result,
                 Err(evohime_tool_runtime::ToolError::NeedsApproval {
@@ -3600,17 +3936,23 @@ impl IpcBridge {
                         policy_id: format!("permission:{permission:?}"),
                         normalized_scope: scope.clone(),
                         input: input.clone(),
-                        policy_decision: evohime_receipts::runtime::PolicyDecision::ApprovalRequired,
+                        policy_decision:
+                            evohime_receipts::runtime::PolicyDecision::ApprovalRequired,
                         approval_id: Some(approval_id),
                         parent_approval_ref: None,
-                        preview: serde_json::to_string(&preview).unwrap_or_else(|_| "approval".into()),
+                        preview: serde_json::to_string(&preview)
+                            .unwrap_or_else(|_| "approval".into()),
                     };
                     {
                         let mut database = self.journal.database().lock().await;
                         let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                        let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
-                            .map_err(|error| FrameError::Io(error.to_string()))?;
-                        runtime.prepare_existing_approval(receipt_request)
+                        let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(
+                            database.connection_mut(),
+                            &signer,
+                        )
+                        .map_err(|error| FrameError::Io(error.to_string()))?;
+                        runtime
+                            .prepare_existing_approval(receipt_request)
                             .map_err(|error| FrameError::Io(error.to_string()))?;
                     }
                     self.write_response(
@@ -3652,23 +3994,43 @@ impl IpcBridge {
                     "SELECT action_id,normalized_scope FROM receipt_approval_intents WHERE approval_id=?1",
                     [approval_id.to_string()], |row| Ok((row.get(0)?, row.get(1)?)),
                 ).map_err(|error| FrameError::Io(error.to_string()))?;
-                let action_id = uuid::Uuid::parse_str(&action_id).map_err(|error| FrameError::Io(error.to_string()))?;
-                (action_id, evohime_receipts::runtime::ActionRequest {
+                let action_id = uuid::Uuid::parse_str(&action_id)
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                (
                     action_id,
-                    task_id: task_id.to_string(), run_id: task_id.to_string(), tool_name: "shell.execute".into(),
-                    policy_id: "permission:ShellExecute".into(), normalized_scope: receipt_scope, input: input.clone(),
-                    policy_decision: evohime_receipts::runtime::PolicyDecision::ApprovalRequired,
-                    approval_id: Some(approval_id), parent_approval_ref: None, preview: "terminal approval".into(),
-                })
+                    evohime_receipts::runtime::ActionRequest {
+                        action_id,
+                        task_id: task_id.to_string(),
+                        run_id: task_id.to_string(),
+                        tool_name: "shell.execute".into(),
+                        policy_id: "permission:ShellExecute".into(),
+                        normalized_scope: receipt_scope,
+                        input: input.clone(),
+                        policy_decision:
+                            evohime_receipts::runtime::PolicyDecision::ApprovalRequired,
+                        approval_id: Some(approval_id),
+                        parent_approval_ref: None,
+                        preview: "terminal approval".into(),
+                    },
+                )
             };
             {
                 let mut database = self.journal.database().lock().await;
                 let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
+                let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(
+                    database.connection_mut(),
+                    &signer,
+                )
+                .map_err(|error| FrameError::Io(error.to_string()))?;
+                runtime
+                    .grant_approval(approval_id)
                     .map_err(|error| FrameError::Io(error.to_string()))?;
-                runtime.grant_approval(approval_id).map_err(|error| FrameError::Io(error.to_string()))?;
-                runtime.claim_approval(&receipt_request, approval_id).map_err(|error| FrameError::Io(error.to_string()))?;
-                runtime.mark_started(action_id).map_err(|error| FrameError::Io(error.to_string()))?;
+                runtime
+                    .claim_approval(&receipt_request, approval_id)
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                runtime
+                    .mark_started(action_id)
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
             }
             match tools
                 .execute_after_approval(&context, "shell.execute", input, approval_id, cancellation)
@@ -3678,17 +4040,26 @@ impl IpcBridge {
                     let output_digest = evohime_receipts::sha256_hex(result.output.as_bytes());
                     let mut database = self.journal.database().lock().await;
                     let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                    let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
+                    let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(
+                        database.connection_mut(),
+                        &signer,
+                    )
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                    runtime
+                        .mark_returned(action_id)
                         .map_err(|error| FrameError::Io(error.to_string()))?;
-                    runtime.mark_returned(action_id).map_err(|error| FrameError::Io(error.to_string()))?;
-                    runtime.complete(&receipt_request, "succeeded", &output_digest, None)
+                    runtime
+                        .complete(&receipt_request, "succeeded", &output_digest, None)
                         .map_err(|error| FrameError::Io(error.to_string()))?;
                     result
                 }
                 Err(error) => {
                     let mut database = self.journal.database().lock().await;
                     let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                    if let Ok(runtime) = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer) {
+                    if let Ok(runtime) = evohime_receipts::runtime::ReceiptRuntime::new(
+                        database.connection_mut(),
+                        &signer,
+                    ) {
                         let _ = runtime.mark_pending_recovery(action_id, "external_error");
                     }
                     return self
@@ -4134,7 +4505,9 @@ async fn publish_review_event(
 /// feeding it to the editing model invites those model names into the plan.
 fn strip_review_header(final_markdown: &str) -> String {
     match final_markdown.split_once("\n---\n\n") {
-        Some((header, body)) if header.starts_with("<!-- Контекст EvoHime") => body.to_string(),
+        Some((header, body)) if header.starts_with("<!-- Контекст EvoHime") => {
+            body.to_string()
+        }
         _ => final_markdown.to_string(),
     }
 }
@@ -4403,8 +4776,8 @@ mod tests {
         let bridge = IpcBridge::new(journal);
         let (mut client, server) = duplex(16 * 1024);
         let (mut server_reader, mut server_writer) = tokio::io::split(server);
-        let destination = std::env::temp_dir()
-            .join(format!("evohime-revised-journal-{}.md", std::process::id()));
+        let destination =
+            std::env::temp_dir().join(format!("evohime-revised-journal-{}.md", std::process::id()));
         let _ = std::fs::remove_file(&destination);
         transport::write_frame(
             &mut client,
@@ -4449,8 +4822,10 @@ mod tests {
     /// editing model an arbitrary text and call it a review.
     #[tokio::test]
     async fn refuses_to_revise_an_unknown_review() {
-        let path = std::env::temp_dir()
-            .join(format!("evohime-ipc-revision-missing-{}.db", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "evohime-ipc-revision-missing-{}.db",
+            std::process::id()
+        ));
         let _ = std::fs::remove_file(&path);
         let journal = EventJournal::open(&path).expect("journal opens");
         let bridge = IpcBridge::new(journal);
@@ -4616,7 +4991,8 @@ mod tests {
             std::env::temp_dir().join(format!("evohime-ipc-terminal-root-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("terminal root");
-        let data_root = std::env::temp_dir().join(format!("evohime-ipc-terminal-data-{}", std::process::id()));
+        let data_root =
+            std::env::temp_dir().join(format!("evohime-ipc-terminal-data-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&data_root);
         std::fs::create_dir_all(&data_root).expect("terminal data root");
         let journal_path = data_root.join("events.db");
@@ -4726,11 +5102,13 @@ mod tests {
 
     #[tokio::test]
     async fn reconciliation_command_executes_only_new_read_only_action() {
-        let root = std::env::temp_dir().join(format!("evohime-ipc-reconcile-root-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("evohime-ipc-reconcile-root-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("reconcile root");
         std::fs::write(root.join("observed.txt"), "observed state\n").expect("observed file");
-        let data_root = std::env::temp_dir().join(format!("evohime-ipc-reconcile-data-{}", std::process::id()));
+        let data_root =
+            std::env::temp_dir().join(format!("evohime-ipc-reconcile-data-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&data_root);
         std::fs::create_dir_all(&data_root).expect("reconcile data root");
         let journal_path = data_root.join("events.db");
@@ -4751,7 +5129,9 @@ mod tests {
         {
             let mut database = journal.database().lock().await;
             let signer = crate::CoreReceiptSigner(Arc::new(keys));
-            let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).unwrap();
+            let mut runtime =
+                evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
+                    .unwrap();
             let old_request = evohime_receipts::runtime::ActionRequest {
                 action_id: old_action_id,
                 task_id: task_id.to_string(),
@@ -4768,7 +5148,9 @@ mod tests {
             runtime.prepare(old_request).unwrap();
             runtime.mark_started(old_action_id).unwrap();
             runtime.mark_returned(old_action_id).unwrap();
-            runtime.mark_pending_recovery(old_action_id, "unknown").unwrap();
+            runtime
+                .mark_pending_recovery(old_action_id, "unknown")
+                .unwrap();
         }
         let command = generated::CommandEnvelope {
             protocol: Some(protocol()),
@@ -4776,20 +5158,30 @@ mod tests {
             client_id: "test-client".into(),
             core_instance_id: String::new(),
             session_epoch: 1,
-            command: Some(generated::command_envelope::Command::ReconcilePendingReceiptAction(
-                generated::ReconcilePendingReceiptAction {
-                    old_action_id: old_action_id.to_string(),
-                    tool_name: "filesystem.read".into(),
-                    input_json: r#"{"path":"observed.txt"}"#.into(),
-                    workspace_path: root.display().to_string(),
-                },
-            )),
+            command: Some(
+                generated::command_envelope::Command::ReconcilePendingReceiptAction(
+                    generated::ReconcilePendingReceiptAction {
+                        old_action_id: old_action_id.to_string(),
+                        tool_name: "filesystem.read".into(),
+                        input_json: r#"{"path":"observed.txt"}"#.into(),
+                        workspace_path: root.display().to_string(),
+                    },
+                ),
+            ),
         };
         let (mut client, server) = duplex(16 * 1024);
         let (mut server_reader, mut server_writer) = tokio::io::split(server);
-        transport::write_frame(&mut client, &command.encode_to_vec()).await.unwrap();
-        bridge.process_once(&mut server_reader, &mut server_writer).await.unwrap();
-        let response = generated::EventEnvelope::decode(transport::read_frame(&mut client).await.unwrap().as_slice()).unwrap();
+        transport::write_frame(&mut client, &command.encode_to_vec())
+            .await
+            .unwrap();
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .unwrap();
+        let response = generated::EventEnvelope::decode(
+            transport::read_frame(&mut client).await.unwrap().as_slice(),
+        )
+        .unwrap();
         assert_eq!(response.event_type, "receipt.reconciliation");
         let payload: serde_json::Value = serde_json::from_slice(&response.payload).unwrap();
         assert_eq!(payload["ok"], true);
@@ -7040,7 +7432,8 @@ mod tests {
 
     #[tokio::test]
     async fn list_verify_and_export_receipts_over_ipc() {
-        let data_root = std::env::temp_dir().join(format!("evohime-ipc-receipts-data-{}", std::process::id()));
+        let data_root =
+            std::env::temp_dir().join(format!("evohime-ipc-receipts-data-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&data_root);
         std::fs::create_dir_all(&data_root).expect("data root");
         let journal_path = data_root.join("events.db");
@@ -7050,7 +7443,9 @@ mod tests {
         {
             let mut database = journal.database().lock().await;
             let signer = crate::CoreReceiptSigner(Arc::new(ReceiptKeyManager::new(&data_root)));
-            let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).unwrap();
+            let mut runtime =
+                evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
+                    .unwrap();
             let action_id = uuid::Uuid::now_v7();
             let request = evohime_receipts::runtime::ActionRequest {
                 action_id,
@@ -7067,7 +7462,9 @@ mod tests {
             };
             runtime.prepare(request.clone()).unwrap();
             runtime.mark_started(action_id).unwrap();
-            runtime.complete(&request, "succeeded", &"a".repeat(64), None).unwrap();
+            runtime
+                .complete(&request, "succeeded", &"a".repeat(64), None)
+                .unwrap();
         }
         let bridge = IpcBridge::new(journal);
         let (mut client, server) = duplex(64 * 1024);
@@ -7101,42 +7498,59 @@ mod tests {
         }
 
         let listed = send(
-            &bridge, &mut client, &mut server_reader, &mut server_writer, "list-1",
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "list-1",
             generated::command_envelope::Command::ListReceipts(generated::ListReceipts {
                 task_id: "receipts-task".into(),
                 ..Default::default()
             }),
-        ).await;
+        )
+        .await;
         assert_eq!(listed.event_type, "receipts.listed");
         let listed_payload: serde_json::Value = serde_json::from_slice(&listed.payload).unwrap();
         assert_eq!(listed_payload["ok"], true);
         assert_eq!(listed_payload["rows"].as_array().unwrap().len(), 2);
 
         let verified = send(
-            &bridge, &mut client, &mut server_reader, &mut server_writer, "verify-1",
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "verify-1",
             generated::command_envelope::Command::VerifyReceipts(generated::VerifyReceipts {
                 task_id: "receipts-task".into(),
                 ..Default::default()
             }),
-        ).await;
+        )
+        .await;
         assert_eq!(verified.event_type, "receipts.verified");
-        let verified_payload: serde_json::Value = serde_json::from_slice(&verified.payload).unwrap();
+        let verified_payload: serde_json::Value =
+            serde_json::from_slice(&verified.payload).unwrap();
         assert_eq!(verified_payload["ok"], true);
         assert_eq!(verified_payload["status"], "verified");
         assert_eq!(verified_payload["actual_verified_count"], 2);
 
         let destination = data_root.join("export-bundle");
         let exported = send(
-            &bridge, &mut client, &mut server_reader, &mut server_writer, "export-1",
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "export-1",
             generated::command_envelope::Command::ExportReceipts(generated::ExportReceipts {
                 destination_path: destination.display().to_string(),
                 task_id: "receipts-task".into(),
                 limit: 1000,
                 ..Default::default()
             }),
-        ).await;
+        )
+        .await;
         assert_eq!(exported.event_type, "receipts.exported");
-        let exported_payload: serde_json::Value = serde_json::from_slice(&exported.payload).unwrap();
+        let exported_payload: serde_json::Value =
+            serde_json::from_slice(&exported.payload).unwrap();
         assert_eq!(exported_payload["ok"], true, "{exported_payload:?}");
         assert_eq!(exported_payload["actual_exported_count"], 2);
         assert!(destination.join("manifest.json").exists());

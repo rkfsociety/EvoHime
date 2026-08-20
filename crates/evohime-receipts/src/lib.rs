@@ -119,7 +119,11 @@ fn write_jcs(value: &Value, out: &mut String, depth: usize) -> Result<(), Receip
 
 fn canonical_number(value: &serde_json::Number) -> Result<String, ReceiptError> {
     if let Some(integer) = value.as_i64() {
-        return Ok(if integer == 0 { "0".into() } else { integer.to_string() });
+        return Ok(if integer == 0 {
+            "0".into()
+        } else {
+            integer.to_string()
+        });
     }
     if let Some(integer) = value.as_u64() {
         return Ok(integer.to_string());
@@ -143,27 +147,45 @@ fn canonical_number(value: &serde_json::Number) -> Result<String, ReceiptError> 
 }
 
 fn normalize_exponent(raw: &str) -> String {
-    let Some((mantissa, exponent)) = raw.split_once('e') else { return raw.into() };
+    let Some((mantissa, exponent)) = raw.split_once('e') else {
+        return raw.into();
+    };
     let exponent = exponent.parse::<i32>().unwrap_or(0);
-    format!("{}e{}{}", mantissa, if exponent >= 0 { "+" } else { "" }, exponent)
+    format!(
+        "{}e{}{}",
+        mantissa,
+        if exponent >= 0 { "+" } else { "" },
+        exponent
+    )
 }
 
 fn expand_decimal(raw: &str) -> String {
-    let Some((mantissa, exponent)) = raw.split_once('e') else { return raw.into() };
+    let Some((mantissa, exponent)) = raw.split_once('e') else {
+        return raw.into();
+    };
     let exponent = exponent.parse::<i32>().unwrap_or(0);
     let negative = mantissa.starts_with('-');
     let digits = mantissa.trim_start_matches('-').replace('.', "");
     let unsigned_mantissa = mantissa.trim_start_matches('-');
-    let decimal_pos = unsigned_mantissa.find('.').map_or(unsigned_mantissa.len() as i32, |pos| pos as i32) + exponent;
+    let decimal_pos = unsigned_mantissa
+        .find('.')
+        .map_or(unsigned_mantissa.len() as i32, |pos| pos as i32)
+        + exponent;
     let mut result = if decimal_pos <= 0 {
         format!("0.{}{}", "0".repeat((-decimal_pos) as usize), digits)
     } else if decimal_pos >= digits.len() as i32 {
-        format!("{}{}", digits, "0".repeat((decimal_pos as usize) - digits.len()))
+        format!(
+            "{}{}",
+            digits,
+            "0".repeat((decimal_pos as usize) - digits.len())
+        )
     } else {
         let split = decimal_pos as usize;
         format!("{}.{}", &digits[..split], &digits[split..])
     };
-    if negative { result.insert(0, '-'); }
+    if negative {
+        result.insert(0, '-');
+    }
     result
 }
 
@@ -252,11 +274,17 @@ pub fn verify_ed25519(envelope: &Envelope, public_key: &[u8]) -> Result<(), Rece
 /// Runtime v1 verification: the Ed25519 message is the raw SHA-256 digest of
 /// canonical payload bytes.  `verify_ed25519` remains available for the
 /// contract vectors whose historical signature message is canonical payload.
-pub fn verify_runtime_signature(envelope: &Envelope, public_key: &[u8]) -> Result<(), ReceiptError> {
-    if envelope.signature_algorithm != "Ed25519" { return Err(ReceiptError::SchemaViolation); }
+pub fn verify_runtime_signature(
+    envelope: &Envelope,
+    public_key: &[u8],
+) -> Result<(), ReceiptError> {
+    if envelope.signature_algorithm != "Ed25519" {
+        return Err(ReceiptError::SchemaViolation);
+    }
     validate_payload_v1(&envelope.payload)?;
     let digest = Sha256::digest(payload_bytes(&envelope.payload)?);
-    let signature_bytes = decode_base64url(&envelope.signature).ok_or(ReceiptError::SignatureInvalid)?;
+    let signature_bytes =
+        decode_base64url(&envelope.signature).ok_or(ReceiptError::SignatureInvalid)?;
     signature::UnparsedPublicKey::new(&signature::ED25519, public_key)
         .verify(&digest, &signature_bytes)
         .map_err(|_| ReceiptError::SignatureInvalid)

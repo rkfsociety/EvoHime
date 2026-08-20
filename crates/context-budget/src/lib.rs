@@ -41,7 +41,7 @@ pub use item::{
 };
 pub use ladder::{
     LadderDiagnostic, LadderLevel, LadderOutcome, OffloadOutcome, OffloadSink, Selection,
-    SummaryOutcome, Summarizer,
+    Summarizer, SummaryOutcome,
 };
 pub use ledger::{
     CompressionRecord, ContextLedgerEntry, ContextLedgerUsage, DroppedItemRecord, LedgerOutcome,

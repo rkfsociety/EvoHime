@@ -224,8 +224,12 @@ impl LaunchContext {
         {
             return Err(SessionError::InvalidIdentifier);
         }
-        if let Some(pipe) = &self.supervisor_pipe_name { validate_pipe_name(pipe)?; }
-        if let Some(secret) = &self.supervisor_secret { SessionSecret::parse(secret.expose())?; }
+        if let Some(pipe) = &self.supervisor_pipe_name {
+            validate_pipe_name(pipe)?;
+        }
+        if let Some(secret) = &self.supervisor_secret {
+            SessionSecret::parse(secret.expose())?;
+        }
         Ok(())
     }
 
@@ -243,7 +247,10 @@ pub fn generate_pipe_name() -> Result<String, SessionError> {
 }
 
 pub fn generate_supervisor_pipe_name() -> Result<String, SessionError> {
-    Ok(format!("{PIPE_PREFIX}evohime-supervisor-{}", random_hex(16)?))
+    Ok(format!(
+        "{PIPE_PREFIX}evohime-supervisor-{}",
+        random_hex(16)?
+    ))
 }
 
 pub fn validate_pipe_name(value: &str) -> Result<(), SessionError> {

@@ -162,7 +162,10 @@ pub fn list_receipts(
         })?
         .filter_map(|row| row.ok())
         .collect();
-    Ok(ListResult { snapshot_last_sequence, rows })
+    Ok(ListResult {
+        snapshot_last_sequence,
+        rows,
+    })
 }
 
 /// Loads the chain-closure range `[min(matched sequence), max(matched
@@ -275,8 +278,17 @@ pub fn verify_receipts(
     }
     let (rows, requested_count, selected_count) = load_closure_rows(connection, filter, limit)?;
     let checkpoint_prefix_hash = active_checkpoint_prefix_for_first_row(connection, &rows)?;
-    let verification = verify_chain(&rows, key_history, trust_key, checkpoint_prefix_hash.as_deref());
-    Ok(VerifyResult { verification, requested_count, selected_count })
+    let verification = verify_chain(
+        &rows,
+        key_history,
+        trust_key,
+        checkpoint_prefix_hash.as_deref(),
+    );
+    Ok(VerifyResult {
+        verification,
+        requested_count,
+        selected_count,
+    })
 }
 
 /// If the closure's first row is exactly the row an active checkpoint's
@@ -301,9 +313,12 @@ fn active_checkpoint_prefix_for_first_row(
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?;
-    Ok(checkpoint.and_then(|(cutoff_sequence, first_retained_hash, prefix_last_hash)| {
-        (cutoff_sequence == first.sequence && first_retained_hash == first.receipt_hash).then_some(prefix_last_hash)
-    }))
+    Ok(
+        checkpoint.and_then(|(cutoff_sequence, first_retained_hash, prefix_last_hash)| {
+            (cutoff_sequence == first.sequence && first_retained_hash == first.receipt_hash)
+                .then_some(prefix_last_hash)
+        }),
+    )
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -328,9 +343,13 @@ pub struct ExportManifest {
     pub files: Vec<ExportManifestFile>,
 }
 
-fn write_jsonl_line(file: &mut std::fs::File, value: &serde_json::Value) -> Result<(), ExportError> {
-    let bytes = crate::canonicalize_json(&serde_json::to_vec(value).map_err(|_| ExportError::ExportIo)?)
-        .map_err(|_| ExportError::ExportIo)?;
+fn write_jsonl_line(
+    file: &mut std::fs::File,
+    value: &serde_json::Value,
+) -> Result<(), ExportError> {
+    let bytes =
+        crate::canonicalize_json(&serde_json::to_vec(value).map_err(|_| ExportError::ExportIo)?)
+            .map_err(|_| ExportError::ExportIo)?;
     file.write_all(&bytes).map_err(|_| ExportError::ExportIo)?;
     file.write_all(b"\n").map_err(|_| ExportError::ExportIo)?;
     Ok(())
@@ -344,7 +363,11 @@ fn finalize_file(path: &Path) -> Result<ExportManifestFile, ExportError> {
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_string();
-    Ok(ExportManifestFile { name, bytes: bytes.len() as u64, sha256 })
+    Ok(ExportManifestFile {
+        name,
+        bytes: bytes.len() as u64,
+        sha256,
+    })
 }
 
 /// Canonicalizes and rejects a destination that is relative, escapes the
@@ -449,7 +472,8 @@ pub fn export_receipts(
     }
     drop(key_history_file);
 
-    let closure_key_ids: std::collections::HashSet<&str> = rows.iter().map(|row| row.key_id.as_str()).collect();
+    let closure_key_ids: std::collections::HashSet<&str> =
+        rows.iter().map(|row| row.key_id.as_str()).collect();
     let mut checkpoint_records: Vec<serde_json::Value> = Vec::new();
     for key_id in &closure_key_ids {
         // checkpoint.schema.json's top-level object: the signed canonical
@@ -474,7 +498,21 @@ pub fn export_receipts(
                     return Err(ExportError::ExportIo);
                 }
             };
-        if let Some((checkpoint_id, key_id, cutoff_sequence, first_retained_hash, prefix_last_hash, last_deleted_receipt_hash, head_receipt_hash, created_at, canonical_checkpoint, signed_by_key_id, signature, status)) = row {
+        if let Some((
+            checkpoint_id,
+            key_id,
+            cutoff_sequence,
+            first_retained_hash,
+            prefix_last_hash,
+            last_deleted_receipt_hash,
+            head_receipt_hash,
+            created_at,
+            canonical_checkpoint,
+            signed_by_key_id,
+            signature,
+            status,
+        )) = row
+        {
             checkpoint_records.push(json!({
                 "checkpoint_id": checkpoint_id,
                 "key_id": key_id,
@@ -508,7 +546,9 @@ pub fn export_receipts(
         drop(checkpoints_file);
     }
 
-    let has_action_rows = rows.iter().any(|row| row.approval_id.is_some() || row.approval_call_hash.is_some());
+    let has_action_rows = rows
+        .iter()
+        .any(|row| row.approval_id.is_some() || row.approval_call_hash.is_some());
     if has_action_rows {
         // Bounded projection is written from the same closure rows already
         // loaded; no raw input/result ever enters this file.
@@ -548,7 +588,12 @@ pub fn export_receipts(
     }
 
     let mut files = Vec::new();
-    for name in ["receipts.jsonl", "key-history.jsonl", "actions.jsonl", "checkpoints.jsonl"] {
+    for name in [
+        "receipts.jsonl",
+        "key-history.jsonl",
+        "actions.jsonl",
+        "checkpoints.jsonl",
+    ] {
         let path = staging.join(name);
         if path.exists() {
             match finalize_file(&path) {
@@ -617,17 +662,25 @@ mod tests {
     struct TestSigner(std::sync::Arc<ReceiptKeyManager>);
     impl ReceiptSigner for TestSigner {
         fn key_id(&self) -> Result<String, crate::runtime::RuntimeError> {
-            self.0.load_signer().map(|(metadata, _)| metadata.key_id)
+            self.0
+                .load_signer()
+                .map(|(metadata, _)| metadata.key_id)
                 .map_err(|_| crate::runtime::RuntimeError::SignerUnavailable)
         }
-        fn sign_payload_hash(&self, payload_hash: &str) -> Result<String, crate::runtime::RuntimeError> {
-            self.0.sign_payload_hash(payload_hash).map(|(_, signature)| signature)
+        fn sign_payload_hash(
+            &self,
+            payload_hash: &str,
+        ) -> Result<String, crate::runtime::RuntimeError> {
+            self.0
+                .sign_payload_hash(payload_hash)
+                .map(|(_, signature)| signature)
                 .map_err(|_| crate::runtime::RuntimeError::SignerUnavailable)
         }
     }
 
     fn make_signer() -> (TestSigner, KeyTransition) {
-        let root = std::env::temp_dir().join(format!("evohime-export-test-{}", uuid::Uuid::now_v7()));
+        let root =
+            std::env::temp_dir().join(format!("evohime-export-test-{}", uuid::Uuid::now_v7()));
         let manager = std::sync::Arc::new(ReceiptKeyManager::new(&root));
         manager.initialize().unwrap();
         let genesis = manager.load_history().unwrap().into_iter().next().unwrap();
@@ -654,7 +707,9 @@ mod tests {
             };
             runtime.prepare(request.clone()).unwrap();
             runtime.mark_started(action_id).unwrap();
-            runtime.complete(&request, "succeeded", &"a".repeat(64), None).unwrap();
+            runtime
+                .complete(&request, "succeeded", &"a".repeat(64), None)
+                .unwrap();
         }
     }
 
@@ -673,8 +728,12 @@ mod tests {
         let (signer, genesis) = make_signer();
         let mut db = Connection::open_in_memory().unwrap();
         seed_chain(&mut db, &signer);
-        let result = verify_receipts(&db, &[genesis], None, &ReceiptFilter::default(), 500).unwrap();
-        assert_eq!(result.verification.status, crate::chain::ChainStatus::Verified);
+        let result =
+            verify_receipts(&db, &[genesis], None, &ReceiptFilter::default(), 500).unwrap();
+        assert_eq!(
+            result.verification.status,
+            crate::chain::ChainStatus::Verified
+        );
         assert_eq!(result.verification.actual_verified_count, 6);
     }
 
@@ -691,18 +750,40 @@ mod tests {
             runtime.compact_chain(&key_id, 5).unwrap();
         }
 
-        let result = verify_receipts(&db, &[genesis.clone()], None, &ReceiptFilter::default(), 500).unwrap();
-        assert_eq!(result.verification.status, crate::chain::ChainStatus::VerifiedPruned, "{:?}", result.verification);
+        let result = verify_receipts(
+            &db,
+            &[genesis.clone()],
+            None,
+            &ReceiptFilter::default(),
+            500,
+        )
+        .unwrap();
+        assert_eq!(
+            result.verification.status,
+            crate::chain::ChainStatus::VerifiedPruned,
+            "{:?}",
+            result.verification
+        );
         assert_eq!(result.verification.actual_verified_count, 2);
 
-        let destination = std::env::temp_dir().join(format!("evohime-export-pruned-{}", uuid::Uuid::now_v7()));
-        let manifest = export_receipts(&db, &[], &destination, &ReceiptFilter::default(), 1000).unwrap();
+        let destination =
+            std::env::temp_dir().join(format!("evohime-export-pruned-{}", uuid::Uuid::now_v7()));
+        let manifest =
+            export_receipts(&db, &[], &destination, &ReceiptFilter::default(), 1000).unwrap();
         assert_eq!(manifest.actual_exported_count, 2);
-        assert!(destination.join("checkpoints.jsonl").exists(), "an active checkpoint must be exported alongside the retained suffix");
-        let checkpoints_content = std::fs::read_to_string(destination.join("checkpoints.jsonl")).unwrap();
-        let checkpoint: crate::chain::ExportedCheckpoint = serde_json::from_str(checkpoints_content.trim_end()).unwrap();
+        assert!(
+            destination.join("checkpoints.jsonl").exists(),
+            "an active checkpoint must be exported alongside the retained suffix"
+        );
+        let checkpoints_content =
+            std::fs::read_to_string(destination.join("checkpoints.jsonl")).unwrap();
+        let checkpoint: crate::chain::ExportedCheckpoint =
+            serde_json::from_str(checkpoints_content.trim_end()).unwrap();
         assert_eq!(checkpoint.key_id, key_id);
-        assert_eq!(checkpoint.signed_by_key_id, key_id, "same signer/chain key in this single-key test");
+        assert_eq!(
+            checkpoint.signed_by_key_id, key_id,
+            "same signer/chain key in this single-key test"
+        );
         assert!(
             crate::chain::verify_checkpoint_signature(&checkpoint, &public_key),
             "the exported checkpoint envelope must verify against the signing key's public key"
@@ -715,8 +796,10 @@ mod tests {
         let (signer, _genesis) = make_signer();
         let mut db = Connection::open_in_memory().unwrap();
         seed_chain(&mut db, &signer);
-        let destination = std::env::temp_dir().join(format!("evohime-export-bundle-{}", uuid::Uuid::now_v7()));
-        let manifest = export_receipts(&db, &[], &destination, &ReceiptFilter::default(), 1000).unwrap();
+        let destination =
+            std::env::temp_dir().join(format!("evohime-export-bundle-{}", uuid::Uuid::now_v7()));
+        let manifest =
+            export_receipts(&db, &[], &destination, &ReceiptFilter::default(), 1000).unwrap();
         assert_eq!(manifest.actual_exported_count, 6);
         assert!(destination.join("manifest.json").exists());
         assert!(destination.join("receipts.jsonl").exists());
@@ -728,7 +811,8 @@ mod tests {
         let (signer, _genesis) = make_signer();
         let mut db = Connection::open_in_memory().unwrap();
         seed_chain(&mut db, &signer);
-        let destination = std::env::temp_dir().join(format!("evohime-export-exists-{}", uuid::Uuid::now_v7()));
+        let destination =
+            std::env::temp_dir().join(format!("evohime-export-exists-{}", uuid::Uuid::now_v7()));
         std::fs::create_dir_all(&destination).unwrap();
         let result = export_receipts(&db, &[], &destination, &ReceiptFilter::default(), 1000);
         assert_eq!(result.unwrap_err(), ExportError::ExportExists);
@@ -745,10 +829,19 @@ mod tests {
         let (signer, genesis) = make_signer();
         let mut db = Connection::open_in_memory().unwrap();
         seed_chain_single(&mut db, &signer);
-        let destination = std::env::temp_dir().join(format!("evohime-export-vectors-{}", uuid::Uuid::now_v7()));
-        let manifest = export_receipts(&db, &[genesis], &destination, &ReceiptFilter::default(), 1000).unwrap();
+        let destination =
+            std::env::temp_dir().join(format!("evohime-export-vectors-{}", uuid::Uuid::now_v7()));
+        let manifest = export_receipts(
+            &db,
+            &[genesis],
+            &destination,
+            &ReceiptFilter::default(),
+            1000,
+        )
+        .unwrap();
         let receipts_jsonl = std::fs::read_to_string(destination.join("receipts.jsonl")).unwrap();
-        let key_history_jsonl = std::fs::read_to_string(destination.join("key-history.jsonl")).unwrap();
+        let key_history_jsonl =
+            std::fs::read_to_string(destination.join("key-history.jsonl")).unwrap();
         let manifest_json = std::fs::read_to_string(destination.join("manifest.json")).unwrap();
         println!(
             "{}",
@@ -781,6 +874,8 @@ mod tests {
         };
         runtime.prepare(request.clone()).unwrap();
         runtime.mark_started(action_id).unwrap();
-        runtime.complete(&request, "succeeded", &"a".repeat(64), None).unwrap();
+        runtime
+            .complete(&request, "succeeded", &"a".repeat(64), None)
+            .unwrap();
     }
 }

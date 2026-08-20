@@ -282,7 +282,11 @@ fn apply_l1(selection: &mut Selection, context: &LadderContext<'_>) {
     let mut seen_hashes: HashSet<String> = HashSet::new();
     // Обязательные item занимают свои hash первыми: дубликат обязательного
     // item отбрасывается, а не наоборот.
-    for item in selection.items.iter().filter(|item| item.is_mandatory_kind()) {
+    for item in selection
+        .items
+        .iter()
+        .filter(|item| item.is_mandatory_kind())
+    {
         seen_hashes.insert(item.content_hash.clone());
     }
     // Последняя ревизия по каждому `parent_id` остаётся, предыдущие вытесняются.
@@ -354,8 +358,7 @@ fn apply_l1(selection: &mut Selection, context: &LadderContext<'_>) {
 /// L2: `effective_priority < profile.low_priority_cutoff`, item не входит в MVC.
 fn apply_l2(selection: &mut Selection, context: &LadderContext<'_>) {
     let cutoff = context.profile.low_priority_cutoff;
-    let candidates =
-        selection.ordered_candidates(|item| item.effective_priority() < cutoff);
+    let candidates = selection.ordered_candidates(|item| item.effective_priority() < cutoff);
     for id in candidates {
         if goal_met(selection, context) {
             return;
@@ -538,11 +541,7 @@ fn apply_l5(
 
 /// L6: отказ от необязательных резервов в фиксированном порядке.
 /// `tool_call_reserve` и `final_answer_reserve` не сокращаются никогда.
-fn apply_l6(
-    selection: &mut Selection,
-    context: &LadderContext<'_>,
-    outcome: &mut LadderOutcome,
-) {
+fn apply_l6(selection: &mut Selection, context: &LadderContext<'_>, outcome: &mut LadderOutcome) {
     let profile = context.profile;
     // Фиксированный порядок отказа: retry → streaming → tool_schema сверх
     // фактического размера схем.
@@ -774,7 +773,9 @@ mod tests {
             .collect();
         assert!(codes.contains(&"artifact_store_unavailable"));
         assert!(codes.contains(&"summarizer_unavailable"));
-        assert!(!outcome.levels_applied.contains(&LadderLevel::OffloadLargeItems));
+        assert!(!outcome
+            .levels_applied
+            .contains(&LadderLevel::OffloadLargeItems));
     }
 
     struct StubOffload;
@@ -808,7 +809,9 @@ mod tests {
             &mut StubOffload,
             &mut NoSummarizer,
         );
-        assert!(outcome.levels_applied.contains(&LadderLevel::OffloadLargeItems));
+        assert!(outcome
+            .levels_applied
+            .contains(&LadderLevel::OffloadLargeItems));
         let item = &selection.items[0];
         assert_eq!(item.estimated_tokens, 32);
         assert_eq!(item.drop_reason, Some(DropReason::Offloaded));
@@ -878,7 +881,9 @@ mod tests {
             &mut NoOffload,
             &mut StubSummarizer,
         );
-        assert!(outcome.levels_applied.contains(&LadderLevel::CompressHistory));
+        assert!(outcome
+            .levels_applied
+            .contains(&LadderLevel::CompressHistory));
         assert_eq!(outcome.summaries.len(), 1);
         assert_eq!(selection.selected().count(), 1);
         assert_eq!(selection.context_tokens(), 64);

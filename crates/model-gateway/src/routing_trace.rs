@@ -7,23 +7,45 @@ pub const ROUTING_TRACE_SCHEMA_VERSION: u32 = 1;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TerminalStatus {
-    Success, Cancelled, NoRoutesConfigured, BothRoutesUnavailable,
-    ClassificationIncomplete, ContextLimitExceeded, PolicyViolation,
-    BudgetUnavailable, ContextAssemblyFailed, FallbackLimitReached,
-    RunDeadlineExceeded, RerouteApprovalDeclined, InternalError,
+    Success,
+    Cancelled,
+    NoRoutesConfigured,
+    BothRoutesUnavailable,
+    ClassificationIncomplete,
+    ContextLimitExceeded,
+    PolicyViolation,
+    BudgetUnavailable,
+    ContextAssemblyFailed,
+    FallbackLimitReached,
+    RunDeadlineExceeded,
+    RerouteApprovalDeclined,
+    InternalError,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum SafeNextAction { RetryLater, ClarifyRequest, ContactSupport, ManualReview }
+pub enum SafeNextAction {
+    RetryLater,
+    ClarifyRequest,
+    ContactSupport,
+    ManualReview,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum HealthState { Healthy, Degraded, Unavailable }
+pub enum HealthState {
+    Healthy,
+    Degraded,
+    Unavailable,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PrivacyLabel { Sensitive, NonSensitive, Unknown }
+pub enum PrivacyLabel {
+    Sensitive,
+    NonSensitive,
+    Unknown,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TraceCandidate {
@@ -67,16 +89,37 @@ pub struct RoutingTrace {
 
 impl RoutingTrace {
     pub fn validate(&self) -> Result<(), &'static str> {
-        if self.schema_version != ROUTING_TRACE_SCHEMA_VERSION { return Err("unsupported_schema_version"); }
-        if self.trace_id.is_empty() || self.run_id.is_empty() || self.policy_version.is_empty() { return Err("missing_identity"); }
-        if self.terminal_status == Some(TerminalStatus::Success) && self.selected_route.is_none() { return Err("success_requires_route"); }
-        if self.terminal_status != Some(TerminalStatus::Success) && self.selected_route.is_some() { return Err("refusal_forbids_route"); }
-        if self.budget_id.is_none() && !self.budget_absent { return Err("budget_presence_ambiguous"); }
-        if self.terminal_status.is_some_and(TerminalStatus::requires_safe_action) && self.safe_next_action.is_none() { return Err("refusal_requires_safe_action"); }
-        if self.terminal_status == Some(TerminalStatus::Success) && self.safe_next_action.is_some() { return Err("success_forbids_safe_action"); }
+        if self.schema_version != ROUTING_TRACE_SCHEMA_VERSION {
+            return Err("unsupported_schema_version");
+        }
+        if self.trace_id.is_empty() || self.run_id.is_empty() || self.policy_version.is_empty() {
+            return Err("missing_identity");
+        }
+        if self.terminal_status == Some(TerminalStatus::Success) && self.selected_route.is_none() {
+            return Err("success_requires_route");
+        }
+        if self.terminal_status != Some(TerminalStatus::Success) && self.selected_route.is_some() {
+            return Err("refusal_forbids_route");
+        }
+        if self.budget_id.is_none() && !self.budget_absent {
+            return Err("budget_presence_ambiguous");
+        }
+        if self
+            .terminal_status
+            .is_some_and(TerminalStatus::requires_safe_action)
+            && self.safe_next_action.is_none()
+        {
+            return Err("refusal_requires_safe_action");
+        }
+        if self.terminal_status == Some(TerminalStatus::Success) && self.safe_next_action.is_some()
+        {
+            return Err("success_forbids_safe_action");
+        }
         Ok(())
     }
-    pub fn to_json_line(&self) -> Result<String, serde_json::Error> { serde_json::to_string(self) }
+    pub fn to_json_line(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
 }
 
 impl TerminalStatus {
@@ -90,13 +133,63 @@ mod tests {
     use super::*;
     #[test]
     fn trace_requires_explicit_budget_absence() {
-        let trace = RoutingTrace { schema_version: 1, trace_id: "t".into(), run_id: "r".into(), sequence: 1, attempt_id: 0, now_ms: 10, policy_version: "p".into(), catalog_version: "c".into(), snapshot_hash: "h".into(), classification: "simple".into(), privacy_label: PrivacyLabel::NonSensitive, candidates: vec![], selected_route: None, reason_code: "internal_error".into(), fallback_count: 0, event: "terminal".into(), latency_ms: 0, terminal_status: Some(TerminalStatus::InternalError), safe_next_action: Some(SafeNextAction::ContactSupport), budget_id: None, budget_absent: true, estimated_input_tokens: 0, profile_version: None, context_ledger_hash: None };
+        let trace = RoutingTrace {
+            schema_version: 1,
+            trace_id: "t".into(),
+            run_id: "r".into(),
+            sequence: 1,
+            attempt_id: 0,
+            now_ms: 10,
+            policy_version: "p".into(),
+            catalog_version: "c".into(),
+            snapshot_hash: "h".into(),
+            classification: "simple".into(),
+            privacy_label: PrivacyLabel::NonSensitive,
+            candidates: vec![],
+            selected_route: None,
+            reason_code: "internal_error".into(),
+            fallback_count: 0,
+            event: "terminal".into(),
+            latency_ms: 0,
+            terminal_status: Some(TerminalStatus::InternalError),
+            safe_next_action: Some(SafeNextAction::ContactSupport),
+            budget_id: None,
+            budget_absent: true,
+            estimated_input_tokens: 0,
+            profile_version: None,
+            context_ledger_hash: None,
+        };
         assert!(trace.validate().is_ok());
     }
 
     #[test]
     fn refusal_requires_a_safe_next_action() {
-        let mut trace = RoutingTrace { schema_version: 1, trace_id: "t".into(), run_id: "r".into(), sequence: 1, now_ms: 10, attempt_id: 0, policy_version: "p".into(), catalog_version: "c".into(), snapshot_hash: "h".into(), classification: "simple".into(), privacy_label: PrivacyLabel::Unknown, candidates: vec![], selected_route: None, reason_code: "internal_error".into(), fallback_count: 0, event: "terminal".into(), latency_ms: 0, terminal_status: Some(TerminalStatus::InternalError), safe_next_action: None, budget_id: None, budget_absent: true, estimated_input_tokens: 0, profile_version: None, context_ledger_hash: None };
+        let mut trace = RoutingTrace {
+            schema_version: 1,
+            trace_id: "t".into(),
+            run_id: "r".into(),
+            sequence: 1,
+            now_ms: 10,
+            attempt_id: 0,
+            policy_version: "p".into(),
+            catalog_version: "c".into(),
+            snapshot_hash: "h".into(),
+            classification: "simple".into(),
+            privacy_label: PrivacyLabel::Unknown,
+            candidates: vec![],
+            selected_route: None,
+            reason_code: "internal_error".into(),
+            fallback_count: 0,
+            event: "terminal".into(),
+            latency_ms: 0,
+            terminal_status: Some(TerminalStatus::InternalError),
+            safe_next_action: None,
+            budget_id: None,
+            budget_absent: true,
+            estimated_input_tokens: 0,
+            profile_version: None,
+            context_ledger_hash: None,
+        };
         assert_eq!(trace.validate(), Err("refusal_requires_safe_action"));
         trace.safe_next_action = Some(SafeNextAction::ContactSupport);
         assert!(trace.validate().is_ok());

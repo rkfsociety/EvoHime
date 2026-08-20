@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::item::{ContextItem, DropReason, ItemKind, ScratchpadStatus, Trust};
-use crate::ladder::{SummaryOutcome, Summarizer};
+use crate::ladder::{Summarizer, SummaryOutcome};
 
 /// Версия стратегии сжатия и pruning.
 pub const COMPRESSION_STRATEGY_VERSION: &str = "compress-1";
@@ -178,12 +178,12 @@ pub fn detect_conflict(
     };
 
     // Существенные факты по умолчанию требуют подтверждения пользователя.
-    let resolution = if matches!(left.kind, ItemKind::Decision) || matches!(right.kind, ItemKind::Decision)
-    {
-        ConflictResolution::UserConfirm
-    } else {
-        resolution
-    };
+    let resolution =
+        if matches!(left.kind, ItemKind::Decision) || matches!(right.kind, ItemKind::Decision) {
+            ConflictResolution::UserConfirm
+        } else {
+            resolution
+        };
 
     Some(Conflict {
         key: key.to_string(),
@@ -216,7 +216,11 @@ fn extract_paths(text: &str) -> Vec<String> {
     let mut paths: Vec<String> = text
         .split_whitespace()
         .filter(|token| token.contains('/') || token.contains('\\'))
-        .map(|token| token.trim_matches(|c: char| c == ',' || c == '.' || c == ';').to_string())
+        .map(|token| {
+            token
+                .trim_matches(|c: char| c == ',' || c == '.' || c == ';')
+                .to_string()
+        })
         .collect();
     paths.sort();
     paths
@@ -226,7 +230,9 @@ fn extract_identifiers(text: &str) -> Vec<String> {
     let mut identifiers: Vec<String> = text
         .split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-'))
         .filter(|token| {
-            token.len() >= 8 && token.chars().any(|c| c.is_ascii_digit()) && token.chars().any(|c| c.is_alphabetic())
+            token.len() >= 8
+                && token.chars().any(|c| c.is_ascii_digit())
+                && token.chars().any(|c| c.is_alphabetic())
         })
         .map(str::to_string)
         .collect();
@@ -378,8 +384,11 @@ pub struct RawSummary {
 pub trait SummaryModel {
     fn available(&self) -> bool;
 
-    fn summarize(&mut self, items: &[ContextItem], config: &SummarizerConfig)
-        -> Result<RawSummary, String>;
+    fn summarize(
+        &mut self,
+        items: &[ContextItem],
+        config: &SummarizerConfig,
+    ) -> Result<RawSummary, String>;
 }
 
 /// Bounded summarizer с deterministic fallback. Если модель недоступна,
@@ -501,7 +510,12 @@ impl<M: SummaryModel> Summarizer for BoundedSummarizer<M> {
             return Ok(self.fallback_summary(items, "summarizer model is unavailable"));
         }
         self.model_attempted = true;
-        let raw = match self.model.as_mut().expect("model present").summarize(items, &config) {
+        let raw = match self
+            .model
+            .as_mut()
+            .expect("model present")
+            .summarize(items, &config)
+        {
             Ok(raw) => raw,
             Err(error) => return Ok(self.fallback_summary(items, &error)),
         };
@@ -584,12 +598,8 @@ mod tests {
         let mut right = build();
         order_items(&mut left);
         order_items(&mut right);
-        let ids = |items: &[ContextItem]| {
-            items
-                .iter()
-                .map(|item| item.id.clone())
-                .collect::<Vec<_>>()
-        };
+        let ids =
+            |items: &[ContextItem]| items.iter().map(|item| item.id.clone()).collect::<Vec<_>>();
         assert_eq!(ids(&left), ids(&right));
     }
 
@@ -647,8 +657,14 @@ mod tests {
     fn negation_divergence_is_a_substantive_conflict() {
         let left = item("l", ItemKind::Memory, "h-l");
         let right = item("r", ItemKind::Memory, "h-r");
-        let conflict = detect_conflict("entity/flag", &left, "сервис включён", &right, "сервис не включён")
-            .expect("conflict detected");
+        let conflict = detect_conflict(
+            "entity/flag",
+            &left,
+            "сервис включён",
+            &right,
+            "сервис не включён",
+        )
+        .expect("conflict detected");
         assert!(conflict.detail.contains("negation"));
     }
 
@@ -674,14 +690,14 @@ mod tests {
         left.trust = Trust::Confirmed;
         let mut right = item("r", ItemKind::Memory, "h-r");
         right.trust = Trust::External;
-        let by_trust = detect_conflict("k", &left, "лимит 10", &right, "лимит 20")
-            .expect("conflict detected");
+        let by_trust =
+            detect_conflict("k", &left, "лимит 10", &right, "лимит 20").expect("conflict detected");
         assert_eq!(by_trust.resolution, ConflictResolution::KeepHigherTrust);
 
         right.trust = Trust::Confirmed;
         right.created_at = left.created_at + 1;
-        let by_recency = detect_conflict("k", &left, "лимит 10", &right, "лимит 20")
-            .expect("conflict detected");
+        let by_recency =
+            detect_conflict("k", &left, "лимит 10", &right, "лимит 20").expect("conflict detected");
         assert_eq!(by_recency.resolution, ConflictResolution::KeepNewer);
     }
 

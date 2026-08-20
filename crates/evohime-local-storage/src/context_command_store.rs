@@ -194,11 +194,7 @@ impl<'a> ContextCommandStore<'a> {
     }
 
     /// Забирает незакрытый запрос `summarize now`, помечая его применённым.
-    pub fn take_pending_summarize(
-        &self,
-        task_id: &str,
-        now: i64,
-    ) -> Result<bool, StorageError> {
+    pub fn take_pending_summarize(&self, task_id: &str, now: i64) -> Result<bool, StorageError> {
         let pending: i64 = self.connection.query_row(
             "SELECT COUNT(*) FROM context_command_audit
              WHERE task_id = ?1 AND command = 'summarize_now' AND outcome = 'pending'",
@@ -251,7 +247,9 @@ mod tests {
     fn pin_and_unpin_are_persisted_and_audited() {
         let database = database("pin");
         let store = ContextCommandStore::new(database.connection());
-        store.set_pin("task", "msg-0001-user", true, 1_000).expect("pin");
+        store
+            .set_pin("task", "msg-0001-user", true, 1_000)
+            .expect("pin");
         assert_eq!(
             store.pinned_items("task").expect("read"),
             vec!["msg-0001-user".to_string()]
@@ -269,7 +267,9 @@ mod tests {
     fn every_mutation_command_gets_a_ledger_entry_in_the_audit_log() {
         let database = database("audit");
         let store = ContextCommandStore::new(database.connection());
-        store.request_summarize("task", 1_000).expect("summarize now");
+        store
+            .request_summarize("task", 1_000)
+            .expect("summarize now");
         store.clear_task("task", 1_100).expect("clear");
         store.set_pin("task", "item", true, 1_200).expect("pin");
         let commands: Vec<String> = store

@@ -16,14 +16,36 @@ fn routing_success_trace(
     attempt_id: u32,
     now_ms: u64,
 ) -> evohime_model_gateway::RoutingTrace {
-    let candidates = decision.map(|decision| decision.candidates.iter().map(|candidate| {
-        let health_state = match candidate.health_status {
-            evohime_model_gateway::HealthStatus::Ready => evohime_model_gateway::HealthState::Healthy,
-            evohime_model_gateway::HealthStatus::Degraded => evohime_model_gateway::HealthState::Degraded,
-            evohime_model_gateway::HealthStatus::Stale | evohime_model_gateway::HealthStatus::Unavailable => evohime_model_gateway::HealthState::Unavailable,
-        };
-        evohime_model_gateway::TraceCandidate { route_id: candidate.route_id.clone(), capability_epoch: candidate.capability_epoch, health_status: candidate.health_status, circuit_state: candidate.circuit_state, health_state, reject_reason: candidate.reject_reason.clone() }
-    }).collect()).unwrap_or_default();
+    let candidates = decision
+        .map(|decision| {
+            decision
+                .candidates
+                .iter()
+                .map(|candidate| {
+                    let health_state = match candidate.health_status {
+                        evohime_model_gateway::HealthStatus::Ready => {
+                            evohime_model_gateway::HealthState::Healthy
+                        }
+                        evohime_model_gateway::HealthStatus::Degraded => {
+                            evohime_model_gateway::HealthState::Degraded
+                        }
+                        evohime_model_gateway::HealthStatus::Stale
+                        | evohime_model_gateway::HealthStatus::Unavailable => {
+                            evohime_model_gateway::HealthState::Unavailable
+                        }
+                    };
+                    evohime_model_gateway::TraceCandidate {
+                        route_id: candidate.route_id.clone(),
+                        capability_epoch: candidate.capability_epoch,
+                        health_status: candidate.health_status,
+                        circuit_state: candidate.circuit_state,
+                        health_state,
+                        reject_reason: candidate.reject_reason.clone(),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     evohime_model_gateway::RoutingTrace {
         schema_version: 1,
         trace_id: run_id.to_owned(),
@@ -38,7 +60,15 @@ fn routing_success_trace(
         privacy_label: evohime_model_gateway::PrivacyLabel::NonSensitive,
         candidates,
         selected_route: Some(selected_route.to_owned()),
-        reason_code: decision.map(|decision| decision.reason_code.clone()).unwrap_or_else(|| if fallback_count > 0 { "fallback_rank_preferred".into() } else { "only_candidate".into() }),
+        reason_code: decision
+            .map(|decision| decision.reason_code.clone())
+            .unwrap_or_else(|| {
+                if fallback_count > 0 {
+                    "fallback_rank_preferred".into()
+                } else {
+                    "only_candidate".into()
+                }
+            }),
         fallback_count: fallback_count as u32,
         event: "terminal".into(),
         latency_ms: 0,
@@ -52,33 +82,91 @@ fn routing_success_trace(
     }
 }
 
-fn routing_failure_trace(run_id: &str, error: &AgentRunError) -> evohime_model_gateway::RoutingTrace {
+fn routing_failure_trace(
+    run_id: &str,
+    error: &AgentRunError,
+) -> evohime_model_gateway::RoutingTrace {
     let (status, reason, action) = match error {
-        AgentRunError::Cancelled => (evohime_model_gateway::TerminalStatus::Cancelled, "cancelled", None),
-        AgentRunError::Timeout(_) => (evohime_model_gateway::TerminalStatus::RunDeadlineExceeded, "run_deadline_exceeded", Some(evohime_model_gateway::SafeNextAction::RetryLater)),
-        AgentRunError::BudgetUnavailable { .. } => (evohime_model_gateway::TerminalStatus::BudgetUnavailable, "budget_unavailable", Some(evohime_model_gateway::SafeNextAction::ClarifyRequest)),
-        AgentRunError::Provider(_) => (evohime_model_gateway::TerminalStatus::BothRoutesUnavailable, "provider_unavailable", Some(evohime_model_gateway::SafeNextAction::RetryLater)),
-        AgentRunError::RoutingApprovalDeclined => (evohime_model_gateway::TerminalStatus::RerouteApprovalDeclined, "reroute_approval_declined", Some(evohime_model_gateway::SafeNextAction::ManualReview)),
-        AgentRunError::Internal(_) => (evohime_model_gateway::TerminalStatus::InternalError, "internal_error", Some(evohime_model_gateway::SafeNextAction::ContactSupport)),
+        AgentRunError::Cancelled => (
+            evohime_model_gateway::TerminalStatus::Cancelled,
+            "cancelled",
+            None,
+        ),
+        AgentRunError::Timeout(_) => (
+            evohime_model_gateway::TerminalStatus::RunDeadlineExceeded,
+            "run_deadline_exceeded",
+            Some(evohime_model_gateway::SafeNextAction::RetryLater),
+        ),
+        AgentRunError::BudgetUnavailable { .. } => (
+            evohime_model_gateway::TerminalStatus::BudgetUnavailable,
+            "budget_unavailable",
+            Some(evohime_model_gateway::SafeNextAction::ClarifyRequest),
+        ),
+        AgentRunError::Provider(_) => (
+            evohime_model_gateway::TerminalStatus::BothRoutesUnavailable,
+            "provider_unavailable",
+            Some(evohime_model_gateway::SafeNextAction::RetryLater),
+        ),
+        AgentRunError::RoutingApprovalDeclined => (
+            evohime_model_gateway::TerminalStatus::RerouteApprovalDeclined,
+            "reroute_approval_declined",
+            Some(evohime_model_gateway::SafeNextAction::ManualReview),
+        ),
+        AgentRunError::Internal(_) => (
+            evohime_model_gateway::TerminalStatus::InternalError,
+            "internal_error",
+            Some(evohime_model_gateway::SafeNextAction::ContactSupport),
+        ),
     };
     evohime_model_gateway::RoutingTrace {
-        schema_version: 1, trace_id: run_id.to_owned(), run_id: run_id.to_owned(), sequence: 1,
-        attempt_id: 0, now_ms: task_memory::now_millis(), policy_version: "routing-policy-v1".into(),
-        catalog_version: "builtin-v1".into(), snapshot_hash: "runtime-selection".into(), classification: "complex".into(),
-        privacy_label: evohime_model_gateway::PrivacyLabel::Unknown, candidates: Vec::new(), selected_route: None,
-        reason_code: reason.into(), fallback_count: 0, event: "terminal".into(), latency_ms: 0,
-        terminal_status: Some(status), safe_next_action: action, budget_id: None, budget_absent: true,
-        estimated_input_tokens: 0, profile_version: None, context_ledger_hash: None,
+        schema_version: 1,
+        trace_id: run_id.to_owned(),
+        run_id: run_id.to_owned(),
+        sequence: 1,
+        attempt_id: 0,
+        now_ms: task_memory::now_millis(),
+        policy_version: "routing-policy-v1".into(),
+        catalog_version: "builtin-v1".into(),
+        snapshot_hash: "runtime-selection".into(),
+        classification: "complex".into(),
+        privacy_label: evohime_model_gateway::PrivacyLabel::Unknown,
+        candidates: Vec::new(),
+        selected_route: None,
+        reason_code: reason.into(),
+        fallback_count: 0,
+        event: "terminal".into(),
+        latency_ms: 0,
+        terminal_status: Some(status),
+        safe_next_action: action,
+        budget_id: None,
+        budget_absent: true,
+        estimated_input_tokens: 0,
+        profile_version: None,
+        context_ledger_hash: None,
     }
 }
 
 fn classify_routing_task(prompt: &str, tools: &[ToolSpec]) -> &'static str {
     let lower = prompt.to_ascii_lowercase();
-    let mutation_markers = ["запиши", "измени", "удали", "создай", "commit", "push", "write", "patch", "execute"];
+    let mutation_markers = [
+        "запиши",
+        "измени",
+        "удали",
+        "создай",
+        "commit",
+        "push",
+        "write",
+        "patch",
+        "execute",
+    ];
     let read_only = !mutation_markers.iter().any(|marker| lower.contains(marker))
         && tools.len() <= 8
         && !lower.contains("multi-hop");
-    if read_only { "simple" } else { "complex" }
+    if read_only {
+        "simple"
+    } else {
+        "complex"
+    }
 }
 
 const LEGACY_TOOL_NAMES: &[&str] = &[
@@ -1013,8 +1101,15 @@ use evohime_model_gateway::{
     providers::{ChatMessage, ChatRole, ProviderError},
     ModelGateway, NativeToolCall, PrivacyClass, RoutingMode, RoutingRequest, ToolSpec,
 };
+use evohime_receipts::{
+    key_lifecycle::ReceiptKeyManager,
+    runtime::{
+        ActionRequest as ReceiptActionRequest, PolicyDecision as ReceiptPolicyDecision,
+        PrepareOutcome as ReceiptPrepareOutcome, ProtectedActionRow, ReceiptRuntime, ReceiptSigner,
+        RuntimeError as ReceiptRuntimeError,
+    },
+};
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
-use evohime_receipts::{runtime::{ActionRequest as ReceiptActionRequest, PolicyDecision as ReceiptPolicyDecision, PrepareOutcome as ReceiptPrepareOutcome, ProtectedActionRow, ReceiptRuntime, ReceiptSigner, RuntimeError as ReceiptRuntimeError}, key_lifecycle::ReceiptKeyManager};
 use futures_util::future::BoxFuture;
 use futures_util::StreamExt;
 use serde::Serialize;
@@ -3045,7 +3140,8 @@ impl EventJournal {
     pub async fn next_child_parent_sequence(&self, parent_task_id: &str) -> Result<u64, String> {
         let database = self.database.lock().await;
         evohime_local_storage::child_store::ChildStoreSql::next_parent_sequence(
-            database.connection(), parent_task_id,
+            database.connection(),
+            parent_task_id,
         )
         .map(|value| value as u64)
         .map_err(|error| error.to_string())
@@ -3057,7 +3153,8 @@ impl EventJournal {
     ) -> Result<(), String> {
         let database = self.database.lock().await;
         evohime_local_storage::child_store::ChildStoreSql::upsert_coordinator_checkpoint(
-            database.connection(), record,
+            database.connection(),
+            record,
         )
         .map_err(|error| error.to_string())
     }
@@ -3065,10 +3162,12 @@ impl EventJournal {
     pub async fn get_coordinator_checkpoint(
         &self,
         child_task_id: &str,
-    ) -> Result<Option<evohime_local_storage::child_store::CoordinatorCheckpointRecord>, String> {
+    ) -> Result<Option<evohime_local_storage::child_store::CoordinatorCheckpointRecord>, String>
+    {
         let database = self.database.lock().await;
         evohime_local_storage::child_store::ChildStoreSql::latest_coordinator_checkpoint(
-            database.connection(), child_task_id,
+            database.connection(),
+            child_task_id,
         )
         .map_err(|error| error.to_string())
     }
@@ -3081,7 +3180,10 @@ impl EventJournal {
     ) -> Result<Vec<evohime_local_storage::child_store::CoordinatorCheckpointRecord>, String> {
         let database = self.database.lock().await;
         evohime_local_storage::child_store::ChildStoreSql::list_dead_letter_checkpoints(
-            database.connection(), parent_task_id, now_ms, limit,
+            database.connection(),
+            parent_task_id,
+            now_ms,
+            limit,
         )
         .map_err(|error| error.to_string())
     }
@@ -3094,7 +3196,10 @@ impl EventJournal {
     ) -> Result<crate::child_contracts::TypedChildReport, String> {
         let database = self.database.lock().await;
         crate::child_workflow::accept_report_with_offload(
-            database.connection(), request, report, now_ms,
+            database.connection(),
+            request,
+            report,
+            now_ms,
         )
         .map_err(|error| error.to_string())
     }
@@ -3790,7 +3895,10 @@ impl RoutingApprovalRegistry {
         cancellation: &CancellationToken,
     ) -> Result<bool, AgentRunError> {
         let (sender, receiver) = tokio::sync::oneshot::channel();
-        self.pending.lock().await.insert(trace_id.to_owned(), sender);
+        self.pending
+            .lock()
+            .await
+            .insert(trace_id.to_owned(), sender);
         let expires_at_ms = task_memory::now_millis().saturating_add(timeout_ms);
         let _ = events.send(CoreEvent::PendingRoutingApproval {
             task_id: task_id.to_owned(),
@@ -3809,9 +3917,15 @@ impl RoutingApprovalRegistry {
     }
 
     pub async fn resolve(&self, trace_id: &str, approve: bool) -> Result<bool, String> {
-        let sender = self.pending.lock().await.remove(trace_id)
+        let sender = self
+            .pending
+            .lock()
+            .await
+            .remove(trace_id)
             .ok_or_else(|| "routing approval is unknown or expired".to_owned())?;
-        sender.send(approve).map_err(|_| "routing approval is no longer pending".to_owned())?;
+        sender
+            .send(approve)
+            .map_err(|_| "routing approval is no longer pending".to_owned())?;
         Ok(true)
     }
 }
@@ -3922,7 +4036,11 @@ impl ModelAgent {
                 required_privacy: PrivacyClass::Internal,
                 allow_fallback: true,
                 preferred_route: None,
-                task_class: None, offline: false, allow_cloud: true, estimated_input_tokens: 0, quality_delta: 0.05,
+                task_class: None,
+                offline: false,
+                allow_cloud: true,
+                estimated_input_tokens: 0,
+                quality_delta: 0.05,
             },
             &messages,
         )?;
@@ -3998,12 +4116,16 @@ struct CoreReceiptSigner(Arc<ReceiptKeyManager>);
 
 impl ReceiptSigner for CoreReceiptSigner {
     fn key_id(&self) -> Result<String, ReceiptRuntimeError> {
-        self.0.load_signer().map(|(metadata, _)| metadata.key_id)
+        self.0
+            .load_signer()
+            .map(|(metadata, _)| metadata.key_id)
             .map_err(|_| ReceiptRuntimeError::SignerUnavailable)
     }
 
     fn sign_payload_hash(&self, payload_hash: &str) -> Result<String, ReceiptRuntimeError> {
-        self.0.sign_payload_hash(payload_hash).map(|(_, signature)| signature)
+        self.0
+            .sign_payload_hash(payload_hash)
+            .map(|(_, signature)| signature)
             .map_err(|_| ReceiptRuntimeError::SignerUnavailable)
     }
 }
@@ -4105,7 +4227,13 @@ impl ToolAgent {
             Ok(value) => value,
             Err(error) => {
                 let code = error.to_string();
-                let marker = if code.contains("signer_unavailable") { "signer_unavailable" } else if code.contains("storage_key_unavailable") { "storage_key_unavailable" } else { "signer_unavailable" };
+                let marker = if code.contains("signer_unavailable") {
+                    "signer_unavailable"
+                } else if code.contains("storage_key_unavailable") {
+                    "storage_key_unavailable"
+                } else {
+                    "signer_unavailable"
+                };
                 let _ = runtime.store_unsigned_runtime_marker(request.action_id, marker);
                 return Err(code);
             }
@@ -4117,24 +4245,54 @@ impl ToolAgent {
     }
 
     async fn receipt_prepare_allowed(
-        &self, task_id: &str, tool: &str, scope: &str, input: &serde_json::Value, preview: &evohime_permissions::ApprovalPreview,
+        &self,
+        task_id: &str,
+        tool: &str,
+        scope: &str,
+        input: &serde_json::Value,
+        preview: &evohime_permissions::ApprovalPreview,
     ) -> Result<Option<ReceiptActionRequest>, String> {
-        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else { return Ok(None); };
-        let request = ReceiptActionRequest { action_id: Uuid::now_v7(), task_id: task_id.to_owned(), run_id: task_id.to_owned(), tool_name: tool.to_owned(), policy_id: "permission-v1".into(), normalized_scope: scope.to_owned(), input: input.clone(), policy_decision: ReceiptPolicyDecision::Allow, approval_id: None, parent_approval_ref: None, preview: serde_json::to_string(preview).unwrap_or_else(|_| "read".into()) };
+        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else {
+            return Ok(None);
+        };
+        let request = ReceiptActionRequest {
+            action_id: Uuid::now_v7(),
+            task_id: task_id.to_owned(),
+            run_id: task_id.to_owned(),
+            tool_name: tool.to_owned(),
+            policy_id: "permission-v1".into(),
+            normalized_scope: scope.to_owned(),
+            input: input.clone(),
+            policy_decision: ReceiptPolicyDecision::Allow,
+            approval_id: None,
+            parent_approval_ref: None,
+            preview: serde_json::to_string(preview).unwrap_or_else(|_| "read".into()),
+        };
         let mut database = journal.database().lock().await;
         let signer = CoreReceiptSigner(Arc::clone(keys));
-        let mut runtime = ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| e.to_string())?;
+        let mut runtime =
+            ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| e.to_string())?;
         let prepared = match runtime.prepare(request.clone()) {
             Ok(value) => value,
             Err(error) => {
                 let code = error.to_string();
-                let marker = if code.contains("signer_unavailable") { "signer_unavailable" } else if code.contains("storage_key_unavailable") { "storage_key_unavailable" } else { "signer_unavailable" };
+                let marker = if code.contains("signer_unavailable") {
+                    "signer_unavailable"
+                } else if code.contains("storage_key_unavailable") {
+                    "storage_key_unavailable"
+                } else {
+                    "signer_unavailable"
+                };
                 let _ = runtime.store_unsigned_runtime_marker(request.action_id, marker);
                 return Err(code);
             }
         };
-        if !matches!(prepared, ReceiptPrepareOutcome::Prepared { .. }) { return Err("receipt.precondition_failed".into()); }
-        runtime.mark_started(request.action_id).map_err(|e| e.to_string())?;
+        if !matches!(prepared, ReceiptPrepareOutcome::Prepared { .. }) {
+            return Err("receipt.precondition_failed".into());
+        }
+        runtime
+            .mark_started(request.action_id)
+            .map_err(|e| e.to_string())?;
         Ok(Some(request))
     }
 
@@ -4150,24 +4308,46 @@ impl ToolAgent {
         approval_id: Uuid,
     ) -> Result<(Uuid, ReceiptActionRequest), String> {
         let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else {
-            return Ok((Uuid::nil(), ReceiptActionRequest {
-                action_id: Uuid::nil(), task_id: task_id.to_owned(), run_id: task_id.to_owned(),
-                tool_name: tool.to_owned(), policy_id: permission.to_owned(), normalized_scope: scope.to_owned(),
-                input: input.clone(), policy_decision: ReceiptPolicyDecision::ApprovalRequired,
-                approval_id: Some(approval_id), parent_approval_ref: None, preview: String::new(),
-            }));
+            return Ok((
+                Uuid::nil(),
+                ReceiptActionRequest {
+                    action_id: Uuid::nil(),
+                    task_id: task_id.to_owned(),
+                    run_id: task_id.to_owned(),
+                    tool_name: tool.to_owned(),
+                    policy_id: permission.to_owned(),
+                    normalized_scope: scope.to_owned(),
+                    input: input.clone(),
+                    policy_decision: ReceiptPolicyDecision::ApprovalRequired,
+                    approval_id: Some(approval_id),
+                    parent_approval_ref: None,
+                    preview: String::new(),
+                },
+            ));
         };
         let action_id = {
             let database = journal.database().lock().await;
-            database.connection().query_row(
-                "SELECT action_id FROM receipt_approval_intents WHERE approval_id=?1",
-                [approval_id.to_string()], |row| row.get::<_, String>(0),
-            ).map_err(|error| error.to_string())?.parse::<Uuid>().map_err(|_| "receipt.schema_violation".to_owned())?
+            database
+                .connection()
+                .query_row(
+                    "SELECT action_id FROM receipt_approval_intents WHERE approval_id=?1",
+                    [approval_id.to_string()],
+                    |row| row.get::<_, String>(0),
+                )
+                .map_err(|error| error.to_string())?
+                .parse::<Uuid>()
+                .map_err(|_| "receipt.schema_violation".to_owned())?
         };
         let request = ReceiptActionRequest {
-            action_id, task_id: task_id.to_owned(), run_id: task_id.to_owned(), tool_name: tool.to_owned(),
-            policy_id: format!("permission:{permission}"), normalized_scope: scope.to_owned(), input: input.clone(),
-            policy_decision: ReceiptPolicyDecision::ApprovalRequired, approval_id: Some(approval_id),
+            action_id,
+            task_id: task_id.to_owned(),
+            run_id: task_id.to_owned(),
+            tool_name: tool.to_owned(),
+            policy_id: format!("permission:{permission}"),
+            normalized_scope: scope.to_owned(),
+            input: input.clone(),
+            policy_decision: ReceiptPolicyDecision::ApprovalRequired,
+            approval_id: Some(approval_id),
             parent_approval_ref: None,
             preview: serde_json::to_string(preview).unwrap_or_else(|_| "approval".to_owned()),
         };
@@ -4177,13 +4357,19 @@ impl ToolAgent {
         // call-hash comparison inside claim_approval_checked).
         let policy_ok = matches!(
             self.tools.permissions().check(permission_value).await,
-            evohime_permissions::PermissionDecision::Allowed | evohime_permissions::PermissionDecision::NeedsApproval
+            evohime_permissions::PermissionDecision::Allowed
+                | evohime_permissions::PermissionDecision::NeedsApproval
         );
         let mut database = journal.database().lock().await;
         let signer = CoreReceiptSigner(Arc::clone(keys));
-        let mut runtime = ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| e.to_string())?;
-        runtime.grant_approval(approval_id).map_err(|e| e.to_string())?;
-        runtime.claim_approval_checked(&request, approval_id, |_| policy_ok).map_err(|e| e.to_string())?;
+        let mut runtime =
+            ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| e.to_string())?;
+        runtime
+            .grant_approval(approval_id)
+            .map_err(|e| e.to_string())?;
+        runtime
+            .claim_approval_checked(&request, approval_id, |_| policy_ok)
+            .map_err(|e| e.to_string())?;
         Ok((action_id, request))
     }
 
@@ -4198,23 +4384,38 @@ impl ToolAgent {
         approval_id: Uuid,
         code: &str,
     ) {
-        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else { return; };
+        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else {
+            return;
+        };
         let mut database = journal.database().lock().await;
         let action_id: Result<String, _> = database.connection().query_row(
             "SELECT action_id FROM receipt_approval_intents WHERE approval_id=?1",
-            [approval_id.to_string()], |row| row.get(0),
+            [approval_id.to_string()],
+            |row| row.get(0),
         );
-        let Ok(action_id) = action_id else { return; };
-        let Ok(action_id) = action_id.parse::<Uuid>() else { return; };
+        let Ok(action_id) = action_id else {
+            return;
+        };
+        let Ok(action_id) = action_id.parse::<Uuid>() else {
+            return;
+        };
         let request = ReceiptActionRequest {
-            action_id, task_id: task_id.to_owned(), run_id: task_id.to_owned(), tool_name: tool.to_owned(),
-            policy_id: format!("permission:{permission}"), normalized_scope: scope.to_owned(), input: input.clone(),
-            policy_decision: ReceiptPolicyDecision::ApprovalRequired, approval_id: Some(approval_id),
+            action_id,
+            task_id: task_id.to_owned(),
+            run_id: task_id.to_owned(),
+            tool_name: tool.to_owned(),
+            policy_id: format!("permission:{permission}"),
+            normalized_scope: scope.to_owned(),
+            input: input.clone(),
+            policy_decision: ReceiptPolicyDecision::ApprovalRequired,
+            approval_id: Some(approval_id),
             parent_approval_ref: None,
             preview: serde_json::to_string(preview).unwrap_or_else(|_| "approval".to_owned()),
         };
         let signer = CoreReceiptSigner(Arc::clone(keys));
-        let Ok(mut runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) else { return; };
+        let Ok(mut runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) else {
+            return;
+        };
         let _ = runtime.refuse(&request, code);
     }
 
@@ -4229,55 +4430,127 @@ impl ToolAgent {
         match preflight {
             evohime_tool_runtime::ToolPreflightDecision::Denied(permission) => {
                 if let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) {
-                    let request = ReceiptActionRequest { action_id: Uuid::now_v7(), task_id: context.task_id.to_string(), run_id: context.task_id.to_string(), tool_name: name.to_owned(), policy_id: "permission-v1".into(), normalized_scope: String::new(), input: input.clone(), policy_decision: ReceiptPolicyDecision::Deny, approval_id: None, parent_approval_ref: None, preview: String::new() };
+                    let request = ReceiptActionRequest {
+                        action_id: Uuid::now_v7(),
+                        task_id: context.task_id.to_string(),
+                        run_id: context.task_id.to_string(),
+                        tool_name: name.to_owned(),
+                        policy_id: "permission-v1".into(),
+                        normalized_scope: String::new(),
+                        input: input.clone(),
+                        policy_decision: ReceiptPolicyDecision::Deny,
+                        approval_id: None,
+                        parent_approval_ref: None,
+                        preview: String::new(),
+                    };
                     let mut database = journal.database().lock().await;
                     let signer = CoreReceiptSigner(Arc::clone(keys));
-                    if let Ok(mut runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) {
+                    if let Ok(mut runtime) = ReceiptRuntime::new(database.connection_mut(), &signer)
+                    {
                         if runtime.prepare(request.clone()).is_err() {
-                            let _ = runtime.store_unsigned_runtime_marker(request.action_id, "signer_unavailable");
+                            let _ = runtime.store_unsigned_runtime_marker(
+                                request.action_id,
+                                "signer_unavailable",
+                            );
                         }
                     }
                 }
-                Err(evohime_tool_runtime::ToolError::PermissionDenied(permission))
+                Err(evohime_tool_runtime::ToolError::PermissionDenied(
+                    permission,
+                ))
             }
             evohime_tool_runtime::ToolPreflightDecision::ApprovalRequired { .. } => {
-                self.tools.execute_with_cancellation(context, name, input, cancellation).await
+                self.tools
+                    .execute_with_cancellation(context, name, input, cancellation)
+                    .await
             }
             evohime_tool_runtime::ToolPreflightDecision::Allowed { scope, preview } => {
-                let scope = self.tools.permissions().normalize_scope(&scope)
+                let scope = self
+                    .tools
+                    .permissions()
+                    .normalize_scope(&scope)
                     .map_err(evohime_tool_runtime::ToolError::Execution)?;
-                let read_only = matches!(name, "filesystem.read" | "filesystem.list" | "git.status" | "git.diff" | "workspace.list" | "workspace.read" | "workspace.search");
+                let read_only = matches!(
+                    name,
+                    "filesystem.read"
+                        | "filesystem.list"
+                        | "git.status"
+                        | "git.diff"
+                        | "workspace.list"
+                        | "workspace.read"
+                        | "workspace.search"
+                );
                 if read_only {
                     let candidate_id = Uuid::now_v7();
-                    if let Some((false, policy_version)) = self.receipt_sampling_decision(candidate_id, name).await {
-                        let result = self.tools.execute_with_cancellation(context, name, input.clone(), cancellation).await;
+                    if let Some((false, policy_version)) =
+                        self.receipt_sampling_decision(candidate_id, name).await
+                    {
+                        let result = self
+                            .tools
+                            .execute_with_cancellation(context, name, input.clone(), cancellation)
+                            .await;
                         if result.is_ok() {
-                            self.receipt_unsampled_marker(candidate_id, name, &scope, &input, policy_version).await;
+                            self.receipt_unsampled_marker(
+                                candidate_id,
+                                name,
+                                &scope,
+                                &input,
+                                policy_version,
+                            )
+                            .await;
                             return result;
                         }
-                        let request = self.receipt_prepare_allowed(&context.task_id.to_string(), name, &scope, &input, &preview).await
+                        let request = self
+                            .receipt_prepare_allowed(
+                                &context.task_id.to_string(),
+                                name,
+                                &scope,
+                                &input,
+                                &preview,
+                            )
+                            .await
                             .map_err(evohime_tool_runtime::ToolError::Execution)?;
                         if let Some(request) = request {
                             let outcome = match &result {
                                 Ok(value) => recovery::ToolOutcome::success(value.clone()),
-                                Err(error) => recovery::ToolOutcome::from_error(evohime_tool_runtime::ToolError::Execution(error.to_string())),
+                                Err(error) => recovery::ToolOutcome::from_error(
+                                    evohime_tool_runtime::ToolError::Execution(error.to_string()),
+                                ),
                             };
                             self.receipt_complete(&request, &outcome).await;
                         }
                         return result;
                     }
                 }
-                let request = self.receipt_prepare_allowed(&context.task_id.to_string(), name, &scope, &input, &preview).await
+                let request = self
+                    .receipt_prepare_allowed(
+                        &context.task_id.to_string(),
+                        name,
+                        &scope,
+                        &input,
+                        &preview,
+                    )
+                    .await
                     .map_err(evohime_tool_runtime::ToolError::Execution)?;
-                let result = self.tools.execute_with_cancellation(context, name, input, cancellation).await;
+                let result = self
+                    .tools
+                    .execute_with_cancellation(context, name, input, cancellation)
+                    .await;
                 if let Some(request) = request {
-                    if matches!(&result, Err(evohime_tool_runtime::ToolError::NeedsApproval { .. })) {
+                    if matches!(
+                        &result,
+                        Err(evohime_tool_runtime::ToolError::NeedsApproval { .. })
+                    ) {
                         self.receipt_pending(&request, "unknown").await;
-                        return Err(evohime_tool_runtime::ToolError::Execution("receipt.policy_changed".into()));
+                        return Err(evohime_tool_runtime::ToolError::Execution(
+                            "receipt.policy_changed".into(),
+                        ));
                     }
                     let outcome = match &result {
                         Ok(value) => recovery::ToolOutcome::success(value.clone()),
-                        Err(error) => recovery::ToolOutcome::from_error(evohime_tool_runtime::ToolError::Execution(error.to_string())),
+                        Err(error) => recovery::ToolOutcome::from_error(
+                            evohime_tool_runtime::ToolError::Execution(error.to_string()),
+                        ),
                     };
                     self.receipt_complete(&request, &outcome).await;
                 }
@@ -4291,71 +4564,140 @@ impl ToolAgent {
         request: &ReceiptActionRequest,
         outcome: &recovery::ToolOutcome,
     ) {
-        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else { return; };
-        let output_digest = outcome.structured.get("output_digest").and_then(|value| value.as_str())
-            .map(str::to_owned).unwrap_or_else(|| evohime_receipts::sha256_hex(outcome.output.as_bytes()));
+        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else {
+            return;
+        };
+        let output_digest = outcome
+            .structured
+            .get("output_digest")
+            .and_then(|value| value.as_str())
+            .map(str::to_owned)
+            .unwrap_or_else(|| evohime_receipts::sha256_hex(outcome.output.as_bytes()));
         let mut database = journal.database().lock().await;
         let signer = CoreReceiptSigner(Arc::clone(keys));
-        let mut runtime = match ReceiptRuntime::new(database.connection_mut(), &signer) { Ok(value) => value, Err(_) => return };
+        let mut runtime = match ReceiptRuntime::new(database.connection_mut(), &signer) {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         let status = if outcome.ok { "succeeded" } else { "failed" };
         runtime.mark_returned(request.action_id).ok();
-        if runtime.complete(request, status, &output_digest, (!outcome.ok).then_some("tool_error")).is_err() {
+        if runtime
+            .complete(
+                request,
+                status,
+                &output_digest,
+                (!outcome.ok).then_some("tool_error"),
+            )
+            .is_err()
+        {
             let mut recovery_code = "signature_failed";
-            let pre_hash = runtime.action(request.action_id).ok().flatten().and_then(|row| row.pre_receipt_hash).unwrap_or_default();
+            let pre_hash = runtime
+                .action(request.action_id)
+                .ok()
+                .flatten()
+                .and_then(|row| row.pre_receipt_hash)
+                .unwrap_or_default();
             let key_id = match keys.storage_key_id() {
                 Ok(value) => value,
-                Err(_) => { recovery_code = "storage_key_unavailable"; "unavailable".to_owned() }
+                Err(_) => {
+                    recovery_code = "storage_key_unavailable";
+                    "unavailable".to_owned()
+                }
             };
             let row = ProtectedActionRow {
                 schema_version: 1,
                 action_id: request.action_id.to_string(),
                 pre_receipt_hash: pre_hash,
-                tool_args_hash: evohime_receipts::runtime::canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input).unwrap_or_default(),
+                tool_args_hash: evohime_receipts::runtime::canonical_call_hash(
+                    &request.tool_name,
+                    &request.normalized_scope,
+                    &request.input,
+                )
+                .unwrap_or_default(),
                 result_status: status.to_owned(),
                 result_hash: evohime_receipts::result_hash(&if outcome.ok {
                     serde_json::json!({"status":"succeeded","output_digest":output_digest})
                 } else {
                     serde_json::json!({"status":"failed","error_category":"tool_error"})
-                }).unwrap_or_else(|_| evohime_receipts::sha256_hex(b"tool_error")),
+                })
+                .unwrap_or_else(|_| evohime_receipts::sha256_hex(b"tool_error")),
                 recovery_code: recovery_code.to_owned(),
-                created_at_ms: SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|value| value.as_millis() as i64).unwrap_or_default(),
+                created_at_ms: SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|value| value.as_millis() as i64)
+                    .unwrap_or_default(),
                 key_id,
             };
             if let Ok(plain) = serde_json::to_vec(&row) {
                 match keys.protect_storage(&plain) {
-                    Ok(envelope) => if runtime.store_protected_envelope(&row, envelope).is_err() { recovery_code = "storage_key_unavailable"; },
+                    Ok(envelope) => {
+                        if runtime.store_protected_envelope(&row, envelope).is_err() {
+                            recovery_code = "storage_key_unavailable";
+                        }
+                    }
                     Err(_) => recovery_code = "storage_key_unavailable",
                 }
-            } else { recovery_code = "storage_key_unavailable"; }
+            } else {
+                recovery_code = "storage_key_unavailable";
+            }
             if recovery_code == "storage_key_unavailable" {
-                let _ = runtime.store_unsigned_runtime_marker(request.action_id, "storage_key_unavailable");
+                let _ = runtime
+                    .store_unsigned_runtime_marker(request.action_id, "storage_key_unavailable");
             }
             let _ = runtime.mark_pending_recovery(request.action_id, recovery_code);
         }
     }
 
     async fn receipt_pending(&self, request: &ReceiptActionRequest, code: &str) {
-        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else { return; };
+        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else {
+            return;
+        };
         let mut database = journal.database().lock().await;
         let signer = CoreReceiptSigner(Arc::clone(keys));
-        if let Ok(runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) { let _ = runtime.mark_pending_recovery(request.action_id, code); }
+        if let Ok(runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) {
+            let _ = runtime.mark_pending_recovery(request.action_id, code);
+        }
     }
 
     async fn receipt_sampling_decision(&self, action_id: Uuid, tool: &str) -> Option<(bool, u8)> {
-        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else { return None; };
+        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else {
+            return None;
+        };
         let mut database = journal.database().lock().await;
         let signer = CoreReceiptSigner(Arc::clone(keys));
         let runtime = ReceiptRuntime::new(database.connection_mut(), &signer).ok()?;
         let (rate, version) = runtime.audit_sampling_config().ok()?;
-        Some((evohime_receipts::runtime::sampled_read_only(&action_id.to_string(), tool, rate), version))
+        Some((
+            evohime_receipts::runtime::sampled_read_only(&action_id.to_string(), tool, rate),
+            version,
+        ))
     }
 
-    async fn receipt_unsampled_marker(&self, action_id: Uuid, tool: &str, scope: &str, input: &serde_json::Value, policy_version: u8) {
-        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else { return; };
-        let Ok(call_hash) = evohime_receipts::runtime::canonical_call_hash(tool, scope, input) else { return; };
+    async fn receipt_unsampled_marker(
+        &self,
+        action_id: Uuid,
+        tool: &str,
+        scope: &str,
+        input: &serde_json::Value,
+        policy_version: u8,
+    ) {
+        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else {
+            return;
+        };
+        let Ok(call_hash) = evohime_receipts::runtime::canonical_call_hash(tool, scope, input)
+        else {
+            return;
+        };
         let mut database = journal.database().lock().await;
         let signer = CoreReceiptSigner(Arc::clone(keys));
-        if let Ok(runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) { let _ = runtime.store_unsampled_read_only_marker(action_id, tool, &call_hash, policy_version); }
+        if let Ok(runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) {
+            let _ = runtime.store_unsampled_read_only_marker(
+                action_id,
+                tool,
+                &call_hash,
+                policy_version,
+            );
+        }
     }
 
     async fn persist_lesson(&self, task_id: &str, workspace_root: &std::path::Path) {
@@ -4723,7 +5065,11 @@ impl ToolAgent {
             required_privacy: PrivacyClass::Internal,
             allow_fallback: true,
             preferred_route: None,
-            task_class: None, offline: false, allow_cloud: true, estimated_input_tokens: 0, quality_delta: 0.05,
+            task_class: None,
+            offline: false,
+            allow_cloud: true,
+            estimated_input_tokens: 0,
+            quality_delta: 0.05,
         };
         for attempt in 0..=extraction::RETRY_DELAYS_MS.len() {
             if attempt > 0 {
@@ -5130,37 +5476,38 @@ impl ToolAgent {
                 }),
             );
 
-            let result: Result<evohime_model_gateway::PolicyChatResult, ProviderError> = match timeout(
-                timeout_duration,
-                self.gateway.chat_with_tools_with_policy_and_route(
-                    RoutingMode::Balanced,
-                    &RoutingRequest {
-                        required_capabilities: vec!["chat".into()],
-                        max_cost_micros_per_1k_tokens: None,
-                        max_latency_ms: None,
-                        required_privacy: PrivacyClass::Internal,
-                        allow_fallback: true,
-                        preferred_route: preferred_route.map(str::to_owned),
-                        task_class: task_class.map(str::to_owned),
-                        offline: false,
-                        allow_cloud: true,
-                        estimated_input_tokens,
-                        quality_delta: 0.05,
-                    },
-                    self.selected_model.get().as_deref(),
-                    messages,
-                    specs,
-                ),
-            )
-            .await
-            {
-                Ok(Ok(result)) => return Ok(result),
-                Ok(Err(error)) => Err(error),
-                Err(_) => Err(ProviderError::Http(format!(
-                    "model timeout after {} seconds",
-                    config.model_timeout_secs
-                ))),
-            };
+            let result: Result<evohime_model_gateway::PolicyChatResult, ProviderError> =
+                match timeout(
+                    timeout_duration,
+                    self.gateway.chat_with_tools_with_policy_and_route(
+                        RoutingMode::Balanced,
+                        &RoutingRequest {
+                            required_capabilities: vec!["chat".into()],
+                            max_cost_micros_per_1k_tokens: None,
+                            max_latency_ms: None,
+                            required_privacy: PrivacyClass::Internal,
+                            allow_fallback: true,
+                            preferred_route: preferred_route.map(str::to_owned),
+                            task_class: task_class.map(str::to_owned),
+                            offline: false,
+                            allow_cloud: true,
+                            estimated_input_tokens,
+                            quality_delta: 0.05,
+                        },
+                        self.selected_model.get().as_deref(),
+                        messages,
+                        specs,
+                    ),
+                )
+                .await
+                {
+                    Ok(Ok(result)) => return Ok(result),
+                    Ok(Err(error)) => Err(error),
+                    Err(_) => Err(ProviderError::Http(format!(
+                        "model timeout after {} seconds",
+                        config.model_timeout_secs
+                    ))),
+                };
 
             match result {
                 Err(error) => {
@@ -5621,8 +5968,18 @@ impl ToolAgent {
                     task_class,
                     result.decision.as_ref(),
                     result.snapshot_hash.as_deref(),
-                    result.attempt_trace.as_ref().and_then(|trace| trace.attempts.last()).map(|attempt| attempt.attempt_id).unwrap_or(0),
-                    result.attempt_trace.as_ref().and_then(|trace| trace.attempts.last()).map(|attempt| attempt.now_ms).unwrap_or_else(task_memory::now_millis),
+                    result
+                        .attempt_trace
+                        .as_ref()
+                        .and_then(|trace| trace.attempts.last())
+                        .map(|attempt| attempt.attempt_id)
+                        .unwrap_or(0),
+                    result
+                        .attempt_trace
+                        .as_ref()
+                        .and_then(|trace| trace.attempts.last())
+                        .map(|attempt| attempt.now_ms)
+                        .unwrap_or_else(task_memory::now_millis),
                 ),
             });
             let result = result.result;
@@ -6051,63 +6408,108 @@ impl ToolAgent {
                                     evohime_tool_runtime::ToolError::Execution(error),
                                 )
                             } else {
-                            let receiver = self.approvals.register(approval_id).await;
-                            let _ = events.send(CoreEvent::ApprovalRequired {
-                                task_id: task_id.clone(),
-                                approval_id: approval_id.to_string(),
-                                tool_name: tool.clone(),
-                                permission: format!("{permission:?}"),
-                                scope: scope.clone(),
-                                preview: preview.clone(),
-                            });
-                            let granted = tokio::select! {
-                                _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
-                                result = receiver => result.unwrap_or(false),
-                            };
-                            if !granted {
-                                self.receipt_refuse_approval(
-                                    &task_id, &tool, &format!("{permission:?}"), &scope,
-                                    &input, &preview, approval_id, "approval_denied",
-                                ).await;
-                                recovery::ToolOutcome::denied_by_user(
-                                    "approval denied: mutation not performed",
-                                )
-                            } else {
-                                match self.receipt_claim_approval(
-                                    &task_id, &tool, &format!("{permission:?}"), permission, &scope,
-                                    &input, &preview, approval_id,
-                                ).await {
-                                    Ok((action_id, request)) => {
-                                        if action_id != Uuid::nil() {
-                                            if let Some(journal) = &self.journal {
-                                                if let Some(keys) = &self.receipt_keys {
-                                                    let mut database = journal.database().lock().await;
-                                                    let signer = CoreReceiptSigner(Arc::clone(keys));
-                                                    if let Ok(runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) {
-                                                        if let Err(error) = runtime.mark_started(action_id) {
-                                                            return Err(AgentRunError::Internal(error.to_string()));
+                                let receiver = self.approvals.register(approval_id).await;
+                                let _ = events.send(CoreEvent::ApprovalRequired {
+                                    task_id: task_id.clone(),
+                                    approval_id: approval_id.to_string(),
+                                    tool_name: tool.clone(),
+                                    permission: format!("{permission:?}"),
+                                    scope: scope.clone(),
+                                    preview: preview.clone(),
+                                });
+                                let granted = tokio::select! {
+                                    _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
+                                    result = receiver => result.unwrap_or(false),
+                                };
+                                if !granted {
+                                    self.receipt_refuse_approval(
+                                        &task_id,
+                                        &tool,
+                                        &format!("{permission:?}"),
+                                        &scope,
+                                        &input,
+                                        &preview,
+                                        approval_id,
+                                        "approval_denied",
+                                    )
+                                    .await;
+                                    recovery::ToolOutcome::denied_by_user(
+                                        "approval denied: mutation not performed",
+                                    )
+                                } else {
+                                    match self
+                                        .receipt_claim_approval(
+                                            &task_id,
+                                            &tool,
+                                            &format!("{permission:?}"),
+                                            permission,
+                                            &scope,
+                                            &input,
+                                            &preview,
+                                            approval_id,
+                                        )
+                                        .await
+                                    {
+                                        Ok((action_id, request)) => {
+                                            if action_id != Uuid::nil() {
+                                                if let Some(journal) = &self.journal {
+                                                    if let Some(keys) = &self.receipt_keys {
+                                                        let mut database =
+                                                            journal.database().lock().await;
+                                                        let signer =
+                                                            CoreReceiptSigner(Arc::clone(keys));
+                                                        if let Ok(runtime) = ReceiptRuntime::new(
+                                                            database.connection_mut(),
+                                                            &signer,
+                                                        ) {
+                                                            if let Err(error) =
+                                                                runtime.mark_started(action_id)
+                                                            {
+                                                                return Err(
+                                                                    AgentRunError::Internal(
+                                                                        error.to_string(),
+                                                                    ),
+                                                                );
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
+                                            let outcome = match self
+                                                .tools
+                                                .execute_after_approval(
+                                                    &context,
+                                                    &tool,
+                                                    input,
+                                                    approval_id,
+                                                    cancellation.clone(),
+                                                )
+                                                .await
+                                            {
+                                                Ok(result) => {
+                                                    recovery::ToolOutcome::success(result)
+                                                }
+                                                Err(error) => {
+                                                    recovery::ToolOutcome::from_error(error)
+                                                }
+                                            };
+                                            if action_id != Uuid::nil() {
+                                                self.receipt_complete(&request, &outcome).await;
+                                            }
+                                            outcome
                                         }
-                                        let outcome = match self.tools.execute_after_approval(&context, &tool, input, approval_id, cancellation.clone()).await {
-                                            Ok(result) => recovery::ToolOutcome::success(result),
-                                            Err(error) => recovery::ToolOutcome::from_error(error),
-                                        };
-                                        if action_id != Uuid::nil() { self.receipt_complete(&request, &outcome).await; }
-                                        outcome
-                                    }
-                                    Err(error) => {
-                                        // claim_approval_checked atomically
-                                        // appends the refusal and closes the
-                                        // durable intent before returning the
-                                        // error. Do not append it a second
-                                        // time from the orchestration layer.
-                                        recovery::ToolOutcome::from_error(evohime_tool_runtime::ToolError::Execution(error))
+                                        Err(error) => {
+                                            // claim_approval_checked atomically
+                                            // appends the refusal and closes the
+                                            // durable intent before returning the
+                                            // error. Do not append it a second
+                                            // time from the orchestration layer.
+                                            recovery::ToolOutcome::from_error(
+                                                evohime_tool_runtime::ToolError::Execution(error),
+                                            )
+                                        }
                                     }
                                 }
-                            }
                             }
                         }
                         Err(error) => recovery::ToolOutcome::from_error(error),
@@ -6416,7 +6818,14 @@ impl TaskExecutor for ToolAgent {
         };
         Box::pin(async move {
             agent
-                .run_once_with_cancellation(task_id, prompt, workspace_root, &events, cancellation, None)
+                .run_once_with_cancellation(
+                    task_id,
+                    prompt,
+                    workspace_root,
+                    &events,
+                    cancellation,
+                    None,
+                )
                 .await
         })
     }
@@ -6442,7 +6851,16 @@ impl TaskExecutor for ToolAgent {
             extraction_guard: Arc::clone(&self.extraction_guard),
         };
         Box::pin(async move {
-            agent.run_once_with_cancellation(task_id, prompt, workspace_root, &events, cancellation, preferred_route_hint).await
+            agent
+                .run_once_with_cancellation(
+                    task_id,
+                    prompt,
+                    workspace_root,
+                    &events,
+                    cancellation,
+                    preferred_route_hint,
+                )
+                .await
         })
     }
 }
@@ -6884,12 +7302,22 @@ impl TaskCoordinator {
                     }
                 });
             }
-            CoreCommand::ResolveRoutingDecision { trace_id, approve, reply } => {
+            CoreCommand::ResolveRoutingDecision {
+                trace_id,
+                approve,
+                reply,
+            } => {
                 let approvals = state.lock().await.routing_approvals.clone();
                 match approvals.resolve(&trace_id, approve).await {
                     Ok(_) => {
-                        state.lock().await.routing_decisions.insert(trace_id, approve);
-                        let _ = reply.send(Ok(serde_json::json!({"accepted": true}).to_string().into_bytes()));
+                        state
+                            .lock()
+                            .await
+                            .routing_decisions
+                            .insert(trace_id, approve);
+                        let _ = reply.send(Ok(serde_json::json!({"accepted": true})
+                            .to_string()
+                            .into_bytes()));
                     }
                     Err(error) => {
                         let _ = reply.send(Err(error));
@@ -9184,7 +9612,8 @@ impl TaskCoordinator {
                     // `ChildTaskRequest::validate` used by the pure unit
                     // tests, now enforced on the live IPC path.
                     request.validate().map_err(|error| error.to_string())?;
-                    let parent_sequence = journal.next_child_parent_sequence(&parent_task_id).await?;
+                    let parent_sequence =
+                        journal.next_child_parent_sequence(&parent_task_id).await?;
                     let typed_correlation = crate::child_contracts::CorrelationContext::new(
                         crate::child_contracts::CorrelationId::new(parent_task_id.clone())
                             .map_err(|error| error.to_string())?,
@@ -9193,8 +9622,11 @@ impl TaskCoordinator {
                         parent_sequence,
                     );
                     let typed_request = crate::child_contracts::TypedChildTaskRequest::new(
-                        child_task_id.clone(), parent_task_id.clone(), role.clone(),
-                        format!("{kind} child workflow"), typed_correlation,
+                        child_task_id.clone(),
+                        parent_task_id.clone(),
+                        role.clone(),
+                        format!("{kind} child workflow"),
+                        typed_correlation,
                     )
                     .map_err(|error| error.to_string())?
                     .with_context(request.reduced_context.clone())
@@ -9208,7 +9640,9 @@ impl TaskCoordinator {
                         crate::child_contracts::CONTRACT_VERSION,
                     )
                     .map_err(|error| error.to_string())?;
-                    typed_request.validate().map_err(|error| error.to_string())?;
+                    typed_request
+                        .validate()
+                        .map_err(|error| error.to_string())?;
                     let request_json =
                         serde_json::to_string(&request).map_err(|error| error.to_string())?;
                     let record = evohime_local_storage::child_store::ChildTaskRequestRecord {
@@ -9220,42 +9654,52 @@ impl TaskCoordinator {
                     };
                     journal.save_child_task_request(&record).await?;
                     let now_ms = task_memory::now_millis() as i64;
-                    journal.save_coordinator_checkpoint(&evohime_local_storage::child_store::CoordinatorCheckpointRecord {
-                        schema_version: 1,
-                        child_task_id: request.child_task_id.clone(),
-                        parent_task_id: request.parent_task_id.clone(),
-                        revision: 0,
-                        state: "created".into(),
-                        failure_reason: None,
-                        dead_letter: false,
-                        report_json: None,
-                        evidence_locators_json: None,
-                        provenance_hashes_json: None,
-                        parent_sequence: parent_sequence as i64,
-                        lease_deadline_monotonic_ms: Some(now_ms + crate::child_workflow::DEFAULT_LEASE_MS as i64),
-                        lease_created_monotonic_ms: Some(now_ms),
-                        lease_clock_boot_id: Some("current".into()),
-                        lease_holder_process_id: Some(std::process::id().to_string()),
-                        last_transition_event: "child.request.submitted".into(),
-                        last_transition_at_ms: now_ms,
-                        created_at_ms: now_ms,
-                    }).await?;
-                    let _ = state.lock().await.events.send(CoreEvent::ChildWorkflowProjection {
-                        task_id: request.parent_task_id.clone(),
-                        projection: crate::child_workflow::ChildProjection {
-                            event_id: format!("{}:created", request.child_task_id),
-                            parent_task_id: request.parent_task_id.clone(),
-                            child_task_id: request.child_task_id.clone(),
-                            role: request.role.clone(),
-                            revision: 0,
-                            state: crate::child_workflow::CoordinatorState::Created,
-                            reason_code: None,
-                            parent_sequence,
-                            budget: typed_request.budget.clone(),
-                            lease_live: false,
-                            dead_letter: false,
-                        },
-                    });
+                    journal
+                        .save_coordinator_checkpoint(
+                            &evohime_local_storage::child_store::CoordinatorCheckpointRecord {
+                                schema_version: 1,
+                                child_task_id: request.child_task_id.clone(),
+                                parent_task_id: request.parent_task_id.clone(),
+                                revision: 0,
+                                state: "created".into(),
+                                failure_reason: None,
+                                dead_letter: false,
+                                report_json: None,
+                                evidence_locators_json: None,
+                                provenance_hashes_json: None,
+                                parent_sequence: parent_sequence as i64,
+                                lease_deadline_monotonic_ms: Some(
+                                    now_ms + crate::child_workflow::DEFAULT_LEASE_MS as i64,
+                                ),
+                                lease_created_monotonic_ms: Some(now_ms),
+                                lease_clock_boot_id: Some("current".into()),
+                                lease_holder_process_id: Some(std::process::id().to_string()),
+                                last_transition_event: "child.request.submitted".into(),
+                                last_transition_at_ms: now_ms,
+                                created_at_ms: now_ms,
+                            },
+                        )
+                        .await?;
+                    let _ = state
+                        .lock()
+                        .await
+                        .events
+                        .send(CoreEvent::ChildWorkflowProjection {
+                            task_id: request.parent_task_id.clone(),
+                            projection: crate::child_workflow::ChildProjection {
+                                event_id: format!("{}:created", request.child_task_id),
+                                parent_task_id: request.parent_task_id.clone(),
+                                child_task_id: request.child_task_id.clone(),
+                                role: request.role.clone(),
+                                revision: 0,
+                                state: crate::child_workflow::CoordinatorState::Created,
+                                reason_code: None,
+                                parent_sequence,
+                                budget: typed_request.budget.clone(),
+                                lease_live: false,
+                                dead_letter: false,
+                            },
+                        });
                     Self::record_audit(
                         &state,
                         crate::audit::AuditKind::Evidence,
@@ -9279,7 +9723,8 @@ impl TaskCoordinator {
                         parent_task_id.clone(),
                         "child.contract.rejected",
                         [("reason".to_owned(), error.clone())],
-                    ).await;
+                    )
+                    .await;
                 }
                 let _ = reply.send(result);
             }
@@ -9322,11 +9767,19 @@ impl TaskCoordinator {
                         serde_json::from_str(&stored_request.request_json)
                             .map_err(|error| error.to_string())?;
                     let typed_request = crate::child_contracts::TypedChildTaskRequest::new(
-                        request.child_task_id.clone(), request.parent_task_id.clone(),
-                        request.role.clone(), "legacy child workflow",
+                        request.child_task_id.clone(),
+                        request.parent_task_id.clone(),
+                        request.role.clone(),
+                        "legacy child workflow",
                         crate::child_contracts::CorrelationContext::new(
-                            crate::child_contracts::CorrelationId::new(request.parent_task_id.clone()).map_err(|error| error.to_string())?,
-                            crate::child_contracts::CorrelationId::new(request.child_task_id.clone()).map_err(|error| error.to_string())?,
+                            crate::child_contracts::CorrelationId::new(
+                                request.parent_task_id.clone(),
+                            )
+                            .map_err(|error| error.to_string())?,
+                            crate::child_contracts::CorrelationId::new(
+                                request.child_task_id.clone(),
+                            )
+                            .map_err(|error| error.to_string())?,
                             parent_sequence,
                         ),
                     )
@@ -9338,12 +9791,19 @@ impl TaskCoordinator {
                     .with_capabilities(request.requested_capabilities.clone())
                     .map_err(|error| error.to_string())?;
                     let typed_status = match report.status {
-                        crate::child_runtime::ChildReportStatus::Complete => crate::child_contracts::TypedReportStatus::Complete,
-                        crate::child_runtime::ChildReportStatus::Partial => crate::child_contracts::TypedReportStatus::Partial,
-                        crate::child_runtime::ChildReportStatus::Rejected => crate::child_contracts::TypedReportStatus::Rejected,
+                        crate::child_runtime::ChildReportStatus::Complete => {
+                            crate::child_contracts::TypedReportStatus::Complete
+                        }
+                        crate::child_runtime::ChildReportStatus::Partial => {
+                            crate::child_contracts::TypedReportStatus::Partial
+                        }
+                        crate::child_runtime::ChildReportStatus::Rejected => {
+                            crate::child_contracts::TypedReportStatus::Rejected
+                        }
                     };
                     let typed_report = crate::child_contracts::TypedChildReport::new(
-                        report.child_task_id.clone(), request.parent_task_id.clone(),
+                        report.child_task_id.clone(),
+                        request.parent_task_id.clone(),
                         typed_request.correlation.clone(),
                         crate::child_contracts::Provenance::new(parent_sequence).mark_completed(),
                     )
@@ -9383,42 +9843,56 @@ impl TaskCoordinator {
                     };
                     journal.save_child_report(&record).await?;
                     let now_ms = task_memory::now_millis() as i64;
-                    journal.save_coordinator_checkpoint(&evohime_local_storage::child_store::CoordinatorCheckpointRecord {
-                        schema_version: 1,
-                        child_task_id: accepted.child_task_id.clone(),
-                        parent_task_id: stored_request.parent_task_id.clone(),
-                        revision: typed_accepted.revision.unwrap_or(0) as i64,
-                        state: "accepted".into(),
-                        failure_reason: None,
-                        dead_letter: false,
-                        report_json: Some(serde_json::to_string(&typed_accepted).map_err(|error| error.to_string())?),
-                        evidence_locators_json: None,
-                        provenance_hashes_json: Some(serde_json::to_string(&typed_accepted.provenance).map_err(|error| error.to_string())?),
-                        parent_sequence: parent_sequence as i64,
-                        lease_deadline_monotonic_ms: None,
-                        lease_created_monotonic_ms: None,
-                        lease_clock_boot_id: None,
-                        lease_holder_process_id: None,
-                        last_transition_event: "child.report.accepted".into(),
-                        last_transition_at_ms: now_ms,
-                        created_at_ms: now_ms,
-                    }).await?;
-                    let _ = state.lock().await.events.send(CoreEvent::ChildWorkflowProjection {
-                        task_id: stored_request.parent_task_id.clone(),
-                        projection: crate::child_workflow::ChildProjection {
-                            event_id: format!("{}:accepted", accepted.child_task_id),
-                            parent_task_id: stored_request.parent_task_id.clone(),
-                            child_task_id: accepted.child_task_id.clone(),
-                            role: request.role.clone(),
-                            revision: typed_accepted.revision.unwrap_or(0),
-                            state: crate::child_workflow::CoordinatorState::Accepted,
-                            reason_code: None,
-                            parent_sequence,
-                            budget: typed_request.budget.clone(),
-                            lease_live: false,
-                            dead_letter: false,
-                        },
-                    });
+                    journal
+                        .save_coordinator_checkpoint(
+                            &evohime_local_storage::child_store::CoordinatorCheckpointRecord {
+                                schema_version: 1,
+                                child_task_id: accepted.child_task_id.clone(),
+                                parent_task_id: stored_request.parent_task_id.clone(),
+                                revision: typed_accepted.revision.unwrap_or(0) as i64,
+                                state: "accepted".into(),
+                                failure_reason: None,
+                                dead_letter: false,
+                                report_json: Some(
+                                    serde_json::to_string(&typed_accepted)
+                                        .map_err(|error| error.to_string())?,
+                                ),
+                                evidence_locators_json: None,
+                                provenance_hashes_json: Some(
+                                    serde_json::to_string(&typed_accepted.provenance)
+                                        .map_err(|error| error.to_string())?,
+                                ),
+                                parent_sequence: parent_sequence as i64,
+                                lease_deadline_monotonic_ms: None,
+                                lease_created_monotonic_ms: None,
+                                lease_clock_boot_id: None,
+                                lease_holder_process_id: None,
+                                last_transition_event: "child.report.accepted".into(),
+                                last_transition_at_ms: now_ms,
+                                created_at_ms: now_ms,
+                            },
+                        )
+                        .await?;
+                    let _ = state
+                        .lock()
+                        .await
+                        .events
+                        .send(CoreEvent::ChildWorkflowProjection {
+                            task_id: stored_request.parent_task_id.clone(),
+                            projection: crate::child_workflow::ChildProjection {
+                                event_id: format!("{}:accepted", accepted.child_task_id),
+                                parent_task_id: stored_request.parent_task_id.clone(),
+                                child_task_id: accepted.child_task_id.clone(),
+                                role: request.role.clone(),
+                                revision: typed_accepted.revision.unwrap_or(0),
+                                state: crate::child_workflow::CoordinatorState::Accepted,
+                                reason_code: None,
+                                parent_sequence,
+                                budget: typed_request.budget.clone(),
+                                lease_live: false,
+                                dead_letter: false,
+                            },
+                        });
                     Self::record_audit(
                         &state,
                         crate::audit::AuditKind::Evidence,
@@ -9448,7 +9922,8 @@ impl TaskCoordinator {
                         child_task_id.clone(),
                         "child.contract.rejected",
                         [("reason".to_owned(), error.clone())],
-                    ).await;
+                    )
+                    .await;
                 }
                 let _ = reply.send(result);
             }
@@ -10517,16 +10992,34 @@ mod tests {
             let events = events.clone();
             tokio::spawn(async move {
                 registry
-                    .wait_for_decision("task", "run", "trace", "cloud", 1_000, &events, &cancellation)
+                    .wait_for_decision(
+                        "task",
+                        "run",
+                        "trace",
+                        "cloud",
+                        1_000,
+                        &events,
+                        &cancellation,
+                    )
                     .await
             })
         };
-        assert!(matches!(receiver.recv().await, Ok(CoreEvent::PendingRoutingApproval { route_id, .. }) if route_id == "cloud"));
+        assert!(
+            matches!(receiver.recv().await, Ok(CoreEvent::PendingRoutingApproval { route_id, .. }) if route_id == "cloud")
+        );
         assert!(registry.resolve("trace", true).await.is_ok());
         assert_eq!(waiting.await.unwrap().unwrap(), true);
 
         let timeout_result = registry
-            .wait_for_decision("task", "run", "trace-timeout", "cloud", 1, &events, &cancellation)
+            .wait_for_decision(
+                "task",
+                "run",
+                "trace-timeout",
+                "cloud",
+                1,
+                &events,
+                &cancellation,
+            )
             .await
             .unwrap();
         assert!(!timeout_result);
@@ -10548,9 +11041,8 @@ mod tests {
 
     #[test]
     fn agent_system_prompt_explains_workspace_research_flow() {
-        let prompt = super::build_agent_system_prompt(
-            &["filesystem.list".into(), "filesystem.read".into()],
-        );
+        let prompt =
+            super::build_agent_system_prompt(&["filesystem.list".into(), "filesystem.read".into()]);
         assert!(!prompt.contains("C:\\Projects\\demo"));
         assert!(!prompt.contains("C:\\Users\\"));
         assert!(prompt.contains("filesystem.list"));
@@ -10561,15 +11053,13 @@ mod tests {
 
     #[test]
     fn git_tool_contract_exposes_safe_repository_workflow() {
-        let prompt = super::build_agent_system_prompt(
-            &[
-                "git.status".into(),
-                "git.diff".into(),
-                "git.commit".into(),
-                "git.pull".into(),
-                "git.push".into(),
-            ],
-        );
+        let prompt = super::build_agent_system_prompt(&[
+            "git.status".into(),
+            "git.diff".into(),
+            "git.commit".into(),
+            "git.pull".into(),
+            "git.push".into(),
+        ]);
         assert!(prompt.contains("git.pull"));
         assert!(prompt.contains("git.push"));
         assert!(prompt.contains("только если пользователь явно попросил"));
@@ -10612,11 +11102,9 @@ mod tests {
         assert_eq!(status.name, "git.status");
         assert_eq!(status.arguments, "{}");
 
-        let pull = super::parse_plain_tool_call(
-            "Выполняю обновление.\n\ngit.pull\n\nЖду результата.",
-            9,
-        )
-        .expect("plain git pull call");
+        let pull =
+            super::parse_plain_tool_call("Выполняю обновление.\n\ngit.pull\n\nЖду результата.", 9)
+                .expect("plain git pull call");
         assert_eq!(pull.name, "git.pull");
         assert_eq!(pull.arguments, "{}");
     }
@@ -10644,11 +11132,9 @@ mod tests {
         assert_eq!(call.name, "browser.session.read");
         assert_eq!(call.arguments, "{}");
 
-        let xml = super::parse_xml_named_tool_call(
-            "<browser.session.close></browser.session.close>",
-            11,
-        )
-        .expect("xml browser close call");
+        let xml =
+            super::parse_xml_named_tool_call("<browser.session.close></browser.session.close>", 11)
+                .expect("xml browser close call");
         assert_eq!(xml.name, "browser.session.close");
         assert_eq!(xml.arguments, "{}");
     }

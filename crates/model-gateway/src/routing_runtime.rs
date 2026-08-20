@@ -9,9 +9,7 @@ use std::collections::BTreeMap;
 use thiserror::Error;
 
 #[cfg(not(test))]
-use crate::routing_policy::{
-    select_route, RouteCandidate, RoutingDecision, RoutingRequest,
-};
+use crate::routing_policy::{select_route, RouteCandidate, RoutingDecision, RoutingRequest};
 
 // Under `cfg(test)` this crate is also built as a standalone integration
 // test binary (see `tests/routing_runtime.rs`) that pulls this file in via
@@ -427,7 +425,11 @@ mod tests {
             required_privacy: PrivacyClass::Internal,
             allow_fallback: true,
             preferred_route: None,
-            task_class: None, offline: false, allow_cloud: true, estimated_input_tokens: 0, quality_delta: 0.05,
+            task_class: None,
+            offline: false,
+            allow_cloud: true,
+            estimated_input_tokens: 0,
+            quality_delta: 0.05,
         }
     }
 

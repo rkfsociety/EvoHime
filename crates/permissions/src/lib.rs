@@ -992,11 +992,20 @@ pub fn fingerprint_input(input: &serde_json::Value) -> String {
                 .join(",")
         ),
         serde_json::Value::Object(values) => {
-            if let (Some(serde_json::Value::String(encoding)), Some(serde_json::Value::String(value)), Some(serde_json::Value::String(kind))) =
-                (values.get("encoding"), values.get("value"), values.get("type"))
-            {
+            if let (
+                Some(serde_json::Value::String(encoding)),
+                Some(serde_json::Value::String(value)),
+                Some(serde_json::Value::String(kind)),
+            ) = (
+                values.get("encoding"),
+                values.get("value"),
+                values.get("type"),
+            ) {
                 if kind == "bytes" && encoding == "base64url" && is_unpadded_base64url(value) {
-                    return format!("{{\"type\":\"bytes\",\"encoding\":\"base64url\",\"value\":{}}}", serde_json::to_string(value).unwrap_or_default());
+                    return format!(
+                        "{{\"type\":\"bytes\",\"encoding\":\"base64url\",\"value\":{}}}",
+                        serde_json::to_string(value).unwrap_or_default()
+                    );
                 }
             }
             let mut keys = values.keys().collect::<Vec<_>>();
@@ -1043,8 +1052,12 @@ fn fingerprint_number(value: &serde_json::Number) -> String {
         }
         return typed_int64(uint_value.to_string());
     }
-    let Some(float_value) = value.as_f64() else { return value.to_string(); };
-    if float_value == 0.0 { return "0".to_string(); }
+    let Some(float_value) = value.as_f64() else {
+        return value.to_string();
+    };
+    if float_value == 0.0 {
+        return "0".to_string();
+    }
     if float_value.is_finite() && float_value.fract() == 0.0 && float_value.abs() < 1e21 {
         return format!("{:.0}", float_value);
     }
@@ -1052,7 +1065,10 @@ fn fingerprint_number(value: &serde_json::Number) -> String {
 }
 
 fn is_unpadded_base64url(value: &str) -> bool {
-    !value.contains('=') && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    !value.contains('=')
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
 }
 
 fn typed_int64(decimal: String) -> String {
@@ -2032,8 +2048,14 @@ mod tests {
 
     #[test]
     fn fingerprint_int64_within_safe_bound_is_a_bare_number() {
-        assert_eq!(fingerprint_input(&serde_json::json!(9_007_199_254_740_991_i64)), "9007199254740991");
-        assert_eq!(fingerprint_input(&serde_json::json!(-9_007_199_254_740_991_i64)), "-9007199254740991");
+        assert_eq!(
+            fingerprint_input(&serde_json::json!(9_007_199_254_740_991_i64)),
+            "9007199254740991"
+        );
+        assert_eq!(
+            fingerprint_input(&serde_json::json!(-9_007_199_254_740_991_i64)),
+            "-9007199254740991"
+        );
         assert_eq!(fingerprint_input(&serde_json::json!(0)), "0");
     }
 
@@ -2082,7 +2104,8 @@ mod tests {
 
     #[test]
     fn fingerprint_pre_encoded_bytes_object_round_trips_as_plain_object() {
-        let value = serde_json::json!({"type": "bytes", "encoding": "base64url", "value": "aGVsbG8"});
+        let value =
+            serde_json::json!({"type": "bytes", "encoding": "base64url", "value": "aGVsbG8"});
         assert_eq!(
             fingerprint_input(&value),
             "{\"type\":\"bytes\",\"encoding\":\"base64url\",\"value\":\"aGVsbG8\"}"
@@ -2112,7 +2135,9 @@ mod tests {
         block_on(async {
             let engine = PermissionEngine::new();
             assert_eq!(
-                engine.normalize_scope("//?/C:/workspace/secrets/token.txt").unwrap(),
+                engine
+                    .normalize_scope("//?/C:/workspace/secrets/token.txt")
+                    .unwrap(),
                 normalize_scope_path("//?/C:/workspace/secrets/token.txt")
             );
         });

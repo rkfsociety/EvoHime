@@ -24,12 +24,12 @@ use evohime_desktop_ipc::session::LaunchContext;
 use windows_sys::Win32::{
     Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE},
     System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-        JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
-        JobObjectCpuRateControlInformation, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION,
-        JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0,
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectCpuRateControlInformation,
+        JobObjectExtendedLimitInformation, SetInformationJobObject,
+        JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE,
+        JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        JOB_OBJECT_LIMIT_PROCESS_MEMORY,
     },
     System::Threading::{CreateEventW, CreateMutexW},
 };
@@ -193,7 +193,10 @@ impl JobObject {
         Self::create_with_limits(None, None)
     }
 
-    pub(crate) fn create_with_limits(memory_bytes: Option<u64>, cpu_percent: Option<u8>) -> io::Result<Self> {
+    pub(crate) fn create_with_limits(
+        memory_bytes: Option<u64>,
+        cpu_percent: Option<u8>,
+    ) -> io::Result<Self> {
         let handle = unsafe { CreateJobObjectW(ptr::null(), ptr::null()) };
         if handle.is_null() {
             return Err(io::Error::last_os_error());
@@ -218,8 +221,11 @@ impl JobObject {
         }
         if let Some(percent) = cpu_percent {
             let mut cpu = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION {
-                ControlFlags: JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
-                Anonymous: JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0 { CpuRate: (u32::from(percent) * 100).min(10_000) },
+                ControlFlags: JOB_OBJECT_CPU_RATE_CONTROL_ENABLE
+                    | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
+                Anonymous: JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0 {
+                    CpuRate: (u32::from(percent) * 100).min(10_000),
+                },
             };
             let configured = unsafe {
                 SetInformationJobObject(
@@ -346,12 +352,11 @@ async fn run_supervisor_command_channel(
     let user_sid = evohime_desktop_ipc::windows_security::current_user_sid()?;
     let logon_session = evohime_desktop_ipc::windows_security::current_logon_session()?;
     loop {
-        let mut security = evohime_desktop_ipc::windows_security::PipeSecurity::owner_only(&user_sid)?;
+        let mut security =
+            evohime_desktop_ipc::windows_security::PipeSecurity::owner_only(&user_sid)?;
         let server = unsafe {
-            ServerOptions::new().create_with_security_attributes_raw(
-                context.pipe_name(),
-                security.as_raw(),
-            )
+            ServerOptions::new()
+                .create_with_security_attributes_raw(context.pipe_name(), security.as_raw())
         }?;
         server.connect().await?;
         let mut channel = BufReader::new(server);
@@ -360,10 +365,14 @@ async fn run_supervisor_command_channel(
             .map_err(|error| io::Error::other(error.to_string()))?;
         channel
             .get_mut()
-            .write_all(serde_json::to_string(&json!({
-                "nonce": nonce.value,
-                "expires_at_ms": nonce.expires_at_ms
-            })).unwrap().as_bytes())
+            .write_all(
+                serde_json::to_string(&json!({
+                    "nonce": nonce.value,
+                    "expires_at_ms": nonce.expires_at_ms
+                }))
+                .unwrap()
+                .as_bytes(),
+            )
             .await?;
         channel.get_mut().write_all(b"\n").await?;
         let mut line = Vec::new();
@@ -381,31 +390,70 @@ async fn run_supervisor_command_channel(
             nonce: message.nonce,
             proof: message.proof,
             capabilities: vec!["local-provider-lifecycle".into()],
-            peer: evohime_desktop_ipc::session::PeerIdentity { user_sid: user_sid.clone(), logon_session: logon_session.clone() },
+            peer: evohime_desktop_ipc::session::PeerIdentity {
+                user_sid: user_sid.clone(),
+                logon_session: logon_session.clone(),
+            },
         };
         if verifier.verify(&request, now_ms()).is_err() {
             let _ = logger.write("supervisor.command_auth_failed", json!({}));
             continue;
         }
-        channel.get_mut().write_all(b"{\"authenticated\":true}\n").await?;
+        channel
+            .get_mut()
+            .write_all(b"{\"authenticated\":true}\n")
+            .await?;
         let mut command = Vec::new();
-        if channel.read_until(b'\n', &mut command).await? == 0 { continue; }
-        let value: serde_json::Value = match serde_json::from_slice(&command) { Ok(value) => value, Err(_) => continue };
-        let op = value.get("op").and_then(serde_json::Value::as_str).unwrap_or("");
+        if channel.read_until(b'\n', &mut command).await? == 0 {
+            continue;
+        }
+        let value: serde_json::Value = match serde_json::from_slice(&command) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let op = value
+            .get("op")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
         let response = match op {
             "launch" => {
-                let model_id = value.get("model_id").and_then(serde_json::Value::as_str).unwrap_or("");
-                let request_id = value.get("request_id").and_then(serde_json::Value::as_str).unwrap_or("");
-                if model_id.len() > 128 || request_id.len() > 128 || model_id.trim().is_empty() || request_id.trim().is_empty() {
+                let model_id = value
+                    .get("model_id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("");
+                let request_id = value
+                    .get("request_id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("");
+                if model_id.len() > 128
+                    || request_id.len() > 128
+                    || model_id.trim().is_empty()
+                    || request_id.trim().is_empty()
+                {
                     json!({"accepted": false, "reason": "invalid_request"})
                 } else if adapter_processes.contains_key(model_id) {
                     json!({"accepted": false, "reason": "already_running"})
                 } else {
-                    match provider_manager.launch(model_id, request_id, now_ms(), &[], ResourceLimits::default()) {
-                        Ok((grant, _health)) => match LocalAdapterProcess::spawn_with_limits(model_id, grant.port, ResourceLimits::default()).await {
+                    match provider_manager.launch(
+                        model_id,
+                        request_id,
+                        now_ms(),
+                        &[],
+                        ResourceLimits::default(),
+                    ) {
+                        Ok((grant, _health)) => match LocalAdapterProcess::spawn_with_limits(
+                            model_id,
+                            grant.port,
+                            ResourceLimits::default(),
+                        )
+                        .await
+                        {
                             Ok(process) => {
                                 adapter_processes.insert(model_id.to_owned(), process);
-                                let _ = logger.write("supervisor.local_provider_started", json!({"model_id": model_id, "port": grant.port}));
+                                let _ = logger.write(
+                                    "supervisor.local_provider_started",
+                                    json!({"model_id": model_id, "port": grant.port}),
+                                );
                                 json!({"accepted": true, "request_id": grant.request_id, "expires_at_ms": grant.expires_at_ms, "port": grant.port, "token": grant.token})
                             }
                             Err(_) => {
@@ -413,26 +461,45 @@ async fn run_supervisor_command_channel(
                                 json!({"accepted": false, "reason": "process_start_failed"})
                             }
                         },
-                        Err(error) => json!({"accepted": false, "reason": format!("{error:?}").to_ascii_lowercase()}),
+                        Err(error) => {
+                            json!({"accepted": false, "reason": format!("{error:?}").to_ascii_lowercase()})
+                        }
                     }
                 }
             }
             "stop" => {
-                let model_id = value.get("model_id").and_then(serde_json::Value::as_str).unwrap_or("");
-                let request_id = value.get("request_id").and_then(serde_json::Value::as_str).unwrap_or("");
+                let model_id = value
+                    .get("model_id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("");
+                let request_id = value
+                    .get("request_id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("");
                 let manager_result = provider_manager.stop(model_id, request_id, now_ms());
                 if let Some(mut process) = adapter_processes.remove(model_id) {
                     let _ = process.stop().await;
                 }
                 match manager_result {
-                    Ok(_) => { let _ = logger.write("supervisor.local_provider_stopped", json!({"model_id": model_id})); json!({"accepted": true}) }
-                    Err(error) => json!({"accepted": false, "reason": format!("{error:?}").to_ascii_lowercase()}),
+                    Ok(_) => {
+                        let _ = logger.write(
+                            "supervisor.local_provider_stopped",
+                            json!({"model_id": model_id}),
+                        );
+                        json!({"accepted": true})
+                    }
+                    Err(error) => {
+                        json!({"accepted": false, "reason": format!("{error:?}").to_ascii_lowercase()})
+                    }
                 }
             }
             "probe" => json!({"accepted": true, "processes": adapter_processes.len()}),
             _ => json!({"accepted": false, "reason": "unsupported_command"}),
         };
-        channel.get_mut().write_all(serde_json::to_string(&response).unwrap().as_bytes()).await?;
+        channel
+            .get_mut()
+            .write_all(serde_json::to_string(&response).unwrap().as_bytes())
+            .await?;
         channel.get_mut().write_all(b"\n").await?;
     }
 }
@@ -443,7 +510,12 @@ struct SupervisorSessionContext {
 }
 
 impl SupervisorSessionContext {
-    fn pipe_name(&self) -> &str { self.launch_context.supervisor_pipe_name.as_deref().unwrap_or("") }
+    fn pipe_name(&self) -> &str {
+        self.launch_context
+            .supervisor_pipe_name
+            .as_deref()
+            .unwrap_or("")
+    }
 }
 
 impl Drop for SupervisorSession {
@@ -496,7 +568,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     if let Some(session) = session.as_ref() {
-        let context = SupervisorSessionContext { launch_context: session.launch_context.clone() };
+        let context = SupervisorSessionContext {
+            launch_context: session.launch_context.clone(),
+        };
         let channel_logger = std::sync::Arc::clone(&logger);
         tokio::spawn(async move {
             if let Err(error) = run_supervisor_command_channel(context, channel_logger).await {

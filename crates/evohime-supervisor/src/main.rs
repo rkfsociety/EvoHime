@@ -3,9 +3,9 @@ mod runtime_loop;
 mod schedule_contract;
 mod scheduler_state;
 
+mod local_provider;
 #[cfg(windows)]
 mod windows_supervisor;
-mod local_provider;
 
 #[cfg(windows)]
 #[tokio::main]

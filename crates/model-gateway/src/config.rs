@@ -163,10 +163,15 @@ impl ModelGatewayConfig {
                 let openai = LiteRouterConfig::openai_compatible_from_env();
                 ModelRouteConfig::openai_compatible(openai.api_key, openai.base_url, openai.model)
             }
-            ProviderKind::Mock => return Err(ProviderError::Config("mock provider is available only to tests".into())),
+            ProviderKind::Mock => {
+                return Err(ProviderError::Config(
+                    "mock provider is available only to tests".into(),
+                ))
+            }
             ProviderKind::Local => ModelRouteConfig::local(
                 env::var("LOCAL_PROVIDER_SESSION").unwrap_or_default(),
-                env::var("LOCAL_PROVIDER_BASE_URL").unwrap_or_else(|_| LOCAL_DEFAULT_BASE_URL.to_string()),
+                env::var("LOCAL_PROVIDER_BASE_URL")
+                    .unwrap_or_else(|_| LOCAL_DEFAULT_BASE_URL.to_string()),
                 env::var("LOCAL_PROVIDER_MODEL").unwrap_or_else(|_| "local-slm".to_string()),
             ),
         };
@@ -232,10 +237,16 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
             ),
             ProviderKind::Local => ModelRouteConfig::local(
                 route.api_key.unwrap_or_default(),
-                route.base_url.unwrap_or_else(|| default_base_url.to_string()),
+                route
+                    .base_url
+                    .unwrap_or_else(|| default_base_url.to_string()),
                 model,
             ),
-            ProviderKind::Mock => return Err(ProviderError::Config("mock provider is available only to tests".into())),
+            ProviderKind::Mock => {
+                return Err(ProviderError::Config(
+                    "mock provider is available only to tests".into(),
+                ))
+            }
         };
         parsed_routes.insert(name, route_config);
     }

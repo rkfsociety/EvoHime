@@ -344,11 +344,8 @@ impl ContextPlanner {
             }
         }
 
-        let surviving: Vec<ContextItem> = items
-            .iter()
-            .filter(|item| item.selected)
-            .cloned()
-            .collect();
+        let surviving: Vec<ContextItem> =
+            items.iter().filter(|item| item.selected).cloned().collect();
         let pre_dropped: Vec<ContextItem> = items
             .iter()
             .filter(|item| !item.selected)
@@ -475,8 +472,11 @@ impl ContextPlanner {
                 .filter(|item| item.kind.category() == category)
                 .map(|item| item.estimated_tokens)
                 .fold(0, u32::saturating_add);
-            self.metrics
-                .record_utilization(category, used, budget.category(category).target_tokens);
+            self.metrics.record_utilization(
+                category,
+                used,
+                budget.category(category).target_tokens,
+            );
         }
 
         let compression: Vec<CompressionRecord> = ladder_outcome
@@ -588,7 +588,11 @@ impl ContextPlanner {
                 BudgetUnavailableStage::ProviderReplanFailed,
                 previous.ledger.estimated_prompt_tokens,
                 previous.profile.hard_limit_tokens,
-                previous.ledger.mandatory_parts.first().map(|part| part.part),
+                previous
+                    .ledger
+                    .mandatory_parts
+                    .first()
+                    .map(|part| part.part),
                 previous.ledger.mandatory_parts.clone(),
                 previous.ledger.selected_items.clone(),
                 previous.fallback_estimator,
@@ -744,7 +748,13 @@ mod tests {
         ))))
     }
 
-    fn text_input(id: &str, kind: ItemKind, text: &str, priority: u8, created_at: i64) -> PlanInput {
+    fn text_input(
+        id: &str,
+        kind: ItemKind,
+        text: &str,
+        priority: u8,
+        created_at: i64,
+    ) -> PlanInput {
         PlanInput::new(
             ContextItemBuilder::new(id, kind, "")
                 .task("task", "session")
@@ -774,7 +784,13 @@ mod tests {
     fn minimal_inputs() -> Vec<PlanInput> {
         vec![
             text_input("safety", ItemKind::SafetyPolicy, "безопасность", 100, 1),
-            text_input("prompt", ItemKind::UserPrompt, "проверь репозиторий", 100, 2),
+            text_input(
+                "prompt",
+                ItemKind::UserPrompt,
+                "проверь репозиторий",
+                100,
+                2,
+            ),
         ]
     }
 
@@ -857,10 +873,7 @@ mod tests {
         let plan = planner.plan(&request(inputs));
         assert!(!plan.is_ready());
         let unavailable = plan.unavailable.expect("refusal");
-        assert_eq!(
-            unavailable.stage,
-            BudgetUnavailableStage::MandatoryOverflow
-        );
+        assert_eq!(unavailable.stage, BudgetUnavailableStage::MandatoryOverflow);
         assert_eq!(
             unavailable.missing_part,
             Some(crate::budget::MandatoryPart::SafetyPolicy)
@@ -905,7 +918,10 @@ mod tests {
         assert!(plan.is_ready());
         assert!(plan.fallback_estimator);
         assert!(plan.ledger.fallback_estimator);
-        assert!(plan.profile.profile_version.ends_with("+fallback-estimator"));
+        assert!(plan
+            .profile
+            .profile_version
+            .ends_with("+fallback-estimator"));
         let base = ProfileCatalog::builtin().resolve("literouter", "gpt-4o-mini", None);
         assert!(plan.profile.hard_limit_tokens < base.hard_limit_tokens);
         assert_eq!(plan.profile.reserves_total(), base.reserves_total());
@@ -963,8 +979,7 @@ mod tests {
         let stage = plan.unavailable.expect("refusal").stage;
         assert!(matches!(
             stage,
-            BudgetUnavailableStage::MandatoryOverflow
-                | BudgetUnavailableStage::DropsExhausted
+            BudgetUnavailableStage::MandatoryOverflow | BudgetUnavailableStage::DropsExhausted
         ));
     }
 
@@ -972,8 +987,20 @@ mod tests {
     fn duplicates_are_pruned_before_the_ladder() {
         let mut planner = planner();
         let mut inputs = minimal_inputs();
-        inputs.push(text_input("dup-a", ItemKind::History, "одно и то же", 60, 5));
-        inputs.push(text_input("dup-b", ItemKind::History, "одно и то же", 60, 6));
+        inputs.push(text_input(
+            "dup-a",
+            ItemKind::History,
+            "одно и то же",
+            60,
+            5,
+        ));
+        inputs.push(text_input(
+            "dup-b",
+            ItemKind::History,
+            "одно и то же",
+            60,
+            6,
+        ));
         let plan = planner.plan(&request(inputs));
         assert!(plan.is_ready());
         assert_eq!(
@@ -1085,7 +1112,10 @@ mod tests {
             .ledger
             .ladder_levels_applied
             .contains(&LadderLevel::OffloadLargeItems));
-        assert!(plan.selected.iter().any(|item| item.artifact_locator.is_some()));
+        assert!(plan
+            .selected
+            .iter()
+            .any(|item| item.artifact_locator.is_some()));
     }
 
     #[test]
@@ -1105,12 +1135,7 @@ mod tests {
             inputs.push(input);
         }
         let mut offload = RecordingOffload { calls: 0 };
-        let _ = planner.plan_with(
-            &request(inputs),
-            &mut offload,
-            &mut NoSummarizer,
-            None,
-        );
+        let _ = planner.plan_with(&request(inputs), &mut offload, &mut NoSummarizer, None);
         assert_eq!(offload.calls, 0);
     }
 
@@ -1126,7 +1151,10 @@ mod tests {
             &mut NoSummarizer,
         );
         assert!(replanned.is_ready());
-        assert_eq!(replanned.ledger.replan_of.as_deref(), Some(plan.ledger.id.as_str()));
+        assert_eq!(
+            replanned.ledger.replan_of.as_deref(),
+            Some(plan.ledger.id.as_str())
+        );
         assert!(replanned.profile.hard_limit_tokens <= 40_000);
         assert_eq!(replanned.profile.retry_reserve, 0);
 

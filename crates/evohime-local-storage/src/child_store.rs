@@ -174,16 +174,33 @@ impl CoordinatorCheckpointRecord {
         validate_text("child_task_id", &self.child_task_id, MAX_ID_BYTES)?;
         validate_text("parent_task_id", &self.parent_task_id, MAX_ID_BYTES)?;
         validate_text("state", &self.state, MAX_STATUS_BYTES)?;
-        validate_text("last_transition_event", &self.last_transition_event, MAX_KIND_BYTES)?;
+        validate_text(
+            "last_transition_event",
+            &self.last_transition_event,
+            MAX_KIND_BYTES,
+        )?;
         for (field, value) in [
             ("failure_reason", self.failure_reason.as_deref()),
             ("report_json", self.report_json.as_deref()),
-            ("evidence_locators_json", self.evidence_locators_json.as_deref()),
-            ("provenance_hashes_json", self.provenance_hashes_json.as_deref()),
+            (
+                "evidence_locators_json",
+                self.evidence_locators_json.as_deref(),
+            ),
+            (
+                "provenance_hashes_json",
+                self.provenance_hashes_json.as_deref(),
+            ),
         ] {
-            if let Some(value) = value { validate_text(field, value, MAX_CHECKPOINT_JSON_BYTES)?; }
+            if let Some(value) = value {
+                validate_text(field, value, MAX_CHECKPOINT_JSON_BYTES)?;
+            }
         }
-        if self.revision < 0 || self.parent_sequence < 0 { return Err(ChildStoreError::Limit { field: "checkpoint_counter", max: i64::MAX as usize }); }
+        if self.revision < 0 || self.parent_sequence < 0 {
+            return Err(ChildStoreError::Limit {
+                field: "checkpoint_counter",
+                max: i64::MAX as usize,
+            });
+        }
         Ok(())
     }
 }
@@ -204,7 +221,10 @@ pub struct ChildStoreSql;
 impl ChildStoreSql {
     /// Atomically reserves the next sequence for one parent task. Gaps are
     /// allowed, but committed children can never share a sequence.
-    pub fn next_parent_sequence(connection: &Connection, parent_task_id: &str) -> Result<i64, ChildStoreError> {
+    pub fn next_parent_sequence(
+        connection: &Connection,
+        parent_task_id: &str,
+    ) -> Result<i64, ChildStoreError> {
         validate_text("parent_task_id", parent_task_id, MAX_ID_BYTES)?;
         connection.execute_batch("BEGIN IMMEDIATE")?;
         let result = (|| {
@@ -213,11 +233,21 @@ impl ChildStoreSql {
                 [parent_task_id],
             )?;
             connection.execute("UPDATE child_parent_sequences SET next_sequence = next_sequence + 1 WHERE parent_task_id = ?1", [parent_task_id])?;
-            connection.query_row("SELECT next_sequence FROM child_parent_sequences WHERE parent_task_id = ?1", [parent_task_id], |row| row.get(0))
+            connection.query_row(
+                "SELECT next_sequence FROM child_parent_sequences WHERE parent_task_id = ?1",
+                [parent_task_id],
+                |row| row.get(0),
+            )
         })();
         match result {
-            Ok(value) => { connection.execute_batch("COMMIT")?; Ok(value) }
-            Err(error) => { let _ = connection.execute_batch("ROLLBACK"); Err(error.into()) }
+            Ok(value) => {
+                connection.execute_batch("COMMIT")?;
+                Ok(value)
+            }
+            Err(error) => {
+                let _ = connection.execute_batch("ROLLBACK");
+                Err(error.into())
+            }
         }
     }
 
@@ -414,15 +444,29 @@ impl ChildStoreSql {
         record: &CoordinatorCheckpointRecord,
     ) -> Result<(), ChildStoreError> {
         record.validate()?;
-        connection.execute(Self::UPSERT_COORDINATOR_CHECKPOINT, params![
-            record.schema_version, record.child_task_id, record.parent_task_id,
-            record.revision, record.state, record.failure_reason, record.dead_letter as i64,
-            record.report_json, record.evidence_locators_json, record.provenance_hashes_json,
-            record.parent_sequence, record.lease_deadline_monotonic_ms,
-            record.lease_created_monotonic_ms, record.lease_clock_boot_id,
-            record.lease_holder_process_id, record.last_transition_event,
-            record.last_transition_at_ms, record.created_at_ms,
-        ])?;
+        connection.execute(
+            Self::UPSERT_COORDINATOR_CHECKPOINT,
+            params![
+                record.schema_version,
+                record.child_task_id,
+                record.parent_task_id,
+                record.revision,
+                record.state,
+                record.failure_reason,
+                record.dead_letter as i64,
+                record.report_json,
+                record.evidence_locators_json,
+                record.provenance_hashes_json,
+                record.parent_sequence,
+                record.lease_deadline_monotonic_ms,
+                record.lease_created_monotonic_ms,
+                record.lease_clock_boot_id,
+                record.lease_holder_process_id,
+                record.last_transition_event,
+                record.last_transition_at_ms,
+                record.created_at_ms,
+            ],
+        )?;
         Ok(())
     }
 
@@ -430,7 +474,14 @@ impl ChildStoreSql {
         connection: &Connection,
         child_task_id: &str,
     ) -> Result<Option<CoordinatorCheckpointRecord>, ChildStoreError> {
-        connection.query_row(Self::SELECT_LATEST_COORDINATOR_CHECKPOINT, [child_task_id], map_checkpoint).optional().map_err(Into::into)
+        connection
+            .query_row(
+                Self::SELECT_LATEST_COORDINATOR_CHECKPOINT,
+                [child_task_id],
+                map_checkpoint,
+            )
+            .optional()
+            .map_err(Into::into)
     }
 
     pub fn list_dead_letter_checkpoints(
@@ -447,7 +498,8 @@ impl ChildStoreSql {
              last_transition_event, last_transition_at_ms, created_at_ms
              FROM coordinator_child_checkpoint
              WHERE parent_task_id = ?1 AND dead_letter = 1 AND created_at_ms >= ?2
-             ORDER BY last_transition_at_ms DESC LIMIT ?3")?;
+             ORDER BY last_transition_at_ms DESC LIMIT ?3",
+        )?;
         let records = statement
             .query_map(
                 params![
@@ -530,14 +582,24 @@ fn map_report(row: &rusqlite::Row<'_>) -> rusqlite::Result<ChildReportRecord> {
 
 fn map_checkpoint(row: &rusqlite::Row<'_>) -> rusqlite::Result<CoordinatorCheckpointRecord> {
     Ok(CoordinatorCheckpointRecord {
-        schema_version: row.get(0)?, child_task_id: row.get(1)?, parent_task_id: row.get(2)?,
-        revision: row.get(3)?, state: row.get(4)?, failure_reason: row.get(5)?,
-        dead_letter: row.get::<_, i64>(6)? != 0, report_json: row.get(7)?,
-        evidence_locators_json: row.get(8)?, provenance_hashes_json: row.get(9)?,
-        parent_sequence: row.get(10)?, lease_deadline_monotonic_ms: row.get(11)?,
-        lease_created_monotonic_ms: row.get(12)?, lease_clock_boot_id: row.get(13)?,
-        lease_holder_process_id: row.get(14)?, last_transition_event: row.get(15)?,
-        last_transition_at_ms: row.get(16)?, created_at_ms: row.get(17)?,
+        schema_version: row.get(0)?,
+        child_task_id: row.get(1)?,
+        parent_task_id: row.get(2)?,
+        revision: row.get(3)?,
+        state: row.get(4)?,
+        failure_reason: row.get(5)?,
+        dead_letter: row.get::<_, i64>(6)? != 0,
+        report_json: row.get(7)?,
+        evidence_locators_json: row.get(8)?,
+        provenance_hashes_json: row.get(9)?,
+        parent_sequence: row.get(10)?,
+        lease_deadline_monotonic_ms: row.get(11)?,
+        lease_created_monotonic_ms: row.get(12)?,
+        lease_clock_boot_id: row.get(13)?,
+        lease_holder_process_id: row.get(14)?,
+        last_transition_event: row.get(15)?,
+        last_transition_at_ms: row.get(16)?,
+        created_at_ms: row.get(17)?,
     })
 }
 
@@ -730,8 +792,14 @@ mod tests {
     fn sequences_are_atomic_and_checkpoint_round_trips() {
         let connection = Connection::open_in_memory().expect("sqlite opens");
         schema(&connection);
-        assert_eq!(ChildStoreSql::next_parent_sequence(&connection, "parent").unwrap(), 1);
-        assert_eq!(ChildStoreSql::next_parent_sequence(&connection, "parent").unwrap(), 2);
+        assert_eq!(
+            ChildStoreSql::next_parent_sequence(&connection, "parent").unwrap(),
+            1
+        );
+        assert_eq!(
+            ChildStoreSql::next_parent_sequence(&connection, "parent").unwrap(),
+            2
+        );
         let record = CoordinatorCheckpointRecord {
             schema_version: 1,
             child_task_id: "child".into(),
@@ -753,6 +821,9 @@ mod tests {
             created_at_ms: 1,
         };
         ChildStoreSql::upsert_coordinator_checkpoint(&connection, &record).unwrap();
-        assert_eq!(ChildStoreSql::latest_coordinator_checkpoint(&connection, "child").unwrap(), Some(record));
+        assert_eq!(
+            ChildStoreSql::latest_coordinator_checkpoint(&connection, "child").unwrap(),
+            Some(record)
+        );
     }
 }

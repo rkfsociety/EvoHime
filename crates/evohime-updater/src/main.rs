@@ -94,13 +94,20 @@ fn parse_staged_args(args: &[String]) -> Result<StagedArgs, String> {
     })
 }
 
-fn parse_worker_args(args: &[String]) -> Result<(PathBuf, PathBuf, PathBuf, Option<PathBuf>), String> {
+fn parse_worker_args(
+    args: &[String],
+) -> Result<(PathBuf, PathBuf, PathBuf, Option<PathBuf>), String> {
     let installer = required(args, "--installer")?;
     let install_dir = required(args, "--install-dir")?;
     let state_dir = optional(args, "--state-dir")
         .map(PathBuf::from)
         .unwrap_or_else(default_state_dir);
-    Ok((installer, install_dir, state_dir, optional(args, "--relaunch").map(PathBuf::from)))
+    Ok((
+        installer,
+        install_dir,
+        state_dir,
+        optional(args, "--relaunch").map(PathBuf::from),
+    ))
 }
 
 fn required(args: &[String], name: &str) -> Result<PathBuf, String> {

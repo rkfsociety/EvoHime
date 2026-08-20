@@ -314,10 +314,7 @@ mod tests {
 
     #[test]
     fn category_shares_sum_to_the_whole_context_budget() {
-        let total: u32 = BudgetCategory::all()
-            .into_iter()
-            .map(category_share)
-            .sum();
+        let total: u32 = BudgetCategory::all().into_iter().map(category_share).sum();
         assert_eq!(total, 100);
     }
 
