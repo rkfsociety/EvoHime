@@ -182,6 +182,32 @@ const updates = {
   }
 }
 
+/** Речевой рантайм тоже принадлежит main-процессу; мост только передаёт. */
+const listenerRuntimeStatus = {
+  state: 'missing' as const,
+  installedVersion: null,
+  availableVersion: '2026.08',
+  progressPct: 0,
+  message: 'Распознавание речи не установлено.',
+  missingOptional: [] as readonly string[],
+  toolsDirectory: 'C:\\tools\\listener'
+}
+const listenerCalls: string[] = []
+const listenerRuntime = {
+  get status() {
+    listenerCalls.push('status')
+    return listenerRuntimeStatus
+  },
+  check: async () => {
+    listenerCalls.push('check')
+    return listenerRuntimeStatus
+  },
+  download: async () => {
+    listenerCalls.push('download')
+    return listenerRuntimeStatus
+  }
+}
+
 function invoke(command: string, payload?: unknown): unknown {
   const handler = handlers.get(INVOKE_CHANNEL)
   if (!handler) {
@@ -209,8 +235,10 @@ beforeEach(() => {
       return true
     },
     updates: updates as never,
+    listenerRuntime: listenerRuntime as never,
     log: () => {}
   })
+  listenerCalls.length = 0
 })
 
 describe('renderer command surface', () => {
@@ -679,5 +707,24 @@ describe('workspace knowledge commands', () => {
       expect((outcome as CommandFailure).ok).toBe(false)
     }
     expect(sent).toHaveLength(0)
+  })
+})
+
+describe('listener runtime bridge', () => {
+  /** Renderer не считает состояние сам: он показывает ответ main-процесса. */
+  it('relays status, check and download to the owning service', async () => {
+    expect(await invoke('listener.getRuntimeStatus', {})).toEqual({
+      ok: true,
+      value: listenerRuntimeStatus
+    })
+    expect(await invoke('listener.checkRuntime', {})).toEqual({
+      ok: true,
+      value: listenerRuntimeStatus
+    })
+    expect(await invoke('listener.downloadRuntime', {})).toEqual({
+      ok: true,
+      value: listenerRuntimeStatus
+    })
+    expect(listenerCalls).toEqual(['status', 'check', 'download'])
   })
 })

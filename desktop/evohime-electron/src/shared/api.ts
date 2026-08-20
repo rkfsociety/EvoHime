@@ -5,6 +5,7 @@
  * the sandboxed renderer bundle, where neither is available.
  */
 
+import type { ListenerRuntimeStatus } from './listener-runtime'
 import type { UpdateStatus } from './update'
 
 export const API_NAMESPACE = 'evohime'
@@ -52,6 +53,7 @@ export type ShellEvent =
   | { readonly kind: 'state'; readonly state: ShellState }
   | { readonly kind: 'core-event'; readonly event: CoreEvent }
   | { readonly kind: 'update'; readonly status: UpdateStatus }
+  | { readonly kind: 'listener-runtime'; readonly status: ListenerRuntimeStatus }
 
 /** Model providers the shell can configure. */
 export const PROVIDER_KINDS = ['literouter', 'openai_compatible'] as const
@@ -264,7 +266,10 @@ export const RENDERER_COMMANDS = [
   'update.check',
   'update.prepare',
   'update.restart',
-  'update.skip'
+  'update.skip',
+  'listener.getRuntimeStatus',
+  'listener.checkRuntime',
+  'listener.downloadRuntime'
 ] as const
 
 export type RendererCommand = (typeof RENDERER_COMMANDS)[number]
@@ -426,6 +431,9 @@ export interface CommandPayloads {
   'update.prepare': Record<string, never>
   'update.restart': Record<string, never>
   'update.skip': Record<string, never>
+  'listener.getRuntimeStatus': Record<string, never>
+  'listener.checkRuntime': Record<string, never>
+  'listener.downloadRuntime': Record<string, never>
 }
 
 export interface CommandResults {
@@ -520,6 +528,10 @@ export interface CommandResults {
   'update.restart': { accepted: boolean }
   /** Releases the launch gate without applying anything. */
   'update.skip': UpdateStatus
+  'listener.getRuntimeStatus': ListenerRuntimeStatus
+  'listener.checkRuntime': ListenerRuntimeStatus
+  /** Долгая загрузка: статус приходит и событиями по мере прогресса. */
+  'listener.downloadRuntime': ListenerRuntimeStatus
 }
 
 export type CommandFailureCode =

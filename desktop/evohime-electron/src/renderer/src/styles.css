@@ -2226,3 +2226,18 @@ select:focus {
   .review-panel__model-row { grid-template-columns: 1fr; }
   .review-panel__result-heading { align-items: flex-start; flex-direction: column; }
 }
+
+.listener-runtime__progress {
+  width: 100%;
+  height: 6px;
+}
+
+.listener-runtime__warning {
+  color: var(--warning, #d9a441);
+}
+
+.listener-runtime__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}

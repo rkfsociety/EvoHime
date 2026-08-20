@@ -90,6 +90,11 @@ export function App(): React.JSX.Element {
         setUpdate(event.status)
         return
       }
+      // Состояние речевого рантайма слушает только его собственный экран:
+      // в общую ленту событий оно не попадает.
+      if (event.kind !== 'core-event') {
+        return
+      }
       setEvents((current) => [event.event, ...current].slice(0, MAX_VISIBLE_EVENTS))
     })
 

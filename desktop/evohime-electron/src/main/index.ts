@@ -18,6 +18,8 @@ import { createTray, type TrayController } from './tray'
 import { BuildLog } from './update/build-log'
 import { BUILD_WORKER_FLAG, runBuildWorkerProcess } from './update/build-worker'
 import { loadUpdateConfig } from './update/config'
+import { resolveGithubToken } from './update/github-token'
+import { ListenerRuntimeService } from './update/listener-runtime'
 import { UpdateService } from './update/update-service'
 import { createMainWindow, focusWindow, loadRenderer } from './window'
 import { WorkspaceService, windowChooser } from './workspace-service'
@@ -43,6 +45,7 @@ let supervisorProcess: ChildProcess | null = null
 let supervisorLivenessTimer: NodeJS.Timeout | null = null
 let recoveryMode = false
 let updates: UpdateService | null = null
+let listenerRuntime: ListenerRuntimeService | null = null
 
 // safeStorage is only usable after the app is ready, so the store is created
 // lazily inside whenReady rather than at module scope.
@@ -102,6 +105,7 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
     mainWindow = createMainWindow({ ...hardening, onRendererFailure: handleRendererFailure })
     tray = createTray({ window: mainWindow, log })
     updates = createUpdateService()
+    listenerRuntime = createListenerRuntimeService()
 
     // The picker dialog is owned by the main process and opens modal to the
     // shell window; the renderer only ever receives the chosen path.
@@ -115,6 +119,7 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
       chats: new ChatStore(ChatStore.defaultPath(dataDirectory())),
       restartCore,
       updates,
+      listenerRuntime: listenerRuntime!,
       log
     })
 
@@ -172,6 +177,32 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
  * checkout, and `app.getPath('exe')` there points at the Electron binary in
  * `node_modules` rather than at an installation.
  */
+/**
+ * Набор рантайма распознавания речи.
+ *
+ * Сервис живёт отдельно от `UpdateService`: обновление продукта и загрузка
+ * речевого рантайма — разные решения пользователя и разные релизные ассеты.
+ * Общими остаются только репозиторий и способ добыть токен GitHub.
+ */
+function createListenerRuntimeService(): ListenerRuntimeService {
+  const config = loadUpdateConfig({
+    dataDirectory: dataDirectory(),
+    executablePath: app.getPath('exe')
+  })
+  return new ListenerRuntimeService({
+    toolsDirectory: join(dataDirectory(), 'tools', 'listener'),
+    repositoryUrl: config.repositoryUrl,
+    // Токен только повышает лимит анонимных запросов к GitHub; его отсутствие
+    // не ошибка, поэтому неудачный поиск даёт `null`, а не отказ.
+    resolveToken: () =>
+      resolveGithubToken({ configured: config.githubToken })
+        .then((found) => found?.token ?? null)
+        .catch(() => null),
+    emit: (status) => broadcast({ kind: 'listener-runtime', status }),
+    log
+  })
+}
+
 function createUpdateService(): UpdateService {
   const config = loadUpdateConfig({
     dataDirectory: dataDirectory(),

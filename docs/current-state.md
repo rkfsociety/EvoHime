@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-20 (аудит плана 02).
+Обновлено: 2026-08-20 (этап 04.4 — движок распознавания).
 
 ## Продукт
 
@@ -38,6 +38,7 @@ Core и supervisor — внутренние компоненты установ�
 - единый Inno Setup installer с одним desktop shortcut; установленный клиент сам поднимает supervisor, а supervisor — Core;
 - фоновое обновление из постоянного GitHub Release: клиент сверяет зелёный commit, скачивает `EvoHime-Setup.exe` только при совпадении манифеста и SHA-256, а затем отдаёт его `evohime-transaction.exe --installer`. Запуск приложения не блокируется скачиванием; после фоновой загрузки UI показывает баннер с предложением перезапуска. Локальная пересборка через `launchPolicy: "build"` сохранена для разработки;
 - ambient listener 04.3 реализован: supervisor запускает `evohime-listener.exe` в отдельном bounded Job Object с независимым restart budget; Core и listener используют разные owner-only pipe endpoints и роль `listener` с nonce/HMAC. Аудио-крейт содержит cpal shared capture, bounded in-memory ring, deterministic 32/48→16 kHz decimation, energy VAD и fixture segmentation; privacy-gate запрещает filesystem I/O в аудио-крейте и включён в `rust-native` CI;
+- движок распознавания 04.4 реализован: whisper.cpp грузится через `libloading` из каталога инструментов, выбранного резолвером `EVOHIME_LISTENER_TOOLS_DIR` → `EVOHIME_TOOLS_DIR` → `%LOCALAPPDATA%\EvoHime\tools\listener`, каждый файл сверяется с SHA-256 манифеста, необъявленная DLL рядом блокирует загрузку, раскладка ABI проверяется до первого вызова. Подпись требуется только у `onnxruntime.dll`; неподписанный собственный `whisper.dll` — штатное состояние, закреплённое тестом. Листенер открывает микрофон, сегментирует речь, дедуплицирует повторы (NFKC-нормализация, окно 60 с, near-dup ≥ 0.9) и спускается по лестнице `small → base → tiny` при RTF > 0.5 пять раз подряд, после чего останавливается с причиной `engine_degraded`. Транскрипты доходят до `ambient_utterances` с реальными языком, длительностью и порядковым номером, а Electron скачивает и проверяет набор рантайма (`listener-runtime.ts`) с показом состояния на вкладке «Распознавание речи»;
 - upgrade smoke в CI, автоматический rollback и recovery незавершённой транзакции перед запуском Core;
 - один постоянный релиз `installer` с описанием из `installer/release-notes.md`: `EvoHime-Setup.exe` и `EvoHime-Setup.json` в нём перезаписываются после успешного CI на `main`, новых релизов и версионных тегов не создаётся. Установщик нужен для первой установки и фоновых обновлений клиента;
 - имя агента «Ева» передаётся в system context Core;
@@ -123,7 +124,7 @@ C#/WinUI compatibility и native package проверяются полным acc
 
 ## Следующие направления
 
-1. План 02: подключить provider contract и затем local SLM fallback/routing;
+1. План 04: этапы 04.5 (контроль и UI), 04.6 (мост ambient в память) и 04.7 (ограниченная проактивность);
 2. hardening credentials, recovery и diagnostics;
 3. поддерживать Windows 10/11 CI и compatibility suite, не возвращая web runtime;
 4. informative ARM64/Insider compatibility runs.

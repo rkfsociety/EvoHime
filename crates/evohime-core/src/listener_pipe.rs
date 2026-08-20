@@ -87,43 +87,114 @@ pub async fn run_windows_listener_pipe(
             &envelope(generated::envelope::Payload::Policy(policy)),
         )
         .await?;
+
+        // Версия движка приходит от листенера и до неё эпизод открывать
+        // нечем: `engine_version` эпизода — это то, чем он реально распознан,
+        // а не заглушка.
+        let mut engine_version = String::new();
+        let mut open_episodes: std::collections::HashSet<String> = std::collections::HashSet::new();
         while let Ok(message) = read_frame(&mut server).await {
-            if let Some(generated::envelope::Payload::Utterance(utterance)) = message.payload {
-                let policy = crate::ambient::load_policy(&data_dir);
-                let journal = bridge.journal();
-                if !utterance.continued {
+            match message.payload {
+                Some(generated::envelope::Payload::Engine(engine)) => {
+                    if !engine.version.is_empty() {
+                        engine_version = engine.version.clone();
+                    }
+                    let status = match engine.status.as_str() {
+                        "approved" => evohime_listener_contract::EngineStatus::Approved,
+                        "downloading" => evohime_listener_contract::EngineStatus::Downloading,
+                        "verifying" => evohime_listener_contract::EngineStatus::Verifying,
+                        "failed" => evohime_listener_contract::EngineStatus::Failed,
+                        _ => evohime_listener_contract::EngineStatus::Idle,
+                    };
+                    let journal = bridge.journal();
                     let _ = journal
-                        .open_ambient_episode(
-                            &utterance.episode_id,
-                            "fixture-v1",
-                            "",
-                            evohime_listener_contract::ExtractionState::Disabled,
-                            utterance.started_at_ms,
+                        .append_ambient_event(&evohime_listener_contract::AmbientLogEvent::Engine {
+                            status,
+                            engine_version: evohime_listener_contract::EngineVersion::new(
+                                engine.version.clone(),
+                            )
+                            .ok(),
+                            progress_pct: None,
+                        })
+                        .await;
+                    let _ = logger.write(
+                        "info",
+                        "listener.engine_status",
+                        serde_json::json!({"status": engine.status, "code": engine.code}),
+                    );
+                }
+                Some(generated::envelope::Payload::State(state)) => {
+                    let _ = logger.write(
+                        "info",
+                        "listener.state_changed",
+                        serde_json::json!({"state": state.state, "reason": state.reason}),
+                    );
+                }
+                Some(generated::envelope::Payload::Utterance(utterance)) => {
+                    let policy = crate::ambient::load_policy(&data_dir);
+                    let journal = bridge.journal();
+                    if !utterance.continued && open_episodes.insert(utterance.episode_id.clone()) {
+                        let _ = journal
+                            .open_ambient_episode(
+                                &utterance.episode_id,
+                                &engine_version,
+                                &engine_version,
+                                evohime_listener_contract::ExtractionState::Disabled,
+                                utterance.started_at_ms,
+                            )
+                            .await;
+                    }
+                    // Идентификатор высказывания строится из эпизода и его
+                    // порядкового номера: время старта одного кадра может
+                    // совпасть у двух высказываний, а пара «эпизод + номер» —
+                    // нет.
+                    let stored = journal
+                        .insert_ambient_utterance(
+                            &AmbientUtteranceInput {
+                                utterance_id: format!(
+                                    "{}-{}",
+                                    utterance.episode_id, utterance.sequence
+                                ),
+                                episode_id: utterance.episode_id.clone(),
+                                sequence: i64::from(utterance.sequence),
+                                started_at_ms: utterance.started_at_ms,
+                                duration_ms: i64::from(utterance.duration_ms),
+                                text: utterance.text,
+                                language: if utterance.language.is_empty() {
+                                    "und".into()
+                                } else {
+                                    utterance.language
+                                },
+                                avg_logprob: 0.0,
+                                redacted: false,
+                            },
+                            policy.retention_days,
+                            evohime_listener_contract::AmbientLimits::DEFAULT.dedup_window_ms,
                         )
                         .await;
+                    if let (Ok(true), Ok(episode_id)) = (
+                        stored,
+                        evohime_listener_contract::EpisodeId::new(utterance.episode_id.clone()),
+                    ) {
+                        let _ = journal
+                            .append_ambient_event(
+                                &evohime_listener_contract::AmbientLogEvent::Transcript {
+                                    episode_id,
+                                    started_at_ms: utterance.started_at_ms,
+                                    utterance_count: utterance.sequence.saturating_add(1),
+                                    extraction_state:
+                                        evohime_listener_contract::ExtractionState::Disabled,
+                                },
+                            )
+                            .await;
+                    }
+                    let _ = logger.write(
+                        "info",
+                        "listener.utterance_received",
+                        serde_json::json!({"episode_id": utterance.episode_id}),
+                    );
                 }
-                let _ = journal
-                    .insert_ambient_utterance(
-                        &AmbientUtteranceInput {
-                            utterance_id: format!("listener-{}", utterance.started_at_ms),
-                            episode_id: utterance.episode_id.clone(),
-                            sequence: utterance.started_at_ms as i64,
-                            started_at_ms: utterance.started_at_ms,
-                            duration_ms: 0,
-                            text: utterance.text,
-                            language: "und".into(),
-                            avg_logprob: 0.0,
-                            redacted: false,
-                        },
-                        policy.retention_days,
-                        evohime_listener_contract::AmbientLimits::DEFAULT.dedup_window_ms,
-                    )
-                    .await;
-                let _ = logger.write(
-                    "info",
-                    "listener.utterance_received",
-                    serde_json::json!({"episode_id": utterance.episode_id}),
-                );
+                _ => {}
             }
         }
     }

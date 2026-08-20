@@ -81,7 +81,7 @@ nonce-handshake; в `ALLOWED_CLIENT_ROLES` добавляется `listener`.
 | 04.1 | реализован; контракт перенесён в [`../architecture.md`](../architecture.md), состояние — в [`../current-state.md`](../current-state.md) | side-effect-free контракт ambient, capability микрофона, правила логирования | 04.2–04.7 |
 | 04.2 | реализован; контракт перенесён в [`../architecture.md`](../architecture.md), состояние — в [`../current-state.md`](../current-state.md) | schema v25, ambient store, retention и удаление | 04.3–04.7 |
 | 04.3 | реализован, контракт перенесён в [`architecture.md`](../architecture.md) | захват, VAD, сегментация, пауза и чёрный список | 04.4–04.7 |
-| 04.4 | [Движок распознавания](04-4-speech-engine.md) | whisper.dll в рантайме, транскрипты в хранилище | 04.5–04.7 |
+| 04.4 | реализован, контракт перенесён в [`architecture.md`](../architecture.md) | whisper.dll в рантайме, транскрипты в хранилище | 04.5–04.7 |
 | 04.5 | [Контроль и UI](04-5-control-and-ui.md) | IPC-команды, индикатор, пауза, панель «Слух» | 04.6, 04.7 |
 | 04.6 | [Мост в память](04-6-ambient-memory-bridge.md) | `SourceTrust::Ambient` и строгая policy | 04.7 |
 | 04.7 | [Проактивность](04-7-bounded-proactivity.md) | bounded предложения с потолком и approval | Core и Electron UI |

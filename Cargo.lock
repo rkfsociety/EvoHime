@@ -787,8 +787,12 @@ dependencies = [
  "evohime-listener-audio",
  "evohime-listener-contract",
  "evohime-listener-ipc",
+ "libloading",
+ "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
+ "unicode-normalization",
  "uuid",
  "windows-sys 0.61.2",
 ]

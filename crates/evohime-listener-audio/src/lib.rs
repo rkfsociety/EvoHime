@@ -65,12 +65,28 @@ pub fn lock_memory(_samples: &mut [f32]) -> bool {
     false
 }
 
+/// Формат открытого входа. Листенеру он нужен целиком: частоту надо знать,
+/// чтобы децимировать, а число каналов — чтобы свести в моно до VAD.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CaptureFormat {
+    pub sample_rate: u32,
+    pub channels: u16,
+}
+
 /// Открывает shared-mode вход cpal. Callback получает PCM в памяти и не имеет
 /// доступа к файловой системе; конкретное устройство можно сменить повторным
 /// вызовом после `DeviceConflict`.
+///
+/// Возвращается ещё и формат: без него вызывающий не может ни свести каналы,
+/// ни децимировать, а угадывание частоты — это тихий брак распознавания.
+///
+/// Callback не передаётся готовым, а собирается из формата: иначе он замыкал
+/// бы копию предполагаемого формата, и настоящая частота устройства до него
+/// уже не дошла бы. Такая ошибка не падает, а тихо портит звук.
 #[cfg(windows)]
-pub fn open_default_capture<F>(mut callback: F) -> Result<cpal::Stream, AudioError>
+pub fn open_default_capture<F, B>(build: B) -> Result<(cpal::Stream, CaptureFormat), AudioError>
 where
+    B: FnOnce(CaptureFormat) -> F,
     F: FnMut(&[f32]) + Send + 'static,
 {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -87,6 +103,11 @@ where
         ));
     }
     let config: cpal::StreamConfig = supported.into();
+    let format = CaptureFormat {
+        sample_rate: config.sample_rate.0,
+        channels: config.channels,
+    };
+    let mut callback = build(format);
     let stream = device
         .build_input_stream(
             &config,
@@ -100,15 +121,35 @@ where
     stream
         .play()
         .map_err(|e| AudioError::DeviceUnavailable(e.to_string()))?;
-    Ok(stream)
+    Ok((stream, format))
+}
+
+/// Сводит чередующиеся каналы в моно усреднением.
+///
+/// Усреднение, а не «взять первый канал»: на стереогарнитуре речь часто
+/// заметно тише в одном из каналов, и выбор канала наугад срезал бы половину
+/// громкости ещё до VAD.
+pub fn downmix_to_mono(input: &[f32], channels: u16) -> Vec<f32> {
+    let channels = channels.max(1) as usize;
+    if channels == 1 {
+        return input.to_vec();
+    }
+    input
+        .chunks_exact(channels)
+        .map(|frame| frame.iter().sum::<f32>() / channels as f32)
+        .collect()
 }
 
 /// Фиксированный дециматор для распространённых голосовых частот. Для 48 и
-/// 32 кГц отношение целое, поэтому результат не зависит от платформы.
+/// 32 кГц отношение целое, поэтому результат не зависит от платформы; 16 кГц
+/// проходит без изменений. Частота вроде 44,1 кГц осознанно остаётся
+/// ошибкой: дробное отношение потребовало бы интерполяции, а тихо испорченный
+/// звук хуже честного отказа.
 pub fn resample_to_16khz(input: &[f32], sample_rate: u32) -> Result<Vec<f32>, AudioError> {
     let factor = match sample_rate {
         48_000 => 3,
         32_000 => 2,
+        16_000 => 1,
         _ => return Err(AudioError::UnsupportedRate(sample_rate)),
     };
     Ok(input.iter().step_by(factor).copied().collect())
@@ -302,6 +343,24 @@ mod tests {
             resample_to_16khz(&[0., 1., 2., 3.], 32_000).unwrap(),
             vec![0., 2.]
         );
+    }
+    #[test]
+    fn native_16khz_passes_through_untouched() {
+        assert_eq!(
+            resample_to_16khz(&[0., 1., 2.], 16_000).unwrap(),
+            vec![0., 1., 2.]
+        );
+        assert_eq!(
+            resample_to_16khz(&[0., 1.], 44_100),
+            Err(AudioError::UnsupportedRate(44_100))
+        );
+    }
+    #[test]
+    fn downmix_averages_channels() {
+        assert_eq!(downmix_to_mono(&[1., 3., 5., 7.], 2), vec![2., 6.]);
+        assert_eq!(downmix_to_mono(&[1., 2., 3.], 1), vec![1., 2., 3.]);
+        // Хвост неполного кадра отбрасывается, а не смешивается с тишиной.
+        assert_eq!(downmix_to_mono(&[1., 3., 9.], 2), vec![2.]);
     }
     #[test]
     fn ring_is_bounded_and_zeroed() {

@@ -30,6 +30,7 @@ import {
   type ProviderStore
 } from './provider-store'
 import { isAllowedExternalUrl } from './security-policy'
+import type { ListenerRuntimeService } from './update/listener-runtime'
 import type { UpdateService } from './update/update-service'
 import type { WorkspaceService } from './workspace-service'
 
@@ -63,6 +64,8 @@ export interface ShellBridgeOptions {
   readonly restartCore: () => Promise<boolean>
   /** Owns the source update; the renderer may only observe and trigger it. */
   readonly updates: UpdateService
+  /** Owns the speech runtime download; the renderer only observes and asks. */
+  readonly listenerRuntime: ListenerRuntimeService
   readonly log: ShellLog
 }
 
@@ -108,7 +111,8 @@ function dispatch(
   command: RendererCommand,
   payload: unknown
 ): unknown {
-  const { client, workspaces, providers, chats, restartCore, updates, log } = options
+  const { client, workspaces, providers, chats, restartCore, updates, listenerRuntime, log } =
+    options
   switch (command) {
     case 'shell.getState':
       return { ok: true, value: client.state }
@@ -874,6 +878,17 @@ function dispatch(
 
     case 'update.skip':
       return { ok: true, value: updates.skip() }
+
+    case 'listener.getRuntimeStatus':
+      return { ok: true, value: listenerRuntime.status }
+
+    case 'listener.checkRuntime':
+      return listenerRuntime.check().then((value) => ({ ok: true, value }))
+
+    // Загрузка идёт сотнями мегабайт: renderer получает финальный статус, а
+    // ход загрузки — событиями, чтобы окно не ждало ответа минутами.
+    case 'listener.downloadRuntime':
+      return listenerRuntime.download().then((value) => ({ ok: true, value }))
   }
 }
 

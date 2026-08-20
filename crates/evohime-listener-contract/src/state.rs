@@ -33,6 +33,10 @@ pub enum ListeningReason {
     DeviceConflict,
     DeviceDisconnected,
     EngineUnavailable,
+    /// Движок распознавания не укладывается в бюджет даже на самой лёгкой
+    /// модели лестницы (этап 04.4). Слушание остановлено политикой, а не
+    /// пользователем и не отказом устройства.
+    EngineDegraded,
     SystemSleep,
     StorageFailed,
     Unknown,
