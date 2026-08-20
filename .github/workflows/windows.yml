@@ -93,7 +93,7 @@ jobs:
         with:
           toolchain: stable-x86_64-pc-windows-msvc
       - name: Test native Rust foundation
-        run: cargo test --locked -p evohime-permissions -p evohime-tool-runtime -p evohime-model-gateway -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc -p evohime-updater -p evohime-receipts
+        run: cargo test --locked -p evohime-permissions -p evohime-tool-runtime -p evohime-model-gateway -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc -p evohime-updater -p evohime-receipts -p evohime-listener-contract
       - name: Receipt key lifecycle contract and verifier tests
         shell: pwsh
         run: ./scripts/receipt-key-lifecycle.tests.ps1

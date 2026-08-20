@@ -78,6 +78,7 @@ pub async fn apply_rules(permissions: &PermissionEngine, data_dir: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use evohime_permissions::{Permission, PermissionMode};
     use std::fs;
     use std::path::PathBuf;
 
@@ -170,6 +171,51 @@ mod tests {
         let loaded_rules = engine.policy_rules().await;
         assert_eq!(loaded_rules.rules().len(), 1);
         assert_eq!(loaded_rules.rules()[0].pattern, "*.secret");
+        cleanup_temp_dir(&temp_dir);
+    }
+
+    #[test]
+    fn microphone_rule_parses_without_falling_back_to_defaults() {
+        let temp_dir = create_temp_dir();
+        let rules_json = r#"[
+            {
+                "permission": "microphone_listen",
+                "pattern": "*",
+                "mode": "deny"
+            }
+        ]"#;
+        fs::write(temp_dir.join("permissions.json"), rules_json).unwrap();
+
+        let result = load_rules_from(&temp_dir).unwrap();
+        // An unknown permission name would break the parse of the whole file
+        // and silently restore `PolicyRuleSet::defaults()`, dropping every
+        // user rule — hence enum variant and example rule ship together.
+        assert_ne!(result, PolicyRuleSet::defaults());
+        assert_eq!(result.rules().len(), 1);
+        for subject in ["workspace", "mic-0", "", "любая строка"] {
+            assert_eq!(
+                result.resolve(Permission::MicrophoneListen, subject),
+                Some(PermissionMode::Deny)
+            );
+        }
+        cleanup_temp_dir(&temp_dir);
+    }
+
+    #[test]
+    fn shipped_example_rules_parse_and_deny_the_microphone() {
+        let example = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../permissions.json.example")
+            .canonicalize()
+            .unwrap();
+        let temp_dir = create_temp_dir();
+        fs::copy(&example, temp_dir.join("permissions.json")).unwrap();
+
+        let result = load_rules_from(&temp_dir).unwrap();
+        assert_ne!(result, PolicyRuleSet::defaults());
+        assert_eq!(
+            result.resolve(Permission::MicrophoneListen, "workspace"),
+            Some(PermissionMode::Deny)
+        );
         cleanup_temp_dir(&temp_dir);
     }
 }

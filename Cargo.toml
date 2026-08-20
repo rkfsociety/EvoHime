@@ -6,6 +6,7 @@ members = [
   "crates/model-gateway",
   "crates/evohime-core",
   "crates/evohime-local-storage",
+  "crates/evohime-listener-contract",
   "crates/evohime-supervisor",
   "crates/evohime-updater",
   "crates/desktop-ipc",

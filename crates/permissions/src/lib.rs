@@ -30,6 +30,9 @@ pub enum Permission {
     BrowserAccess,
     McpCall,
     MemorySearch,
+    /// Ambient microphone capture (plan 04).  Default `Deny`; never touched by
+    /// [`PermissionEngine::set_all_modes`].
+    MicrophoneListen,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -247,6 +250,9 @@ impl PermissionEngine {
         modes.insert(Permission::BrowserAccess, PermissionMode::Ask);
         modes.insert(Permission::McpCall, PermissionMode::Ask);
         modes.insert(Permission::MemorySearch, PermissionMode::Ask);
+        // Explicit, not omitted: `mode()` falls back to `Ask` for a missing
+        // key, so "not listed" would mean "prompt for the microphone".
+        modes.insert(Permission::MicrophoneListen, PermissionMode::Deny);
         Self {
             modes: Arc::new(RwLock::new(modes)),
             policy_rules: Arc::new(RwLock::new(PolicyRuleSet::default())),
@@ -276,6 +282,14 @@ impl PermissionEngine {
         self.modes.write().await.insert(permission, mode);
     }
 
+    /// Sets the global mode for every permission **except**
+    /// [`Permission::MicrophoneListen`].
+    ///
+    /// The exclusion lives here and only here.  Electron re-sends the stored
+    /// workspace mode on every workspace open, and the `PermissionMode` branch
+    /// in `ipc_bridge.rs` calls this for any value (`full` → `Allow`,
+    /// `read_only` → `Deny`, anything else → `Ask`), so without the exclusion
+    /// a routine mode change would silently open the microphone.
     pub async fn set_all_modes(&self, mode: PermissionMode) {
         let mut modes = self.modes.write().await;
         for permission in [
@@ -2123,5 +2137,91 @@ mod tests {
             let twice = engine.normalize_scope(&once).unwrap();
             assert_eq!(once, twice);
         });
+    }
+
+    #[test]
+    fn microphone_listen_is_present_and_denied_by_default() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            // Presence matters: a missing key would fall back to `Ask`.
+            assert!(engine
+                .modes
+                .read()
+                .await
+                .contains_key(&Permission::MicrophoneListen));
+            assert_eq!(
+                engine.mode(Permission::MicrophoneListen).await,
+                PermissionMode::Deny
+            );
+            assert_eq!(
+                engine.check(Permission::MicrophoneListen).await,
+                PermissionDecision::Denied
+            );
+        });
+    }
+
+    #[test]
+    fn set_all_modes_never_touches_microphone_listen() {
+        block_on(async {
+            for mode in [
+                PermissionMode::Allow,
+                PermissionMode::Deny,
+                PermissionMode::Ask,
+            ] {
+                let engine = PermissionEngine::new();
+                engine.set_all_modes(mode).await;
+                assert_eq!(
+                    engine.mode(Permission::MicrophoneListen).await,
+                    PermissionMode::Deny,
+                    "set_all_modes({mode:?}) changed the microphone capability"
+                );
+                assert_eq!(engine.mode(Permission::ShellExecute).await, mode);
+            }
+        });
+    }
+
+    #[test]
+    fn microphone_listen_stays_denied_across_repeated_workspace_opens() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            for mode in [
+                PermissionMode::Allow,
+                PermissionMode::Ask,
+                PermissionMode::Allow,
+                PermissionMode::Deny,
+            ] {
+                engine.set_all_modes(mode).await;
+            }
+            assert_eq!(
+                engine.mode(Permission::MicrophoneListen).await,
+                PermissionMode::Deny
+            );
+        });
+    }
+
+    #[test]
+    fn microphone_listen_is_granted_only_by_an_explicit_named_call() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            engine
+                .set_mode(Permission::MicrophoneListen, PermissionMode::Allow)
+                .await;
+            assert_eq!(
+                engine.check(Permission::MicrophoneListen).await,
+                PermissionDecision::Allowed
+            );
+        });
+    }
+
+    #[test]
+    fn microphone_listen_serializes_as_snake_case() {
+        assert_eq!(
+            serde_json::to_string(&Permission::MicrophoneListen).unwrap(),
+            "\"microphone_listen\""
+        );
+        assert_eq!(
+            serde_json::from_str::<Permission>("\"microphone_listen\"").unwrap(),
+            Permission::MicrophoneListen
+        );
     }
 }

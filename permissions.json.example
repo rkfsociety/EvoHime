@@ -25,6 +25,11 @@
     "mode": "deny"
   },
   {
+    "permission": "microphone_listen",
+    "pattern": "*",
+    "mode": "deny"
+  },
+  {
     "permission": "filesystem_read",
     "pattern": "*.env",
     "mode": "deny"
