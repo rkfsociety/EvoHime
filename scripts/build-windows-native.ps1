@@ -61,6 +61,13 @@ foreach ($component in $requiredNative) {
     if ($source -ne $destination) { Copy-Item -LiteralPath $source -Destination $destination -Force }
 }
 
+# The signed evaluation catalog is a runtime resource as well as a compiled
+# fallback. Keep it beside the native package so Core can validate and load an
+# updated copy without rebuilding the executable.
+$routingResource = Join-Path $resolvedOutput 'routing'
+New-Item -ItemType Directory -Force -Path $routingResource | Out-Null
+Copy-Item -LiteralPath (Join-Path $repoRoot 'crates\model-gateway\resources\routing-v1.jsonl') -Destination (Join-Path $routingResource 'routing-v1.jsonl') -Force
+
 $electronPayload = Join-Path $electronRoot 'release\win-unpacked'
 $uiPackaged = Join-Path $resolvedOutput 'EvoHime.exe'
 if (-not $SkipBuild) {

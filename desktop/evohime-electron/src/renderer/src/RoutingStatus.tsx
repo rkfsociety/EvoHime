@@ -20,13 +20,24 @@ export function RoutingStatus({ events, connection }: { readonly events: readonl
     return event ? parsePendingRoutingApproval(event.payload) : null
   }, [events])
   const [nowMs, setNowMs] = useState(() => Date.now())
+  const [dismissedTrace, setDismissedTrace] = useState<string | null>(null)
+  const [retryStatus, setRetryStatus] = useState<string | null>(null)
   useEffect(() => {
     if (!pending) return
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [pending])
   if (!trace && !pending && !CONNECTED_STATES.includes(connection)) {
-    return <div className="routing-status routing-status--core_unavailable" role="alert">Связь с Core потеряна: состояние маршрутизации недоступно.</div>
+    const retry = async (): Promise<void> => {
+      if (!api) { setRetryStatus('Мост оболочки недоступен.'); return }
+      const outcome = await api.invoke('shell.requestResync', {})
+      setRetryStatus(outcome.ok && outcome.value.accepted ? 'Повторная синхронизация запрошена.' : 'Core пока недоступен; повтори позже.')
+    }
+    return <div className="routing-status routing-status--core_unavailable" role="alert" aria-live="assertive">
+      <span>Связь с Core потеряна: состояние маршрутизации недоступно.</span>
+      {retryStatus ? <span role="status">{retryStatus}</span> : null}
+      <button type="button" onClick={() => void retry()}>Повторить подключение</button>
+    </div>
   }
   if (!trace && !pending) return null
   const resolve = async (approve: boolean) => {
@@ -43,6 +54,7 @@ export function RoutingStatus({ events, connection }: { readonly events: readonl
     </div>
   }
   if (!trace) return null
+  if (trace.trace_id === dismissedTrace) return null
   const state = routingViewState(trace, preferred)
   const role = state === 'normal' || state === 'degraded' || state === 'partial_fallback' ? 'status' : 'alert'
   return <div className={`routing-status routing-status--${state}`} role={role} aria-live="polite">
@@ -51,6 +63,8 @@ export function RoutingStatus({ events, connection }: { readonly events: readonl
     {trace.selected_route ? <span className="routing-status__route">Маршрут: {trace.selected_route}</span> : null}
     {state === 'degraded' ? <span>⚠ Резервный локальный режим</span> : null}
     {state === 'partial_fallback' && trace.fallback_count > 0 ? <span>Использован резервный маршрут</span> : null}
+    {trace.candidates.filter((candidate) => candidate.reject_reason).map((candidate) => <span key={candidate.route_id}>Маршрут {candidate.route_id}: {candidate.reject_reason}</span>)}
     {safeActionText(trace.safe_next_action) ? <span>{safeActionText(trace.safe_next_action)}</span> : null}
+    {state === 'degraded' ? <button type="button" onClick={() => setDismissedTrace(trace.trace_id)}>Скрыть предупреждение</button> : null}
   </div>
 }

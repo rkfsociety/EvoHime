@@ -8,6 +8,12 @@ use rand::{rngs::OsRng, RngCore};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
+#[cfg(windows)]
+use tokio::process::{Child, Command};
+
+#[cfg(windows)]
+use crate::windows_supervisor::JobObject;
+
 pub const PORT_FIRST: u16 = 49_152;
 pub const PORT_LAST: u16 = 49_252;
 pub const MAX_PORT_ATTEMPTS: usize = 8;
@@ -20,7 +26,7 @@ pub enum ProcessState { Starting, Running, Stopping, Stopped }
 pub enum HealthStatus { Ready, Degraded, Stale, Unavailable }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LocalError { ModelNotFound, PortUnavailable, AlreadyCancelled, InvalidRequest, ResourceLimitExceeded, Timeout, Cancelled }
+pub enum LocalError { ModelNotFound, PortUnavailable, AlreadyCancelled, InvalidRequest, ResourceLimitExceeded, Timeout, Cancelled, AuthenticationFailed, SessionExpired }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResourceLimits { pub adapter_memory_bytes: u64, pub runtime_memory_bytes: u64, pub adapter_cpu_percent: u8, pub runtime_cpu_percent: u8 }
@@ -43,7 +49,10 @@ pub struct SessionGrant { pub token: Vec<u8>, pub request_id: String, pub expire
 pub struct HealthEvent { pub request_id: String, pub model_id: String, pub process_state: ProcessState, pub health_status: HealthStatus, pub reason: Option<&'static str>, pub port: Option<u16> }
 
 #[derive(Debug)]
-struct ProcessRecord { model_id: String, state: ProcessState, port: u16, references: u32, idle_since_ms: Option<u64>, limits: ResourceLimits, sessions: BTreeMap<String, [u8; 32]> }
+struct SessionRecord { hash: [u8; 32], expires_at_ms: u64, used: bool }
+
+#[derive(Debug)]
+struct ProcessRecord { model_id: String, state: ProcessState, port: u16, references: u32, idle_since_ms: Option<u64>, limits: ResourceLimits, sessions: BTreeMap<String, SessionRecord> }
 
 #[derive(Debug, Default)]
 pub struct LocalProviderManager { processes: BTreeMap<String, ProcessRecord>, cancelled: BTreeMap<String, bool> }
@@ -60,8 +69,21 @@ impl LocalProviderManager {
         record.idle_since_ms = None;
         let mut token = vec![0u8; 32]; OsRng.fill_bytes(&mut token);
         let mut hash = [0u8; 32]; hash.copy_from_slice(&Sha256::digest(&token));
-        record.sessions.insert(request_id.to_owned(), hash);
-        Ok((SessionGrant { token, request_id: request_id.to_owned(), expires_at_ms: now_ms.saturating_add(SESSION_TTL_MS), port: record.port }, HealthEvent { request_id: request_id.to_owned(), model_id: model_id.to_owned(), process_state: ProcessState::Running, health_status: HealthStatus::Ready, reason: None, port: Some(record.port) }))
+        let expires_at_ms = now_ms.saturating_add(SESSION_TTL_MS);
+        record.sessions.insert(request_id.to_owned(), SessionRecord { hash, expires_at_ms, used: false });
+        Ok((SessionGrant { token, request_id: request_id.to_owned(), expires_at_ms, port: record.port }, HealthEvent { request_id: request_id.to_owned(), model_id: model_id.to_owned(), process_state: ProcessState::Running, health_status: HealthStatus::Ready, reason: None, port: Some(record.port) }))
+    }
+
+    /// Authenticates a launch grant exactly once. The grant is consumed at
+    /// request admission, so a response that takes longer than the session TTL
+    /// does not invalidate an already admitted request.
+    pub fn authenticate(&mut self, model_id: &str, request_id: &str, token: &[u8], now_ms: u64) -> Result<u16, LocalError> {
+        let record = self.processes.get_mut(model_id).ok_or(LocalError::ModelNotFound)?;
+        let session = record.sessions.get_mut(request_id).ok_or(LocalError::AuthenticationFailed)?;
+        if now_ms > session.expires_at_ms { return Err(LocalError::SessionExpired); }
+        if session.used || Sha256::digest(token).as_slice() != session.hash { return Err(LocalError::AuthenticationFailed); }
+        session.used = true;
+        Ok(record.port)
     }
 
     pub fn stop(&mut self, model_id: &str, request_id: &str, now_ms: u64) -> Result<HealthEvent, LocalError> {
@@ -85,10 +107,63 @@ pub fn choose_port(occupied: &[u16]) -> Option<u16> {
     (PORT_FIRST..=PORT_LAST).filter(|port| !occupied.contains(port)).take(MAX_PORT_ATTEMPTS).next()
 }
 
+/// Supervisor-owned adapter process. The renderer never supplies an
+/// executable or command line: the supervisor reads the configured adapter
+/// path from its own environment and passes only the selected model and port.
+#[cfg(windows)]
+pub struct LocalAdapterProcess {
+    child: Child,
+    _job: JobObject,
+}
+
+#[cfg(windows)]
+impl LocalAdapterProcess {
+    pub async fn spawn(model_id: &str, port: u16) -> Result<Self, LocalError> {
+        Self::spawn_with_limits(model_id, port, ResourceLimits::default()).await
+    }
+
+    pub async fn spawn_with_limits(model_id: &str, port: u16, limits: ResourceLimits) -> Result<Self, LocalError> {
+        if model_id.trim().is_empty() || !(PORT_FIRST..=PORT_LAST).contains(&port) {
+            return Err(LocalError::InvalidRequest);
+        }
+        let limits = limits.validate()?;
+        let executable = std::env::var_os("EVOHIME_LOCAL_ADAPTER_EXE")
+            .ok_or(LocalError::ModelNotFound)?;
+        let job = JobObject::create_with_limits(Some(limits.adapter_memory_bytes), Some(limits.adapter_cpu_percent)).map_err(|_| LocalError::ResourceLimitExceeded)?;
+        let mut child = Command::new(executable)
+            .arg("--model-id")
+            .arg(model_id)
+            .arg("--port")
+            .arg(port.to_string())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|_| LocalError::ModelNotFound)?;
+        if job.assign(&child).is_err() {
+            let _ = child.start_kill();
+            return Err(LocalError::ResourceLimitExceeded);
+        }
+        Ok(Self { child, _job: job })
+    }
+
+    pub async fn stop(&mut self) -> Result<(), LocalError> {
+        self.child.start_kill().map_err(|_| LocalError::AlreadyCancelled)?;
+        let _ = self.child.wait().await;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test] fn reuses_process_and_stops_idempotently() { let mut manager = LocalProviderManager::default(); let (first, _) = manager.launch("m", "r1", 0, &[], ResourceLimits::default()).unwrap(); let (second, _) = manager.launch("m", "r2", 1, &[], ResourceLimits::default()).unwrap(); assert_eq!(first.port, second.port); assert_eq!(manager.process_count(), 1); assert!(manager.stop("m", "r1", 2).is_ok()); assert!(manager.stop("m", "r2", 3).is_ok()); assert_eq!(manager.process_count(), 1); assert!(manager.stop("m", "r2", 4).is_err()); }
     #[test] fn launch_stop_race_is_cancelled() { let mut manager = LocalProviderManager::default(); manager.cancelled.insert("r".into(), true); assert_eq!(manager.launch("m", "r", 0, &[], ResourceLimits::default()), Err(LocalError::Cancelled)); }
+    #[test] fn session_grant_is_single_use_and_time_bounded() {
+        let mut manager = LocalProviderManager::default();
+        let (grant, _) = manager.launch("m", "r", 1_000, &[], ResourceLimits::default()).unwrap();
+        assert_eq!(manager.authenticate("m", "r", &grant.token, 1_001), Ok(grant.port));
+        assert_eq!(manager.authenticate("m", "r", &grant.token, 1_002), Err(LocalError::AuthenticationFailed));
+        let (expired, _) = manager.launch("m", "r2", 1_000, &[], ResourceLimits::default()).unwrap();
+        assert_eq!(manager.authenticate("m", "r2", &expired.token, expired.expires_at_ms + 1), Err(LocalError::SessionExpired));
+    }
     #[test] fn port_selection_is_bounded() { let occupied: Vec<u16> = (PORT_FIRST..PORT_FIRST + 8).collect(); assert_eq!(choose_port(&occupied), Some(PORT_FIRST + 8)); }
 }

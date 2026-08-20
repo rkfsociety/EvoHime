@@ -183,6 +183,10 @@ pub struct LaunchContext {
     pub supervisor_pid: u32,
     #[serde(default)]
     pub supervisor_liveness_event: String,
+    #[serde(default)]
+    pub supervisor_pipe_name: Option<String>,
+    #[serde(default)]
+    pub supervisor_secret: Option<SessionSecret>,
 }
 
 impl LaunchContext {
@@ -199,6 +203,8 @@ impl LaunchContext {
             issued_at_ms,
             supervisor_pid: 0,
             supervisor_liveness_event: String::new(),
+            supervisor_pipe_name: None,
+            supervisor_secret: None,
         })
     }
 
@@ -218,6 +224,8 @@ impl LaunchContext {
         {
             return Err(SessionError::InvalidIdentifier);
         }
+        if let Some(pipe) = &self.supervisor_pipe_name { validate_pipe_name(pipe)?; }
+        if let Some(secret) = &self.supervisor_secret { SessionSecret::parse(secret.expose())?; }
         Ok(())
     }
 
@@ -232,6 +240,10 @@ impl LaunchContext {
 /// relies on its secrecy — the DACL and this handshake do the work.
 pub fn generate_pipe_name() -> Result<String, SessionError> {
     Ok(format!("{PIPE_PREFIX}{PIPE_NAME_STEM}{}", random_hex(16)?))
+}
+
+pub fn generate_supervisor_pipe_name() -> Result<String, SessionError> {
+    Ok(format!("{PIPE_PREFIX}evohime-supervisor-{}", random_hex(16)?))
 }
 
 pub fn validate_pipe_name(value: &str) -> Result<(), SessionError> {
@@ -419,6 +431,8 @@ mod tests {
             issued_at_ms: 1_000,
             supervisor_pid: 0,
             supervisor_liveness_event: String::new(),
+            supervisor_pipe_name: None,
+            supervisor_secret: None,
         }
     }
 

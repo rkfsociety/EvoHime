@@ -726,21 +726,23 @@ pub fn select_route_snapshot(
         let mut status = health.status;
         let circuit = overlay.get_circuit_state(&candidate.route_id);
         if !health.is_fresh_at(now_ms) { status = HealthStatus::Stale; }
-        if overlay.is_excluded(&candidate.route_id) { reject = Some("route_attempts_exhausted"); }
-        else if circuit != CircuitState::Closed { reject = Some("circuit_open"); }
-        else if status == HealthStatus::Unavailable { reject = Some("health_unavailable"); }
-        else if status == HealthStatus::Stale { reject = Some("health_stale"); }
-        else if candidate.privacy < request.required_privacy { reject = Some("privacy_violation"); }
+        if candidate.privacy < request.required_privacy { reject = Some("privacy_violation"); }
         else if request.offline && candidate.capabilities.execution_class != ExecutionClass::Local { reject = Some("offline_mode"); }
         else if unknown_class && candidate.capabilities.execution_class == ExecutionClass::Cloud { reject = Some("classification_incomplete"); }
         else if !request.allow_cloud && candidate.capabilities.execution_class != ExecutionClass::Local { reject = Some("classification_incomplete"); }
-        else if request.required_capabilities.iter().any(|cap| cap == "tools" && !candidate.capabilities.tool_calling) { reject = Some("capability_missing"); }
+        else if request.required_capabilities.iter().any(|cap| !candidate_supports_capability(candidate, cap)) { reject = Some("capability_missing"); }
         else if candidate.capabilities.context_limit.is_some_and(|limit| request.estimated_input_tokens > limit) { reject = Some("context_limit_exceeded"); }
+        else if request.max_cost_micros_per_1k_tokens.is_some_and(|limit| candidate.cost_micros_per_1k_tokens > limit) { reject = Some("budget_exceeded"); }
+        else if request.max_latency_ms.is_some_and(|limit| candidate.p95_latency_ms > limit) { reject = Some("latency_exceeded"); }
         else if candidate.capabilities.execution_class == ExecutionClass::Local && request.task_class.as_deref() == Some("simple") {
             let large = snapshot.candidates.iter().find(|other| other.capabilities.execution_class == ExecutionClass::Cloud);
             let gate_ok = large.and_then(|large| catalog.map(|cat| cat.small_route_allowed("simple", &large.route_id, &candidate.route_id, request.quality_delta, now_ms))).unwrap_or(false);
             if !gate_ok { reject = Some("gate_unavailable"); }
         }
+        if reject.is_none() && overlay.is_excluded(&candidate.route_id) { reject = Some("route_attempts_exhausted"); }
+        else if reject.is_none() && circuit != CircuitState::Closed { reject = Some("circuit_open"); }
+        else if reject.is_none() && status == HealthStatus::Unavailable { reject = Some("health_unavailable"); }
+        else if reject.is_none() && status == HealthStatus::Stale { reject = Some("health_stale"); }
         decisions.push(SnapshotCandidateDecision { route_id: candidate.route_id.clone(), capability_epoch: candidate.capabilities.capability_epoch, health_status: status, circuit_state: circuit, reject_reason: reject.map(str::to_owned) });
         if reject.is_none() { eligible.push(candidate); }
     }
@@ -756,6 +758,17 @@ pub fn select_route_snapshot(
     let fallback_chain = eligible.iter().skip(1).take(16).map(|candidate| candidate.route_id.clone()).collect::<Vec<_>>();
     let reason_code = if snapshot.candidates.is_empty() { "no_routes_configured" } else if selected_route.is_none() { "all_routes_excluded" } else if attempt_id > 0 { "fallback_selection" } else { "policy_selection" };
     Ok(SnapshotRouteDecision { selected_route, fallback_chain, candidates: decisions, reason_code: reason_code.into() })
+}
+
+fn candidate_supports_capability(candidate: &CandidateEntry, capability: &str) -> bool {
+    match capability {
+        "chat" => true,
+        "tools" | "tool_calling" => candidate.capabilities.tool_calling,
+        "structured_output" => candidate.capabilities.structured_output,
+        "streaming" => candidate.capabilities.streaming,
+        "vision" => candidate.capabilities.vision,
+        _ => false,
+    }
 }
 
 fn health_rank(candidate: &CandidateEntry, now_ms: u64) -> u8 {
@@ -898,6 +911,8 @@ pub struct RunTrace {
 pub struct AttemptTrace {
     /// Attempt index (0-based).
     pub attempt_id: u32,
+    /// The clock value supplied to selection for deterministic replay.
+    pub now_ms: u64,
     /// Selected route ID.
     pub route_id: String,
     /// Capability epoch at attempt time.

@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{fs, path::Path};
+use std::{fs, path::{Path, PathBuf}};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EvaluationRecord {
@@ -74,11 +74,52 @@ impl EvaluationCatalog {
         hex::encode(Sha256::digest(bytes))
     }
 
-    pub fn atomic_replace(path: &Path, content: &str) -> Result<(), CatalogError> {
-        let temp = path.with_extension("tmp");
+    /// Validates a complete signed catalog before replacing the runtime file.
+    /// The caller never observes a partially-written JSONL document.
+    pub fn atomic_replace(path: &Path, content: &str) -> Result<Self, CatalogError> {
+        let catalog = Self::load_jsonl(content, None)?;
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        fs::create_dir_all(parent).map_err(|error| CatalogError::Io(error.to_string()))?;
+        let temp = temporary_path(path);
         fs::write(&temp, content).map_err(|error| CatalogError::Io(error.to_string()))?;
-        fs::rename(&temp, path).map_err(|error| CatalogError::Io(error.to_string()))
+        if let Err(error) = fs::rename(&temp, path) {
+            let _ = fs::remove_file(&temp);
+            return Err(CatalogError::Io(error.to_string()));
+        }
+        Ok(catalog)
     }
+}
+
+/// A runtime catalog location. Loading is fail-closed: an invalid external
+/// file is not silently mixed with the embedded fallback.
+#[derive(Debug, Clone)]
+pub struct CatalogStore {
+    path: PathBuf,
+    catalog: EvaluationCatalog,
+}
+
+impl CatalogStore {
+    pub fn load(path: impl Into<PathBuf>) -> Result<Self, CatalogError> {
+        let path = path.into();
+        let catalog = EvaluationCatalog::load_file(&path, None)?;
+        Ok(Self { path, catalog })
+    }
+
+    pub fn path(&self) -> &Path { &self.path }
+    pub fn catalog(&self) -> &EvaluationCatalog { &self.catalog }
+
+    pub fn replace(&mut self, content: &str) -> Result<(), CatalogError> {
+        let catalog = EvaluationCatalog::atomic_replace(&self.path, content)?;
+        self.catalog = catalog;
+        Ok(())
+    }
+}
+
+fn temporary_path(path: &Path) -> PathBuf {
+    let mut temp = path.to_path_buf();
+    let extension = path.extension().and_then(|value| value.to_str()).unwrap_or("catalog");
+    temp.set_extension(format!("{extension}.tmp-{}", std::process::id()));
+    temp
 }
 
 fn validate_record(record: &EvaluationRecord) -> Result<(), CatalogError> {
@@ -93,4 +134,18 @@ mod tests {
     #[test] fn gate_requires_floor_and_delta() { let catalog = EvaluationCatalog { records: vec![record()] }; assert!(catalog.small_route_allowed("simple", "cloud", "local", 0.03, 2)); assert!(!catalog.small_route_allowed("simple", "cloud", "local", 0.01, 2)); }
     #[test] fn expired_catalog_is_gate_unavailable() { let catalog = EvaluationCatalog { records: vec![record()] }; assert!(!catalog.small_route_allowed("simple", "cloud", "local", 0.1, 100)); }
     #[test] fn signature_excludes_signature_field() { let value = record(); assert_eq!(EvaluationCatalog::canonical_signature(&value), EvaluationCatalog::canonical_signature(&EvaluationRecord { signature: "other".into(), ..value })); }
+    #[test]
+    fn atomic_replace_rejects_invalid_content_and_keeps_old_catalog() {
+        let dir = std::env::temp_dir().join(format!("evohime-catalog-{}", std::process::id()));
+        let path = dir.join("routing.jsonl");
+        let value = record();
+        let content = serde_json::to_string(&EvaluationRecord { signature: EvaluationCatalog::canonical_signature(&value), ..value }).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut store = CatalogStore { path: path.clone(), catalog: EvaluationCatalog::default() };
+        store.replace(&content).unwrap();
+        assert_eq!(store.catalog().records.len(), 1);
+        assert!(EvaluationCatalog::atomic_replace(&path, "not-json").is_err());
+        assert_eq!(EvaluationCatalog::load_file(&path, None).unwrap().records.len(), 1);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

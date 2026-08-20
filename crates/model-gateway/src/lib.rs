@@ -33,7 +33,7 @@ pub use crate::routing_policy::{PrivacyClass, RouteCandidate, RoutingRequest};
 pub use crate::routing_runtime::routing_policy::{PrivacyClass, RouteCandidate, RoutingRequest};
 pub use crate::routing_runtime::{RoutingMode, RoutingRuntime, RuntimeError, RuntimeLimits};
 pub use crate::routing_trace::{RoutingTrace, TraceCandidate, TerminalStatus, SafeNextAction, HealthState, PrivacyLabel};
-pub use crate::routing_catalog::{EvaluationCatalog, EvaluationRecord, CatalogError};
+pub use crate::routing_catalog::{CatalogError, CatalogStore, EvaluationCatalog, EvaluationRecord};
 pub use crate::tools::{
     ChatResult, ChatStreamItem, FunctionSpec, LlmUsage, NativeToolCall, ToolSpec,
 };
@@ -48,7 +48,34 @@ fn current_time_ms() -> u64 {
 
 fn builtin_routing_catalog() -> Option<&'static EvaluationCatalog> {
     static CATALOG: OnceLock<Option<EvaluationCatalog>> = OnceLock::new();
-    CATALOG.get_or_init(|| EvaluationCatalog::load_jsonl(include_str!("../resources/routing-v1.jsonl"), None).ok()).as_ref()
+    CATALOG.get_or_init(|| load_runtime_catalog().or_else(|| EvaluationCatalog::load_jsonl(include_str!("../resources/routing-v1.jsonl"), None).ok())).as_ref()
+}
+
+fn load_runtime_catalog() -> Option<EvaluationCatalog> {
+    let mut paths = Vec::new();
+    if let Ok(path) = std::env::var("EVOHIME_ROUTING_CATALOG") {
+        if !path.trim().is_empty() { paths.push(std::path::PathBuf::from(path)); }
+    }
+    if let Ok(data_dir) = std::env::var("EVOHIME_DATA_DIR") {
+        paths.push(std::path::PathBuf::from(data_dir).join("routing/routing-v1.jsonl"));
+    }
+    if let Ok(executable) = std::env::current_exe() {
+        if let Some(parent) = executable.parent() {
+            paths.push(parent.join("routing/routing-v1.jsonl"));
+            paths.push(parent.join("resources/routing-v1.jsonl"));
+        }
+    }
+    paths.into_iter().find_map(|path| EvaluationCatalog::load_file(&path, None).ok())
+}
+
+fn classify_failure(error: &ProviderError) -> FailureCategory {
+    match error {
+        ProviderError::Config(_) => FailureCategory::InvalidRequest,
+        ProviderError::Http(message) if message.contains("timeout") => FailureCategory::Timeout,
+        ProviderError::Http(message) if message.contains("connection") => FailureCategory::ConnectionRefused,
+        ProviderError::Http(_) | ProviderError::Api(_) => FailureCategory::ServerError,
+        ProviderError::Stream(_) => FailureCategory::MalformedResponse,
+    }
 }
 
 /// Entry point for chat completions.
@@ -88,6 +115,7 @@ pub struct PolicyChatResult {
     pub result: ChatResult,
     pub decision: Option<SnapshotRouteDecision>,
     pub snapshot_hash: Option<String>,
+    pub attempt_trace: Option<RunTrace>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -396,15 +424,48 @@ impl ModelGateway {
             let overlay = RunHealthOverlay::new(&snapshot.run_id);
             let decision = select_route_snapshot(request, &snapshot, &overlay, builtin_routing_catalog(), 0, now_ms)
                 .map_err(|error| ProviderError::Config(error.to_string()))?;
-            let route = decision.selected_route.as_deref().ok_or_else(|| ProviderError::Config(decision.reason_code.clone()))?;
-            let result = self.chat_with_tools_for_route(route, model, messages, tools).await?;
             let snapshot_hash = snapshot.round_trip_hash().ok();
-            return Ok(PolicyChatResult { selected_route: route.to_owned(), fallback_chain: decision.fallback_chain.clone(), result, decision: Some(decision), snapshot_hash });
+            let policy_hash = snapshot_hash.clone().unwrap_or_else(|| "snapshot-hash-unavailable".into());
+            let mut trace = RunTrace::new(snapshot.run_id.clone(), policy_hash, snapshot.schema_version.clone());
+            let mut routes = Vec::new();
+            if let Some(route) = decision.selected_route.clone() { routes.push(route); }
+            routes.extend(decision.fallback_chain.clone());
+            let retry = RetryConfig::default();
+            let mut last_error = None;
+            let mut attempt_id = 1_u32;
+            'routes: for route in routes.into_iter().take(retry.max_attempts as usize) {
+                for route_attempt in 0..retry.max_attempts_per_route {
+                    let capability_epoch = snapshot.candidates.iter().find(|candidate| candidate.route_id == route).map(|candidate| candidate.capabilities.capability_epoch).unwrap_or_default();
+                    let backoff = if attempt_id == 1 { 0 } else { retry.compute_backoff(attempt_id - 1, &snapshot.run_id, &route).as_millis() as u64 };
+                    let selection_now_ms = snapshot.created_at.saturating_add(attempt_id as u64);
+                    trace.add_attempt(AttemptTrace { attempt_id, now_ms: selection_now_ms, route_id: route.clone(), capability_epoch, selection_reason: if attempt_id == 1 { decision.reason_code.clone() } else { "fallback_after_provider_failure".into() }, failure_category: None, backoff_ms: backoff, overlay_generation: overlay.generation() });
+                    if backoff > 0 { tokio::time::sleep(std::time::Duration::from_millis(backoff)).await; }
+                    match self.chat_with_tools_for_route(&route, model, messages, tools).await {
+                        Ok(result) => {
+                            trace.set_result(RunResult::Success);
+                            trace.circuit_opened_during_run = overlay.circuit_opened_during_run();
+                            return Ok(PolicyChatResult { selected_route: route, fallback_chain: decision.fallback_chain.clone(), result, decision: Some(decision), snapshot_hash, attempt_trace: Some(trace) });
+                        }
+                        Err(error) => {
+                            let category = classify_failure(&error);
+                            if let Some(attempt) = trace.attempts.last_mut() { attempt.failure_category = Some(category); }
+                            let _ = overlay.record_failure_at(&route, attempt_id, category, &retry, snapshot.created_at.saturating_add(attempt_id as u64));
+                            last_error = Some(error);
+                            attempt_id = attempt_id.saturating_add(1);
+                            if category == FailureCategory::InvalidRequest { break 'routes; }
+                            if attempt_id > retry.max_attempts { break 'routes; }
+                            if route_attempt + 1 >= retry.max_attempts_per_route { break; }
+                        }
+                    }
+                }
+            }
+            trace.set_result(RunResult::RouteExhausted);
+            return Err(last_error.unwrap_or_else(|| ProviderError::Config(decision.reason_code)));
         }
         let runtime = self.plan_route(mode, request, RuntimeLimits::default()).map_err(|error| ProviderError::Config(error.to_string()))?;
         let route = runtime.decision().selected_route.as_deref().ok_or_else(|| ProviderError::Config("routing policy selected no route".into()))?;
         let result = self.chat_with_tools_for_route(route, model, messages, tools).await?;
-        Ok(PolicyChatResult { selected_route: route.to_owned(), fallback_chain: runtime.decision().fallback_chain.clone(), result, decision: None, snapshot_hash: None })
+        Ok(PolicyChatResult { selected_route: route.to_owned(), fallback_chain: runtime.decision().fallback_chain.clone(), result, decision: None, snapshot_hash: None, attempt_trace: None })
     }
 
     /// Plans a route using the bounded routing contract (`routing_policy` /

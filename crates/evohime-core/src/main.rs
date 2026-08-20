@@ -64,6 +64,7 @@ async fn main() {
         evohime_core::attach_permission_audit_sink(journal.clone(), &tools).await;
     evohime_core::permission_rules::apply_rules(tools.permissions(), &data_dir).await;
     let approvals = evohime_core::ApprovalCoordinator::default();
+    let routing_approvals = evohime_core::RoutingApprovalRegistry::default();
     let model_config = evohime_model_gateway::ModelGatewayConfig::from_env().ok();
     let model_snapshot = model_config.as_ref().and_then(|config| {
         config
@@ -91,6 +92,7 @@ async fn main() {
                 )
                 .with_journal(journal.clone())
                 .with_receipt_keys(receipt_keys.clone())
+                .with_routing_approvals(routing_approvals.clone())
                 .with_selected_model(selected_model.clone()),
             ) as std::sync::Arc<dyn evohime_core::TaskExecutor>
         });
@@ -115,6 +117,7 @@ async fn main() {
         };
         let (coordinator, mut events) =
             evohime_core::TaskCoordinator::new_with_journal(256, Some(executor), journal);
+        coordinator.attach_routing_approvals(routing_approvals.clone()).await;
         let task_id = uuid::Uuid::new_v4().to_string();
         if let Err(error) = coordinator
             .dispatch(evohime_core::CoreCommand::StartTask {
@@ -163,6 +166,7 @@ async fn main() {
     }
     let (coordinator, _events) =
         evohime_core::TaskCoordinator::new_with_journal(256, executor, journal.clone());
+    coordinator.attach_routing_approvals(routing_approvals).await;
     let bridge = evohime_core::IpcBridge::with_coordinator_and_approvals(
         journal,
         coordinator,
@@ -186,6 +190,9 @@ async fn main() {
             std::process::exit(1);
         }
     };
+    if let Err(error) = probe_supervisor(&context).await {
+        eprintln!("evohime-core supervisor lifecycle probe failed: {error}");
+    }
     let authenticated = context.is_authenticated();
     let _ = logger.write(
         "info",
@@ -207,6 +214,51 @@ async fn main() {
     heartbeat_task.abort();
     approval_gc_task.abort();
     receipt_retention_task.abort();
+}
+
+#[cfg(windows)]
+async fn probe_supervisor(
+    context: &evohime_desktop_ipc::session::LaunchContext,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use evohime_desktop_ipc::session::SessionSecret;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::windows::named_pipe::ClientOptions;
+
+    let pipe = context.supervisor_pipe_name.as_deref().ok_or("supervisor channel unavailable")?;
+    let secret = context.supervisor_secret.as_ref().ok_or("supervisor secret unavailable")?;
+    let client_id = format!("core-{}", std::process::id());
+    let client = ClientOptions::new().open(pipe)?;
+    let mut channel = BufReader::new(client);
+    let mut line = Vec::new();
+    channel.read_until(b'\n', &mut line).await?;
+    let challenge: serde_json::Value = serde_json::from_slice(&line)?;
+    let nonce = challenge.get("nonce").and_then(serde_json::Value::as_str).ok_or("supervisor nonce missing")?;
+    let proof = SessionSecret::parse(secret.expose())?.proof("core", &client_id, nonce);
+    let user_sid = evohime_desktop_ipc::windows_security::current_user_sid()?;
+    let logon_session = evohime_desktop_ipc::windows_security::current_logon_session()?;
+    let request = serde_json::json!({
+        "client_id": client_id,
+        "client_role": "core",
+        "nonce": nonce,
+        "proof": proof,
+        "peer": {"user_sid": user_sid, "logon_session": logon_session},
+    });
+    channel.get_mut().write_all(serde_json::to_string(&request)?.as_bytes()).await?;
+    channel.get_mut().write_all(b"\n").await?;
+    line.clear();
+    channel.read_until(b'\n', &mut line).await?;
+    let authenticated: serde_json::Value = serde_json::from_slice(&line)?;
+    if authenticated.get("authenticated") != Some(&serde_json::Value::Bool(true)) {
+        return Err("supervisor rejected Core authentication".into());
+    }
+    channel.get_mut().write_all(b"{\"op\":\"probe\"}\n").await?;
+    line.clear();
+    channel.read_until(b'\n', &mut line).await?;
+    let response: serde_json::Value = serde_json::from_slice(&line)?;
+    if response.get("accepted") != Some(&serde_json::Value::Bool(true)) {
+        return Err("supervisor probe was rejected".into());
+    }
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -627,5 +679,7 @@ fn launch_context() -> Result<evohime_desktop_ipc::session::LaunchContext, std::
         issued_at_ms: 0,
         supervisor_pid: 0,
         supervisor_liveness_event: String::new(),
+        supervisor_pipe_name: None,
+        supervisor_secret: None,
     })
 }

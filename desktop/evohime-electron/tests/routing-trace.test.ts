@@ -16,4 +16,14 @@ describe('routing trace', () => {
     const parsed = parseRoutingTrace(trace({ terminal_status: 'no_routes_configured', selected_route: null, candidates: [], safe_next_action: 'contact_support' }))!
     expect(routingViewState(parsed, 'cloud')).toBe('refusal')
   })
+  it('maps unknown route enum to unknown_state instead of rendering raw input', () => {
+    const parsed = parseRoutingTrace(trace({ selected_route: 'quantum' }))!
+    expect(routingViewState(parsed, null)).toBe('unknown_state')
+    expect(parsed.reason_code).toBe('unsupported_enum')
+  })
+  it('keeps preferred-route annotations read-only', () => {
+    const parsed = parseRoutingTrace(trace({ selected_route: 'cloud', reason_code: 'fallback_selection', fallback_count: 1 }))!
+    expect(routingViewState(parsed, 'local')).toBe('partial_fallback')
+    expect(parsed.selected_route).toBe('cloud')
+  })
 })

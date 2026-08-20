@@ -46,10 +46,10 @@ Legacy web UI, browser launcher, HTTP server и PostgreSQL persistence удал�
 Core + SQLite + authenticated named-pipe IPC сохраняются. Пользовательская оболочка
 — Electron; WinUI — compatibility runtime.
 
-Активный implementation-план — [02 Local SLM fallback и routing](plans/02-0-local-slm-fallback-routing.md).
-Следующий этап — [02.1 Provider contract](plans/02-1-provider-contract.md), затем
-02.2 local provider, 02.3 routing и budget и 02.4 UI. План 03 остаётся
-независимой веткой и не отменяет незавершённые этапы плана 02.
+Этап 02 Local SLM fallback и routing завершён. Его контракт находится в
+[`architecture.md`](architecture.md), подтверждённое состояние — в
+[`current-state.md`](current-state.md). Следующим независимым направлением
+остаётся план 03.
 
 После завершения foundation добавлен функциональный slice «Ревью планов» в
 Electron: additive desktop IPC, `plan_review` в Core и event journal для

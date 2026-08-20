@@ -13,6 +13,8 @@ fn routing_success_trace(
     classification: &str,
     decision: Option<&evohime_model_gateway::SnapshotRouteDecision>,
     snapshot_hash: Option<&str>,
+    attempt_id: u32,
+    now_ms: u64,
 ) -> evohime_model_gateway::RoutingTrace {
     let candidates = decision.map(|decision| decision.candidates.iter().map(|candidate| {
         let health_state = match candidate.health_status {
@@ -27,8 +29,8 @@ fn routing_success_trace(
         trace_id: run_id.to_owned(),
         run_id: run_id.to_owned(),
         sequence: 1,
-        attempt_id: 0,
-        now_ms: task_memory::now_millis(),
+        attempt_id,
+        now_ms,
         policy_version: "routing-policy-v1".into(),
         catalog_version: "builtin-v1".into(),
         snapshot_hash: snapshot_hash.unwrap_or("runtime-selection").into(),
@@ -56,6 +58,7 @@ fn routing_failure_trace(run_id: &str, error: &AgentRunError) -> evohime_model_g
         AgentRunError::Timeout(_) => (evohime_model_gateway::TerminalStatus::RunDeadlineExceeded, "run_deadline_exceeded", Some(evohime_model_gateway::SafeNextAction::RetryLater)),
         AgentRunError::BudgetUnavailable { .. } => (evohime_model_gateway::TerminalStatus::BudgetUnavailable, "budget_unavailable", Some(evohime_model_gateway::SafeNextAction::ClarifyRequest)),
         AgentRunError::Provider(_) => (evohime_model_gateway::TerminalStatus::BothRoutesUnavailable, "provider_unavailable", Some(evohime_model_gateway::SafeNextAction::RetryLater)),
+        AgentRunError::RoutingApprovalDeclined => (evohime_model_gateway::TerminalStatus::RerouteApprovalDeclined, "reroute_approval_declined", Some(evohime_model_gateway::SafeNextAction::ManualReview)),
         AgentRunError::Internal(_) => (evohime_model_gateway::TerminalStatus::InternalError, "internal_error", Some(evohime_model_gateway::SafeNextAction::ContactSupport)),
     };
     evohime_model_gateway::RoutingTrace {
@@ -3660,6 +3663,8 @@ pub enum AgentRunError {
     Timeout(u64),
     #[error("agent runtime failed: {0}")]
     Internal(String),
+    #[error("routing reroute approval was declined or expired")]
+    RoutingApprovalDeclined,
     /// План 01.1: сборка контекста завершилась отказом. Это терминальный
     /// результат, а не обрыв соединения: model call не выполнялся, а
     /// автоматический retry запрещён на всех уровнях.
@@ -3698,6 +3703,49 @@ pub struct ApprovalCoordinator {
     pending: Arc<Mutex<HashMap<uuid::Uuid, oneshot::Sender<bool>>>>,
     approved: Arc<Mutex<HashMap<uuid::Uuid, bool>>>,
     resolved: Arc<Mutex<HashSet<uuid::Uuid>>>,
+}
+
+#[derive(Clone, Default)]
+pub struct RoutingApprovalRegistry {
+    pending: Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>>,
+}
+
+impl RoutingApprovalRegistry {
+    pub async fn wait_for_decision(
+        &self,
+        task_id: &str,
+        run_id: &str,
+        trace_id: &str,
+        route_id: &str,
+        timeout_ms: u64,
+        events: &broadcast::Sender<CoreEvent>,
+        cancellation: &CancellationToken,
+    ) -> Result<bool, AgentRunError> {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        self.pending.lock().await.insert(trace_id.to_owned(), sender);
+        let expires_at_ms = task_memory::now_millis().saturating_add(timeout_ms);
+        let _ = events.send(CoreEvent::PendingRoutingApproval {
+            task_id: task_id.to_owned(),
+            trace_id: trace_id.to_owned(),
+            run_id: run_id.to_owned(),
+            route_id: route_id.to_owned(),
+            expires_at_ms,
+        });
+        let outcome = tokio::select! {
+            _ = cancellation.cancelled() => Err(AgentRunError::Cancelled),
+            result = tokio::time::timeout(std::time::Duration::from_millis(timeout_ms.max(1)), receiver) =>
+                Ok(result.ok().and_then(Result::ok).unwrap_or(false)),
+        };
+        self.pending.lock().await.remove(trace_id);
+        outcome
+    }
+
+    pub async fn resolve(&self, trace_id: &str, approve: bool) -> Result<bool, String> {
+        let sender = self.pending.lock().await.remove(trace_id)
+            .ok_or_else(|| "routing approval is unknown or expired".to_owned())?;
+        sender.send(approve).map_err(|_| "routing approval is no longer pending".to_owned())?;
+        Ok(true)
+    }
 }
 
 impl ApprovalCoordinator {
@@ -3897,6 +3945,7 @@ pub struct ToolAgent {
     tools: Arc<ToolRegistry>,
     max_iterations: usize,
     approvals: ApprovalCoordinator,
+    routing_approvals: Option<RoutingApprovalRegistry>,
     journal: Option<EventJournal>,
     selected_model: SelectedModel,
     receipt_keys: Option<Arc<ReceiptKeyManager>>,
@@ -3922,6 +3971,7 @@ impl ToolAgent {
             tools,
             max_iterations: DEFAULT_TOOL_ITERATIONS,
             approvals,
+            routing_approvals: None,
             journal: None,
             selected_model: SelectedModel::default(),
             receipt_keys: None,
@@ -3944,6 +3994,11 @@ impl ToolAgent {
 
     pub fn with_receipt_keys(mut self, keys: Arc<ReceiptKeyManager>) -> Self {
         self.receipt_keys = Some(keys);
+        self
+    }
+
+    pub fn with_routing_approvals(mut self, approvals: RoutingApprovalRegistry) -> Self {
+        self.routing_approvals = Some(approvals);
         self
     }
 
@@ -5386,6 +5441,8 @@ impl ToolAgent {
         let mut research_has_content = false;
         let mut research_has_search = false;
         let mut observability_sequence = 0_u64;
+        let mut reroutes_used = 0_u32;
+        let max_reroutes = 1_u32;
         for iteration in 0..self.max_iterations {
             write_model_trace(
                 "model.request",
@@ -5440,6 +5497,50 @@ impl ToolAgent {
                 _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
                 result = self.call_model_with_resilience(&task_id, &messages, &specs, &resilience_config, preferred_route.as_deref(), Some(task_class), assembled.ledger().estimated_prompt_tokens) => result?,
             };
+            if let Some(attempt_trace) = result.attempt_trace.as_ref() {
+                write_model_trace(
+                    "routing.attempt_trace",
+                    serde_json::json!({
+                        "task_id": task_id,
+                        "run_id": attempt_trace.run_id,
+                        "attempts": attempt_trace.attempts,
+                        "result": attempt_trace.result,
+                        "circuit_opened_during_run": attempt_trace.circuit_opened_during_run
+                    }),
+                );
+            }
+            let has_tool_calls = result.result.has_tool_calls();
+            if preferred_route.as_deref() == Some("local")
+                && result.selected_route == "cloud"
+                && has_tool_calls
+            {
+                if let Some(registry) = &self.routing_approvals {
+                    if reroutes_used >= max_reroutes {
+                        return Err(AgentRunError::RoutingApprovalDeclined);
+                    }
+                    let timeout_ms = std::env::var("EVOHIME_ROUTING_APPROVAL_TIMEOUT_MS")
+                        .ok()
+                        .and_then(|value| value.parse::<u64>().ok())
+                        .unwrap_or(120_000)
+                        .clamp(1, 120_000);
+                    let trace_id = format!("{task_id}:routing:{iteration}");
+                    let approved = registry
+                        .wait_for_decision(
+                            &task_id,
+                            &task_id,
+                            &trace_id,
+                            &result.selected_route,
+                            timeout_ms,
+                            events,
+                            &cancellation,
+                        )
+                        .await?;
+                    if !approved {
+                        return Err(AgentRunError::RoutingApprovalDeclined);
+                    }
+                    reroutes_used = reroutes_used.saturating_add(1);
+                }
+            }
             let _ = events.send(CoreEvent::RoutingTrace {
                 task_id: task_id.clone(),
                 trace: routing_success_trace(
@@ -5452,6 +5553,8 @@ impl ToolAgent {
                     task_class,
                     result.decision.as_ref(),
                     result.snapshot_hash.as_deref(),
+                    result.attempt_trace.as_ref().and_then(|trace| trace.attempts.last()).map(|attempt| attempt.attempt_id).unwrap_or(0),
+                    result.attempt_trace.as_ref().and_then(|trace| trace.attempts.last()).map(|attempt| attempt.now_ms).unwrap_or_else(task_memory::now_millis),
                 ),
             });
             let result = result.result;
@@ -6235,6 +6338,7 @@ impl TaskExecutor for ToolAgent {
             tools: Arc::clone(&self.tools),
             max_iterations: self.max_iterations,
             approvals: self.approvals.clone(),
+            routing_approvals: self.routing_approvals.clone(),
             journal: self.journal.clone(),
             selected_model: self.selected_model.clone(),
             receipt_keys: self.receipt_keys.clone(),
@@ -6263,6 +6367,7 @@ impl TaskExecutor for ToolAgent {
             tools: Arc::clone(&self.tools),
             max_iterations: self.max_iterations,
             approvals: self.approvals.clone(),
+            routing_approvals: self.routing_approvals.clone(),
             journal: self.journal.clone(),
             selected_model: self.selected_model.clone(),
             receipt_keys: self.receipt_keys.clone(),
@@ -6287,6 +6392,7 @@ struct CoordinatorState {
     backup_cancellations: HashMap<String, CancellationToken>,
     backup_approvals: HashMap<String, String>,
     routing_decisions: HashMap<String, bool>,
+    routing_approvals: RoutingApprovalRegistry,
     events: broadcast::Sender<CoreEvent>,
     executor: Option<Arc<dyn TaskExecutor>>,
     journal: Option<EventJournal>,
@@ -6326,6 +6432,10 @@ impl TaskCoordinator {
         let _ = self.state.lock().await.events.send(event);
     }
 
+    pub async fn attach_routing_approvals(&self, approvals: RoutingApprovalRegistry) {
+        self.state.lock().await.routing_approvals = approvals;
+    }
+
     pub fn new_with_executor(
         buffer: usize,
         executor: Option<Arc<dyn TaskExecutor>>,
@@ -6354,6 +6464,7 @@ impl TaskCoordinator {
             backup_cancellations: HashMap::new(),
             backup_approvals: HashMap::new(),
             routing_decisions: HashMap::new(),
+            routing_approvals: RoutingApprovalRegistry::default(),
             events: events.clone(),
             executor,
             journal: journal.clone(),
@@ -6706,8 +6817,16 @@ impl TaskCoordinator {
                 });
             }
             CoreCommand::ResolveRoutingDecision { trace_id, approve, reply } => {
-                state.lock().await.routing_decisions.insert(trace_id, approve);
-                let _ = reply.send(Ok(serde_json::json!({"accepted": true}).to_string().into_bytes()));
+                let approvals = state.lock().await.routing_approvals.clone();
+                match approvals.resolve(&trace_id, approve).await {
+                    Ok(_) => {
+                        state.lock().await.routing_decisions.insert(trace_id, approve);
+                        let _ = reply.send(Ok(serde_json::json!({"accepted": true}).to_string().into_bytes()));
+                    }
+                    Err(error) => {
+                        let _ = reply.send(Err(error));
+                    }
+                }
             }
             CoreCommand::StopTask { task_id } => {
                 let mut state_guard = state.lock().await;
@@ -10152,6 +10271,33 @@ mod tests {
         assert!(coordinator.resolve(approval_id, true).await);
         assert!(!coordinator.resolve(approval_id, false).await);
         assert!(receiver.await.expect("approval response"));
+    }
+
+    #[tokio::test]
+    async fn routing_approval_waits_for_explicit_decision_and_times_out() {
+        let registry = super::RoutingApprovalRegistry::default();
+        let (events, mut receiver) = tokio::sync::broadcast::channel(4);
+        let cancellation = CancellationToken::new();
+        let waiting = {
+            let registry = registry.clone();
+            let cancellation = cancellation.clone();
+            let events = events.clone();
+            tokio::spawn(async move {
+                registry
+                    .wait_for_decision("task", "run", "trace", "cloud", 1_000, &events, &cancellation)
+                    .await
+            })
+        };
+        assert!(matches!(receiver.recv().await, Ok(CoreEvent::PendingRoutingApproval { route_id, .. }) if route_id == "cloud"));
+        assert!(registry.resolve("trace", true).await.is_ok());
+        assert_eq!(waiting.await.unwrap().unwrap(), true);
+
+        let timeout_result = registry
+            .wait_for_decision("task", "run", "trace-timeout", "cloud", 1, &events, &cancellation)
+            .await
+            .unwrap();
+        assert!(!timeout_result);
+        assert!(registry.resolve("trace-timeout", true).await.is_err());
     }
 
     #[test]

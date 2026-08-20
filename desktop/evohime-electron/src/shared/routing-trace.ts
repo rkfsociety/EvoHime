@@ -58,6 +58,7 @@ export function parseRoutingTrace(raw: string): RoutingTrace | null {
   if (!(v.terminal_status in STATUS_TEXT) || !['sensitive', 'non_sensitive', 'unknown'].includes(v.privacy_label)) return { schema_version: version as number | string, terminal_status: 'internal_error', selected_route: null, candidates: [], reason_code: 'unsupported_enum', fallback_count: 0, privacy_label: 'unknown', trace_id: String(v.trace_id), run_id: String(v.run_id), sequence: Number(v.sequence) } as RoutingTrace
   if (v.terminal_status === 'success' && typeof v.selected_route !== 'string') return null
   if (v.terminal_status !== 'success' && v.selected_route !== null) return null
+  if (typeof v.selected_route === 'string' && !ROUTES.includes(v.selected_route as RouteId)) return { schema_version: version as number | string, terminal_status: 'internal_error', selected_route: null, candidates: [], reason_code: 'unsupported_enum', fallback_count: 0, privacy_label: 'unknown', trace_id: String(v.trace_id), run_id: String(v.run_id), sequence: Number(v.sequence) } as RoutingTrace
   const candidates = v.candidates.filter((candidate): candidate is RoutingCandidate => {
     if (!candidate || typeof candidate !== 'object') return false
     const c = candidate as Record<string, unknown>

@@ -106,19 +106,12 @@ gate и budget. User preference передаётся только как hint в
 Все этапы сохраняют tool permissions, approval requirements, sandbox и privacy
 границы при fallback. Trace и enum-контракт для UI версионируются; malformed
 payload или несовместимая major-версия не интерпретируются renderer частично.
-Подробный порядок, зависимости и acceptance criteria находятся в
-[`plans/02-0-local-slm-fallback-routing.md`](plans/02-0-local-slm-fallback-routing.md)
-и связанных этапах `02-1`–`02-4`.
-
-На checkout от 20 августа 2026 года provider contract, snapshot/overlay selector,
-loopback local provider, embedded signed evaluation catalog, Core routing trace,
-preferred-route hint и базовая routing UI-проекция подключены к agent loop. Полный
-этап 02 ещё не закрыт: supervisor manager пока является тестируемой state-machine
-без запуска model process и authenticated Core↔supervisor command channel;
-post-analysis reroute/pending approval не доведены до рабочего ожидания решения;
-runtime trace ещё не является полным replayable attempt log. Поэтому файлы
-`docs/plans/02-0`–`02-4` сохраняются как активные acceptance criteria, а
-подтверждённые детали и остаточный долг ведутся в [`current-state.md`](current-state.md).
+Реализация этапа 02 завершена. Snapshot/overlay selector, loopback local
+provider, supervisor-owned adapter lifecycle в Job Object, authenticated
+Core↔supervisor command channel, bounded fallback/approval workflow,
+versioned runtime catalog, redacted replayable trace и typed routing UI
+подключены к agent loop. Временные планы этапа удалены после переноса
+контракта сюда и подтверждённого состояния в [`current-state.md`](current-state.md).
 
 ## Signed receipts
 
