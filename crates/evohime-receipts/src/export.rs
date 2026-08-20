@@ -14,6 +14,25 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+/// Строка активного чекпоинта из `receipt_checkpoints` в порядке SELECT:
+/// checkpoint_id, key_id, cutoff_sequence, first_retained_hash,
+/// prefix_last_hash, last_deleted_receipt_hash, head_receipt_hash, created_at,
+/// canonical_checkpoint, signed_by_key_id, signature, status.
+type ActiveCheckpointRow = (
+    String,
+    String,
+    i64,
+    String,
+    String,
+    String,
+    String,
+    String,
+    Vec<u8>,
+    String,
+    String,
+    String,
+);
+
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum ExportError {
     #[error("receipts.db_unavailable")]
@@ -481,8 +500,7 @@ pub fn export_receipts(
         // alongside the detached `signature`, exactly like a receipt
         // envelope — the offline verifier trusts neither the duplicated
         // display columns nor an unsigned re-serialization.
-        let row: Option<(String, String, i64, String, String, String, String, String, Vec<u8>, String, String, String)> =
-            match connection.query_row(
+        let row: Option<ActiveCheckpointRow> = match connection.query_row(
                 "SELECT checkpoint_id, key_id, cutoff_sequence, first_retained_hash, prefix_last_hash, last_deleted_receipt_hash, head_receipt_hash, created_at, canonical_checkpoint, signed_by_key_id, signature, status \
                  FROM receipt_checkpoints WHERE key_id=?1 AND status='active'",
                 [key_id],
@@ -752,7 +770,7 @@ mod tests {
 
         let result = verify_receipts(
             &db,
-            &[genesis.clone()],
+            std::slice::from_ref(&genesis),
             None,
             &ReceiptFilter::default(),
             500,

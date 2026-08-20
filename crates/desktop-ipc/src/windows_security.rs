@@ -58,7 +58,7 @@ impl PipeSecurity {
         let created = unsafe {
             ConvertStringSecurityDescriptorToSecurityDescriptorW(
                 wide.as_ptr(),
-                SDDL_REVISION_1 as u32,
+                SDDL_REVISION_1,
                 &mut descriptor,
                 std::ptr::null_mut(),
             )

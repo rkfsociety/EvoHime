@@ -3,6 +3,8 @@ pub struct CoreVersion;
 pub const AGENT_IDENTITY_PROMPT: &str =
     "Ты — Ева, AI-агент приложения EvoHime. Ева — короткое имя EvoHime; понимай обращения к тебе «Ева» и «EvoHime» как к одному агенту.";
 
+// Аргументы — поля одной строки трассы маршрутизации; структура-обёртка здесь только продублировала бы её.
+#[allow(clippy::too_many_arguments)]
 fn routing_success_trace(
     run_id: &str,
     selected_route: &str,
@@ -692,9 +694,7 @@ fn parse_natural_tool_intent(content: &str, iteration: usize) -> Option<NativeTo
             .filter(|value| value.is_object())
             .cloned()
             .unwrap_or(json_body);
-        let arguments = if name == "filesystem.search" {
-            arguments
-        } else if arguments.get("path").is_some() {
+        let arguments = if name == "filesystem.search" || arguments.get("path").is_some() {
             arguments
         } else {
             serde_json::json!({ "path": "." })
@@ -1033,6 +1033,8 @@ fn classify_shell_verification(
     )
 }
 
+// Аргументы — признаки выполненных требований поставки, по одному булеву на требование.
+#[allow(clippy::too_many_arguments)]
 fn delivery_next_step(
     requirements: DeliveryRequirements,
     research_done: bool,
@@ -2274,7 +2276,7 @@ impl EventJournal {
         store.read(
             locator,
             task_id,
-            &[reference.owner_task_id.clone()],
+            std::slice::from_ref(&reference.owner_task_id),
             kind,
             task_memory::now_millis() as i64,
         )
@@ -2379,6 +2381,8 @@ impl EventJournal {
         database.append_event(task_id, event_type, &payload)
     }
 
+    // Аргументы повторяют колонки строки метрики инструмента в SQLite.
+    #[allow(clippy::too_many_arguments)]
     pub async fn record_tool_metric(
         &self,
         task_id: &str,
@@ -2569,6 +2573,8 @@ impl EventJournal {
         })
     }
 
+    // Аргументы повторяют колонки перехода recovery в SQLite.
+    #[allow(clippy::too_many_arguments)]
     pub async fn transition_recovery(
         &self,
         run_id: &str,
@@ -3884,6 +3890,8 @@ pub struct RoutingApprovalRegistry {
 }
 
 impl RoutingApprovalRegistry {
+    // Аргументы — параметры ожидания решения: идентичность запроса, таймаут и каналы.
+    #[allow(clippy::too_many_arguments)]
     pub async fn wait_for_decision(
         &self,
         task_id: &str,
@@ -4192,6 +4200,8 @@ impl ToolAgent {
         self
     }
 
+    // Аргументы повторяют поля ActionRequest чека.
+    #[allow(clippy::too_many_arguments)]
     async fn receipt_prepare_approval(
         &self,
         task_id: &str,
@@ -4296,6 +4306,8 @@ impl ToolAgent {
         Ok(Some(request))
     }
 
+    // Аргументы повторяют поля ActionRequest чека.
+    #[allow(clippy::too_many_arguments)]
     async fn receipt_claim_approval(
         &self,
         task_id: &str,
@@ -4373,6 +4385,8 @@ impl ToolAgent {
         Ok((action_id, request))
     }
 
+    // Аргументы повторяют поля ActionRequest чека.
+    #[allow(clippy::too_many_arguments)]
     async fn receipt_refuse_approval(
         &self,
         task_id: &str,
@@ -4539,7 +4553,7 @@ impl ToolAgent {
                 if let Some(request) = request {
                     if matches!(
                         &result,
-                        Err(evohime_tool_runtime::ToolError::NeedsApproval { .. })
+                        Err(evohime_tool_runtime::ToolError::NeedsApproval(_))
                     ) {
                         self.receipt_pending(&request, "unknown").await;
                         return Err(evohime_tool_runtime::ToolError::Execution(
@@ -4876,7 +4890,7 @@ impl ToolAgent {
                 .unwrap_or_default();
             let summaries = active
                 .iter()
-                .filter_map(|record| memory_active_summary(record))
+                .filter_map(memory_active_summary)
                 .collect::<Vec<_>>();
             let conflict = extraction::detect_conflict(&candidate, &summaries);
             match conflict {
@@ -5440,6 +5454,8 @@ impl ToolAgent {
             .await;
     }
 
+    // Аргументы — параметры одного вызова модели: маршрут, сообщения, инструменты и бюджеты.
+    #[allow(clippy::too_many_arguments)]
     async fn call_model_with_resilience(
         &self,
         task_id: &str,
@@ -5986,14 +6002,11 @@ impl ToolAgent {
             if let Some(usage) = result.usage.as_ref() {
                 // Фактический usage провайдера обновляет диагностику оценки и
                 // пишется отдельно от immutable записи ledger.
-                context_runtime.record_actual_usage(
-                    &assembled.plan,
-                    u32::try_from(usage.prompt_tokens).unwrap_or(u32::MAX),
-                );
+                context_runtime.record_actual_usage(&assembled.plan, usage.prompt_tokens);
                 self.record_context_usage(
                     assembled.ledger(),
-                    u32::try_from(usage.prompt_tokens).unwrap_or(u32::MAX),
-                    u32::try_from(usage.completion_tokens).unwrap_or(u32::MAX),
+                    usage.prompt_tokens,
+                    usage.completion_tokens,
                 )
                 .await;
             }
@@ -6264,17 +6277,16 @@ impl ToolAgent {
                         "arguments": call.arguments
                     }),
                 );
-                let input = serde_json::from_str(&call.arguments)
-                    .unwrap_or_else(|_| serde_json::Value::Null);
+                let input =
+                    serde_json::from_str(&call.arguments).unwrap_or(serde_json::Value::Null);
                 // План 01.4: вызов инструмента вне loadout отклоняется до
                 // эффекта с bounded diagnostic `loadout_miss`.
-                let loadout_miss = step_loadout
-                    .allows(&call.name)
-                    .then_some(None)
-                    .unwrap_or_else(|| {
-                        evohime_context_budget::loadout::check_tool_call(&step_loadout, &call.name)
-                            .err()
-                    });
+                let loadout_miss = if step_loadout.allows(&call.name) {
+                    None
+                } else {
+                    evohime_context_budget::loadout::check_tool_call(&step_loadout, &call.name)
+                        .err()
+                };
                 let commit_blocked = call.name == "git.commit"
                     && delivery_requirements.commit
                     && (!verification_test_passed
@@ -6384,14 +6396,15 @@ impl ToolAgent {
                         }
                     } {
                         Ok(result) => recovery::ToolOutcome::success(result),
-                        Err(evohime_tool_runtime::ToolError::NeedsApproval {
-                            tool,
-                            permission,
-                            scope,
-                            approval_id,
-                            input,
-                            preview,
-                        }) => {
+                        Err(evohime_tool_runtime::ToolError::NeedsApproval(details)) => {
+                            let evohime_tool_runtime::ApprovalRequired {
+                                tool,
+                                permission,
+                                scope,
+                                approval_id,
+                                input,
+                                preview,
+                            } = *details;
                             if let Err(error) = self
                                 .receipt_prepare_approval(
                                     &task_id,
@@ -7807,11 +7820,11 @@ impl TaskCoordinator {
                         ],
                     )
                     .await;
-                    Ok(serde_json::to_vec(&serde_json::json!({
+                    serde_json::to_vec(&serde_json::json!({
                         "snapshot_id": snapshot_id,
                         "restored": true,
                     }))
-                    .map_err(|error| error.to_string())?)
+                    .map_err(|error| error.to_string())
                 }
                 .await;
                 let _ = reply.send(result);
@@ -11008,7 +11021,7 @@ mod tests {
             matches!(receiver.recv().await, Ok(CoreEvent::PendingRoutingApproval { route_id, .. }) if route_id == "cloud")
         );
         assert!(registry.resolve("trace", true).await.is_ok());
-        assert_eq!(waiting.await.unwrap().unwrap(), true);
+        assert!(waiting.await.unwrap().unwrap());
 
         let timeout_result = registry
             .wait_for_decision(
@@ -11347,7 +11360,7 @@ mod tests {
             .expect("failure audit record is appended");
         assert_eq!(failure.actor, "task-audit-failure");
         assert_eq!(failure.event_id, "task.failed");
-        assert!(failure.fields.get("error").is_some());
+        assert!(failure.fields.contains_key("error"));
     }
 
     #[tokio::test]
@@ -11458,7 +11471,7 @@ mod tests {
             requirements.missing(false, false, false, false),
             vec!["изучить workspace и подготовить отчёт"]
         );
-        assert!(super::DeliveryRequirements::from_prompt("привет").research == false);
+        assert!(!super::DeliveryRequirements::from_prompt("привет").research);
     }
 
     #[test]

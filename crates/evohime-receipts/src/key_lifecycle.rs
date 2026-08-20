@@ -794,7 +794,7 @@ impl ReceiptKeyManager {
             return Err(KeyError::TrustRequired);
         }
         let (old, _) = self.active_storage_key()?;
-        let mut history: Vec<StorageKeyMetadata> = fs::read(&self.storage_key_history_path())
+        let mut history: Vec<StorageKeyMetadata> = fs::read(self.storage_key_history_path())
             .ok()
             .and_then(|raw| serde_json::from_slice(&raw).ok())
             .unwrap_or_default();
@@ -1790,7 +1790,7 @@ fn harden_path(path: &Path) -> Result<(), KeyError> {
     if unsafe {
         ConvertStringSecurityDescriptorToSecurityDescriptorW(
             wide_sddl.as_ptr(),
-            SDDL_REVISION_1 as u32,
+            SDDL_REVISION_1,
             &mut descriptor,
             std::ptr::null_mut(),
         )
@@ -1829,7 +1829,7 @@ fn harden_path(_: &Path) -> Result<(), KeyError> {
 fn protect(bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
     use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Cryptography::{CryptProtectData, CRYPT_INTEGER_BLOB};
-    let mut input = CRYPT_INTEGER_BLOB {
+    let input = CRYPT_INTEGER_BLOB {
         cbData: bytes.len() as u32,
         pbData: bytes.as_ptr() as *mut u8,
     };
@@ -1839,7 +1839,7 @@ fn protect(bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
     };
     let ok = unsafe {
         CryptProtectData(
-            &mut input,
+            &input,
             std::ptr::null(),
             std::ptr::null_mut(),
             std::ptr::null_mut(),
@@ -1865,7 +1865,7 @@ fn protect(_: &[u8]) -> Result<Vec<u8>, KeyError> {
 fn unprotect(bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
     use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Cryptography::{CryptUnprotectData, CRYPT_INTEGER_BLOB};
-    let mut input = CRYPT_INTEGER_BLOB {
+    let input = CRYPT_INTEGER_BLOB {
         cbData: bytes.len() as u32,
         pbData: bytes.as_ptr() as *mut u8,
     };
@@ -1875,7 +1875,7 @@ fn unprotect(bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
     };
     let ok = unsafe {
         CryptUnprotectData(
-            &mut input,
+            &input,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
             std::ptr::null_mut(),

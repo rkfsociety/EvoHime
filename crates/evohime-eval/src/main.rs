@@ -126,7 +126,7 @@ fn run(args: Vec<String>) -> Result<(), EvalError> {
                 index += 1;
             }
             "--verbose" => verbose = true,
-            value if value == "--help" => {
+            "--help" => {
                 println!("cargo eval --fixture <path> --case <id> --mode {{static|deterministic|real}} --model <name> --verbose");
                 return Ok(());
             }

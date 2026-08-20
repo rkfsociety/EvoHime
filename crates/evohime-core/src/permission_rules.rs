@@ -75,6 +75,8 @@ pub async fn apply_rules(permissions: &PermissionEngine, data_dir: &Path) {
     }
 }
 
+pub use crate::StructuredLogger;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,5 +221,3 @@ mod tests {
         cleanup_temp_dir(&temp_dir);
     }
 }
-
-pub use crate::StructuredLogger;

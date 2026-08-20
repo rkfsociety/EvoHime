@@ -143,6 +143,8 @@ pub struct MemoryRecord {
 }
 
 impl MemoryRecord {
+    // Аргументы повторяют колонки записи памяти в SQLite.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: impl Into<String>,
         scope: MemoryScope,
@@ -938,6 +940,8 @@ impl MemoryStoreSql {
 
     /// «Только на эту сессию»: отдельный session-scoped state с
     /// автоматическим expiry. Persistent row не создаётся.
+    // Аргументы повторяют колонки заметки сессии в SQLite.
+    #[allow(clippy::too_many_arguments)]
     pub fn insert_session_note(
         connection: &Connection,
         id: &str,

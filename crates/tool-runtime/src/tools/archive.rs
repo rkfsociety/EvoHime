@@ -49,12 +49,10 @@ pub async fn create(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
             args.push("-f");
             args.push(&dest_str);
 
+            // tar получает имя записи одинаково для файла и каталога:
+            // рабочий каталог уже переставлен на родителя источника.
             let source_name = source.file_name().unwrap().to_string_lossy().into_owned();
-            if source.is_dir() {
-                args.push(&source_name);
-            } else {
-                args.push(&source_name);
-            }
+            args.push(&source_name);
 
             let output = Command::new("tar")
                 .args(&args)

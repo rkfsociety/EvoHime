@@ -333,7 +333,7 @@ pub fn result_hash(projection: &Value) -> Result<String, ReceiptError> {
 
 pub fn validate_typed_identifier(value: &str) -> bool {
     let bytes = value.as_bytes();
-    bytes.len() >= 1
+    !bytes.is_empty()
         && bytes.len() <= MAX_IDENTIFIER_BYTES
         && bytes[0].is_ascii_alphanumeric()
         && bytes

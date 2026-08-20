@@ -8,25 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
-#[cfg(not(test))]
 use crate::routing_policy::{select_route, RouteCandidate, RoutingDecision, RoutingRequest};
-
-// Under `cfg(test)` this crate is also built as a standalone integration
-// test binary (see `tests/routing_runtime.rs`) that pulls this file in via
-// `#[path]` without going through `lib.rs`'s module tree, so it cannot
-// reach `crate::routing_policy` there. To keep a single source of truth it
-// embeds a copy of `routing_policy.rs` instead. `lib.rs` mirrors this same
-// cfg split (see its `RouteCandidate`/`RoutingRequest`/`PrivacyClass`
-// imports) so that types passed into `RoutingRuntime::plan` match under
-// both configurations; `pub(crate)` here is what makes that mirroring
-// possible.
-#[cfg(test)]
-#[path = "routing_policy.rs"]
-pub(crate) mod routing_policy;
-#[cfg(test)]
-use self::routing_policy::{
-    select_route, PrivacyClass, RouteCandidate, RoutingDecision, RoutingRequest,
-};
 
 pub const MAX_ITERATIONS: u32 = 128;
 pub const MAX_TOOL_CALLS: u32 = 512;
@@ -298,6 +280,12 @@ impl RoutingRuntime {
         self.state
     }
 
+    /// Режим, в котором план был построен: снимок решения обязан объяснять
+    /// сам себя, не полагаясь на то, что вызывающий помнит аргумент `plan`.
+    pub fn mode(&self) -> RoutingMode {
+        self.mode
+    }
+
     pub fn decision(&self) -> &RoutingDecision {
         &self.decision
     }
@@ -403,6 +391,7 @@ fn bound_value(value: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::routing_policy::PrivacyClass;
 
     fn route(id: &str, cost: u64) -> RouteCandidate {
         RouteCandidate {

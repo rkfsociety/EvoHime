@@ -106,7 +106,7 @@ impl LocalProvider {
     }
 
     pub fn validate_capability(capability: &LocalCapabilityMetadata) -> Result<(), ProviderError> {
-        if capability.schema_version.split('-').last() != Some("v1")
+        if capability.schema_version.split('-').next_back() != Some("v1")
             || capability.model_id.trim().is_empty()
             || capability.capability_epoch == 0
         {

@@ -231,6 +231,12 @@ pub struct ChildBudget {
     pub max_tool_calls: Option<u64>,
 }
 
+impl Default for ChildBudget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ChildBudget {
     pub fn new() -> Self {
         Self {
@@ -307,6 +313,12 @@ pub struct Schema {
     /// Maximum size in bytes
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_bytes: Option<usize>,
+}
+
+impl Default for Schema {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Schema {

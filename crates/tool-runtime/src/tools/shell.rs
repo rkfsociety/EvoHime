@@ -166,7 +166,7 @@ pub async fn execute(
             &stderr
         }
     );
-    let ok = exit_code.map_or(false, |code| code == 0);
+    let ok = exit_code == Some(0);
     Ok(ToolResult {
         output,
         structured: json!({

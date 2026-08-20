@@ -4,6 +4,12 @@
 //! transport this state, while the transition helpers keep lifecycle, lease,
 //! retry, shutdown and recovery decisions deterministic and bounded.
 
+// Модуль — bounded-контракт: часть его поверхности сегодня вызывается только
+// собственными тестами, а вызовы из supervisor появятся при wiring этапа,
+// которому контракт принадлежит. Удалять её нельзя — это и есть описанный в
+// планах интерфейс.
+#![allow(dead_code)]
+
 use std::{convert::TryFrom, time::Duration};
 
 pub const MAX_SCHEDULER_ID_BYTES: usize = 128;
@@ -217,9 +223,10 @@ impl SchedulerState {
         self.retry.attempts += 1;
         let exponent = self.retry.attempts.saturating_sub(1).min(31);
         let multiplier = 1u128 << exponent;
-        let backoff_ms = (base_backoff.as_millis() as u128)
+        let backoff_ms = base_backoff
+            .as_millis()
             .saturating_mul(multiplier)
-            .min(MAX_BACKOFF.as_millis() as u128) as u64;
+            .min(MAX_BACKOFF.as_millis()) as u64;
         self.retry.next_attempt_at_ms = now_ms.saturating_add(backoff_ms);
         self.retry.last_error = Some(error.into());
         RetryDisposition::Retry

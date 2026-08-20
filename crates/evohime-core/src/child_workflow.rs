@@ -197,6 +197,12 @@ pub struct Coordinator {
     next_sequence: BTreeMap<String, u64>,
 }
 
+impl Default for Coordinator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Coordinator {
     pub fn new() -> Self {
         Self {
@@ -608,6 +614,8 @@ pub struct ArtifactSummaryProjection {
 /// Performs the artifact policy check on every invocation. Callers may retain
 /// only the returned summary; no full blob is exposed without a current,
 /// locator-scoped full grant and explicit selected-context membership.
+// Список аргументов повторяет запрос дочернего процесса целиком: локатор, идентичность и лимиты проверяются вместе.
+#[allow(clippy::too_many_arguments)]
 pub fn read_artifact_for_child(
     store: &evohime_local_storage::artifact_store::ArtifactStore<'_>,
     correlation: &CorrelationContext,

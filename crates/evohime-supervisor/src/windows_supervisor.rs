@@ -246,7 +246,7 @@ impl JobObject {
     pub(crate) fn assign(&self, child: &tokio::process::Child) -> io::Result<()> {
         let process = child
             .raw_handle()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "core process has no handle"))?;
+            .ok_or_else(|| io::Error::other("core process has no handle"))?;
         if unsafe { AssignProcessToJobObject(self.0, process) } == 0 {
             return Err(io::Error::last_os_error());
         }

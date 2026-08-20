@@ -4,6 +4,12 @@
 //! the bounded, testable state machine separate from the Windows Job Object
 //! plumbing in `windows_supervisor.rs`.
 
+// Модуль — bounded-контракт: часть его поверхности сегодня вызывается только
+// собственными тестами, а вызовы из supervisor появятся при wiring этапа,
+// которому контракт принадлежит. Удалять её нельзя — это и есть описанный в
+// планах интерфейс.
+#![allow(dead_code)]
+
 use rand::{rngs::OsRng, RngCore};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;

@@ -312,7 +312,7 @@ mod tests {
         let domain = wiremock_domain(&server);
 
         let provider = OfflineStubSearchProvider {
-            endpoint: format!("https://search.example/api?q=x"),
+            endpoint: "https://search.example/api?q=x".to_string(),
             fixed_results: vec![SearchResult {
                 url: format!("{}/a", server.uri()),
                 title: "Result A".into(),

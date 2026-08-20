@@ -3,7 +3,7 @@ use evohime_local_storage::{
 };
 use std::{
     env, fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, Command},
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -21,7 +21,7 @@ fn temp_path(suffix: &str) -> PathBuf {
     env::temp_dir().join(format!("evohime-recovery-harness-{suffix}-{stamp}.db"))
 }
 
-fn seed_executing_effect(database_path: &PathBuf) {
+fn seed_executing_effect(database_path: &Path) {
     let database = LocalDatabase::open(database_path).expect("database opens");
     database
         .create_project("project-harness", "Recovery harness", ".", None)
@@ -83,7 +83,7 @@ fn seed_executing_effect(database_path: &PathBuf) {
         .expect("effect starts");
 }
 
-fn run_until_killed(mut child: Child, marker: &PathBuf) {
+fn run_until_killed(mut child: Child, marker: &Path) {
     for _ in 0..50 {
         if marker.exists() {
             child.kill().expect("child kills");

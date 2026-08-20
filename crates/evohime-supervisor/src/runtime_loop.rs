@@ -72,6 +72,9 @@ pub enum TickEvent {
     },
     ScheduleFailed(FailureDecision),
     ScheduleDeadLetter,
+    /// Публикуется только `SupervisorRuntime::requeue`, который supervisor
+    /// сам не вызывает: возврат из dead-letter — операторское действие.
+    #[allow(dead_code)]
     ScheduleRequeued,
 }
 
@@ -320,6 +323,7 @@ impl SupervisorRuntime {
     /// Requeues a dead-lettered watchdog record so the next `start_generation`
     /// call can proceed again. Exposed for operators/future tooling; the
     /// supervisor does not call this automatically.
+    #[allow(dead_code)]
     pub fn requeue(&mut self, now_ms: u64) -> Result<Vec<TickEvent>, RuntimeError> {
         self.watchdog.requeue(now_ms)?;
         Ok(vec![TickEvent::ScheduleRequeued])

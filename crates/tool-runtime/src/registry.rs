@@ -21,15 +21,8 @@ pub enum ToolError {
         path: String,
         hint: String,
     },
-    #[error("approval required for {tool}: {approval_id}")]
-    NeedsApproval {
-        tool: String,
-        permission: Permission,
-        scope: String,
-        approval_id: uuid::Uuid,
-        input: Value,
-        preview: ApprovalPreview,
-    },
+    #[error("approval required for {}: {}", .0.tool, .0.approval_id)]
+    NeedsApproval(Box<ApprovalRequired>),
     #[error("approval does not match this call")]
     ApprovalMismatch,
     #[error("approval was denied for this call")]
@@ -38,6 +31,21 @@ pub enum ToolError {
     Execution(String),
     #[error("tool timed out after {0:?}")]
     TimedOut(Duration),
+}
+
+/// Payload of [`ToolError::NeedsApproval`].
+///
+/// Boxed inside the error on purpose: it carries the whole tool input and the
+/// approval preview, so inlining it would put ~250 bytes on every
+/// `Result<_, ToolError>` in the crate, including the happy path.
+#[derive(Debug, Clone)]
+pub struct ApprovalRequired {
+    pub tool: String,
+    pub permission: Permission,
+    pub scope: String,
+    pub approval_id: uuid::Uuid,
+    pub input: Value,
+    pub preview: ApprovalPreview,
 }
 
 #[derive(Debug, Clone)]
@@ -562,24 +570,26 @@ impl ToolRegistry {
                     let approval = self
                         .permissions
                         .create_approval_scoped_for_call_with_command_and_preview(
-                            ctx.task_id,
-                            ctx.session_id,
-                            name,
-                            *permission,
-                            scope,
+                            evohime_permissions::CallIdentity {
+                                task_id: ctx.task_id,
+                                session_id: ctx.session_id,
+                                tool_name: name,
+                                permission: *permission,
+                                scope: &scope,
+                                input: &input,
+                            },
                             command.clone(),
-                            &input,
                             preview.clone(),
                         )
                         .await;
-                    return Err(ToolError::NeedsApproval {
+                    return Err(ToolError::NeedsApproval(Box::new(ApprovalRequired {
                         tool: name.to_string(),
                         permission: *permission,
                         scope: approval.scope,
                         approval_id: approval.id,
                         input: input.clone(),
                         preview: approval.preview,
-                    });
+                    })));
                 }
             }
         }
@@ -730,12 +740,14 @@ impl ToolRegistry {
                 .permissions
                 .claim_approval_for_call(
                     approval_id,
-                    ctx.task_id,
-                    ctx.session_id,
-                    name,
-                    *permission,
-                    &scope,
-                    &input,
+                    evohime_permissions::CallIdentity {
+                        task_id: ctx.task_id,
+                        session_id: ctx.session_id,
+                        tool_name: name,
+                        permission: *permission,
+                        scope: &scope,
+                        input: &input,
+                    },
                 )
                 .await
             {
@@ -927,10 +939,8 @@ fn canonical_policy_subject(
 
 fn scope_from_input(tool_name: &str, input: &Value) -> String {
     if tool_name == tools::shell::NAME {
-        if let Some((_, _, cwd)) = tools::shell::resolve_invocation(input) {
-            if let Some(cwd) = cwd {
-                return cwd.replace('\\', "/");
-            }
+        if let Some((_, _, Some(cwd))) = tools::shell::resolve_invocation(input) {
+            return cwd.replace('\\', "/");
         }
     }
     if let Some(path) = input.get("path").and_then(Value::as_str) {
@@ -1587,8 +1597,8 @@ mod tests {
             .await
             .expect_err("ask mode should require approval");
         match err {
-            ToolError::NeedsApproval { scope, .. } => {
-                assert_eq!(scope, "notes/todo.txt");
+            ToolError::NeedsApproval(details) => {
+                assert_eq!(details.scope, "notes/todo.txt");
             }
             other => panic!("expected NeedsApproval, got {other:?}"),
         }
@@ -1620,7 +1630,7 @@ mod tests {
             .await
             .expect_err("ask mode should require approval")
         {
-            ToolError::NeedsApproval { approval_id, .. } => approval_id,
+            ToolError::NeedsApproval(details) => details.approval_id,
             other => panic!("expected NeedsApproval, got {other:?}"),
         };
         permissions
@@ -1737,7 +1747,7 @@ mod tests {
             .await
             .expect_err("ask mode should require approval")
         {
-            ToolError::NeedsApproval { approval_id, .. } => approval_id,
+            ToolError::NeedsApproval(details) => details.approval_id,
             other => panic!("expected NeedsApproval, got {other:?}"),
         };
         permissions

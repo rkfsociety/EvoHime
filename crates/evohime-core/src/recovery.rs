@@ -195,7 +195,7 @@ impl ToolOutcome {
             ToolError::NotFound { .. } => ToolFailureKind::NotFound,
             ToolError::InvalidInput { .. } => ToolFailureKind::InvalidInput,
             ToolError::PermissionDenied(_) => ToolFailureKind::Denied(DenialSource::Policy),
-            ToolError::NeedsApproval { .. } => ToolFailureKind::Denied(DenialSource::Policy),
+            ToolError::NeedsApproval(_) => ToolFailureKind::Denied(DenialSource::Policy),
             ToolError::ApprovalMismatch => ToolFailureKind::Denied(DenialSource::Policy),
             ToolError::ApprovalDenied => ToolFailureKind::Denied(DenialSource::User),
             ToolError::TimedOut(_) => ToolFailureKind::Timeout,
@@ -273,7 +273,7 @@ pub fn classify_tool_outcome(result: Result<ToolResult, ToolError>, output: Stri
                 // Приоритет 4: TimedOut
                 ToolError::TimedOut(_) => ToolFailureKind::Timeout,
                 // Остальное: Execution или специфичные отказы
-                ToolError::NeedsApproval { .. } => ToolFailureKind::Denied(DenialSource::Policy),
+                ToolError::NeedsApproval(_) => ToolFailureKind::Denied(DenialSource::Policy),
                 ToolError::ApprovalMismatch => ToolFailureKind::Denied(DenialSource::Policy),
                 ToolError::ApprovalDenied => ToolFailureKind::Denied(DenialSource::User),
                 ToolError::Execution(_) | ToolError::UnknownTool(_) => ToolFailureKind::Execution,

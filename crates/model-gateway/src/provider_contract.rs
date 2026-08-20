@@ -486,9 +486,7 @@ impl RunHealthOverlay {
 
             if counter >= config.rate_limit_threshold {
                 let mut circuits = self.circuits.write();
-                let entry = circuits
-                    .entry(route_id.to_string())
-                    .or_insert_with(CircuitEntry::new);
+                let entry = circuits.entry(route_id.to_string()).or_default();
                 entry.state = CircuitState::Cooldown;
                 entry.cooldown_until_ms = Some(now + config.cooldown_ms);
                 entry.last_failure_category = Some(category);
@@ -509,9 +507,7 @@ impl RunHealthOverlay {
 
             if counter >= config.failure_threshold {
                 let mut circuits = self.circuits.write();
-                let entry = circuits
-                    .entry(route_id.to_string())
-                    .or_insert_with(CircuitEntry::new);
+                let entry = circuits.entry(route_id.to_string()).or_default();
                 entry.state = CircuitState::Open;
                 entry.opened_at = Some(now);
                 entry.failure_count = counter;
@@ -578,7 +574,7 @@ impl RunHealthOverlay {
         let circuits = self.circuits.read();
         match circuits.get(route_id) {
             Some(entry) if entry.state == CircuitState::Cooldown => {
-                entry.cooldown_until_ms.map_or(true, |until| now >= until)
+                entry.cooldown_until_ms.is_none_or(|until| now >= until)
             }
             _ => true,
         }
@@ -753,11 +749,12 @@ pub fn select_route_snapshot(
         } else if request.offline && candidate.capabilities.execution_class != ExecutionClass::Local
         {
             reject = Some("offline_mode");
-        } else if unknown_class && candidate.capabilities.execution_class == ExecutionClass::Cloud {
-            reject = Some("classification_incomplete");
-        } else if !request.allow_cloud
-            && candidate.capabilities.execution_class != ExecutionClass::Local
+        } else if (unknown_class && candidate.capabilities.execution_class == ExecutionClass::Cloud)
+            || (!request.allow_cloud
+                && candidate.capabilities.execution_class != ExecutionClass::Local)
         {
+            // Незавершённая классификация и запрет облака дают один и тот же
+            // отказ: кандидат не доказал, что исполняется локально.
             reject = Some("classification_incomplete");
         } else if request
             .required_capabilities

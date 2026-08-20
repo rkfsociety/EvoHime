@@ -5,6 +5,12 @@
 //! references needed by the supervisor to enforce the same budgets and
 //! approvals as a normal run.
 
+// Модуль — bounded-контракт: часть его поверхности сегодня вызывается только
+// собственными тестами, а вызовы из supervisor появятся при wiring этапа,
+// которому контракт принадлежит. Удалять её нельзя — это и есть описанный в
+// планах интерфейс.
+#![allow(dead_code)]
+
 pub const MAX_ID_BYTES: usize = 128;
 pub const MAX_ERROR_BYTES: usize = 512;
 pub const MAX_ATTEMPTS: u32 = 16;

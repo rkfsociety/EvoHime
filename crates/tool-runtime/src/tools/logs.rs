@@ -98,15 +98,12 @@ pub async fn grep(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
             .await
             .map_err(|e| ToolError::Execution(format!("failed to read file: {e}")))?;
 
-        matches.extend(
-            search_file(
-                &content,
-                &opts.pattern,
-                opts.case_insensitive,
-                opts.invert_match,
-            )
-            .into_iter(),
-        );
+        matches.extend(search_file(
+            &content,
+            &opts.pattern,
+            opts.case_insensitive,
+            opts.invert_match,
+        ));
     } else if search_path.is_dir() {
         // Recursively search all files in directory
         search_directory(
@@ -223,7 +220,7 @@ async fn search_directory(
             } else if path.is_dir()
                 && !path
                     .file_name()
-                    .map_or(false, |n| n.to_string_lossy().starts_with('.'))
+                    .is_some_and(|n| n.to_string_lossy().starts_with('.'))
             {
                 // Avoid hidden directories
                 pending.push(path);

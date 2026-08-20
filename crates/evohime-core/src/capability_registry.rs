@@ -379,7 +379,7 @@ fn validate_signature_format(value: &str) -> Result<(), RegistryError> {
 }
 
 fn hex_decode(value: &str) -> Result<Vec<u8>, ()> {
-    if value.len() % 2 != 0 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    if !value.len().is_multiple_of(2) || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(());
     }
     let mut bytes = Vec::with_capacity(value.len() / 2);

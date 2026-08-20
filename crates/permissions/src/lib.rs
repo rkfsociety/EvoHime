@@ -16,7 +16,6 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::{mpsc, RwLock};
-use tracing;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -118,6 +117,34 @@ impl Default for ApprovalPreview {
             details: None,
             truncated: false,
         }
+    }
+}
+
+/// Идентичность вызова, к которой привязан approval.
+///
+/// Отдельный тип, а не пять позиционных аргументов: approval сверяется с
+/// вызовом целиком, и перепутанные местами `tool_name`/`scope` дали бы
+/// «совпадение» там, где его нет.
+#[derive(Debug, Clone, Copy)]
+pub struct CallIdentity<'a> {
+    pub task_id: Uuid,
+    pub session_id: Option<Uuid>,
+    pub tool_name: &'a str,
+    pub permission: Permission,
+    pub scope: &'a str,
+    pub input: &'a serde_json::Value,
+}
+
+impl CallIdentity<'_> {
+    /// Совпадает ли выданный approval с этим вызовом. Scope сравнивается
+    /// нормализованным, вход — каноническим хешем, как при выдаче.
+    fn matches(&self, request: &ApprovalRequest) -> bool {
+        request.task_id == self.task_id
+            && request.session_id == self.session_id
+            && request.tool_name == self.tool_name
+            && request.permission == self.permission
+            && request.scope == normalize_scope_path(self.scope)
+            && request.call_hash == canonical_call_hash(self.tool_name, &request.scope, self.input)
     }
 }
 
@@ -535,30 +562,30 @@ impl PermissionEngine {
         scope: impl Into<String>,
         input: &serde_json::Value,
     ) -> ApprovalRequest {
+        let tool_name = tool_name.into();
+        let scope = scope.into();
         self.create_approval_scoped_for_call_with_command(
-            task_id, session_id, tool_name, permission, scope, None, input,
+            CallIdentity {
+                task_id,
+                session_id,
+                tool_name: &tool_name,
+                permission,
+                scope: &scope,
+                input,
+            },
+            None,
         )
         .await
     }
 
     pub async fn create_approval_scoped_for_call_with_command(
         &self,
-        task_id: Uuid,
-        session_id: Option<Uuid>,
-        tool_name: impl Into<String>,
-        permission: Permission,
-        scope: impl Into<String>,
+        call: CallIdentity<'_>,
         command: Option<String>,
-        input: &serde_json::Value,
     ) -> ApprovalRequest {
         self.create_approval_scoped_for_call_with_command_and_preview(
-            task_id,
-            session_id,
-            tool_name,
-            permission,
-            scope,
+            call,
             command,
-            input,
             ApprovalPreview::default(),
         )
         .await
@@ -566,17 +593,19 @@ impl PermissionEngine {
 
     pub async fn create_approval_scoped_for_call_with_command_and_preview(
         &self,
-        task_id: Uuid,
-        session_id: Option<Uuid>,
-        tool_name: impl Into<String>,
-        permission: Permission,
-        scope: impl Into<String>,
+        call: CallIdentity<'_>,
         command: Option<String>,
-        input: &serde_json::Value,
         preview: ApprovalPreview,
     ) -> ApprovalRequest {
-        let tool_name = tool_name.into();
-        let scope = normalize_scope_path(scope.into());
+        let CallIdentity {
+            task_id,
+            session_id,
+            permission,
+            input,
+            ..
+        } = call;
+        let tool_name = call.tool_name.to_string();
+        let scope = normalize_scope_path(call.scope);
         let call_hash = canonical_call_hash(&tool_name, &scope, input);
         let request = ApprovalRequest {
             id: Uuid::now_v7(),
@@ -682,23 +711,13 @@ impl PermissionEngine {
     pub async fn approval_matches_call(
         &self,
         id: Uuid,
-        task_id: Uuid,
-        session_id: Option<Uuid>,
-        tool_name: &str,
-        permission: Permission,
-        scope: &str,
-        input: &serde_json::Value,
+        call: CallIdentity<'_>,
     ) -> Option<ApprovalState> {
-        self.approvals.read().await.get(&id).and_then(|record| {
-            let request = &record.request;
-            (request.task_id == task_id
-                && request.session_id == session_id
-                && request.tool_name == tool_name
-                && request.permission == permission
-                && request.scope == normalize_scope_path(scope)
-                && request.call_hash == canonical_call_hash(tool_name, &request.scope, input))
-            .then_some(record.state)
-        })
+        self.approvals
+            .read()
+            .await
+            .get(&id)
+            .and_then(|record| call.matches(&record.request).then_some(record.state))
     }
 
     /// Atomically claim a granted approval for execution.
@@ -710,23 +729,12 @@ impl PermissionEngine {
     pub async fn claim_approval_for_call(
         &self,
         id: Uuid,
-        task_id: Uuid,
-        session_id: Option<Uuid>,
-        tool_name: &str,
-        permission: Permission,
-        scope: &str,
-        input: &serde_json::Value,
+        call: CallIdentity<'_>,
     ) -> Option<ApprovalState> {
         let mut approvals = self.approvals.write().await;
-        let matches = approvals.get(&id).is_some_and(|record| {
-            let request = &record.request;
-            request.task_id == task_id
-                && request.session_id == session_id
-                && request.tool_name == tool_name
-                && request.permission == permission
-                && request.scope == normalize_scope_path(scope)
-                && request.call_hash == canonical_call_hash(tool_name, &request.scope, input)
-        });
+        let matches = approvals
+            .get(&id)
+            .is_some_and(|record| call.matches(&record.request));
         if !matches {
             return None;
         }
@@ -1155,12 +1163,14 @@ mod tests {
                 engine
                     .approval_matches_call(
                         request.id,
-                        request.task_id,
-                        None,
-                        "filesystem.write",
-                        Permission::FilesystemWrite,
-                        "src/main.rs",
-                        &equivalent,
+                        CallIdentity {
+                            task_id: request.task_id,
+                            session_id: None,
+                            tool_name: "filesystem.write",
+                            permission: Permission::FilesystemWrite,
+                            scope: "src/main.rs",
+                            input: &equivalent,
+                        },
                     )
                     .await,
                 Some(ApprovalState::Granted)
@@ -1190,12 +1200,14 @@ mod tests {
                 engine
                     .claim_approval_for_call(
                         request.id,
-                        task_id,
-                        None,
-                        "filesystem.write",
-                        Permission::FilesystemWrite,
-                        "a.txt",
-                        &input,
+                        CallIdentity {
+                            task_id,
+                            session_id: None,
+                            tool_name: "filesystem.write",
+                            permission: Permission::FilesystemWrite,
+                            scope: "a.txt",
+                            input: &input,
+                        },
                     )
                     .await,
                 Some(ApprovalState::Granted)
@@ -1204,12 +1216,14 @@ mod tests {
                 engine
                     .claim_approval_for_call(
                         request.id,
-                        task_id,
-                        None,
-                        "filesystem.write",
-                        Permission::FilesystemWrite,
-                        "a.txt",
-                        &input,
+                        CallIdentity {
+                            task_id,
+                            session_id: None,
+                            tool_name: "filesystem.write",
+                            permission: Permission::FilesystemWrite,
+                            scope: "a.txt",
+                            input: &input,
+                        },
                     )
                     .await,
                 None

@@ -8,7 +8,8 @@ mod ssrf;
 mod tools;
 
 pub use registry::{
-    ToolContext, ToolError, ToolPreflightDecision, ToolProgress, ToolRegistry, ToolResult,
+    ApprovalRequired, ToolContext, ToolError, ToolPreflightDecision, ToolProgress, ToolRegistry,
+    ToolResult,
 };
 pub use risk::{classify_call_risk, ToolRiskLevel};
 pub use sandbox::WorkspaceSandbox;

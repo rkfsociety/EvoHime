@@ -1,5 +1,11 @@
 //! Truthful local Pulse digest for schedules and recovery.
 
+// Модуль — bounded-контракт: часть его поверхности сегодня вызывается только
+// собственными тестами, а вызовы из supervisor появятся при wiring этапа,
+// которому контракт принадлежит. Удалять её нельзя — это и есть описанный в
+// планах интерфейс.
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

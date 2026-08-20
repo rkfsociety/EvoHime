@@ -21,17 +21,8 @@ use crate::providers::{
     ProviderKind, TokenStream,
 };
 pub use crate::retry::RetryPolicy;
-// `routing_runtime` embeds its own private copy of `routing_policy` when
-// this crate is built with `cfg(test)` (see the comment in
-// `routing_runtime.rs`), so `RoutingRuntime::plan` there expects
-// `RouteCandidate`/`RoutingRequest`/`PrivacyClass` from that embedded copy
-// rather than from `crate::routing_policy`. Mirror the same split here so
-// candidates built in this file always match the type `plan` expects.
 pub use crate::routing_catalog::{CatalogError, CatalogStore, EvaluationCatalog, EvaluationRecord};
-#[cfg(not(test))]
 pub use crate::routing_policy::{PrivacyClass, RouteCandidate, RoutingRequest};
-#[cfg(test)]
-pub use crate::routing_runtime::routing_policy::{PrivacyClass, RouteCandidate, RoutingRequest};
 pub use crate::routing_runtime::{RoutingMode, RoutingRuntime, RuntimeError, RuntimeLimits};
 pub use crate::routing_trace::{
     HealthState, PrivacyLabel, RoutingTrace, SafeNextAction, TerminalStatus, TraceCandidate,
@@ -41,9 +32,15 @@ pub use crate::tools::{
 };
 use async_stream::stream;
 use serde::{Deserialize, Serialize};
+#[cfg(not(test))]
 use std::sync::OnceLock;
 use std::{collections::HashMap, sync::Arc};
 
+// Ниже — хелперы политики маршрутизации, к которым обращается только ветка
+// `#[cfg(not(test))]` в `chat_with_tools_with_policy_and_route`: в тестовой
+// сборке крейта эта ветка выключена, поэтому и хелперы собираются вместе с
+// ней, а не висят мёртвым кодом.
+#[cfg(not(test))]
 fn current_time_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -51,6 +48,7 @@ fn current_time_ms() -> u64 {
         .as_millis() as u64
 }
 
+#[cfg(not(test))]
 fn builtin_routing_catalog() -> Option<&'static EvaluationCatalog> {
     static CATALOG: OnceLock<Option<EvaluationCatalog>> = OnceLock::new();
     CATALOG
@@ -63,6 +61,7 @@ fn builtin_routing_catalog() -> Option<&'static EvaluationCatalog> {
         .as_ref()
 }
 
+#[cfg(not(test))]
 fn load_runtime_catalog() -> Option<EvaluationCatalog> {
     let mut paths = Vec::new();
     if let Ok(path) = std::env::var("EVOHIME_ROUTING_CATALOG") {
@@ -84,6 +83,7 @@ fn load_runtime_catalog() -> Option<EvaluationCatalog> {
         .find_map(|path| EvaluationCatalog::load_file(&path, None).ok())
 }
 
+#[cfg(not(test))]
 fn classify_failure(error: &ProviderError) -> FailureCategory {
     match error {
         ProviderError::Config(_) => FailureCategory::InvalidRequest,
@@ -545,7 +545,7 @@ impl ModelGateway {
                 }
             }
             trace.set_result(RunResult::RouteExhausted);
-            return Err(last_error.unwrap_or_else(|| ProviderError::Config(decision.reason_code)));
+            return Err(last_error.unwrap_or(ProviderError::Config(decision.reason_code)));
         }
         let runtime = self
             .plan_route(mode, request, RuntimeLimits::default())

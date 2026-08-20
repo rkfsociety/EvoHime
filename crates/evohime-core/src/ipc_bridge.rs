@@ -35,7 +35,7 @@ fn bounded_tool_error_code(error: &evohime_tool_runtime::ToolError) -> &'static 
         evohime_tool_runtime::ToolError::InvalidInput { .. } => "invalid_input",
         evohime_tool_runtime::ToolError::PermissionDenied(_) => "permission_denied",
         evohime_tool_runtime::ToolError::NotFound { .. } => "not_found",
-        evohime_tool_runtime::ToolError::NeedsApproval { .. } => "approval_required",
+        evohime_tool_runtime::ToolError::NeedsApproval(_) => "approval_required",
         evohime_tool_runtime::ToolError::ApprovalMismatch => "approval_mismatch",
         evohime_tool_runtime::ToolError::ApprovalDenied => "approval_denied",
         evohime_tool_runtime::ToolError::Execution(_) => "execution_failed",
@@ -1047,7 +1047,6 @@ impl IpcBridge {
                                 ).map_err(|error| error.to_string())?;
                                 if !progressed { break; }
                             }
-                            drop(runtime);
                             Some(new_storage_key_id)
                         } else {
                             None
@@ -1839,11 +1838,7 @@ impl IpcBridge {
             }
             Some(generated::command_envelope::Command::RunDoctor(request)) => {
                 let result = self
-                    .dispatch_run_doctor(
-                        request.project_id,
-                        request.detail_level,
-                        command.protocol.clone(),
-                    )
+                    .dispatch_run_doctor(request.project_id, request.detail_level, command.protocol)
                     .await?;
                 self.write_response(writer, "doctor.report", result).await?;
             }
@@ -3919,14 +3914,15 @@ impl IpcBridge {
                 .await
             {
                 Ok(result) => result,
-                Err(evohime_tool_runtime::ToolError::NeedsApproval {
-                    tool,
-                    permission,
-                    scope,
-                    approval_id,
-                    input,
-                    preview,
-                }) => {
+                Err(evohime_tool_runtime::ToolError::NeedsApproval(details)) => {
+                    let evohime_tool_runtime::ApprovalRequired {
+                        tool,
+                        permission,
+                        scope,
+                        approval_id,
+                        input,
+                        preview,
+                    } = *details;
                     let durable_action_id = uuid::Uuid::now_v7();
                     let receipt_request = evohime_receipts::runtime::ActionRequest {
                         action_id: durable_action_id,

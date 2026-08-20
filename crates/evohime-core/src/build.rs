@@ -32,9 +32,10 @@ pub struct BuildChange {
 /// performed while the build ran. Any UI surface presenting rollback MUST
 /// render this scope explicitly — never as a bare boolean — so a user cannot
 /// conclude that rollback undid "everything the run did".
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RollbackScope {
+    #[default]
     WorkspaceFilesOnly,
 }
 
@@ -54,12 +55,6 @@ impl RollbackScope {
                  outside the workspace)."
             }
         }
-    }
-}
-
-impl Default for RollbackScope {
-    fn default() -> Self {
-        RollbackScope::WorkspaceFilesOnly
     }
 }
 

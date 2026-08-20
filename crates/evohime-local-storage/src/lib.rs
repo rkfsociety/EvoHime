@@ -1430,6 +1430,8 @@ impl LocalDatabase {
         ).map_err(Into::into)
     }
 
+    // Аргументы повторяют колонки перехода recovery в SQLite.
+    #[allow(clippy::too_many_arguments)]
     pub fn transition_recovery(
         &self,
         run_id: &str,
@@ -1563,6 +1565,8 @@ impl LocalDatabase {
         Ok(record)
     }
 
+    // Аргументы повторяют колонки перехода recovery агента в SQLite.
+    #[allow(clippy::too_many_arguments)]
     pub fn transition_agent_recovery(
         &self,
         run_id: &str,
@@ -1847,6 +1851,8 @@ impl LocalDatabase {
         Ok(self.connection.last_insert_rowid())
     }
 
+    // Аргументы повторяют колонки строки метрики инструмента в SQLite.
+    #[allow(clippy::too_many_arguments)]
     pub fn record_tool_metric(
         &self,
         task_id: &str,

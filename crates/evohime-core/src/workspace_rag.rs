@@ -1562,6 +1562,8 @@ fn insert_document(
     Ok(())
 }
 
+// Аргументы повторяют колонки строки FTS-индекса.
+#[allow(clippy::too_many_arguments)]
 fn insert_fts(
     connection: &Connection,
     chunk_id: &str,
@@ -1619,6 +1621,8 @@ fn assert_generation_consistent(
     Ok(())
 }
 
+// Аргументы повторяют колонки публикуемого поколения индекса.
+#[allow(clippy::too_many_arguments)]
 fn publish_generation(
     connection: &mut Connection,
     run_id: &str,
@@ -1856,6 +1860,8 @@ pub fn search_workspace_with_config(
     )
 }
 
+// Аргументы — параметры одного поиска: запрос, лимиты, фильтры и канал прогресса.
+#[allow(clippy::too_many_arguments)]
 pub fn search_workspace_with_progress(
     connection: &Connection,
     workspace_root: &Path,
@@ -2255,6 +2261,8 @@ fn push_progress(
     events.push(event);
 }
 
+// Аргументы — поля bounded-результата отказа: причина, лимиты и диагностика.
+#[allow(clippy::too_many_arguments)]
 fn retrieval_failure_result(
     query_id: String,
     plan: QueryPlan,
@@ -2514,7 +2522,7 @@ fn lexical_retrieval(
             checker_confidence: 0.0,
         });
     }
-    output.sort_by(|left, right| deterministic_rank(left, right));
+    output.sort_by(deterministic_rank);
     output.truncate(limits.max_retrieval_chunks);
     Ok(output)
 }
@@ -2563,7 +2571,7 @@ fn decode_source_range(
     {
         let little_endian = bytes.starts_with(&[0xff, 0xfe]);
         let decode = |slice: &[u8]| -> Result<String, RagError> {
-            if slice.len() % 2 != 0 {
+            if !slice.len().is_multiple_of(2) {
                 return Err(RagError::InvalidWorkspace(
                     "unaligned UTF-16 byte range".into(),
                 ));
@@ -2891,6 +2899,8 @@ fn decode_vector(bytes: &[u8]) -> Option<Vec<f32>> {
     )
 }
 
+// Аргументы — параметры гибридного поиска: запрос, веса, лимиты и диагностика.
+#[allow(clippy::too_many_arguments)]
 fn hybrid_retrieval(
     connection: &Connection,
     workspace_root: &Path,

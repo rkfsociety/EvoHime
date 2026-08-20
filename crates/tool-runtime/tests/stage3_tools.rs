@@ -62,8 +62,8 @@ async fn registry_requires_approval_for_write() {
         .await;
     assert!(matches!(
         result,
-        Err(ToolError::NeedsApproval { tool, input, .. })
-            if tool == "filesystem.write" && input["path"] == "a.txt"
+        Err(ToolError::NeedsApproval(details))
+            if details.tool == "filesystem.write" && details.input["path"] == "a.txt"
     ));
 }
 

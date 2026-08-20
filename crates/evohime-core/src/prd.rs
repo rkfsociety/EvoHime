@@ -80,10 +80,8 @@ pub fn parse_markdown_prd(source_text: &str, origin: &str, version: &str) -> Prd
             continue;
         }
 
-        if !trimmed.is_empty() && !trimmed.starts_with('#') {
-            if current.is_some() {
-                description.push(trimmed);
-            }
+        if !trimmed.is_empty() && !trimmed.starts_with('#') && current.is_some() {
+            description.push(trimmed);
         }
     }
     finish_task(&mut tasks, &mut current, &mut description);

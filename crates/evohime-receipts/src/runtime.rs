@@ -18,6 +18,42 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
+
+/// Строка привязки действия из `receipt_actions` в порядке SELECT:
+/// task_id, run_id, tool_name, normalized_scope, policy_id, policy_decision,
+/// fingerprint_input_version, approval_id, parent_approval_ref, state,
+/// terminal_receipt_hash.
+type ActionBindingRow = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    i64,
+    Option<String>,
+    Option<String>,
+    String,
+    Option<String>,
+);
+
+/// Та же привязка, снятая при завершении действия: перед идентификацией идут
+/// state, dispatch_state и tool_args_hash.
+type ActionCompletionRow = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    i64,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use uuid::Uuid;
@@ -52,9 +88,7 @@ static BOOT_ID: OnceLock<String> = OnceLock::new();
 fn monotonic_ms() -> Result<i64, RuntimeError> {
     #[cfg(windows)]
     {
-        return Ok(unsafe {
-            windows_sys::Win32::System::SystemInformation::GetTickCount64() as i64
-        });
+        Ok(unsafe { windows_sys::Win32::System::SystemInformation::GetTickCount64() as i64 })
     }
     #[cfg(target_os = "linux")]
     {
@@ -1076,6 +1110,8 @@ fn parent_approval_ids(value: &str) -> Option<(&str, &str)> {
     Some((action_id, approval_id))
 }
 
+// Аргументы повторяют поля подписываемого чека.
+#[allow(clippy::too_many_arguments)]
 fn signed_receipt(
     tx: &Connection,
     signer: &dyn ReceiptSigner,
@@ -1636,7 +1672,7 @@ impl<'a> ReceiptRuntime<'a> {
             status == "succeeded",
         )?;
         let tx = RetryTransaction::begin(self.connection)?;
-        let (state, dispatch, stored_hash, task_id, run_id, tool_name, normalized_scope, policy_id, policy_decision, fingerprint_version, stored_approval, stored_parent, terminal_hash): (String,String,String,String,String,String,String,String,String,i64,Option<String>,Option<String>,Option<String>) = tx.query_row(
+        let (state, dispatch, stored_hash, task_id, run_id, tool_name, normalized_scope, policy_id, policy_decision, fingerprint_version, stored_approval, stored_parent, terminal_hash): ActionCompletionRow = tx.query_row(
             "SELECT state,dispatch_state,tool_args_hash,task_id,run_id,tool_name,normalized_scope,policy_id,policy_decision,fingerprint_input_version,approval_id,parent_approval_ref,terminal_receipt_hash FROM receipt_actions WHERE action_id=?1",
             [request.action_id.to_string()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?,r.get(11)?,r.get(12)?)))?;
         let binding_matches = state == "prepared" || state == "pending_recovery";
@@ -1719,7 +1755,7 @@ impl<'a> ReceiptRuntime<'a> {
             &request.input,
         )?;
         let tx = RetryTransaction::begin(self.connection)?;
-        let binding: (String,String,String,String,String,String,i64,Option<String>,Option<String>,String,Option<String>) = tx.query_row(
+        let binding: ActionBindingRow = tx.query_row(
             "SELECT task_id,run_id,tool_name,normalized_scope,policy_id,policy_decision,fingerprint_input_version,approval_id,parent_approval_ref,state,terminal_receipt_hash FROM receipt_actions WHERE action_id=?1",
             [request.action_id.to_string()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?)))?;
         let identity_matches = request.task_id == binding.0
@@ -2278,7 +2314,7 @@ impl<'a> ReceiptRuntime<'a> {
             &request.input,
         )?;
         let tx = RetryTransaction::begin(self.connection)?;
-        let binding: (String,String,String,String,String,String,i64,Option<String>,Option<String>,String,Option<String>) = tx.query_row(
+        let binding: ActionBindingRow = tx.query_row(
             "SELECT task_id,run_id,tool_name,normalized_scope,policy_id,policy_decision,fingerprint_input_version,approval_id,parent_approval_ref,state,terminal_receipt_hash FROM receipt_actions WHERE action_id=?1",
             [request.action_id.to_string()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?)))?;
         if binding.9 != "quarantined"
@@ -2605,7 +2641,6 @@ mod tests {
             runtime.complete(&request, "succeeded", &"b".repeat(64), None),
             Err(RuntimeError::Code("action_id_conflict"))
         ));
-        drop(runtime);
         assert_eq!(
             db.query_row(
                 "SELECT COUNT(*) FROM receipt_records WHERE action_id=?1",
@@ -2670,7 +2705,6 @@ mod tests {
         runtime
             .quarantine(quarantined.action_id, "invariant")
             .unwrap();
-        drop(runtime);
 
         db.execute(
             "UPDATE receipt_runtime_guard SET phase='read_only_recovery' WHERE id=1",
@@ -2790,7 +2824,6 @@ mod tests {
         let old_key_rejected = runtime
             .load_protected_action(action_id, &[1u8; 32])
             .is_err();
-        drop(runtime);
         assert_eq!(
             db.query_row(
                 "SELECT COUNT(*) FROM receipt_storage_rotation_audit WHERE job_id='job-1'",
@@ -3003,7 +3036,6 @@ mod tests {
         let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
         let deleted = runtime.approval_gc(now_ms()).unwrap();
         assert_eq!(deleted, 1);
-        drop(runtime);
 
         assert_eq!(
             db.query_row(

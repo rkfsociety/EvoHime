@@ -4,11 +4,7 @@
 //! It provides deterministic in-memory semantics for the public API, including
 //! approval gates for destructive operations and export/delete.
 
-#[allow(dead_code)]
-#[path = "memory_domain.rs"]
-mod domain;
-
-use domain::{
+use crate::memory_domain::{
     CreateMemory, MemoryDomain, MemoryError, MemoryRecord, MemoryScope, MemorySearchHit,
     MemoryStatus, PrivacyLabel, ProvenanceRef, MAX_QUERY_CHARS, MAX_RESULTS,
 };
