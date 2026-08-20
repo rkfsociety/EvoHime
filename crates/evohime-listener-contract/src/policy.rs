@@ -94,6 +94,10 @@ impl AmbientPolicy {
         for window in &self.quiet_hours {
             window.validate()?;
         }
+        if self.process_blocklist.len() + self.window_title_blocklist.len() > MAX_BLOCKLIST_ENTRIES
+        {
+            return Err(ContractError::TooManyEntries("blocklists"));
+        }
         validate_blocklist(&self.process_blocklist, "process_blocklist")?;
         validate_blocklist(&self.window_title_blocklist, "window_title_blocklist")?;
         if self.retention_days == 0 || self.retention_days > MAX_RETENTION_DAYS {
@@ -235,7 +239,20 @@ mod tests {
             policy_with_patterns(vec!["chrome.exe".to_string(); MAX_BLOCKLIST_ENTRIES + 1]);
         assert_eq!(
             long_list.validate(),
-            Err(ContractError::TooManyEntries("process_blocklist"))
+            Err(ContractError::TooManyEntries("blocklists"))
+        );
+
+        let split_list = AmbientPolicy {
+            process_blocklist: vec!["process-*".to_string(); MAX_BLOCKLIST_ENTRIES / 2],
+            window_title_blocklist: vec![
+                "title-*".to_string();
+                MAX_BLOCKLIST_ENTRIES - MAX_BLOCKLIST_ENTRIES / 2 + 1
+            ],
+            ..AmbientPolicy::default()
+        };
+        assert_eq!(
+            split_list.validate(),
+            Err(ContractError::TooManyEntries("blocklists"))
         );
 
         let long_pattern = policy_with_patterns(vec!["a".repeat(MAX_PATTERN_BYTES + 1)]);

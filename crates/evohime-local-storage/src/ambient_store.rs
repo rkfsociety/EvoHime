@@ -66,6 +66,8 @@ pub enum AmbientStoreError {
     Limit { field: &'static str, max: usize },
     #[error("ambient v1 stores only unverified speakers")]
     InvalidSpeaker,
+    #[error("ambient episodes must start with zero counters")]
+    InvalidInitialCounters,
     #[error("unknown removal reason")]
     InvalidReason,
     #[error("{field} must not be negative")]
@@ -235,6 +237,9 @@ impl AmbientStoreSql {
         record: &AmbientEpisodeRecord,
     ) -> Result<(), AmbientStoreError> {
         record.validate()?;
+        if record.utterance_count != 0 || record.speech_ms != 0 {
+            return Err(AmbientStoreError::InvalidInitialCounters);
+        }
         connection.execute(
             "INSERT INTO ambient_episodes
              (episode_id, started_at, ended_at, utterance_count, speech_ms,
@@ -306,8 +311,8 @@ impl AmbientStoreSql {
         let duplicate: Option<i64> = transaction
             .query_row(
                 "SELECT 1 FROM ambient_utterances
-                 WHERE text_hash = ?1 AND started_at >= ?2 LIMIT 1",
-                params![record.text_hash, dedup_window_start],
+                 WHERE text_hash = ?1 AND started_at >= ?2 AND started_at <= ?3 LIMIT 1",
+                params![record.text_hash, dedup_window_start, record.started_at],
                 |row| row.get(0),
             )
             .optional()?;
@@ -1030,6 +1035,46 @@ mod tests {
     }
 
     #[test]
+    fn a_future_duplicate_does_not_hide_an_older_out_of_order_utterance() {
+        let connection = open();
+        AmbientStoreSql::open_episode(
+            &connection,
+            &episode(
+                "ep-1",
+                "2026-08-20T10:00:00.000Z",
+                "2026-09-19T10:00:00.000Z",
+            ),
+        )
+        .expect("episode opens");
+        let future = utterance(
+            "u-future",
+            "ep-1",
+            1,
+            "2026-08-20T10:05:00.000Z",
+            "повтор",
+            "2026-08-27T10:00:00.000Z",
+        );
+        assert!(AmbientStoreSql::insert_utterance(
+            &connection,
+            &future,
+            "2026-08-20T09:00:00.000Z"
+        )
+        .expect("future insert"));
+        let older = utterance(
+            "u-older",
+            "ep-1",
+            0,
+            "2026-08-20T10:04:00.000Z",
+            "повтор",
+            "2026-08-27T10:00:00.000Z",
+        );
+        assert!(
+            AmbientStoreSql::insert_utterance(&connection, &older, "2026-08-20T10:00:00.000Z")
+                .expect("older insert")
+        );
+    }
+
+    #[test]
     fn v1_stores_no_speaker_identity() {
         let connection = open();
         AmbientStoreSql::open_episode(
@@ -1053,6 +1098,21 @@ mod tests {
         assert!(matches!(
             AmbientStoreSql::insert_utterance(&connection, &record, "2026-08-20T09:00:00.000Z"),
             Err(AmbientStoreError::InvalidSpeaker)
+        ));
+    }
+
+    #[test]
+    fn store_owns_episode_counters_and_rejects_prefilled_values() {
+        let connection = open();
+        let mut record = episode(
+            "ep-1",
+            "2026-08-20T10:00:00.000Z",
+            "2026-09-19T10:00:00.000Z",
+        );
+        record.utterance_count = 1;
+        assert!(matches!(
+            AmbientStoreSql::open_episode(&connection, &record),
+            Err(AmbientStoreError::InvalidInitialCounters)
         ));
     }
 

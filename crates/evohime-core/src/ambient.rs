@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use evohime_listener_contract::{
     AmbientErrorCode, AmbientLogEvent, AmbientPolicy, ExtractionState, ListeningState,
-    DEFAULT_RETENTION_DAYS, MAX_RETENTION_DAYS,
+    DEFAULT_RETENTION_DAYS, MAX_DEDUP_WINDOW_MS, MAX_RETENTION_DAYS,
 };
 use evohime_local_storage::ambient_store::{
     AmbientDeletion, AmbientEpisodeRecord, AmbientPurge, AmbientStoreError, AmbientStoreSql,
@@ -308,6 +308,12 @@ impl crate::EventJournal {
         retention_days: u32,
         dedup_window_ms: u32,
     ) -> Result<bool, AmbientErrorCode> {
+        if retention_days == 0 || retention_days > MAX_RETENTION_DAYS {
+            return Err(AmbientErrorCode::InvalidArgument);
+        }
+        if dedup_window_ms == 0 || dedup_window_ms > MAX_DEDUP_WINDOW_MS {
+            return Err(AmbientErrorCode::InvalidArgument);
+        }
         let record = AmbientUtteranceRecord {
             utterance_id: input.utterance_id.clone(),
             episode_id: input.episode_id.clone(),
@@ -659,6 +665,34 @@ mod tests {
                 event.task_id
             );
         }
+    }
+
+    #[tokio::test]
+    async fn utterance_storage_rejects_limits_outside_the_contract() {
+        let (journal, _directory) = temporary_journal("ambient-input-limits");
+        let input = AmbientUtteranceInput {
+            utterance_id: "u-1".to_owned(),
+            episode_id: "ep-1".to_owned(),
+            sequence: 0,
+            started_at_ms: NOW_MS,
+            duration_ms: 1_000,
+            text: "текст".to_owned(),
+            language: "ru".to_owned(),
+            avg_logprob: -0.2,
+            redacted: false,
+        };
+        assert_eq!(
+            journal
+                .insert_ambient_utterance(&input, MAX_RETENTION_DAYS + 1, 60_000)
+                .await,
+            Err(AmbientErrorCode::InvalidArgument)
+        );
+        assert_eq!(
+            journal
+                .insert_ambient_utterance(&input, 7, MAX_DEDUP_WINDOW_MS + 1)
+                .await,
+            Err(AmbientErrorCode::InvalidArgument)
+        );
     }
 
     #[test]
