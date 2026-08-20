@@ -42,7 +42,8 @@ fn test_full_child_workflow() {
         .with_input_hash(Provenance::compute_hash("test input"))
         .unwrap()
         .with_model_id("gpt-4o".to_string())
-        .unwrap();
+        .unwrap()
+        .mark_completed();
 
     let report = TypedChildReport::new(
         "child-task-456",

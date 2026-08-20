@@ -59,6 +59,18 @@ interface WorkspaceSearchPayload {
   }
 }
 
+interface ChildTimelineItem {
+  readonly child_task_id?: string
+  readonly role?: string
+  readonly state?: string
+  readonly revision?: number
+  readonly reason_code?: string | null
+  readonly lease_live?: boolean
+  readonly dead_letter?: boolean
+  readonly parent_sequence?: number
+  readonly budget?: { readonly max_tokens?: number; readonly max_time_seconds?: number; readonly max_tool_calls?: number }
+}
+
 const KIND_LABELS: Record<string, string> = {
   preference: 'предпочтение',
   constraint: 'ограничение',
@@ -103,6 +115,12 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
   const connected = CONNECTED_STATES.includes(connection)
   const count = (name: string) => events.filter((event) => event.eventType === name).length
   const childEvents = events.filter((event) => event.eventType.startsWith('child.'))
+  const childProjection = useMemo(() => childEvents.map((event) => {
+    try { return { event, item: JSON.parse(event.payload) as ChildTimelineItem } } catch { return { event, item: {} as ChildTimelineItem } }
+  }), [childEvents])
+  const activeChildren = childProjection.filter(({ item }) => item.lease_live === true && !item.dead_letter).length
+  const deadLetters = childProjection.filter(({ item }) => item.dead_letter === true).length
+  const liveLeases = childProjection.filter(({ item }) => item.lease_live === true).length
   const pulseFailed = count('runtime.schedule_failed') + count('runtime.schedule_dead_letter')
 
   const pendingEvent = latest(events, 'memory.pending')
@@ -266,9 +284,9 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
         </article>
         <article className="operations-card">
           <h3>Child jobs</h3>
-          <strong>{childEvents.length}</strong>
-          <span>событий timeline</span>
-          <small>{count('child.report.accepted')} принятых отчётов · {count('child.failed')} failed</small>
+          <strong>{activeChildren}</strong>
+          <span>активных children</span>
+          <small>{liveLeases} leases · {deadLetters} dead-letter · {count('child.report.accepted')} принятых отчётов</small>
         </article>
         <article className={`operations-card ${pulseFailed ? 'operations-card--warning' : ''}`}>
           <h3>Pulse</h3>
@@ -426,10 +444,10 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
 
       {childEvents.length > 0 ? (
         <ol className="operations-timeline" aria-label="Последние child события">
-          {childEvents.slice(0, 8).map((event) => (
+          {childProjection.slice(0, 8).map(({ event, item }) => (
             <li key={`${event.sequenceId}-${event.eventType}`}>
-              <code>{event.eventType}</code>
-              <span>{event.payload || 'без дополнительной информации'}</span>
+              <code>{item.role ?? 'child'} · {item.state ?? event.eventType}</code>
+              <span>{item.child_task_id ?? 'идентификатор скрыт'} · rev {item.revision ?? 0}{item.reason_code ? ` · ${item.reason_code}` : ''}{item.dead_letter ? ' · dead-letter' : ''}</span>
             </li>
           ))}
         </ol>

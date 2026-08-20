@@ -1030,6 +1030,7 @@ pub mod capability_selection;
 pub mod child_contracts;
 pub mod child_roles;
 pub mod child_runtime;
+pub mod child_workflow;
 pub mod context_budget;
 pub mod doctor;
 pub mod evals;
@@ -9116,6 +9117,30 @@ impl TaskCoordinator {
                     // `ChildTaskRequest::validate` used by the pure unit
                     // tests, now enforced on the live IPC path.
                     request.validate().map_err(|error| error.to_string())?;
+                    let typed_correlation = crate::child_contracts::CorrelationContext::new(
+                        crate::child_contracts::CorrelationId::new(parent_task_id.clone())
+                            .map_err(|error| error.to_string())?,
+                        crate::child_contracts::CorrelationId::new(child_task_id.clone())
+                            .map_err(|error| error.to_string())?,
+                        0,
+                    );
+                    let typed_request = crate::child_contracts::TypedChildTaskRequest::new(
+                        child_task_id.clone(), parent_task_id.clone(), role.clone(),
+                        format!("{kind} child workflow"), typed_correlation,
+                    )
+                    .map_err(|error| error.to_string())?
+                    .with_context(request.reduced_context.clone())
+                    .map_err(|error| error.to_string())?
+                    .with_max_output_bytes(request.max_output_bytes)
+                    .map_err(|error| error.to_string())?
+                    .with_capabilities(request.requested_capabilities.clone())
+                    .map_err(|error| error.to_string())?;
+                    crate::child_contracts::validate_contract_version(
+                        typed_request.contract_version,
+                        crate::child_contracts::CONTRACT_VERSION,
+                    )
+                    .map_err(|error| error.to_string())?;
+                    typed_request.validate().map_err(|error| error.to_string())?;
                     let request_json =
                         serde_json::to_string(&request).map_err(|error| error.to_string())?;
                     let record = evohime_local_storage::child_store::ChildTaskRequestRecord {
@@ -9177,6 +9202,43 @@ impl TaskCoordinator {
                     let request: crate::child_runtime::ChildTaskRequest =
                         serde_json::from_str(&stored_request.request_json)
                             .map_err(|error| error.to_string())?;
+                    let typed_request = crate::child_contracts::TypedChildTaskRequest::new(
+                        request.child_task_id.clone(), request.parent_task_id.clone(),
+                        request.role.clone(), "legacy child workflow",
+                        crate::child_contracts::CorrelationContext::new(
+                            crate::child_contracts::CorrelationId::new(request.parent_task_id.clone()).map_err(|error| error.to_string())?,
+                            crate::child_contracts::CorrelationId::new(request.child_task_id.clone()).map_err(|error| error.to_string())?,
+                            0,
+                        ),
+                    )
+                    .map_err(|error| error.to_string())?
+                    .with_context(request.reduced_context.clone())
+                    .map_err(|error| error.to_string())?
+                    .with_max_output_bytes(request.max_output_bytes)
+                    .map_err(|error| error.to_string())?
+                    .with_capabilities(request.requested_capabilities.clone())
+                    .map_err(|error| error.to_string())?;
+                    let typed_status = match report.status {
+                        crate::child_runtime::ChildReportStatus::Complete => crate::child_contracts::TypedReportStatus::Complete,
+                        crate::child_runtime::ChildReportStatus::Partial => crate::child_contracts::TypedReportStatus::Partial,
+                        crate::child_runtime::ChildReportStatus::Rejected => crate::child_contracts::TypedReportStatus::Rejected,
+                    };
+                    let typed_report = crate::child_contracts::TypedChildReport::new(
+                        report.child_task_id.clone(), request.parent_task_id.clone(),
+                        typed_request.correlation.clone(),
+                        crate::child_contracts::Provenance::new(0).mark_completed(),
+                    )
+                    .map_err(|error| error.to_string())?
+                    .with_status(typed_status)
+                    .with_summary(report.summary.clone())
+                    .map_err(|error| error.to_string())?
+                    .with_findings(report.findings.clone())
+                    .map_err(|error| error.to_string())?
+                    .with_sources(report.sources.clone())
+                    .map_err(|error| error.to_string())?
+                    .with_confidence(report.confidence_percent);
+                    crate::child_contracts::accept_typed_report(&typed_request, &typed_report)
+                        .map_err(|error| error.to_string())?;
                     // The real bounded contract runs here: re-validates the
                     // request, validates the report's own bounds, rejects
                     // secret-like content and duplicate sources, and

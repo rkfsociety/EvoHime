@@ -38,6 +38,11 @@ pub const MAX_SCHEMA_CHARS: usize = 4_096;
 pub const MAX_HASH_CHARS: usize = 64;
 pub const MAX_MODEL_ID_CHARS: usize = 128;
 pub const MAX_TOOL_VERSION_CHARS: usize = 64;
+pub const MAX_EVIDENCE: usize = 32;
+pub const MAX_CHANGED_PATHS: usize = 64;
+pub const MAX_TESTS: usize = 32;
+pub const MAX_RISKS: usize = 32;
+pub const MAX_REVISIONS: u32 = 3;
 pub const CONTRACT_VERSION: ContractVersion = ContractVersion { major: 1, minor: 0 };
 
 // ============================================================================
@@ -132,11 +137,7 @@ pub struct CorrelationContext {
 }
 
 impl CorrelationContext {
-    pub fn new(
-        task_id: CorrelationId,
-        child_id: CorrelationId,
-        parent_sequence: u64,
-    ) -> Self {
+    pub fn new(task_id: CorrelationId, child_id: CorrelationId, parent_sequence: u64) -> Self {
         Self {
             task_id,
             child_id,
@@ -205,12 +206,14 @@ impl Grant {
             return false;
         }
         match (&self.scope, &parent.scope) {
-            (None, _) => true, // No scope means it's a subset
+            (None, _) => true,                   // No scope means it's a subset
             (Some(_child_scope), None) => false, // Child has scope but parent doesn't
             (Some(child_scope), Some(parent_scope)) => {
-                // Child scope must be contained within parent scope
-                parent_scope.starts_with(child_scope.trim_start_matches('/'))
-                    || child_scope == parent_scope
+                let child = child_scope.trim_end_matches('/');
+                let parent = parent_scope.trim_end_matches('/');
+                child == parent
+                    || (child.starts_with(parent)
+                        && child.as_bytes().get(parent.len()) == Some(&b'/'))
             }
         }
     }
@@ -340,6 +343,22 @@ impl Schema {
                 });
             }
         }
+        if let Some(schema) = &self.json_schema {
+            let schema_value: serde_json::Value = serde_json::from_str(schema)
+                .map_err(|_| ContractError::SchemaValidation("schema is not valid JSON".into()))?;
+            let compiled = jsonschema::JSONSchema::compile(&schema_value)
+                .map_err(|error| ContractError::SchemaValidation(error.to_string()))?;
+            let value: serde_json::Value = serde_json::from_str(content)
+                .map_err(|_| ContractError::SchemaValidation("content is not valid JSON".into()))?;
+            if let Err(mut errors) = compiled.validate(&value) {
+                return Err(ContractError::SchemaValidation(
+                    errors
+                        .next()
+                        .map(|error| error.to_string())
+                        .unwrap_or_else(|| "content does not match schema".into()),
+                ));
+            };
+        }
         Ok(())
     }
 }
@@ -414,7 +433,10 @@ impl Provenance {
         Ok(self)
     }
 
-    pub fn with_schema_version(mut self, version: impl Into<String>) -> Result<Self, ContractError> {
+    pub fn with_schema_version(
+        mut self,
+        version: impl Into<String>,
+    ) -> Result<Self, ContractError> {
         let version = version.into();
         validate_text("schema_version", &version, MAX_TOOL_VERSION_CHARS, false)?;
         self.schema_version = Some(version);
@@ -489,6 +511,14 @@ pub struct TypedChildTaskRequest {
     /// Maximum number of revisions allowed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_revisions: Option<u32>,
+    /// Explicit context/artifact allowlist for this child.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub input_context_ids: Vec<String>,
+    /// Explicit opt-in for moving oversized output to the artifact store.
+    #[serde(default)]
+    pub allow_output_offload: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_privacy: Option<String>,
 }
 
 impl TypedChildTaskRequest {
@@ -526,6 +556,9 @@ impl TypedChildTaskRequest {
             budget: None,
             acceptance_criteria: None,
             max_revisions: None,
+            input_context_ids: Vec::new(),
+            allow_output_offload: false,
+            output_privacy: None,
         })
     }
 
@@ -604,7 +637,10 @@ impl TypedChildTaskRequest {
         self
     }
 
-    pub fn with_acceptance_criteria(mut self, criteria: impl Into<String>) -> Result<Self, ContractError> {
+    pub fn with_acceptance_criteria(
+        mut self,
+        criteria: impl Into<String>,
+    ) -> Result<Self, ContractError> {
         let criteria = criteria.into();
         validate_text("acceptance_criteria", &criteria, MAX_PURPOSE_CHARS, false)?;
         self.acceptance_criteria = Some(criteria);
@@ -612,7 +648,27 @@ impl TypedChildTaskRequest {
     }
 
     pub fn with_max_revisions(mut self, max: u32) -> Self {
-        self.max_revisions = Some(max);
+        self.max_revisions = Some(max.min(MAX_REVISIONS));
+        self
+    }
+
+    pub fn with_input_context_ids(mut self, ids: Vec<String>) -> Result<Self, ContractError> {
+        if ids.len() > MAX_CONTEXT_ITEMS {
+            return Err(ContractError::TooManyItems {
+                field: "input_context_ids",
+                max: MAX_CONTEXT_ITEMS,
+            });
+        }
+        for id in &ids {
+            validate_text("input_context_id", id, MAX_CONTEXT_ITEM_CHARS, true)?;
+        }
+        self.input_context_ids = ids;
+        Ok(self)
+    }
+
+    pub fn with_output_offload(mut self, enabled: bool, privacy: Option<String>) -> Self {
+        self.allow_output_offload = enabled;
+        self.output_privacy = privacy;
         self
     }
 
@@ -696,6 +752,15 @@ impl TypedChildTaskRequest {
         if let Some(ref criteria) = self.acceptance_criteria {
             validate_text("acceptance_criteria", criteria, MAX_PURPOSE_CHARS, false)?;
         }
+        if self.max_revisions.is_some_and(|max| max > MAX_REVISIONS) {
+            return Err(ContractError::TooManyRevisions);
+        }
+        if self.input_context_ids.len() > MAX_CONTEXT_ITEMS {
+            return Err(ContractError::TooManyItems {
+                field: "input_context_ids",
+                max: MAX_CONTEXT_ITEMS,
+            });
+        }
 
         Ok(())
     }
@@ -709,9 +774,9 @@ impl TypedChildTaskRequest {
 
         // For each child grant, check if there's a matching parent grant
         for child_grant in &self.grants {
-            let has_matching_parent = parent_grants.iter().any(|parent_grant| {
-                child_grant.is_subset_of(parent_grant)
-            });
+            let has_matching_parent = parent_grants
+                .iter()
+                .any(|parent_grant| child_grant.is_subset_of(parent_grant));
             if !has_matching_parent {
                 return false;
             }
@@ -785,6 +850,40 @@ pub struct TypedChildReport {
     /// Whether this report has been accepted by parent
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accepted: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence: Vec<EvidenceItem>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed_paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tests: Vec<TestResult>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub risks: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_action: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_artifact: Option<ArtifactOutputRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EvidenceItem {
+    pub locator: String,
+    pub summary: String,
+    pub content_hash: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TestResult {
+    pub name: String,
+    pub status: String,
+    #[serde(default)]
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArtifactOutputRef {
+    pub locator: String,
+    pub content_hash: String,
+    pub summary: String,
 }
 
 impl TypedChildReport {
@@ -814,6 +913,12 @@ impl TypedChildReport {
             errors: None,
             revision: None,
             accepted: None,
+            evidence: Vec::new(),
+            changed_paths: Vec::new(),
+            tests: Vec::new(),
+            risks: Vec::new(),
+            next_action: None,
+            output_artifact: None,
         })
     }
 
@@ -892,6 +997,57 @@ impl TypedChildReport {
         self
     }
 
+    pub fn with_evidence(mut self, evidence: Vec<EvidenceItem>) -> Result<Self, ContractError> {
+        if evidence.len() > MAX_EVIDENCE {
+            return Err(ContractError::TooManyItems {
+                field: "evidence",
+                max: MAX_EVIDENCE,
+            });
+        }
+        self.evidence = evidence;
+        Ok(self)
+    }
+
+    pub fn with_changed_paths(mut self, paths: Vec<String>) -> Result<Self, ContractError> {
+        if paths.len() > MAX_CHANGED_PATHS {
+            return Err(ContractError::TooManyItems {
+                field: "changed_paths",
+                max: MAX_CHANGED_PATHS,
+            });
+        }
+        self.changed_paths = paths;
+        Ok(self)
+    }
+
+    pub fn with_tests(mut self, tests: Vec<TestResult>) -> Result<Self, ContractError> {
+        if tests.len() > MAX_TESTS {
+            return Err(ContractError::TooManyItems {
+                field: "tests",
+                max: MAX_TESTS,
+            });
+        }
+        self.tests = tests;
+        Ok(self)
+    }
+
+    pub fn with_risks(mut self, risks: Vec<String>) -> Result<Self, ContractError> {
+        if risks.len() > MAX_RISKS {
+            return Err(ContractError::TooManyItems {
+                field: "risks",
+                max: MAX_RISKS,
+            });
+        }
+        self.risks = risks;
+        Ok(self)
+    }
+
+    pub fn with_next_action(mut self, action: impl Into<String>) -> Result<Self, ContractError> {
+        let action = action.into();
+        validate_text("next_action", &action, MAX_PURPOSE_CHARS, false)?;
+        self.next_action = Some(action);
+        Ok(self)
+    }
+
     /// Validate the report
     pub fn validate(&self) -> Result<(), ContractError> {
         // Validate basic fields
@@ -950,12 +1106,43 @@ impl TypedChildReport {
                 reject_secret_like(error)?;
             }
         }
+        if self.evidence.len() > MAX_EVIDENCE
+            || self.changed_paths.len() > MAX_CHANGED_PATHS
+            || self.tests.len() > MAX_TESTS
+            || self.risks.len() > MAX_RISKS
+        {
+            return Err(ContractError::TooManyItems {
+                field: "report_details",
+                max: MAX_EVIDENCE,
+            });
+        }
+        for evidence in &self.evidence {
+            validate_text(
+                "evidence.locator",
+                &evidence.locator,
+                MAX_SOURCE_CHARS,
+                true,
+            )?;
+            validate_text(
+                "evidence.content_hash",
+                &evidence.content_hash,
+                MAX_HASH_CHARS,
+                true,
+            )?;
+            reject_secret_like(&evidence.summary)?;
+        }
+        for risk in &self.risks {
+            reject_secret_like(risk)?;
+        }
 
         Ok(())
     }
 
     /// Validate that this report matches the corresponding request
-    pub fn validate_against_request(&self, request: &TypedChildTaskRequest) -> Result<(), ContractError> {
+    pub fn validate_against_request(
+        &self,
+        request: &TypedChildTaskRequest,
+    ) -> Result<(), ContractError> {
         // Check task IDs match
         if self.child_task_id != request.child_task_id {
             return Err(ContractError::TaskMismatch);
@@ -977,6 +1164,22 @@ impl TypedChildReport {
             if let Some(ref schema) = request.output_schema {
                 schema.validate_content(output_data)?;
             }
+        }
+
+        if self.provenance.parent_sequence != self.correlation.parent_sequence
+            || self.provenance.created_at
+                > self
+                    .provenance
+                    .completed_at
+                    .unwrap_or(self.provenance.created_at)
+            || (matches!(
+                self.status,
+                TypedReportStatus::Complete
+                    | TypedReportStatus::Rejected
+                    | TypedReportStatus::Failed
+            ) && self.provenance.completed_at.is_none())
+        {
+            return Err(ContractError::StaleProvenance);
         }
 
         Ok(())
@@ -1004,12 +1207,40 @@ pub fn accept_typed_report(
     Ok(report.clone())
 }
 
+/// Boundary check used by create/accept paths. Optional minor fields are
+/// additive; a different major is never silently migrated.
+pub fn validate_contract_version(
+    actual: ContractVersion,
+    supported: ContractVersion,
+) -> Result<(), ContractError> {
+    if supported.can_accept_additive(&actual) {
+        Ok(())
+    } else {
+        Err(ContractError::VersionMismatch)
+    }
+}
+
+pub fn validate_context_allowlist(
+    request: &TypedChildTaskRequest,
+    accessible_ids: &BTreeSet<String>,
+) -> Result<(), ContractError> {
+    for id in &request.input_context_ids {
+        if !accessible_ids.contains(id) {
+            return Err(ContractError::ContextIdNotAccessible { id: id.clone() });
+        }
+    }
+    Ok(())
+}
+
 /// Validate that child grants are a subset of parent grants.
-pub fn validate_grant_subset(child_grants: &[Grant], parent_grants: &[Grant]) -> Result<(), ContractError> {
+pub fn validate_grant_subset(
+    child_grants: &[Grant],
+    parent_grants: &[Grant],
+) -> Result<(), ContractError> {
     for child_grant in child_grants {
-        let has_matching_parent = parent_grants.iter().any(|parent_grant| {
-            child_grant.is_subset_of(parent_grant)
-        });
+        let has_matching_parent = parent_grants
+            .iter()
+            .any(|parent_grant| child_grant.is_subset_of(parent_grant));
         if !has_matching_parent {
             return Err(ContractError::GrantEscalation {
                 grant: child_grant.grant_type.clone(),
@@ -1051,6 +1282,11 @@ pub enum ContractError {
     ContentTooLarge { actual: usize, max: usize },
     OutputTooLarge { actual: usize, max: usize },
     ContextTooLarge { actual: usize, max: usize },
+    SchemaValidation(String),
+    VersionMismatch,
+    StaleProvenance,
+    ContextIdNotAccessible { id: String },
+    TooManyRevisions,
 
     // Capability errors
     ForbiddenCapability(String),
@@ -1092,6 +1328,13 @@ impl fmt::Display for ContractError {
             Self::ContextTooLarge { actual, max } => {
                 write!(f, "context is {actual} bytes, maximum is {max}")
             }
+            Self::SchemaValidation(message) => write!(f, "schema validation failed: {message}"),
+            Self::VersionMismatch => write!(f, "incompatible child contract version"),
+            Self::StaleProvenance => write!(f, "child report provenance is stale or incomplete"),
+            Self::ContextIdNotAccessible { id } => {
+                write!(f, "child context is not accessible: {id}")
+            }
+            Self::TooManyRevisions => write!(f, "child revision limit exceeds the maximum"),
             Self::ForbiddenCapability(capability) => {
                 write!(f, "forbidden child capability: {capability}")
             }
@@ -1197,7 +1440,7 @@ mod tests {
             "child-1",
             "task-1",
             create_test_correlation(),
-            Provenance::new(1),
+            Provenance::new(1).mark_completed(),
         )
         .unwrap()
         .with_status(TypedReportStatus::Complete)
@@ -1269,7 +1512,10 @@ mod tests {
         // Test invalid nested child
         let mut nested = request.clone();
         nested.parent_is_child = true;
-        assert!(matches!(nested.validate(), Err(ContractError::NestedChildForbidden)));
+        assert!(matches!(
+            nested.validate(),
+            Err(ContractError::NestedChildForbidden)
+        ));
     }
 
     #[test]
@@ -1280,7 +1526,10 @@ mod tests {
         // Test secret-like content
         let mut unsafe_report = report.clone();
         unsafe_report.summary = "token must not leak".to_string();
-        assert!(matches!(unsafe_report.validate(), Err(ContractError::SecretLikeContent)));
+        assert!(matches!(
+            unsafe_report.validate(),
+            Err(ContractError::SecretLikeContent)
+        ));
     }
 
     #[test]
@@ -1313,15 +1562,11 @@ mod tests {
             Grant::new("git.status").unwrap(),
         ];
 
-        let child_grants = vec![
-            Grant::new("workspace.read").unwrap(),
-        ];
+        let child_grants = vec![Grant::new("workspace.read").unwrap()];
 
         assert!(validate_grant_subset(&child_grants, &parent_grants).is_ok());
 
-        let escalated_grants = vec![
-            Grant::new("workspace.write").unwrap(),
-        ];
+        let escalated_grants = vec![Grant::new("workspace.write").unwrap()];
 
         assert!(matches!(
             validate_grant_subset(&escalated_grants, &parent_grants),

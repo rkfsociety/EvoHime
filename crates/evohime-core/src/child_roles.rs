@@ -27,6 +27,43 @@ pub enum ChildRole {
     Custom,
 }
 
+/// Capability matrix for specialized workflows. The matrix is advisory input
+/// to Core policy; every tool call still re-checks the effective grant.
+pub fn allowed_capabilities(role: ChildRole) -> &'static [&'static str] {
+    match role {
+        ChildRole::Coordinator => &[
+            "workspace.read",
+            "workspace.search",
+            "git.status",
+            "git.diff",
+        ],
+        ChildRole::Researcher => &["workspace.read", "workspace.search", "git.status"],
+        ChildRole::Implementer => &[
+            "workspace.read",
+            "workspace.search",
+            "git.status",
+            "git.diff",
+        ],
+        ChildRole::Tester => &[
+            "workspace.read",
+            "workspace.search",
+            "git.status",
+            "git.diff",
+        ],
+        ChildRole::Reviewer => &[
+            "workspace.read",
+            "workspace.search",
+            "git.status",
+            "git.diff",
+        ],
+        ChildRole::Planner | ChildRole::Custom => &["workspace.read", "workspace.search"],
+    }
+}
+
+pub fn can_request_capability(role: ChildRole, capability: &str) -> bool {
+    allowed_capabilities(role).contains(&capability)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HandoffKind {
