@@ -62,11 +62,15 @@ audit-логирования отклонений.
 UTF-8 строка в поле `Schema.json_schema` (лимит `MAX_SCHEMA_CHARS = 4096`
 символов). `Schema.content_type` описывает формат самого значения (обычно
 `application/json`), `Schema.max_bytes` — верхняя граница сериализованного
-значения, проверяемая до валидации по JSON Schema. Report проходит две
-проверки в этом порядке: (1) `max_bytes`, (2) JSON Schema validation
-`output_data` против `output_schema.json_schema`, если оно задано; отсутствие
-`output_schema` не освобождает report от базовой structural-валидации
-`TypedChildReport::validate()`.
+значения, проверяемая до валидации по JSON Schema. В обычном inline-пути
+report проходит две проверки в этом порядке: (1) `max_bytes`, (2) JSON Schema
+validation `output_data` против `output_schema.json_schema`, если оно задано;
+отсутствие `output_schema` не освобождает report от базовой
+structural-валидации `TypedChildReport::validate()`. Этап 03.3 добавляет
+явный offload-путь: включённый для конкретного child offload перехватывает
+результат до inline-лимита, сохраняет его как разрешённый `ArtifactRef`, а
+родителю передаёт только bounded reference/summary; без этого пути превышение
+лимита по-прежнему отклоняется как `OutputTooLarge`.
 
 `acceptance_criteria` в 03.1 — свободный текст, который формулирует
 coordinator при создании child (см. [03-0](03-0-specialized-child-workflows.md#контракт-child-task)
@@ -155,7 +159,7 @@ Provenance считается stale, если выполняется любое 
 ## Проверки
 
 - malformed report, oversized report (`max_bytes`/`MAX_OUTPUT_BYTES`) и
-  wrong parent id отклоняются до persistence;
+  wrong parent id отклоняются до persistence в inline-пути;
 - role permission matrix и negative tests;
 - child cannot commit/push without parent policy and approval (approval
   state machine — 03.2; здесь проверяется, что typed contract не содержит

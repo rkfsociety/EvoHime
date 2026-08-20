@@ -86,11 +86,17 @@ content-addressed Artifact Store (`crates/context-budget/src/artifact.rs`,
   унаследованным от declared privacy данных в отчёте (не всегда
   `Workspace`); parent получает `ArtifactRef.summary`, построенный
   `bounded_summary` (уже реализовано, не переписывается), plus `locator` и
-  `content_hash`. Данные с `Privacy::Sensitive`/`Privacy::Secret` не
-  offload'ятся — `ArtifactError::PrivacyForbidsOffload` (уже реализовано в
-  `artifact.rs`) должен приводить report к отдельному пути: такой результат
-  остаётся inline только внутри доверенного tool-call пути и не появляется
-  ни в summary, ни в diagnostics/trace. 03.3 добавляет проверку этого пути
+  `content_hash`. Это исключение из inline-валидации 03.1 и должно быть явно
+  включено в child contract; без такого флага действует обычный
+  `OutputTooLarge`. Для этого этап добавляет optional additive-поля typed
+  report `output_privacy` и `output_artifact`; их отсутствие означает обычный
+  inline output и сохраняет совместимость с контрактом 03.1. Данные с
+  `Privacy::Sensitive`/`Privacy::Secret` не offload'ятся —
+  `ArtifactError::PrivacyForbidsOffload` (уже реализовано в `artifact.rs`)
+  отклоняет передачу результата родителю. Такой результат не остаётся inline
+  в parent-visible report и не появляется в summary, diagnostics или trace;
+  child может завершиться только с redacted reason без raw payload. 03.3
+  добавляет проверку этого пути
   специально для child report (сейчас `PrivacyForbidsOffload` проверяется
   только в generic artifact write, не в report offload branch).
 

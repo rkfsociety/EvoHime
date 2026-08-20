@@ -27,9 +27,11 @@ dead-letter; trace переходов состояний.
   отказа.
 - OperationsPanel показывает активных children, leases и dead-letter.
 - Dead-letter содержит окончательно не принятые reports/events после
-  исчерпания retries/revisions или невосстановимого schema/policy failure;
-  хранится 30 дней, доступен coordinator и администратору, payload redacted
-  и не содержит raw transcript.
+  исчерпания bounded transport/recovery retries или revisions либо после
+  невосстановимого schema/policy failure; лимит retries задаётся 03.2 и не
+  является новым бесконечным циклом. Запись хранится 30 дней, доступна
+  coordinator и администратору, payload redacted и не содержит raw
+  transcript.
 - Trace сохраняет state transitions, not raw hidden chain-of-thought.
 
 Audit и trace различаются: audit отвечает на «кто, когда, что запросил и чем

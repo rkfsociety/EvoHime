@@ -5,8 +5,8 @@
 ## Зависимости
 
 Блокирующие: этап 03.1 (typed report и `CorrelationContext`/`Provenance` с
-`parent_sequence`, который валидируется при переходах) и существующие leases
-и task graph.
+`parent_sequence`, который валидируется при переходах) и существующий task
+graph. Lease-механизма в текущем runtime нет: он создаётся этим этапом.
 
 Разблокирует: 03.3 и 03.4.
 
@@ -53,11 +53,11 @@ revision, привязанное к паре часов (`crates/evohime-receipt
   `lease_clock_boot_id`, `lease_holder_process_id`.
 - **Живой lease** = `lease_deadline_monotonic_ms > now_monotonic_ms` **и**
   `lease_clock_boot_id == current_clock_boot_id`. Смена `clock_boot_id`
-  (перезапуск runtime) сама по себе не убивает lease мгновенно — coordinator
-  переносит monotonic-часы на новый boot по тому же механизму, что
-  `receipt_approval_intents`, и только затем проверяет deadline; если
-  перенести часы нельзя (отсутствует reference point), lease считается
-  мёртвым консервативно.
+  (перезапуск runtime) делает старый lease недействительным: monotonic
+  deadline нельзя безопасно сравнивать между boot-сессиями. Поэтому активный
+  child после restart проходит recovery как `restart_no_live_lease`; новый
+  lease выдаётся только после повторного запуска child. Переноса monotonic
+  deadline между boot-сессиями нет.
 - **Продление:** каждый heartbeat устанавливает новый
   `lease_deadline_monotonic_ms = now_monotonic_ms + lease_ttl_ms`
   (`lease_ttl_ms` по умолчанию 15000 мс, ≥ 3×
@@ -77,7 +77,7 @@ Checkpoint — таблица SQLite, конвенции по образцу `re
 ```sql
 CREATE TABLE IF NOT EXISTS coordinator_child_checkpoint (
   schema_version INTEGER NOT NULL DEFAULT 1,
-  child_task_id TEXT PRIMARY KEY NOT NULL,
+  child_task_id TEXT NOT NULL,
   parent_task_id TEXT NOT NULL,
   revision INTEGER NOT NULL,
   state TEXT NOT NULL CHECK(state IN (
@@ -96,9 +96,17 @@ CREATE TABLE IF NOT EXISTS coordinator_child_checkpoint (
   lease_holder_process_id TEXT,
   last_transition_event TEXT NOT NULL,
   last_transition_at_ms INTEGER NOT NULL,
-  created_at_ms INTEGER NOT NULL
+  created_at_ms INTEGER NOT NULL,
+  PRIMARY KEY (child_task_id, revision)
 );
 ```
+
+`child_task_id` не является единственным ключом: каждая revision имеет
+отдельную checkpoint-строку. Текущий исход выбирается по максимальной
+revision и последнему transition sequence. Дедупликация повторно
+доставленного lifecycle event выполняется в event journal по составному ключу
+`(child_task_id, revision, last_transition_event)`; checkpoint хранит только
+последнее событие текущей revision.
 
 `report_json`/`evidence_locators_json`/`provenance_hashes_json` хранят typed
 payload из 03.1 (`ChildReport`, evidence locators, `Provenance` hashes) как
@@ -194,6 +202,9 @@ src/lib.rs:3493-3511`): фоновый цикл на интервале (по у
 - restart не создаёт новую revision и не расходует лимит — это то же
   число попыток, к которому coordinator возвращается после lease/hash
   ревалидации;
+- transport/recovery retry ограничен тремя попытками на одну revision и не
+  расходует `max_revisions`; после исчерпания попыток исход попадает в
+  `Failed`/dead-letter с конкретной причиной;
 - после исчерпания `max_revisions` действует правило 03-0: `revise_plan`,
   если изменились предпосылки/границы, иначе `Failed(reason=
   max_revisions_exceeded)`; новый implementer автоматически не создаётся.

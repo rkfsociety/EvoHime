@@ -120,13 +120,15 @@ retrieval для неё уже есть, но grants и budget не заданы
   03.1–03.3;
 - Local Agentic RAG (реализован, см. [`../architecture.md`](../architecture.md)) — workspace retrieval и query planner, на
   которые опирается read-only роль `researcher`;
-- этап 01.3 — связь действий ребёнка с approval родителя;
-- существующие child runtime, permission policy, task graph, leases и
-  evaluation catalog (`tests/evals/`).
+- существующие child runtime, permission policy, task graph и evaluation
+  catalog (`tests/evals/`). Отдельного lease-механизма в текущем runtime нет;
+  bounded leases и их checkpoint появляются в 03.2.
 
-Этап 01.3 должен предоставлять correlation id receipt. До его наличия 03.1
-может валидировать task/child/tool correlation, но не объявляет receipt
-интеграцию готовой.
+Опциональные:
+
+- этап 01.3 — связь child-действий с receipt и approval родителя. До его
+  появления `receipt_id` остаётся `None`: workflow работает, но audit явно
+  показывает отсутствие receipt-связи; это не блокирует этапы 03.1–03.4.
 
 Это последний план цепочки: от него никто не зависит. A2A/network protocol
 не нужен — достаточно локальных Core-owned children.
