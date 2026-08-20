@@ -616,8 +616,10 @@ dependencies = [
  "evohime-desktop-ipc",
  "evohime-receipts",
  "evohime-updater",
+ "rand 0.8.7",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
  "windows-sys 0.61.2",
 ]

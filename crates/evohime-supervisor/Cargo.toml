@@ -14,6 +14,8 @@ serde = { version = "1", features = ["derive"] }
 evohime-updater = { path = "../evohime-updater" }
 evohime-desktop-ipc = { path = "../desktop-ipc" }
 evohime-receipts = { path = "../evohime-receipts" }
+rand = "0.8"
+sha2 = "0.10"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading"] }

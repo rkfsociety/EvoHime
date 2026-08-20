@@ -62,6 +62,9 @@ pub struct RoutingRequest {
     pub max_latency_ms: Option<u32>,
     pub required_privacy: PrivacyClass,
     pub allow_fallback: bool,
+    /// Unprivileged user hint; policy filters always take precedence.
+    #[serde(default)]
+    pub preferred_route: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -174,6 +177,11 @@ pub fn select_route(
             .cmp(&right.cost_micros_per_1k_tokens)
             .then(left.p95_latency_ms.cmp(&right.p95_latency_ms))
             .then(left.fallback_rank.cmp(&right.fallback_rank))
+            .then_with(|| {
+                let preferred = request.preferred_route.as_deref();
+                (preferred != Some(left.route_id.as_str()))
+                    .cmp(&(preferred != Some(right.route_id.as_str())))
+            })
             .then(left.route_id.cmp(&right.route_id))
     });
 
@@ -257,6 +265,7 @@ mod tests {
             max_latency_ms: Some(500),
             required_privacy: PrivacyClass::Internal,
             allow_fallback: true,
+            preferred_route: None,
         };
         let mut expensive = candidate("expensive", 90, 200);
         expensive.fallback_rank = 1;
@@ -275,6 +284,7 @@ mod tests {
             max_latency_ms: None,
             required_privacy: PrivacyClass::Restricted,
             allow_fallback: false,
+            preferred_route: None,
         };
         let mut route = candidate("cloud", 1, 1);
         route.available = false;
@@ -308,6 +318,7 @@ mod tests {
             max_latency_ms: None,
             required_privacy: PrivacyClass::Public,
             allow_fallback: true,
+            preferred_route: None,
         };
         let routes: Vec<_> = (0..(MAX_FALLBACKS + 4))
             .map(|index| candidate(&format!("route-{index}"), index as u64, 1))

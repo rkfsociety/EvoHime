@@ -1516,6 +1516,10 @@ impl IpcBridge {
                             prompt: start.prompt,
                             workspace_root: (!start.workspace_path.is_empty())
                                 .then(|| std::path::PathBuf::from(start.workspace_path)),
+                            preferred_route_hint: match start.preferred_route_hint.as_str() {
+                                "local" | "cloud" => Some(start.preferred_route_hint),
+                                _ => None,
+                            },
                         })
                         .await
                         .map_err(|error| FrameError::Io(error.to_string()))?;
@@ -1844,6 +1848,26 @@ impl IpcBridge {
                 if let Some(approvals) = &self.approvals {
                     let _ = approvals.resolve(approval_id, resolve.granted).await;
                 }
+            }
+            Some(generated::command_envelope::Command::ResolveRoutingDecision(resolve)) => {
+                let coordinator = self
+                    .coordinator
+                    .as_ref()
+                    .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+                let (reply, response) = oneshot::channel();
+                coordinator
+                    .dispatch(CoreCommand::ResolveRoutingDecision {
+                        trace_id: resolve.trace_id,
+                        approve: resolve.approve,
+                        reply,
+                    })
+                    .await
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                let result = response
+                    .await
+                    .map_err(|_| FrameError::Io("routing decision response dropped".into()))?
+                    .map_err(FrameError::Io)?;
+                self.write_response(writer, "routing.decision", result).await?;
             }
             None => {}
         }

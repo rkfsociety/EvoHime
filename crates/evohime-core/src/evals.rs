@@ -1270,6 +1270,7 @@ mod routing {
             max_latency_ms: None,
             required_privacy: PrivacyClass::Restricted,
             allow_fallback: true,
+            preferred_route: None,
         };
         let decision = select_route(&request, &candidates)
             .map_err(|error| format!("select_route failed: {error:?}"))?;
@@ -1308,6 +1309,7 @@ mod routing {
             max_latency_ms: None,
             required_privacy: PrivacyClass::Restricted,
             allow_fallback: true,
+            preferred_route: None,
         };
         let decision = select_route(&request, &candidates)
             .map_err(|error| format!("select_route failed: {error:?}"))?;

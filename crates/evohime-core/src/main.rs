@@ -121,6 +121,7 @@ async fn main() {
                 task_id: task_id.clone(),
                 prompt,
                 workspace_root: Some(workspace_root),
+                preferred_route_hint: None,
             })
             .await
         {
@@ -523,6 +524,15 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         } => println!(
             "Контекст: модель={model}; workspace={workspace_path}; инструментов={}; токены={estimated_tokens}/{context_limit_tokens}",
             tools.len()
+        ),
+        evohime_core::CoreEvent::RoutingTrace { trace, .. } => println!(
+            "routing.terminal: route={} status={:?} fallback={}",
+            trace.selected_route.as_deref().unwrap_or("—"),
+            trace.terminal_status,
+            trace.fallback_count
+        ),
+        evohime_core::CoreEvent::PendingRoutingApproval { route_id, expires_at_ms, .. } => println!(
+            "routing.pending_approval: route={route_id} expires_at_ms={expires_at_ms}"
         ),
         evohime_core::CoreEvent::TaskStarted { prompt, .. } => println!("\nЗапрос: {prompt}"),
         evohime_core::CoreEvent::AssistantDelta { content, .. } => print!("{content}"),

@@ -39,11 +39,19 @@ export interface RoutingTrace {
 }
 export type RoutingViewState = 'normal' | 'partial_fallback' | 'degraded' | 'refusal' | 'cancelled' | 'unknown_state' | 'core_unavailable'
 
+export interface PendingRoutingApproval {
+  readonly traceId: string
+  readonly runId: string
+  readonly routeId: RouteId
+  readonly expiresAtMs: number
+}
+
 export function parseRoutingTrace(raw: string): RoutingTrace | null {
   let value: unknown
   try { value = JSON.parse(raw) } catch { return null }
   if (!value || typeof value !== 'object') return null
-  const v = value as Record<string, unknown>
+  const outer = value as Record<string, unknown>
+  const v = outer.trace && typeof outer.trace === 'object' ? outer.trace as Record<string, unknown> : outer
   const version = v.schema_version
   const major = typeof version === 'number' ? version : typeof version === 'string' ? Number(version.split('.')[0]) : NaN
   if (major !== ROUTING_SCHEMA_MAJOR || typeof v.terminal_status !== 'string' || typeof v.selected_route === undefined || !Array.isArray(v.candidates) || typeof v.fallback_count !== 'number' || typeof v.privacy_label !== 'string' || typeof v.trace_id !== 'string' || typeof v.run_id !== 'string' || typeof v.sequence !== 'number') return null
@@ -56,7 +64,21 @@ export function parseRoutingTrace(raw: string): RoutingTrace | null {
     return typeof c.route_id === 'string' && ['healthy', 'degraded', 'unavailable'].includes(String(c.health_state))
   })
   if (candidates.length !== v.candidates.length) return null
+  if (['both_routes_unavailable', 'context_limit_exceeded', 'context_assembly_failed'].includes(v.terminal_status as string) && candidates.length === 0) return null
   return v as unknown as RoutingTrace
+}
+
+export function parsePendingRoutingApproval(raw: string): PendingRoutingApproval | null {
+  let value: unknown
+  try { value = JSON.parse(raw) } catch { return null }
+  if (!value || typeof value !== 'object') return null
+  const v = value as Record<string, unknown>
+  const traceId = typeof v.trace_id === 'string' ? v.trace_id : typeof v.traceId === 'string' ? v.traceId : null
+  const runId = typeof v.run_id === 'string' ? v.run_id : typeof v.runId === 'string' ? v.runId : null
+  const routeId = typeof v.route_id === 'string' ? v.route_id : typeof v.routeId === 'string' ? v.routeId : null
+  const expiresAtMs = typeof v.expires_at_ms === 'number' ? v.expires_at_ms : typeof v.expiresAtMs === 'number' ? v.expiresAtMs : null
+  if (!traceId || !runId || (routeId !== 'local' && routeId !== 'cloud') || expiresAtMs === null || !Number.isFinite(expiresAtMs)) return null
+  return { traceId, runId, routeId, expiresAtMs }
 }
 
 export function routingViewState(trace: RoutingTrace, preferred: RouteId | null): RoutingViewState {
@@ -74,3 +96,15 @@ export function routingText(trace: RoutingTrace): string {
 }
 export function safeActionText(action: string | null | undefined): string | null { return action ? SAFE_ACTION[action] ?? 'Обратиться в поддержку' : null }
 export function isRefusal(status: string): boolean { return REFUSALS.has(status as TerminalStatus) }
+
+// Keep the closed schema lists executable so a future Core enum cannot silently
+// become a user-visible internal string.
+export const ROUTING_TERMINAL_STATUSES: readonly TerminalStatus[] = [
+  'success', 'cancelled', 'no_routes_configured', 'both_routes_unavailable', 'classification_incomplete',
+  'context_limit_exceeded', 'policy_violation', 'budget_unavailable', 'context_assembly_failed',
+  'fallback_limit_reached', 'run_deadline_exceeded', 'reroute_approval_declined', 'internal_error'
+]
+
+if (Object.keys(STATUS_TEXT).sort().join('|') !== [...ROUTING_TERMINAL_STATUSES].sort().join('|')) {
+  throw new Error('routing localization table is incomplete')
+}

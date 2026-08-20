@@ -104,10 +104,11 @@ pub struct CandidateHealthSnapshot {
 impl CandidateHealthSnapshot {
     /// Creates a ready health snapshot with current timestamp.
     pub fn ready(ttl_ms: u64) -> Self {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
+        let now = current_time_ms();
+        Self::ready_at(ttl_ms, now)
+    }
+
+    pub fn ready_at(ttl_ms: u64, now: u64) -> Self {
         Self {
             status: HealthStatus::Ready,
             observed_at: now,
@@ -118,11 +119,9 @@ impl CandidateHealthSnapshot {
     }
 
     /// Checks if this health observation is still valid (not stale).
-    pub fn is_fresh(&self) -> bool {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
+    pub fn is_fresh(&self) -> bool { self.is_fresh_at(current_time_ms()) }
+
+    pub fn is_fresh_at(&self, now: u64) -> bool {
         now < self.observed_at + self.ttl_ms
     }
 }
@@ -248,7 +247,7 @@ pub struct RoutePolicySnapshot {
     /// User preference hints.
     pub preference: UserPreference,
     /// Budget snapshot ID from Context Budget Manager.
-    pub budget_id: String,
+    pub budget_id: Option<String>,
     /// Timestamp when snapshot was created (Unix millis).
     pub created_at: u64,
 }
@@ -281,14 +280,22 @@ impl RoutePolicySnapshot {
         candidates: Vec<CandidateEntry>,
         policy_hashes: PolicyHashes,
         preference: UserPreference,
-        budget_id: String,
+        budget_id: Option<String>,
     ) -> Result<Self, SnapshotError> {
         validate_candidates(&candidates)?;
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
+        Self::new_at(run_id, candidates, policy_hashes, preference, budget_id, current_time_ms())
+    }
+
+    pub fn new_at(
+        run_id: String,
+        candidates: Vec<CandidateEntry>,
+        policy_hashes: PolicyHashes,
+        preference: UserPreference,
+        budget_id: Option<String>,
+        created_at: u64,
+    ) -> Result<Self, SnapshotError> {
+        validate_candidates(&candidates)?;
 
         Ok(Self {
             schema_version: SNAPSHOT_SCHEMA_VERSION.to_string(),
@@ -298,7 +305,7 @@ impl RoutePolicySnapshot {
             policy_hashes,
             preference,
             budget_id,
-            created_at: now,
+            created_at,
         })
     }
 
@@ -433,10 +440,17 @@ impl RunHealthOverlay {
         category: FailureCategory,
         config: &RetryConfig,
     ) -> Result<u64, OverlayError> {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
+        self.record_failure_at(route_id, attempt_id, category, config, current_time_ms())
+    }
+
+    pub fn record_failure_at(
+        &self,
+        route_id: &str,
+        attempt_id: u32,
+        category: FailureCategory,
+        config: &RetryConfig,
+        now: u64,
+    ) -> Result<u64, OverlayError> {
 
         // Update failure counters
         {
@@ -539,10 +553,10 @@ impl RunHealthOverlay {
 
     /// Checks if cooldown has expired for a route.
     pub fn is_cooldown_expired(&self, route_id: &str) -> bool {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
+        self.is_cooldown_expired_at(route_id, current_time_ms())
+    }
+
+    pub fn is_cooldown_expired_at(&self, route_id: &str, now: u64) -> bool {
 
         let circuits = self.circuits.read();
         match circuits.get(route_id) {
@@ -645,7 +659,8 @@ impl RetryConfig {
 
     /// Computes deterministic backoff with jitter.
     pub fn compute_backoff(&self, attempt: u32, run_id: &str, route_id: &str) -> Duration {
-        let base = self.initial_backoff_ms * 2_u64.pow(attempt.saturating_sub(1));
+        let exponent = attempt.saturating_sub(1).min(63);
+        let base = self.initial_backoff_ms.saturating_mul(2_u64.saturating_pow(exponent));
         let capped = base.min(self.max_backoff_ms);
 
         // Deterministic jitter from hash
@@ -664,9 +679,16 @@ impl RetryConfig {
             0
         };
 
-        let backoff_ms = capped + jitter;
+        let backoff_ms = capped.saturating_add(jitter).min(self.max_backoff_ms);
         Duration::from_millis(backoff_ms)
     }
+}
+
+fn current_time_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 /// Startup probe configuration and result.
@@ -966,7 +988,7 @@ mod tests {
             candidates,
             hashes,
             UserPreference::default(),
-            "budget-456".to_string(),
+            Some("budget-456".to_string()),
         )
         .expect("valid snapshot");
 
@@ -986,7 +1008,7 @@ mod tests {
             candidates,
             hashes,
             UserPreference::default(),
-            "budget-456".to_string(),
+            Some("budget-456".to_string()),
         );
         assert!(matches!(result, Err(SnapshotError::TooManyCandidates(_))));
     }
@@ -1000,7 +1022,7 @@ mod tests {
             candidates,
             hashes,
             UserPreference::default(),
-            "budget-456".to_string(),
+            Some("budget-456".to_string()),
         );
         assert!(matches!(result, Err(SnapshotError::InvalidRouteId(_))));
     }
@@ -1077,7 +1099,7 @@ mod tests {
             candidates,
             hashes,
             UserPreference::default(),
-            "budget-456".to_string(),
+            Some("budget-456".to_string()),
         )
         .expect("valid snapshot");
 

@@ -5,6 +5,7 @@ pub mod retry;
 pub mod routing_policy;
 pub mod routing_runtime;
 pub mod routing_trace;
+pub mod routing_catalog;
 pub mod tools;
 
 pub use crate::config::{ModelGatewayConfig, ModelRouteConfig};
@@ -31,6 +32,7 @@ pub use crate::routing_policy::{PrivacyClass, RouteCandidate, RoutingRequest};
 pub use crate::routing_runtime::routing_policy::{PrivacyClass, RouteCandidate, RoutingRequest};
 pub use crate::routing_runtime::{RoutingMode, RoutingRuntime, RuntimeError, RuntimeLimits};
 pub use crate::routing_trace::{RoutingTrace, TerminalStatus, SafeNextAction, HealthState, PrivacyLabel};
+pub use crate::routing_catalog::{EvaluationCatalog, EvaluationRecord, CatalogError};
 pub use crate::tools::{
     ChatResult, ChatStreamItem, FunctionSpec, LlmUsage, NativeToolCall, ToolSpec,
 };
@@ -66,6 +68,13 @@ pub struct ModelRouteResponse {
     pub billing_mode: String,
     /// Wave 3B: Provider supports extended thinking
     pub supports_thinking: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct PolicyChatResult {
+    pub selected_route: String,
+    pub fallback_chain: Vec<String>,
+    pub result: ChatResult,
 }
 
 #[derive(Debug, Deserialize)]
@@ -353,6 +362,20 @@ impl ModelGateway {
         messages: &[ChatMessage],
         tools: &[ToolSpec],
     ) -> Result<ChatResult, ProviderError> {
+        Ok(self
+            .chat_with_tools_with_policy_and_route(mode, request, model, messages, tools)
+            .await?
+            .result)
+    }
+
+    pub async fn chat_with_tools_with_policy_and_route(
+        &self,
+        mode: RoutingMode,
+        request: &RoutingRequest,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        tools: &[ToolSpec],
+    ) -> Result<PolicyChatResult, ProviderError> {
         let runtime = self
             .plan_route(mode, request, RuntimeLimits::default())
             .map_err(|error| ProviderError::Config(error.to_string()))?;
@@ -361,7 +384,8 @@ impl ModelGateway {
             .selected_route
             .as_deref()
             .ok_or_else(|| ProviderError::Config("routing policy selected no route".into()))?;
-        self.chat_with_tools_for_route(route, model, messages, tools).await
+        let result = self.chat_with_tools_for_route(route, model, messages, tools).await?;
+        Ok(PolicyChatResult { selected_route: route.to_owned(), fallback_chain: runtime.decision().fallback_chain.clone(), result })
     }
 
     /// Plans a route using the bounded routing contract (`routing_policy` /
@@ -520,6 +544,7 @@ mod tests {
             max_latency_ms: None,
             required_privacy: PrivacyClass::Internal,
             allow_fallback: true,
+            preferred_route: None,
         }
     }
 
@@ -588,6 +613,7 @@ mod tests {
             max_latency_ms: None,
             required_privacy: PrivacyClass::Internal,
             allow_fallback: true,
+            preferred_route: None,
         };
         let runtime = gateway
             .plan_route(RoutingMode::Balanced, &request, RuntimeLimits::default())

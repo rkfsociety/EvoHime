@@ -156,7 +156,11 @@ export function TaskTimeline({
     const outcome = await api.invoke('core.startTask', {
       taskId: nextTaskId,
       prompt: text,
-      workspacePath: workspace
+      workspacePath: workspace,
+      preferredRouteHint: (() => {
+        const value = window.localStorage.getItem('evohime.preferred-route')
+        return value === 'local' || value === 'cloud' ? value : null
+      })()
     })
     setBusy(false)
     if (!outcome.ok) {
@@ -214,7 +218,7 @@ export function TaskTimeline({
         onOpenTask={() => {}}
         showOpenTask={false}
       />
-      <RoutingStatus events={taskEvents} />
+      <RoutingStatus events={taskEvents} connection={connection} />
       <div className="chat__scroll">
         {empty ? (
           <HomeScreen

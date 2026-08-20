@@ -196,6 +196,7 @@ export const RENDERER_COMMANDS = [
   'core.startTask',
   'core.stopTask',
   'core.resolveApproval',
+  'core.resolveRoutingDecision',
   'core.listWorkspace',
   'core.readWorkspaceFile',
   'core.gitStatus',
@@ -293,9 +294,10 @@ export interface CommandPayloads {
   'workspace.pick': Record<string, never>
   'workspace.select': { path: string }
   'workspace.forget': { path: string }
-  'core.startTask': { taskId: string; prompt: string; workspacePath: string }
+  'core.startTask': { taskId: string; prompt: string; workspacePath: string; preferredRouteHint?: 'local' | 'cloud' | null }
   'core.stopTask': { taskId: string }
   'core.resolveApproval': { approvalId: string; granted: boolean }
+  'core.resolveRoutingDecision': { traceId: string; approve: boolean }
   'core.listWorkspace': { workspacePath: string; relativePath: string; maxEntries?: number }
   'core.readWorkspaceFile': { workspacePath: string; relativePath: string; maxBytes?: number }
   'core.getContextLedger': { taskId: string; limit?: number }
@@ -438,6 +440,7 @@ export interface CommandResults {
   'core.startTask': { accepted: boolean }
   'core.stopTask': { accepted: boolean }
   'core.resolveApproval': { accepted: boolean }
+  'core.resolveRoutingDecision': { accepted: boolean }
   'core.listWorkspace': { accepted: boolean }
   'core.readWorkspaceFile': { accepted: boolean }
   'core.gitStatus': { accepted: boolean }

@@ -1,8 +1,12 @@
-import { useMemo, useState } from 'react'
-import type { CoreEvent } from '@shared/api'
-import { parseRoutingTrace, routingText, routingViewState, safeActionText, type RouteId } from '@shared/routing-trace'
+import { useEffect, useMemo, useState } from 'react'
+import type { ConnectionState, CoreEvent } from '@shared/api'
+import { parsePendingRoutingApproval, parseRoutingTrace, routingText, routingViewState, safeActionText, type RouteId } from '@shared/routing-trace'
+import { useShellApi } from './shell-api'
 
-export function RoutingStatus({ events }: { readonly events: readonly CoreEvent[] }): React.JSX.Element | null {
+const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
+
+export function RoutingStatus({ events, connection }: { readonly events: readonly CoreEvent[]; readonly connection: ConnectionState }): React.JSX.Element | null {
+  const api = useShellApi()
   const [preferred, setPreferred] = useState<RouteId | null>(() => {
     const value = window.localStorage.getItem('evohime.preferred-route')
     return value === 'local' || value === 'cloud' ? value : null
@@ -11,6 +15,33 @@ export function RoutingStatus({ events }: { readonly events: readonly CoreEvent[
     const event = events.find((item) => item.eventType === 'routing.trace' || item.eventType === 'routing.terminal')
     return event ? parseRoutingTrace(event.payload) : null
   }, [events])
+  const pending = useMemo(() => {
+    const event = events.find((item) => item.eventType === 'routing.pending_approval')
+    return event ? parsePendingRoutingApproval(event.payload) : null
+  }, [events])
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    if (!pending) return
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [pending])
+  if (!trace && !pending && !CONNECTED_STATES.includes(connection)) {
+    return <div className="routing-status routing-status--core_unavailable" role="alert">Связь с Core потеряна: состояние маршрутизации недоступно.</div>
+  }
+  if (!trace && !pending) return null
+  const resolve = async (approve: boolean) => {
+    if (!api || !pending || !CONNECTED_STATES.includes(connection)) return
+    await api.invoke('core.resolveRoutingDecision', { traceId: pending.traceId, approve })
+  }
+  if (pending) {
+    const remaining = Math.max(0, pending.expiresAtMs - nowMs)
+    return <div className="routing-status routing-status--degraded" role="alert" aria-live="polite">
+      <span>Core просит подтвердить перенаправление на маршрут: {pending.routeId}.</span>
+      <span>Осталось: {Math.ceil(remaining / 1000)} с</span>
+      <button type="button" disabled={!api || !CONNECTED_STATES.includes(connection)} onClick={() => void resolve(true)}>Подтвердить</button>
+      <button type="button" disabled={!api || !CONNECTED_STATES.includes(connection)} onClick={() => void resolve(false)}>Отклонить</button>
+    </div>
+  }
   if (!trace) return null
   const state = routingViewState(trace, preferred)
   const role = state === 'normal' || state === 'degraded' || state === 'partial_fallback' ? 'status' : 'alert'

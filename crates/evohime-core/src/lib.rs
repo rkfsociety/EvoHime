@@ -3,6 +3,61 @@ pub struct CoreVersion;
 pub const AGENT_IDENTITY_PROMPT: &str =
     "Ты — Ева, AI-агент приложения EvoHime. Ева — короткое имя EvoHime; понимай обращения к тебе «Ева» и «EvoHime» как к одному агенту.";
 
+fn routing_success_trace(
+    run_id: &str,
+    selected_route: &str,
+    fallback_count: usize,
+    estimated_input_tokens: u32,
+    profile_version: &str,
+    context_ledger_hash: &str,
+) -> evohime_model_gateway::RoutingTrace {
+    evohime_model_gateway::RoutingTrace {
+        schema_version: 1,
+        trace_id: run_id.to_owned(),
+        run_id: run_id.to_owned(),
+        sequence: 1,
+        attempt_id: 0,
+        now_ms: task_memory::now_millis(),
+        policy_version: "routing-policy-v1".into(),
+        catalog_version: "builtin-v1".into(),
+        snapshot_hash: "runtime-selection".into(),
+        classification: "complex".into(),
+        privacy_label: evohime_model_gateway::PrivacyLabel::NonSensitive,
+        candidates: Vec::new(),
+        selected_route: Some(selected_route.to_owned()),
+        reason_code: if fallback_count > 0 { "fallback_rank_preferred" } else { "only_candidate" }.into(),
+        fallback_count: fallback_count as u32,
+        event: "terminal".into(),
+        latency_ms: 0,
+        terminal_status: Some(evohime_model_gateway::TerminalStatus::Success),
+        safe_next_action: None,
+        budget_id: None,
+        budget_absent: true,
+        estimated_input_tokens,
+        profile_version: Some(profile_version.to_owned()),
+        context_ledger_hash: Some(context_ledger_hash.to_owned()),
+    }
+}
+
+fn routing_failure_trace(run_id: &str, error: &AgentRunError) -> evohime_model_gateway::RoutingTrace {
+    let (status, reason, action) = match error {
+        AgentRunError::Cancelled => (evohime_model_gateway::TerminalStatus::Cancelled, "cancelled", None),
+        AgentRunError::Timeout(_) => (evohime_model_gateway::TerminalStatus::RunDeadlineExceeded, "run_deadline_exceeded", Some(evohime_model_gateway::SafeNextAction::RetryLater)),
+        AgentRunError::BudgetUnavailable { .. } => (evohime_model_gateway::TerminalStatus::BudgetUnavailable, "budget_unavailable", Some(evohime_model_gateway::SafeNextAction::ClarifyRequest)),
+        AgentRunError::Provider(_) => (evohime_model_gateway::TerminalStatus::BothRoutesUnavailable, "provider_unavailable", Some(evohime_model_gateway::SafeNextAction::RetryLater)),
+        AgentRunError::Internal(_) => (evohime_model_gateway::TerminalStatus::InternalError, "internal_error", Some(evohime_model_gateway::SafeNextAction::ContactSupport)),
+    };
+    evohime_model_gateway::RoutingTrace {
+        schema_version: 1, trace_id: run_id.to_owned(), run_id: run_id.to_owned(), sequence: 1,
+        attempt_id: 0, now_ms: task_memory::now_millis(), policy_version: "routing-policy-v1".into(),
+        catalog_version: "builtin-v1".into(), snapshot_hash: "runtime-selection".into(), classification: "complex".into(),
+        privacy_label: evohime_model_gateway::PrivacyLabel::Unknown, candidates: Vec::new(), selected_route: None,
+        reason_code: reason.into(), fallback_count: 0, event: "terminal".into(), latency_ms: 0,
+        terminal_status: Some(status), safe_next_action: action, budget_id: None, budget_absent: true,
+        estimated_input_tokens: 0, profile_version: None, context_ledger_hash: None,
+    }
+}
+
 const LEGACY_TOOL_NAMES: &[&str] = &[
     "agent.run",
     "filesystem.list",
@@ -992,9 +1047,15 @@ pub enum CoreCommand {
         task_id: String,
         prompt: String,
         workspace_root: Option<PathBuf>,
+        preferred_route_hint: Option<String>,
     },
     StopTask {
         task_id: String,
+    },
+    ResolveRoutingDecision {
+        trace_id: String,
+        approve: bool,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
     CreateProject {
         client_id: String,
@@ -1547,6 +1608,20 @@ pub enum CoreEvent {
         /// клиенты игнорируют неизвестное поле, поэтому major bump не нужен.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         context: Option<Box<crate::context_budget::ModelContextProjection>>,
+    },
+    /// Terminal Core-owned routing decision. Intermediate attempts stay in
+    /// diagnostics; the renderer receives this bounded projection only.
+    RoutingTrace {
+        task_id: String,
+        trace: evohime_model_gateway::RoutingTrace,
+    },
+    /// Non-terminal request to approve a policy-controlled reroute.
+    PendingRoutingApproval {
+        task_id: String,
+        trace_id: String,
+        run_id: String,
+        route_id: String,
+        expires_at_ms: u64,
     },
     TaskStarted {
         task_id: String,
@@ -2123,6 +2198,8 @@ impl EventJournal {
     pub async fn record(&self, event: &CoreEvent) -> Result<i64, StorageError> {
         let task_id = match event {
             CoreEvent::ModelContext { task_id, .. }
+            | CoreEvent::RoutingTrace { task_id, .. }
+            | CoreEvent::PendingRoutingApproval { task_id, .. }
             | CoreEvent::TaskStarted { task_id, .. }
             | CoreEvent::AssistantDelta { task_id, .. }
             | CoreEvent::ToolStarted { task_id, .. }
@@ -2140,6 +2217,8 @@ impl EventJournal {
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
+            CoreEvent::RoutingTrace { .. } => "routing.terminal",
+            CoreEvent::PendingRoutingApproval { .. } => "routing.pending_approval",
             CoreEvent::TaskStarted { .. } => "task.started",
             CoreEvent::AssistantDelta { .. } => "agent.message.delta",
             CoreEvent::ToolStarted { .. } => "tool.started",
@@ -3652,6 +3731,19 @@ pub trait TaskExecutor: Send + Sync {
         let _ = workspace_root;
         self.execute(task_id, prompt, cancellation, events)
     }
+
+    fn execute_in_workspace_with_routing_hint(
+        &self,
+        task_id: String,
+        prompt: String,
+        workspace_root: PathBuf,
+        preferred_route_hint: Option<String>,
+        cancellation: CancellationToken,
+        events: broadcast::Sender<CoreEvent>,
+    ) -> BoxFuture<'static, Result<String, AgentRunError>> {
+        let _ = preferred_route_hint;
+        self.execute_in_workspace(task_id, prompt, workspace_root, cancellation, events)
+    }
 }
 
 pub struct ModelAgent {
@@ -3693,6 +3785,7 @@ impl ModelAgent {
                 max_latency_ms: None,
                 required_privacy: PrivacyClass::Internal,
                 allow_fallback: true,
+                preferred_route: None,
             },
             &messages,
         )?;
@@ -4485,6 +4578,7 @@ impl ToolAgent {
             max_latency_ms: None,
             required_privacy: PrivacyClass::Internal,
             allow_fallback: true,
+            preferred_route: None,
         };
         for attempt in 0..=extraction::RETRY_DELAYS_MS.len() {
             if attempt > 0 {
@@ -4776,6 +4870,7 @@ impl ToolAgent {
                     max_latency_ms: None,
                     required_privacy: PrivacyClass::Internal,
                     allow_fallback: true,
+                    preferred_route: None,
                 },
                 None,
                 &request,
@@ -4855,7 +4950,8 @@ impl ToolAgent {
         messages: &[ChatMessage],
         specs: &[ToolSpec],
         config: &ProviderResilienceConfig,
-    ) -> Result<evohime_model_gateway::ChatResult, AgentRunError> {
+        preferred_route: Option<&str>,
+    ) -> Result<evohime_model_gateway::PolicyChatResult, AgentRunError> {
         let timeout_duration = Duration::from_secs(config.model_timeout_secs);
         let mut last_error: Option<String> = None;
 
@@ -4882,9 +4978,9 @@ impl ToolAgent {
                 }),
             );
 
-            let result: Result<evohime_model_gateway::ChatResult, ProviderError> = match timeout(
+            let result: Result<evohime_model_gateway::PolicyChatResult, ProviderError> = match timeout(
                 timeout_duration,
-                self.gateway.chat_with_tools_with_policy(
+                self.gateway.chat_with_tools_with_policy_and_route(
                     RoutingMode::Balanced,
                     &RoutingRequest {
                         required_capabilities: vec!["chat".into()],
@@ -4892,6 +4988,7 @@ impl ToolAgent {
                         max_latency_ms: None,
                         required_privacy: PrivacyClass::Internal,
                         allow_fallback: true,
+                        preferred_route: preferred_route.map(str::to_owned),
                     },
                     self.selected_model.get().as_deref(),
                     messages,
@@ -4959,6 +5056,7 @@ impl ToolAgent {
             workspace_root,
             events,
             CancellationToken::new(),
+            None,
         )
         .await
     }
@@ -4970,6 +5068,7 @@ impl ToolAgent {
         workspace_root: impl Into<std::path::PathBuf>,
         events: &broadcast::Sender<CoreEvent>,
         cancellation: CancellationToken,
+        preferred_route: Option<String>,
     ) -> Result<String, AgentRunError> {
         let task_id = task_id.into();
         let task_uuid = uuid::Uuid::parse_str(&task_id).unwrap_or_else(|_| uuid::Uuid::new_v4());
@@ -5304,8 +5403,20 @@ impl ToolAgent {
 
             let result = tokio::select! {
                 _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
-                result = self.call_model_with_resilience(&task_id, &messages, &specs, &resilience_config) => result?,
+                result = self.call_model_with_resilience(&task_id, &messages, &specs, &resilience_config, preferred_route.as_deref()) => result?,
             };
+            let _ = events.send(CoreEvent::RoutingTrace {
+                task_id: task_id.clone(),
+                trace: routing_success_trace(
+                    &task_id,
+                    &result.selected_route,
+                    result.fallback_chain.len(),
+                    assembled.ledger().estimated_prompt_tokens,
+                    &assembled.ledger().profile_version,
+                    &assembled.ledger().context_ledger_hash,
+                ),
+            });
+            let result = result.result;
             if let Some(usage) = result.usage.as_ref() {
                 // Фактический usage провайдера обновляет диагностику оценки и
                 // пишется отдельно от immutable записи ledger.
@@ -6095,8 +6206,32 @@ impl TaskExecutor for ToolAgent {
         };
         Box::pin(async move {
             agent
-                .run_once_with_cancellation(task_id, prompt, workspace_root, &events, cancellation)
+                .run_once_with_cancellation(task_id, prompt, workspace_root, &events, cancellation, None)
                 .await
+        })
+    }
+
+    fn execute_in_workspace_with_routing_hint(
+        &self,
+        task_id: String,
+        prompt: String,
+        workspace_root: PathBuf,
+        preferred_route_hint: Option<String>,
+        cancellation: CancellationToken,
+        events: broadcast::Sender<CoreEvent>,
+    ) -> BoxFuture<'static, Result<String, AgentRunError>> {
+        let agent = Self {
+            gateway: Arc::clone(&self.gateway),
+            tools: Arc::clone(&self.tools),
+            max_iterations: self.max_iterations,
+            approvals: self.approvals.clone(),
+            journal: self.journal.clone(),
+            selected_model: self.selected_model.clone(),
+            receipt_keys: self.receipt_keys.clone(),
+            extraction_guard: Arc::clone(&self.extraction_guard),
+        };
+        Box::pin(async move {
+            agent.run_once_with_cancellation(task_id, prompt, workspace_root, &events, cancellation, preferred_route_hint).await
         })
     }
 }
@@ -6113,6 +6248,7 @@ struct CoordinatorState {
     workspace_index_cancellations: HashMap<String, CancellationToken>,
     backup_cancellations: HashMap<String, CancellationToken>,
     backup_approvals: HashMap<String, String>,
+    routing_decisions: HashMap<String, bool>,
     events: broadcast::Sender<CoreEvent>,
     executor: Option<Arc<dyn TaskExecutor>>,
     journal: Option<EventJournal>,
@@ -6179,6 +6315,7 @@ impl TaskCoordinator {
             workspace_index_cancellations: HashMap::new(),
             backup_cancellations: HashMap::new(),
             backup_approvals: HashMap::new(),
+            routing_decisions: HashMap::new(),
             events: events.clone(),
             executor,
             journal: journal.clone(),
@@ -6389,6 +6526,7 @@ impl TaskCoordinator {
                 task_id,
                 prompt,
                 workspace_root,
+                preferred_route_hint,
             } => {
                 let cancellation = CancellationToken::new();
                 let run_id = format!("agent-{}", uuid::Uuid::new_v4());
@@ -6464,11 +6602,12 @@ impl TaskCoordinator {
                     let result = match executor {
                         Some(executor) => match timeout(
                             Duration::from_secs(task_timeout_secs),
-                            executor.execute_in_workspace(
+                            executor.execute_in_workspace_with_routing_hint(
                                 task_id.clone(),
                                 prompt,
                                 workspace_root
                                     .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
+                                preferred_route_hint,
                                 cancellation.clone(),
                                 events.clone(),
                             ),
@@ -6498,6 +6637,12 @@ impl TaskCoordinator {
                     }
                     let mut state_guard = state.lock().await;
                     state_guard.tasks.remove(&task_id);
+                    if let Err(error) = &result {
+                        let _ = state_guard.events.send(CoreEvent::RoutingTrace {
+                            task_id: task_id.clone(),
+                            trace: routing_failure_trace(&run_id, error),
+                        });
+                    }
                     match (result, heartbeat_error) {
                         (Ok(_), Some(error)) => {
                             let _ = state_guard.events.send(CoreEvent::TaskFailed {
@@ -6521,6 +6666,10 @@ impl TaskCoordinator {
                         }
                     }
                 });
+            }
+            CoreCommand::ResolveRoutingDecision { trace_id, approve, reply } => {
+                state.lock().await.routing_decisions.insert(trace_id, approve);
+                let _ = reply.send(Ok(serde_json::json!({"accepted": true}).to_string().into_bytes()));
             }
             CoreCommand::StopTask { task_id } => {
                 let mut state_guard = state.lock().await;
@@ -10197,6 +10346,7 @@ mod tests {
                 task_id: "task-audit-tool".into(),
                 prompt: "list files".into(),
                 workspace_root: None,
+                preferred_route_hint: None,
             })
             .await
             .expect("start dispatches");
@@ -10259,6 +10409,7 @@ mod tests {
                 task_id: "task-audit-failure".into(),
                 prompt: "fail please".into(),
                 workspace_root: None,
+                preferred_route_hint: None,
             })
             .await
             .expect("start dispatches");
@@ -10300,6 +10451,7 @@ mod tests {
                 task_id: "task-1".into(),
                 prompt: "hello".into(),
                 workspace_root: None,
+                preferred_route_hint: None,
             })
             .await
             .expect("start dispatches");
@@ -10492,6 +10644,7 @@ mod tests {
                 task_id: "task-cancel".into(),
                 prompt: "wait".into(),
                 workspace_root: None,
+                preferred_route_hint: None,
             })
             .await
             .expect("start dispatches");
@@ -10631,6 +10784,7 @@ mod tests {
                 task_id: "task-signal".into(),
                 prompt: "persist me".into(),
                 workspace_root: None,
+                preferred_route_hint: None,
             })
             .await
             .expect("command dispatches");
@@ -10799,6 +10953,7 @@ mod tests {
                 task_id: "task-persisted".into(),
                 prompt: "persist lifecycle".into(),
                 workspace_root: None,
+                preferred_route_hint: None,
             })
             .await
             .expect("start dispatches");

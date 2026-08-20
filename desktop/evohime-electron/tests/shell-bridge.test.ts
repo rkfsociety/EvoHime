@@ -233,7 +233,7 @@ describe('renderer command surface', () => {
     })
     expect(outcome).toEqual({ ok: true, value: { accepted: true } })
     expect(sent).toEqual([
-      { startTask: { taskId: 'task-1', prompt: 'сделай', workspacePath: 'C:\\work' } }
+      { startTask: { taskId: 'task-1', prompt: 'сделай', workspacePath: 'C:\\work', preferredRouteHint: '' } }
     ])
   })
 

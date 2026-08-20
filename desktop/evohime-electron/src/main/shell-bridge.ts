@@ -176,11 +176,14 @@ function dispatch(
       const taskId = asBoundedString(value['taskId'])
       const prompt = asBoundedString(value['prompt'])
       const workspacePath = asBoundedString(value['workspacePath'])
-      if (taskId === null || prompt === null || workspacePath === null) {
+      const preferredRouteHint = value['preferredRouteHint'] === undefined || value['preferredRouteHint'] === null
+        ? null
+        : value['preferredRouteHint'] === 'local' || value['preferredRouteHint'] === 'cloud' ? value['preferredRouteHint'] : undefined
+      if (taskId === null || prompt === null || workspacePath === null || preferredRouteHint === undefined) {
         return failure('invalid-payload', 'Некорректные параметры задачи.')
       }
       log('info', 'shell.command_forwarded', { command })
-      return accepted(client.send({ startTask: { taskId, prompt, workspacePath } }))
+      return accepted(client.send({ startTask: { taskId, prompt, workspacePath, preferredRouteHint: preferredRouteHint ?? '' } }))
     }
 
     case 'core.stopTask': {
@@ -201,6 +204,17 @@ function dispatch(
       }
       log('info', 'shell.command_forwarded', { command })
       return accepted(client.send({ resolveApproval: { approvalId, granted } }))
+    }
+
+    case 'core.resolveRoutingDecision': {
+      const value = asRecord(payload)
+      const traceId = asBoundedString(value['traceId'])
+      const approve = value['approve']
+      if (traceId === null || typeof approve !== 'boolean') {
+        return failure('invalid-payload', 'Некорректное решение по маршруту.')
+      }
+      log('info', 'shell.routing_decision_forwarded', { command })
+      return accepted(client.send({ resolveRoutingDecision: { traceId, approve } }))
     }
 
     // План 01.5: read-only проекция состава контекста и Core-команды над

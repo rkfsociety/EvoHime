@@ -248,6 +248,8 @@ message StartTask {
   string task_id = 1;
   string prompt = 2;
   string workspace_path = 3;
+  // Non-privileged route hint; Core policy remains authoritative.
+  string preferred_route_hint = 4;
 }
 
 // Bounded read-only workspace browsing for the native Files surface.
@@ -293,6 +295,13 @@ message StopTask {
 message ResolveApproval {
   string approval_id = 1;
   bool granted = 2;
+}
+
+// Decision for a Core-owned route reroute. This is not a tool approval and
+// cannot change permissions, sandbox or the immutable routing snapshot.
+message ResolveRoutingDecision {
+  string trace_id = 1;
+  bool approve = 2;
 }
 
 // Receipt key lifecycle commands are accepted only on the authenticated Core
@@ -940,6 +949,7 @@ message CommandEnvelope {
     RevisePlan revise_plan = 103;
     StopRevision stop_revision = 104;
     SaveRevisedPlan save_revised_plan = 105;
+    ResolveRoutingDecision resolve_routing_decision = 106;
   }
 }
 

@@ -426,6 +426,7 @@ mod tests {
             max_latency_ms: None,
             required_privacy: PrivacyClass::Internal,
             allow_fallback: true,
+            preferred_route: None,
         }
     }
 

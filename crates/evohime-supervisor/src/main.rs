@@ -5,6 +5,7 @@ mod scheduler_state;
 
 #[cfg(windows)]
 mod windows_supervisor;
+mod local_provider;
 
 #[cfg(windows)]
 #[tokio::main]
