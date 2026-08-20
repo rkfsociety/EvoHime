@@ -41,6 +41,9 @@ sha2 = "0.10"
 rand = "0.8"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
+
 [dev-dependencies]
 wiremock = "0.6"
 tempfile = "3"

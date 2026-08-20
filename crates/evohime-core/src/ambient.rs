@@ -144,7 +144,10 @@ pub fn save_policy(data_dir: &Path, policy: &AmbientPolicy) -> Result<(), String
         let _ = std::fs::remove_file(&temporary);
         return Err(error);
     }
-    std::fs::rename(&temporary, &path).map_err(|error| error.to_string())?;
+    if let Err(error) = replace_file(&temporary, &path) {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(error);
+    }
     harden(&path)?;
     if let Some(parent) = path.parent() {
         if let Ok(directory) = std::fs::File::open(parent) {
@@ -158,6 +161,39 @@ pub fn save_policy(data_dir: &Path, policy: &AmbientPolicy) -> Result<(), String
 fn harden(path: &Path) -> Result<(), String> {
     evohime_desktop_ipc::windows_security::harden_file_owner_only(path)
         .map_err(|error| error.to_string())
+}
+
+/// Atomically replaces the destination on every supported platform.
+///
+/// `std::fs::rename` replaces an existing destination on Unix, but Windows
+/// rejects that case. `MoveFileExW(REPLACE_EXISTING)` preserves the atomic
+/// replacement contract needed for a policy update.
+#[cfg(windows)]
+fn replace_file(from: &Path, to: &Path) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let from: Vec<u16> = from.as_os_str().encode_wide().chain(Some(0)).collect();
+    let to: Vec<u16> = to.as_os_str().encode_wide().chain(Some(0)).collect();
+    let result = unsafe {
+        MoveFileExW(
+            from.as_ptr(),
+            to.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if result == 0 {
+        Err(std::io::Error::last_os_error().to_string())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+fn replace_file(from: &Path, to: &Path) -> Result<(), String> {
+    std::fs::rename(from, to).map_err(|error| error.to_string())
 }
 
 #[cfg(not(windows))]
@@ -664,6 +700,15 @@ mod tests {
         };
         save_policy(directory.path(), &policy).expect("policy saves");
         assert_eq!(load_policy(directory.path()), policy);
+
+        // Обновление существующего файла должно сохранять атомарность и на
+        // Windows, где обычный std::fs::rename не заменяет destination.
+        let updated = AmbientPolicy {
+            paused: true,
+            ..policy
+        };
+        save_policy(directory.path(), &updated).expect("policy updates");
+        assert_eq!(load_policy(directory.path()), updated);
     }
 
     #[test]

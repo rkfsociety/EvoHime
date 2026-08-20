@@ -497,6 +497,17 @@ impl AmbientStoreSql {
              WHERE event_type LIKE ?1 AND created_at >= ?2 AND created_at <= ?3",
             params![AMBIENT_EVENT_PREFIX, from, to],
         )?;
+        // События эпизода могут быть старше окна высказываний (например,
+        // `ambient.transcript` был опубликован при его открытии). Если у
+        // эпизода удалено хотя бы одно высказывание, его ambient-хронология
+        // должна исчезнуть целиком.
+        for episode_id in &affected {
+            deletion.events_removed += transaction.execute(
+                "DELETE FROM events
+                 WHERE task_id = ?1 AND event_type LIKE ?2",
+                params![episode_id, AMBIENT_EVENT_PREFIX],
+            )?;
+        }
         transaction.commit()?;
         Ok(deletion)
     }
@@ -1214,7 +1225,7 @@ mod tests {
         assert_eq!(deletion.utterances_removed, 2);
         assert_eq!(deletion.episodes_removed, 1, "пустой эпизод уходит целиком");
         assert_eq!(deletion.candidates_rejected, 2);
-        assert_eq!(deletion.events_removed, 2);
+        assert_eq!(deletion.events_removed, 3);
 
         assert!(AmbientStoreSql::get_episode(&connection, "ep-1")
             .expect("read")
@@ -1227,8 +1238,8 @@ mod tests {
         assert_eq!(candidate_state(&connection, "mem-2").0, "rejected");
         assert_eq!(
             event_types(&connection),
-            vec!["ambient.transcript".to_owned()],
-            "ambient-строка вне окна переживает forget"
+            Vec::<String>::new(),
+            "ambient-строки затронутых эпизодов не переживают forget"
         );
     }
 
