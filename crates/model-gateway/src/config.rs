@@ -11,6 +11,7 @@ pub const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 
 /// Default OpenAI-compatible model.
 pub const OPENAI_DEFAULT_MODEL: &str = "gpt-4o-mini";
+pub const LOCAL_DEFAULT_BASE_URL: &str = "http://127.0.0.1:49152/v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiteRouterConfig {
@@ -100,6 +101,16 @@ impl ModelRouteConfig {
         Self::with_provider(ProviderKind::OpenAICompatible, api_key, base_url, model)
     }
 
+    /// A local SLM route. `api_key` is a short-lived supervisor-issued
+    /// capability, never a cloud credential and never exposed to the shell.
+    pub fn local(
+        session_capability: impl Into<String>,
+        base_url: impl Into<String>,
+        model: impl Into<String>,
+    ) -> Self {
+        Self::with_provider(ProviderKind::Local, session_capability, base_url, model)
+    }
+
     pub fn mock(model: impl Into<String>) -> Self {
         Self {
             provider: ProviderKind::Mock,
@@ -117,6 +128,7 @@ impl ModelRouteConfig {
             ProviderKind::LiteRouter | ProviderKind::OpenAICompatible => {
                 !self.literouter.api_key.is_empty()
             }
+            ProviderKind::Local => !self.literouter.model.trim().is_empty(),
             ProviderKind::Mock => true,
         }
     }
@@ -152,6 +164,11 @@ impl ModelGatewayConfig {
                 ModelRouteConfig::openai_compatible(openai.api_key, openai.base_url, openai.model)
             }
             ProviderKind::Mock => return Err(ProviderError::Config("mock provider is available only to tests".into())),
+            ProviderKind::Local => ModelRouteConfig::local(
+                env::var("LOCAL_PROVIDER_SESSION").unwrap_or_default(),
+                env::var("LOCAL_PROVIDER_BASE_URL").unwrap_or_else(|_| LOCAL_DEFAULT_BASE_URL.to_string()),
+                env::var("LOCAL_PROVIDER_MODEL").unwrap_or_else(|_| "local-slm".to_string()),
+            ),
         };
 
         Ok(Self {
@@ -195,6 +212,7 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
         });
         let default_base_url = match provider {
             ProviderKind::OpenAICompatible => OPENAI_DEFAULT_BASE_URL,
+            ProviderKind::Local => LOCAL_DEFAULT_BASE_URL,
             _ => LITEROUTER_DEFAULT_BASE_URL,
         };
         let route_config = match provider {
@@ -210,6 +228,11 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
                 route
                     .base_url
                     .unwrap_or_else(|| default_base_url.to_string()),
+                model,
+            ),
+            ProviderKind::Local => ModelRouteConfig::local(
+                route.api_key.unwrap_or_default(),
+                route.base_url.unwrap_or_else(|| default_base_url.to_string()),
                 model,
             ),
             ProviderKind::Mock => return Err(ProviderError::Config("mock provider is available only to tests".into())),

@@ -1360,6 +1360,22 @@ body {
   font-size: 12px;
 }
 
+.routing-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 18px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.routing-status__route { color: var(--accent); }
+.routing-status--degraded, .routing-status--partial_fallback { border-color: var(--warning); color: var(--warning); }
+.routing-status--refusal, .routing-status--unknown_state, .routing-status--core_unavailable { border-color: var(--danger); color: var(--danger); }
+
 .context-usage {
   display: inline-flex;
   align-items: center;

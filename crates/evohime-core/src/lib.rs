@@ -933,7 +933,7 @@ use evohime_local_storage::{
 };
 use evohime_model_gateway::{
     providers::{ChatMessage, ChatRole, ProviderError},
-    ModelGateway, NativeToolCall, ToolSpec,
+    ModelGateway, NativeToolCall, PrivacyClass, RoutingMode, RoutingRequest, ToolSpec,
 };
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use evohime_receipts::{runtime::{ActionRequest as ReceiptActionRequest, PolicyDecision as ReceiptPolicyDecision, PrepareOutcome as ReceiptPrepareOutcome, ProtectedActionRow, ReceiptRuntime, ReceiptSigner, RuntimeError as ReceiptRuntimeError}, key_lifecycle::ReceiptKeyManager};
@@ -3685,7 +3685,17 @@ impl ModelAgent {
             ChatMessage::text(ChatRole::System, AGENT_IDENTITY_PROMPT),
             ChatMessage::text(ChatRole::User, prompt),
         ];
-        let mut stream = self.gateway.stream_chat(&messages);
+        let mut stream = self.gateway.stream_chat_with_policy(
+            RoutingMode::Balanced,
+            &RoutingRequest {
+                required_capabilities: vec!["chat".into()],
+                max_cost_micros_per_1k_tokens: None,
+                max_latency_ms: None,
+                required_privacy: PrivacyClass::Internal,
+                allow_fallback: true,
+            },
+            &messages,
+        )?;
         let mut final_message = String::new();
         while let Some(item) = tokio::select! {
             _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
@@ -4469,15 +4479,26 @@ impl ToolAgent {
             .ok()
             .map(|value| value.trim().to_owned())
             .filter(|value| !value.is_empty());
+        let routing_request = RoutingRequest {
+            required_capabilities: vec!["chat".into()],
+            max_cost_micros_per_1k_tokens: None,
+            max_latency_ms: None,
+            required_privacy: PrivacyClass::Internal,
+            allow_fallback: true,
+        };
         for attempt in 0..=extraction::RETRY_DELAYS_MS.len() {
             if attempt > 0 {
                 if let Some(delay) = extraction::ExtractionGuard::retry_delay_ms(attempt - 1) {
                     tokio::time::sleep(Duration::from_millis(delay)).await;
                 }
             }
-            let call =
-                self.gateway
-                    .chat_with_tools_for_route("default", model.as_deref(), &messages, &[]);
+            let call = self.gateway.chat_with_tools_with_policy(
+                RoutingMode::Balanced,
+                &routing_request,
+                model.as_deref(),
+                &messages,
+                &[],
+            );
             match timeout(Duration::from_secs(20), call).await {
                 Ok(Ok(result)) => {
                     let tokens = (context_token_estimate(&messages)
@@ -4747,7 +4768,19 @@ impl ToolAgent {
         // Ни инструментов, ни повторов: ровно одна попытка.
         let result = self
             .gateway
-            .chat_with_tools_for_route("default", None, &request, &[])
+            .chat_with_tools_with_policy(
+                RoutingMode::Balanced,
+                &RoutingRequest {
+                    required_capabilities: vec!["chat".into()],
+                    max_cost_micros_per_1k_tokens: None,
+                    max_latency_ms: None,
+                    required_privacy: PrivacyClass::Internal,
+                    allow_fallback: true,
+                },
+                None,
+                &request,
+                &[],
+            )
             .await
             .ok()?;
         let summary = result.content.trim().to_string();
@@ -4851,8 +4884,15 @@ impl ToolAgent {
 
             let result: Result<evohime_model_gateway::ChatResult, ProviderError> = match timeout(
                 timeout_duration,
-                self.gateway.chat_with_tools_for_route(
-                    "default",
+                self.gateway.chat_with_tools_with_policy(
+                    RoutingMode::Balanced,
+                    &RoutingRequest {
+                        required_capabilities: vec!["chat".into()],
+                        max_cost_micros_per_1k_tokens: None,
+                        max_latency_ms: None,
+                        required_privacy: PrivacyClass::Internal,
+                        allow_fallback: true,
+                    },
                     self.selected_model.get().as_deref(),
                     messages,
                     specs,

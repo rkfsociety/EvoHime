@@ -4,6 +4,7 @@ pub mod providers;
 pub mod retry;
 pub mod routing_policy;
 pub mod routing_runtime;
+pub mod routing_trace;
 pub mod tools;
 
 pub use crate::config::{ModelGatewayConfig, ModelRouteConfig};
@@ -13,7 +14,7 @@ pub use crate::provider_contract::{
     RunHealthOverlay, RunResult, RunTrace, SnapshotError,
 };
 use crate::providers::{
-    literouter::LiteRouterProvider, mock::MockProvider,
+    literouter::LiteRouterProvider, local::LocalProvider, mock::MockProvider,
     openai_compatible::OpenAICompatibleProvider, ChatMessage, ModelProvider, ProviderError,
     ProviderKind, TokenStream,
 };
@@ -29,6 +30,7 @@ pub use crate::routing_policy::{PrivacyClass, RouteCandidate, RoutingRequest};
 #[cfg(test)]
 pub use crate::routing_runtime::routing_policy::{PrivacyClass, RouteCandidate, RoutingRequest};
 pub use crate::routing_runtime::{RoutingMode, RoutingRuntime, RuntimeError, RuntimeLimits};
+pub use crate::routing_trace::{RoutingTrace, TerminalStatus, SafeNextAction, HealthState, PrivacyLabel};
 pub use crate::tools::{
     ChatResult, ChatStreamItem, FunctionSpec, LlmUsage, NativeToolCall, ToolSpec,
 };
@@ -341,6 +343,27 @@ impl ModelGateway {
             .await
     }
 
+    /// Policy entry point used by Core's agent loop. The caller supplies only
+    /// classification/capability metadata; the route name is selected here.
+    pub async fn chat_with_tools_with_policy(
+        &self,
+        mode: RoutingMode,
+        request: &RoutingRequest,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        tools: &[ToolSpec],
+    ) -> Result<ChatResult, ProviderError> {
+        let runtime = self
+            .plan_route(mode, request, RuntimeLimits::default())
+            .map_err(|error| ProviderError::Config(error.to_string()))?;
+        let route = runtime
+            .decision()
+            .selected_route
+            .as_deref()
+            .ok_or_else(|| ProviderError::Config("routing policy selected no route".into()))?;
+        self.chat_with_tools_for_route(route, model, messages, tools).await
+    }
+
     /// Plans a route using the bounded routing contract (`routing_policy` /
     /// `routing_runtime`) instead of trusting a caller-supplied route name.
     /// This is the real entry point for policy-governed selection: mode
@@ -453,6 +476,10 @@ fn build_provider(route: &ModelRouteConfig) -> Result<Arc<dyn ModelProvider>, Pr
         ProviderKind::OpenAICompatible => Ok(Arc::new(OpenAICompatibleProvider::new(
             route.literouter.clone(),
         )?)),
+        ProviderKind::Local => {
+            LocalProvider::validate_loopback(&route.literouter.base_url)?;
+            Ok(Arc::new(LocalProvider::new(route.literouter.clone())?))
+        }
         ProviderKind::Mock => Ok(Arc::new(MockProvider::new(
             route.literouter.model.clone(),
             vec![],

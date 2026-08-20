@@ -12,6 +12,7 @@ import { MarkdownMessage } from './MarkdownMessage'
 import { RecoveryBanner } from './RecoveryBanner'
 import { PermissionModePicker } from './PermissionModePicker'
 import { ContextUsage } from './ContextUsage'
+import { RoutingStatus } from './RoutingStatus'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 const MAX_RENDERED_ITEMS = 80
@@ -213,6 +214,7 @@ export function TaskTimeline({
         onOpenTask={() => {}}
         showOpenTask={false}
       />
+      <RoutingStatus events={taskEvents} />
       <div className="chat__scroll">
         {empty ? (
           <HomeScreen
