@@ -42,17 +42,26 @@
 | --- | --- | --- |
 | 03 Специализированные child workflows | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
 | 04 Постоянное слушание и ambient-память | [обзор](04-0-ambient-listening.md) | — |
+| 05 Provenance и реконструируемость model request | [обзор](05-0-model-request-provenance.md) | — |
 
 ```text
 04.1 контракт (реализован) ── 04.2 хранение (реализован) ──
 04.3 листенер (реализован) ── 04.4 движок (реализован) ── 04.5 UI ──
 04.6 память ── 04.7 проактивность  (независимый путь)
+
+05 provenance model request  (независимый путь)
 ```
 
 План 04 опирается только на уже реализованные Memory Extraction, permissions,
 desktop IPC, local storage и supervisor, поэтому блокирующих зависимостей от
 01–03 у него нет. Единственная связь с планом 01 — receipts на проактивные
 эффекты — объявлена опциональной с описанной деградацией в этапе 04.7.
+
+План 05 опирается только на уже реализованные model gateway/routing, Context
+Budget Manager, SQLite persistence, signed receipts и recovery foundation, а
+значит блокирующих зависимостей у него тоже нет: незавершённые этапы 04 его не
+держат. Ambient и scheduled model calls при их появлении подключаются к общему
+provenance pipeline новым `request_kind`, а не отдельным механизмом.
 
 ## Что уже реализовано
 
