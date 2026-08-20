@@ -220,7 +220,27 @@ async fn main() {
         context,
         enforce_authentication: authenticated,
     };
-    if let Err(error) = evohime_core::run_windows_pipe(config, bridge, logger).await {
+    let bridge = std::sync::Arc::new(bridge);
+    let listener_bridge = std::sync::Arc::clone(&bridge);
+    let listener_context = config.context.clone();
+    let listener_logger = std::sync::Arc::clone(&logger);
+    let result = tokio::select! {
+        result = evohime_core::run_windows_pipe(config, bridge, logger) => result,
+        _result = async move {
+            loop {
+                match evohime_core::run_windows_listener_pipe(listener_context.clone(), std::sync::Arc::clone(&listener_bridge), std::sync::Arc::clone(&listener_logger)).await {
+                    Ok(()) => {}
+                    Err(error) => {
+                        eprintln!("evohime-core listener pipe restarted: {error}");
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    }
+                }
+            }
+        } => {
+            Err("listener supervision unexpectedly stopped".into())
+        },
+    };
+    if let Err(error) = result {
         eprintln!("evohime-core failed: {error}");
         std::process::exit(1);
     }

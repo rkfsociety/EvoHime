@@ -1,0 +1,13 @@
+[package]
+name = "evohime-listener-audio"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+evohime-listener-contract = { path = "../evohime-listener-contract" }
+thiserror = "2"
+
+[target.'cfg(windows)'.dependencies]
+cpal = "0.15"
+windows-sys = { version = "0.61", features = ["Win32_System_Memory"] }
+

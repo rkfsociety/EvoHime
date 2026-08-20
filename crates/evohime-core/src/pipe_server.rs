@@ -76,11 +76,10 @@ fn now_ms() -> u64 {
 
 pub async fn run_windows_pipe(
     config: PipeServerConfig,
-    bridge: IpcBridge,
+    bridge: Arc<IpcBridge>,
     logger: Arc<StructuredLogger>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Shared so the event pump can outlive one command loop iteration.
-    let bridge = Arc::new(bridge);
     let pipe_name = config.context.pipe_name.clone();
     let enforce = config.enforce_authentication;
     let mut verifier = HandshakeVerifier::new(config.context, DEFAULT_NONCE_TTL_MS)

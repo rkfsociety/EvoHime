@@ -37,6 +37,7 @@ Core и supervisor — внутренние компоненты установ�
 - Windows package smoke tests и Windows CI;
 - единый Inno Setup installer с одним desktop shortcut; установленный клиент сам поднимает supervisor, а supervisor — Core;
 - фоновое обновление из постоянного GitHub Release: клиент сверяет зелёный commit, скачивает `EvoHime-Setup.exe` только при совпадении манифеста и SHA-256, а затем отдаёт его `evohime-transaction.exe --installer`. Запуск приложения не блокируется скачиванием; после фоновой загрузки UI показывает баннер с предложением перезапуска. Локальная пересборка через `launchPolicy: "build"` сохранена для разработки;
+- ambient listener 04.3 реализован: supervisor запускает `evohime-listener.exe` в отдельном bounded Job Object с независимым restart budget; Core и listener используют разные owner-only pipe endpoints и роль `listener` с nonce/HMAC. Аудио-крейт содержит cpal shared capture, bounded in-memory ring, deterministic 32/48→16 kHz decimation, energy VAD и fixture segmentation; privacy-gate запрещает filesystem I/O в аудио-крейте и включён в `rust-native` CI;
 - upgrade smoke в CI, автоматический rollback и recovery незавершённой транзакции перед запуском Core;
 - один постоянный релиз `installer` с описанием из `installer/release-notes.md`: `EvoHime-Setup.exe` и `EvoHime-Setup.json` в нём перезаписываются после успешного CI на `main`, новых релизов и версионных тегов не создаётся. Установщик нужен для первой установки и фоновых обновлений клиента;
 - имя агента «Ева» передаётся в system context Core;

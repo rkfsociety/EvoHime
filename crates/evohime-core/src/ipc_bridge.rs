@@ -89,6 +89,9 @@ fn runtime_identity() -> (String, u64) {
 }
 
 impl IpcBridge {
+    pub fn journal(&self) -> EventJournal {
+        self.journal.clone()
+    }
     fn manager_for(journal: &EventJournal) -> Arc<ReceiptKeyManager> {
         let data_dir = journal
             .database_path()

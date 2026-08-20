@@ -1077,6 +1077,8 @@ pub use logging::StructuredLogger;
 #[cfg(windows)]
 mod pipe_server;
 #[cfg(windows)]
+pub use listener_pipe::run_windows_listener_pipe;
+#[cfg(windows)]
 pub use pipe_server::{run_windows_pipe, PipeServerConfig};
 
 impl CoreVersion {
@@ -1133,6 +1135,8 @@ pub mod context_budget;
 pub mod doctor;
 pub mod evals;
 pub mod export;
+#[cfg(windows)]
+mod listener_pipe;
 pub mod memory_api;
 pub mod memory_domain;
 pub mod memory_extraction;

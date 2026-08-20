@@ -23,6 +23,7 @@ evohime-permissions = { path = "../permissions" }
 evohime-local-storage = { path = "../evohime-local-storage" }
 evohime-desktop-ipc = { path = "../desktop-ipc" }
 evohime-listener-contract = { path = "../evohime-listener-contract" }
+evohime-listener-ipc = { path = "../evohime-listener-ipc" }
 evohime-receipts = { path = "../evohime-receipts" }
 prost = "0.14"
 futures-util = "0.3"

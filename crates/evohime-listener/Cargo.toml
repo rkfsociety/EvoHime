@@ -1,0 +1,23 @@
+[package]
+name = "evohime-listener"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "evohime-listener"
+path = "src/main.rs"
+
+[dependencies]
+evohime-listener-audio = { path = "../evohime-listener-audio" }
+evohime-listener-contract = { path = "../evohime-listener-contract" }
+evohime-listener-ipc = { path = "../evohime-listener-ipc" }
+evohime-desktop-ipc = { path = "../desktop-ipc" }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "time", "sync"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Diagnostics_Debug", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }

@@ -504,6 +504,70 @@ async fn run_supervisor_command_channel(
     }
 }
 
+/// Listener is deliberately outside the Core generation Job Object. Its own
+/// bounded job lets it survive a Core crash while still guaranteeing cleanup
+/// when this supervisor task ends.
+async fn run_listener_supervision(
+    listener_exe: PathBuf,
+    pipe_name: String,
+    context_path: PathBuf,
+    logger: std::sync::Arc<SupervisorLogger>,
+) {
+    let max_restarts = std::env::var("EVOHIME_LISTENER_MAX_RESTARTS")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(3);
+    let mut restarts = 0;
+    loop {
+        let job = match JobObject::create_with_limits(Some(256 * 1024 * 1024), Some(20)) {
+            Ok(job) => job,
+            Err(error) => {
+                let _ = logger.write("listener.job_failed", json!({"error": error.to_string()}));
+                return;
+            }
+        };
+        let mut command = Command::new(&listener_exe);
+        command
+            .kill_on_drop(true)
+            .env("EVOHIME_LISTENER_PIPE", &pipe_name)
+            .env("EVOHIME_LAUNCH_CONTEXT", &context_path);
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                let _ = logger.write("listener.spawn_failed", json!({"error": error.to_string()}));
+                return;
+            }
+        };
+        if let Err(error) = job.assign(&child) {
+            let _ = logger.write(
+                "listener.job_assign_failed",
+                json!({"error": error.to_string()}),
+            );
+            let _ = child.kill().await;
+            return;
+        }
+        let _ = logger.write("listener.spawned", json!({"restart": restarts}));
+        let status = child.wait().await;
+        drop(job);
+        let _ = logger.write(
+            "listener.exit",
+            json!({"status": status.ok().and_then(|s| s.code())}),
+        );
+        if restarts >= max_restarts {
+            let _ = logger.write(
+                "listener.restart_budget_exhausted",
+                json!({"max_restarts": max_restarts}),
+            );
+            return;
+        }
+        restarts += 1;
+        tokio::time::sleep(std::time::Duration::from_millis(
+            250u64.saturating_mul(2u64.saturating_pow(restarts.min(6))),
+        ))
+        .await;
+    }
+}
+
 #[derive(Clone)]
 struct SupervisorSessionContext {
     launch_context: LaunchContext,
@@ -578,6 +642,20 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 // a channel failure is logged and does not widen fallback paths.
                 eprintln!("supervisor command channel stopped: {error}");
             }
+        });
+        let listener_exe = normalized_env_path("EVOHIME_LISTENER_EXE")
+            .unwrap_or_else(|| PathBuf::from("evohime-listener.exe"));
+        let listener_pipe = format!("{}-listener", session.launch_context.pipe_name);
+        let listener_context_path = session.context_path.clone();
+        let listener_logger = std::sync::Arc::clone(&logger);
+        tokio::spawn(async move {
+            run_listener_supervision(
+                listener_exe,
+                listener_pipe,
+                listener_context_path,
+                listener_logger,
+            )
+            .await;
         });
     }
     let max_restarts = std::env::var("EVOHIME_CORE_MAX_RESTARTS")
