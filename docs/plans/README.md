@@ -6,7 +6,9 @@
 
 ## С чего начинать
 
-Следующий шаг — **[03 Specialized child workflows](03-0-specialized-child-workflows.md)**.
+Следующий незавершённый шаг — **[02.1 Provider contract](02-1-provider-contract.md)**.
+План 03 остаётся независимой веткой работ и может выполняться отдельно, но не
+заменяет незавершённые этапы плана 02.
 
 План Local Agentic RAG реализован целиком и удалён из каталога: его контракт
 живёт в [`../architecture.md`](../architecture.md), состояние — в
@@ -42,7 +44,8 @@
 | 04 Постоянное слушание и ambient-память | [обзор](04-0-ambient-listening.md) | — |
 
 ```text
-02.1-02.2 provider, 02.3 routing  (независимый путь)
+02.1 provider ── 02.2 local provider ── 02.3 routing ── 02.4 UI
+                                      (независимый путь плана 02)
 
 04.1 контракт ── 04.2 хранение ── 04.3 листенер ── 04.4 движок ──
      04.5 UI ── 04.6 память ── 04.7 проактивность  (независимый путь)
@@ -77,7 +80,7 @@ Budget Manager, Local Agentic RAG и план 01 Signed hash-chain receipts
 Проверка на 2026-08-19: план 01 реализован целиком, включая 01.4 (SQLite
 receipts_v1, signed checkpoints, retention/compaction, verified_pruned,
 chain-aware offline verifier, ListReceipts/VerifyReceipts/ExportReceipts IPC).
-Следующий незавершённый план — 03 Specialized child workflows.
+Следующий незавершённый этап — 02.1 Provider contract.
 Частичный код есть в плане 02 (детерминированный выбор маршрута существует, но
 не подключён к агенту) и в плане 03 (роли и lifecycle есть, grants, budget и
 изоляции нет); оба случая отмечены внутри соответствующих этапов.

@@ -10,8 +10,9 @@
 `fallback_count`, `privacy_label`). UI не вводит собственных кодов и не
 переопределяет то, что уже зафиксировано в 02.3.
 
-**Frozen constraint.** Условие выполнено: 02.3 опубликовал под
-`schema_version = 1` полный список значений
+**Frozen constraint.** Это блокирующее предусловие этапа: перед началом
+реализации 02.4 этап 02.3 должен опубликовать под `schema_version = 1` полный
+список значений
 `terminal_status`/`safe_next_action`/`health_state`/`reason_code`/
 `reject_reason`/`privacy_label`. Любое расширение этих перечислений —
 это новый `schema_version`, требующий согласованного обновления localization

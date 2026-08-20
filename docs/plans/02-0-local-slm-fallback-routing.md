@@ -76,7 +76,9 @@ Manager.
 `unavailable`/`route_denied`, без маскировки под успех.
 
 Context Budget Manager, evaluation catalog и provider health model считаются
-доступными контрактами; их минимальные интерфейсы зафиксированы в этапах ниже.
+доступными контрактами. Канонический контракт Context Budget Manager живёт в
+[`../architecture.md`](../architecture.md), а этапы ниже фиксируют только его
+точки интеграции с routing.
 
 Опциональные зависимости этапов перечислены в самих этапах (02.1 — Context
 Budget Manager, 02.2 — 02.3 routing) и ни одна из них не блокирует старт.
