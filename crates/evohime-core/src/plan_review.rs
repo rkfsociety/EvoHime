@@ -26,6 +26,27 @@ const PLAN_OPEN: &str = "--- ПЛАН ---";
 const PLAN_CLOSE: &str = "--- КОНЕЦ ПЛАНА ---";
 const REVIEW_OPEN: &str = "--- РЕВЬЮ ---";
 const REVIEW_CLOSE: &str = "--- КОНЕЦ РЕВЬЮ ---";
+const CONTEXT_OPEN: &str = "--- СОСЕДНИЕ ПЛАНЫ ---";
+const CONTEXT_CLOSE: &str = "--- КОНЕЦ СОСЕДНИХ ПЛАНОВ ---";
+
+/// Сколько связанных планов и сколько их текста уходит в промпт. Планы этапа
+/// ссылаются друг на друга, и инвариант соседнего этапа сплошь и рядом не
+/// повторён в самом файле: без него редактор уверенно перепишет план так, что
+/// он начнёт противоречить соседям. Потолки держат промпт в пределах окна
+/// модели — контекст обрезается, а не роняет правку.
+pub const MAX_CONTEXT_DOCUMENTS: usize = 8;
+pub const MAX_CONTEXT_BYTES: usize = 192 * 1024;
+pub const MAX_CONTEXT_DEPTH: usize = 2;
+
+/// Соседний план, приложенный к промпту только для сверки.
+///
+/// Ни ревью, ни правка не могут его изменить: он не попадает ни в ответ
+/// модели, ни в файл — только в контекст запроса.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContextDocument {
+    pub file_name: String,
+    pub markdown: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReviewRequest {
@@ -35,6 +56,9 @@ pub struct ReviewRequest {
     pub source_markdown: String,
     pub reviewer_models: Vec<String>,
     pub synthesis_model: String,
+    /// Планы, на которые ссылается проверяемый: рецензент видит их только для
+    /// сверки. Пустой список — обычное дело для одиночного плана.
+    pub context_documents: Vec<ContextDocument>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -76,6 +100,8 @@ pub enum ReviewError {
     EmptyReview,
     #[error("Markdown plan exceeds {MAX_PLAN_BYTES} bytes")]
     PlanTooLarge,
+    #[error("linked plans exceed {MAX_CONTEXT_DOCUMENTS} documents or {MAX_CONTEXT_BYTES} bytes")]
+    ContextTooLarge,
     #[error("review requires between {MIN_REVIEWERS} and {MAX_REVIEWERS} unique models")]
     InvalidReviewerCount,
     #[error("model identifier is invalid")]
@@ -107,6 +133,7 @@ impl ReviewRequest {
         if self.source_markdown.len() > MAX_PLAN_BYTES {
             return Err(ReviewError::PlanTooLarge);
         }
+        validate_context(&self.context_documents)?;
         if self.reviewer_models.len() < MIN_REVIEWERS
             || self.reviewer_models.len() > MAX_REVIEWERS
             || self.reviewer_models.iter().any(|model| !valid_model(model))
@@ -185,7 +212,7 @@ pub async fn run_review_with_progress(
         let reviewer = match collect_model_response(
             Arc::clone(&gateway),
             &model,
-            reviewer_messages(&source),
+            reviewer_messages(&source, &request.context_documents),
             cancellation.clone(),
         )
         .await
@@ -323,6 +350,9 @@ pub struct RevisionRequest {
     pub source_markdown: String,
     pub review_markdown: String,
     pub model: String,
+    /// Те же соседние планы, что видел рецензент. Правка без них — главный
+    /// способ получить внутренне складный план, противоречащий соседям.
+    pub context_documents: Vec<ContextDocument>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -332,6 +362,12 @@ pub struct RevisionResult {
     pub file_name: String,
     pub model: String,
     pub revised_markdown: String,
+    /// С чем правка сверялась. Пользователь должен видеть это до сохранения:
+    /// пустой список означает, что редактор работал вслепую по одному файлу.
+    /// `default` — записи правок, сделанных до появления контекста, лежат в
+    /// журнале без этого поля.
+    #[serde(default)]
+    pub context_files: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -358,6 +394,7 @@ impl RevisionRequest {
         if !valid_model(&self.model) {
             return Err(ReviewError::InvalidModel);
         }
+        validate_context(&self.context_documents)?;
         Ok(())
     }
 }
@@ -387,7 +424,11 @@ pub async fn run_revision(
     let revised = collect_model_response(
         gateway,
         &request.model,
-        revision_messages(&request.source_markdown, &request.review_markdown),
+        revision_messages(
+            &request.source_markdown,
+            &request.review_markdown,
+            &request.context_documents,
+        ),
         cancellation,
     )
     .await
@@ -408,7 +449,12 @@ pub async fn run_revision(
         review_id: request.review_id,
         file_name: request.file_name,
         model: request.model,
-        revised_markdown: as_plan_file(&revised),
+        revised_markdown: match_line_endings(&request.source_markdown, &as_plan_file(&revised)),
+        context_files: request
+            .context_documents
+            .iter()
+            .map(|document| document.file_name.clone())
+            .collect(),
     })
 }
 
@@ -418,7 +464,14 @@ pub async fn run_revision(
 /// that saving the revision does not leave the file without its final break.
 fn as_plan_file(value: &str) -> String {
     let stripped = strip_markdown_fence(value);
-    let end = [PLAN_CLOSE, PLAN_OPEN, REVIEW_OPEN, REVIEW_CLOSE]
+    let end = [
+        PLAN_CLOSE,
+        PLAN_OPEN,
+        REVIEW_OPEN,
+        REVIEW_CLOSE,
+        CONTEXT_OPEN,
+        CONTEXT_CLOSE,
+    ]
         .iter()
         .filter_map(|marker| stripped.find(marker))
         .min()
@@ -520,11 +573,128 @@ fn valid_model(model: &str) -> bool {
     !trimmed.is_empty() && trimmed.len() <= 128 && !trimmed.chars().any(char::is_whitespace)
 }
 
-fn reviewer_messages(source: &str) -> Vec<ChatMessage> {
+/// Контекст режется по числу документов и по суммарному объёму, а не по факту
+/// «влезло в окно»: провайдер отвечает на переполненный промпт отказом, и
+/// правка падала бы тем позже, чем больше планов ссылаются друг на друга.
+fn validate_context(context: &[ContextDocument]) -> Result<(), ReviewError> {
+    if context.len() > MAX_CONTEXT_DOCUMENTS {
+        return Err(ReviewError::ContextTooLarge);
+    }
+    let total: usize = context
+        .iter()
+        .map(|document| document.file_name.len() + document.markdown.len())
+        .sum();
+    if total > MAX_CONTEXT_BYTES {
+        return Err(ReviewError::ContextTooLarge);
+    }
+    Ok(())
+}
+
+/// Имена файлов, на которые план ссылается Markdown-ссылкой.
+///
+/// Берутся только относительные ссылки на `.md` внутри каталога плана: путь с
+/// `..`, абсолютный путь, диск и схема отбрасываются здесь, а не в вызывающем
+/// коде, потому что именно этот список решает, какие файлы ядро откроет с
+/// диска. Порядок появления сохраняется, повторы снимаются: первый упомянутый
+/// сосед и есть самый близкий по смыслу.
+pub fn linked_plan_names(markdown: &str) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    let mut index = 0;
+    while let Some(found) = markdown[index..].find("](") {
+        let start = index + found + 2;
+        let Some(end) = markdown[start..].find(')') else {
+            break;
+        };
+        let end = start + end;
+        index = end + 1;
+        let target = markdown[start..end].trim();
+        let target = target.split('#').next().unwrap_or(target);
+        let target = target.split(' ').next().unwrap_or(target);
+        if !is_relative_markdown_link(target) {
+            continue;
+        }
+        let name = target.replace('\\', "/");
+        if !names.iter().any(|existing| existing == &name) {
+            names.push(name);
+        }
+    }
+    names
+}
+
+fn is_relative_markdown_link(target: &str) -> bool {
+    if target.is_empty() || target.len() > 256 {
+        return false;
+    }
+    if !target.to_ascii_lowercase().ends_with(".md") {
+        return false;
+    }
+    if target.contains("://") || target.starts_with('/') || target.starts_with('\\') {
+        return false;
+    }
+    // `C:\plans\x.md` уводит за пределы каталога плана так же, как `..`.
+    if target.chars().nth(1) == Some(':') {
+        return false;
+    }
+    !target
+        .split(['/', '\\'])
+        .any(|segment| segment == ".." || segment.is_empty())
+}
+
+/// Приводит перевод строки ответа к тому, что был в исходном файле.
+///
+/// Модель отвечает через LF всегда. Записать такой ответ поверх файла с CRLF
+/// значит показать в git переписанным весь файл целиком, и настоящая правка
+/// утонет в различиях, которых никто не вносил.
+fn match_line_endings(source: &str, revised: &str) -> String {
+    let normalized = revised.replace("\r\n", "\n");
+    if source.contains("\r\n") {
+        return normalized.replace('\n', "\r\n");
+    }
+    normalized
+}
+
+/// Указание про соседние планы добавляется только когда они есть: упоминание
+/// блока, которого в промпте нет, модель принимает за потерянный ввод и
+/// начинает его додумывать.
+fn context_instruction(context: &[ContextDocument]) -> &'static str {
+    if context.is_empty() {
+        ""
+    } else {
+        " Ниже приложены планы, на которые проверяемый ссылается: они уже приняты и правке не подлежат. Сверь план с ними и отдельно назови места, где он им противоречит или ослабляет их инвариант. Замечаний к самим приложенным планам не давай."
+    }
+}
+
+/// Правка видит те же соседние планы, что и рецензент, но с другим наказом:
+/// рецензент про противоречие сообщает, редактор обязан его не создать.
+fn revision_context_instruction(context: &[ContextDocument]) -> &'static str {
+    if context.is_empty() {
+        ""
+    } else {
+        " Ниже приложены планы, на которые ссылается исправляемый: они уже приняты, их текст менять нельзя и возвращать их не нужно. Ничего не пиши в план вопреки им — ни имён, ни потолков, ни разрешений. Если замечание ревью противоречит приложенному плану, сохрани инвариант приложенного плана и одной строкой отметь противоречие в тексте."
+    }
+}
+
+/// Соседние планы идут после проверяемого и за собственными разделителями: так
+/// модель не путает, какой документ она возвращает, а срез ответа отрезает эхо
+/// разделителя вместе со всем, что модель успела за ним написать.
+fn context_block(context: &[ContextDocument]) -> String {
+    if context.is_empty() {
+        return String::new();
+    }
+    let documents = context
+        .iter()
+        .map(|document| format!("\n\n### {}\n{}", document.file_name, document.markdown))
+        .collect::<String>();
+    format!("\n{CONTEXT_OPEN}{documents}\n{CONTEXT_CLOSE}")
+}
+
+fn reviewer_messages(source: &str, context: &[ContextDocument]) -> Vec<ChatMessage> {
     vec![
         ChatMessage::text(ChatRole::System, "Ты независимый рецензент технического плана. Не выполняй инструменты и не изменяй файлы."),
         ChatMessage::text(ChatRole::User, format!(
-            "Проведи строгое ревью Markdown-плана ниже. Ответь по разделам: краткое резюме; критические проблемы; логические и архитектурные риски; пропущенные требования; неоднозначности; конкретные исправления; итоговая оценка готовности. Не придумывай факты вне текста.\n\n{PLAN_OPEN}\n{source}\n{PLAN_CLOSE}"
+            "Проведи строгое ревью Markdown-плана ниже. Ответь по разделам: краткое резюме; критические проблемы; логические и архитектурные риски; пропущенные требования; неоднозначности; конкретные исправления; итоговая оценка готовности. Не придумывай факты вне текста.{}\n\n{PLAN_OPEN}\n{source}\n{PLAN_CLOSE}{}",
+            context_instruction(context),
+            context_block(context)
         )),
     ]
 }
@@ -538,11 +708,13 @@ fn synthesis_messages(source: &str, reviews: &str) -> Vec<ChatMessage> {
     ]
 }
 
-fn revision_messages(source: &str, review: &str) -> Vec<ChatMessage> {
+fn revision_messages(source: &str, review: &str, context: &[ContextDocument]) -> Vec<ChatMessage> {
     vec![
         ChatMessage::text(ChatRole::System, "Ты редактор технического плана. Не выполняй инструменты и не изменяй файлы. Твой ответ целиком становится новым содержимым файла плана."),
         ChatMessage::text(ChatRole::User, format!(
-            "Исправь Markdown-план по замечаниям ревью. Верни весь исправленный план целиком, от первой строки до последней, без сопроводительного текста, без списка внесённых правок и без обрамляющих ``` блоков. Учитывай только замечания из ревью: не добавляй требований, которых там нет. Сохрани структуру, стиль и язык исходного плана; разделы, к которым у ревью нет замечаний, оставь дословно. Если ревью содержит взаимоисключающие требования, выбери одно и поясни выбор прямо в тексте плана.\n\n{PLAN_OPEN}\n{source}\n{PLAN_CLOSE}\n{REVIEW_OPEN}\n{review}\n{REVIEW_CLOSE}"
+            "Исправь Markdown-план по замечаниям ревью. Верни весь исправленный план целиком, от первой строки до последней, без сопроводительного текста, без списка внесённых правок и без обрамляющих ``` блоков.\n\nПравь минимально. Меняй только то, к чему в ревью есть замечание; остальное — заголовки, абзацы, пункты списков, порядок разделов, формулировки — переноси дословно. Не переписывай текст ради стиля, не разворачивай пункт в подраздел и не заводи новых разделов, если ревью прямо этого не требует. Исправленный план должен быть сопоставим по объёму с исходным: заметный рост означает, что дописано лишнее.\n\nНе выдумывай фактов: имена файлов, типов, полей, команд, кодов событий, номера тегов и числовые потолки бери только из плана или из ревью. Если ревью требует уточнения, а взять его неоткуда, одной строкой напиши, что осталось нерешённым, вместо правдоподобной выдумки.\n\nНе ослабляй ограничения. Запрет, инвариант, «нельзя», «только после подтверждения», закрытый список правятся лишь тогда, когда ревью требует этого дословно; иначе формулировка запрета остаётся как была.{}\n\nЕсли ревью содержит взаимоисключающие требования, выбери одно и поясни выбор прямо в тексте плана.\n\n{PLAN_OPEN}\n{source}\n{PLAN_CLOSE}\n{REVIEW_OPEN}\n{review}\n{REVIEW_CLOSE}{}",
+            revision_context_instruction(context),
+            context_block(context)
         )),
     ]
 }
@@ -560,6 +732,7 @@ mod tests {
             source_markdown: "# Plan\n\nDo the thing".into(),
             reviewer_models: vec!["one".into(), "two".into()],
             synthesis_model: "main".into(),
+            context_documents: Vec::new(),
         }
     }
 
@@ -734,6 +907,7 @@ mod tests {
             source_markdown: "# Plan\n\nDo the thing".into(),
             review_markdown: "Раздел про откат отсутствует.".into(),
             model: "main".into(),
+            context_documents: Vec::new(),
         }
     }
 
@@ -805,6 +979,111 @@ mod tests {
         );
         // Ответ без разделителей не трогается, кроме финального перевода строки.
         assert_eq!(as_plan_file("# Plan"), "# Plan\n");
+    }
+
+
+    fn context(file_name: &str, markdown: &str) -> ContextDocument {
+        ContextDocument {
+            file_name: file_name.into(),
+            markdown: markdown.into(),
+        }
+    }
+
+    /// Список решает, какие файлы ядро откроет с диска, поэтому всё, что уводит
+    /// за пределы каталога плана, отсеивается здесь.
+    #[test]
+    fn linked_names_take_relative_markdown_links_only() {
+        let markdown = concat!(
+            "Этап плана [04](04-0-ambient.md).\n",
+            "Ещё раз [тот же](04-0-ambient.md) и [сосед](sub/04-1-contract.md).\n",
+            "[вверх](../other/plan.md) [корень](/etc/plan.md) [сеть](https://example.com/plan.md)\n",
+            "[диск](C:\\plans\\plan.md) [не план](notes.txt) [якорь](04-2-store.md#retention)\n"
+        );
+
+        assert_eq!(
+            linked_plan_names(markdown),
+            vec![
+                "04-0-ambient.md".to_string(),
+                "sub/04-1-contract.md".to_string(),
+                "04-2-store.md".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn context_is_bounded_by_documents_and_bytes() {
+        let mut invalid = revision();
+        invalid.context_documents = (0..MAX_CONTEXT_DOCUMENTS + 1)
+            .map(|index| context(&format!("plan-{index}.md"), "x"))
+            .collect();
+        assert_eq!(invalid.validate(), Err(ReviewError::ContextTooLarge));
+
+        invalid = revision();
+        invalid.context_documents = vec![context("plan.md", &"x".repeat(MAX_CONTEXT_BYTES))];
+        assert_eq!(invalid.validate(), Err(ReviewError::ContextTooLarge));
+
+        let mut review = request();
+        review.context_documents = vec![context("plan.md", &"x".repeat(MAX_CONTEXT_BYTES))];
+        assert_eq!(review.validate(), Err(ReviewError::ContextTooLarge));
+    }
+
+    /// Соседний план едет в промпт целиком и с наказом не противоречить ему:
+    /// без этого редактор уверенно переписывает план вразрез с соседями, а
+    /// проверить это на живом провайдере нечем.
+    #[test]
+    fn prompts_carry_linked_plans_and_their_instruction() {
+        let documents = vec![context("04-1-contract.md", "Хеш текста в лог не попадает.")];
+        let prompt = revision_messages("# Plan", "Замечание", &documents)[1]
+            .content
+            .clone();
+        assert!(prompt.contains(CONTEXT_OPEN));
+        assert!(prompt.contains("04-1-contract.md"));
+        assert!(prompt.contains("Хеш текста в лог не попадает."));
+        assert!(prompt.contains("сохрани инвариант приложенного плана"));
+
+        let reviewer_prompt = reviewer_messages("# Plan", &documents)[1].content.clone();
+        assert!(reviewer_prompt.contains(CONTEXT_OPEN));
+        assert!(reviewer_prompt.contains("Замечаний к самим приложенным планам не давай."));
+    }
+
+    /// Без соседей промпт не должен упоминать блок, которого в нём нет.
+    #[test]
+    fn prompts_stay_silent_about_context_when_there_is_none() {
+        let prompt = revision_messages("# Plan", "Замечание", &[])[1].content.clone();
+        assert!(!prompt.contains(CONTEXT_OPEN));
+        assert!(!prompt.contains("приложены планы"));
+    }
+
+    /// Модель отвечает через LF всегда, а план на диске — с CRLF: без
+    /// выравнивания git показывает переписанным весь файл.
+    #[tokio::test]
+    async fn revision_keeps_the_line_endings_of_the_source_file() {
+        let gateway = Arc::new(mock_gateway(vec!["# Plan\n\nДело\n\n## Откат".into()]));
+        let mut request = revision();
+        request.source_markdown = "# Plan\r\n\r\nДело\r\n".into();
+        request.context_documents = vec![context("04-1-contract.md", "Инвариант.")];
+        let result = run_revision(gateway, request, CancellationToken::new(), Arc::new(|_| {}))
+            .await
+            .expect("revision completes");
+
+        assert!(!result.revised_markdown.contains("\n\n\r"));
+        assert_eq!(result.revised_markdown.matches("\r\n").count(), 5);
+        assert!(result.revised_markdown.ends_with("\r\n"));
+        // Пользователь должен видеть, с чем сверялась правка.
+        assert_eq!(result.context_files, vec!["04-1-contract.md".to_string()]);
+    }
+
+    /// План с LF остаётся с LF: выравнивание не должно вносить CR туда, где
+    /// его не было.
+    #[tokio::test]
+    async fn revision_leaves_lf_sources_alone() {
+        let gateway = Arc::new(mock_gateway(vec!["# Plan\r\n\r\nДело".into()]));
+        let result = run_revision(gateway, revision(), CancellationToken::new(), Arc::new(|_| {}))
+            .await
+            .expect("revision completes");
+
+        assert!(!result.revised_markdown.contains('\r'));
+        assert!(result.context_files.is_empty());
     }
 
     #[test]

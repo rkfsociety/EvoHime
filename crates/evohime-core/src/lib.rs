@@ -979,6 +979,7 @@ pub mod research_search;
 pub mod scope;
 pub mod task_memory;
 pub use task_memory::project_scope_id;
+pub mod plan_context;
 pub mod plan_review;
 pub mod workflow;
 pub mod workflow_execution;

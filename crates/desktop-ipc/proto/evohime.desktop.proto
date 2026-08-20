@@ -76,6 +76,12 @@ message StartPlanReview {
   repeated string reviewer_models = 4;
   string synthesis_model = 5;
   repeated string file_names = 6;
+  // Absolute paths of the reviewed files. Core follows the Markdown links
+  // inside them to read the neighbouring plans a stage relies on, so a review
+  // can say that a plan contradicts the stage next door. Empty when the plan
+  // came from a source without a filesystem: the review then runs blind, as
+  // it did before.
+  repeated string source_paths = 7;
 }
 
 message StopPlanReview {
@@ -110,6 +116,10 @@ message RevisePlan {
   string file_name = 3;
   string source_markdown = 4;
   string model = 5;
+  // Absolute path of the plan being revised; the editor gets the same linked
+  // plans the reviewer saw. Without them a revision reads well on its own and
+  // still breaks the invariant of a neighbouring stage.
+  string source_path = 6;
 }
 
 message StopRevision {

@@ -390,13 +390,20 @@ async fn run_console_review(
         .file_name()
         .map(|name| name.to_string_lossy().to_string())
         .unwrap_or_else(|| "plan.md".to_string());
+    // Консольный прогон читает соседние планы так же, как IPC: иначе проверить
+    // правку с контекстом можно было бы только через UI.
+    let plan_path = request.plan.to_string_lossy().to_string();
+    let context_documents =
+        evohime_core::plan_context::read_linked_plans(std::slice::from_ref(&plan_path), &source)
+            .await;
     let started = std::time::Instant::now();
     println!(
-        "план: {} ({} байт); рецензенты: {}; синтез: {}",
+        "план: {} ({} байт); рецензенты: {}; синтез: {}; соседних планов: {}",
         file_name,
         source.len(),
         request.reviewers.join(", "),
-        request.synthesis
+        request.synthesis,
+        context_documents.len()
     );
 
     let review = evohime_core::plan_review::ReviewRequest {
@@ -406,6 +413,7 @@ async fn run_console_review(
         source_markdown: source.clone(),
         reviewer_models: request.reviewers.clone(),
         synthesis_model: request.synthesis.clone(),
+        context_documents: context_documents.clone(),
     };
     let clock = started;
     let review_result = evohime_core::plan_review::run_review_with_progress(
@@ -453,6 +461,7 @@ async fn run_console_review(
             .split_once("\n---\n\n")
             .map_or(review_result.final_markdown.clone(), |(_, body)| body.to_string()),
         model: request.synthesis.clone(),
+        context_documents,
     };
     let clock = started;
     let revised = evohime_core::plan_review::run_revision(

@@ -3744,6 +3744,9 @@ impl IpcBridge {
         if !request.file_name.to_ascii_lowercase().ends_with(".md") {
             return Err(FrameError::Io("review accepts Markdown files only".into()).into());
         }
+        let context_documents =
+            crate::plan_context::read_linked_plans(&request.source_paths, &request.source_markdown)
+                .await;
         let review = crate::plan_review::ReviewRequest {
             review_id: request.review_id,
             file_name: request.file_name,
@@ -3751,6 +3754,7 @@ impl IpcBridge {
             source_markdown: request.source_markdown,
             reviewer_models: request.reviewer_models,
             synthesis_model: request.synthesis_model,
+            context_documents,
         };
         review
             .validate()
@@ -3907,6 +3911,11 @@ impl IpcBridge {
             }
         }
         let review = review.ok_or_else(|| FrameError::Io("review not found".into()))?;
+        let context_documents = crate::plan_context::read_linked_plans(
+            std::slice::from_ref(&request.source_path),
+            &request.source_markdown,
+        )
+        .await;
         let revision = crate::plan_review::RevisionRequest {
             revision_id: request.revision_id,
             review_id: request.review_id,
@@ -3914,6 +3923,7 @@ impl IpcBridge {
             source_markdown: request.source_markdown,
             review_markdown: strip_review_header(&review.final_markdown),
             model: request.model,
+            context_documents,
         };
         revision
             .validate()
@@ -4272,6 +4282,7 @@ mod tests {
                 file_name: "plan.md".into(),
                 model: "main".into(),
                 revised_markdown: "# Исправленный план".into(),
+                context_files: Vec::new(),
             },
         );
         let (mut client, server) = duplex(16 * 1024);
@@ -4434,6 +4445,7 @@ mod tests {
                     file_name: "plan.md".into(),
                     source_markdown: "# Plan".into(),
                     model: "main".into(),
+                    source_path: String::new(),
                 },
             )),
         };
