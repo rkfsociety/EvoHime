@@ -43,6 +43,13 @@ pub const MAX_EXTRACTION_TOKENS_PER_HOUR: u64 = 100_000;
 pub const MAX_CONTEXT_MESSAGES: usize = 10;
 pub const MAX_CONTEXT_TOKENS: usize = 2_048;
 
+/// Ambient-бюджеты (этап 04.6). Они отдельные и заведомо меньше диалоговых:
+/// речь идёт непрерывно, поэтому общий часовой лимит диалога ambient-путь
+/// выбрал бы за несколько минут и вытеснил бы извлечение из самого диалога.
+pub const MAX_AMBIENT_CANDIDATES_PER_HOUR: usize = 6;
+pub const MAX_AMBIENT_EPISODES_PER_HOUR: usize = 12;
+pub const MAX_AMBIENT_EXTRACTION_TOKENS_PER_HOUR: u64 = 20_000;
+
 /// Задержки повторов на malformed output (мс) — максимум 2 повтора.
 pub const RETRY_DELAYS_MS: [u64; 2] = [250, 1_000];
 pub const MALFORMED_BREAKER_THRESHOLD: usize = 3;
@@ -184,6 +191,9 @@ pub enum SourceTrust {
     ToolOutput,
     Document,
     ModelInference,
+    /// Постоянное слушание (04.6): говорящий не подтверждён, диаризации нет,
+    /// поэтому доверия к такому источнику меньше, чем к любому другому.
+    Ambient,
 }
 
 impl SourceTrust {
@@ -193,6 +203,7 @@ impl SourceTrust {
             Self::ToolOutput => "tool_output",
             Self::Document => "document",
             Self::ModelInference => "model_inference",
+            Self::Ambient => "ambient",
         }
     }
 
@@ -202,8 +213,14 @@ impl SourceTrust {
             "tool_output" => Some(Self::ToolOutput),
             "document" => Some(Self::Document),
             "model_inference" => Some(Self::ModelInference),
+            "ambient" => Some(Self::Ambient),
             _ => None,
         }
+    }
+
+    /// Пришёл ли факт из постоянного слушания.
+    pub fn is_ambient(self) -> bool {
+        matches!(self, Self::Ambient)
     }
 
     /// Только явное утверждение пользователя может быть основанием
@@ -213,9 +230,10 @@ impl SourceTrust {
     }
 
     /// `document` факты требуют Local Agentic RAG validation, `tool_output` —
-    /// verification hook.
+    /// verification hook, `ambient` — подтверждения человеком: говорящего
+    /// никто не проверял, и считать такой факт проверенным нельзя.
     pub fn requires_validation(self) -> bool {
-        matches!(self, Self::ToolOutput | Self::Document)
+        matches!(self, Self::ToolOutput | Self::Document | Self::Ambient)
     }
 }
 
@@ -377,6 +395,41 @@ impl ExtractionMode {
     }
 }
 
+/// Режим ambient-извлечения (04.6). Аналога `open` здесь нет намеренно:
+/// услышанное не может стать памятью без клика пользователя, поэтому
+/// «включено» означает ровно `pending`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AmbientMemoryMode {
+    Off,
+    Pending,
+}
+
+impl AmbientMemoryMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Pending => "pending",
+        }
+    }
+
+    /// Разбор значения `EVOHIME_AMBIENT_MEMORY`. Отсутствие переменной — это
+    /// дефолт `pending`, а вот мусор в ней — fail-safe `off`: неизвестное
+    /// значение не должно молча включать извлечение из речи.
+    pub fn parse(raw: Option<&str>) -> Self {
+        match raw.map(|value| value.trim().to_ascii_lowercase()) {
+            None => Self::Pending,
+            Some(value) if value.is_empty() => Self::Pending,
+            Some(value) if value == "pending" => Self::Pending,
+            Some(_) => Self::Off,
+        }
+    }
+
+    pub fn is_enabled(self) -> bool {
+        matches!(self, Self::Pending)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RiskClass {
@@ -464,6 +517,10 @@ pub enum ThrottleReason {
     CircuitOpen,
     ModeDisabled,
     NoExplicitTrigger,
+    /// Ambient-бюджеты считаются отдельно от диалоговых: иначе два разных
+    /// троттлинга стали бы неразличимы в трассах.
+    AmbientCandidateLimit,
+    AmbientEpisodeLimit,
 }
 
 impl ThrottleReason {
@@ -475,6 +532,8 @@ impl ThrottleReason {
             Self::CircuitOpen => "circuit_open",
             Self::ModeDisabled => "mode_disabled",
             Self::NoExplicitTrigger => "no_explicit_trigger",
+            Self::AmbientCandidateLimit => "ambient_candidate_limit",
+            Self::AmbientEpisodeLimit => "ambient_episode_limit",
         }
     }
 }
@@ -533,6 +592,11 @@ pub struct RawCandidate {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawEvidenceLocator {
+    /// Эпизод постоянного слушания (04.6). Именно он попадает в
+    /// `provenance_source_id`, поэтому удаление эпизода находит и отклоняет
+    /// своих кандидатов по существующему индексу.
+    #[serde(default)]
+    pub episode_id: String,
     #[serde(default)]
     pub message_id: String,
     #[serde(default)]
@@ -551,7 +615,8 @@ pub struct RawEvidenceLocator {
 
 impl RawEvidenceLocator {
     pub fn is_empty(&self) -> bool {
-        self.message_id.trim().is_empty()
+        self.episode_id.trim().is_empty()
+            && self.message_id.trim().is_empty()
             && self.task_id.trim().is_empty()
             && self.tool_call_id.trim().is_empty()
             && self.file_path.trim().is_empty()
@@ -856,6 +921,11 @@ pub struct ExtractionPolicy {
     pub max_statement_chars: usize,
     pub max_output_bytes: usize,
     pub max_tokens_per_hour: u64,
+    /// Ambient-бюджеты живут в той же policy, но своими полями: общий
+    /// часовой лимит диалога речь выбрала бы за минуты.
+    pub max_ambient_candidates_per_hour: usize,
+    pub max_ambient_episodes_per_hour: usize,
+    pub max_ambient_tokens_per_hour: u64,
 }
 
 impl Default for ExtractionPolicy {
@@ -870,6 +940,9 @@ impl Default for ExtractionPolicy {
             max_statement_chars: MAX_STATEMENT_CHARS,
             max_output_bytes: MAX_STRUCTURED_OUTPUT_BYTES,
             max_tokens_per_hour: MAX_EXTRACTION_TOKENS_PER_HOUR,
+            max_ambient_candidates_per_hour: MAX_AMBIENT_CANDIDATES_PER_HOUR,
+            max_ambient_episodes_per_hour: MAX_AMBIENT_EPISODES_PER_HOUR,
+            max_ambient_tokens_per_hour: MAX_AMBIENT_EXTRACTION_TOKENS_PER_HOUR,
         }
     }
 }
@@ -929,6 +1002,8 @@ pub enum PolicyReason {
     ExtractionDisabled,
     NoExplicitTrigger,
     SessionOnly,
+    /// Услышанное никогда не подтверждается само.
+    AmbientNeverAutoConfirms,
 }
 
 impl PolicyReason {
@@ -947,6 +1022,7 @@ impl PolicyReason {
             Self::ExtractionDisabled => "extraction_disabled",
             Self::NoExplicitTrigger => "no_explicit_trigger",
             Self::SessionOnly => "session_only",
+            Self::AmbientNeverAutoConfirms => "ambient_never_auto_confirms",
         }
     }
 }
@@ -987,6 +1063,18 @@ impl TurnContext {
     pub fn open() -> Self {
         Self {
             mode: ExtractionMode::Open,
+            trigger: None,
+            user_asserted: false,
+        }
+    }
+
+    /// Контекст ambient-извлечения: триггером служит закрытие эпизода, а не
+    /// фраза пользователя, поэтому `user_asserted` здесь ложно по
+    /// построению. Подделывать «ход» с ambient-текстом вместо реплики
+    /// пользователя нельзя: это сломало бы смысл `user_asserted`.
+    pub fn ambient(mode: ExtractionMode) -> Self {
+        Self {
+            mode,
             trigger: None,
             user_asserted: false,
         }
@@ -1033,6 +1121,15 @@ pub fn evaluate(
     // Секреты не сохраняются вообще — ни pending, ни confirmed.
     if candidate.privacy == PrivacyLevel::Secret || looks_like_secret(&candidate.statement) {
         return reject(PolicyReason::SecretNeverStored);
+    }
+    // Услышанное не подтверждается автоматически ни при каких значениях
+    // kind/scope/privacy/confidence. Гейт стоит здесь явно, а не выводится
+    // из того, что кандидат «и так упадёт ниже»: единственный путь до
+    // `AutoConfirm` не должен зависеть от порядка не связанных с ambient
+    // проверок. Общий выключатель извлечения при этом старше частного и
+    // проверяется до вызова `evaluate`, в самой ambient-точке входа.
+    if candidate.source_trust.is_ambient() {
+        return pending(PolicyReason::AmbientNeverAutoConfirms);
     }
     if context.mode == ExtractionMode::Disabled && context.trigger.is_none() {
         return reject(PolicyReason::ExtractionDisabled);
@@ -1104,6 +1201,118 @@ pub fn bounded_ttl(candidate: &Candidate) -> u64 {
     } else {
         candidate.suggested_ttl_ms.min(default)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Ambient (04.6)
+// ---------------------------------------------------------------------------
+
+/// Какие kind вообще принимаются из речи.
+///
+/// `constraint` и `decision` отбрасываются до persistence: они влияют на
+/// действия агента, а услышанная в комнате фраза — слишком дешёвое
+/// основание, чтобы ошибиться в них. `session_summary` не принимается по
+/// другой причине: у ambient нет диалоговой сессии, а session-note не
+/// проходит через очередь подтверждения и потому не был бы виден
+/// пользователю до того, как начнёт работать.
+pub fn ambient_kind_allowed(kind: MemoryKind) -> bool {
+    matches!(
+        kind,
+        MemoryKind::Preference | MemoryKind::Entity | MemoryKind::Lesson
+    )
+}
+
+/// Местоимения и обороты, которыми высказывание говорит не о говорящем.
+const THIRD_PARTY_MARKERS: &[&str] = &[
+    "он",
+    "она",
+    "они",
+    "его",
+    "ее",
+    "её",
+    "их",
+    "him",
+    "her",
+    "them",
+    "they",
+    "he",
+    "she",
+    "ему",
+    "ей",
+    "им",
+    "него",
+    "нее",
+    "неё",
+    "них",
+    "сказал",
+    "сказала",
+    "сказали",
+    "говорит",
+    "говорил",
+    "говорила",
+    "просил",
+    "просила",
+    "просят",
+    "обещал",
+    "обещала",
+    "считает",
+    "считают",
+    "said",
+    "says",
+    "told",
+    "asked",
+    "promised",
+    "thinks",
+];
+
+/// Распознан ли в высказывании субъект не в первом лице.
+///
+/// Диаризации и голосового профиля в v1 нет намеренно: голосовой шаблон —
+/// это биометрия, а ошибка диаризации приписала бы пользователю чужое
+/// утверждение. Поэтому вместо «кто это сказал» проверяется «о ком это
+/// сказано», и проверка нарочно перестраховывается: заглавное слово в
+/// середине фразы считается именем. Ложное срабатывание здесь стоит скрытого
+/// тела записи, ложный пропуск — чужого утверждения в памяти пользователя.
+pub fn mentions_third_party(statement: &str) -> bool {
+    let Ok(normalized) = normalize_subject(statement) else {
+        // Нормализовать нечего: решать не по чему, и это не повод считать
+        // высказывание безопасным.
+        return true;
+    };
+    let padded = format!(" {normalized} ");
+    if THIRD_PARTY_MARKERS
+        .iter()
+        .any(|marker| padded.contains(&format!(" {marker} ")))
+    {
+        return true;
+    }
+    // Имя собственное: слово с заглавной буквы не в начале фразы и не после
+    // точки.
+    let mut sentence_start = true;
+    for word in statement.split_whitespace() {
+        let first = word.chars().next();
+        let starts_upper = first.is_some_and(|character| character.is_uppercase());
+        if starts_upper && !sentence_start {
+            return true;
+        }
+        sentence_start = word.ends_with('.') || word.ends_with('!') || word.ends_with('?');
+    }
+    false
+}
+
+/// Поднимает `privacy_class` ambient-кандидата минимум до `sensitive`, если
+/// в высказывании распознан субъект не в первом лице. По существующему коду
+/// это даёт `SensitivePrivacy`, pending и скрытое тело записи. Возвращает
+/// `true`, если класс был поднят.
+pub fn apply_ambient_privacy_floor(candidate: &mut Candidate) -> bool {
+    if candidate.privacy != PrivacyLevel::Normal {
+        return false;
+    }
+    if !mentions_third_party(&candidate.statement) {
+        return false;
+    }
+    candidate.privacy = PrivacyLevel::Sensitive;
+    true
 }
 
 // ---------------------------------------------------------------------------
@@ -1381,6 +1590,10 @@ pub struct ExtractionGuard {
     malformed_timestamps_ms: Vec<u64>,
     breaker_open_until_ms: Option<u64>,
     token_events: Vec<(u64, u64)>,
+    /// Ambient-счётчики отдельные: circuit breaker общий, а бюджеты — нет.
+    ambient_candidate_timestamps_ms: Vec<u64>,
+    ambient_episode_timestamps_ms: Vec<u64>,
+    ambient_token_events: Vec<(u64, u64)>,
 }
 
 impl ExtractionGuard {
@@ -1422,6 +1635,88 @@ impl ExtractionGuard {
             });
         }
         Ok(())
+    }
+
+    /// Можно ли запускать ambient-извлечение сейчас.
+    ///
+    /// Это отдельный гейт, а не ветка `check_can_extract`: та отвергает всё
+    /// без явного триггера в strict-режиме — то есть заблокировала бы
+    /// ambient полностью, потому что триггером ambient служит закрытие
+    /// эпизода, а не фраза пользователя. Circuit breaker переиспользуется
+    /// как есть: malformed output извлекателя одинаково плох в обоих путях.
+    /// Общий выключатель старше частного, поэтому `ExtractionMode::Disabled`
+    /// закрывает и ambient, каким бы ни было `EVOHIME_AMBIENT_MEMORY`.
+    pub fn check_can_extract_ambient(
+        &mut self,
+        ambient: AmbientMemoryMode,
+        mode: ExtractionMode,
+        now_ms: u64,
+        policy: &ExtractionPolicy,
+    ) -> Result<(), ExtractionError> {
+        if mode == ExtractionMode::Disabled || !ambient.is_enabled() {
+            return Err(ExtractionError::Throttled {
+                reason: ThrottleReason::ModeDisabled,
+            });
+        }
+        if self.breaker_is_open(now_ms) {
+            return Err(ExtractionError::Throttled {
+                reason: ThrottleReason::CircuitOpen,
+            });
+        }
+        if self.ambient_tokens_in_last_hour(now_ms) >= policy.max_ambient_tokens_per_hour {
+            return Err(ExtractionError::Throttled {
+                reason: ThrottleReason::TokenBudget,
+            });
+        }
+        Ok(())
+    }
+
+    /// Регистрирует эпизод, отданный в извлечение. Переполнение — отказ без
+    /// очереди: отложенный эпизод к моменту разбора уже мог быть удалён.
+    pub fn register_ambient_episode(
+        &mut self,
+        now_ms: u64,
+        policy: &ExtractionPolicy,
+    ) -> Result<(), ExtractionError> {
+        self.prune(now_ms);
+        if self.ambient_episode_timestamps_ms.len() >= policy.max_ambient_episodes_per_hour {
+            return Err(ExtractionError::Throttled {
+                reason: ThrottleReason::AmbientEpisodeLimit,
+            });
+        }
+        self.ambient_episode_timestamps_ms.push(now_ms);
+        Ok(())
+    }
+
+    /// Регистрирует ambient-кандидата в его собственном часовом лимите.
+    pub fn register_ambient_candidate(
+        &mut self,
+        now_ms: u64,
+        policy: &ExtractionPolicy,
+    ) -> Result<(), ExtractionError> {
+        self.prune(now_ms);
+        if self.ambient_candidate_timestamps_ms.len() >= policy.max_ambient_candidates_per_hour {
+            return Err(ExtractionError::Throttled {
+                reason: ThrottleReason::AmbientCandidateLimit,
+            });
+        }
+        self.ambient_candidate_timestamps_ms.push(now_ms);
+        Ok(())
+    }
+
+    /// Учитывает ambient-токены в их собственном бюджете.
+    pub fn register_ambient_tokens(&mut self, now_ms: u64, tokens: u64) {
+        self.prune(now_ms);
+        self.ambient_token_events.push((now_ms, tokens));
+    }
+
+    pub fn ambient_tokens_in_last_hour(&self, now_ms: u64) -> u64 {
+        let window_start = now_ms.saturating_sub(60 * 60 * 1_000);
+        self.ambient_token_events
+            .iter()
+            .filter(|(at, _)| *at >= window_start)
+            .map(|(_, tokens)| *tokens)
+            .sum()
     }
 
     /// Регистрирует появление кандидата, соблюдая per-turn и hourly лимиты.
@@ -1493,6 +1788,12 @@ impl ExtractionGuard {
         self.candidate_timestamps_ms
             .retain(|at| *at >= window_start);
         self.token_events.retain(|(at, _)| *at >= window_start);
+        self.ambient_candidate_timestamps_ms
+            .retain(|at| *at >= window_start);
+        self.ambient_episode_timestamps_ms
+            .retain(|at| *at >= window_start);
+        self.ambient_token_events
+            .retain(|(at, _)| *at >= window_start);
     }
 }
 
@@ -2299,6 +2600,370 @@ mod tests {
             elapsed < std::time::Duration::from_millis(200),
             "100 full policy passes took {elapsed:?}, budget is 200 ms for one turn"
         );
+    }
+
+    // ---------------------------------------------------------------------
+    // Ambient (04.6)
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn ambient_never_auto_confirms_in_any_combination() {
+        let kinds = [
+            MemoryKind::Preference,
+            MemoryKind::Constraint,
+            MemoryKind::Decision,
+            MemoryKind::Entity,
+            MemoryKind::Lesson,
+            MemoryKind::SessionSummary,
+        ];
+        let scopes = [
+            MemoryScopeLevel::Task,
+            MemoryScopeLevel::Project,
+            MemoryScopeLevel::Workspace,
+            MemoryScopeLevel::Session,
+        ];
+        let privacies = [PrivacyLevel::Normal, PrivacyLevel::Sensitive];
+        let confidences = [0.0, 0.5, 0.85, 0.95, 1.0];
+        let subjects = [
+            CanonicalSubject {
+                value: "язык интерфейса".to_owned(),
+                resolved_via_alias: true,
+                ambiguous: false,
+            },
+            CanonicalSubject {
+                value: "x".to_owned(),
+                resolved_via_alias: false,
+                ambiguous: true,
+            },
+        ];
+        let modes = [
+            ExtractionMode::Strict,
+            ExtractionMode::Open,
+            ExtractionMode::Disabled,
+        ];
+        let policy = ExtractionPolicy::default();
+        let mut checked = 0usize;
+        for kind in kinds {
+            for scope in scopes {
+                for privacy in privacies {
+                    for confidence in confidences {
+                        for subject in &subjects {
+                            for mode in modes {
+                                let candidate = Candidate {
+                                    kind,
+                                    statement: "использовать русский язык в интерфейсе".to_owned(),
+                                    scope,
+                                    canonical_subject: subject.value.clone(),
+                                    raw_subject: subject.value.clone(),
+                                    model_confidence: confidence,
+                                    verification_confidence: 0.0,
+                                    reason: "услышано".to_owned(),
+                                    evidence: RawEvidenceLocator {
+                                        episode_id: "episode-1".to_owned(),
+                                        ..RawEvidenceLocator::default()
+                                    },
+                                    privacy,
+                                    source_trust: SourceTrust::Ambient,
+                                    suggested_ttl_ms: 0,
+                                };
+                                let decision = evaluate(
+                                    &candidate,
+                                    &TurnContext::ambient(mode),
+                                    subject,
+                                    &policy,
+                                );
+                                assert_ne!(
+                                    decision.outcome,
+                                    PolicyOutcome::AutoConfirm,
+                                    "ambient auto-confirmed {kind:?}/{scope:?}/{privacy:?}"
+                                );
+                                assert_ne!(decision.state, ConfirmationState::Confirmed);
+                                checked += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(checked, 6 * 4 * 2 * 5 * 2 * 3);
+    }
+
+    #[test]
+    fn ambient_candidate_stays_pending_even_with_a_user_trigger() {
+        // Явный триггер в диалоге не делает услышанное утверждением
+        // пользователя: источник остаётся ambient.
+        let candidate = Candidate {
+            kind: MemoryKind::Preference,
+            statement: "использовать тёмную тему".to_owned(),
+            scope: MemoryScopeLevel::Workspace,
+            canonical_subject: "тема оформления".to_owned(),
+            raw_subject: "тема оформления".to_owned(),
+            model_confidence: 1.0,
+            verification_confidence: 0.0,
+            reason: "услышано".to_owned(),
+            evidence: RawEvidenceLocator {
+                episode_id: "episode-1".to_owned(),
+                ..RawEvidenceLocator::default()
+            },
+            privacy: PrivacyLevel::Normal,
+            source_trust: SourceTrust::Ambient,
+            suggested_ttl_ms: 0,
+        };
+        let subject = CanonicalSubject {
+            value: "тема оформления".to_owned(),
+            resolved_via_alias: true,
+            ambiguous: false,
+        };
+        let decision = evaluate(
+            &candidate,
+            &TurnContext::strict_with_trigger("запомни"),
+            &subject,
+            &ExtractionPolicy::default(),
+        );
+        assert_eq!(decision.outcome, PolicyOutcome::Pending);
+        assert_eq!(decision.reason, PolicyReason::AmbientNeverAutoConfirms);
+    }
+
+    #[test]
+    fn ambient_secret_is_still_rejected_before_the_ambient_gate() {
+        let candidate = Candidate {
+            kind: MemoryKind::Entity,
+            statement: "ключ sk-abcdef".to_owned(),
+            scope: MemoryScopeLevel::Workspace,
+            canonical_subject: "ключ".to_owned(),
+            raw_subject: "ключ".to_owned(),
+            model_confidence: 0.9,
+            verification_confidence: 0.0,
+            reason: "услышано".to_owned(),
+            evidence: RawEvidenceLocator {
+                episode_id: "episode-1".to_owned(),
+                ..RawEvidenceLocator::default()
+            },
+            privacy: PrivacyLevel::Normal,
+            source_trust: SourceTrust::Ambient,
+            suggested_ttl_ms: 0,
+        };
+        let subject = CanonicalSubject {
+            value: "ключ".to_owned(),
+            resolved_via_alias: false,
+            ambiguous: false,
+        };
+        let decision = evaluate(
+            &candidate,
+            &TurnContext::ambient(ExtractionMode::Strict),
+            &subject,
+            &ExtractionPolicy::default(),
+        );
+        assert_eq!(decision.outcome, PolicyOutcome::Reject);
+        assert_eq!(decision.reason, PolicyReason::SecretNeverStored);
+    }
+
+    #[test]
+    fn ambient_mode_defaults_to_pending_and_fails_safe_on_garbage() {
+        assert_eq!(AmbientMemoryMode::parse(None), AmbientMemoryMode::Pending);
+        assert_eq!(
+            AmbientMemoryMode::parse(Some(" PENDING ")),
+            AmbientMemoryMode::Pending
+        );
+        assert_eq!(
+            AmbientMemoryMode::parse(Some("off")),
+            AmbientMemoryMode::Off
+        );
+        // Аналога `open` у ambient нет: он не «почти pending», а мусор.
+        assert_eq!(
+            AmbientMemoryMode::parse(Some("open")),
+            AmbientMemoryMode::Off
+        );
+        assert_eq!(AmbientMemoryMode::parse(Some("да")), AmbientMemoryMode::Off);
+    }
+
+    #[test]
+    fn ambient_runs_in_strict_mode_although_the_dialog_gate_would_refuse_it() {
+        let policy = ExtractionPolicy::default();
+        let mut guard = ExtractionGuard::new();
+        // Диалоговый гейт отвергает всё без триггера в strict-режиме...
+        assert_eq!(
+            guard.check_can_extract(ExtractionMode::Strict, None, 0, &policy),
+            Err(ExtractionError::Throttled {
+                reason: ThrottleReason::NoExplicitTrigger
+            })
+        );
+        // ...а ambient-гейт триггера не ждёт: им служит закрытие эпизода.
+        assert!(guard
+            .check_can_extract_ambient(
+                AmbientMemoryMode::Pending,
+                ExtractionMode::Strict,
+                0,
+                &policy
+            )
+            .is_ok());
+    }
+
+    #[test]
+    fn general_switch_outranks_the_ambient_one() {
+        let policy = ExtractionPolicy::default();
+        let mut guard = ExtractionGuard::new();
+        assert_eq!(
+            guard.check_can_extract_ambient(
+                AmbientMemoryMode::Pending,
+                ExtractionMode::Disabled,
+                0,
+                &policy
+            ),
+            Err(ExtractionError::Throttled {
+                reason: ThrottleReason::ModeDisabled
+            })
+        );
+        assert_eq!(
+            guard.check_can_extract_ambient(
+                AmbientMemoryMode::Off,
+                ExtractionMode::Strict,
+                0,
+                &policy
+            ),
+            Err(ExtractionError::Throttled {
+                reason: ThrottleReason::ModeDisabled
+            })
+        );
+    }
+
+    #[test]
+    fn ambient_budgets_are_counted_apart_from_the_dialog_ones() {
+        let policy = ExtractionPolicy::default();
+        let mut guard = ExtractionGuard::new();
+        for _ in 0..policy.max_ambient_candidates_per_hour {
+            assert!(guard.register_ambient_candidate(1_000, &policy).is_ok());
+        }
+        assert_eq!(
+            guard.register_ambient_candidate(1_000, &policy),
+            Err(ExtractionError::Throttled {
+                reason: ThrottleReason::AmbientCandidateLimit
+            })
+        );
+        for _ in 0..policy.max_ambient_episodes_per_hour {
+            assert!(guard.register_ambient_episode(1_000, &policy).is_ok());
+        }
+        assert_eq!(
+            guard.register_ambient_episode(1_000, &policy),
+            Err(ExtractionError::Throttled {
+                reason: ThrottleReason::AmbientEpisodeLimit
+            })
+        );
+        // Диалоговый путь этих трат не заметил: у него свой счётчик и своя
+        // причина отказа.
+        guard.begin_turn();
+        assert!(guard.register_candidate(1_000, &policy).is_ok());
+        // Свой бюджет токенов: ambient не тратит часовой бюджет диалога.
+        guard.register_ambient_tokens(1_000, policy.max_ambient_tokens_per_hour);
+        assert_eq!(
+            guard.check_can_extract_ambient(
+                AmbientMemoryMode::Pending,
+                ExtractionMode::Strict,
+                1_000,
+                &policy
+            ),
+            Err(ExtractionError::Throttled {
+                reason: ThrottleReason::TokenBudget
+            })
+        );
+        assert!(guard
+            .check_can_extract(
+                ExtractionMode::Strict,
+                Some(&TriggerMatch {
+                    keyword: "запомни"
+                }),
+                1_000,
+                &policy
+            )
+            .is_ok());
+    }
+
+    #[test]
+    fn constraint_and_decision_never_come_from_ambient() {
+        assert!(!ambient_kind_allowed(MemoryKind::Constraint));
+        assert!(!ambient_kind_allowed(MemoryKind::Decision));
+        // session_summary тоже не принимается: у речи нет диалоговой сессии,
+        // а session-note не проходит через очередь подтверждения.
+        assert!(!ambient_kind_allowed(MemoryKind::SessionSummary));
+        assert!(ambient_kind_allowed(MemoryKind::Preference));
+        assert!(ambient_kind_allowed(MemoryKind::Entity));
+        assert!(ambient_kind_allowed(MemoryKind::Lesson));
+    }
+
+    #[test]
+    fn a_third_person_statement_is_raised_to_sensitive_and_stays_pending() {
+        let mut candidate = Candidate {
+            kind: MemoryKind::Entity,
+            statement: "она просила присылать отчёты по понедельникам".to_owned(),
+            scope: MemoryScopeLevel::Workspace,
+            canonical_subject: "отчёты".to_owned(),
+            raw_subject: "отчёты".to_owned(),
+            model_confidence: 1.0,
+            verification_confidence: 0.0,
+            reason: "услышано".to_owned(),
+            evidence: RawEvidenceLocator {
+                episode_id: "episode-1".to_owned(),
+                ..RawEvidenceLocator::default()
+            },
+            privacy: PrivacyLevel::Normal,
+            source_trust: SourceTrust::Ambient,
+            suggested_ttl_ms: 0,
+        };
+        assert!(apply_ambient_privacy_floor(&mut candidate));
+        assert_eq!(candidate.privacy, PrivacyLevel::Sensitive);
+        assert!(candidate.privacy.redacts_body_by_default());
+        let subject = CanonicalSubject {
+            value: "отчёты".to_owned(),
+            resolved_via_alias: true,
+            ambiguous: false,
+        };
+        let decision = evaluate(
+            &candidate,
+            &TurnContext::ambient(ExtractionMode::Strict),
+            &subject,
+            &ExtractionPolicy::default(),
+        );
+        assert_eq!(decision.outcome, PolicyOutcome::Pending);
+        assert_eq!(decision.risk, RiskClass::High);
+
+        // Утверждение от первого лица класс не поднимает.
+        let mut plain = candidate.clone();
+        plain.statement = "предпочитаю тёмную тему".to_owned();
+        plain.privacy = PrivacyLevel::Normal;
+        assert!(!apply_ambient_privacy_floor(&mut plain));
+        assert_eq!(plain.privacy, PrivacyLevel::Normal);
+    }
+
+    #[test]
+    fn third_party_detection_covers_pronouns_and_names() {
+        assert!(mentions_third_party("он сказал, что сборка сломана"));
+        assert!(mentions_third_party("Это просил передать Андрей"));
+        assert!(!mentions_third_party("Хочу отчёты по понедельникам"));
+    }
+
+    #[test]
+    fn ambient_locator_carries_the_episode_and_reaches_provenance() {
+        let mut raw = raw("preference", "workspace", "ambient", 0.9);
+        raw.evidence_locator = RawEvidenceLocator {
+            episode_id: "episode-42".to_owned(),
+            ..RawEvidenceLocator::default()
+        };
+        // Локатор с одним эпизодом — не пустой: иначе ambient-кандидат не
+        // прошёл бы валидацию вовсе.
+        assert!(!raw.evidence_locator.is_empty());
+        let (candidate, _) = candidate(&raw);
+        assert_eq!(candidate.source_trust, SourceTrust::Ambient);
+        assert!(candidate.source_trust.requires_validation());
+        assert!(!candidate.source_trust.can_ground_strict_save());
+        assert_eq!(candidate.evidence.episode_id, "episode-42");
+        // Хеш текста для ambient пуст: по правилу 04.1 хеш короткой фразы
+        // приравнивается к её содержимому.
+        assert!(candidate.evidence.content_hash.is_empty());
+        let json = candidate
+            .evidence
+            .to_provenance_json()
+            .expect("locator serialises");
+        assert!(json.contains("episode-42"));
     }
 
     #[test]

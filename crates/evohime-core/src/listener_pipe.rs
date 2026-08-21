@@ -21,6 +21,19 @@ use tokio::net::windows::named_pipe::ServerOptions;
 /// начнёт ждать. Команд здесь единицы — это защита от утечки, а не буфер.
 const CONTROL_QUEUE: usize = 16;
 
+/// Сколько тишины считается концом эпизода.
+///
+/// Сообщения «эпизод кончился» в протоколе листенера нет: он присылает
+/// высказывания и флаг продолжения. Границу поэтому проводит Core — по началу
+/// нового эпизода, по этой паузе и по разрыву связи. Без такой границы
+/// закрытие эпизода никогда бы не наступило, а вместе с ним не наступило бы и
+/// ambient-извлечение, для которого оно и есть триггер.
+const EPISODE_IDLE_MS: u64 = 60_000;
+
+/// Как часто проверяется тишина. Ветка срабатывает только тогда, когда за это
+/// время не пришло ни кадра, — то есть ровно в тишине.
+const IDLE_POLL_SECONDS: u64 = 20;
+
 pub async fn run_windows_listener_pipe(
     context: evohime_desktop_ipc::session::LaunchContext,
     bridge: Arc<IpcBridge>,
@@ -106,7 +119,10 @@ pub async fn run_windows_listener_pipe(
         // нечем: `engine_version` эпизода — это то, чем он реально распознан,
         // а не заглушка.
         let mut engine_version = String::new();
-        let mut open_episodes: std::collections::HashSet<String> = std::collections::HashSet::new();
+        // Эпизод -> время последнего высказывания: по нему и определяется
+        // тишина, закрывающая эпизод.
+        let mut open_episodes: std::collections::HashMap<String, u64> =
+            std::collections::HashMap::new();
         loop {
             tokio::select! {
                 message = read_frame(&mut server) => {
@@ -186,8 +202,19 @@ pub async fn run_windows_listener_pipe(
                             let policy = crate::ambient::load_policy(&data_dir);
                             let journal = bridge.journal();
                             if !utterance.continued
-                                && open_episodes.insert(utterance.episode_id.clone())
+                                && !open_episodes.contains_key(&utterance.episode_id)
                             {
+                                // Начался новый эпизод — значит прежние
+                                // кончились. Закрываются они здесь, а не
+                                // молча забываются: закрытие и есть триггер
+                                // ambient-извлечения.
+                                let previous =
+                                    open_episodes.keys().cloned().collect::<Vec<_>>();
+                                for episode_id in previous {
+                                    open_episodes.remove(&episode_id);
+                                    close_episode(&bridge, &episode_id, utterance.started_at_ms)
+                                        .await;
+                                }
                                 let _ = journal
                                     .open_ambient_episode(
                                         &utterance.episode_id,
@@ -197,6 +224,13 @@ pub async fn run_windows_listener_pipe(
                                         utterance.started_at_ms,
                                     )
                                     .await;
+                                open_episodes.insert(
+                                    utterance.episode_id.clone(),
+                                    utterance.started_at_ms,
+                                );
+                            }
+                            if let Some(last) = open_episodes.get_mut(&utterance.episode_id) {
+                                *last = utterance.started_at_ms;
                             }
                             // Идентификатор высказывания строится из эпизода и
                             // его порядкового номера: время старта одного кадра
@@ -256,7 +290,28 @@ pub async fn run_windows_listener_pipe(
                         break;
                     }
                 }
+                _ = tokio::time::sleep(std::time::Duration::from_secs(IDLE_POLL_SECONDS)),
+                    if !open_episodes.is_empty() => {
+                    let now = now_ms();
+                    let idle = open_episodes
+                        .iter()
+                        .filter(|(_, last)| now.saturating_sub(**last) >= EPISODE_IDLE_MS)
+                        .map(|(episode_id, _)| episode_id.clone())
+                        .collect::<Vec<_>>();
+                    for episode_id in idle {
+                        open_episodes.remove(&episode_id);
+                        close_episode(&bridge, &episode_id, now).await;
+                    }
+                }
             }
+        }
+
+        // Связь потеряна: продолжения у открытых эпизодов не будет, и
+        // оставлять их незакрытыми значило бы потерять их для извлечения.
+        let now = now_ms();
+        for episode_id in open_episodes.keys().cloned().collect::<Vec<_>>() {
+            open_episodes.remove(&episode_id);
+            close_episode(&bridge, &episode_id, now).await;
         }
 
         // Связь потеряна. Реестр не имеет права остаться на «слушаю»: это
@@ -277,6 +332,19 @@ pub async fn run_windows_listener_pipe(
             serde_json::json!({"role":"listener"}),
         );
     }
+}
+
+/// Закрывает эпизод и отдаёт его в ambient-извлечение (04.6).
+///
+/// Порядок важен: сначала эпизод получает `ended_at`, и только потом его
+/// разбирают. Решает ли Core вообще что-то извлекать — вопрос режимов и
+/// бюджетов, и он решается там, а не здесь.
+async fn close_episode(bridge: &IpcBridge, episode_id: &str, now_ms: u64) {
+    let _ = bridge
+        .journal()
+        .close_ambient_episode(episode_id, now_ms)
+        .await;
+    bridge.request_ambient_extraction(episode_id).await;
 }
 
 /// Собирает `PolicyUpdate` из политики 04.1 и намерения пользователя.

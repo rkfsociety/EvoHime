@@ -148,6 +148,53 @@ describe('operations panel', () => {
     expect(payload.sessionId.length).toBeGreaterThan(0)
   })
 
+  it('marks an ambient candidate as heard and says the speaker is unverified', async () => {
+    render(
+      <OperationsPanel
+        connection="connected"
+        events={[
+          event('memory.pending', {
+            records: [metadata('cand-5', { source_trust: 'ambient', validation_status: 'unknown' })],
+            counts: { pending_confirmation: 1 }
+          })
+        ]}
+      />
+    )
+    expect(await screen.findByText('услышано')).toBeTruthy()
+    expect(screen.getByText(/говорящий не подтверждён/)).toBeTruthy()
+  })
+
+  it('filters the queue by source without confirming anything hidden', async () => {
+    render(
+      <OperationsPanel
+        connection="connected"
+        events={[
+          event('memory.pending', {
+            records: [
+              metadata('cand-dialog'),
+              metadata('cand-ambient', { source_trust: 'ambient', kind: 'entity' })
+            ],
+            counts: { pending_confirmation: 2 }
+          })
+        ]}
+      />
+    )
+    // Выбираем услышанного кандидата, затем прячем его фильтром: скрытая
+    // строка не должна уехать в подтверждение вместе с видимыми.
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'факт' }))
+    await userEvent.selectOptions(screen.getByLabelText('Источник'), 'dialog')
+    expect(screen.queryByRole('checkbox', { name: 'факт' })).toBeNull()
+    expect(screen.getByRole('checkbox', { name: 'предпочтение' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Сохранить выбранные' })).toHaveProperty(
+      'disabled',
+      true
+    )
+
+    await userEvent.selectOptions(screen.getByLabelText('Источник'), 'ambient')
+    expect(screen.queryByRole('checkbox', { name: 'предпочтение' })).toBeNull()
+    expect(screen.getByRole('checkbox', { name: 'факт' })).toBeTruthy()
+  })
+
   it('resolves a conflict only through an explicit supersede', async () => {
     render(
       <OperationsPanel

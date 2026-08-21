@@ -1178,6 +1178,12 @@ pub enum CoreCommand {
     StopTask {
         task_id: String,
     },
+    /// Эпизод постоянного слушания закрылся: разобрать его в кандидатов
+    /// памяти (04.6). Ответа нет намеренно — извлечение идёт после того, как
+    /// эпизод уже закрыт, и не должно никого ждать.
+    ExtractAmbientMemory {
+        episode_id: String,
+    },
     ResolveRoutingDecision {
         trace_id: String,
         approve: bool,
@@ -4033,6 +4039,17 @@ pub trait TaskExecutor: Send + Sync {
         let _ = preferred_route_hint;
         self.execute_in_workspace(task_id, prompt, workspace_root, cancellation, events)
     }
+
+    /// Ambient-извлечение по закрытому эпизоду (04.6).
+    ///
+    /// Отдельный вход, а не задача: у эпизода нет ни промпта, ни воркспейса,
+    /// ни отменяемого хода, и притворяться, будто есть, значило бы сломать
+    /// смысл `user_asserted` в policy. Исполнитель без модели ничего не
+    /// делает — это не ошибка, а отсутствие извлекателя.
+    fn extract_ambient_memory(&self, episode_id: String) -> BoxFuture<'static, ()> {
+        let _ = episode_id;
+        Box::pin(async {})
+    }
 }
 
 pub struct ModelAgent {
@@ -5011,6 +5028,320 @@ impl ToolAgent {
         }
     }
 
+    /// Runs bounded memory extraction for one closed ambient episode (04.6).
+    ///
+    /// This is a separate entry point on purpose. `run_memory_extraction`
+    /// takes the pair (user prompt, assistant reply) of one finished turn, and
+    /// passing heard speech as the user's half would quietly turn
+    /// `user_asserted` into a lie. The policy gate below is the same one; only
+    /// the way into it is different, and it is strictly stricter: an ambient
+    /// candidate can never auto-confirm.
+    async fn run_ambient_memory_extraction(&self, episode_id: &str) {
+        use crate::memory_extraction as extraction;
+
+        let Some(journal) = &self.journal else {
+            return;
+        };
+        if episode_id.trim().is_empty() {
+            return;
+        }
+        // The general switch outranks the specific one: with extraction off
+        // entirely, ambient does not run at all, whatever
+        // `EVOHIME_AMBIENT_MEMORY` says. This is checked here, before
+        // `evaluate`, because the ambient gate inside `evaluate` stands above
+        // the `ExtractionDisabled` branch and would otherwise let it through.
+        let mode = memory_extraction_mode();
+        let ambient_mode = ambient_memory_mode();
+        let policy = extraction::ExtractionPolicy::default();
+        let now_ms = task_memory::now_millis();
+        {
+            let mut guard = self.extraction_guard.lock().await;
+            if let Err(error) = guard.check_can_extract_ambient(ambient_mode, mode, now_ms, &policy)
+            {
+                write_model_trace(
+                    "memory.ambient.skipped",
+                    serde_json::json!({
+                        "episode_id": episode_id,
+                        "mode": mode.as_str(),
+                        "ambient_mode": ambient_mode.as_str(),
+                        "reason": error.to_string(),
+                    }),
+                );
+                return;
+            }
+            if let Err(error) = guard.register_ambient_episode(now_ms, &policy) {
+                write_model_trace(
+                    "memory.ambient.skipped",
+                    serde_json::json!({
+                        "episode_id": episode_id,
+                        "reason": error.to_string(),
+                    }),
+                );
+                drop(guard);
+                let _ = journal
+                    .set_ambient_extraction_state(
+                        episode_id,
+                        evohime_listener_contract::ExtractionState::Failed,
+                    )
+                    .await;
+                return;
+            }
+        }
+        let _ = journal
+            .set_ambient_extraction_state(
+                episode_id,
+                evohime_listener_contract::ExtractionState::Pending,
+            )
+            .await;
+
+        let Some(context) = self.ambient_episode_context(episode_id).await else {
+            // An empty or fully redacted episode has nothing to extract; that
+            // is a finished episode, not a failed one.
+            let _ = journal
+                .set_ambient_extraction_state(
+                    episode_id,
+                    evohime_listener_contract::ExtractionState::Done,
+                )
+                .await;
+            return;
+        };
+
+        let mut aliases = extraction::AliasTable::new();
+        if let Ok(registered) = journal
+            .list_memory_aliases(
+                evohime_local_storage::memory_store::MemoryScope::Workspace,
+                AMBIENT_MEMORY_SCOPE_ID,
+            )
+            .await
+        {
+            for (alias, entity_id) in registered {
+                let _ = aliases.register(&alias, &entity_id);
+            }
+        }
+
+        let Some(raw_output) = self
+            .call_extractor(episode_id, AMBIENT_MEMORY_EXTRACTION_PROMPT, context, true)
+            .await
+        else {
+            let _ = journal
+                .set_ambient_extraction_state(
+                    episode_id,
+                    evohime_listener_contract::ExtractionState::Failed,
+                )
+                .await;
+            return;
+        };
+        let candidates = match extraction::parse_extraction(&raw_output, &policy) {
+            Ok(candidates) => candidates,
+            Err(error) => {
+                // The breaker is shared with the dialog path: a malformed
+                // extractor is equally broken whichever text it was given.
+                self.extraction_guard
+                    .lock()
+                    .await
+                    .register_malformed(now_ms);
+                write_model_trace(
+                    "memory.ambient.rejected",
+                    serde_json::json!({
+                        "episode_id": episode_id,
+                        "reason": error.to_string(),
+                    }),
+                );
+                let _ = journal
+                    .set_ambient_extraction_state(
+                        episode_id,
+                        evohime_listener_contract::ExtractionState::Failed,
+                    )
+                    .await;
+                return;
+            }
+        };
+
+        for raw in &candidates {
+            let Ok((mut candidate, subject)) =
+                extraction::validate_candidate(raw, &aliases, &policy)
+            else {
+                continue;
+            };
+            // Trust is decided by where the text came from, not by what the
+            // model claims about itself.
+            candidate.source_trust = extraction::SourceTrust::Ambient;
+            // The locator is rebuilt rather than trusted: the episode is the
+            // only provenance heard speech has, and `content_hash` stays empty
+            // because the hash of a short phrase is the phrase (04.1).
+            candidate.evidence = extraction::RawEvidenceLocator {
+                episode_id: episode_id.to_owned(),
+                ..extraction::RawEvidenceLocator::default()
+            };
+            // Speech at the desk belongs to no repository, so claiming a
+            // project or task scope for it would be an invention.
+            candidate.scope = extraction::MemoryScopeLevel::Workspace;
+            if !extraction::ambient_kind_allowed(candidate.kind) {
+                write_model_trace(
+                    "memory.ambient.rejected",
+                    serde_json::json!({
+                        "episode_id": episode_id,
+                        "kind": candidate.kind.as_str(),
+                        "reason": "kind_not_allowed_from_ambient",
+                    }),
+                );
+                continue;
+            }
+            let raised = extraction::apply_ambient_privacy_floor(&mut candidate);
+            if self
+                .extraction_guard
+                .lock()
+                .await
+                .register_ambient_candidate(now_ms, &policy)
+                .is_err()
+            {
+                break;
+            }
+            let context = extraction::TurnContext::ambient(mode);
+            let mut decision = extraction::evaluate(&candidate, &context, &subject, &policy);
+            if decision.outcome == extraction::PolicyOutcome::Reject {
+                write_model_trace(
+                    "memory.ambient.rejected",
+                    serde_json::json!({
+                        "episode_id": episode_id,
+                        "kind": candidate.kind.as_str(),
+                        "reason": decision.reason.as_str(),
+                    }),
+                );
+                continue;
+            }
+            // Belt and braces: `evaluate` cannot return `AutoConfirm` for an
+            // ambient candidate, and if it ever did, persistence would still
+            // not be the place to find out.
+            if decision.outcome == extraction::PolicyOutcome::AutoConfirm {
+                decision.outcome = extraction::PolicyOutcome::Pending;
+                decision.state = extraction::ConfirmationState::PendingConfirmation;
+                decision.reason = extraction::PolicyReason::AmbientNeverAutoConfirms;
+            }
+
+            let store_scope = evohime_local_storage::memory_store::MemoryScope::Workspace;
+            let active = journal
+                .memory_conflict_candidates(
+                    store_scope,
+                    AMBIENT_MEMORY_SCOPE_ID,
+                    candidate.kind.as_str(),
+                    100,
+                )
+                .await
+                .unwrap_or_default();
+            let summaries = active
+                .iter()
+                .filter_map(memory_active_summary)
+                .collect::<Vec<_>>();
+            if let extraction::ConflictVerdict::Duplicate { .. } =
+                extraction::detect_conflict(&candidate, &summaries)
+            {
+                write_model_trace(
+                    "memory.ambient.duplicate",
+                    serde_json::json!({
+                        "episode_id": episode_id,
+                        "subject": candidate.canonical_subject,
+                    }),
+                );
+                continue;
+            }
+
+            let Ok(provenance) = candidate.evidence.to_provenance_json() else {
+                continue;
+            };
+            let Ok(mut record) = evohime_local_storage::memory_store::MemoryRecord::new(
+                uuid::Uuid::new_v4().to_string(),
+                store_scope,
+                AMBIENT_MEMORY_SCOPE_ID,
+                candidate.raw_subject.clone(),
+                candidate.statement.clone(),
+                provenance,
+                evohime_local_storage::memory_store::MemoryPrivacy::Private,
+                now_ms.to_string(),
+                Some(now_ms.saturating_add(decision.ttl_ms).to_string()),
+            ) else {
+                continue;
+            };
+            record.extraction = evohime_local_storage::memory_store::MemoryExtractionFields {
+                kind: candidate.kind.as_str().to_owned(),
+                canonical_subject: Some(candidate.canonical_subject.clone()),
+                confirmation_state: decision.state.as_str().to_owned(),
+                model_confidence: candidate.model_confidence,
+                verification_confidence: 0.0,
+                privacy_class: candidate.privacy.as_str().to_owned(),
+                source_trust: candidate.source_trust.as_str().to_owned(),
+                supersedes: None,
+                superseded_by: None,
+                supersession_reason: None,
+                extractor_version: decision.extractor_version.to_owned(),
+                policy_version: decision.policy_version.to_owned(),
+                // Heard speech has no validator: no file to re-read, no tool
+                // call to replay, and no verified speaker. `unknown` is the
+                // honest answer, and it keeps the record out of retrieval.
+                validation_status: extraction::ValidationStatus::Unknown.as_str().to_owned(),
+                validated_at: None,
+                provenance_source_id: memory_provenance_source_id(&candidate.evidence),
+            };
+            if let Err(error) = journal.save_memory(&record).await {
+                write_model_trace(
+                    "memory.ambient.rejected",
+                    serde_json::json!({ "episode_id": episode_id, "reason": error }),
+                );
+                continue;
+            }
+            write_model_trace(
+                "memory.ambient.candidate",
+                serde_json::json!({
+                    "episode_id": episode_id,
+                    "memory_id": record.id,
+                    "kind": candidate.kind.as_str(),
+                    "state": decision.state.as_str(),
+                    "risk": decision.risk.as_str(),
+                    "reason": decision.reason.as_str(),
+                    "privacy_raised": raised,
+                    "policy_version": decision.policy_version,
+                    "extractor_version": decision.extractor_version,
+                }),
+            );
+        }
+        let _ = journal
+            .set_ambient_extraction_state(
+                episode_id,
+                evohime_listener_contract::ExtractionState::Done,
+            )
+            .await;
+    }
+
+    /// Builds the bounded extractor context of one episode.
+    ///
+    /// Redacted utterances are skipped rather than sent as holes: a record
+    /// that the policy already withheld must not reach the extractor through
+    /// the back door. `None` means there is nothing to extract from.
+    async fn ambient_episode_context(&self, episode_id: &str) -> Option<String> {
+        use crate::memory_extraction as extraction;
+
+        let journal = self.journal.as_ref()?;
+        let records = journal
+            .list_ambient_utterances(episode_id, 500)
+            .await
+            .ok()?;
+        let text = records
+            .iter()
+            .filter(|record| !record.redacted)
+            .map(|record| record.text.trim())
+            .filter(|text| !text.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
+        if text.trim().is_empty() {
+            return None;
+        }
+        let budget_chars = extraction::MAX_CONTEXT_TOKENS * 4;
+        Some(truncate_chars(
+            &format!("Эпизод {episode_id}. Услышанная речь:\n{text}"),
+            budget_chars,
+        ))
+    }
+
     /// Runs the verification hook for one candidate and returns the verdict
     /// the versioned verification policy produced. A timeout, an unreadable
     /// file or a missing validator yields `unknown`, which keeps the record
@@ -5095,8 +5426,24 @@ impl ToolAgent {
             &format!("Пользователь: {user_prompt}\nАгент: {assistant_reply}"),
             budget_chars,
         );
+        self.call_extractor(task_id, MEMORY_EXTRACTION_PROMPT, context, false)
+            .await
+    }
+
+    /// The shared half of both extractor calls. `ambient` selects which
+    /// hourly token budget the spent tokens are charged to: ambient has its
+    /// own, so a talkative room cannot eat the dialog budget.
+    async fn call_extractor(
+        &self,
+        task_id: &str,
+        system_prompt: &str,
+        context: String,
+        ambient: bool,
+    ) -> Option<String> {
+        use crate::memory_extraction as extraction;
+
         let messages = vec![
-            ChatMessage::text(ChatRole::System, MEMORY_EXTRACTION_PROMPT.to_string()),
+            ChatMessage::text(ChatRole::System, system_prompt.to_string()),
             ChatMessage::text(ChatRole::User, context),
         ];
         let model = std::env::var("EVOHIME_MEMORY_EXTRACTION_MODEL")
@@ -5134,10 +5481,17 @@ impl ToolAgent {
                     let tokens = (context_token_estimate(&messages)
                         + result.content.chars().count().div_ceil(4))
                         as u64;
-                    self.extraction_guard
-                        .lock()
-                        .await
-                        .register_tokens(task_memory::now_millis(), tokens);
+                    let now_ms = task_memory::now_millis();
+                    let mut guard = self.extraction_guard.lock().await;
+                    // Ambient tokens are charged to their own hourly
+                    // budget: a talkative room must not spend the budget
+                    // the dialog path lives on.
+                    if ambient {
+                        guard.register_ambient_tokens(now_ms, tokens);
+                    } else {
+                        guard.register_tokens(now_ms, tokens);
+                    }
+                    drop(guard);
                     return Some(result.content);
                 }
                 Ok(Err(error)) => {
@@ -6907,6 +7261,25 @@ impl TaskExecutor for ToolAgent {
                 .await
         })
     }
+
+    fn extract_ambient_memory(&self, episode_id: String) -> BoxFuture<'static, ()> {
+        let agent = Self {
+            gateway: Arc::clone(&self.gateway),
+            tools: Arc::clone(&self.tools),
+            max_iterations: self.max_iterations,
+            approvals: self.approvals.clone(),
+            routing_approvals: self.routing_approvals.clone(),
+            journal: self.journal.clone(),
+            selected_model: self.selected_model.clone(),
+            receipt_keys: self.receipt_keys.clone(),
+            // Shared, not cloned: the ambient budgets and the malformed
+            // breaker are hourly and have to hold across episodes.
+            extraction_guard: Arc::clone(&self.extraction_guard),
+        };
+        Box::pin(async move {
+            agent.run_ambient_memory_extraction(&episode_id).await;
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -7386,6 +7759,17 @@ impl TaskCoordinator {
                         let _ = reply.send(Err(error));
                     }
                 }
+            }
+            CoreCommand::ExtractAmbientMemory { episode_id } => {
+                let executor = state.lock().await.executor.clone();
+                let Some(executor) = executor else {
+                    return;
+                };
+                // Извлечение не держит очередь команд: эпизод уже закрыт, и
+                // ждать его разбора некому.
+                tokio::spawn(async move {
+                    executor.extract_ambient_memory(episode_id).await;
+                });
             }
             CoreCommand::StopTask { task_id } => {
                 let mut state_guard = state.lock().await;
@@ -8960,9 +9344,37 @@ impl TaskCoordinator {
                             limit,
                         )
                         .await?;
-                    let counts = journal
+                    let mut counts = journal
                         .count_memory_by_state(store_scope, &scope_id)
                         .await?
+                        .into_iter()
+                        .collect::<std::collections::BTreeMap<String, i64>>();
+                    let mut pending = pending;
+                    // Услышанное живёт в своём scope: речь у стола не
+                    // принадлежит рабочему каталогу. Но очередь подтверждения
+                    // у пользователя одна, и прятать ambient-кандидатов от
+                    // неё значило бы, что подтвердить их негде.
+                    let ambient_scope = evohime_local_storage::memory_store::MemoryScope::Workspace;
+                    if !(store_scope == ambient_scope && scope_id == AMBIENT_MEMORY_SCOPE_ID) {
+                        pending.extend(
+                            journal
+                                .list_memory_by_state(
+                                    ambient_scope,
+                                    AMBIENT_MEMORY_SCOPE_ID,
+                                    crate::memory_extraction::ConfirmationState::PendingConfirmation
+                                        .as_str(),
+                                    limit,
+                                )
+                                .await?,
+                        );
+                        for (state, count) in journal
+                            .count_memory_by_state(ambient_scope, AMBIENT_MEMORY_SCOPE_ID)
+                            .await?
+                        {
+                            *counts.entry(state).or_insert(0) += count;
+                        }
+                    }
+                    let counts = counts
                         .into_iter()
                         .map(|(state, count)| (state, serde_json::json!(count)))
                         .collect::<serde_json::Map<_, _>>();
@@ -10507,6 +10919,42 @@ const MEMORY_EXTRACTION_PROMPT: &str = "\
 токены, ключи и другие секреты. Неизвестные поля запрещены. Если запоминать \
 нечего — верни {\"candidates\":[]}.";
 
+/// System prompt of the ambient extractor (04.6). It differs from the dialog
+/// one in what it may propose at all: `constraint` and `decision` are refused
+/// outright, and the evidence locator carries the episode instead of a
+/// message. `source_trust` is not negotiable either — Core overwrites it with
+/// `ambient` regardless of what the model claims.
+const AMBIENT_MEMORY_EXTRACTION_PROMPT: &str = "\
+Ты — извлекатель кандидатов в память из расшифровки услышанной речи. \
+Говорящий НЕ подтверждён: это может быть не пользователь. Ты НЕ решаешь, \
+что запомнить: решение принимает policy на стороне Core. Верни ТОЛЬКО \
+JSON вида {\"candidates\":[...]} без markdown и пояснений. Каждый \
+кандидат: {\"kind\":\"preference|entity|lesson\",\"statement\":\"...\", \
+\"scope\":\"workspace\",\"canonical_subject\":\"...\", \
+\"model_confidence\":0.0..1.0,\"verification_confidence\":0.0, \
+\"reason\":\"...\",\"evidence_locator\":{\"episode_id\":\"<эпизод>\"}, \
+\"privacy\":\"normal|sensitive\",\"source_trust\":\"ambient\", \
+\"suggested_ttl_ms\":0}. Не предлагай ограничений и решений: такие kind \
+запрещены. Не более 5 кандидатов. Никогда не включай пароли, токены, ключи \
+и другие секреты. Неизвестные поля запрещены. Если запоминать нечего — \
+верни {\"candidates\":[]}.";
+
+/// Scope id under which ambient candidates live.
+///
+/// Речь у стола не принадлежит ни одному репозиторию, поэтому привязывать её
+/// к рабочему каталогу было бы выдумкой. Собственный scope делает связь
+/// честной, а очередь подтверждения дополняется ambient-кандидатами явно, а
+/// не тем, что они притворились записями текущего воркспейса.
+pub const AMBIENT_MEMORY_SCOPE_ID: &str = "ambient";
+
+/// Ambient extraction mode for this process. Отсутствие переменной — это
+/// `pending`; мусор в ней — `off`, а не молчаливое включение.
+fn ambient_memory_mode() -> crate::memory_extraction::AmbientMemoryMode {
+    crate::memory_extraction::AmbientMemoryMode::parse(
+        std::env::var("EVOHIME_AMBIENT_MEMORY").ok().as_deref(),
+    )
+}
+
 /// Extraction mode for this process. The user can switch automatic
 /// extraction off entirely; explicit "запомни" triggers keep working because
 /// `check_can_extract` allows a manual trigger even when disabled.
@@ -10538,7 +10986,11 @@ fn context_token_estimate(messages: &[ChatMessage]) -> usize {
 fn memory_provenance_source_id(
     evidence: &crate::memory_extraction::RawEvidenceLocator,
 ) -> Option<String> {
+    // Эпизод проверяется первым: связь «кандидат ↔ эпизод» существует ради
+    // удаления, и именно по этому значению `ambient_store` находит своих
+    // кандидатов, чтобы отклонить их причиной `source_deleted`.
     for value in [
+        &evidence.episode_id,
         &evidence.message_id,
         &evidence.tool_call_id,
         &evidence.task_id,
@@ -10999,6 +11451,60 @@ mod tests {
     use futures_util::future::BoxFuture;
     use std::sync::Arc;
     use tokio_util::sync::CancellationToken;
+
+    /// Связь «кандидат ↔ эпизод» существует в данных, а не на бумаге:
+    /// `provenance_source_id` берёт эпизод первым, и именно по этому
+    /// значению `ambient_store` отклоняет кандидатов удалённого эпизода
+    /// причиной `source_deleted`.
+    #[test]
+    fn episode_wins_the_provenance_source_id() {
+        use crate::memory_extraction::RawEvidenceLocator;
+
+        let ambient = RawEvidenceLocator {
+            episode_id: "episode-7".to_owned(),
+            ..RawEvidenceLocator::default()
+        };
+        assert_eq!(
+            super::memory_provenance_source_id(&ambient).as_deref(),
+            Some("episode-7")
+        );
+        // Даже если извлекатель заодно назвал сообщение, эпизод старше: без
+        // этого удаление эпизода не нашло бы своих кандидатов.
+        let mixed = RawEvidenceLocator {
+            episode_id: "episode-7".to_owned(),
+            message_id: "msg-1".to_owned(),
+            ..RawEvidenceLocator::default()
+        };
+        assert_eq!(
+            super::memory_provenance_source_id(&mixed).as_deref(),
+            Some("episode-7")
+        );
+        // Диалоговый путь не изменился.
+        let dialog = RawEvidenceLocator {
+            message_id: "msg-1".to_owned(),
+            ..RawEvidenceLocator::default()
+        };
+        assert_eq!(
+            super::memory_provenance_source_id(&dialog).as_deref(),
+            Some("msg-1")
+        );
+    }
+
+    /// Неизвестное значение переменной не включает извлечение из речи.
+    #[test]
+    fn ambient_memory_mode_reads_the_environment_fail_safe() {
+        use crate::memory_extraction::AmbientMemoryMode;
+
+        assert_eq!(
+            AmbientMemoryMode::parse(std::env::var("EVOHIME_AMBIENT_MEMORY").ok().as_deref()),
+            super::ambient_memory_mode()
+        );
+        assert_eq!(
+            AmbientMemoryMode::parse(Some("pending")),
+            AmbientMemoryMode::Pending
+        );
+        assert_eq!(AmbientMemoryMode::parse(Some("on")), AmbientMemoryMode::Off);
+    }
 
     /// The chat shows what the model said before it called a tool, so the
     /// printed call itself must not travel with it.

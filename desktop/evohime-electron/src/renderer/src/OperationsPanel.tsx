@@ -84,8 +84,18 @@ const TRUST_LABELS: Record<string, string> = {
   user: 'сказал пользователь',
   tool_output: 'вывод инструмента',
   document: 'документ',
-  model_inference: 'вывод модели'
+  model_inference: 'вывод модели',
+  ambient: 'услышано'
 }
+
+/** Источник кандидата в фильтре очереди. */
+type SourceFilter = 'all' | 'ambient' | 'dialog'
+
+const SOURCE_FILTERS: readonly { readonly value: SourceFilter; readonly label: string }[] = [
+  { value: 'all', label: 'Все источники' },
+  { value: 'dialog', label: 'Из диалога' },
+  { value: 'ambient', label: 'Услышано' }
+]
 
 function parsePayload<T>(event: CoreEvent | undefined, key: string): T | null {
   if (!event) return null
@@ -110,6 +120,7 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [embeddingEnabled, setEmbeddingEnabled] = useState(false)
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
   const [knowledgeQuery, setKnowledgeQuery] = useState('')
 
   const connected = CONNECTED_STATES.includes(connection)
@@ -131,6 +142,24 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
   const counts = useMemo(
     () => parsePayload<Record<string, number>>(pendingEvent, 'counts') ?? {},
     [pendingEvent]
+  )
+  // Фильтр только скрывает строки: решение всё равно принимает пользователь
+  // по каждой записи, и скрытая строка не может быть подтверждена вслепую —
+  // выбор с неё снимается вместе с ней.
+  const visiblePending = useMemo(
+    () =>
+      pending.filter((record) =>
+        sourceFilter === 'all'
+          ? true
+          : sourceFilter === 'ambient'
+            ? record.source_trust === 'ambient'
+            : record.source_trust !== 'ambient'
+      ),
+    [pending, sourceFilter]
+  )
+  const ambientCount = useMemo(
+    () => pending.filter((record) => record.source_trust === 'ambient').length,
+    [pending]
   )
   const conflicts = useMemo(
     () => parsePayload<readonly MemoryConflict[]>(latest(events, 'memory.conflicts'), 'conflicts') ?? [],
@@ -183,6 +212,14 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  useEffect(() => {
+    const visible = new Set(visiblePending.map((record) => record.id))
+    setSelected((current) => {
+      const kept = current.filter((id) => visible.has(id))
+      return kept.length === current.length ? current : kept
+    })
+  }, [visiblePending])
 
   // Confirm and reject are approval-gated on the Core side; the shell only
   // forwards the decision the user just made in this panel.
@@ -356,8 +393,23 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
 
       {pending.length > 0 ? (
         <>
+          <div className="operations-actions">
+            <label htmlFor="memory-source-filter">Источник</label>
+            <select
+              id="memory-source-filter"
+              value={sourceFilter}
+              onChange={(input) => setSourceFilter(input.target.value as SourceFilter)}
+            >
+              {SOURCE_FILTERS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <small>услышано: {ambientCount} из {pending.length}</small>
+          </div>
           <ol className="operations-timeline" aria-label="Кандидаты в память">
-            {pending.map((record) => (
+            {visiblePending.map((record) => (
               <li key={record.id}>
                 <label>
                   <input
@@ -367,11 +419,15 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
                   />
                   <code>{KIND_LABELS[record.kind] ?? record.kind}</code>
                 </label>
+                {record.source_trust === 'ambient' ? (
+                  <span className="operations-badge operations-badge--ambient">услышано</span>
+                ) : null}
                 <span>
                   {record.canonical_subject ?? 'без темы'} ·{' '}
                   {TRUST_LABELS[record.source_trust] ?? record.source_trust} · уверенность{' '}
                   {record.model_confidence.toFixed(2)} · проверка {record.validation_status}
                   {record.privacy_class === 'normal' ? '' : ' · содержимое скрыто'}
+                  {record.source_trust === 'ambient' ? ' · говорящий не подтверждён' : ''}
                 </span>
                 <div className="operations-actions">
                   {editing === record.id ? (

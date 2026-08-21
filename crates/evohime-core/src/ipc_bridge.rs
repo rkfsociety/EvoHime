@@ -259,6 +259,23 @@ impl IpcBridge {
         Ok(sequence)
     }
 
+    /// Отдаёт закрытый эпизод в ambient-извлечение (04.6).
+    ///
+    /// Мост здесь только курьер: решают `EVOHIME_AMBIENT_MEMORY`, общий режим
+    /// извлечения и ambient-бюджеты, и все три проверяются в Core, а не тут.
+    /// Без координатора вызов молча ничего не делает — извлекателя в этой
+    /// сборке просто нет.
+    pub async fn request_ambient_extraction(&self, episode_id: &str) {
+        let Some(coordinator) = &self.coordinator else {
+            return;
+        };
+        let _ = coordinator
+            .dispatch(CoreCommand::ExtractAmbientMemory {
+                episode_id: episode_id.to_owned(),
+            })
+            .await;
+    }
+
     /// Shares the agent's model selection so `SelectModelRequest` can change it.
     pub fn with_selected_model(mut self, selected: SelectedModel) -> Self {
         self.selected_model = selected;

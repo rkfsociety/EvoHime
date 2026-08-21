@@ -15,6 +15,15 @@ use std::fmt;
 pub const MAX_EXPORT_BYTES: usize = 256 * 1024;
 pub const MAX_PROVENANCE_RESULTS: usize = 32;
 
+/// Provenance kind записей, пришедших из постоянного слушания (04.6).
+///
+/// У услышанного нет ни сообщения, ни файла — только эпизод, и связь с ним
+/// обязана существовать в данных: удаление эпизода отклоняет его кандидатов
+/// причиной `source_deleted`, а `inspect_provenance` по этому же kind
+/// отвечает на обратный вопрос «откуда это взялось». Само значение приходит
+/// из `RawEvidenceLocator::episode_id`.
+pub const AMBIENT_PROVENANCE_KIND: &str = "ambient_episode";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MemoryApiError {
     Domain(MemoryError),
@@ -546,6 +555,41 @@ mod tests {
             .unwrap()
             .is_empty());
         api.forget("m-1", &auth(MemoryOperation::Forget)).unwrap();
+    }
+
+    /// Услышанное прослеживается до своего эпизода: без этого «удаление
+    /// эпизода отклоняет кандидатов» было бы утверждением без данных.
+    #[test]
+    fn ambient_records_are_traced_back_to_their_episode() {
+        let mut api = MemoryApi::new();
+        let mut request = create(
+            "m-ambient",
+            MemoryScope::workspace("p-1", "w-1").unwrap(),
+            "услышанное предпочтение",
+            1_000,
+        );
+        request.provenance =
+            ProvenanceRef::new(AMBIENT_PROVENANCE_KIND, "episode-7", None).unwrap();
+        api.create(request).expect("ambient record is created");
+        api.create(create(
+            "m-dialog",
+            MemoryScope::workspace("p-1", "w-1").unwrap(),
+            "предпочтение из диалога",
+            1_000,
+        ))
+        .expect("dialog record is created");
+
+        let found = api
+            .inspect_provenance(ProvenanceInspectionRequest {
+                scope: None,
+                kind: Some(AMBIENT_PROVENANCE_KIND.to_owned()),
+                id: Some("episode-7".to_owned()),
+                limit: MAX_PROVENANCE_RESULTS,
+            })
+            .expect("inspection succeeds");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].memory_id, "m-ambient");
+        assert_eq!(found[0].provenance.id, "episode-7");
     }
 
     #[test]

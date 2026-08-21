@@ -2145,6 +2145,20 @@ select:focus {
   background: color-mix(in srgb, var(--surface, #171c27) 82%, transparent);
 }
 
+.operations-badge {
+  align-self: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #2c3546);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.operations-badge--ambient {
+  border-color: #b77a42;
+  color: #d8a06a;
+}
+
 @media (max-width: 900px) {
   .operations-grid { grid-template-columns: 1fr; }
 }
