@@ -38,11 +38,9 @@
 | 05 Provenance и реконструируемость model request | [обзор](05-0-model-request-provenance.md) | — |
 
 ```text
-05.1 контракт ── 05.2 хранение ── 05.3 интеграция ─┬── 05.4 evidence ─┬── 05.6 shadowing
-                                                   │                  │
-                                                   │                  └── 05.8 удаление и retention
-                                                   └── 05.5 receipts + tool linkage ┬── 05.9 verify/export
-                                                                                    └── 05.7 recovery
+05.1 контракт ── 05.2 хранение ── 05.3 интеграция ─┬── 05.4 evidence ── 05.6 shadowing ── 05.8 retention ── 05.9 verify/export
+                                                   └── 05.5 receipts + tool linkage ────────────────────────────────┬── 05.7 recovery
+                                                                                                                      └── 05.9 verify/export
 ```
 
 План 05 опирается только на уже реализованные model gateway/routing, Context
@@ -50,12 +48,13 @@ Budget Manager, SQLite persistence, signed receipts и recovery foundation, а
 значит блокирующих зависимостей у него тоже нет. Ambient и scheduled model calls при их появлении подключаются к общему
 provenance pipeline новым `request_kind`, а не отдельным механизмом.
 
-Внутри плана 05 три обратные связи объявлены опциональными с описанной
-деградацией, и все три упираются в этап 05.8 «Удаление и retention»: до него
-хранилище 05.2 работает в hash-only режиме без captured текста, shadowing 05.6
-живёт с временным потолком по объёму, а verifier 05.9 не различает
-`redacted` и повреждение. Порядок этапов от этого не меняется: 05.8 остаётся
-после своих блокирующих 05.2 и 05.4.
+Внутри плана 05 есть последовательность зависимых состояний: до 05.8
+хранилище 05.2 допускает только migration/fixture `hash_only`, shadowing 05.6
+живёт с временным потолком, а 05.9 ещё не может выпустить verifier,
+различающий `redacted`/`retention_pruned` и повреждение. Поэтому 05.9 явно
+блокируется завершёнными 05.4, 05.5, 05.6 и 05.8; переходные режимы остаются
+только для чтения legacy записей и не являются критерием готовности offline
+export.
 
 05.7 не является независимой веткой: после 05.5 он использует
 authoritative `model_responses` и `tool_intents` для безопасной классификации

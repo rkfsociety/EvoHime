@@ -149,14 +149,12 @@ Envelope описывает **фактически отправляемый** re
 | 05.6 ContextProjection и append-only shadowing | [05-6](05-6-compaction-shadowing.md) | 05.1, 05.2, 05.4 |
 | 05.7 Crash recovery | [05-7](05-7-crash-recovery.md) | 05.2, 05.3, 05.5 |
 | 05.8 Удаление и retention | [05-8](05-8-redaction-and-retention.md) | 05.2, 05.4 |
-| 05.9 Offline verification и export | [05-9](05-9-verify-and-export.md) | 05.1, 05.2, 05.5 |
+| 05.9 Offline verification и export | [05-9](05-9-verify-and-export.md) | 05.1, 05.2, 05.4, 05.5, 05.6, 05.8 |
 
 ```text
-05.1 контракт ── 05.2 хранение ── 05.3 интеграция ─┬── 05.4 evidence ─┬── 05.6 shadowing
-                                                   │                  │
-                                                   │                  └── 05.8 удаление и retention
-                                                   └── 05.5 receipts + tool linkage ┬── 05.9 verify/export
-                                                                                    └── 05.7 recovery
+05.1 контракт ── 05.2 хранение ── 05.3 интеграция ─┬── 05.4 evidence ── 05.6 shadowing ── 05.8 retention ── 05.9 verify/export
+                                                   └── 05.5 receipts + tool linkage ────────────────────────────────┬── 05.7 recovery
+                                                                                                                      └── 05.9 verify/export
 ```
 
 Стрелка означает «блокирующая зависимость от левого узла»; 05.7 начинается
