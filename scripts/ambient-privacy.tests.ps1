@@ -4,9 +4,16 @@ $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $audio = Join-Path $root 'crates\evohime-listener-audio\src'
 $forbidden = @('std::fs', 'std::fs::', 'File::', 'OpenOptions', 'tempfile', 'create_dir', 'write_all')
+# Поиск идёт встроенным Select-String, а не ripgrep: гейт обязан работать на
+# любой машине и на раннере, где внешнего rg в образе нет.
+$sources = @(Get-ChildItem -LiteralPath $audio -Recurse -File -Filter '*.rs')
+if ($sources.Count -eq 0) { throw "Audio crate sources not found under '$audio'." }
 foreach ($needle in $forbidden) {
-    $hits = rg --fixed-strings --line-number $needle $audio 2>$null
-    if ($LASTEXITCODE -eq 0 -and $hits) { throw "Audio crate contains forbidden filesystem API '$needle': $hits" }
+    $hits = @($sources | Select-String -SimpleMatch -Pattern $needle)
+    if ($hits.Count -gt 0) {
+        $where = ($hits | ForEach-Object { "$($_.Path):$($_.LineNumber)" }) -join ', '
+        throw "Audio crate contains forbidden filesystem API '$needle': $where"
+    }
 }
 $cargo = Get-Command cargo -ErrorAction Stop
 & $cargo.Source test --locked -p evohime-listener-audio
