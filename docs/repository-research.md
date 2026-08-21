@@ -23,7 +23,7 @@
 |---|---|---|---|
 | 01 execution ledger | Журнал выполнения и typed receipts | перенесён в план 08 | блокирующий фундамент |
 | 02 policy and capabilities | Policy, permissions, scope и approval | перенесён в план 09 | блокирующий фундамент |
-| [03-ipc-adapters-and-providers.md](repository-research/03-ipc-adapters-and-providers.md) | IPC, version negotiation и provider boundary | 01–02 | блокирующий фундамент |
+| 03 IPC adapters and providers | IPC, version negotiation и provider boundary | перенесён в план 10 | блокирующий фундамент |
 | [04-memory-and-rag.md](repository-research/04-memory-and-rag.md) | Память, retrieval и forget | 01–03 | следующий слой |
 | [05-telemetry-and-evaluation.md](repository-research/05-telemetry-and-evaluation.md) | Наблюдаемость, fixtures и evaluation | 01–03 | следующий слой |
 | [06-browser-backend.md](repository-research/06-browser-backend.md) | Изолированный browser backend | 01–03 | отдельный optional-план |
@@ -56,6 +56,9 @@
 удалён после переноса требований и критериев готовности.
 
 Раздел 02 перенесён в подпункты плана 09; исходный исследовательский файл
+удалён после переноса требований и критериев готовности.
+
+Раздел 03 перенесён в подпункты плана 10; исходный исследовательский файл
 удалён после переноса требований и критериев готовности.
 
 ## Общая архитектурная граница
