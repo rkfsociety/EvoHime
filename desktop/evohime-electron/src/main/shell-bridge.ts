@@ -1030,7 +1030,118 @@ function dispatch(
 
     case 'ambient.hotkeyStatus':
       return { ok: true, value: ambientHotkey() }
+
+    // ------------------------------------------------------------------
+    // Workflow orchestration (план 06.3).
+    //
+    // Main-процесс здесь только курьер: он не строит граф, не считает
+    // зависимости и не решает порядок узлов. Всё это принадлежит Core, а
+    // сюда возвращается bounded projection.
+    // ------------------------------------------------------------------
+
+    case 'workflow.listTemplates':
+      return accepted(client.send({ listWorkflowTemplates: {} }))
+
+    case 'workflow.getDefinition': {
+      const value = asRecord(payload)
+      const templateId = asBoundedString(value['templateId'])
+      if (templateId === null) {
+        return failure('invalid-payload', 'Некорректный идентификатор шаблона.')
+      }
+      return accepted(client.send({ getWorkflowDefinition: { templateId } }))
+    }
+
+    case 'workflow.start': {
+      const value = asRecord(payload)
+      const templateId = asBoundedString(value['templateId'])
+      const workspacePath = asBoundedString(value['workspacePath'])
+      // Ключ идемпотентности обязателен: без него двойной клик по кнопке
+      // создал бы два запуска одного и того же шаблона.
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const inputs = asWorkflowInputs(value['inputs'])
+      if (templateId === null || workspacePath === null || idempotencyKey === null) {
+        return failure('invalid-payload', 'Некорректный запрос запуска workflow.')
+      }
+      if (inputs === null) {
+        return failure('invalid-payload', 'Некорректные входы шаблона.')
+      }
+      const taskId = value['taskId'] === undefined ? '' : asBoundedString(value['taskId'])
+      if (taskId === null) {
+        return failure('invalid-payload', 'Некорректный идентификатор задачи.')
+      }
+      return accepted(
+        client.send({
+          startWorkflow: { templateId, taskId, workspacePath, inputs, idempotencyKey }
+        })
+      )
+    }
+
+    case 'workflow.getRun': {
+      const value = asRecord(payload)
+      const runId = asBoundedString(value['runId'])
+      if (runId === null) {
+        return failure('invalid-payload', 'Некорректный идентификатор запуска.')
+      }
+      return accepted(client.send({ getWorkflowRun: { runId } }))
+    }
+
+    case 'workflow.cancel': {
+      const value = asRecord(payload)
+      const runId = asBoundedString(value['runId'])
+      if (runId === null) {
+        return failure('invalid-payload', 'Некорректный идентификатор запуска.')
+      }
+      return accepted(client.send({ cancelWorkflow: { runId } }))
+    }
+
+    case 'workflow.listEvents': {
+      const value = asRecord(payload)
+      const runId = asBoundedString(value['runId'])
+      if (runId === null) {
+        return failure('invalid-payload', 'Некорректный идентификатор запуска.')
+      }
+      const limit = value['limit'] === undefined ? 100 : asBoundedNumber(value['limit'], 500)
+      if (limit === null) {
+        return failure('invalid-payload', 'Некорректный лимит списка событий.')
+      }
+      const rawAfter = value['afterSequence']
+      const afterSequence =
+        rawAfter === undefined
+          ? -1
+          : typeof rawAfter === 'number' && Number.isSafeInteger(rawAfter) && rawAfter >= -1
+            ? rawAfter
+            : null
+      if (afterSequence === null) {
+        return failure('invalid-payload', 'Некорректная позиция replay.')
+      }
+      return accepted(client.send({ listWorkflowEvents: { runId, afterSequence, limit } }))
+    }
   }
+}
+
+/**
+ * Входы шаблона: ограниченная карта строк.
+ *
+ * Ядро всё равно проверит имена и длины по контракту шаблона; здесь
+ * отсекается только заведомо неподходящая форма, чтобы в очередь не уходил
+ * объект произвольной глубины.
+ */
+function asWorkflowInputs(value: unknown): { name: string; value: string }[] | null {
+  if (value === undefined) return []
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const entries = Object.entries(value as Record<string, unknown>)
+  if (entries.length > 16) return null
+  const inputs: { name: string; value: string }[] = []
+  for (const [name, raw] of entries) {
+    const boundedName = asBoundedString(name)
+    // Пустое значение допустимо: обязательность входа объявляет шаблон, и
+    // отказ по нему должен приходить от ядра с typed-кодом, а не отсюда.
+    if (boundedName === null || typeof raw !== 'string' || raw.length > MAX_TEXT_FIELD_CHARS) {
+      return null
+    }
+    inputs.push({ name: boundedName, value: raw })
+  }
+  return inputs
 }
 
 /**

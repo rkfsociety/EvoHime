@@ -2530,3 +2530,42 @@ select:focus {
   color: var(--fg);
   cursor: pointer;
 }
+
+/* Составные задачи (план 06.3): раскладка по topological order, который
+   прислало ядро. Собственного расположения узлов у панели нет. */
+.workflow__templates,
+.workflow__preview,
+.workflow__nodes,
+.workflow__events {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workflow__templates li small,
+.workflow__nodes li small {
+  display: block;
+  opacity: 0.7;
+}
+
+.workflow__input {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.workflow__run {
+  margin-top: 16px;
+  border-top: 1px solid var(--border, rgba(128, 128, 128, 0.3));
+  padding-top: 12px;
+}
+
+.workflow__events li {
+  font-family: var(--mono, monospace);
+  font-size: 0.85em;
+  opacity: 0.85;
+}

@@ -14,14 +14,16 @@ permission/approval decision, loadout selection, telemetry и provenance без
 - [07-0](07-0-superagi-inspired-tooling.md);
 - текущий `ToolRegistry` (`crates/tool-runtime/src/registry.rs`), capability
   registry, `run_policy` и approval intent;
-- [06-1](06-1-workflow-contract.md) для versioned tool identity в workflow.
+- реализованный workflow-контракт: versioned tool identity в workflow описана
+  в разделе «Workflow orchestration» [`../architecture.md`](../architecture.md).
 
 ### Опциональные
 
-- Core-owned MCP registry entry из 06-1 (server identity, tool allowlist,
-  transport). До его появления MCP описывается manifest-ом существующего
-  `mcp.call` как одного builtin-инструмента с host allowlist, а per-server
-  entry возвращает typed `adapter_unavailable` и не попадает в loadout.
+- Core-owned MCP registry entry уже существует
+  (`crates/evohime-core/src/workflow_registry.rs`: server identity, tool
+  allowlist, transport, host allowlist). Manifest 07-1 может ссылаться на него
+  напрямую; запись с неподдержанным транспортом возвращает typed
+  `transport_unavailable` и не попадает в loadout.
 
 ## Что уже есть в коде
 

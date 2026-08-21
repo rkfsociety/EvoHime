@@ -101,13 +101,15 @@ registry entry входит в объём 07-1/07-2, а не считается 
 - существующие `ToolRegistry`, permission/approval policy, `run_policy` и
   authenticated desktop IPC;
 - реализованные provenance receipts, SQLite event journal и Context Budget;
-- план 06-1 для versioned workflow/tool identity;
-- план 06-3 для существующей Electron workflow/approval projection.
+- реализованный workflow-контракт: versioned workflow/tool identity и Electron
+  workflow/approval projection описаны в разделе «Workflow orchestration»
+  [`../architecture.md`](../architecture.md).
 
 ### Опциональные
 
-- план 06-4 evaluation workflow. До его появления проверки 07 выполняются
-  отдельным deterministic test suite;
+- общий deterministic evaluation harness (`crates/evohime-core/src/evals.rs`,
+  `tests/evals/`). При необходимости проверки 07 выполняются отдельным
+  deterministic test suite;
 - optional embeddings. Без них tool discovery и telemetry работают на
   metadata/FTS5 и не требуют vector backend;
 - подписанный внешний каталог. До появления signing pipeline доверие строится

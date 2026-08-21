@@ -23,7 +23,8 @@
   заводит собственный журнал: до появления 08 она пишет bounded события в уже
   существующий `EventJournal` и provenance, а после — становится проекцией
   ledger-событий без смены correlation fields;
-- [06-4](06-4-workflow-acceptance.md) как общий workflow evaluation harness.
+- общий deterministic evaluation harness (`crates/evohime-core/src/evals.rs`,
+  `tests/evals/`), уже покрывающий workflow orchestration.
   До его появления сценарии из пункта 6 живут отдельным deterministic test
   suite внутри 07 и запускаются самостоятельно; при появлении 06-4 они
   переносятся в общий harness без изменения ожидаемых terminal states.

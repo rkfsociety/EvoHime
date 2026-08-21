@@ -1165,8 +1165,12 @@ pub use task_memory::project_scope_id;
 pub mod plan_context;
 pub mod plan_review;
 pub mod workflow;
+pub mod workflow_adapters;
 pub mod workflow_execution;
+pub mod workflow_registry;
 pub mod workflow_runner;
+pub mod workflow_runtime;
+pub mod workflow_templates;
 pub mod workspace;
 pub mod workspace_rag;
 
@@ -1822,6 +1826,15 @@ pub enum CoreEvent {
     ChildWorkflowProjection {
         task_id: String,
         projection: crate::child_workflow::ChildProjection,
+    },
+    /// Bounded projection события durable workflow run (план 06.2).
+    ///
+    /// Полезная нагрузка ограничена идентификаторами, состояниями и кодами:
+    /// ни prompt, ни сырой вывод child, ни содержимое контекста в неё не
+    /// попадают.
+    WorkflowProgress {
+        run_id: String,
+        projection: Box<crate::workflow_runtime::WorkflowEventProjection>,
     },
     /// Marks the point after which review history is shown. The journal is
     /// append-only, so clearing hides earlier reviews instead of deleting them.
@@ -2628,6 +2641,7 @@ impl EventJournal {
             | CoreEvent::WorkspaceRetrievalProgress { .. } => "workspace-rag",
             CoreEvent::ReviewHistoryCleared { marker_id } => marker_id,
             CoreEvent::ChildWorkflowProjection { task_id, .. } => task_id,
+            CoreEvent::WorkflowProgress { run_id, .. } => run_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -2648,6 +2662,7 @@ impl EventJournal {
             CoreEvent::WorkspaceRetrievalProgress { .. } => "workspace.retrieval_progress",
             CoreEvent::ReviewHistoryCleared { .. } => "review.history_cleared",
             CoreEvent::ChildWorkflowProjection { .. } => "child.workflow",
+            CoreEvent::WorkflowProgress { .. } => "workflow.progress",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -2661,6 +2676,9 @@ impl EventJournal {
             }
             CoreEvent::ChildWorkflowProjection { projection, .. } => {
                 serde_json::to_vec(projection).expect("child projection serializes")
+            }
+            CoreEvent::WorkflowProgress { projection, .. } => {
+                serde_json::to_vec(projection).expect("workflow projection serializes")
             }
             _ => serde_json::to_vec(event).expect("core events serialize"),
         };

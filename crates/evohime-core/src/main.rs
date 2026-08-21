@@ -715,6 +715,10 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
             projection.lease_live,
             projection.dead_letter
         ),
+        evohime_core::CoreEvent::WorkflowProgress { run_id, projection } => println!(
+            "workflow.progress {run_id}: {} node={} attempt={} error={}",
+            projection.event_type, projection.node_id, projection.attempt, projection.error_code
+        ),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             println!("review.history_cleared {marker_id}")
         }

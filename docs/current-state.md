@@ -1,7 +1,8 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-21 (планы 04 завершены; план 05 реализован в текущем
-checkout, включая durable model-request provenance и offline export).
+Обновлено: 2026-08-22 (планы 04 и 05 завершены; план 06 реализован в текущем
+checkout: контракт workflow/v1, Core-owned реестр и шаблоны, durable runtime
+со схемой 29, additive IPC и раздел «Составные задачи» в Electron).
 
 ## Продукт
 
@@ -128,12 +129,62 @@ Read-only Git loadout расширен операциями git.log, git.show, g
   внешний trust key. Намеренно неполные `redacted`, `retention_pruned`,
   `legacy_hash_only` и `metadata_hash_only` не считаются полной реконструкцией.
 
+### Workflow orchestration 06
+
+- контракт `workflow/v1` (`crates/evohime-core/src/workflow.rs`): immutable
+  граф, action profiles `child`/`mcp_tool`/`context_provider` рядом с прежними
+  `research`/`transform`/`tool`/`condition`/`approval`/`subgraph`/`loop`,
+  block identity с версией, acceptance contract, allowlist маршрутов, явные
+  failure-ветви, canonical JSON и SHA-256 hash. Идентичности ограничены
+  charset `[a-z0-9._:-]`, поэтому URL, путь или команда в них не помещаются;
+- Core-owned реестр (`workflow_registry.rs`): каталог блоков с test fixtures,
+  MCP-серверы с транспортом/endpoint/allowlist, read-only контекстные
+  провайдеры, допущенные инструменты и Core-owned подграфы. Отклоняются
+  неизвестный блок и сервер, несовпадение версии или схемы блока, инструмент
+  вне allowlist, `transport_unavailable`, host вне
+  `EVOHIME_MCP_ALLOWED_HOSTS`, превышение бюджета провайдера и эскалация
+  grants/бюджета/контекста child;
+- библиотека шаблонов (`workflow_templates.rs`): `repository-research`,
+  `plan-implement-review`, `parallel-security-review`. Подстановка входов идёт
+  только в свободный текст; шаблон с обязательным approval помечен
+  `schedule_eligibility = unavailable`, остальные — `interval_only`;
+- durable runtime (`workflow_runtime.rs`, storage schema 29): таблицы
+  `workflow_runs`, `workflow_run_nodes`, `workflow_node_attempts`,
+  `workflow_run_events`, lease, dispatch marker до эффекта, восстановление в
+  `unknown_outcome`/`interrupted` без слепого повтора, bounded fan-out/fan-in,
+  явные failure-ветви, `dead_letter` для исчерпанных повторов, `degraded` для
+  недоступного источника и монотонные durable-события;
+- адаптеры (`workflow_adapters.rs`) ведут узлы в существующие контуры Core:
+  typed child request, `ToolRegistry` (включая Core-owned `mcp.call`),
+  read-only контекстные источники и deterministic-операции;
+- IPC: additive `ListWorkflowTemplates`, `GetWorkflowDefinition`,
+  `StartWorkflow`, `GetWorkflowRun`, `CancelWorkflow`, `ListWorkflowEvents`.
+  Approval узла решается существующей `ResolveApproval`;
+- Electron: раздел «Составные задачи» (`WorkflowPanel`) показывает шаблоны,
+  входы, состояния узлов, зависимости, попытки и события. Renderer не считает
+  зависимости и не запускает узлы; prompt, цель child и сырой вывод в него не
+  приходят;
+- матрица приёмки 06-4 проверена deterministic evals в
+  `crates/evohime-core/src/evals.rs` (12 новых случаев в существующих
+  категориях), unit-тестами runtime/хранилища и real-Core E2E, запускающим один
+  шаблон против собранного `evohime-core.exe`.
+
 ### Разработка
 
 - `.env.example` описывает переменные провайдера для локального запуска; `start-dev.ps1` читает `.env` по allow-list и передаёт значения только дочерним native-процессам.
 - deterministic evaluation catalog и security smoke gates находятся в `tests/evals/` и запускаются из `scripts/eval-gate.tests.ps1` и `scripts/security-eval-gate.tests.ps1`; redacted CI summary сохраняется в `artifacts/eval-gate/summary.jsonl`.
 
 ## Последняя проверка checkout
+
+22 августа 2026 года пройдены `cargo fmt --all -- --check`,
+`cargo check --workspace --all-targets`, `cargo test -p evohime-core -p
+evohime-local-storage -p evohime-desktop-ipc` (477 + 146 + 33 тестов),
+`cargo check -p evohime-supervisor`, полный Electron-прогон (`check:protocol`,
+`typecheck`, 405 тестов при 2 пропущенных, `build`, `check:bundle`), real-Core
+E2E с запуском одного workflow-шаблона против собранного `evohime-core.exe`,
+`scripts/eval-gate.tests.ps1`, `scripts/security-eval-gate.tests.ps1`,
+`scripts/native-package.tests.ps1`, а также C#/WinUI compatibility suites
+(24 + 34 теста).
 
 21 августа 2026 года пройдены `cargo test -p evohime-core` (421 unit-тест,
 integration/recovery/doc-tests), `cargo test -p evohime-model-provenance -p

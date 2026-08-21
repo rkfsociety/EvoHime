@@ -347,6 +347,125 @@ export interface AmbientHotkeyStatus {
   readonly registered: boolean
 }
 
+/**
+ * Workflow orchestration (план 06.3).
+ *
+ * Всё, что renderer знает о запуске, — это проекция Core: идентификаторы,
+ * состояния, роли и коды ошибок. Ни prompt, ни цель child-узла, ни сырой
+ * вывод инструмента в эти типы не входят по построению, потому что их нет в
+ * ответе ядра.
+ */
+export type WorkflowScheduleEligibility = 'interval_only' | 'unavailable'
+
+export interface WorkflowTemplateInput {
+  readonly name: string
+  readonly title: string
+  readonly required: boolean
+  readonly max_chars: number
+}
+
+export interface WorkflowTemplateSummary {
+  readonly template_id: string
+  readonly version: number
+  readonly display_name: string
+  readonly description: string
+  readonly inputs: readonly WorkflowTemplateInput[]
+  readonly required_capabilities: readonly string[]
+  readonly schedule_eligibility: WorkflowScheduleEligibility
+  readonly preview: readonly string[]
+  readonly node_count: number
+}
+
+export interface WorkflowTemplateList {
+  readonly templates: readonly WorkflowTemplateSummary[]
+  readonly error_code: string
+}
+
+export interface WorkflowDefinitionNode {
+  readonly node_id: string
+  readonly action_kind: string
+  readonly approval_required: boolean
+  readonly block_id: string
+  readonly block_version: number
+}
+
+export interface WorkflowDefinitionEdge {
+  readonly from_node: string
+  readonly to_node: string
+  readonly channel: 'data' | 'failure'
+}
+
+export interface WorkflowDefinition {
+  readonly template_id: string
+  readonly version: number
+  readonly display_name: string
+  readonly graph_id: string
+  readonly graph_version: number
+  readonly graph_hash: string
+  readonly schedule_eligibility: WorkflowScheduleEligibility
+  readonly preview: readonly string[]
+  readonly nodes: readonly WorkflowDefinitionNode[]
+  readonly edges: readonly WorkflowDefinitionEdge[]
+  readonly error_code: string
+}
+
+export interface WorkflowStartResult {
+  readonly run_id: string
+  readonly state: string
+  readonly graph_hash: string
+  readonly deduplicated: boolean
+  readonly error_code: string
+}
+
+export interface WorkflowNodeProjection {
+  readonly node_id: string
+  readonly action_kind: string
+  readonly role: string
+  readonly state: string
+  readonly attempts: number
+  readonly error_code: string
+  readonly message: string
+  readonly approval_id: string
+  readonly dependencies: readonly string[]
+}
+
+export interface WorkflowRunProjection {
+  readonly run_id: string
+  readonly task_id: string
+  readonly template_id: string
+  readonly template_version: number
+  readonly graph_id: string
+  readonly graph_version: number
+  readonly graph_hash: string
+  /** `unknown_state`, когда Core не знает такого запуска. */
+  readonly state: string
+  readonly terminal_reason: string
+  readonly created_at_ms: number
+  readonly updated_at_ms: number
+  readonly nodes: readonly WorkflowNodeProjection[]
+  readonly error_code: string
+}
+
+export interface WorkflowEventEntry {
+  readonly sequence: number
+  readonly node_id: string
+  readonly event_type: string
+  readonly payload: string
+  readonly created_at_ms: number
+}
+
+export interface WorkflowEventList {
+  readonly run_id: string
+  readonly events: readonly WorkflowEventEntry[]
+  readonly error_code: string
+}
+
+export interface WorkflowCancelResult {
+  readonly run_id: string
+  readonly cancelled: boolean
+  readonly error_code: string
+}
+
 export type PermissionMode = 'ask' | 'read_only' | 'full'
 
 /**
@@ -450,7 +569,15 @@ export const RENDERER_COMMANDS = [
   // Не команда ядра: доступность глобального хоткея знает только main, и
   // спросить её больше негде. Без этого ответа панель молча изображала бы
   // работающую третью точку входа.
-  'ambient.hotkeyStatus'
+  'ambient.hotkeyStatus',
+  // Workflow orchestration (план 06.3): renderer только просит и показывает.
+  // Подтверждение узла решается уже существующей 'core.resolveApproval'.
+  'workflow.listTemplates',
+  'workflow.getDefinition',
+  'workflow.start',
+  'workflow.getRun',
+  'workflow.cancel',
+  'workflow.listEvents'
 ] as const
 
 export type RendererCommand = (typeof RENDERER_COMMANDS)[number]
@@ -651,6 +778,18 @@ export interface CommandPayloads {
   }
   'ambient.listProposals': { limit?: number }
   'ambient.hotkeyStatus': Record<string, never>
+  'workflow.listTemplates': Record<string, never>
+  'workflow.getDefinition': { templateId: string }
+  'workflow.start': {
+    templateId: string
+    workspacePath: string
+    inputs: Record<string, string>
+    idempotencyKey: string
+    taskId?: string
+  }
+  'workflow.getRun': { runId: string }
+  'workflow.cancel': { runId: string }
+  'workflow.listEvents': { runId: string; afterSequence?: number; limit?: number }
 }
 
 export interface CommandResults {
@@ -768,6 +907,12 @@ export interface CommandResults {
   'ambient.resolveProposal': { accepted: boolean }
   'ambient.listProposals': { accepted: boolean }
   'ambient.hotkeyStatus': AmbientHotkeyStatus
+  'workflow.listTemplates': { accepted: boolean }
+  'workflow.getDefinition': { accepted: boolean }
+  'workflow.start': { accepted: boolean }
+  'workflow.getRun': { accepted: boolean }
+  'workflow.cancel': { accepted: boolean }
+  'workflow.listEvents': { accepted: boolean }
 }
 
 export type CommandFailureCode =

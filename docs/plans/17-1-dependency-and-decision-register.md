@@ -9,7 +9,7 @@
 
 - Вести таблицу решений по первому vertical slice планов 08–10, расширяемым
   IPC/SQLite schemas, schema ownership и migration strategy.
-- Для каждого плана 06–16 указать blocking/optional dependencies, fallback до
+- Для каждого плана 07–16 указать blocking/optional dependencies, fallback до
   появления optional компонента и минимальный release evidence.
 - Зафиксировать решение о worker process для browser/voice/vision, а также
   CPU/GPU/memory/disk/latency/retention/concurrency budgets.

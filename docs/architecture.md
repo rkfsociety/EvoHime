@@ -96,6 +96,83 @@ scope grant и выбранный context, поэтому renderer не полу
 `OperationsPanel` отображает typed projection timeline (role, state, revision,
 budget, lease, reason, dead-letter) и отделяет trace projection от audit.
 
+## Workflow orchestration
+
+Составная задача описывается графом контракта `workflow/v1`
+(`crates/evohime-core/src/workflow.rs`). Граф immutable после запуска: новая
+версия создаётся целиком, а начатый запуск продолжает работать по своему
+snapshot и его canonical hash (`canonical_json`/`canonical_hash` —
+нормализованный JSON с отсортированными ключами, узлами и рёбрами).
+
+Узел объявляет action profile: `research`, `transform`, `tool`, `condition`,
+`approval`, `subgraph`, `loop`, `child`, `mcp_tool`, `context_provider`. Поля
+идентичности (`tool_name`, `server_id`, `provider_id`, роль child, имя
+маршрута, `block_id`) ограничены charset `[a-z0-9._:-]`, поэтому URL, путь или
+команда физически не помещаются в identity; inline script, Python, shell и
+dynamic import в контракте отсутствуют как понятие. Дополнительно узел несёт
+`block` (стабильная identity возможности и её версия), `routes` (allowlist
+исходящих маршрутов), `acceptance` (схема результата, минимум evidence,
+разрешённые статусы, retryable-классы ошибок), `on_failure`, `join`,
+`concurrency` и `batch`.
+
+Разрешение идентичностей принадлежит Core-owned реестру
+(`workflow_registry.rs`): каталог блоков с test fixtures, MCP-серверы с
+транспортом, endpoint и allowlist инструментов, read-only контекстные
+провайдеры с потолком свежести и объёма, список допущенных инструментов и
+Core-owned подграфы. `WorkflowRegistry::validate_bindings` отклоняет неизвестный
+блок, несовпадение версии или схемы блока, неизвестный инструмент или сервер,
+инструмент вне allowlist сервера, недоступный транспорт (`transport_unavailable`
+— поддержан только remote JSON-RPC поверх существующего Core tool `mcp.call`),
+host вне `EVOHIME_MCP_ALLOWED_HOSTS`, провайдера сверх зарегистрированного
+бюджета и любую попытку child получить grants, бюджет или контекст шире
+родительских. `NodeType::Subgraph` — не nested child delegation: Core
+разворачивает уже проверенный граф статически до запуска, наследует
+`ExecutionPolicy` родительского узла и запрещает вложенные подграфы.
+
+Библиотека шаблонов (`workflow_templates.rs`) — versioned definitions в коде
+Core: `repository-research`, `plan-implement-review`,
+`parallel-security-review`. Подстановка входов идёт только в свободный текст
+(цель child, запрос провайдера, значения аргументов), поэтому вход
+пользователя не может подменить capability. Шаблон объявляет
+`schedule_eligibility`: сегодня supervisor-контракт умеет только
+`once`/`interval`, а шаблон с обязательным approval помечен `unavailable`.
+
+Runtime (`workflow_runtime.rs`) durable: SQLite-схема 29
+(`workflow_runs`, `workflow_run_nodes`, `workflow_node_attempts`,
+`workflow_run_events`) ставится идемпотентно тем же способом, что receipts и
+model provenance. Инварианты запуска:
+
+- узел ставится в очередь только после получения и валидации всех обязательных
+  входов; `batch` ограничивает итерацию по списку и не размножает исполнения;
+- перед каждым эффектом заново сверяются graph hash, разрешимость capability по
+  реестру и родительские возможности;
+- dispatch marker пишется до эффекта и закрывается после него, поэтому падение
+  Core даёт `unknown_outcome`, а не слепой повтор; восстановление снимает lease
+  и переводит запуск в `interrupted`;
+- параллельно выполняются только узлы, объявившие `concurrency = parallel` и не
+  требующие approval, в пределах `budget.max_parallel_nodes`; stateful-узлы идут
+  по одному;
+- ошибка узла продолжает выполнение только по объявленной failure-ветви;
+  неподключённая ошибка блокирует downstream и не маскируется под успех;
+- исчерпанный повтор повторяемой ошибки даёт `dead_letter`, а неповторяемая
+  ошибка — `failed`: это разные факты и разные терминальные состояния;
+- недоступный или устаревший источник даёт `degraded`, а не уверенный ответ;
+- события durable, монотонны внутри запуска и содержат только bounded
+  projection.
+
+Адаптеры (`workflow_adapters.rs`) ведут узлы в уже существующие контуры:
+`child` — в `TypedChildTaskRequest`/report, `tool` и `mcp_tool` — в
+`ToolRegistry` с тем же approval path, `context_provider` и `research` — в
+read-only источники с проверкой свежести, `condition`/`transform` — в
+deterministic-операции Core.
+
+Approval узла решается существующей командой `ResolveApproval` и тем же
+approval registry, что и у инструментов: отдельного workflow-approval нет.
+
+Этот контур не следует путать с
+[`features/task-dependency-graphs.md`](features/task-dependency-graphs.md):
+там описан граф зависимостей work items проекта.
+
 ## IPC
 
 Контракт находится в `crates/desktop-ipc/proto/evohime.desktop.proto`.
@@ -110,6 +187,7 @@ budget, lease, reason, dead-letter) и отделяет trace projection от au
 - `ClearPlanReviewHistory` удаляет сохранённые ревью планов из локального журнала; Core отвечает подтверждением, и UI перестаёт показывать историю немедленно;
 - `RevisePlan`, `StopRevision` и `SaveRevisedPlan` правят план по готовому ревью. `RevisePlan` подтверждается сразу, результат приходит событием `task.completed` с `task_id` вида `revision-<uuid>`, прогресс — событием `revision.progress`. `SaveRevisedPlan` пишет файл сам и принимает только путь с расширением `.md`: запись — единственный шаг, где правка покидает память Core. Отказ сохранения приходит событием `plan.save_failed`, а не ошибкой кадра: ошибка кадра рвёт соединение с оболочкой, и опечатка в имени файла читалась бы как падение ядра. Правку, которой уже нет в памяти, Core ищет в журнале — перезапуск Core при обновлении не должен отнимать возможность сохранить готовый текст;
 - `StartPlanReview` и `RevisePlan` принимают пути проверяемых файлов (`source_paths`, `source_path`). По ним Core сам читает соседние планы, на которые проверяемый ссылается Markdown-ссылками, и кладёт их в промпт отдельным блоком: план этапа почти никогда не самодостаточен, инвариант соседа в нём только упомянут ссылкой, и модель, не видя соседа, уверенно переписывает план вразрез с ним. Обход идёт вширь на `MAX_CONTEXT_DEPTH` шагов (этапы связаны не напрямую, а через обзорный файл), берёт только `.md` по относительным ссылкам внутри каталога исходного плана (канонизированные пути сверяются с каталогом, поэтому симлинк наружу не проходит) и ограничен `MAX_CONTEXT_DOCUMENTS` файлами и `MAX_CONTEXT_BYTES`. Читает ядро, а не оболочка: иначе за соседний план можно было бы выдать произвольный текст. Единственное место этой файловой операции — `crates/evohime-core/src/plan_context.rs`; `plan_review.rs` остаётся без файловой системы и часов. Пустой путь — не ошибка: план мог прийти перетаскиванием из источника без файловой системы, и правка тогда идёт по одному файлу, а `RevisionResult.context_files` показывает пользователю, что сверки не было;
+- команды workflow `ListWorkflowTemplates`, `GetWorkflowDefinition`, `StartWorkflow`, `GetWorkflowRun`, `CancelWorkflow` и `ListWorkflowEvents` аддитивны: клиент, который их не знает, согласовывает ту же major-версию и просто их не шлёт. `StartWorkflow` требует ключ идемпотентности — повтор возвращает первый запуск, а не создаёт второй. Ответы несут только bounded projection: идентификаторы, состояния, роли, коды ошибок и номера событий; prompt, цель child-узла, сырой вывод инструмента и содержимое контекста через IPC не проходят. Approval узла решается общей командой `ResolveApproval`;
 - команды памяти `GetMemory`, `ListMemoryPending`, `GetMemoryConflicts`, `ConfirmMemory`, `RejectMemory`, `SupersedeMemory`, `ReviseMemoryCandidate` аддитивны. `ListMemory`, `SearchMemory` и `ListMemoryPending` возвращают только metadata; тело записи доступно исключительно через явный `GetMemory` и маскируется для `sensitive` и забытых записей. Confirm/reject/supersede требуют approval-токен и idempotency key: повтор безопасен и возвращает фактическое состояние записи.
 
 ## Model gateway и routing

@@ -255,7 +255,7 @@ mod tests {
     use super::*;
     use crate::workflow::{
         ApprovalPolicy, CancellationPolicy, ExecutionPolicy, NodeType, Port, PortType, RetryPolicy,
-        WorkflowEdge,
+        ToolActionProfile, WorkflowBudget, WorkflowEdge, WORKFLOW_CONTRACT_VERSION,
     };
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Mutex;
@@ -282,26 +282,28 @@ mod tests {
     }
 
     fn node(id: &str, execution: ExecutionPolicy) -> WorkflowNode {
-        WorkflowNode {
-            id: id.into(),
-            node_type: NodeType::Tool,
-            inputs: vec![],
-            outputs: vec![Port {
-                name: "out".into(),
-                value_type: PortType::Text,
-                required: false,
-            }],
+        WorkflowNode::new(
+            id,
+            NodeType::Tool {
+                tool: ToolActionProfile {
+                    tool_name: "workspace.read".into(),
+                    arguments: Default::default(),
+                },
+            },
             execution,
-        }
+        )
+        .with_output("out", PortType::Text)
     }
 
     fn graph(nodes: Vec<WorkflowNode>, edges: Vec<WorkflowEdge>) -> WorkflowGraph {
         WorkflowGraph {
+            contract: WORKFLOW_CONTRACT_VERSION.into(),
             graph_id: "exec-test".into(),
             version: 1,
             entry_node: "a".into(),
             nodes,
             edges,
+            budget: WorkflowBudget::default(),
         }
     }
 
@@ -359,15 +361,7 @@ mod tests {
             value_type: PortType::Text,
             required: true,
         });
-        let g = graph(
-            vec![a, b],
-            vec![WorkflowEdge {
-                from_node: "a".into(),
-                from_port: "out".into(),
-                to_node: "b".into(),
-                to_port: "in".into(),
-            }],
-        );
+        let g = graph(vec![a, b], vec![WorkflowEdge::data("a", "out", "b", "in")]);
         let executor = ScriptedExecutor {
             calls: Mutex::new(vec![]),
             attempt_counter: AtomicU32::new(0),
@@ -426,15 +420,7 @@ mod tests {
             value_type: PortType::Text,
             required: true,
         });
-        let g = graph(
-            vec![a, b],
-            vec![WorkflowEdge {
-                from_node: "a".into(),
-                from_port: "out".into(),
-                to_node: "b".into(),
-                to_port: "in".into(),
-            }],
-        );
+        let g = graph(vec![a, b], vec![WorkflowEdge::data("a", "out", "b", "in")]);
         let outcome = run_workflow(&g, &SlowExecutor, &AlwaysApproved, &NeverCancelled)
             .await
             .unwrap();
@@ -492,18 +478,8 @@ mod tests {
         let g = graph(
             vec![c, b, a],
             vec![
-                WorkflowEdge {
-                    from_node: "a".into(),
-                    from_port: "out".into(),
-                    to_node: "b".into(),
-                    to_port: "in".into(),
-                },
-                WorkflowEdge {
-                    from_node: "a".into(),
-                    from_port: "out".into(),
-                    to_node: "c".into(),
-                    to_port: "in".into(),
-                },
+                WorkflowEdge::data("a", "out", "b", "in"),
+                WorkflowEdge::data("a", "out", "c", "in"),
             ],
         );
         let run = || async {

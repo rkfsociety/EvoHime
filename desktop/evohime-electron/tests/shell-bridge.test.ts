@@ -872,3 +872,99 @@ describe('ambient listening bridge', () => {
     expect(sent).toHaveLength(0)
   })
 })
+
+describe('workflow orchestration bridge', () => {
+  /**
+   * Оболочка только пересылает намерение. Ни граф, ни порядок узлов, ни
+   * зависимости здесь не вычисляются: всё это принадлежит ядру.
+   */
+  it('forwards the six workflow commands unchanged', () => {
+    expect(invoke('workflow.listTemplates', {})).toEqual({ ok: true, value: { accepted: true } })
+    invoke('workflow.getDefinition', { templateId: 'repository-research' })
+    invoke('workflow.start', {
+      templateId: 'repository-research',
+      workspacePath: 'C:\\work',
+      inputs: { question: 'как устроен supervisor' },
+      idempotencyKey: 'key-1'
+    })
+    invoke('workflow.getRun', { runId: 'run-1' })
+    invoke('workflow.listEvents', { runId: 'run-1', afterSequence: 3, limit: 50 })
+    invoke('workflow.cancel', { runId: 'run-1' })
+
+    expect(sent).toEqual([
+      { listWorkflowTemplates: {} },
+      { getWorkflowDefinition: { templateId: 'repository-research' } },
+      {
+        startWorkflow: {
+          templateId: 'repository-research',
+          taskId: '',
+          workspacePath: 'C:\\work',
+          inputs: [{ name: 'question', value: 'как устроен supervisor' }],
+          idempotencyKey: 'key-1'
+        }
+      },
+      { getWorkflowRun: { runId: 'run-1' } },
+      { listWorkflowEvents: { runId: 'run-1', afterSequence: 3, limit: 50 } },
+      { cancelWorkflow: { runId: 'run-1' } }
+    ])
+  })
+
+  /** Запуск без ключа идемпотентности не доходит до ядра. */
+  it('refuses a start without an idempotency key or a workspace', () => {
+    expect(
+      invoke('workflow.start', {
+        templateId: 'repository-research',
+        workspacePath: 'C:\\work',
+        inputs: {}
+      })
+    ).toMatchObject({ ok: false, code: 'invalid-payload' })
+    expect(
+      invoke('workflow.start', {
+        templateId: 'repository-research',
+        inputs: {},
+        idempotencyKey: 'key-1'
+      })
+    ).toMatchObject({ ok: false, code: 'invalid-payload' })
+    expect(sent).toHaveLength(0)
+  })
+
+  /**
+   * Входы шаблона — плоская карта строк. Вложенный объект или список длиннее
+   * лимита не должен уходить в очередь команд.
+   */
+  it('refuses inputs that are not a bounded flat string map', () => {
+    expect(
+      invoke('workflow.start', {
+        templateId: 'repository-research',
+        workspacePath: 'C:\\work',
+        inputs: { nested: { evil: true } } as unknown as Record<string, string>,
+        idempotencyKey: 'key-1'
+      })
+    ).toMatchObject({ ok: false, code: 'invalid-payload' })
+
+    const tooMany: Record<string, string> = {}
+    for (let index = 0; index < 17; index += 1) tooMany[`field-${index}`] = 'x'
+    expect(
+      invoke('workflow.start', {
+        templateId: 'repository-research',
+        workspacePath: 'C:\\work',
+        inputs: tooMany,
+        idempotencyKey: 'key-1'
+      })
+    ).toMatchObject({ ok: false, code: 'invalid-payload' })
+    expect(sent).toHaveLength(0)
+  })
+
+  /** Позиция replay не может быть отрицательной сверх `-1` или дробной. */
+  it('refuses a malformed replay position or run id', () => {
+    expect(
+      invoke('workflow.listEvents', { runId: 'run-1', afterSequence: -5 })
+    ).toMatchObject({ ok: false, code: 'invalid-payload' })
+    expect(invoke('workflow.getRun', { runId: '' })).toMatchObject({
+      ok: false,
+      code: 'invalid-payload'
+    })
+    expect(invoke('workflow.cancel', {})).toMatchObject({ ok: false, code: 'invalid-payload' })
+    expect(sent).toHaveLength(0)
+  })
+})

@@ -231,32 +231,23 @@ mod tests {
     }
 
     fn node(id: &str, required_approval: bool) -> WorkflowNode {
-        WorkflowNode {
-            id: id.into(),
-            node_type: NodeType::Transform,
-            inputs: vec![],
-            outputs: vec![],
-            execution: policy(required_approval),
-        }
+        WorkflowNode::new(id, NodeType::Transform, policy(required_approval))
     }
 
     fn graph(nodes: Vec<WorkflowNode>, edges: Vec<WorkflowEdge>) -> WorkflowGraph {
         WorkflowGraph {
+            contract: WORKFLOW_CONTRACT_VERSION.into(),
             graph_id: "runner-test".into(),
             version: 7,
             entry_node: "a".into(),
             nodes,
             edges,
+            budget: WorkflowBudget::default(),
         }
     }
 
     fn edge(from: &str, to: &str) -> WorkflowEdge {
-        WorkflowEdge {
-            from_node: from.into(),
-            from_port: "out".into(),
-            to_node: to.into(),
-            to_port: "in".into(),
-        }
+        WorkflowEdge::data(from, "out", to, "in")
     }
 
     #[test]

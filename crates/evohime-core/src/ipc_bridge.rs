@@ -93,6 +93,15 @@ pub struct IpcBridge {
     /// что держит агент: иначе мост и производитель предложений считали бы
     /// разные бюджеты.
     proactivity: crate::ambient::AmbientProactivityRegistry,
+    /// Реестр подтверждений узлов workflow (план 06.3).
+    ///
+    /// Отдельной команды approval для workflow нет: карточка решается той же
+    /// `ResolveApproval`, а этот реестр помнит, какому узлу принадлежит
+    /// идентификатор и было ли решение.
+    workflow_approvals: Arc<crate::workflow_runtime::WorkflowApprovalRegistry>,
+    /// Core-owned каталог возможностей workflow: он статичен, поэтому
+    /// строится один раз на мост.
+    workflow_registry: Arc<crate::workflow_registry::WorkflowRegistry>,
 }
 
 /// Проект, под которым живут принятые предложения. Речь у стола не
@@ -110,6 +119,37 @@ pub const AMBIENT_REMINDER_NON_GOAL: &str =
 /// Потолок длины ключа идемпотентности. Совпадает с bounded-лимитом
 /// идентификаторов хранилища.
 const MAX_PROPOSAL_KEY_BYTES: usize = 128;
+
+/// Отказ запуска workflow: код называется явно, идентификатор не выдумывается.
+fn workflow_start_failure(code: &str) -> serde_json::Value {
+    serde_json::json!({
+        "run_id": "",
+        "state": "",
+        "graph_hash": "",
+        "deduplicated": false,
+        "error_code": code,
+    })
+}
+
+/// Родительские возможности запуска из оболочки.
+///
+/// Оболочка не назначает права: набор фиксирован Core и совпадает с тем, что
+/// уже разрешено обычной задаче чтения репозитория. Child-узел может получить
+/// только подмножество.
+fn workflow_parent_capabilities() -> crate::workflow_registry::ParentCapabilities {
+    crate::workflow_registry::ParentCapabilities {
+        grants: std::collections::BTreeSet::from([
+            "fs.read".to_string(),
+            "workspace.read".to_string(),
+        ]),
+        budget: crate::workflow::NodeBudget {
+            max_tokens: 64_000,
+            max_seconds: 900,
+            max_tool_calls: 64,
+        },
+        context_allowlist: std::collections::BTreeSet::new(),
+    }
+}
 
 /// Отказ по решению предложения: код называется явно, «применено» не
 /// придумывается.
@@ -196,6 +236,8 @@ impl IpcBridge {
             ambient: crate::ambient::AmbientListeningRegistry::default(),
             ambient_data_dir: None,
             proactivity: crate::ambient::AmbientProactivityRegistry::default(),
+            workflow_approvals: Arc::new(crate::workflow_runtime::WorkflowApprovalRegistry::new()),
+            workflow_registry: Arc::new(crate::workflow_registry::WorkflowRegistry::bootstrap()),
         }
     }
 
@@ -220,6 +262,8 @@ impl IpcBridge {
             ambient: crate::ambient::AmbientListeningRegistry::default(),
             ambient_data_dir: None,
             proactivity: crate::ambient::AmbientProactivityRegistry::default(),
+            workflow_approvals: Arc::new(crate::workflow_runtime::WorkflowApprovalRegistry::new()),
+            workflow_registry: Arc::new(crate::workflow_registry::WorkflowRegistry::bootstrap()),
         }
     }
 
@@ -251,6 +295,8 @@ impl IpcBridge {
             ambient: crate::ambient::AmbientListeningRegistry::default(),
             ambient_data_dir: None,
             proactivity: crate::ambient::AmbientProactivityRegistry::default(),
+            workflow_approvals: Arc::new(crate::workflow_runtime::WorkflowApprovalRegistry::new()),
+            workflow_registry: Arc::new(crate::workflow_registry::WorkflowRegistry::bootstrap()),
         }
     }
 
@@ -2208,6 +2254,19 @@ impl IpcBridge {
                 if let Some(approvals) = &self.approvals {
                     let _ = approvals.resolve(approval_id, resolve.granted).await;
                 }
+                // Узел workflow подтверждается той же командой, что и
+                // инструмент: отдельного пути approval у workflow нет. Если
+                // идентификатор принадлежит узлу, запуск продолжается сам —
+                // иначе он остался бы ждать уже принятого решения.
+                if self
+                    .workflow_approvals
+                    .resolve(&resolve.approval_id, resolve.granted)
+                {
+                    if let Some(run_id) = self.workflow_approvals.run_for(&resolve.approval_id) {
+                        let workspace = self.journal.workflow_run_workspace(&run_id).await;
+                        self.spawn_workflow_drive(run_id, workspace);
+                    }
+                }
             }
             Some(generated::command_envelope::Command::ResolveRoutingDecision(resolve)) => {
                 let coordinator = self
@@ -2285,6 +2344,36 @@ impl IpcBridge {
             Some(generated::command_envelope::Command::ListAmbientProposals(request)) => {
                 let result = self.dispatch_list_ambient_proposals(request).await;
                 self.write_response(writer, "ambient.proposals", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::ListWorkflowTemplates(_)) => {
+                let result = self.dispatch_list_workflow_templates();
+                self.write_response(writer, "workflow.templates", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::GetWorkflowDefinition(request)) => {
+                let result = self.dispatch_workflow_definition(request);
+                self.write_response(writer, "workflow.definition", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::StartWorkflow(request)) => {
+                let result = self.dispatch_start_workflow(request).await;
+                self.write_response(writer, "workflow.started", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::GetWorkflowRun(request)) => {
+                let result = self.dispatch_workflow_run(request).await;
+                self.write_response(writer, "workflow.run", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::CancelWorkflow(request)) => {
+                let result = self.dispatch_cancel_workflow(request).await;
+                self.write_response(writer, "workflow.cancelled", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::ListWorkflowEvents(request)) => {
+                let result = self.dispatch_list_workflow_events(request).await;
+                self.write_response(writer, "workflow.events", serde_json::to_vec(&result)?)
                     .await?;
             }
             None => {}
@@ -2706,6 +2795,283 @@ impl IpcBridge {
         {
             Ok(()) => serde_json::json!({ "applied": true, "error_code": "" }),
             Err(code) => serde_json::json!({ "applied": false, "error_code": code.as_str() }),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Workflow orchestration (план 06.3).
+    //
+    // Мост здесь только курьер. Он не планирует граф, не решает порядок и не
+    // выполняет узлы: всё это делает `workflow_runtime`, а наружу уходит
+    // bounded projection — идентификаторы, состояния и коды. Ни prompt, ни
+    // сырой вывод child, ни содержимое контекста через эти команды не
+    // проходят.
+    // ------------------------------------------------------------------
+
+    /// Собирает runtime под конкретный рабочий каталог.
+    ///
+    /// Runtime создаётся на команду, а не хранится: состояние запуска durable,
+    /// поэтому «живого» объекта между командами не требуется, а рабочий
+    /// каталог у каждого запуска свой.
+    fn workflow_runtime(&self, workspace_path: &str) -> crate::workflow_runtime::WorkflowRuntime {
+        let mut adapter =
+            crate::workflow_adapters::CoreNodeAdapter::new(self.journal.clone(), workspace_path);
+        if let Some(tools) = &self.tools {
+            adapter = adapter.with_tools(Arc::clone(tools));
+        }
+        crate::workflow_runtime::WorkflowRuntime::new(
+            self.journal.clone(),
+            Arc::clone(&self.workflow_registry),
+            Arc::new(adapter),
+            Arc::clone(&self.workflow_approvals)
+                as Arc<dyn crate::workflow_runtime::WorkflowApprovalGate>,
+            self.core_instance_id.clone(),
+        )
+    }
+
+    /// Продолжает запуск в фоне. Команда IPC не ждёт выполнения графа:
+    /// состояние durable, и оболочка забирает его отдельным `GetWorkflowRun`.
+    fn spawn_workflow_drive(&self, run_id: String, workspace_path: String) {
+        let runtime = self.workflow_runtime(&workspace_path);
+        tokio::spawn(async move {
+            let _ = runtime.drive(&run_id).await;
+        });
+    }
+
+    fn dispatch_list_workflow_templates(&self) -> serde_json::Value {
+        let templates: Vec<serde_json::Value> = crate::workflow_templates::catalog()
+            .into_iter()
+            .map(|template| {
+                serde_json::json!({
+                    "template_id": template.template_id,
+                    "version": template.version,
+                    "display_name": template.display_name,
+                    "description": template.description,
+                    "inputs": template
+                        .inputs
+                        .iter()
+                        .map(|input| serde_json::json!({
+                            "name": input.name,
+                            "title": input.title,
+                            "required": input.required,
+                            "max_chars": input.max_chars,
+                        }))
+                        .collect::<Vec<_>>(),
+                    "required_capabilities": template.required_capabilities,
+                    "schedule_eligibility": template.schedule_eligibility.as_str(),
+                    "preview": template.preview,
+                    "node_count": template.graph().nodes.len(),
+                })
+            })
+            .collect();
+        serde_json::json!({ "templates": templates, "error_code": "" })
+    }
+
+    fn dispatch_workflow_definition(
+        &self,
+        request: generated::GetWorkflowDefinition,
+    ) -> serde_json::Value {
+        let Some(template) = crate::workflow_templates::template(&request.template_id) else {
+            return serde_json::json!({
+                "template_id": request.template_id,
+                "nodes": Vec::<serde_json::Value>::new(),
+                "edges": Vec::<serde_json::Value>::new(),
+                "error_code": "unknown_template",
+            });
+        };
+        let graph = template.graph();
+        serde_json::json!({
+            "template_id": template.template_id,
+            "version": template.version,
+            "display_name": template.display_name,
+            "graph_id": graph.graph_id,
+            "graph_version": graph.version,
+            "graph_hash": graph.canonical_hash(),
+            "schedule_eligibility": template.schedule_eligibility.as_str(),
+            "preview": template.preview,
+            "nodes": graph
+                .nodes
+                .iter()
+                .map(|node| serde_json::json!({
+                    "node_id": node.id,
+                    "action_kind": node.node_type.action_kind(),
+                    "approval_required": node.execution.approval.required,
+                    "block_id": node
+                        .block
+                        .as_ref()
+                        .map(|block| block.block_id.clone())
+                        .unwrap_or_default(),
+                    "block_version": node
+                        .block
+                        .as_ref()
+                        .map(|block| block.block_version)
+                        .unwrap_or_default(),
+                }))
+                .collect::<Vec<_>>(),
+            "edges": graph
+                .edges
+                .iter()
+                .map(|edge| serde_json::json!({
+                    "from_node": edge.from_node,
+                    "to_node": edge.to_node,
+                    "channel": match edge.channel {
+                        crate::workflow::EdgeChannel::Failure => "failure",
+                        crate::workflow::EdgeChannel::Data => "data",
+                    },
+                }))
+                .collect::<Vec<_>>(),
+            "error_code": "",
+        })
+    }
+
+    async fn dispatch_start_workflow(
+        &self,
+        request: generated::StartWorkflow,
+    ) -> serde_json::Value {
+        let Some(template) = crate::workflow_templates::template(&request.template_id) else {
+            return workflow_start_failure("unknown_template");
+        };
+        let inputs: std::collections::BTreeMap<String, String> = request
+            .inputs
+            .iter()
+            .map(|input| (input.name.clone(), input.value.clone()))
+            .collect();
+        let graph = match template.instantiate(&inputs) {
+            Ok(graph) => graph,
+            Err(error) => return workflow_start_failure(error.code()),
+        };
+
+        // Идемпотентность: тот же ключ даёт тот же `run_id`, поэтому двойной
+        // клик возвращает первый запуск, а не создаёт второй.
+        let run_id = if request.idempotency_key.trim().is_empty() {
+            uuid::Uuid::new_v4().to_string()
+        } else {
+            let digest = <sha2::Sha256 as sha2::Digest>::digest(
+                format!("{}|{}", request.template_id, request.idempotency_key).as_bytes(),
+            );
+            format!("wf-{}", hex_encode(&digest[..16]))
+        };
+        if let Ok(Some(existing)) = self.journal.workflow_run(&run_id).await {
+            return serde_json::json!({
+                "run_id": existing.run_id,
+                "state": existing.state.as_str(),
+                "graph_hash": existing.graph_hash,
+                "deduplicated": true,
+                "error_code": "",
+            });
+        }
+
+        let workspace_path = request.workspace_path.clone();
+        let runtime = self.workflow_runtime(&workspace_path);
+        let start = crate::workflow_runtime::StartWorkflowRequest {
+            run_id: run_id.clone(),
+            task_id: if request.task_id.trim().is_empty() {
+                run_id.clone()
+            } else {
+                request.task_id.clone()
+            },
+            workspace_path: workspace_path.clone(),
+            template_id: template.template_id.clone(),
+            template_version: template.version,
+            inputs,
+            graph,
+            parent: workflow_parent_capabilities(),
+        };
+        match runtime.start(start).await {
+            Ok(run_id) => {
+                self.spawn_workflow_drive(run_id.clone(), workspace_path);
+                serde_json::json!({
+                    "run_id": run_id,
+                    "state": "pending",
+                    "graph_hash": "",
+                    "deduplicated": false,
+                    "error_code": "",
+                })
+            }
+            Err(error) => workflow_start_failure(error.code()),
+        }
+    }
+
+    async fn dispatch_workflow_run(&self, request: generated::GetWorkflowRun) -> serde_json::Value {
+        let workspace = self.journal.workflow_run_workspace(&request.run_id).await;
+        let runtime = self.workflow_runtime(&workspace);
+        match runtime.projection(&request.run_id).await {
+            Ok(Some(projection)) => {
+                let mut value = serde_json::to_value(&projection).unwrap_or_default();
+                if let Some(object) = value.as_object_mut() {
+                    object.insert("error_code".into(), serde_json::json!(""));
+                }
+                value
+            }
+            Ok(None) => serde_json::json!({
+                "run_id": request.run_id,
+                "nodes": Vec::<serde_json::Value>::new(),
+                "state": "unknown_state",
+                "error_code": "unknown_run",
+            }),
+            Err(error) => serde_json::json!({
+                "run_id": request.run_id,
+                "nodes": Vec::<serde_json::Value>::new(),
+                "state": "unknown_state",
+                "error_code": error.code(),
+            }),
+        }
+    }
+
+    async fn dispatch_cancel_workflow(
+        &self,
+        request: generated::CancelWorkflow,
+    ) -> serde_json::Value {
+        let now_ms = crate::task_memory::now_millis() as i64;
+        let cancelled = self
+            .journal
+            .request_workflow_cancel(&request.run_id, now_ms)
+            .await
+            .unwrap_or(false);
+        if cancelled {
+            let workspace = self.journal.workflow_run_workspace(&request.run_id).await;
+            self.spawn_workflow_drive(request.run_id.clone(), workspace);
+        }
+        serde_json::json!({
+            "run_id": request.run_id,
+            "cancelled": cancelled,
+            "error_code": if cancelled { "" } else { "not_cancellable" },
+        })
+    }
+
+    async fn dispatch_list_workflow_events(
+        &self,
+        request: generated::ListWorkflowEvents,
+    ) -> serde_json::Value {
+        let limit = if request.limit <= 0 {
+            100usize
+        } else {
+            (request.limit as usize).min(500)
+        };
+        match self
+            .journal
+            .list_workflow_events(&request.run_id, request.after_sequence, limit)
+            .await
+        {
+            Ok(events) => serde_json::json!({
+                "run_id": request.run_id,
+                "events": events
+                    .into_iter()
+                    .map(|event| serde_json::json!({
+                        "sequence": event.run_sequence,
+                        "node_id": event.node_id,
+                        "event_type": event.event_type,
+                        "payload": event.payload_json,
+                        "created_at_ms": event.created_at_ms,
+                    }))
+                    .collect::<Vec<_>>(),
+                "error_code": "",
+            }),
+            Err(error) => serde_json::json!({
+                "run_id": request.run_id,
+                "events": Vec::<serde_json::Value>::new(),
+                "error_code": error.to_string(),
+            }),
         }
     }
 
@@ -9303,5 +9669,279 @@ mod tests {
             .expect("utterances read");
         assert_eq!(left.len(), 1);
         assert_eq!(left[0].sequence, 0);
+    }
+
+    // ------------------------------------------------------------------
+    // Workflow orchestration (план 06.3).
+    // ------------------------------------------------------------------
+
+    fn workflow_bridge(name: &str) -> (IpcBridge, tempfile::TempDir) {
+        ambient_bridge(name)
+    }
+
+    /// Каталог отдаёт версии, входы и пригодность к расписанию, но не граф
+    /// целиком: renderer не должен получать материал для собственного
+    /// планирования.
+    #[tokio::test]
+    async fn the_template_catalog_is_bounded_and_versioned() {
+        let (bridge, _directory) = workflow_bridge("workflow-templates");
+        let (event_type, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::ListWorkflowTemplates(
+                generated::ListWorkflowTemplates {},
+            ),
+        )
+        .await;
+        assert_eq!(event_type, "workflow.templates");
+        let templates = payload["templates"].as_array().expect("список шаблонов");
+        assert_eq!(templates.len(), 3);
+        let ids: Vec<&str> = templates
+            .iter()
+            .map(|item| item["template_id"].as_str().unwrap_or_default())
+            .collect();
+        assert!(ids.contains(&"repository-research"));
+        assert!(ids.contains(&"plan-implement-review"));
+        assert!(ids.contains(&"parallel-security-review"));
+        for template in templates {
+            assert!(template["version"].as_u64().unwrap_or_default() >= 1);
+            assert!(!template["schedule_eligibility"]
+                .as_str()
+                .unwrap_or_default()
+                .is_empty());
+            assert!(template.get("graph").is_none(), "граф целиком не уходит");
+        }
+        let approval_bearing = templates
+            .iter()
+            .find(|item| item["template_id"] == "plan-implement-review")
+            .expect("шаблон с подтверждением");
+        assert_eq!(approval_bearing["schedule_eligibility"], "unavailable");
+    }
+
+    /// Неизвестный шаблон получает typed-код, а не пустой успешный ответ.
+    #[tokio::test]
+    async fn an_unknown_template_definition_is_named_not_faked() {
+        let (bridge, _directory) = workflow_bridge("workflow-definition");
+        let (_, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::GetWorkflowDefinition(
+                generated::GetWorkflowDefinition {
+                    template_id: "does-not-exist".into(),
+                },
+            ),
+        )
+        .await;
+        assert_eq!(payload["error_code"], "unknown_template");
+        assert!(payload["nodes"].as_array().expect("узлы").is_empty());
+
+        let (_, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::GetWorkflowDefinition(
+                generated::GetWorkflowDefinition {
+                    template_id: "parallel-security-review".into(),
+                },
+            ),
+        )
+        .await;
+        assert_eq!(payload["error_code"], "");
+        assert_eq!(payload["nodes"].as_array().expect("узлы").len(), 4);
+        assert_eq!(payload["graph_hash"].as_str().unwrap_or_default().len(), 64);
+    }
+
+    /// Пропущенный обязательный вход не запускает граф.
+    #[tokio::test]
+    async fn a_template_input_contract_violation_never_starts_a_run() {
+        let (bridge, directory) = workflow_bridge("workflow-start-invalid");
+        let (event_type, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::StartWorkflow(generated::StartWorkflow {
+                template_id: "repository-research".into(),
+                task_id: "task-1".into(),
+                workspace_path: directory.path().to_string_lossy().to_string(),
+                inputs: vec![],
+                idempotency_key: "key-1".into(),
+            }),
+        )
+        .await;
+        assert_eq!(event_type, "workflow.started");
+        assert_eq!(payload["error_code"], "missing_input");
+        assert_eq!(payload["run_id"], "");
+        assert!(bridge
+            .journal()
+            .list_workflow_runs(10)
+            .await
+            .expect("список запусков")
+            .is_empty());
+    }
+
+    /// Один и тот же ключ идемпотентности возвращает первый запуск.
+    #[tokio::test]
+    async fn the_same_idempotency_key_returns_the_first_run() {
+        let (bridge, directory) = workflow_bridge("workflow-idempotency");
+        let command = || {
+            generated::command_envelope::Command::StartWorkflow(generated::StartWorkflow {
+                template_id: "parallel-security-review".into(),
+                task_id: "task-1".into(),
+                workspace_path: directory.path().to_string_lossy().to_string(),
+                inputs: vec![generated::WorkflowInput {
+                    name: "scope".into(),
+                    value: "crates/evohime-core".into(),
+                }],
+                idempotency_key: "key-1".into(),
+            })
+        };
+        let (_, first) = ambient_call(&bridge, command()).await;
+        assert_eq!(first["error_code"], "");
+        let run_id = first["run_id"].as_str().expect("идентификатор").to_string();
+        assert!(!run_id.is_empty());
+        assert_eq!(first["deduplicated"], false);
+
+        let (_, second) = ambient_call(&bridge, command()).await;
+        assert_eq!(second["run_id"], run_id);
+        assert_eq!(second["deduplicated"], true);
+        assert_eq!(
+            bridge
+                .journal()
+                .list_workflow_runs(10)
+                .await
+                .expect("список запусков")
+                .len(),
+            1
+        );
+    }
+
+    /// Проекция запуска несёт состояния и роли, но не цель child, не prompt и
+    /// не сырой вывод.
+    #[tokio::test]
+    async fn a_run_projection_carries_no_prompt_goal_or_raw_output() {
+        let (bridge, directory) = workflow_bridge("workflow-projection");
+        let (_, started) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::StartWorkflow(generated::StartWorkflow {
+                template_id: "repository-research".into(),
+                task_id: "task-1".into(),
+                workspace_path: directory.path().to_string_lossy().to_string(),
+                inputs: vec![generated::WorkflowInput {
+                    name: "question".into(),
+                    value: "секретная формулировка вопроса".into(),
+                }],
+                idempotency_key: "key-1".into(),
+            }),
+        )
+        .await;
+        let run_id = started["run_id"]
+            .as_str()
+            .expect("идентификатор")
+            .to_string();
+
+        let (event_type, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::GetWorkflowRun(generated::GetWorkflowRun {
+                run_id: run_id.clone(),
+            }),
+        )
+        .await;
+        assert_eq!(event_type, "workflow.run");
+        assert_eq!(payload["error_code"], "");
+        assert_eq!(payload["run_id"], run_id);
+        let rendered = payload.to_string();
+        assert!(
+            !rendered.contains("секретная формулировка вопроса"),
+            "цель узла не должна доходить до renderer: {rendered}"
+        );
+        let nodes = payload["nodes"].as_array().expect("узлы");
+        assert_eq!(nodes.len(), 4);
+        for node in nodes {
+            assert!(node.get("node_id").is_some());
+            assert!(node.get("state").is_some());
+            assert!(node.get("output").is_none(), "сырой вывод наружу не уходит");
+        }
+    }
+
+    /// Неизвестный запуск даёт `unknown_state`, а не выдуманный успех.
+    #[tokio::test]
+    async fn an_unknown_run_is_reported_as_unknown_state() {
+        let (bridge, _directory) = workflow_bridge("workflow-unknown-run");
+        let (_, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::GetWorkflowRun(generated::GetWorkflowRun {
+                run_id: "missing".into(),
+            }),
+        )
+        .await;
+        assert_eq!(payload["error_code"], "unknown_run");
+        assert_eq!(payload["state"], "unknown_state");
+
+        let (_, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::CancelWorkflow(generated::CancelWorkflow {
+                run_id: "missing".into(),
+            }),
+        )
+        .await;
+        assert_eq!(payload["cancelled"], false);
+        assert_eq!(payload["error_code"], "not_cancellable");
+    }
+
+    /// События запуска durable, монотонны и доступны для replay с любой точки.
+    #[tokio::test]
+    async fn run_events_replay_from_any_sequence() {
+        let (bridge, directory) = workflow_bridge("workflow-events");
+        let (_, started) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::StartWorkflow(generated::StartWorkflow {
+                template_id: "parallel-security-review".into(),
+                task_id: "task-1".into(),
+                workspace_path: directory.path().to_string_lossy().to_string(),
+                inputs: vec![generated::WorkflowInput {
+                    name: "scope".into(),
+                    value: "crates".into(),
+                }],
+                idempotency_key: "key-1".into(),
+            }),
+        )
+        .await;
+        let run_id = started["run_id"]
+            .as_str()
+            .expect("идентификатор")
+            .to_string();
+
+        let (event_type, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::ListWorkflowEvents(
+                generated::ListWorkflowEvents {
+                    run_id: run_id.clone(),
+                    after_sequence: -1,
+                    limit: 100,
+                },
+            ),
+        )
+        .await;
+        assert_eq!(event_type, "workflow.events");
+        let events = payload["events"].as_array().expect("события");
+        assert!(!events.is_empty());
+        assert_eq!(events[0]["event_type"], "workflow.run_started");
+        let sequences: Vec<i64> = events
+            .iter()
+            .map(|event| event["sequence"].as_i64().unwrap_or_default())
+            .collect();
+        let mut sorted = sequences.clone();
+        sorted.sort();
+        assert_eq!(sequences, sorted);
+
+        let (_, tail) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::ListWorkflowEvents(
+                generated::ListWorkflowEvents {
+                    run_id,
+                    after_sequence: 0,
+                    limit: 100,
+                },
+            ),
+        )
+        .await;
+        let tail_events = tail["events"].as_array().expect("хвост");
+        assert!(tail_events
+            .iter()
+            .all(|event| event["sequence"].as_i64().unwrap_or_default() > 0));
     }
 }

@@ -22,13 +22,14 @@ pub mod model_provenance;
 pub mod reconciliation_verifier;
 pub mod research_store;
 pub mod scratchpad_store;
+pub mod workflow_store;
 
 pub use backup::{
     BackupObjectSummary, BackupPreview, BackupProgress, BackupProgressPhase, BackupResult,
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 28;
+pub const SCHEMA_VERSION: u32 = 29;
 const LEGACY_SCHEMA_VERSION: u32 = 26;
 
 #[derive(Debug, thiserror::Error)]
@@ -396,6 +397,11 @@ impl LocalDatabase {
         evohime_receipts::runtime::install_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         model_provenance::install_schema(&connection)
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        // Схема 29: durable-запуски workflow. Ставится идемпотентно тем же
+        // способом, что receipts и model provenance, поэтому существующая база
+        // получает таблицы без отдельной ветки миграции.
+        workflow_store::install_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })

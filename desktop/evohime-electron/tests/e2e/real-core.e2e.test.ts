@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import type { ShellState } from '../../src/shared/api'
+import type { CoreEvent, ShellState } from '../../src/shared/api'
 import type { LaunchContext } from '../../src/main/ipc/launch-context'
 import { CorePipeClient } from '../../src/main/ipc/pipe-client'
 
@@ -145,4 +145,88 @@ describe.runIf(coreExecutable !== null && process.platform === 'win32')('real Co
     const recovered = await waitForState(target, 'reconnected', (state) => state.connection === 'connected')
     expect(recovered.protocol).toEqual({ major: 1, minor: 0 })
   }, 90_000)
+
+  /**
+   * Один шаблон, запущенный против настоящего Core (план 06.3).
+   *
+   * Проверяется весь путь: каталог шаблонов, запуск с bounded входом,
+   * durable-проекция запуска и его события. Никакого внешнего web runtime при
+   * этом не поднимается — работает только уже собранный `evohime-core.exe`.
+   */
+  it('runs one Core-owned workflow template end to end', async () => {
+    const pipeName = `\\\\.\\pipe\\evohime-e2e-${process.pid}-workflow`
+    startCore(pipeName)
+
+    const target = createClient(pipeName)
+    const events: CoreEvent[] = []
+    target.on('core-event', (event) => events.push(event))
+    target.start()
+    await waitForState(target, 'connected', (state) => state.connection === 'connected')
+
+    const awaitEvent = async (eventType: string): Promise<CoreEvent> => {
+      const deadline = Date.now() + 30_000
+      for (;;) {
+        const found = events.filter((event) => event.eventType === eventType).at(-1)
+        if (found) return found
+        if (Date.now() > deadline) throw new Error(`timed out waiting for ${eventType}`)
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 100))
+      }
+    }
+
+    target.send({ listWorkflowTemplates: {} })
+    const catalog = JSON.parse((await awaitEvent('workflow.templates')).payload) as {
+      templates: { template_id: string }[]
+    }
+    expect(catalog.templates.map((item) => item.template_id)).toContain('parallel-security-review')
+
+    target.send({
+      startWorkflow: {
+        templateId: 'parallel-security-review',
+        taskId: 'e2e-task',
+        workspacePath: repoRoot,
+        inputs: [{ name: 'scope', value: 'crates' }],
+        idempotencyKey: `e2e-${process.pid}`
+      }
+    })
+    const started = JSON.parse((await awaitEvent('workflow.started')).payload) as {
+      run_id: string
+      error_code: string
+    }
+    expect(started.error_code).toBe('')
+    expect(started.run_id).toBeTruthy()
+
+    // Запуск идёт в ядре: оболочка только спрашивает состояние.
+    let projection: { state: string; nodes: { node_id: string }[] } | null = null
+    const deadline = Date.now() + 60_000
+    while (Date.now() < deadline) {
+      target.send({ getWorkflowRun: { runId: started.run_id } })
+      const payload = JSON.parse((await awaitEvent('workflow.run')).payload) as {
+        run_id: string
+        state: string
+        nodes: { node_id: string }[]
+      }
+      if (payload.run_id === started.run_id) {
+        projection = payload
+        if (['completed', 'failed', 'degraded', 'cancelled'].includes(payload.state)) break
+      }
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 300))
+    }
+    expect(projection).not.toBeNull()
+    expect(projection?.nodes.map((node) => node.node_id).sort()).toEqual([
+      'merge',
+      'permissions',
+      'scope',
+      'secrets'
+    ])
+
+    target.send({
+      listWorkflowEvents: { runId: started.run_id, afterSequence: -1, limit: 100 }
+    })
+    const eventList = JSON.parse((await awaitEvent('workflow.events')).payload) as {
+      events: { sequence: number; event_type: string }[]
+    }
+    expect(eventList.events[0]?.event_type).toBe('workflow.run_started')
+    const sequences = eventList.events.map((item) => item.sequence)
+    expect(sequences).toEqual([...sequences].sort((left, right) => left - right))
+  }, 120_000)
 })

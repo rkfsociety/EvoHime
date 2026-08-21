@@ -12,7 +12,8 @@
 - [07-1](07-1-tool-manifest-contract.md);
 - текущие approval tokens, exact-call recheck, permission policy,
   cancellation и task timeline;
-- [06-3](06-3-workflow-desktop.md) для общей Electron projection модели.
+- реализованная Electron projection модель workflow: раздел «Workflow
+  orchestration» [`../architecture.md`](../architecture.md).
 
 ### Опциональные
 

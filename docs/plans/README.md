@@ -6,13 +6,12 @@
 
 ## С чего начинать
 
-Планы 01–05 реализованы целиком и удалены из каталога: их контракты живут в
+Планы 01–06 реализованы целиком и удалены из каталога: их контракты живут в
 [`../architecture.md`](../architecture.md), подтверждённое состояние — в
-[`../current-state.md`](../current-state.md). В каталоге остаются двенадцать
-незавершённых направлений: сначала план 06, затем планы 07, 08, 09, 10, 11,
+[`../current-state.md`](../current-state.md). В каталоге остаются одиннадцать
+незавершённых направлений: сначала план 07, затем планы 08, 09, 10, 11,
 12, 13, 14, 15, 16 и 17.
 Их обзоры:
-[`06-0-workflow-orchestration.md`](06-0-workflow-orchestration.md),
 [`07-0-superagi-inspired-tooling.md`](07-0-superagi-inspired-tooling.md),
 [`08-0-execution-ledger.md`](08-0-execution-ledger.md),
 [`09-0-policy-and-capabilities.md`](09-0-policy-and-capabilities.md),
@@ -52,8 +51,8 @@
 | 03 Специализированные child workflows | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
 | 04 Постоянное слушание и ambient-память | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
 | 05 Provenance и реконструируемость model request | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
-| 06 CAMEL/AutoGPT-inspired workflow orchestration для Евы | проектируется; обзор в [`06-0-workflow-orchestration.md`](06-0-workflow-orchestration.md) | 06-1 зависит от существующих workflow/child contracts; 06-2 от 06-1; 06-3 от 06-2; 06-4 от 06-3 |
-| 07 SuperAGI-inspired tool manifests, Action Console и telemetry | предложен; обзор в [`07-0-superagi-inspired-tooling.md`](07-0-superagi-inspired-tooling.md) | 07-0 блокируется 06-1 и 06-3; 07-1 от 07-0; 07-2 от 07-1; 07-3 от 07-1 и 06-3; 07-4 от 07-1 и 07-3 |
+| 06 CAMEL/AutoGPT-inspired workflow orchestration для Евы | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
+| 07 SuperAGI-inspired tool manifests, Action Console и telemetry | предложен; обзор в [`07-0-superagi-inspired-tooling.md`](07-0-superagi-inspired-tooling.md) | 07-0 блокируется реализованным workflow-контрактом из [`../architecture.md`](../architecture.md); 07-1 от 07-0; 07-2 от 07-1; 07-3 от 07-1; 07-4 от 07-1 и 07-3 |
 | 08 Core-owned execution ledger и typed receipts | проектируется; обзор в [`08-0-execution-ledger.md`](08-0-execution-ledger.md) | 08-1 от текущих EventJournal/receipts/IPC; 08-2 от 08-1; 08-3 от 08-2; 08-4 от 08-3 |
 | 09 Policy, capabilities и approval | проектируется; обзор в [`09-0-policy-and-capabilities.md`](09-0-policy-and-capabilities.md) | 09-1 от плана 08 и текущей policy; 09-2 от 09-1; 09-3 от 09-2; 09-4 от 09-3 |
 | 10 IPC, version negotiation и provider boundary | проектируется; обзор в [`10-0-ipc-adapters-and-providers.md`](10-0-ipc-adapters-and-providers.md) | 10-1 от планов 08–09 и текущего IPC; 10-2 от 10-1; 10-3 от 10-2; 10-4 от 10-3 |
@@ -63,18 +62,17 @@
 | 14 Voice pipeline и ambient audio | проектируется; обзор в [`14-0-voice-and-ambient-audio.md`](14-0-voice-and-ambient-audio.md) | 14-1 от планов 08–12 и listener; 14-2 от 14-1; 14-3 от 14-2; 14-4 от 14-3 |
 | 15 Vision и document worker | проектируется; обзор в [`15-0-vision-and-documents.md`](15-0-vision-and-documents.md) | 15-1 от планов 08–12 и решения о worker; 15-2 от 15-1; 15-3 от 15-2; 15-4 от 15-3 |
 | 16 Workflow, automation и simulation | проектируется; обзор в [`16-0-workflow-automation-and-simulation.md`](16-0-workflow-automation-and-simulation.md) | 16-1 от планов 08–12 и существующих workflow contracts; 16-2 от 16-1; 16-3 от 16-2; 16-4 от 16-3 |
-| 17 Общие release gates и нерешённые решения | сопровождающий план; обзор в [`17-0-release-criteria-and-open-decisions.md`](17-0-release-criteria-and-open-decisions.md) | 17-1 от планов 06–16; 17-2 от 17-1; 17-3 от 17-2; 17-4 от 17-3 |
+| 17 Общие release gates и нерешённые решения | сопровождающий план; обзор в [`17-0-release-criteria-and-open-decisions.md`](17-0-release-criteria-and-open-decisions.md) | 17-1 от планов 07–16; 17-2 от 17-1; 17-3 от 17-2; 17-4 от 17-3 |
 
 Порядок незавершённых этапов задаётся так: сначала последовательно выполняется
-06-1 → 06-2 → 06-3 → 06-4, затем 07-1 → 07-2 → 07-3 → 07-4, затем
-08-1 → 08-2 → 08-3 → 08-4, затем 09-1 → 09-2 → 09-3 → 09-4, затем
+07-1 → 07-2 → 07-3 → 07-4, затем 08-1 → 08-2 → 08-3 → 08-4, затем 09-1 → 09-2 → 09-3 → 09-4, затем
 10-1 → 10-2 → 10-3 → 10-4, затем 11-1 → 11-2 → 11-3 → 11-4, затем
 12-1 → 12-2 → 12-3 → 12-4, затем 13-1 → 13-2 → 13-3 → 13-4, затем
 14-1 → 14-2 → 14-3 → 14-4, затем 15-1 → 15-2 → 15-3 → 15-4, затем
-16-1 → 16-2 → 16-3 → 16-4 и 17-1 → 17-2 → 17-3 → 17-4. Обзоры 06-0,
-07-0, 08-0, 09-0, 10-0, 11-0, 12-0, 13-0, 14-0, 15-0, 16-0 и 17-0 не являются исполняемыми этапами;
+16-1 → 16-2 → 16-3 → 16-4 и 17-1 → 17-2 → 17-3 → 17-4. Обзоры 07-0, 08-0, 09-0, 10-0, 11-0, 12-0, 13-0, 14-0, 15-0, 16-0 и 17-0 не являются исполняемыми этапами;
 они фиксируют границы и граф зависимостей соответствующего плана. План 07-4
-может использовать общий evaluation harness из 06-4 как опциональную
+может использовать общий deterministic evaluation harness
+(`crates/evohime-core/src/evals.rs`, `tests/evals/`) как опциональную
 зависимость, но не блокирует его отсутствие.
 
 ## Что уже реализовано

@@ -36,10 +36,11 @@ Source-update E2E остаётся штатно пропущенным без в
 Foundation текущего цикла завершён: обходы permission policy и approval закрыты
 и проверены; Local Agentic RAG, routing, child workflows, ambient-контур и
 model-request provenance реализованы и перенесены в канонические
-`architecture.md`/`current-state.md`. Ближайший исполняемый план — 06:
-workflow orchestration поверх существующего typed workflow-контракта и child
-runtime. CAMEL используется только как архитектурный reference и не является
-runtime-зависимостью продукта.
+`architecture.md`/`current-state.md`. Workflow orchestration (план 06) также
+реализована: контракт `workflow/v1`, Core-owned реестр и шаблоны, durable
+runtime и раздел «Составные задачи» в Electron. CAMEL и AutoGPT остались
+архитектурными reference и не являются runtime-зависимостями продукта.
+Ближайший исполняемый план — 07: tool manifests, Action Console и telemetry.
 
 ## Текущий статус
 
@@ -47,10 +48,10 @@ Legacy web UI, browser launcher, HTTP server и PostgreSQL persistence удал�
 Core + SQLite + authenticated named-pipe IPC сохраняются. Пользовательская оболочка
 — Electron; WinUI — compatibility runtime.
 
-Этапы 02–05 завершены. Их контракты находятся в [`architecture.md`](architecture.md),
+Этапы 02–06 завершены. Их контракты находятся в [`architecture.md`](architecture.md),
 подтверждённое состояние — в [`current-state.md`](current-state.md). Следующее
-независимое направление — план 06 из
-[`plans/06-0-workflow-orchestration.md`](plans/06-0-workflow-orchestration.md).
+независимое направление — план 07 из
+[`plans/07-0-superagi-inspired-tooling.md`](plans/07-0-superagi-inspired-tooling.md).
 
 После завершения foundation добавлен функциональный slice «Ревью планов» в
 Electron: additive desktop IPC, `plan_review` в Core и event journal для

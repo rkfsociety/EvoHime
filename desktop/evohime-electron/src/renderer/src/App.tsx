@@ -19,6 +19,7 @@ import { TaskTimeline } from './TaskTimeline'
 import { SettingsModal } from './SettingsModal'
 import { OperationsPanel } from './OperationsPanel'
 import { PlanReviewPanel } from './PlanReviewPanel'
+import { WorkflowPanel } from './WorkflowPanel'
 import { OverviewPanel } from './OverviewPanel'
 import { ListeningPanel, REASON_TEXTS, STATE_TITLES } from './ListeningPanel'
 import { TracePanel } from './TracePanel'
@@ -46,7 +47,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'listening'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'listening'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -62,6 +63,7 @@ const VIEWS: readonly ViewDescriptor[] = [
   { id: 'overview', label: 'Обзор', icon: '◉' },
   { id: 'reviews', label: 'Ревью планов', icon: '✓' },
   { id: 'operations', label: 'Память и Pulse', icon: '◌' },
+  { id: 'workflows', label: 'Составные задачи', icon: '⛓' },
   { id: 'listening', label: 'Слух', icon: '🎙' },
 ]
 
@@ -227,6 +229,9 @@ export function App(): React.JSX.Element {
               {view === 'overview' ? <OverviewPanel connection={connection} events={events} workspace={workspace} /> : null}
               {view === 'reviews' ? <PlanReviewPanel connection={connection} events={events} /> : null}
               {view === 'operations' ? <OperationsPanel connection={connection} events={events} /> : null}
+              {view === 'workflows' ? (
+                <WorkflowPanel connection={connection} events={events} workspace={workspace} />
+              ) : null}
               {view === 'listening' ? <ListeningPanel connection={connection} events={events} /> : null}
             </div>
           )}
