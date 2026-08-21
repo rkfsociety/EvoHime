@@ -25,7 +25,7 @@
 | 02 policy and capabilities | Policy, permissions, scope и approval | перенесён в план 09 | блокирующий фундамент |
 | 03 IPC adapters and providers | IPC, version negotiation и provider boundary | перенесён в план 10 | блокирующий фундамент |
 | 04 memory and RAG | Память, retrieval и forget | перенесён в план 11 | следующий слой |
-| [05-telemetry-and-evaluation.md](repository-research/05-telemetry-and-evaluation.md) | Наблюдаемость, fixtures и evaluation | 01–03 | следующий слой |
+| 05 telemetry and evaluation | Наблюдаемость, fixtures и evaluation | перенесён в план 12 | следующий слой |
 | [06-browser-backend.md](repository-research/06-browser-backend.md) | Изолированный browser backend | 01–03 | отдельный optional-план |
 | [07-voice-and-ambient-audio.md](repository-research/07-voice-and-ambient-audio.md) | Voice pipeline и ambient audio | 01–03 | отдельный optional-план |
 | [08-vision-and-documents.md](repository-research/08-vision-and-documents.md) | Vision и document worker | 01–03, 05 | отдельный optional-план |
@@ -62,6 +62,9 @@
 удалён после переноса требований и критериев готовности.
 
 Раздел 04 перенесён в подпункты плана 11; исходный исследовательский файл
+удалён после переноса требований и критериев готовности.
+
+Раздел 05 перенесён в подпункты плана 12; исходный исследовательский файл
 удалён после переноса требований и критериев готовности.
 
 ## Общая архитектурная граница
