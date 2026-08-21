@@ -78,7 +78,9 @@ model_request_block_refs
 
 ### Связь с `context_ledger`
 
-`ledger_id` обязателен: один model call — одна запись ledger и один envelope на attempt. `provider` и `model` продублированы из ledger намеренно: они входят в подписанный request receipt, и offline-верификатор обязан читать их без ledger. Остальные поля ledger не дублируются.
+`ledger_id` обязателен и ссылается на `context_ledger.id`, а не на `model_call_id`: последний не уникален (см. `replan_of`). Отношение направленное — у envelope ровно один `ledger_id`, у одной записи ledger может быть несколько envelope, по одному на attempt: retry и fallback контекст не пересобирают и новой записи ledger не создают.
+
+`provider` и `model` продублированы из ledger намеренно: они входят в подписанный request receipt, и offline-верификатор обязан читать их без ledger. При fallback значения расходятся — ledger хранит provider/model на момент планирования контекста, envelope — фактические; authoritative значение в envelope. Остальные поля ledger не дублируются.
 
 Полный разбор того, что уже есть в ledger и как на него ложится `ContextProjection`, — в разделе «Что есть в коде сейчас» обзора плана.
 
@@ -110,7 +112,7 @@ Committed envelope immutable, с единственным исключением
 
 ### Integration
 
-1. **Ledger parity:** у каждого записанного envelope ровно одна запись `context_ledger`, и обратно.
+1. **Ledger parity:** у каждого записанного envelope ровно одна запись `context_ledger`; fallback внутри одного model call даёт два envelope на одну запись ledger, и это не считается нарушением.
 2. **Hash-only режим:** при выключенном хранении payload запись содержит метаданные и хеши, но не текст.
 
 ## Критерии готовности
@@ -118,4 +120,4 @@ Committed envelope immutable, с единственным исключением
 1. Миграция применяется на существующей базе без потери данных.
 2. Committed envelope нельзя изменить средствами repository API.
 3. Дедупликация подтверждена тестом на росте хранилища.
-4. Связь `ledger_id` двусторонняя и проверяется тестом.
+4. Связь `ledger_id` обязательна для каждого envelope и проверяется тестом, включая случай нескольких attempt на одну запись ledger.

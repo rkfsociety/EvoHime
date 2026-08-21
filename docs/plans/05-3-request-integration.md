@@ -23,7 +23,7 @@
 
 Запись `context_ledger` сегодня **не** fail-closed: комментарий в `crates/evohime-core/src/lib.rs` фиксирует «Неудача записи — diagnostic `ledger_write_failed`, а не повтор вызова модели», то есть при неудачной durable записи model call выполняется. Этот этап меняет контракт: неудача commit становится `REQUEST_PROVENANCE_COMMIT_FAILED` и запрещает dispatch.
 
-`model_call_id` сейчас `format!("{task_id}-{iteration}")` и не уникален по attempt. Этап вводит `request_id` на каждый фактический dispatch, оставляя `model_call_id` в роли `logical_request_id`.
+`model_call_id` сейчас `format!("{task_id}-{iteration}")` и не уникален по attempt. Этап вводит `request_id` на каждый фактический dispatch, оставляя `model_call_id` в роли `logical_request_id`. Миграция ledger при этом не нужна: attempt связывается с ledger через `model_requests.ledger_id` (`context_ledger.id`), а сам ledger остаётся записью на одну сборку контекста.
 
 ## Интеграция
 
@@ -122,7 +122,8 @@ request_kind = plan_review | plan_revision
 
 - отказ dispatch по каждому из шести условий fail-closed;
 - отсутствие snapshot hash трактуется как `policy snapshot invalid`, а не как валидное значение;
-- retry и fallback дают разные `request_id` при общем `logical_request_id`.
+- retry и fallback дают разные `request_id` при общем `logical_request_id` и общем `ledger_id`;
+- при fallback `provider`/`model` envelope берутся фактические, а не унаследованные из ledger.
 
 ### Integration
 
