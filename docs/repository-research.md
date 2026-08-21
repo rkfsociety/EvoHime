@@ -29,6 +29,7 @@
 | 6 | [simular-ai/Agent-S](https://github.com/simular-ai/Agent-S) | Исследовано | Разделение worker/grounding, reflection, bounded trajectory и UI evaluation | Адаптировать computer-use/evaluation идеи; runtime не подключать |
 | 7 | [lavague-ai/LaVague](https://github.com/lavague-ai/LaVague) | Исследовано | Web-agent loop, DOM/XPath grounding, driver abstraction, telemetry и QA fixtures | Адаптировать web-action/evidence/test идеи; runtime и extension не подключать |
 | 8 | [microsoft/playwright](https://github.com/microsoft/playwright) | Исследовано | Изолированные BrowserContext, locators/actionability, accessibility snapshots, network policy, trace и cross-browser tests | Рассматривать как возможный isolated browser backend; не подключать до отдельного packaging/security плана |
+| 9 | [puppeteer/puppeteer](https://github.com/puppeteer/puppeteer) / [pptr.dev](https://pptr.dev/) | Исследовано | Chromium-first CDP/BiDi client, BrowserContext, locators, interception, tracing и browser manager | Рассматривать как альтернативный isolated browser backend; runtime не подключать до packaging/security плана |
 
 ## Карточки исследований
 
@@ -1479,6 +1480,128 @@ packaging, sandbox, egress, approval и secret-storage плана`.
   strict action schema, snapshot-bound target revalidation, per-mutation
   approval, typed unknown after partial side effect, deterministic final-state
   assertions, bounded artifacts и cleanup после crash/cancel.
+
+### 9. Puppeteer
+
+- Источник: [официальная документация](https://pptr.dev/) и репозиторий
+  [puppeteer/puppeteer](https://github.com/puppeteer/puppeteer)
+- Дата проверки: 2026-08-21
+- Ревизия/commit: `186beb8ae8091d7cce1c23ab6d2fba109c169988`
+- Версия документации: `25.8.0`
+- Лицензия исходного кода: Apache-2.0; отдельные browser binaries и
+  системный Chrome имеют собственные условия распространения.
+- Состав: TypeScript/Node.js monorepo с `puppeteer`, тонким
+  `puppeteer-core`, `@puppeteer/browsers`, документацией и большой test suite.
+- Назначение: управление Chrome/Chromium и Firefox через Chrome DevTools
+  Protocol или WebDriver BiDi; по умолчанию браузер запускается headless.
+- Краткий вывод: сильный Chromium/CDP-first кандидат для будущего browser
+  host Евы. Для EvoHime интереснее `puppeteer-core`, потому что он не скачивает
+  браузер автоматически; браузер, helper process, sandbox и lifecycle должны
+  оставаться под контролем supervisor/Core.
+
+#### Что изучено
+
+- `BrowserContext` изолирует cookies, localStorage, cache и связанные страницы;
+  контекст можно создавать и закрывать на задачу, выдавать разрешения явно и
+  не использовать профиль пользователя. Это полезный runtime-механизм, но не
+  замена OS sandbox или EvoHime Job Object.
+- Locator API и ARIA-селекторы (`::-p-aria(...)`) дают семантическое управление
+  с ожиданием состояния, вместо координат мыши. В будущий action contract нужно
+  передавать evidence из наблюдения: page/frame/context, роль, имя, ref и
+  ожидаемое состояние; locator сам не понимает риск бизнес-действия.
+- `puppeteer-core` подключается к явно выбранному браузеру, CDP session и
+  remote endpoint; `@puppeteer/browsers` умеет install/list/clear/launch и
+  вычислять executable path. Это позволяет отдельно закрепить версию browser
+  binary и реализовать health check, rollback и очистку.
+- Network interception, request/response events, downloads, screenshots, PDF,
+  upload/file chooser, permissions, tracing и CDP дают хорошие точки для
+  наблюдаемости и policy adapter. Сама библиотека не является egress policy,
+  secret store или журналом действий.
+- Полный пакет `puppeteer` скачивает совместимый Chrome при установке;
+  `puppeteer-core` этого не делает. Заблокированные package-manager scripts
+  требуют отдельной установки browser binary, поэтому supply chain и installer
+  должны быть частью решения.
+- Репозиторий содержит отдельные browser/API/type tests, проверки документации,
+  lint, лицензий и зависимостей; в рамках исследования upstream-сборка и тесты
+  не запускались. В документации также упоминается отдельный
+  `chrome-devtools-mcp` на базе Puppeteer и экспериментальный WebMCP; это
+  исследовательские ориентиры, а не готовая зависимость EvoHime.
+
+#### Что можем использовать в Еве
+
+- Паттерн `puppeteer-core` как тонкого клиента без install-time скачивания;
+  только внутри отдельного supervisor-managed browser helper, не в renderer и
+  не как прямой runtime Core.
+- Одноразовый non-persistent `BrowserContext` на задачу, явное закрытие всех
+  страниц и default-deny permissions. Нельзя разрешать attach к реальному
+  пользовательскому профилю или принимать произвольный CDP endpoint.
+- Locator/ARIA-контракт для `browser_observation` и `browser_action` с
+  повторной проверкой target после каждого navigation/DOM change, risk class,
+  approval для мутаций и typed `unknown` после частично выполненного действия.
+- Browser manager как источник идей для pinned browser build, executable path,
+  запуска, проверки версии, восстановления после падения и очистки временного
+  профиля.
+- CDP session и bounded tracing для диагностики; наружу отдавать только
+  редактированные receipts/telemetry, а не raw DOM, cookies, headers, bodies,
+  trace, screenshots или storage state.
+- Request interception как один слой allowlist/redirect/request-body policy;
+  фактические DNS/private-IP, filesystem, proxy и egress-ограничения должны
+  проверяться Core/supervisor независимо от Puppeteer.
+- Upstream locator, browser-lifecycle, cancellation и deterministic local
+  server fixtures можно использовать как образец для собственных contract и
+  integration tests без копирования бизнес-логики.
+
+#### Ограничения и риски
+
+- Puppeteer прямо оставляет ответственность за безопасное применение на
+  вызывающей стороне. `page.evaluate`, function-based actions и CDP могут
+  выполнять произвольную логику страницы; BrowserContext не является
+  sandbox-границей операционной системы.
+- `--no-sandbox` встречается в troubleshooting/launch-сценариях, но такой путь
+  неприемлем как дефолт Евы. Нужны проверка sandbox, restricted helper,
+  supervisor Job Object и fail-closed при неподдержанном окружении.
+- Downloads и screenshots пишут на диск, upload принимает локальные пути,
+  extensions могут загружаться, а storage/trace/network artifacts могут
+  содержать cookies, токены и секретные request data. Нужны redaction,
+  encrypted storage, bounded retention и запрет raw export.
+- Interception и `allowed origins` не дают полной сетевой границы: остаются
+  redirects, DNS rebinding/private ranges, service workers, extensions и
+  remote browser attach. Нужна собственная Core-issued policy с audit каждого
+  запроса и повторной проверкой redirect.
+- Нет встроенных EvoHime approval, capability registry, durable receipts,
+  prompt-injection defence или модели частичного исхода. Auto-wait повышает
+  надёжность UI-синхронизации, но не делает опасную кнопку безопасной.
+- Node.js helper и browser binaries конфликтуют с текущим правилом продукта,
+  что внешний Node.js runtime не входит в поставку. Нужны отдельное решение о
+  bundled helper, Windows packaging, размерe/update/rollback и поддержке
+  Chromium/Firefox feature differences.
+- Apache-2.0 допускает использование при сохранении условий лицензии и
+  attribution; лицензии Chrome/Chromium и прочих binary dependencies требуется
+  проверять отдельно.
+
+#### Предварительное решение
+
+`рассматривать puppeteer-core + supervisor-managed pinned browser как
+альтернативу Playwright для Chromium-first backend`; `не подключать Puppeteer,
+Chrome DevTools MCP, WebMCP, user-profile attach или no-sandbox path до
+отдельного packaging/security плана`. Не добавлять одновременно Playwright и
+Puppeteer как runtime-зависимости без сравнительного PoC и решения о границах
+поддержки.
+
+#### Связь с EvoHime
+
+- Потенциальный browser host должен быть отдельным процессом под supervisor;
+  Core владеет capability/approval, network policy, redaction/provenance,
+  cancellation/timeout и SQLite audit, а Electron получает только typed state и
+  receipts. Puppeteer не должен обходить authenticated desktop IPC.
+- Сначала нужен design-only контракт `browser_observation`, `browser_action`,
+  `browser_receipt` и lifecycle/error model; затем минимальный Chromium fixture
+  на локальном test server. В этот журнал implementation plan не добавляется.
+- Критерии будущей проверки: pinned binary и health check, отсутствие
+  user-profile/CDP attach, sandbox/Job Object enforcement, context cleanup после
+  crash/cancel, default-deny permissions, redirect/DNS/private-IP tests,
+  semantic target revalidation, per-mutation approval, bounded/redacted
+  artifacts и deterministic final-state assertions.
 
 ## Итог для будущего плана
 
