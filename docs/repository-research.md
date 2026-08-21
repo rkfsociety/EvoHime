@@ -29,7 +29,7 @@
 | 06 browser backend | Изолированный browser backend | перенесён в план 13 | отдельный optional-план |
 | 07 voice and ambient audio | Voice pipeline и ambient audio | перенесён в план 14 | отдельный optional-план |
 | 08 vision and documents | Vision и document worker | планы 08–10, 12 | перенесён в план 15 |
-| [09-workflow-automation-and-simulation.md](repository-research/09-workflow-automation-and-simulation.md) | Длительные jobs, automation и simulation | 01–05 | поздний этап |
+| 09 workflow automation and simulation | Длительные jobs, automation и simulation | планы 08–12 | перенесён в план 16 |
 | [10-release-criteria-and-open-decisions.md](repository-research/10-release-criteria-and-open-decisions.md) | Общие release gates и нерешённые вопросы | все разделы | сопровождающий файл |
 
 ## Рекомендуемый порядок
@@ -74,6 +74,9 @@
 удалён после переноса требований и критериев готовности.
 
 Раздел 08 перенесён в подпункты плана 15; исходный исследовательский файл
+удалён после переноса требований и критериев готовности.
+
+Раздел 09 перенесён в подпункты плана 16; исходный исследовательский файл
 удалён после переноса требований и критериев готовности.
 
 ## Общая архитектурная граница
