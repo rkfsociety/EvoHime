@@ -159,10 +159,10 @@ model_responses
 - request_id NOT NULL FK model_requests(request_id)
 - provider/model response metadata
 - output или content-addressed output reference
-- output_hash
+- output_hash NULL when status is `redacted`/`retention_pruned`
 - usage_json bounded
 - finish_reason
-- status (complete | interrupted | failed)
+- status (complete | interrupted | failed | redacted | retention_pruned)
 - started_at
 - completed_at NULL
 - UNIQUE(request_id)
@@ -172,6 +172,10 @@ model_responses
 `logical_request_id`, task id или последний request в ledger. Response
 создаётся после dispatch в Core и immutable после commit; повторная запись
 проверяет тот же digest и не создаёт дубль.
+
+`redacted` и `retention_pruned` — разрешённые lifecycle-переходы 05.8:
+исходный outcome не переписывается в `complete`, а output становится
+недоступен через typed tombstone.
 
 При cancellation, crash или оборванном stream доступный partial output
 сохраняется как `status = interrupted` с bounded output/hash и не считается
@@ -252,7 +256,11 @@ tool pre receipt — до tool dispatch, terminal receipt — только по�
 Request receipt и effect receipts immutable: redaction не переписывает
 canonical envelope, receipt payload, `receipt_hash`, `previous_receipt_hash`
 или chain head. 05.8 может удалить/заменить model-visible blocks, sources и
-response output, но оставляет metadata, digest и request/tool linkage.
+response output, а также перевести связанные `tool_intents` в
+`redacted`/`retention_pruned`; metadata, разрешённые digest и request/tool
+linkage остаются. Эти lifecycle-переходы выполняются одной транзакцией с
+`model_requests.status`, refs и source hashes; receipts по-прежнему не
+переписываются.
 
 После redaction verifier:
 
