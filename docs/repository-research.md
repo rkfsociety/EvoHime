@@ -27,6 +27,7 @@
 | 4 | [openinterpreter/openinterpreter](https://github.com/openinterpreter/openinterpreter) | Исследовано | Execution policy, sandbox, approvals, ACP и typed protocol | Адаптировать security/protocol идеи; runtime не подключать |
 | 5 | [OthersideAI/self-operating-computer](https://github.com/OthersideAI/self-operating-computer) | Исследовано | Computer-use loop, screenshot/OCR и action schema | Адаптировать идеи; прямое управление desktop не включать по умолчанию |
 | 6 | [simular-ai/Agent-S](https://github.com/simular-ai/Agent-S) | Исследовано | Разделение worker/grounding, reflection, bounded trajectory и UI evaluation | Адаптировать computer-use/evaluation идеи; runtime не подключать |
+| 7 | [lavague-ai/LaVague](https://github.com/lavague-ai/LaVague) | Исследовано | Web-agent loop, DOM/XPath grounding, driver abstraction, telemetry и QA fixtures | Адаптировать web-action/evidence/test идеи; runtime и extension не подключать |
 
 ## Карточки исследований
 
@@ -1081,6 +1082,195 @@ Python/Bash как runtime-зависимость Евы`.
   redacted frames, frame-bound action hash, повторная проверка target/window,
   typed unknown outcome после частичного действия, per-action approval,
   cancel/timeout cleanup и deterministic final-state tests.
+
+### 7. LaVague
+
+- Источник: https://github.com/lavague-ai/LaVague
+- Дата проверки: 2026-08-21
+- Ревизия/commit: `9024bb832c40291cd012916757f27ef60469b22d`.
+- Последний commit в checkout: 2025-01-21, `CI: drop cron schedule run (#633)`.
+- Лицензия исходного кода: Apache-2.0.
+- Версии в checkout: root package `lavague` `1.1.19`, `lavague-core`
+  `0.2.35`; root зависимости допускают `lavague-core ^0.2.31`.
+- Состав: Python-монорепозиторий с `lavague-core`, Selenium и Playwright
+  drivers, Chrome Extension, Gradio UI, server/integrations, QA/test runner,
+  retrievers, contexts и локальными сайтами для тестов.
+- Назначение: web-agent framework, в котором World Model получает objective,
+  состояние страницы и историю, а Action Engine компилирует инструкции в
+  Selenium/Playwright action code и исполняет их.
+- Краткий вывод: LaVague полезен как reference для изолированного web-agent
+  слоя: DOM/XPath grounding, driver abstraction, наблюдение страницы,
+  structured action schema, retriever pipeline и acceptance fixtures. Прямое
+  подключение не подходит Еве: код генерируется моделью и исполняется через
+  browser driver, Chrome Extension имеет `<all_urls>` и `debugger`, а
+  telemetry по умолчанию отправляет подробные данные на внешний endpoint.
+
+#### Что изучено
+
+- `WebAgent` строит цикл с ограничением `n_steps`: получает observation,
+  вызывает World Model, выбирает один из `Navigation Engine`, `Python Engine`
+  или `Navigation Controls`, обновляет short-term state и снимает новую
+  observation. World Model хранит objective, текущий state, предыдущие
+  инструкции, последний engine и результат предыдущего шага.
+- `WorldModel` передаёт multimodal LLM YAML-состояние, сведения о вкладках,
+  objective и изображения из screenshot directory. Контекст и примеры можно
+  добавлять через `add_knowledge`; это полезная, но не доверенная модельная
+  память.
+- `BaseDriver.get_obs()` возвращает HTML, screenshot path, URL, timestamp и
+  `tab_info`. Screenshot сохраняется с MD5-именем, а для одной страницы есть
+  bounded whole-page scan до 30 кадров. Driver abstraction отделяет
+  Selenium/Playwright/Chrome Extension от agent logic.
+- Default retriever pipeline последовательно применяет interactive XPath
+  extraction, расширение XPath nodes и semantic retrieval. Есть BM25,
+  syntax/semantic и trivial retriever варианты. Результат ограничивает HTML
+  context перед вызовом action model.
+- `NavigationEngine` просит модель вернуть YAML actions, извлекает code,
+  подсвечивает target до исполнения и разрешает XPath только из текущего
+  authorized context. При ошибке делает до `n_attempts` повторов; для каждого
+  шага сохраняет raw response, prompt, retrieved HTML, selected target,
+  execution result и error.
+- В core JSON Schema описывает массив actions и наличие `name/args`, но не
+  ограничивает конкретные action names и их аргументы. Chrome Extension
+  дополнительно использует Zod discriminated union для `click`, `enter`,
+  `setValue`, `setValueAndEnter`, `scroll`, `wait` и `fail`.
+- `ActionResult` содержит instruction, generated code, success, output и
+  token/cost fields. Важно: `success` в Navigation Engine означает, что
+  driver-код выполнился без ошибки, а не что пользовательская цель доказанно
+  достигнута.
+- `Python Engine` в этом checkout в основном извлекает информацию из HTML и
+  пачки screenshots через RAG/OCR с confidence score и fallback; это не
+  sandbox для произвольного Python. Сгенерированный browser action code всё
+  равно исполняется через driver (`exec_code`/DOM JavaScript).
+- QA runner использует YAML fixtures со свойствами `URL`, `Status`, `Output`,
+  `Steps`, `HTML`, `Tabs`, глобальными/task-level max steps и локальными
+  static-site fixtures. Это хороший источник deterministic acceptance tests.
+- Chrome Extension Manifest V3 содержит `host_permissions: ["<all_urls>"]`
+  и permissions `activeTab`, `tabs`, `scripting`, `debugger`, `sidePanel`;
+  extension валидирует action schema, но работает в реальном браузерном
+  профиле пользователя.
+- LaVague включает optional Browserbase remote connection, cloud LLM/context
+  integrations, Gradio demo и локальный SQLite logger. Эти integrations не
+  рассматривались как зависимости EvoHime.
+
+#### Что можем использовать в Еве
+
+- **World Model → typed web action pipeline.** Сопоставить objective,
+  observation, planner decision, action dispatch, result и next observation
+  с Core-owned workflow Евы. Реализация должна быть в Rust Core, а не в
+  Electron renderer и не в Python framework.
+- **Web observation/evidence contract.** Взять состав `url + tabs + html
+  snapshot + screenshot hash + timestamp + viewport` и дополнить его
+  origin, frame id, DOM hash, active tab/window, redaction status и retention.
+  Любое действие должно ссылаться на конкретную observation и терять
+  валидность после изменения DOM/navigation.
+- **Authorized DOM targets.** Идею `authorized_xpaths` перенести как
+  allowlist актуальных DOM nodes, но вместо доверия к XPath использовать
+  stable target descriptor: DOM/attribute fingerprint, frame/tab id, bounds,
+  role/name и короткоживущий observation id. Перед side effect Core обязан
+  заново разрешить target и отказать при stale/ambiguous match.
+- **Retrieval before action.** Pipeline interactive elements → bounded HTML
+  expansion → lexical/semantic retrieval полезен для уменьшения context и
+  стоимости. В Еве применить существующий local RAG/context budget, сохраняя
+  provenance source nodes и не позволяя retrieved page text менять policy.
+- **Typed action schema из Extension.** Небольшой набор `click`, `set_value`,
+  `press_enter`, `scroll`, `wait`, `fail` может быть baseline будущего
+  browser capability. В Еве добавить action id, target/evidence reference,
+  risk class, redacted input, expected effect, timeout, idempotency key и
+  approval requirement; схему держать в Rust/proto и генерировать TypeScript.
+- **Target preview.** Подсветка выбранного DOM target перед выполнением —
+  хороший UX и debugging pattern. Для Евы preview должен показывать URL/tab,
+  target summary, изменяемое поле в redacted виде, risk и expected effect,
+  после чего approval относится к конкретному action hash.
+- **Bounded retries и unknown outcome.** `n_attempts`, error log и
+  `ActionResult` полезны как идеи для retry budget, но после возможного
+  частичного browser side effect повтор нельзя выполнять автоматически.
+  Нужен typed `unknown`, новая observation и отдельное решение policy.
+- **Final-state QA fixtures.** Перенять YAML-подобную декларацию тестов с
+  initial URL, objective, max steps и проверками URL/HTML/tabs/status. Для Евы
+  тесты должны дополнительно проверять отсутствие неразрешённых network
+  requests, receipt/approval, cancellation cleanup и redaction.
+- **Driver capability matrix.** Сопоставление Selenium/Playwright/extension
+  по headless, iframe, tabs и highlight можно превратить в capability matrix
+  браузерного backend Евы. Предпочтителен изолированный Playwright context;
+  пользовательский Chrome Extension — только отдельный opt-in режим.
+- **Token/cost and execution observability.** Поля inference time, token usage,
+  retrieved context, generated action и error полезны для Core events и
+  budget accounting. Хранить нужно redacted structured receipt, а не raw
+  prompt/chain-of-thought и полный HTML по умолчанию.
+
+#### Ограничения и риски
+
+- **Generated code executes browser effects.** LaVague компилирует model
+  output в Selenium/Playwright code и вызывает driver `exec_code`. Ошибка
+  модели может отправить форму, перейти по внешней ссылке, изменить данные
+  или загрузить файл; нет общей Core policy/approval boundary EvoHime.
+- **XPath allowlist не является security boundary.** Проверка, что XPath был
+  среди retrieved nodes, защищает от части hallucinated targets, но не от
+  prompt injection в HTML, вредного элемента в разрешённом context, stale DOM,
+  неправильного tab/frame или опасного значения поля.
+- **Telemetry включена по умолчанию.** При `LAVAGUE_TELEMETRY` не равном
+  `NONE` код отправляет на `telemetrylavague.mithrilsecurity.io` msgpack с
+  version, objectives, generated actions, past actions, observations, model
+  names, chain-of-thought, bounding box, viewport, current step, token usage,
+  URL, result/error и source HTML chunks согласно README. HTML/screenshots
+  частично удаляются в helper, но это не равно privacy guarantee Евы.
+- **Chrome Extension имеет широкие права.** `<all_urls>`, `scripting`,
+  `tabs` и `debugger` дают большую поверхность доступа к браузеру и
+  страницам. Это нельзя добавлять в продукт без explicit install consent,
+  host allowlist, profile isolation, permission review и отдельного audit.
+- **Cloud/remote egress.** OpenAI default context, другие provider packages и
+  optional Browserbase передают страницу, prompts или browser session во
+  внешние сервисы. Local-first режим и provider egress должны быть явными
+  capability decisions, а не побочным эффектом запуска.
+- **Ретри и success semantics небезопасны.** До пяти попыток могут повторить
+  side effect; `success=True` означает отсутствие exception, а не проверенный
+  final state. Нет общего idempotency key, compensation, per-action approval
+  или typed partial/unknown outcome.
+- **Контекст содержит недоверенный web input.** HTML, text nodes, URLs и
+  retrieved source chunks поступают в prompt; страницы могут содержать
+  prompt injection, секреты или инструкции для агента. Нужны untrusted-data
+  envelope, redaction и строгая граница между page content и Core policy.
+- **Runtime и зависимости не соответствуют EvoHime.** Python 3.10+, LlamaIndex,
+  LangChain, Selenium/Playwright, Gradio и provider packages дают большую
+  surface area; версии root/core разнесены, а checkout имеет alpha classifier.
+  Переносить framework целиком в Rust Core нецелесообразно.
+- **Лицензия integrations и browser dependencies требует отдельной проверки.**
+  Apache-2.0 относится к repository code; Chrome/Playwright/Selenium,
+  provider SDK, Browserbase и модели имеют собственные условия. При
+  заимствовании кода сохранить attribution/NOTICE и проверить transitive
+  licenses.
+- **Тестовые сайты не доказывают безопасность.** URL/HTML/status checks
+  полезны для regression, но не покрывают data exfiltration, wrong account,
+  duplicate submit, popup/navigation race, prompt injection и secret leakage.
+
+#### Предварительное решение
+
+`адаптировать web observation, authorized-target, typed action, retriever и
+QA fixture идеи`; `не подключать LaVague core, Chrome Extension, telemetry,
+Selenium/Playwright execution loop или Browserbase как runtime-зависимость
+Евы`.
+
+#### Связь с EvoHime
+
+- будущий browser capability должен быть отдельным Core-owned tool с default
+  deny, capability/host allowlist, isolated browser profile/context,
+  bounded navigation/network policy, per-action approval для mutations,
+  redacted provenance и supervisor lifecycle; Electron renderer не должен
+  обращаться к WebDriver или provider напрямую.
+- существующие в EvoHime model gateway, local RAG/context budget,
+  prompt-injection envelope, redaction, named-pipe auth, approval/receipts,
+  cancellation и Core state ownership остаются источниками истины; LaVague
+  не должен добавлять собственные telemetry, secrets или policy layers.
+- возможная будущая работа: описать `browser_observation` и
+  `browser_action` в desktop IPC/Core contract, затем реализовать isolated
+  backend и deterministic local-site fixtures. Этот журнал не создаёт такой
+  план.
+- критерии проверки: telemetry и raw HTML/screenshot egress выключены по
+  умолчанию, provider opt-in явно отражён в policy, target/frame/DOM hash
+  revalidated, action schema строго валидируется, side effects требуют
+  approval, stale/ambiguous target fail-closed, unknown outcome не повторяет
+  submit, cancellation закрывает browser context, а final-state tests
+  проверяют URL/DOM/receipt и отсутствие неразрешённых эффектов.
 
 ## Итог для будущего плана
 
