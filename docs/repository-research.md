@@ -30,7 +30,7 @@
 | 07 voice and ambient audio | Voice pipeline и ambient audio | перенесён в план 14 | отдельный optional-план |
 | 08 vision and documents | Vision и document worker | планы 08–10, 12 | перенесён в план 15 |
 | 09 workflow automation and simulation | Длительные jobs, automation и simulation | планы 08–12 | перенесён в план 16 |
-| [10-release-criteria-and-open-decisions.md](repository-research/10-release-criteria-and-open-decisions.md) | Общие release gates и нерешённые вопросы | все разделы | сопровождающий файл |
+| 10 release criteria and open decisions | Общие release gates и нерешённые вопросы | планы 06–16 | перенесён в план 17; сопровождающий release plan |
 
 ## Рекомендуемый порядок
 
@@ -77,6 +77,9 @@
 удалён после переноса требований и критериев готовности.
 
 Раздел 09 перенесён в подпункты плана 16; исходный исследовательский файл
+удалён после переноса требований и критериев готовности.
+
+Раздел 10 перенесён в подпункты плана 17; исходный исследовательский файл
 удалён после переноса требований и критериев готовности.
 
 ## Общая архитектурная граница
