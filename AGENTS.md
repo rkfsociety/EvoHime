@@ -52,6 +52,11 @@ pwsh -File .\start-dev.ps1 -SkipBuild
 .\scripts\test-agent.ps1 -ListModels
 .\scripts\test-agent.ps1 -ReviewPlan docs\plans\03-4-child-ui-and-observability.md -Reviewers 'модель-1,модель-2' -Synthesis 'модель-3' -Revise -Out C:\temp\plan.md
 
+# Поставка движка распознавания: whisper.dll, модели лестницы и манифест
+# (нужны CMake и MSVC Build Tools; самому продукту CMake не требуется)
+pwsh -File .\scripts\build-listener-runtime.ps1
+pwsh -File .\scripts\build-listener-runtime.ps1 -Rungs tiny   # быстрый прогон без тяжёлых ступеней
+
 # Smoke-тест упаковки
 $pwsh = Join-Path $PSHOME 'pwsh.exe'
 & $pwsh -NoProfile -File scripts\native-package.tests.ps1

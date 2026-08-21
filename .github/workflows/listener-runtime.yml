@@ -1,0 +1,128 @@
+name: Listener runtime
+
+# Набор движка распознавания живёт в отдельном постоянном релизе и меняется
+# редко: собирать и заливать ~700 МБ на каждый push в main незачем. Поэтому
+# публикация — ручной запуск, а автоматически прогоняется только гейт сборки.
+#
+# Гейт запускается при правке всего, от чего зависит совместимость поставки:
+# самого скрипта, workflow и зеркала ABI. Иначе расхождение зеркала с
+# закреплённым whisper.cpp обнаружилось бы только в момент публикации.
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Залить собранный набор в релиз listener-runtime
+        type: boolean
+        default: true
+  push:
+    branches: [main]
+    paths:
+      - scripts/build-listener-runtime.ps1
+      - .github/workflows/listener-runtime.yml
+      - crates/evohime-listener/src/engine/whisper_dll.rs
+      - crates/evohime-listener/src/tools_dir.rs
+      - crates/evohime-listener/examples/**
+  pull_request:
+    paths:
+      - scripts/build-listener-runtime.ps1
+      - .github/workflows/listener-runtime.yml
+      - crates/evohime-listener/src/engine/whisper_dll.rs
+      - crates/evohime-listener/src/tools_dir.rs
+      - crates/evohime-listener/examples/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: listener-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+      # Ручной запуск собирает лестницу целиком, автоматический гейт — только
+      # `tiny`. Проверяются при этом одни и те же шаги: сборка DLL, сверка
+      # раскладки ABI, генерация манифеста и его проверка кодом листенера.
+      # Разница только в объёме скачиваемых моделей.
+      - name: Build the listener runtime bundle
+        shell: pwsh
+        env:
+          RUNGS: ${{ github.event_name == 'workflow_dispatch' && 'small,base,tiny' || 'tiny' }}
+        run: ./scripts/build-listener-runtime.ps1 -Rungs ($env:RUNGS -split ',')
+      - name: Upload the bundle
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        uses: actions/upload-artifact@v7
+        with:
+          name: evohime-listener-runtime
+          path: artifacts/listener-runtime
+          retention-days: 1
+
+  # Права на запись есть только у этого job и только после успешной сборки.
+  publish:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: listener-runtime
+      RELEASE_TITLE: EvoHime — движок распознавания речи
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          name: evohime-listener-runtime
+          path: listener-runtime-output
+      - name: Refresh the single runtime release
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $env:GITHUB_WORKSPACE 'listener-runtime-output'
+          $manifestPath = Join-Path $bundle 'listener-runtime.json'
+          if (-not (Test-Path -LiteralPath $manifestPath)) { throw 'В артефакте нет манифеста поставки.' }
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          $notes = 'installer/listener-runtime-notes.md'
+
+          gh release view $env:RELEASE_TAG 2>$null | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            # Релиз создаётся один раз — только если его вообще нет.
+            gh release create $env:RELEASE_TAG --title $env:RELEASE_TITLE --notes-file $notes
+            if ($LASTEXITCODE -ne 0) { throw 'Не удалось создать релиз рантайма.' }
+          }
+          else {
+            gh release edit $env:RELEASE_TAG --title $env:RELEASE_TITLE --notes-file $notes
+            if ($LASTEXITCODE -ne 0) { throw 'Не удалось обновить описание релиза.' }
+          }
+
+          # Манифест заливается последним: пока он описывает прежнюю версию,
+          # клиент не увидит полуобновлённого набора и не начнёт скачивать
+          # файлы, которых в релизе ещё нет.
+          $assets = Get-ChildItem -LiteralPath $bundle -File | Where-Object { $_.Name -ne 'listener-runtime.json' }
+          foreach ($asset in $assets) {
+            gh release upload $env:RELEASE_TAG $asset.FullName --clobber
+            if ($LASTEXITCODE -ne 0) { throw "Не удалось загрузить $($asset.Name)." }
+          }
+          gh release upload $env:RELEASE_TAG $manifestPath --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Не удалось загрузить манифест поставки.' }
+
+          # Файлы прежних версий убираются только после того, как новый манифест
+          # уже опубликован: до этого момента они всё ещё те, за которыми ходит
+          # установленный клиент.
+          $keptNames = [string[]]@(Get-ChildItem -LiteralPath $bundle -File | ForEach-Object { $_.Name })
+          $keep = [System.Collections.Generic.HashSet[string]]::new($keptNames, [System.StringComparer]::OrdinalIgnoreCase)
+          $published = gh release view $env:RELEASE_TAG --json assets --jq '.assets[].name'
+          if ($LASTEXITCODE -ne 0) { throw 'Не удалось перечислить файлы релиза.' }
+          foreach ($name in @($published)) {
+            if ([string]::IsNullOrWhiteSpace($name) -or $keep.Contains($name)) { continue }
+            gh release delete-asset $env:RELEASE_TAG $name --yes
+            if ($LASTEXITCODE -ne 0) { throw "Не удалось удалить устаревший файл $name." }
+            Write-Host "Удалён устаревший файл релиза: $name"
+          }
+
+          Write-Host "Набор $($manifest.version) опубликован в релизе $env:RELEASE_TAG"
+          exit 0
