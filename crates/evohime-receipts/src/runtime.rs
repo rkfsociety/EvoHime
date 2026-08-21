@@ -1274,6 +1274,7 @@ impl<'a> ReceiptRuntime<'a> {
 
     /// Appends a request-commit receipt to the existing signed chain. Only
     /// identifiers and the immutable envelope hash are signed.
+    #[allow(clippy::too_many_arguments)]
     pub fn append_model_request_receipt(
         &mut self,
         request_id: &str,

@@ -804,7 +804,7 @@ impl<'a> ModelProvenanceRepository<'a> {
         let shadows = self
             .list_shadow_originals(request_id, 4096)?
             .into_iter()
-            .map(|shadow| serde_json::to_value(shadow))
+            .map(serde_json::to_value)
             .collect::<std::result::Result<Vec<_>, _>>()?;
         write_jsonl(
             &staging.join("context_shadowed_originals/records.jsonl"),

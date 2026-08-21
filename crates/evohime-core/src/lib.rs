@@ -2357,9 +2357,7 @@ impl EventJournal {
                 "policy": "conservative_no_blind_retry",
             }))
             .map_err(|error| StorageError::Context(error.to_string()))?;
-            database
-                .append_event("system", "model_provenance.recovery", &payload)
-                .map_err(StorageError::from)?;
+            database.append_event("system", "model_provenance.recovery", &payload)?;
         }
         Ok(recovered)
     }
@@ -4572,6 +4570,7 @@ struct ProvenancedModelResult {
     response_id: Option<String>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn model_request_envelope(
     logical_request_id: &str,
     request_id: String,
@@ -6543,7 +6542,7 @@ impl ToolAgent {
                 let envelope = model_request_envelope(
                     &logical_request_id,
                     request_id.clone(),
-                    attempt as u32 + 1,
+                    attempt + 1,
                     parent_request_id,
                     previous_request_hash,
                     ledger,
