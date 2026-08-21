@@ -19,7 +19,11 @@ capability-as-tool, но остаётся безопасным для Rust Core.
 - локальные embeddings и расширенный RAG. До их появления узел knowledge
   использует FTS5 или возвращает bounded `degraded` с объяснением;
 - дополнительные model routes. До их появления используется уже выбранный
-  route snapshot и существующий fallback.
+  route snapshot и существующий fallback;
+- stdio и long-lived MCP session. До их появления `mcp_tool` описывает только
+  уже существующий remote JSON-RPC путь `mcp.call` с host allowlist, а entry с
+  другим transport валиден в контракте, но помечается typed
+  `transport_unavailable` и не может быть выбран запуском.
 
 ## Изменения
 
@@ -35,7 +39,10 @@ capability-as-tool, но остаётся безопасным для Rust Core.
    ссылается только на Core-owned registry entry с server identity и
    разрешённым tool name; URL, command и headers не приходят из model output.
    `context_provider` допускает только read-only provider с source identity,
-   freshness policy, evidence schema и bounded result budget.
+   freshness policy, evidence schema и bounded result budget. Существующий
+   Core-owned tool `mcp.call` остаётся единственным исполнителем `mcp_tool`:
+   registry entry задаёт server identity, разрешённые tool names и host
+   allowlist, а не новый transport.
 4. Описать routing edges как versioned event/port transitions. Для условий
    поддержать детерминированные `all`/`any`; LLM не выбирает произвольный node ID
    и не рассылает произвольный broadcast-контекст всем узлам.
@@ -51,6 +58,12 @@ capability-as-tool, но остаётся безопасным для Rust Core.
    чтобы graph snapshot можно было связать с model-request и receipts.
 9. Удалить или запретить в public contract любые пути к inline script,
    произвольному Python, shell и неразрешённым dynamic refs.
+10. Мигрировать существующий `NodeType` на action profiles без потери
+    поведения: `research`, `transform`, `tool`, `condition`, `approval` и
+    `loop` переносятся один в один, а `subgraph` либо ограничивается
+    Core-owned статическим разворачиванием проверенного графа в пределах того
+    же policy/budget/approval, либо удаляется. Существующие deterministic
+    evals в `crates/evohime-core/src/evals.rs` обновляются в том же изменении.
 
 ## Проверки
 
@@ -65,6 +78,8 @@ capability-as-tool, но остаётся безопасным для Rust Core.
 - тесты на обязательные входы, явную failure-ветвь и запрет silent success;
 - негативные тесты на nested child, capability escalation, unbounded loop,
   unknown action и unknown route;
+- тесты на миграцию старого `NodeType` и на ограничение либо отсутствие
+  `subgraph`, включая обновлённые evals из `evals.rs`;
 - `cargo fmt --check` и targeted `cargo test -p evohime-core`.
 
 ## Готово, когда

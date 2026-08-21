@@ -33,14 +33,17 @@
 3. Реализовать adapter layer:
    - `child` → typed child request/report;
    - `tool` → existing ToolRegistry and approval path;
-   - `mcp_tool` → supervisor-owned trusted MCP session, Core ToolRegistry,
-     bounded transport и тот же approval/receipt path;
+   - `mcp_tool` → существующий Core ToolRegistry path `mcp.call`: registry
+     entry, host allowlist, permission, bounded transport и тот же
+     approval/receipt path. Supervisor владеет только процессным деревом Core,
+     а не MCP-сессией;
    - `context_provider` → read-only Context Provider registry, bounded evidence,
      freshness/staleness gate и связь с Context Budget/RAG provenance;
    - `research` → existing bounded research/RAG path;
    - `approval` → pending approval registry;
    - `condition`/`transform` → deterministic Core-owned operations.
-4. Реализовать bounded fan-out/fan-in. Независимые узлы могут выполняться
+4. Реализовать bounded fan-out/fan-in поверх сегодняшнего последовательного
+   `workflow_execution`. Независимые узлы могут выполняться
    параллельно только в пределах run policy, child budget и supervisor limits;
    fan-in принимает только validated reports с актуальной provenance.
    Stateful child capabilities и tools с side effects выполняются
@@ -63,13 +66,15 @@
 
 ## Проверки
 
-- миграции и rollback-safe startup recovery;
+- транзакционные SQLite-миграции с предварительным backup и rollback-safe
+  startup recovery;
 - crash injection до/после dispatch marker;
 - fan-out/fan-in с перемешанным входным порядком и одинаковым результатом;
 - retry только для разрешённых error classes;
 - approval denial/pending, cancellation, timeout и dead-letter;
 - проверка, что child не может поднять grants/budget или запустить nested child;
-- MCP session restart, untrusted server rejection, tool allowlist и cancellation;
+- MCP: untrusted host rejection, tool allowlist, timeout, redirect за пределы
+  allowlist и cancellation;
 - Context Provider timeout, deleted source, stale evidence и unavailable source;
 - обязательный input, batch iteration и explicit failure-branch semantics;
 - повторный вызов stateful child capability не возникает из-за

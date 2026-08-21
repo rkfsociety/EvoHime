@@ -18,14 +18,20 @@
 - визуальный редактор графа. До его появления workflow запускается из
   Core-owned шаблона или read-only JSON/Markdown preview;
 - drag-and-drop layout. До его появления UI использует стабильную раскладку
-  по topological order.
+  по topological order;
+- timezone- и календарные расписания. Существующий supervisor-контракт
+  (`schedule_contract.rs`, `scheduler_state.rs`) поддерживает только
+  `once`/`interval` и пока не подключён к supervisor loop. До его расширения
+  шаблон показывает `schedule_eligibility = interval_only`, а календарные
+  правила возвращают typed `unsupported_schedule`.
 
 ## Изменения
 
 1. Добавить additive IPC-команды:
    `ListWorkflowTemplates`, `GetWorkflowDefinition`, `StartWorkflow`,
-   `GetWorkflowRun`, `CancelWorkflow`, `ResolveWorkflowApproval` и
-   `ListWorkflowEvents`.
+   `GetWorkflowRun`, `CancelWorkflow` и `ListWorkflowEvents`. Approval узла
+   разрешается существующей командой `ResolveApproval` через тот же approval
+   registry; отдельная workflow-команда approval не вводится.
 2. Добавить typed events: run/node started, waiting approval, progress,
    child report accepted/rejected, degraded, failed, cancelled и completed.
    События должны поддерживать replay и bounded payloads.
@@ -42,9 +48,12 @@
 6. Для каждого шаблона показывать version, input schema, required capabilities,
    schedule eligibility и безопасный preview. Запущенный workflow использует
    snapshot шаблона и не меняется после редактирования библиотеки.
-7. Подключить расписание только как supervisor-owned trigger с сохранёнными
-   входами и timezone. Webhook/event trigger до появления доверенного adapter
-   остаётся `unavailable` и не открывает новый HTTP runtime.
+7. Подключить расписание только через уже описанный supervisor schedule
+   contract с сохранёнными bounded входами; поддержанные виды расписания
+   ограничены его текущими `once`/`interval`, а timezone-правила добавляются
+   отдельно и до этого возвращают typed `unsupported_schedule`.
+   Webhook/event trigger до появления доверенного adapter остаётся
+   `unavailable` и не открывает новый HTTP runtime.
 8. Обеспечить старому Electron-клиенту graceful handling неизвестных
    additive events и состояния `unknown_state`/`core_unavailable`.
 
@@ -55,7 +64,7 @@
 - main/preload security tests на отсутствие raw prompt/output/secrets;
 - UI tests для replay, reconnect, cancel, approval и Core unavailable;
 - real-Core E2E на запуске одного шаблона без внешнего web runtime;
-- `npm run typecheck` и `npm test`.
+- `npm run typecheck`, `npm test`, `npm run build` и `npm run check:bundle`.
 
 ## Готово, когда
 

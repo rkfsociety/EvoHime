@@ -11,8 +11,12 @@
 ### Блокирующие
 
 - [06-3](06-3-workflow-desktop.md);
-- deterministic evaluation catalog и security smoke gates;
-- полный набор Rust, Electron, IPC и packaging checks из `AGENTS.md`.
+- существующий evaluation catalog `tests/evals/` со скриптами
+  `scripts/eval-gate.tests.ps1`, `scripts/security-eval-gate.tests.ps1` и
+  deterministic evals в `crates/evohime-core/src/evals.rs`
+  ([`../evaluations.md`](../evaluations.md));
+- полный набор Rust, Electron, IPC и packaging checks из `AGENTS.md`, включая
+  `scripts/native-package.tests.ps1`.
 
 ### Опциональные
 
@@ -30,9 +34,9 @@
 7. Crash до/после dispatch marker не приводит к blind retry.
 8. Renderer получает projection, но не raw prompt, secret, unrestricted child
    context или произвольный tool result.
-9. MCP server identity, transport, tool name и capability grants не могут быть
-    подменены model output или входом renderer; untrusted stdio/remote server
-    отклоняется до запуска.
+9. MCP server identity, host, tool name и capability grants не могут быть
+   подменены model output или входом renderer; host вне allowlist, redirect за
+   его пределы и неподдержанный transport отклоняются до запуска.
 10. Context Provider freshness, source identity, path scope и evidence provenance
     проверяются до включения данных в model context; stale/unavailable source
     не превращается в уверенный ответ.
@@ -43,7 +47,9 @@
     явная failure-ветвь продолжает только разрешённый fallback, а неподключённая
     ошибка блокирует downstream.
 14. Изменение template/block version во время активного запуска не меняет его
-    graph snapshot; расписание сохраняет timezone и bounded input snapshot.
+    graph snapshot; расписание сохраняет bounded input snapshot, а
+    неподдержанное календарное правило даёт typed `unsupported_schedule`
+    вместо молчаливого пропуска запуска.
 
 ## Документация и закрытие
 
@@ -51,8 +57,14 @@
   `docs/architecture.md`;
 - перенести фактическое состояние, шаблоны и результаты проверок в
   `docs/current-state.md`;
-- обновить `docs/features/task-dependency-graphs.md`, чтобы он ссылался на
-  канонический contract и не описывал неподключённое поведение;
+- обновить `docs/features/task-dependency-graphs.md`: он описывает граф
+  зависимостей work items, а не workflow orchestration, поэтому обязан явно
+  разделить два контура и сослаться на канонический workflow contract;
+- обновить `docs/plans/README.md` и `docs/development-plan.md`: убрать строки
+  и порядок этапов плана 06 и перевести его в раздел реализованного;
+- заменить в `docs/plans/07-0-superagi-inspired-tooling.md` и
+  `docs/plans/07-1-tool-manifest-contract.md` ссылки на 06-1 и 06-3 ссылками на
+  `docs/architecture.md`, иначе удаление файлов плана оставит битые ссылки;
 - проверить внутренние ссылки, `git diff --check`, generated protocol и
   отсутствие CAMEL/AutoGPT/Python/Docker как runtime-зависимости;
 - проверить, что prompts, responses, workspace text и credentials не уходят в

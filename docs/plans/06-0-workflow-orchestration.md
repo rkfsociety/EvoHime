@@ -52,20 +52,40 @@ workflow и расписаний; его Python/Docker runtime в продукт
 ## Что уже есть в коде
 
 - `crates/evohime-core/src/workflow.rs` содержит typed graph с портами,
-  типами данных, ограничениями размера, проверкой циклов и недостижимых узлов;
+  типами данных, ограничениями размера, проверкой циклов и недостижимых узлов.
+  `NodeType` сегодня знает только `research`, `transform`, `tool`, `condition`,
+  `approval`, `subgraph` и `loop`; `child`, `mcp_tool` и `context_provider`
+  отсутствуют;
 - `crates/evohime-core/src/workflow_runner.rs` строит стабильный
   topological plan и планирует retry, timeout, cancellation и approval;
-- `crates/evohime-core/src/workflow_execution.rs` выполняет узлы с live
-  approval/cancellation, timeout и retry;
+- `crates/evohime-core/src/workflow_execution.rs` выполняет узлы через
+  инъектируемый `NodeExecutor` строго последовательно, с live
+  approval/cancellation, timeout и retry; параллельного batch там нет;
+- `crates/evohime-core/src/evals.rs` уже гоняет deterministic evals поверх
+  `workflow` и `workflow_runner`, поэтому контракт нельзя менять молча;
 - `crates/evohime-core/src/child_contracts.rs` уже содержит role, reduced
   context, output schema, grants, budget, provenance и revision limits;
-- `docs/features/task-dependency-graphs.md` фиксирует ожидаемую модель графа,
-  bounded concurrency, SQLite state и projection в Electron.
+- `crates/tool-runtime/src/tools/mcp.rs` — единственный существующий MCP-путь:
+  Core-owned tool `mcp.call` с `Permission::McpCall`, host allowlist
+  `EVOHIME_MCP_ALLOWED_HOSTS`, SSRF-проверкой, ограничением redirect и bounded
+  timeout. Это remote HTTP JSON-RPC вызов, а не каталог серверов и не stdio
+  session;
+- `crates/evohime-supervisor/src/schedule_contract.rs` и
+  `crates/evohime-supervisor/src/scheduler_state.rs` содержат bounded
+  schedule/trigger/lease/retry контракт, но он помечен `dead_code`, вызывается
+  только собственными тестами и знает лишь `once`/`interval` без timezone и
+  календарных правил.
 
 Сейчас workflow-модули не являются полноценным пользовательским workflow
 контуром: нет durable graph-run state и recovery, нет адаптера узла к реальному
 child/tool/model execution path, нет Electron IPC surface и нет проверенного
 end-to-end сценария.
+
+`docs/features/task-dependency-graphs.md` описывает не этот контракт, а уже
+работающий граф зависимостей work items проекта (`AddTaskEdge`, `GetTaskGraph`,
+`next_ready`, SQLite state, projection в task timeline). Два графа не
+объединяются: workflow orchestration получает собственный контракт, а feature-
+документ уточняется в 06-4, чтобы разница была явной.
 
 ## Решения и границы
 
@@ -89,6 +109,13 @@ end-to-end сценария.
 8. Импортируемый workflow JSON является только данными для валидации. Он не может
    содержать inline Python/Node/shell, произвольный URL, секрет или dynamic code
    reference.
+9. Существующий `NodeType::Subgraph` не является nested child delegation.
+   Он допускается только как Core-owned статическое разворачивание уже
+   проверенного графа в пределах того же run policy, budget и approval. Если
+   06-1 не закрывает это ограничение проверками, тип удаляется из контракта.
+10. MCP остаётся Core-owned. Registry, transport, allowlist и approval
+    принадлежат Core ToolRegistry поверх существующего `mcp.call`; supervisor
+    отвечает только за процессное дерево, lifecycle и восстановление Core.
 
 ## Этапы
 
