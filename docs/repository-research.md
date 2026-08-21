@@ -23,6 +23,7 @@
 
 | № | Репозиторий | Статус | Потенциальная ценность | Решение |
 |---|---|---|---|---|
+| 3 | [run-llama/llama_index](https://github.com/run-llama/llama_index) | Исследовано | RAG-контракты, ingestion, workflow и evaluation | Адаптировать идеи; runtime не подключать |
 
 ## Карточки исследований
 
@@ -375,6 +376,180 @@ LangChain/LangGraph как runtime Евы и не переносить middlewar
 - критерии проверки: no new runtime/network boundary, deterministic tests без
   network, explicit provider egress, typed terminal failures, approval
   recheck после edit, bounded stream redaction и conservative profile fallback.
+
+### 3. LlamaIndex
+
+- Источник: https://github.com/run-llama/llama_index
+- Дата проверки: 2026-08-21
+- Ревизия/commit: `d8021225eb7e7b276d5ceb476b0a4650240f27f8`
+- Лицензия исходного кода: MIT
+- Состав: Python-монорепозиторий с отдельным `llama-index-core`, большим
+  набором package-level integrations, workflow runtime и instrumentation;
+  starter-пакет `llama-index` добавляет core и OpenAI integrations.
+- Версия core на момент проверки: `0.14.24`, Python `>=3.10,<4.0`.
+- Назначение: framework для agentic applications, document parsing,
+  ingestion, индексов, retrieval, query engines, tools, workflows и
+  evaluation; README также выделяет внешний Parse/Extract/Index продукт.
+- Краткий вывод: сильный источник архитектурных контрактов и evaluation
+  сценариев для локального RAG Евы. Подключать Python framework или внешние
+  LlamaCloud/connector services в runtime EvoHime не следует.
+
+#### Что изучено
+
+- `llama-index-core` разделяет `Document`, `BaseNode`, `TextNode` и
+  `NodeWithScore`: узлы имеют стабильный `id_`, metadata, hash, embedding и
+  явные отношения `SOURCE`, `PREVIOUS`, `NEXT`, `PARENT`, `CHILD`;
+  `RelatedNodeInfo` переносит node id, type, metadata и hash без обязательной
+  загрузки полного текста.
+- Metadata может отдельно исключаться из текста для embedding и для LLM;
+  `MetadataMode` даёт режимы `ALL`, `EMBED`, `LLM`, `NONE`. Это полезное
+  разделение между поисковым представлением и доказательным контекстом.
+- `IngestionPipeline` оформляет ingestion как последовательность
+  transformations. В нём есть cache, docstore, стратегии `UPSERTS`,
+  `DUPLICATES_ONLY`, `UPSERTS_AND_DELETE`, optional vector store и async
+  execution. Кэш и dedup завязаны на hash исходных документов/узлов.
+- Vector index/retriever возвращает `NodeWithScore`, а response/query
+  engine сохраняет `source_nodes`; citation и multi-step/router/sub-question
+  engines умеют объединять источники нескольких подзапросов.
+- `StorageContext` группирует docstore, index store, vector stores и graph
+  stores и умеет сохранять/восстанавливать их из каталога. По умолчанию
+  используются простые локальные хранилища, но plugin surface позволяет
+  подключать внешние vector/database backends.
+- Workflow слой использует типизированные `Event`, `StartEvent`, `StopEvent`,
+  `Context` и `@step`; граф шагов можно визуализировать по accepted events и
+  return types. Retry policy вынесена в отдельный workflow package.
+- `FunctionTool` связывает имя/описание и schema аргументов с sync/async
+  функцией и возвращает typed `ToolOutput` с raw input/output и content
+  blocks. Есть адаптеры к другим tool-форматам, но security approval в
+  `FunctionTool` не является самостоятельной границей.
+- Evaluation API задаёт общий `EvaluationResult` с `query`, `contexts`,
+  `response`, `passing`, `feedback`, `score` и invalid-result marker. В core
+  есть evaluator-ы faithfulness, context/answer relevancy, correctness,
+  semantic similarity, pairwise и retrieval, а также batch runner.
+- Core зависит от достаточно широкого Python stack: Pydantic 2, SQLAlchemy,
+  fsspec, httpx/requests/aiohttp, numpy, tiktoken, NLTK, Pillow, NetworkX,
+  SQLite async bindings и tenacity. Core отдельно исключает workflow и
+  instrumentation из coverage-отчёта.
+- Внешние integrations и instrumentation выделены в отдельные пакеты;
+  observability может подключать сторонние backend-ы. Это полезный список
+  событий и spans для сравнения, но не разрешение на передачу prompt/tool
+  данных наружу.
+
+#### Что можем использовать в Еве
+
+- **RAG metadata/provenance contract.** Сопоставить текущую схему chunk-а с
+  полями stable id, source document id, content hash, source/parent/next
+  relationships и score. Идея `RelatedNodeInfo` особенно полезна для
+  компактного provenance без копирования полного текста. Не заменять
+  текущие generation/hash/citation gates EvoHime.
+- **Разделение представлений metadata.** Использовать отдельные правила для
+  metadata, разрешённых в embedding-представлении, в LLM-контексте и в UI
+  citation. В Еве это должно быть Core-owned и redaction-aware, чтобы
+  исключённое из embedding поле не стало случайно доступным модели через
+  другой путь.
+- **Ingestion как наблюдаемая цепочка трансформаций.** Зафиксировать в
+  acceptance tests этапы scan → normalize → chunk → metadata → embedding →
+  publication и для каждого этапа hash/version/input-output counts. Это
+  помогает диагностировать cache hits, upsert и stale generation, но
+  реализацию оставить в существующем Rust workspace RAG pipeline.
+- **Dedup/upsert test matrix.** Перенять комбинацию сценариев: новый
+  документ, неизменённый документ, изменённый документ, удалённый документ,
+  duplicate hash, частично упавшая трансформация и повтор после отмены.
+  Результатом должна быть атомарная опубликованная generation, а не
+  промежуточно видимый индекс.
+- **Retriever/source-node boundary.** Закрепить контракт, где retrieval
+  выдаёт scored evidence с node id, score, generation и provenance, а
+  synthesis получает только проверенный набор source nodes. Для сложных
+  запросов полезны acceptance cases на router, sub-question и merge источников
+  с дедупликацией citations.
+- **Local storage decomposition как сравнительный reference.** Разделение
+  document/index/vector/graph store помогает проверить, что SQLite FTS5,
+  optional local embeddings, context ledger и citation metadata Евы не
+  смешивают поисковый индекс с источником истины. Новые внешние vector DB для
+  этого не нужны.
+- **Event-driven workflow vocabulary.** Использовать typed events, step
+  inputs/outputs, cancellation, retry policy и визуализируемую схему как
+  материал для acceptance tests текущего Rust workflow runtime: особенно
+  resume после approval, timeout, retryable provider error и terminal failure.
+- **Tool output contract.** Идея отдельного `ToolOutput` с typed content,
+  raw input/output и tool name полезна для receipts, artifact references и
+  UI-диагностики. В Еве raw output должен проходить redaction/size limits и
+  храниться только в разрешённой форме; `FunctionTool` нельзя считать
+  заменой capability/approval policy.
+- **RAG evaluation fixtures.** Перенять разделение оценок retrieval
+  (recall/релевантность контекста) и generation (faithfulness, answer
+  relevancy, correctness), сохраняя отдельно query, retrieved contexts,
+  response, score, pass/fail, feedback и invalid reason. Это хороший каркас
+  для offline acceptance suite Евы.
+- **Instrumentation checklist.** Использовать event/span vocabulary для
+  измерения latency, cache hit, retrieval scores, token/cost и workflow
+  transitions. События должны создаваться Core, быть redacted и иметь
+  correlation/run id; внешние exporters — только явный opt-in.
+- **Мультимодальный ingestion как дальняя идея.** Поддержка media resources
+  и modality-specific embeddings может быть полезна для будущих локальных
+  документов/изображений, но не должна расширять текущий scope без отдельной
+  модели приватности и bounded storage.
+
+#### Ограничения и риски
+
+- **Несовместимый runtime и размер dependency surface.** LlamaIndex — Python
+  framework с Pydantic, сетевыми клиентами, численными и parser-зависимостями;
+  добавление его в Windows desktop Core создаст второй runtime, упаковку,
+  обновления и отдельную поверхность уязвимостей.
+- **Слишком широкий plugin/egress surface.** Интеграции охватывают cloud
+  providers, vector stores, readers и observability. Наличие адаптера не
+  означает, что данные можно отправлять во внешний сервис; ключи и prompt
+  содержимое должны оставаться под текущей Core policy.
+- **LlamaParse/Parse — внешняя сервисная зависимость.** OCR, extraction и
+  indexing через облачные продукты могут раскрывать документы и требуют
+  отдельного consent, network policy, billing, retention и license review.
+  По умолчанию для Евы это отклонённый путь.
+- **Persistence может обойти текущие гарантии.** Простая сериализация
+  `storage`/vector store может сохранить raw text, metadata или embeddings
+  вне EvoHime SQLite, не зная о redaction, generation, stale-evidence,
+  backup и atomic-publication правилах. Использовать только как comparison
+  reference.
+- **Generic agent/tool API не является security boundary.** `FunctionTool`,
+  workflow и agent loops не заменяют capability checks, approval, exact-call
+  hash, cancellation, supervisor limits или receipts Евы. Нельзя давать им
+  прямой доступ к workspace и model secrets.
+- **Cache/hash semantics недостаточны сами по себе.** Hash документа может не
+  учитывать смену parser/chunker/embedding/model policy. В Еве любой reuse
+  должен быть привязан к generation, schema/pipeline version и model profile,
+  иначе появятся stale citations и несовместимые embeddings.
+- **LLM-based evaluation не является доказательством.** Faithfulness,
+  correctness и relevancy evaluators требуют модели-судьи и могут зависеть от
+  network/provider. Их результат — измерение качества с invalid/uncertain
+  состоянием, а не security decision.
+- **Лицензирование интеграций неоднородно.** MIT относится к исходному core;
+  отдельные readers, provider SDK, модели, LlamaCloud и observability
+  backends могут иметь собственные лицензии и условия.
+- **Документация и код меняются быстро.** README прямо направляет к текущей
+  документации; перед любым заимствованием нужно снова сверять live source,
+  package versions, tests и конкретную лицензию. Полный test suite LlamaIndex
+  в рамках записи не запускался.
+
+#### Предварительное решение
+
+`адаптировать RAG/ingestion/workflow/evaluation контракты и тестовые идеи`;
+`не подключать LlamaIndex runtime, LlamaParse или cloud integrations в Еву`.
+
+#### Связь с EvoHime
+
+- уже покрыто и не дублировать: локальный Agentic RAG, canonical workspace
+  scan, versioned chunking, SQLite FTS5, optional local embeddings, RRF,
+  citations с re-read verification, context ledger, redaction и stale-evidence
+  gates;
+- наиболее ценные кандидаты для будущего плана: единый RAG evaluation suite,
+  dedup/upsert failure matrix, metadata/provenance contract audit,
+  retriever/source-node contract и workflow observability checklist;
+- реализацию держать в Rust Core и существующих SQLite/IPC контрактах; Python
+  использовать только во внешнем offline benchmark, если это когда-нибудь
+  понадобится, без включения в поставку Евы;
+- критерии проверки: atomic generation publication, parser/chunker/model
+  version in reuse key, no raw-text egress, redacted Core-owned events,
+  deterministic retrieval fixtures, explicit invalid evaluation state,
+  cancellation/timeout/retry tests и сохранение approval/receipt invariants.
 
 ## Итог для будущего плана
 
