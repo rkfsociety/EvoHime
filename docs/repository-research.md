@@ -24,6 +24,7 @@
 | № | Репозиторий | Статус | Потенциальная ценность | Решение |
 |---|---|---|---|---|
 | 3 | [run-llama/llama_index](https://github.com/run-llama/llama_index) | Исследовано | RAG-контракты, ingestion, workflow и evaluation | Адаптировать идеи; runtime не подключать |
+| 4 | [openinterpreter/openinterpreter](https://github.com/openinterpreter/openinterpreter) | Исследовано | Execution policy, sandbox, approvals, ACP и typed protocol | Адаптировать security/protocol идеи; runtime не подключать |
 
 ## Карточки исследований
 
@@ -550,6 +551,205 @@ LangChain/LangGraph как runtime Евы и не переносить middlewar
   version in reuse key, no raw-text egress, redacted Core-owned events,
   deterministic retrieval fixtures, explicit invalid evaluation state,
   cancellation/timeout/retry tests и сохранение approval/receipt invariants.
+
+### 4. Open Interpreter
+
+- Источник: https://github.com/openinterpreter/openinterpreter
+- Дата проверки: 2026-08-21
+- Ревизия/commit: `5b07159c477920c159d8892d112b480e7307f257`
+- Лицензия исходного кода: Apache-2.0; в репозитории также есть `NOTICE` и
+  унаследованные upstream-компоненты, поэтому attribution нужно сохранять при
+  любом переносе кода.
+- Состав: текущий Rust-монорепозиторий, основанный на OpenAI Codex, с CLI/TUI,
+  app-server JSON-RPC, ACP server, MCP, SDK, harness-ами, skills/hooks,
+  execution policy, sandboxing и отдельным native Windows sandbox crate.
+- Назначение: coding agent для open/low-cost моделей, совместимый с Codex
+  exec/app-server surfaces и ACP-клиентами. README отдельно указывает, что
+  старый Python-проект теперь живёт в community fork.
+- Краткий вывод: один из самых полезных источников для security-контрактов
+  выполнения команд в Еве: разделение approval и sandbox, typed permission
+  profiles, fail-closed поведение, Windows ACL/restricted-token/Job Object
+  механизмы, streaming protocol и conformance tests. Целиком переносить
+  Codex runtime в EvoHime не нужно.
+
+#### Что изучено
+
+- В текущем репозитории основной runtime — Rust, а не исторический Python
+  Open Interpreter. Пространство разделено на `core`, `protocol`, `sandboxing`,
+  `windows-sandbox-rs`, `app-server`, `acp-server`, SDK и отдельные crates для
+  tools, skills, MCP, network proxy и process hardening.
+- Модель безопасности разделяет две независимые оси: sandbox задаёт
+  техническую границу локального выполнения, approval policy определяет, когда
+  нужно остановить agent и запросить решение пользователя.
+- Sandbox-профили включают `read-only`, `workspace-write`,
+  `danger-full-access` и `external-sandbox`; filesystem и network policy
+  сериализуются отдельно. `workspace-write` задаёт writable roots, умеет
+  отключить tmp roots и по умолчанию не включает сеть.
+- Approval policy имеет `untrusted`, `on-request`, granular и `never`.
+  Granular-конфигурация отдельно управляет sandbox escalation, execpolicy
+  rules, skill approval, request_permissions и MCP elicitations.
+- Writable roots защищают control directories: `.git`, `.codex` и agent
+  configuration paths должны оставаться read-only либо deny-write даже внутри
+  разрешённого workspace. В policy есть read-only subpaths и protected
+  metadata names.
+- Sandbox manager выбирает platform backend и преобразует typed policy в
+  spawn parameters. Для macOS используется Seatbelt, для Linux/WSL —
+  Bubblewrap/Landlock и связанные kernel limits, для Windows — native
+  restricted-token/elevated backends с ACL-подготовкой.
+- Windows crate содержит Job Object для дерева процессов, ACL deny-read и
+  deny-write, restricted token/elevation paths, ConPTY/stdio bridge, helper
+  materialization, filesystem permission resolution и smoke/integration tests.
+  Для неподдерживаемой комбинации filesystem policy runtime не должен молча
+  запускать команду без sandbox; код и тесты явно проверяют отказ.
+- Network policy может работать через ограниченный local proxy; sandbox
+  преобразует network access в разрешённые proxy endpoints/ports и имеет
+  fail-closed ветки при невозможности применить managed network requirements.
+- App-server предоставляет typed JSON-RPC поверх stdio: initialize,
+  thread/turn lifecycle, streaming agent deltas, command/file-change output,
+  tool progress, approval requests, interrupt/steer, configuration и
+  generated stable/experimental JSON/TypeScript schemas.
+- ACP server даёт отдельный stdio-протокол для editor/UI: клиент владеет UI,
+  а agent — model/provider, tools, approvals, sandbox и session state. Через
+  ACP передаются streaming messages, tool progress и permission requests без
+  scraping терминального UI.
+- TypeScript и Python SDK запускают внешний agent process, маршрутизируют
+  JSON-RPC responses/notifications по thread/turn и умеют stream текста. В
+  compatibility script есть provider-free smoke test для запуска реального
+  binary через Codex SDK.
+- Python SDK по умолчанию принимает command/file approval, если caller не
+  передал свой `approval_handler`. Это удобный пример API, но опасное default
+  поведение для desktop-продукта.
+- README/документация рекомендуют `read-only + on-request` для незнакомого
+  кода, `workspace-write + on-request` для обычной работы и разрешают
+  full-access/never только во внешней disposable isolation. Отдельно
+  предупреждается, что `--yolo` отключает сразу approval и sandbox.
+- Репозиторий содержит крупные Rust unit/integration/snapshot suites,
+  generated protocol schemas, Windows sandbox smoke tests и тесты policy
+  transforms, protected paths, network proxy, approval routing и unsupported
+  backend behavior. Полный test suite в рамках записи не запускался.
+
+#### Что можем использовать в Еве
+
+- **Разделение sandbox и approval как двух контрактов.** Сверить текущие
+  `Permission`, approval redemption и tool policy Евы с явной моделью:
+  permission profile отвечает за технические возможности процесса, approval —
+  за пользовательское решение. Ни один из них не должен подменять другой.
+- **Typed permission profile.** Использовать структуру filesystem roots,
+  deny/read-only carve-outs, network mode, escalation capability и source/hash
+  policy snapshot для receipts. Profile должен входить в execution context и
+  быть повторно проверен перед запуском, а не жить только в Electron UI.
+- **Protected control paths.** Добавить в acceptance/security matrix Евы
+  проверки, что `.git`, hooks, `.codex`/EvoHime runtime state, secrets,
+  supervisor/session files и policy/config directories не становятся
+  writable вследствие общего writable root. Отдельно проверять symlink,
+  junction, rename и create-child обходы.
+- **Windows-native executor checklist.** Использовать Windows-часть как
+  reference для ревью supervisor/Core execution: Job Object для всего дерева,
+  restricted token, ACL deny rules, ConPTY isolation, bounded stdio и явный
+  cleanup. Код напрямую не переносить без проверки совместимости с текущим
+  supervisor и ownership модели EvoHime.
+- **Fail-closed capability negotiation.** Если Windows backend не может
+  выразить requested policy, возвращать typed unsupported/denied result и не
+  запускать команду unsandboxed. Это особенно важно для split read/write
+  roots, deny-read paths и network restrictions.
+- **Approval request protocol.** Перенять typed request/response shape с
+  tool/command id, requested filesystem/network delta, policy snapshot, human
+  explanation, expiry и decision. Любое edit/escalation решение должно
+  canonicalize command, пересчитать hash и пройти Core policy ещё раз.
+- **Granular approval matrix.** Разделить approval для shell escalation,
+  policy-rule exception, skill script, permission request и MCP elicitation.
+  Это даст пользователю точное управление, не превращая все опасные действия
+  в один общий prompt.
+- **Transport/schema discipline.** Использовать идеи generated stable vs
+  experimental schemas, major/version negotiation, typed notifications,
+  request correlation, streaming deltas и explicit interrupt. Для Евы это
+  нужно адаптировать к каноническому `desktop-ipc-v1` через named pipe, не
+  заменять существующий IPC на stdio.
+- **ACP как внешний compatibility adapter.** Рассмотреть ACP только как
+  будущий opt-in adapter для editor/automation interoperability. Внутри Евы
+  Core остаётся владельцем состояния, tools, approvals и secrets; ACP-клиент
+  не получает прямого доступа к workspace/SQLite.
+- **Binary compatibility smoke tests.** Перенять проверку реального binary
+  через SDK/app-server: initialize, thread start/resume, stream, approval,
+  interrupt и terminal result. Это полезно для Electron/Core IPC E2E и
+  supervisor recovery tests.
+- **Portable instruction/skills boundary.** Идея shared `AGENTS.md`,
+  `.agents/skills`, MCP и protocol-neutral directories полезна для
+  interoperability. В Еве содержимое таких файлов должно считаться
+  untrusted context и проходить prompt-injection/policy handling; оно не может
+  менять Core permissions или approval state.
+- **Execution observability.** Перенять события для command start/output/
+  completion, sandbox violation, approval requested/decided, process exit,
+  timeout, cancellation и network denial. События должны быть redacted,
+  correlation-id based и записываться Core/supervisor, а не только UI.
+- **Windows negative-test fixtures.** Добавить сценарии: запись за пределами
+  root, изменение `.git/hooks`, чтение deny-read secret, rename через parent,
+  child-process escape, network access при disabled policy, unsupported split
+  policy и cleanup после crash.
+
+#### Ограничения и риски
+
+- **Это не независимый маленький Open Interpreter runtime.** Текущий проект —
+  большой fork Codex с сотнями Rust crates, upstream protocol assumptions,
+  provider/auth surfaces и быстро меняющимся app-server API. Прямая зависимость
+  добавила бы второй agent runtime и усложнила существующий EvoHime Core.
+- **Apache-2.0 требует соблюдения attribution/NOTICE.** Даже при допустимом
+  reuse нужно сохранять license/notice, отмечать изменённые файлы и отдельно
+  проверять лицензии зависимостей, bundled providers, моделей и внешних tools.
+  Название Open Interpreter/OpenAI и trademarks не становятся свободными для
+  использования вместе с кодом.
+- **Full-access и never опасны по дизайну.** Документация прямо допускает
+  режимы, где sandbox или approval отсутствуют, но только во внешней
+  disposable isolation. Еве нельзя выставлять такие комбинации как обычный
+  пользовательский профиль или скрытый fallback.
+- **Approval SDK может auto-accept.** Python SDK default handler принимает
+  approvals без caller-supplied handler. При заимствовании протокола это нужно
+  запретить: отсутствие обработчика должно быть deny/blocked, а решение —
+  только из доверенного UI/Core path.
+- **Sandbox не равен полной безопасности agent.** Даже хороший OS boundary не
+  предотвращает prompt injection внутри разрешённого workspace, утечку через
+  разрешённую сеть, опасную команду в `danger-full-access`, заражённый MCP или
+  ошибку policy translation. Нужны отдельные Core policy, redaction и audit.
+- **Windows backend имеет ограничения покрытия.** ACL/restricted-token paths
+  различаются по правам, elevation, deny-read и writable-root форме. Нельзя
+  считать одну успешную подготовку helper-а доказательством защиты всех
+  комбинаций; сохранять negative tests и fail-closed behavior.
+- **External protocol увеличивает поверхность.** ACP/app-server/stdin JSON-RPC
+  требуют bounded frames, authentication/ownership, correlation, cancellation
+  и защиты от spoofed approval responses. Для локального IPC Евы named pipe с
+  session authentication остаётся более подходящей границей.
+- **Shared instructions могут быть атакующим входом.** `AGENTS.md`, skills,
+  MCP и подключённые editors могут передать инструкции, которые выглядят как
+  policy. Их нельзя принимать как trusted authority или разрешать им менять
+  secrets, permission profile и approval.
+- **Кодовая совместимость не означает продуктовую совместимость.** Runtime
+  рассчитан на Codex process layout, его config/home, provider auth и rollout
+  storage. Для EvoHime можно использовать контракты и тесты, но не копировать
+  пути, env names, state ownership или UI semantics без отдельного решения.
+
+#### Предварительное решение
+
+`адаптировать permission/sandbox/approval/protocol контракты и Windows
+negative-test идеи`; `не подключать Open Interpreter/Codex runtime как
+внутреннюю зависимость Евы`.
+
+#### Связь с EvoHime
+
+- уже покрыто и не дублировать: Rust Core, supervisor/Job Object lifecycle,
+  named-pipe desktop IPC с session authentication, capability registry,
+  approval/receipts, tool sandbox/timeout/cancellation, provider gateway,
+  redaction и Core-owned state;
+- наиболее ценные кандидаты для будущего плана: Windows sandbox capability
+  matrix, protected-path negative tests, explicit fail-closed unsupported
+  policy, granular approval schema, execution-event audit и real-binary IPC
+  compatibility suite;
+- ACP/app-server рассматривать только как внешний interoperability layer после
+  стабилизации собственного `desktop-ipc-v1`; не переносить stdio transport
+  внутрь продукта и не давать editor/client прямого доступа к Core storage;
+- критерии проверки: no unsandboxed fallback, policy/approval hash recheck,
+  deny-read/write and child-process escape tests, bounded protocol frames,
+  authenticated approval responses, cancellation/cleanup after crash,
+  redacted audit events и сохранение Core/supervisor ownership invariants.
 
 ## Итог для будущего плана
 
