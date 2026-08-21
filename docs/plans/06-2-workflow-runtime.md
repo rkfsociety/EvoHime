@@ -1,4 +1,4 @@
-# План 06-2 — Durable runtime и интеграция с Core
+# План 06-2 — Durable runtime, Context Providers и интеграция с Core
 
 ## Цель
 
@@ -35,6 +35,8 @@
    - `tool` → existing ToolRegistry and approval path;
    - `mcp_tool` → supervisor-owned trusted MCP session, Core ToolRegistry,
      bounded transport и тот же approval/receipt path;
+   - `context_provider` → read-only Context Provider registry, bounded evidence,
+     freshness/staleness gate и связь с Context Budget/RAG provenance;
    - `research` → existing bounded research/RAG path;
    - `approval` → pending approval registry;
    - `condition`/`transform` → deterministic Core-owned operations.
@@ -65,7 +67,8 @@
 - approval denial/pending, cancellation, timeout и dead-letter;
 - проверка, что child не может поднять grants/budget или запустить nested child;
 - MCP session restart, untrusted server rejection, tool allowlist и cancellation;
-- повторный вызов stateful AgentTool-подобной capability не возникает из-за
+- Context Provider timeout, deleted source, stale evidence и unavailable source;
+- повторный вызов stateful child capability не возникает из-за
   parallel tool calls или replay;
 - `cargo test -p evohime-core -p evohime-local-storage`.
 

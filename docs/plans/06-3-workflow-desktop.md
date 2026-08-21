@@ -1,4 +1,4 @@
-# План 06-3 — IPC и Electron projection
+# План 06-3 — IPC, Electron projection и workflow-рецепты
 
 ## Цель
 
@@ -35,9 +35,10 @@
    отдавать.
 4. Добавить экран/панель workflow с графом, текущими состояниями узлов,
    зависимостями, попытками, approval и ссылками на task timeline.
-5. Добавить стартовые шаблоны:
+5. Добавить стартовые шаблоны по Agno-подобным ролям:
    `Исследование репозитория`, `План → реализация → ревью`,
-   `Параллельное security review`.
+   `Параллельное security review`. Шаблоны являются Core-owned versioned
+   definitions, а не динамически загружаемыми Python agents.
 6. Обеспечить старому Electron-клиенту graceful handling неизвестных
    additive events и состояния `unknown_state`/`core_unavailable`.
 

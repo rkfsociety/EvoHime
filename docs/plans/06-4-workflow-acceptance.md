@@ -1,4 +1,4 @@
-# План 06-4 — Evaluation, security и закрытие плана
+# План 06-4 — Evaluation, security, observability и закрытие плана
 
 ## Цель
 
@@ -31,11 +31,14 @@
 8. Renderer получает projection, но не raw prompt, secret, unrestricted child
    context или произвольный tool result.
 9. MCP server identity, transport, tool name и capability grants не могут быть
-   подменены model output или входом renderer; untrusted stdio/remote server
-   отклоняется до запуска.
-10. Попытки cycle, route injection, grant escalation, nested child, path escape,
+    подменены model output или входом renderer; untrusted stdio/remote server
+    отклоняется до запуска.
+10. Context Provider freshness, source identity, path scope и evidence provenance
+    проверяются до включения данных в model context; stale/unavailable source
+    не превращается в уверенный ответ.
+11. Попытки cycle, route injection, grant escalation, nested child, path escape,
     unbounded loop и oversized payload отклоняются до эффекта.
-11. Старые IPC-клиенты продолжают работать с additive workflow protocol.
+12. Старые IPC-клиенты продолжают работать с additive workflow protocol.
 
 ## Документация и закрытие
 
@@ -46,7 +49,10 @@
 - обновить `docs/features/task-dependency-graphs.md`, чтобы он ссылался на
   канонический contract и не описывал неподключённое поведение;
 - проверить внутренние ссылки, `git diff --check`, generated protocol и
-  отсутствие упоминаний AutoGen как runtime-зависимости;
+  отсутствие упоминаний Agno/AgentOS как runtime-зависимости;
+- проверить, что prompts, responses, workspace text и credentials не уходят в
+  observability export без явного opt-in; локальный redacted trace остаётся
+  authoritative projection поверх receipts/provenance;
 - удалить `docs/plans/06-*.md` только после полного acceptance и task-only
   commit.
 

@@ -1,10 +1,10 @@
-# План 06-1 — Контракт workflow и адаптеры agent-узлов
+# План 06-1 — Контракт workflow, Agno-роли и MCP-адаптеры
 
 ## Цель
 
 Превратить существующий typed graph в канонический контракт workflow, который
-может описывать AutoGen-подобные роли, capability-as-tool и маршруты, но
-остаётся безопасным для Rust Core.
+может описывать Agno-подобные Agent/Team/Workflow-роли, Context Providers и
+capability-as-tool, но остаётся безопасным для Rust Core.
 
 ## Зависимости
 
@@ -29,11 +29,13 @@
    IDs, unknown ports, type mismatch, cycles, unreachable nodes, invalid retry,
    timeout и loop bounds.
 3. Добавить к узлу typed action profile:
-   `child`, `tool`, `mcp_tool`, `research`, `transform`, `condition`,
-   `approval`, `loop`. `child` получает role, goal, output schema,
+   `child`, `tool`, `mcp_tool`, `context_provider`, `research`, `transform`,
+   `condition`, `approval`, `loop`. `child` получает role, goal, output schema,
    context/artifact allowlist, grants, budget и max revisions. `mcp_tool`
    ссылается только на Core-owned registry entry с server identity и
    разрешённым tool name; URL, command и headers не приходят из model output.
+   `context_provider` допускает только read-only provider с source identity,
+   freshness policy, evidence schema и bounded result budget.
 4. Описать routing edges как versioned event/port transitions. Для условий
    поддержать детерминированные `all`/`any`; LLM не выбирает произвольный node ID
    и не рассылает произвольный broadcast-контекст всем узлам.
@@ -49,9 +51,10 @@
 - round-trip serde fixtures для valid/invalid graphs;
 - deterministic error ordering и canonical hash;
 - тесты на `AND`/`OR`, route allowlist, output schema и parent-subset grants;
-- тесты на `AgentTool`-подобную child capability без общего mutable context;
+- тесты на Team/Agent-подобную child capability без общего mutable context;
 - тесты на MCP registry identity, tool allowlist и запрет model-controlled server
   selection;
+- тесты на Context Provider identity, stale evidence и parent-subset budget;
 - негативные тесты на nested child, capability escalation, unbounded loop,
   unknown action и unknown route;
 - `cargo fmt --check` и targeted `cargo test -p evohime-core`.

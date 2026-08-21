@@ -1,4 +1,4 @@
-# План 06 — Workflow orchestration и внешние agent-инструменты для Евы
+# План 06 — Agno-inspired workflow orchestration и внешние agent-инструменты для Евы
 
 Статус: проект плана, реализация не начата.
 
@@ -9,30 +9,32 @@
 результаты, проверять их по схемам, ждать approval и продолжать выполнение после
 перезапуска Core.
 
-План использует проверенные идеи AutoGen — typed message routing, GraphFlow,
-AgentTool, MCP Workbench, intervention handlers и tracing — но не добавляет
-AutoGen как зависимость и не переносит его Python runtime. AutoGen находится в
-режиме сопровождения, поэтому Microsoft рекомендует для новых проектов
-Microsoft Agent Framework; его typed data-flow и checkpoint-подход используются
-только как дополнительный reference.
+План использует выбранные идеи Agno — Agent/Team/Workflow, typed input/output,
+Context Providers, MCP toolkits, human-in-the-loop, tracing и evaluations — но
+не добавляет Agno как зависимость и не переносит его Python runtime. Agno
+AgentOS, FastAPI API и control-plane UI остаются только внешними reference и
+не входят в поставляемый Windows runtime.
 
 Исполнительным контуром остаются Rust Core, существующие child contracts,
 `run_policy`, receipts, SQLite и authenticated Electron IPC.
 
 ## Что именно заимствуем
 
-- GraphFlow → условные переходы, bounded fan-out/fan-in и циклы с обязательным
-  ограничителем, но в каноническом typed data-flow контракте Core;
-- AgentTool → child workflow выступает capability coordinator-а, а не свободным
-  агентом с доступом к общему контексту;
-- MCP Workbench → Core-owned адаптер доверенных внешних tools;
-- intervention handler → единая точка перехвата до side effect, поверх текущих
-  approval intent, exact-call recheck и signed receipts;
+- Agent/Team/Workflow → роли, маршрутизация, последовательные/параллельные
+  этапы и deterministic fan-in в каноническом typed data-flow контракте Core;
+- Context Providers → read-only источники актуального контекста с provenance,
+  freshness и bounded context budget;
+- MCP toolkits → Core-owned каталог доверенных внешних tools с discovery,
+  allowlist и ограниченными schemas;
+- structured input/output и human-in-the-loop → schema validation и единая
+  точка перехвата до side effect поверх текущих approval intent, exact-call
+  recheck и signed receipts;
 - tracing/evaluation → корреляция workflow/node/tool/model событий и
   deterministic сценарии проверки.
 
-Не входят в план AutoGen Studio, AutoGen Memory/RAG, локальный code executor,
-внутренний AgentChat runtime или произвольный Python/Node sidecar.
+Не входят в план AgentOS control plane/UI, Agno Memory/Knowledge как замена
+локальным memory/RAG, локальный code executor, произвольный Python/Node sidecar,
+внешний HTTP runtime или обязательный OTLP/Agno telemetry.
 
 ## Что уже есть в коде
 
@@ -78,14 +80,14 @@ end-to-end сценария.
 
 ## Внешние references
 
-- [AutoGen repository](https://github.com/microsoft/autogen) — статус проекта,
-  слои Core/AgentChat/Extensions;
-- [AutoGen GraphFlow](https://microsoft.github.io/autogen/dev/user-guide/agentchat-user-guide/graph-flow.html)
-  — graph patterns, используемые только как reference;
-- [AutoGen MCP Workbench](https://microsoft.github.io/autogen/stable/reference/python/autogen_ext.tools.mcp.html)
-  — MCP capability surface и ограничения доверия;
-- [AutoGen migration guide](https://learn.microsoft.com/en-us/agent-framework/migration-guide/from-autogen/)
-  — typed Workflow/data-flow и checkpoint reference для архитектурных решений.
+- [Agno repository](https://github.com/agno-agi/agno) — SDK, integrations,
+  AgentOS и Apache-2.0 license;
+- [Agno SDK primitives](https://docs.agno.com/sdk/introduction) — Agent, Team,
+  Workflow, structured I/O, Context Providers, approvals, evals и tracing;
+- [Agno MCP](https://docs.agno.com/tools/mcp/overview) — discovery/lifecycle
+  reference для MCP tools;
+- [Agno AgentOS](https://docs.agno.com/agent-os/introduction) — только
+  reference для API/runtime capabilities, не продуктовая зависимость.
 
 ## Критерий готовности плана
 
