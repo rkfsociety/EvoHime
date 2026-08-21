@@ -49,7 +49,7 @@
 - обновить `docs/features/task-dependency-graphs.md`, чтобы он ссылался на
   канонический contract и не описывал неподключённое поведение;
 - проверить внутренние ссылки, `git diff --check`, generated protocol и
-  отсутствие упоминаний Agno/AgentOS как runtime-зависимости;
+  отсутствие CAMEL/Python как runtime-зависимости;
 - проверить, что prompts, responses, workspace text и credentials не уходят в
   observability export без явного opt-in; локальный redacted trace остаётся
   authoritative projection поверх receipts/provenance;

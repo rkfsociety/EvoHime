@@ -1,4 +1,4 @@
-# План 06 — Agno-inspired workflow orchestration и внешние agent-инструменты для Евы
+# План 06 — CAMEL-inspired Research Workforce и workflow orchestration для Евы
 
 Статус: проект плана, реализация не начата.
 
@@ -9,32 +9,35 @@
 результаты, проверять их по схемам, ждать approval и продолжать выполнение после
 перезапуска Core.
 
-План использует выбранные идеи Agno — Agent/Team/Workflow, typed input/output,
-Context Providers, MCP toolkits, human-in-the-loop, tracing и evaluations — но
-не добавляет Agno как зависимость и не переносит его Python runtime. Agno
-AgentOS, FastAPI API и control-plane UI остаются только внешними reference и
-не входят в поставляемый Windows runtime.
+План использует выбранные идеи CAMEL — ChatAgent/Workforce, task
+specification/planning, critic loop, stateful memory, typed structured output,
+MCP toolkit и evaluations — но не добавляет CAMEL как зависимость и не
+переносит его Python runtime. CAMEL `to_mcp`, внешние web/API services и
+отдельный control-plane UI остаются только reference и не входят в
+поставляемый Windows runtime.
 
 Исполнительным контуром остаются Rust Core, существующие child contracts,
 `run_policy`, receipts, SQLite и authenticated Electron IPC.
 
 ## Что именно заимствуем
 
-- Agent/Team/Workflow → роли, маршрутизация, последовательные/параллельные
+- ChatAgent/Workforce → роли, маршрутизация, последовательные/параллельные
   этапы и deterministic fan-in в каноническом typed data-flow контракте Core;
-- Context Providers → read-only источники актуального контекста с provenance,
-  freshness и bounded context budget;
-- MCP toolkits → Core-owned каталог доверенных внешних tools с discovery,
+- task planner/critic loop → уточнение задачи, synthesis и независимая проверка
+  результата с evidence gate;
+- stateful memory/context utility → read-only источники актуального контекста с
+  provenance, freshness и bounded context budget;
+- MCP toolkit → Core-owned каталог доверенных внешних tools с discovery,
   allowlist и ограниченными schemas;
 - structured input/output и human-in-the-loop → schema validation и единая
   точка перехвата до side effect поверх текущих approval intent, exact-call
   recheck и signed receipts;
-- tracing/evaluation → корреляция workflow/node/tool/model событий и
-  deterministic сценарии проверки.
+- tracing/evaluation → корреляция workflow/node/tool/model событий,
+  сравнение с single-agent baseline и deterministic сценарии проверки.
 
-Не входят в план AgentOS control plane/UI, Agno Memory/Knowledge как замена
-локальным memory/RAG, локальный code executor, произвольный Python/Node sidecar,
-внешний HTTP runtime или обязательный OTLP/Agno telemetry.
+Не входят в план CAMEL memory/storage/RAG как замена локальным memory/RAG,
+локальный code executor, произвольный Python/Node sidecar, внешний HTTP runtime,
+публикация Workforce как MCP server или обязательная внешняя telemetry.
 
 ## Что уже есть в коде
 
@@ -80,14 +83,14 @@ end-to-end сценария.
 
 ## Внешние references
 
-- [Agno repository](https://github.com/agno-agi/agno) — SDK, integrations,
-  AgentOS и Apache-2.0 license;
-- [Agno SDK primitives](https://docs.agno.com/sdk/introduction) — Agent, Team,
-  Workflow, structured I/O, Context Providers, approvals, evals и tracing;
-- [Agno MCP](https://docs.agno.com/tools/mcp/overview) — discovery/lifecycle
-  reference для MCP tools;
-- [Agno AgentOS](https://docs.agno.com/agent-os/introduction) — только
-  reference для API/runtime capabilities, не продуктовая зависимость.
+- [CAMEL repository](https://github.com/camel-ai/camel) — agents, societies,
+  Workforce, memory, tools, RAG и evaluations;
+- [CAMEL ChatAgent](https://raw.githubusercontent.com/camel-ai/camel/master/camel/agents/chat_agent.py)
+  — stateful agent, structured output, tool calls и context summarization;
+- [CAMEL Workforce](https://raw.githubusercontent.com/camel-ai/camel/master/camel/societies/workforce/workforce.py)
+  — coordinator, planner, workers, failure handling и fan-in reference;
+- [CAMEL MCPToolkit](https://raw.githubusercontent.com/camel-ai/camel/master/camel/toolkits/mcp_toolkit.py)
+  — discovery/lifecycle reference для MCP tools.
 
 ## Критерий готовности плана
 

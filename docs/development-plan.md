@@ -38,7 +38,7 @@ Foundation текущего цикла завершён: обходы permission
 model-request provenance реализованы и перенесены в канонические
 `architecture.md`/`current-state.md`. Ближайший исполняемый план — 06:
 workflow orchestration поверх существующего typed workflow-контракта и child
-runtime. Agno используется только как архитектурный reference и не является
+runtime. CAMEL используется только как архитектурный reference и не является
 runtime-зависимостью продукта.
 
 ## Текущий статус
@@ -49,7 +49,8 @@ Core + SQLite + authenticated named-pipe IPC сохраняются. Польз�
 
 Этапы 02–05 завершены. Их контракты находятся в [`architecture.md`](architecture.md),
 подтверждённое состояние — в [`current-state.md`](current-state.md). Следующее
-независимое направление — план 06 из [`plans/06-0-workflow-orchestration.md`](plans/06-0-workflow-orchestration.md).
+независимое направление — план 06 из
+[`plans/06-0-workflow-orchestration.md`](plans/06-0-workflow-orchestration.md).
 
 После завершения foundation добавлен функциональный slice «Ревью планов» в
 Electron: additive desktop IPC, `plan_review` в Core и event journal для

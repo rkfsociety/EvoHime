@@ -1,9 +1,9 @@
-# План 06-1 — Контракт workflow, Agno-роли и MCP-адаптеры
+# План 06-1 — Контракт workflow, CAMEL-роли и MCP-адаптеры
 
 ## Цель
 
 Превратить существующий typed graph в канонический контракт workflow, который
-может описывать Agno-подобные Agent/Team/Workflow-роли, Context Providers и
+может описывать CAMEL-подобные ChatAgent/Workforce-роли, context providers и
 capability-as-tool, но остаётся безопасным для Rust Core.
 
 ## Зависимости
