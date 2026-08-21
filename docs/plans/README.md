@@ -18,7 +18,8 @@
 [`10-0-ipc-adapters-and-providers.md`](10-0-ipc-adapters-and-providers.md),
 [`11-0-memory-and-rag.md`](11-0-memory-and-rag.md),
 [`12-0-telemetry-and-evaluation.md`](12-0-telemetry-and-evaluation.md) и
-[`13-0-browser-backend.md`](13-0-browser-backend.md).
+[`13-0-browser-backend.md`](13-0-browser-backend.md) и
+[`14-0-voice-and-ambient-audio.md`](14-0-voice-and-ambient-audio.md).
 
 ## Правило нумерации
 
@@ -55,13 +56,15 @@
 | 11 Typed memory и Core-first RAG | проектируется; обзор в [`11-0-memory-and-rag.md`](11-0-memory-and-rag.md) | 11-1 от планов 08–10 и текущего RAG; 11-2 от 11-1; 11-3 от 11-2; 11-4 от 11-3 |
 | 12 Local telemetry и deterministic evaluation | проектируется; обзор в [`12-0-telemetry-and-evaluation.md`](12-0-telemetry-and-evaluation.md) | 12-1 от планов 08–11 и текущего event/evaluation harness; 12-2 от 12-1; 12-3 от 12-2; 12-4 от 12-3 |
 | 13 Изолированный browser backend | проектируется; обзор в [`13-0-browser-backend.md`](13-0-browser-backend.md) | 13-1 от планов 08–12 и tool-runtime; 13-2 от 13-1; 13-3 от 13-2; 13-4 от 13-3 |
+| 14 Voice pipeline и ambient audio | проектируется; обзор в [`14-0-voice-and-ambient-audio.md`](14-0-voice-and-ambient-audio.md) | 14-1 от планов 08–12 и listener; 14-2 от 14-1; 14-3 от 14-2; 14-4 от 14-3 |
 
 Порядок незавершённых этапов задаётся так: сначала последовательно выполняется
 06-1 → 06-2 → 06-3 → 06-4, затем 07-1 → 07-2 → 07-3 → 07-4, затем
 08-1 → 08-2 → 08-3 → 08-4, затем 09-1 → 09-2 → 09-3 → 09-4, затем
 10-1 → 10-2 → 10-3 → 10-4, затем 11-1 → 11-2 → 11-3 → 11-4, затем
-12-1 → 12-2 → 12-3 → 12-4, затем 13-1 → 13-2 → 13-3 → 13-4. Обзоры 06-0,
-07-0, 08-0, 09-0, 10-0, 11-0, 12-0 и 13-0 не являются исполняемыми этапами;
+12-1 → 12-2 → 12-3 → 12-4, затем 13-1 → 13-2 → 13-3 → 13-4, затем
+14-1 → 14-2 → 14-3 → 14-4. Обзоры 06-0, 07-0, 08-0, 09-0, 10-0, 11-0,
+12-0, 13-0 и 14-0 не являются исполняемыми этапами;
 они фиксируют границы и граф зависимостей соответствующего плана. План 07-4
 может использовать общий evaluation harness из 06-4 как опциональную
 зависимость, но не блокирует его отсутствие.

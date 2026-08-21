@@ -27,7 +27,7 @@
 | 04 memory and RAG | Память, retrieval и forget | перенесён в план 11 | следующий слой |
 | 05 telemetry and evaluation | Наблюдаемость, fixtures и evaluation | перенесён в план 12 | следующий слой |
 | 06 browser backend | Изолированный browser backend | перенесён в план 13 | отдельный optional-план |
-| [07-voice-and-ambient-audio.md](repository-research/07-voice-and-ambient-audio.md) | Voice pipeline и ambient audio | 01–03 | отдельный optional-план |
+| 07 voice and ambient audio | Voice pipeline и ambient audio | перенесён в план 14 | отдельный optional-план |
 | [08-vision-and-documents.md](repository-research/08-vision-and-documents.md) | Vision и document worker | 01–03, 05 | отдельный optional-план |
 | [09-workflow-automation-and-simulation.md](repository-research/09-workflow-automation-and-simulation.md) | Длительные jobs, automation и simulation | 01–05 | поздний этап |
 | [10-release-criteria-and-open-decisions.md](repository-research/10-release-criteria-and-open-decisions.md) | Общие release gates и нерешённые вопросы | все разделы | сопровождающий файл |
@@ -68,6 +68,9 @@
 удалён после переноса требований и критериев готовности.
 
 Раздел 06 перенесён в подпункты плана 13; исходный исследовательский файл
+удалён после переноса требований и критериев готовности.
+
+Раздел 07 перенесён в подпункты плана 14; исходный исследовательский файл
 удалён после переноса требований и критериев готовности.
 
 ## Общая архитектурная граница
