@@ -8,8 +8,9 @@
 
 Планы 01–05 реализованы целиком и удалены из каталога: их контракты живут в
 [`../architecture.md`](../architecture.md), подтверждённое состояние — в
-[`../current-state.md`](../current-state.md). В каталоге остаются семь
-незавершённых направлений: сначала план 06, затем планы 07, 08, 09, 10, 11 и 13.
+[`../current-state.md`](../current-state.md). В каталоге остаются двенадцать
+незавершённых направлений: сначала план 06, затем планы 07, 08, 09, 10, 11,
+12, 13, 14, 15, 16 и 17.
 Их обзоры:
 [`06-0-workflow-orchestration.md`](06-0-workflow-orchestration.md),
 [`07-0-superagi-inspired-tooling.md`](07-0-superagi-inspired-tooling.md),
@@ -19,7 +20,10 @@
 [`11-0-memory-and-rag.md`](11-0-memory-and-rag.md),
 [`12-0-telemetry-and-evaluation.md`](12-0-telemetry-and-evaluation.md) и
 [`13-0-browser-backend.md`](13-0-browser-backend.md) и
-[`14-0-voice-and-ambient-audio.md`](14-0-voice-and-ambient-audio.md).
+[`14-0-voice-and-ambient-audio.md`](14-0-voice-and-ambient-audio.md),
+[`15-0-vision-and-documents.md`](15-0-vision-and-documents.md),
+[`16-0-workflow-automation-and-simulation.md`](16-0-workflow-automation-and-simulation.md) и
+[`17-0-release-criteria-and-open-decisions.md`](17-0-release-criteria-and-open-decisions.md).
 
 ## Правило нумерации
 
