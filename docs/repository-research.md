@@ -31,6 +31,7 @@
 | 8 | [microsoft/playwright](https://github.com/microsoft/playwright) | Исследовано | Изолированные BrowserContext, locators/actionability, accessibility snapshots, network policy, trace и cross-browser tests | Рассматривать как возможный isolated browser backend; не подключать до отдельного packaging/security плана |
 | 9 | [puppeteer/puppeteer](https://github.com/puppeteer/puppeteer) / [pptr.dev](https://pptr.dev/) | Исследовано | Chromium-first CDP/BiDi client, BrowserContext, locators, interception, tracing и browser manager | Рассматривать как альтернативный isolated browser backend; runtime не подключать до packaging/security плана |
 | 10 | [fixie-ai/ultravox](https://github.com/fixie-ai/ultravox) | Исследовано | Audio-to-LLM projector, streaming text inference, conversation KV-cache, voice dataset/evaluation pipeline | Адаптировать контракты, preprocessing и eval-идеи; модельный runtime не подключать в desktop без отдельного GPU/provider плана |
+| 11 | [kyutai-labs/moshi](https://github.com/kyutai-labs/moshi) | Исследовано | Full-duplex speech-text model, Mimi streaming codec, Rust/Candle backend, binary WebSocket protocol и audio client | Рассматривать как наиболее близкий voice-runtime кандидат; адаптировать протокол/streaming идеи, runtime не подключать до PoC и security/licensing плана |
 
 ## Карточки исследований
 
@@ -1755,6 +1756,188 @@ provider и источник eval fixtures.
   first-token and end-to-end latency, cancellation during generation, bounded
   memory/cache, text-only fallback, transcript provenance, redacted events,
   offline behavior, model checksum/license manifest и cleanup после crash.
+
+### 11. Moshi
+
+- Источник: [репозиторий kyutai-labs/moshi](https://github.com/kyutai-labs/moshi),
+  [протокол Rust backend](https://github.com/kyutai-labs/moshi/blob/main/rust/protocol.md)
+  и paper [Moshi: a speech-text foundation model for real-time dialogue](https://arxiv.org/abs/2410.00037)
+- Дата проверки: 2026-08-21
+- Ревизия/commit: `e6a55d2722a65870ef52a6c9f6ecfc0e90f38362`
+  (`2026-05-16`)
+- Лицензии: Python и web client — MIT, Rust backend — Apache-2.0; в репозитории
+  есть отдельные `LICENSE-MIT`, `LICENSE-APACHE`, `moshi/LICENSE` и
+  `client/LICENSE`. Model weights выпущены под CC-BY 4.0; сторонние AudioCraft,
+  Mimi и используемые модели/данные требуют отдельной проверки условий.
+- Состав: три inference backend — PyTorch для research, MLX для on-device
+  inference на macOS/iPhone и Rust/Candle для production; Rust содержит
+  `moshi-core`, Mimi implementation, server/backend и CLI, а `client` — web UI
+  и binary WebSocket client.
+- Назначение: full-duplex spoken dialogue. Moshi моделирует поток пользователя и
+  поток собственной речи, а также текстовые токены; Mimi потоково сжимает
+  24 kHz audio до 12.5 Hz representation с заявленной задержкой frame 80 ms.
+- Краткий вывод: это самый близкий из изученных источников к будущему
+  voice-runtime Евы благодаря Rust backend, streaming state, отдельному codec
+  layer и явному typed/binary protocol. Использовать как источник контракта и
+  сравнительный PoC; не встраивать сейчас: нет официальной Windows-поддержки,
+  PyTorch требует GPU около 24 GB без quantization, а production path всё ещё
+  требует самостоятельной security/packaging интеграции.
+
+#### Что изучено
+
+- Архитектура делит систему на `Mimi` streaming neural audio codec, multistream
+  temporal/depth transformer и server/client transport. Модель работает на
+  нескольких audio codebooks одновременно, выдавая audio tokens для собственной
+  речи и text token stream; full-duplex не сводится к последовательному
+  `ASR -> LLM -> TTS` pipeline.
+- Mimi имеет frame size 1920 samples при 24 kHz и frame rate 12.5 Hz. В
+  streaming mode вход обязан поступать положительными блоками, кратными frame
+  size; код явно предупреждает о необходимости buffer/pad и о фиксированном
+  размере входа для CUDA Graphs. Это сильный контракт для bounded audio ring
+  buffer.
+- `moshi/modules/streaming.py` задаёт context-managed streaming state,
+  reset, snapshot/set state и execution mask для рассинхронизированных batch
+  streams. В Rust есть аналогичные streaming state, KV cache, reset и
+  multistream generation.
+- Rust backend реализует production-oriented `moshi-core`/Candle model path,
+  отдельный Mimi path и `moshi-backend`. Поддерживаются CUDA/Metal features,
+  quantized q8 config и standalone server; Python bindings `rustymimi` дают
+  возможность использовать Rust Mimi из Python.
+- Binary WebSocket protocol использует one-byte message type и little-endian
+  payload: handshake, Opus/Ogg audio, UTF-8 text, control, JSON metadata, error
+  и ping. Control содержит Start, EndTurn, Pause и Restart. Неизвестные типы
+  должны отбрасываться, а version/model fields позволяют версионировать
+  protocol.
+- Input audio идёт как Opus 24 kHz mono внутри Ogg pages; output PCM
+  буферизуется и кодируется в Opus frames. Web client записывает microphone с
+  echo-cancellation path, а Rust server декодирует вход в bounded chunks перед
+  Mimi/model loop.
+- Session configuration разделяет text/audio temperature, top-k, seed,
+  max_steps, repetition penalty и optional ASR delay. Это образец отделения
+  deterministic session parameters от global model config; seeds полезны для
+  воспроизводимых voice fixtures.
+- Сервер отсылает handshake/metadata до потока, разделяет websocket receive,
+  decode, model generation и async send loops, имеет backpressure-sensitive
+  channels и закрывает сессию по timeout/inactivity. Web client дополнительно
+  закрывает socket после 10 секунд отсутствия сообщений.
+- Для WebSocket auth backend принимает authorized ID из header или query
+  parameter, потому что браузеру неудобно задавать custom headers. Есть
+  `room_id` для Mimi send/receive channels. Это пример edge transport auth, но
+  не замена authenticated EvoHime named pipe.
+- После сессии Rust backend записывает JSON summary и safetensors с text/audio
+  token trajectories, включая session config, transcript, client address,
+  model file paths и build information. Это полезно для offline debugging, но
+  требует жёсткой redaction/retention политики в Еве.
+- Тесты и benchmark покрывают streaming modules, SEANet/codec, model generation
+  и Mimi streaming; README отдельно требует `mimi_streaming_test` и GPU
+  benchmark. В рамках исследования зависимости, сборка Cargo и runtime-тесты
+  не запускались.
+
+#### Что можем использовать в Еве
+
+- Архитектурный шаблон отдельного `voice-host`: Rust Core владеет сессией,
+  streaming state и policy, а transport adapter обменивается bounded binary
+  audio/text events. Это хорошо соответствует Core-first архитектуре Евы, но
+  transport должен идти через authenticated desktop IPC, а не через открытый
+  WebSocket server.
+- Протокол framing/versioning: `protocol_major`, `model_revision`, typed
+  `audio_frame`, `text_delta`, `control`, `metadata`, `error`, `ping` и
+  terminal event. В EvoHime стоит добавить sequence/correlation/session IDs,
+  payload limits, replay rules и explicit unknown/partial outcome.
+- Explicit control state machine `start -> streaming -> end_turn/pause/restart`
+  с отказом от невалидных переходов. `cancel`, `disconnect`, `model_error` и
+  `permission_revoked` должны быть отдельными Core events, а не молчаливым
+  закрытием socket.
+- Audio ring buffer с обязательным frame alignment, bounded queue, flush/pad
+  на завершении и измерением `input_pcm_duration`, `encoded_frames`,
+  `dropped_frames`, `decode_lag` и `first_output_latency`.
+- Разделение codec/model/transport слоёв: Mimi-like codec может быть заменён
+  текущим listener/encoder, provider model может быть удалённым, а IPC
+  transport — локальным. Не связывать аудиоформат, модель и UI state в одном
+  модуле.
+- Streaming state API с `reset`, explicit session scope, bounded cache и
+  optional snapshot only for controlled recovery. Не сохранять внутренний
+  audio/token state в Electron и не делать его вторым источником истины рядом
+  с SQLite.
+- Session sampling config и seed как часть auditable provider invocation;
+  значения должны проходить allowlist/limits, логироваться в redacted form и
+  не позволять модели или пользовательскому prompt менять policy-поля.
+- Typed metadata для `model_revision`, `backend`, `build_id`, `codec_revision`
+  и latency capabilities, но без раскрытия абсолютных путей, client address,
+  секретов и внутренних filesystem details.
+- Полезно перенять testing approach: exact frame-size tests, encode/decode
+  round-trip, stream reset, desynchronized batch mask, bounded queue,
+  reconnect/replay, cancellation и final transcript/audio determinism.
+- Rust/Candle backend можно рассматривать как сравнительный PoC для локального
+  voice provider, если hardware и Windows support будут подтверждены. Даже без
+  включения Moshi его codec framing и state contracts могут быть реализованы
+  самостоятельно в существующем Rust Core.
+
+#### Ограничения и риски
+
+- README прямо указывает отсутствие официальной поддержки Windows. PyTorch
+  backend не поддерживает quantization и требует GPU с существенной памятью
+  (около 24 GB); Rust CUDA path требует корректные CUDA/nvcc/toolchain.
+  Нельзя обещать работу на целевых Windows машинах без отдельного hardware/CI
+  PoC.
+- WebSocket auth ID в query может попадать в URL, proxy/access log, browser
+  history и telemetry. Для EvoHime нужен HMAC-authenticated named pipe уже
+  существующего IPC, одноразовая session binding и запрет передачи секретов в
+  query string.
+- Binary protocol из репозитория не задаёт полноценную security boundary:
+  payload limits, origin policy, replay protection, per-session authorization,
+  backpressure fairness и encrypted transport должны быть добавлены отдельно.
+- Сервер сохраняет transcript, client address, model paths и raw text/audio
+  token trajectories в JSON/safetensors. Эти артефакты могут восстановить
+  разговор или содержать чувствительные данные; в Еве нужен default-deny
+  recording, redaction, owner-only ACL, retention/erase и отсутствие raw export.
+- `inner monologue` является частью модельного потока и не должен попадать в
+  пользовательский UI, durable transcript, model context или telemetry без
+  явного redaction. Нужна граница между visible speech text, hidden reasoning
+  и diagnostic tokens.
+- Full-duplex sampling генерирует audio и text одновременно. Это усложняет
+  interruption/barge-in, approval перед внешним действием, idempotency,
+  partial speech playback и reconciliation уже проигранного аудио с новым
+  Core state.
+- Client CLI намеренно barebone: без echo cancellation и компенсации
+  растущего lag; web UI выполняет дополнительную обработку. Это не готовая
+  microphone UX-гарантия и не заменяет listener permission/quality checks Евы.
+- Backend использует fixed max steps/timeout и отдельные threads/channels;
+  комментарии и cleanup-path требуют проверки на реальном disconnect/crash.
+  Нельзя считать закрытие WebSocket доказательством остановки GPU/native work.
+- Rust backend и Python/web части имеют разные лицензии, а weights — CC-BY 4.0;
+  model checkpoints, tokenizer, Opus/Ogg, Candle и данные нужно включить в
+  license manifest и installer attribution. MIT корневого проекта не покрывает
+  всё содержимое поставки.
+- Public demo/tunnel может добавлять сотни миллисекунд задержки и переносить
+  microphone/audio через внешний маршрут. Для production Евы допустим только
+  локальный или явно разрешённый provider endpoint с audit egress.
+
+#### Предварительное решение
+
+`рассматривать Moshi как наиболее близкий сравнительный voice-runtime и
+источник Rust/codec/streaming контрактов`; `адаптировать protocol, state,
+buffering и evaluation идеи`. Не подключать upstream сервер, public tunnel,
+query auth, raw token logging или модельные weights в desktop-поставку до
+отдельного Windows/GPU, security, privacy и licensing PoC. Не заменять им
+автоматически текущий listener: сначала сравнить full-duplex latency, barge-in,
+transcript quality, memory и recovery.
+
+#### Связь с EvoHime
+
+- Возможный host должен запускаться supervisor и быть виден Core как provider,
+  используя authenticated desktop-ipc-v1; Electron получает только
+  transcript/audio playback state. Workspace, secrets, approvals, identity,
+  SQLite audit, cancellation и redaction остаются у Core.
+- Сначала нужен design-only `voice_session`/`voice_frame`/`voice_event`
+  контракт и deterministic local test fixture; затем Rust/Candle/Mimi PoC с
+  локальными weights и без внешнего tunnel. Этот журнал implementation plan не
+  создаёт.
+- Критерии будущей проверки: frame alignment/flush, bounded queue and memory,
+  protocol version mismatch, HMAC auth, replay/sequence rejection, barge-in,
+  cancel/disconnect stops work, hidden-output redaction, no raw trajectory
+  persistence, model checksum/license manifest, Windows CUDA/CPU fallback и
+  supervisor crash/restart cleanup.
 
 ## Итог для будущего плана
 
