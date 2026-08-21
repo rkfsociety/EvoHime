@@ -30,6 +30,7 @@
 | 7 | [lavague-ai/LaVague](https://github.com/lavague-ai/LaVague) | Исследовано | Web-agent loop, DOM/XPath grounding, driver abstraction, telemetry и QA fixtures | Адаптировать web-action/evidence/test идеи; runtime и extension не подключать |
 | 8 | [microsoft/playwright](https://github.com/microsoft/playwright) | Исследовано | Изолированные BrowserContext, locators/actionability, accessibility snapshots, network policy, trace и cross-browser tests | Рассматривать как возможный isolated browser backend; не подключать до отдельного packaging/security плана |
 | 9 | [puppeteer/puppeteer](https://github.com/puppeteer/puppeteer) / [pptr.dev](https://pptr.dev/) | Исследовано | Chromium-first CDP/BiDi client, BrowserContext, locators, interception, tracing и browser manager | Рассматривать как альтернативный isolated browser backend; runtime не подключать до packaging/security плана |
+| 10 | [fixie-ai/ultravox](https://github.com/fixie-ai/ultravox) | Исследовано | Audio-to-LLM projector, streaming text inference, conversation KV-cache, voice dataset/evaluation pipeline | Адаптировать контракты, preprocessing и eval-идеи; модельный runtime не подключать в desktop без отдельного GPU/provider плана |
 
 ## Карточки исследований
 
@@ -1602,6 +1603,158 @@ Puppeteer как runtime-зависимости без сравнительно�
   crash/cancel, default-deny permissions, redirect/DNS/private-IP tests,
   semantic target revalidation, per-mutation approval, bounded/redacted
   artifacts и deterministic final-state assertions.
+
+### 10. Ultravox
+
+- Источник: [репозиторий fixie-ai/ultravox](https://github.com/fixie-ai/ultravox)
+  и связанные в нём [Ultravox Realtime](https://ultravox.ai) / модели
+  [Hugging Face](https://huggingface.co/fixie-ai)
+- Дата проверки: 2026-08-21
+- Ревизия/commit: `69ddc63b2d72be5e9a86f818315da72cec55a876`
+  (`2025-12-12`, README обновлён для Ultravox 0.7)
+- Лицензия исходного кода: MIT, Copyright Fixie.ai 2023. Лицензии и условия
+  базовых LLM, audio encoder и опубликованных model weights нужно проверять
+  отдельно.
+- Состав: Python 3.10+ проект на PyTorch/Transformers с Whisper-подобным audio
+  encoder, multimodal projector, open-weight text LLM, локальным inference,
+  training, dataset tooling и evaluation.
+- Назначение: multimodal LLM для real-time voice research. Модель принимает
+  аудио и текст и выдаёт streaming text без отдельного ASR-этапа; полноценный
+  voice-to-voice продукт и managed realtime API находятся вне этого checkout.
+- Краткий вывод: полезный источник архитектурных идей для voice provider Евы,
+  потокового ответа, формата голосового turn, диалогового KV-cache и
+  воспроизводимых audio evals. Это не готовый компонент поставки EvoHime:
+  default-модель на Llama 3.3 70B, Python/PyTorch/CUDA-зависимости, скачивание
+  весов и GPU-профиль требуют отдельного provider/deployment решения.
+
+#### Что изучено
+
+- `UltravoxModel` объединяет audio tower и текстовую модель, а
+  `UltravoxProjector` переводит признаки аудио в пространство hidden states
+  LLM. Конфигурация позволяет менять audio/text backbone, projector, LoRA и
+  latency block size. Это модельная архитектура, а не готовая политика
+  инструментов или состояние продукта.
+- `UltravoxProcessor` нормализует аудио, использует placeholder `<|audio|>`,
+  считает длину audio token span и вставляет replacement tokens в текстовую
+  последовательность. Длинные записи режутся на chunks по audio context size;
+  тесты проверяют короткие, длинные, многократные и переполняющие контекст
+  аудио.
+- `LocalInference` имеет обычный, batch и streaming пути. Streaming строит
+  KV-cache для входа, затем использует `transformers.TextIteratorStreamer` в
+  отдельном thread и отдаёт `InferenceChunk`/`InferenceStats`. Это хороший
+  образец API наблюдаемого потока, но в нём нет полноценного cancellation,
+  backpressure, аудиовывода или гарантии прерывания native generation.
+- `conversation_mode` сохраняет `past_messages` и `past_key_values`, а после
+  ответа заменяет audio placeholder на EOS-span и добавляет assistant message.
+  Паттерн полезен для latency, но cache должен принадлежать Core-сессии,
+  иметь лимит бюджета и удаляться при завершении/отмене.
+- `VoiceSample` описывает messages, float32 PCM, sample rate, transcript,
+  label и extra evaluation fields; поддерживаются raw buffer, WAV file и
+  JSON/base64 WAV. Для EvoHime полезен typed voice-turn envelope, но base64 и
+  произвольные пути не должны быть внутренним IPC-форматом по умолчанию.
+- Dataset configs задают split, audio field, prompt templates, message history,
+  labels и eval metric. `ds_tool` умеет ASR/TTS/text generation, chunked dataset
+  transforms, timestamping, mixing, augmentation и кэширование. Registry и
+  composable configs — хороший образец для локального набора voice fixtures.
+- Evaluation pipeline поддерживает WER/BLEU и instruction/voicebench-подобные
+  метрики, ограничение sample count, DDP sharding и отдельный прогон
+  audio augmentations. В проекте есть pytest-тесты для preprocessing,
+  inference, model config, streaming, datasets и metrics.
+- README описывает обучение projector при замороженных backbone, адаптацию к
+  новым LLM/audio encoder и RAG-on-the-fly вместо обязательного fine-tuning.
+  Указанный масштаб старого training run — 8xH100; это показывает стоимость
+  обучения, а не обязательный минимум для каждого inference checkpoint.
+
+#### Что можем использовать в Еве
+
+- Идею отдельного voice provider contract: `audio_input`/`text_context` →
+  `text_delta` → `voice_turn_completed`, с `input_tokens`, `output_tokens`,
+  latency и terminal reason. В Core это должно быть typed IPC и единый audit,
+  а не прямой Python callback в Electron.
+- Audio preprocessing contract: явный sample rate, PCM dtype, channel count,
+  duration limit, resampling policy, chunk sequence и stable turn id. Ошибки
+  формата и превышения длительности должны возвращаться до model invocation.
+- Placeholder/span-модель для привязки аудиофрагмента к сообщению и
+  conversation turn. Для Евы это может стать частью transcript/provenance:
+  какой audio chunk породил наблюдение или ответ, без хранения сырого аудио в
+  каждом event.
+- Потоковую семантику `chunk`/`stats`/`completed` и раздельное сохранение
+  assistant text от внутреннего thinking/debug content. Нужны bounded queues,
+  cancellation token и backpressure поверх этой идеи.
+- Conversation cache как оптимизацию: Core владеет session state, KV-cache
+  привязан к provider/model revision и очищается при смене модели, workspace,
+  identity или policy. При cache miss должен существовать детерминированный
+  replay из сохранённых typed messages.
+- Набор локальных voice fixtures и evaluation registry: 16 kHz/48 kHz,
+  тишина, шум, длинный input, clipping, multi-turn, text-only fallback,
+  cancellation и partial output. Метрики WER/latency/first-token и
+  deterministic final transcript можно включить в provider conformance suite.
+- Audio augmentation как тестовый слой, а не runtime-состояние: gain, noise,
+  reverb, resampling и compression помогают проверять устойчивость listener и
+  provider adapter без изменения исходных пользовательских записей.
+- Composable prompt/data configs и explicit labels/transcripts как образец
+  разделения test fixture, expected outcome и production conversation. Идеи
+  можно реализовать на Rust/SQLite/JSONL без импорта Python pipeline.
+- RAG-on-the-fly как архитектурную подсказку: улучшение голосового ответа
+  знаниями не требует менять multimodal projector; retrieval должен идти через
+  существующий Core-owned workspace RAG и context budget.
+
+#### Ограничения и риски
+
+- Checkout ориентирован на обучение и локальный inference, а не на Windows
+  desktop delivery. Python, PyTorch >=2.6, Transformers, librosa, CUDA/GPU,
+  Hugging Face/W&B и многочисленные evaluation dependencies не соответствуют
+  правилу EvoHime об отсутствии внешнего Python/Node runtime в продукте.
+- Модель не является заменой текущему listener/ASR runtime без доказанного
+  latency, memory, multilingual и hardware профиля. Прямое audio-to-LLM
+  coupling может убрать отдельный ASR этап, но усложняет транскрипт,
+  searchable provenance, partial recognition и отладку ошибок.
+- Default 70B backbone и скачивание model weights создают большую стоимость,
+  supply-chain риск, требования к диску/VRAM и отдельные условия лицензий.
+  Нельзя включать загрузку Hugging Face или W&B в пользовательский runtime без
+  явного provider policy, pinning, checksum и offline/failure behavior.
+- `VoiceSample.to_json()` кодирует аудио в base64 WAV, а dataset tools умеют
+  загружать/публиковать данные и обращаться к внешним ASR/TTS/LLM сервисам.
+  Сырые записи, transcript, W&B/eval logs и dataset cache могут содержать
+  персональные данные; для Евы нужны consent, redaction, retention и
+  owner-only storage.
+- Streaming сделан через Python thread и `TextIteratorStreamer`; upstream API
+  не задаёт EvoHime cancellation, timeout, crash recovery, queue bounds или
+  exactly-once receipt. Нельзя переносить эту реализацию в Core без явного
+  lifecycle/error contract.
+- KV-cache может быть чувствительным производным состоянием и занимать много
+  памяти. Нужны session quota, eviction, model revision binding, telemetry без
+  сырого содержимого и очистка после аварийного завершения.
+- Тренировочный dataset tool документирует append-only, неатомный локальный
+  metadata cache; это нельзя принимать как модель долговременного состояния
+  EvoHime. SQLite migrations, backups и audit остаются ответственностью Core.
+- MIT-лицензия репозитория не распространяется автоматически на Llama/Mistral/
+  Gemma, Whisper, Hugging Face datasets и сервисы Deepgram/ElevenLabs/W&B.
+  Для любого runtime-включения потребуются отдельные license/attribution и
+  privacy проверки.
+
+#### Предварительное решение
+
+`адаптировать идеи и тестовые контракты; наблюдать за модельными checkpoint`
+и не подключать Ultravox Python runtime, training stack, внешние realtime API,
+Hugging Face/W&B upload или 70B weights в desktop-поставку без отдельного
+provider/GPU/privacy плана. Приоритетнее использовать существующий Core-owned
+listener + model gateway, а Ultravox рассматривать как сравнительный voice
+provider и источник eval fixtures.
+
+#### Связь с EvoHime
+
+- Возможная интеграция должна быть provider adapter за Core-owned model gateway:
+  Electron получает только transcript/stream state, Core владеет audio buffer,
+  context budget, approval, identity, provenance, SQLite events и cancellation.
+  Ultravox не должен получать workspace или provider secrets напрямую.
+- Сначала нужен design-only voice provider contract и conformance suite;
+  затем локальная deterministic audio fixture, bounded streaming test и
+  comparison с текущим listener. Этот журнал implementation plan не создаёт.
+- Критерии будущей проверки: 16/48 kHz normalization, duration/chunk limits,
+  first-token and end-to-end latency, cancellation during generation, bounded
+  memory/cache, text-only fallback, transcript provenance, redacted events,
+  offline behavior, model checksum/license manifest и cleanup после crash.
 
 ## Итог для будущего плана
 
