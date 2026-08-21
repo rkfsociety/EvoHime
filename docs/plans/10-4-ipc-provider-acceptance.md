@@ -2,32 +2,85 @@
 
 ## Цель
 
-Подтвердить end-to-end границы IPC и provider adapters на restart, mismatch,
-fallback и target switch сценариях.
+Подтвердить end-to-end границы IPC, negotiation, provider/worker adapters и
+target lifecycle на deterministic fixtures без credentials и внешнего
+provider network.
 
-## Deterministic acceptance fixtures
+## Зависимости
 
-- совместимый CoreInfo и успешный handshake;
-- major mismatch, unsupported feature и stale session;
-- Core unavailable и reconnect/replay;
-- provider unavailable с fallback без старого dispatch;
-- worker capability/path/secret scope violation;
-- прямой renderer IPC/HTTP call;
-- смена workspace/provider/backend во время in-flight operation;
-- stale projection и stale response после Core revision change;
-- oversized frame, timeout и cancellation.
+### Блокирующие
 
-## Release checks
+- 10-1, 10-2 и 10-3 с их Rust/Electron fixtures;
+- принятые compatibility suites текущего desktop IPC и WinUI transitional
+  shell;
+- generated proto types синхронизированы между Rust, Electron и C#.
 
-- Rust desktop IPC contract/version tests;
-- Electron protocol generation, adapter, security и real-Core E2E tests;
-- compatibility suite для transitional shell;
-- `npm run check:protocol`, `npm run typecheck`, `npm test`, targeted Rust tests;
-- `git diff --check`, packaging smoke и security review secret/target boundary.
+### Опциональные
+
+- real-Core E2E с локальным mock provider. При отсутствии собранного Core
+  тест помечается skip по существующему правилу и не подменяется зелёным
+  результатом fake acceptance;
+- packaging smoke: он нужен для release audit, но не заменяет contract tests.
+
+## Deterministic acceptance matrix
+
+### Negotiation и session
+
+- compatible `CoreInfo`, auth challenge, handshake и Ready;
+- same-major minor downgrade и capability intersection;
+- major mismatch, missing required feature, malformed/zero/oversized limits;
+- unavailable Core, auth rejection, reconnect и stale session;
+- instance/epoch change очищает queue/cache и запускает bounded replay;
+- oversized frame/request отвергается до изменения projection.
+
+### Provider/worker boundary
+
+- provider unavailable: same-target fallback либо typed terminal failure без
+  dispatch в старый route;
+- unsupported descriptor version и capability mismatch до эффекта;
+- fake worker получает только grant subset, bounded scope и opaque secret ref;
+- path, SQLite handle, raw secret, prompt и capability overgrant отвергаются;
+- timeout/cancellation дают один terminal typed result без blind retry;
+- provider/worker diagnostics redacted и bounded.
+
+### Target/projection
+
+- workspace/route/backend switch во время queued и running operation;
+- stale response после switch не попадает в projection и не порождает side
+  effect;
+- уже начатый внешний эффект становится `unknown_outcome`, не повторяется;
+- provider credential change проходит через новый Core generation;
+- replay после restart принимает только current epoch/target metadata;
+- два workspace target не пересекаются по path, query и secret scope.
+
+### Shell boundary
+
+- renderer API работает только через preload/contextBridge;
+- static/security test запрещает renderer imports для pipe, HTTP, protobuf,
+  SQLite и filesystem;
+- `provider.*` сохраняет только shell summary и не раскрывает ключ;
+- legacy `Ready` без `core_info` остаётся совместимым для C# consumer.
+
+## Проверки и команды
+
+- Rust: `cargo test --locked -p evohime-desktop-ipc -p evohime-core -p evohime-model-gateway`
+  и targeted adapter/target tests;
+- Electron из `desktop/evohime-electron`: `npm run check:protocol`, `npm run typecheck`,
+  `npm test`;
+- compatibility suite: `dotnet test desktop\\EvoHime.Tests\\EvoHime.Tests.csproj -p:Platform=x64`
+  и `dotnet test desktop\\EvoHime.IpcTests\\EvoHime.IpcTests.csproj`;
+- static checks for forbidden imports/direct transport calls and redaction;
+- `git diff --check` plus packaging smoke `pwsh -File
+  scripts\\native-package.tests.ps1` when release packaging is in scope.
+
+Каждый acceptance test должен указывать fixture, expected typed code,
+dispatch count и projection result. Простого `ok` или HTTP status без
+проверки фактического state transition недостаточно.
 
 ## Закрытие
 
-После прохождения критериев контракт переносится в `docs/architecture.md`,
-подтверждённое состояние — в `docs/current-state.md`, а план 10 удаляется из
-каталога только после полной проверки. Неполная реализация остаётся описанной
-в плане и не помечается выполненной.
+После прохождения матрицы контракт переносится в `docs/architecture.md`,
+подтверждённое состояние — в `docs/current-state.md`, generated protocol и
+compatibility references сверяются, затем удаляются все файлы плана 10.
+Удаление допустимо только после task-only commit с тестовыми доказательствами;
+неполная реализация остаётся в этих планах и не помечается выполненной.
