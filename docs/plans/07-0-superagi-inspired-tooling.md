@@ -29,24 +29,51 @@ authenticated Electron IPC.
 - загрузка toolkit-ов скачивает GitHub zipball и распаковывает код, а очередь
   и обработчики используют небезопасно переносимые для Евы `eval`/строковые
   parser-подходы:
-  [tool_manager.py](https://github.com/TransformerOptimus/SuperAGI/blob/main/superagi/tool_manager.py),
+  [tool_manager.py](https://raw.githubusercontent.com/TransformerOptimus/SuperAGI/main/superagi/tool_manager.py),
   [task_queue.py](https://raw.githubusercontent.com/TransformerOptimus/SuperAGI/main/superagi/agent/task_queue.py).
 
 SuperAGI используется только как reference. Его runtime и код загрузчика не
 являются зависимостями плана.
 
-## Что уже есть в Еве
+## Что уже есть в коде
 
-- Core-owned `ToolRegistry`, capability loadout, permission и approval policy;
-- одноразовые approval-токены, exact-call recheck и signed receipts;
-- bounded `run_policy` с лимитами итераций, времени, tool calls, токенов и
-  стоимости;
-- Context Budget Manager, scratchpad, artifact store, Local Agentic RAG и
-  provenance для evidence;
-- typed workflow/child-workflow контракты и Electron Operations Panel.
+- `crates/tool-runtime/src/registry.rs` содержит `ToolRegistry`,
+  `ToolDefinition` (имя, описание, набор `Permission`, timeout), preflight с
+  approval preview, one-shot approval id и exact-call recheck;
+- `crates/permissions` владеет permission/approval policy, а
+  `crates/evohime-core/src/run_policy.rs` — bounded `RunPolicy`/`RunUsage`
+  (итерации, wall clock, tool calls, tokens, `cost_micros`) и `RunStopReason`;
+- `crates/evohime-core/src/context_budget.rs` и `crates/context-budget`
+  собирают loadout инструментов под бюджет контекста;
+- `crates/evohime-model-provenance` и `crates/evohime-receipts` дают
+  provenance-записи (`request_id`, `logical_request_id`, `parent_request_id`,
+  `attempt`) и подписанные receipts;
+- `crates/evohime-core/src/observability.rs` фиксирует bounded redacted hook
+  events (`before_tool`, `after_tool`, лимиты полей и размера события);
+- Electron уже показывает approval-карточку инструмента в
+  `desktop/evohime-electron/src/renderer/src/TaskTimeline.tsx` и решает её через
+  IPC `core.resolveApproval`, а Operations Panel показывает лимиты запуска.
 
-Эти компоненты не заменяются. План добавляет поверх них недостающий единый
-контракт описания toolkit-а и понятную пользовательскую проекцию действия.
+Чего нет:
+
+- единого versioned manifest: описание инструмента разорвано между
+  `ToolDefinition` в `crates/tool-runtime` и хардкодной таблицей
+  `tool_parameters` в `crates/evohime-core/src/lib.rs`; версии, canonical hash
+  и output schema отсутствуют;
+- каталога toolkit-ов с provenance, статусами и rollback;
+- durable identity approval-запроса, переживающей restart, и состояний
+  expired/cancelled/policy-denied в проекции;
+- сводной telemetry по стоимости, задержкам и retries на уровне запуска.
+
+Существующий инструмент `mcp.call`
+(`crates/tool-runtime/src/tools/mcp.rs`) принимает URL из аргументов вызова и
+ограничен только env-allowlist `EVOHIME_MCP_ALLOWED_HOSTS` и SSRF-проверкой.
+Это прямо противоречит границе 3 ниже, поэтому его перевод на Core-owned
+registry entry входит в объём 07-1/07-2, а не считается уже выполненным.
+
+Перечисленные компоненты не заменяются. План добавляет поверх них недостающий
+единый контракт описания toolkit-а и понятную пользовательскую проекцию
+действия.
 
 ## Решения и границы
 
@@ -54,9 +81,10 @@ SuperAGI используется только как reference. Его runtime 
    создаёт новую версию и не меняет уже начатый run.
 2. Core проверяет manifest, capability, schema, policy, budget и provenance до
    любого эффекта. Renderer не выбирает права и не исполняет инструмент.
-3. На первом этапе поддерживаются встроенные Rust tools и уже разрешённые
-   MCP/внешние adapters. Произвольный Python/Node plugin runtime, shell,
-   inline script и model-controlled server selection запрещены.
+3. На первом этапе поддерживаются встроенные Rust tools и MCP endpoints,
+   объявленные в Core-owned registry. Произвольный Python/Node plugin runtime,
+   shell, inline script и model-controlled server selection запрещены: server
+   identity выбирается из registry, а не из аргументов модели.
 4. Каталог toolkit-ов хранит metadata, версии, hash, license и capability
    declaration. Установка не означает автоматическое разрешение на запуск.
 5. UI получает только bounded action projection: имя, цель, безопасный preview

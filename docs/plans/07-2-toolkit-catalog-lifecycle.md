@@ -12,16 +12,31 @@ allowlist и rollback semantics. Каталог должен помогать п
 ### Блокирующие
 
 - [07-1](07-1-tool-manifest-contract.md);
-- текущие verified runtime/package hash utilities, SQLite migrations и
-  permission/audit storage;
+- существующие sha256-проверки артефактов рядом с runtime
+  (`crates/evohime-listener/src/tools_dir.rs`, `evohime.manifest.json` в
+  `crates/evohime-updater`), SQLite migrations в `crates/evohime-local-storage`
+  и permission/audit storage;
 - authenticated Core↔Electron IPC.
 
 ### Опциональные
 
 - remote signed catalog. До его появления каталог работает только с builtin
   entries и локально импортированными manifest metadata;
-- MCP transport. До его появления external entries остаются `unavailable` и
-  не появляются в executable loadout.
+- Core-owned MCP registry entry из 06-1. До его появления external entries
+  остаются `unavailable`, не появляются в executable loadout, а существующий
+  `mcp.call` виден как обычный builtin-инструмент.
+
+## Что уже есть в коде
+
+- проверка sha256 файлов runtime по manifest уже реализована для listener
+  (`tools_dir.rs`) и для пакета обновления (`evohime.manifest.json`);
+- SQLite storage с миграциями и audit-таблицами существует
+  (`crates/evohime-local-storage`), включая `capability_store.rs`;
+- read-only IPC projection и rate limit уже применяются для других панелей.
+
+Нет самой сущности catalog entry: нет таблицы версий toolkit-а, статусов,
+license/source metadata, истории enable/disable и rollback. Хеш-утилиты сейчас
+привязаны к конкретным потребителям и не обобщены до каталога.
 
 ## Изменения
 
@@ -48,7 +63,9 @@ allowlist и rollback semantics. Каталог должен помогать п
 - проверка, что disabled/quarantined entry не попадает в loadout;
 - проверка snapshot stability во время активного run;
 - отсутствие install-time code execution в smoke tests;
-- compatibility с текущими listener/runtime hash manifest правилами.
+- совместимость с существующими правилами hash manifest для listener и
+  updater: их проверки не ослабляются и продолжают проходить;
+- `cargo fmt --check` и targeted `cargo test -p evohime-core -p evohime-local-storage`.
 
 ## Готово, когда
 
