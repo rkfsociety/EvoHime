@@ -8,8 +8,8 @@
 
 Планы 01–05 реализованы целиком и удалены из каталога: их контракты живут в
 [`../architecture.md`](../architecture.md), подтверждённое состояние — в
-[`../current-state.md`](../current-state.md). Новых незавершённых планов в каталоге
-нет.
+[`../current-state.md`](../current-state.md). Текущий незавершённый план — 06,
+его обзор находится в [`06-0-workflow-orchestration.md`](06-0-workflow-orchestration.md).
 
 ## Правило нумерации
 
@@ -36,6 +36,7 @@
 | 03 Специализированные child workflows | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
 | 04 Постоянное слушание и ambient-память | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
 | 05 Provenance и реконструируемость model request | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
+| 06 Workflow orchestration для Евы | проектируется; обзор в [`06-0-workflow-orchestration.md`](06-0-workflow-orchestration.md) | 06-1 зависит от существующих workflow/child contracts; 06-2 от 06-1; 06-3 от 06-2; 06-4 от 06-3 |
 
 ```text
 05.1 контракт ── 05.2 хранение ── 05.3 интеграция ─┬── 05.4 evidence ── 05.6 shadowing ── 05.8 retention ── 05.9 verify/export

@@ -34,11 +34,11 @@ compatibility и native acceptance перепроверяются полным �
 Source-update E2E остаётся штатно пропущенным без включённого флага.
 
 Foundation текущего цикла завершён: обходы permission policy и approval закрыты
-и проверены; Local Agentic RAG 01.1–01.5 реализован, интегрирован в agent
-loop/IPC/Electron и перенесён в канонические `architecture.md`/
-`current-state.md`. План 02 частично подключён к agent loop, но остаётся
-активным до завершения supervisor process lifecycle, реального reroute approval,
-runtime catalog packaging и полного replayable trace.
+и проверены; Local Agentic RAG, routing, child workflows, ambient-контур и
+model-request provenance реализованы и перенесены в канонические
+`architecture.md`/`current-state.md`. Ближайший исполняемый план — 06:
+workflow orchestration поверх существующего typed workflow-контракта и child
+runtime. crewAI не является runtime-зависимостью продукта.
 
 ## Текущий статус
 
@@ -46,10 +46,9 @@ Legacy web UI, browser launcher, HTTP server и PostgreSQL persistence удал�
 Core + SQLite + authenticated named-pipe IPC сохраняются. Пользовательская оболочка
 — Electron; WinUI — compatibility runtime.
 
-Этап 02 Local SLM fallback и routing завершён. Его контракт находится в
-[`architecture.md`](architecture.md), подтверждённое состояние — в
-[`current-state.md`](current-state.md). Следующим независимым направлением
-остаётся план 03.
+Этапы 02–05 завершены. Их контракты находятся в [`architecture.md`](architecture.md),
+подтверждённое состояние — в [`current-state.md`](current-state.md). Следующее
+независимое направление — план 06 из [`plans/06-0-workflow-orchestration.md`](plans/06-0-workflow-orchestration.md).
 
 После завершения foundation добавлен функциональный slice «Ревью планов» в
 Electron: additive desktop IPC, `plan_review` в Core и event journal для
