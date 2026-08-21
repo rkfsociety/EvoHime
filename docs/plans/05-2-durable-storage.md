@@ -24,9 +24,6 @@ model_requests
 - logical_request_id
 - attempt
 - parent_request_id
-- run_id
-- task_id
-- step_id
 - request_kind
 - ledger_id (FK на context_ledger)
 - provider
@@ -34,11 +31,11 @@ model_requests
 - envelope_version
 - envelope_hash
 - envelope_blob / immutable artifact ref
-- projection_hash
+- context_projection_hash
 - route_snapshot_hash
 - policy_snapshot_hash
 - status
-- created_at
+- dispatch_at
 - completed_at
 ```
 
@@ -80,7 +77,16 @@ model_request_block_refs
 
 `ledger_id` обязателен и ссылается на `context_ledger.id`, а не на `model_call_id`: последний не уникален (см. `replan_of`). Отношение направленное — у envelope ровно один `ledger_id`, у одной записи ledger может быть несколько envelope, по одному на attempt: retry и fallback контекст не пересобирают и новой записи ledger не создают.
 
-`provider` и `model` продублированы из ledger намеренно: они входят в подписанный request receipt, и offline-верификатор обязан читать их без ledger. При fallback значения расходятся — ledger хранит provider/model на момент планирования контекста, envelope — фактические; authoritative значение в envelope. Остальные поля ledger не дублируются.
+`provider` и `model` продублированы из ledger намеренно: они входят в
+подписанный request receipt, и offline-верификатор обязан читать их без ledger.
+При fallback значения расходятся — ledger хранит provider/model на момент
+планирования контекста, envelope — фактические; authoritative значение в
+envelope. Остальные поля ledger (`run_id`, `task_id`, `step_id`, `created_at`)
+не дублируются.
+
+`status` и `dispatch_at` — lifecycle/audit metadata. Они не входят в canonical
+envelope bytes и могут обновляться по правилам 05.8/интеграции без изменения
+`envelope_hash`; mutation committed payload по-прежнему запрещена.
 
 Полный разбор того, что уже есть в ledger и как на него ложится `ContextProjection`, — в разделе «Что есть в коде сейчас» обзора плана.
 
@@ -89,11 +95,13 @@ model_request_block_refs
 ```text
 request -> sources
 source -> requests
-run -> requests
 logical_request -> attempts
 ledger -> request
 content_hash -> requests
 ```
+
+Запросы по `run_id`/`task_id`/`step_id` выполняются через индекс и join на
+`context_ledger`; прямых дублирующих колонок в `model_requests` нет.
 
 ## Immutability
 

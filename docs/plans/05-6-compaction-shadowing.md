@@ -68,7 +68,10 @@ Projection фиксирует:
 
 `ContextProjection` — не новая сущность рядом с ledger, а его расширение до model-visible содержимого. `projection_entry_id` ложится на `selected_items[].id`, `operation = summary` и `source_refs[]` — на существующие `compression[].summary_id`/`source_ids`, `operation = prune` — на `dropped_items[].drop_reason`. Второй независимый список выбранных item заводить запрещено.
 
-Двух хешей одного и того же контекста быть не должно: либо `projection_hash` вычисляется из `context_ledger_hash` и добавленного content-покрытия, либо `context_ledger_hash` объявляется его входом. Связь фиксируется в контракте явно.
+Двух независимых хешей одного и того же контекста быть не должно:
+`context_projection_hash` вычисляется из `context_ledger_hash` и добавленного
+content-покрытия по правилам [05.1](05-1-canonical-request-contract.md).
+Второй независимый список выбранных item запрещён.
 
 ## Append-only shadowing
 
@@ -95,7 +98,8 @@ Model-visible projection видит `S`, audit/reconstruction surface сохра
 ### Unit
 
 - `ContextProjection` совпадает с записью `context_ledger` по составу `selected_items`/`compression`/`dropped_items`;
-- `projection_hash` детерминирован и связан с `context_ledger_hash` объявленным способом;
+- `context_projection_hash` детерминирован и связан с `context_ledger_hash`
+  способом, объявленным в 05.1;
 - превышение `MAX_CONTEXT_PROJECTION_BYTES` даёт типизированную ошибку.
 
 ### Integration

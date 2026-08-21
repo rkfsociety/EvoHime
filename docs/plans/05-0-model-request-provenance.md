@@ -55,8 +55,17 @@ context_ledger_hash
 
 1. Ключ записи ledger — собственный `context_ledger.id`; `model_call_id` — отдельная колонка, и уникальности по ней нет: поле `replan_of` прямо допускает несколько записей ledger для одного логического вызова. Поэтому `ledger_id` envelope ссылается на `context_ledger.id`, а не на `model_call_id`.
 2. `ContextProjection` — не новая сущность рядом с ledger, а его расширение до model-visible содержимого. `projection_entry_id` ложится на `selected_items[].id`, `operation = summary` и `source_refs[]` — на существующие `compression[].summary_id`/`source_ids`, `operation = prune` — на `dropped_items[].drop_reason`. Второй независимый список выбранных item заводить запрещено.
-3. Два хеша одного и того же контекста недопустимы. Либо `projection_hash` вычисляется из `context_ledger_hash` и добавленного content-покрытия, либо `context_ledger_hash` объявляется его входом. Явно зафиксировать связь в контракте.
-4. Таблица `model_requests` не дублирует колонки ledger: `task_id` и `created_at` остаются в ledger, а `model_requests` ссылается на `ledger_id`. Дублировать допустимо только то, что нужно для offline-верификации без ledger; `provider` и `model` дублируются именно поэтому — они входят в подписанный request receipt. При этом ledger фиксирует provider/model на момент планирования контекста, а envelope — фактические: при fallback они расходятся, и authoritative значение — в envelope.
+3. Два хеша одного и того же контекста недопустимы. `context_projection_hash`
+   вычисляется из `context_ledger_hash` и добавленного content-покрытия по
+   правилам [05.1](05-1-canonical-request-contract.md); второй независимый
+   список контекста запрещён.
+4. Таблица `model_requests` не дублирует колонки ledger: `run_id`, `task_id`,
+   `step_id` и `created_at` остаются в ledger, а `model_requests` ссылается на
+   `ledger_id`. Дублировать допустимо только то, что нужно для
+   offline-верификации без ledger; `provider` и `model` дублируются именно
+   поэтому — они входят в подписанный request receipt. При этом ledger фиксирует
+   provider/model на момент планирования контекста, а envelope — фактические:
+   при fallback они расходятся, и authoritative значение — в envelope.
 5. `context_ledger_receipts` уже существует. Signed request receipt подключается к этой связи, а не создаёт вторую.
 
 Чего в ledger нет и ради чего нужен этот план: фактического system prompt, messages, tool schemas, effective model parameters, hash источников и captured bytes. Ledger отвечает на вопрос «какие item были выбраны», envelope — «что именно увидела модель».
