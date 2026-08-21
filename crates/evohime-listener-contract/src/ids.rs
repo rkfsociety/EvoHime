@@ -82,6 +82,16 @@ bounded_id!(
     "Identifier of one bounded proactive proposal."
 );
 bounded_id!(
+    SubjectKey,
+    "subject_key",
+    "Bounded, opaque key of one proposal subject.
+
+It is a token, not a phrase: the charset excludes spaces, so a canonical
+subject reaches an event only after Core has reduced it to a slug (or, when
+nothing ASCII survives, to a short fingerprint). The card's human-readable
+text never travels this way — it is read back with a command."
+);
+bounded_id!(
     EngineVersion,
     "engine_version",
     "Speech-engine build identifier, e.g. `whisper-base-q5_1`."
@@ -116,6 +126,10 @@ mod tests {
         assert_eq!(
             EpisodeId::new("a".repeat(MAX_ID_BYTES + 1)),
             Err(ContractError::FieldTooLong("episode_id"))
+        );
+        assert_eq!(
+            SubjectKey::new("купить хлеб"),
+            Err(ContractError::InvalidCharacter("subject_key"))
         );
         assert_eq!(
             DeviceId::new("mic 1"),

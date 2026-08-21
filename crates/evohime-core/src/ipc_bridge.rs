@@ -89,6 +89,37 @@ pub struct IpcBridge {
     /// тестов: подмена переменной окружения на процесс сделала бы соседние
     /// тесты зависимыми друг от друга.
     ambient_data_dir: Option<std::path::PathBuf>,
+    /// Потолок и счётчики ограниченной проактивности (04.7). Тот же реестр,
+    /// что держит агент: иначе мост и производитель предложений считали бы
+    /// разные бюджеты.
+    proactivity: crate::ambient::AmbientProactivityRegistry,
+}
+
+/// Проект, под которым живут принятые предложения. Речь у стола не
+/// принадлежит рабочему каталогу, поэтому у неё собственная строка проекта — по
+/// той же причине, по которой ambient-память живёт в scope `workspace/ambient`.
+pub const AMBIENT_PROPOSAL_PROJECT_ID: &str = "ambient-proposals";
+
+/// `client_id` дедупликации принятых предложений.
+const AMBIENT_PROPOSAL_CLIENT_ID: &str = "ambient-proactivity";
+
+/// Признак неисполняемого напоминания, записанный в данных задачи.
+pub const AMBIENT_REMINDER_NON_GOAL: &str =
+    "Напоминание не выполняется автоматически: это заметка, а не задача агента.";
+
+/// Потолок длины ключа идемпотентности. Совпадает с bounded-лимитом
+/// идентификаторов хранилища.
+const MAX_PROPOSAL_KEY_BYTES: usize = 128;
+
+/// Отказ по решению предложения: код называется явно, «применено» не
+/// придумывается.
+fn resolve_failure(code: evohime_listener_contract::AmbientErrorCode) -> serde_json::Value {
+    serde_json::json!({
+        "applied": false,
+        "state": "",
+        "task_id": "",
+        "error_code": code.as_str(),
+    })
 }
 
 fn runtime_identity() -> (String, u64) {
@@ -164,6 +195,7 @@ impl IpcBridge {
             revision_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             ambient: crate::ambient::AmbientListeningRegistry::default(),
             ambient_data_dir: None,
+            proactivity: crate::ambient::AmbientProactivityRegistry::default(),
         }
     }
 
@@ -187,6 +219,7 @@ impl IpcBridge {
             revision_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             ambient: crate::ambient::AmbientListeningRegistry::default(),
             ambient_data_dir: None,
+            proactivity: crate::ambient::AmbientProactivityRegistry::default(),
         }
     }
 
@@ -217,6 +250,7 @@ impl IpcBridge {
             revision_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             ambient: crate::ambient::AmbientListeningRegistry::default(),
             ambient_data_dir: None,
+            proactivity: crate::ambient::AmbientProactivityRegistry::default(),
         }
     }
 
@@ -235,6 +269,21 @@ impl IpcBridge {
     /// Каталог политики и намерения слушания.
     pub fn with_ambient_data_dir(mut self, directory: std::path::PathBuf) -> Self {
         self.ambient_data_dir = Some(directory);
+        self
+    }
+
+    /// Разделяемый реестр проактивности.
+    pub fn proactivity(&self) -> crate::ambient::AmbientProactivityRegistry {
+        self.proactivity.clone()
+    }
+
+    /// Подключает готовый реестр проактивности: `main.rs` создаёт его до
+    /// агента и до моста, чтобы обе стороны считали один и тот же потолок.
+    pub fn with_proactivity(
+        mut self,
+        proactivity: crate::ambient::AmbientProactivityRegistry,
+    ) -> Self {
+        self.proactivity = proactivity;
         self
     }
 
@@ -2223,7 +2272,19 @@ impl IpcBridge {
             }
             Some(generated::command_envelope::Command::ResolveAmbientProposal(request)) => {
                 let result = self.dispatch_resolve_ambient_proposal(request).await;
-                self.write_response(writer, "ambient.proposal", serde_json::to_vec(&result)?)
+                // Имя ответа отличается от имени журнальной записи
+                // `ambient.proposal`: renderer подписан на неё как на событие,
+                // и ответ на команду не должен подменять собой список карточек.
+                self.write_response(
+                    writer,
+                    "ambient.proposal_resolved",
+                    serde_json::to_vec(&result)?,
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::ListAmbientProposals(request)) => {
+                let result = self.dispatch_list_ambient_proposals(request).await;
+                self.write_response(writer, "ambient.proposals", serde_json::to_vec(&result)?)
                     .await?;
             }
             None => {}
@@ -2648,33 +2709,284 @@ impl IpcBridge {
         }
     }
 
-    /// Решение по ограниченному предложению (этап 04.7). До появления самих
-    /// предложений реестр пуст, и команда отвечает `applied: false` вместо
-    /// вымышленного успеха.
+    /// Список ожидающих карточек (этап 04.7).
+    ///
+    /// Это единственный путь, по которому человекочитаемый текст предложения
+    /// пересекает границу IPC: durable journal его не несёт, потому что
+    /// `events` — append-only таблица, из которой ambient-содержимое пришлось
+    /// бы вычищать. Тот же принцип, по которому `memory.pending` не несёт
+    /// `statement`.
+    ///
+    /// Просроченные карточки снимаются здесь же: список, показывающий
+    /// вчерашнее предложение как ждущее ответа, врал бы пользователю.
+    async fn dispatch_list_ambient_proposals(
+        &self,
+        request: generated::ListAmbientProposals,
+    ) -> serde_json::Value {
+        let limit = if request.limit <= 0 {
+            50usize
+        } else {
+            (request.limit as usize).min(200)
+        };
+        let now_ms = crate::task_memory::now_millis();
+        let _ = self.journal.expire_stale_ambient_proposals(now_ms).await;
+        let budget = self.proactivity.budget().await;
+        match self.journal.list_open_ambient_proposals(limit).await {
+            Ok(records) => serde_json::json!({
+                "proposals": records
+                    .into_iter()
+                    .map(|record| serde_json::json!({
+                        "proposal_id": record.proposal_id,
+                        "kind": record.kind.as_str(),
+                        "subject": record.subject,
+                        "title": record.title,
+                        "source_episode_id": record.source_episode_id.unwrap_or_default(),
+                        "created_at_ms": parse_timestamp_ms(&record.created_at),
+                        "expires_at_ms": parse_timestamp_ms(&record.expires_at),
+                        "occurrences": record.occurrences,
+                        "state": record.state.as_str(),
+                    }))
+                    .collect::<Vec<_>>(),
+                "max_per_hour": budget.max_per_hour,
+                "max_per_day": budget.max_per_day,
+                "min_interval_ms": budget.min_interval_ms,
+                "error_code": "",
+            }),
+            Err(code) => serde_json::json!({
+                "proposals": Vec::<serde_json::Value>::new(),
+                "max_per_hour": budget.max_per_hour,
+                "max_per_day": budget.max_per_day,
+                "min_interval_ms": budget.min_interval_ms,
+                "error_code": code.as_str(),
+            }),
+        }
+    }
+
+    /// Решение по ограниченному предложению (этап 04.7).
+    ///
+    /// Три исхода, а не два: принять, отклонить и «больше не предлагать
+    /// такое». Принятие создаёт обычную задачу или неисполняемое напоминание
+    /// штатным механизмом Core с сохранением провенанса; ни один другой
+    /// эффект здесь недостижим.
+    ///
+    /// `idempotency_key` обязателен: без него двойной клик по карточке
+    /// породил бы две задачи. Повтор с тем же ключом возвращает первое
+    /// решение, а не создаёт второе.
     async fn dispatch_resolve_ambient_proposal(
         &self,
         request: generated::ResolveAmbientProposal,
     ) -> serde_json::Value {
+        use evohime_listener_contract::AmbientErrorCode as Code;
+        use evohime_listener_contract::ProposalState;
+
         let Ok(proposal_id) =
             evohime_listener_contract::ProposalId::new(request.proposal_id.clone())
         else {
-            return serde_json::json!({ "applied": false });
+            return resolve_failure(Code::InvalidArgument);
         };
-        let Some(kind) = self.ambient.resolve_proposal(proposal_id.as_str()).await else {
-            return serde_json::json!({ "applied": false });
+        let idempotency_key = request.idempotency_key.trim().to_owned();
+        if idempotency_key.is_empty() || idempotency_key.len() > MAX_PROPOSAL_KEY_BYTES {
+            return resolve_failure(Code::InvalidArgument);
+        }
+        // Повтор того же клика: ответ берётся из уже принятого решения, и
+        // вторая задача не создаётся.
+        match self
+            .journal
+            .find_ambient_proposal_by_idempotency(&idempotency_key)
+            .await
+        {
+            Ok(Some(existing)) => {
+                return serde_json::json!({
+                    "applied": true,
+                    "state": existing.state.as_str(),
+                    "task_id": existing.accepted_task_id.unwrap_or_default(),
+                    "error_code": "",
+                })
+            }
+            Ok(None) => {}
+            Err(code) => return resolve_failure(code),
+        }
+
+        let record = match self
+            .journal
+            .get_ambient_proposal(proposal_id.as_str())
+            .await
+        {
+            Ok(Some(record)) => record,
+            // Нет такого предложения — это честное «не применено», а не
+            // вымышленный успех.
+            Ok(None) => return resolve_failure(Code::InvalidArgument),
+            Err(code) => return resolve_failure(code),
         };
-        let _ = self
-            .publish_ambient(&evohime_listener_contract::AmbientLogEvent::Proposal {
-                proposal_id,
-                kind,
-                proposal_state: if request.accepted {
-                    evohime_listener_contract::ProposalState::Accepted
-                } else {
-                    evohime_listener_contract::ProposalState::Dismissed
-                },
-            })
-            .await;
-        serde_json::json!({ "applied": true })
+        if record.state.is_terminal() {
+            return serde_json::json!({
+                "applied": false,
+                "state": record.state.as_str(),
+                "task_id": record.accepted_task_id.unwrap_or_default(),
+                "error_code": Code::InvalidArgument.as_str(),
+            });
+        }
+
+        let now_ms = crate::task_memory::now_millis();
+        let next_state = if request.mute {
+            ProposalState::Muted
+        } else if request.accepted {
+            ProposalState::Accepted
+        } else {
+            ProposalState::Declined
+        };
+
+        // Задача создаётся только при принятии и только до перевода карточки
+        // в терминальное состояние: обратный порядок оставил бы «принято» без
+        // задачи, если бы создание не удалось.
+        let task_id = if next_state == ProposalState::Accepted {
+            match self.create_proposal_effect(&record, &idempotency_key).await {
+                Ok(task_id) => Some(task_id),
+                Err(code) => return resolve_failure(code),
+            }
+        } else {
+            None
+        };
+
+        match self
+            .journal
+            .resolve_ambient_proposal_row(
+                proposal_id.as_str(),
+                next_state,
+                now_ms,
+                task_id.as_deref(),
+                Some(&idempotency_key),
+            )
+            .await
+        {
+            Ok(true) => {}
+            // Кто-то решил карточку между чтением и записью: первый клик
+            // выигрывает.
+            Ok(false) => return resolve_failure(Code::InvalidArgument),
+            Err(code) => return resolve_failure(code),
+        }
+
+        if next_state == ProposalState::Muted {
+            let _ = self
+                .proactivity
+                .mute(
+                    &self.journal,
+                    &record.mute_key,
+                    record.kind,
+                    &record.subject_key,
+                    now_ms,
+                )
+                .await;
+        }
+
+        if let Ok(subject_key) =
+            evohime_listener_contract::SubjectKey::new(record.subject_key.clone())
+        {
+            let _ = self
+                .publish_ambient(&evohime_listener_contract::AmbientLogEvent::Proposal {
+                    proposal_id,
+                    episode_id: record
+                        .source_episode_id
+                        .as_ref()
+                        .and_then(|id| evohime_listener_contract::EpisodeId::new(id.clone()).ok()),
+                    kind: record.kind,
+                    subject_key,
+                    proposal_state: next_state,
+                })
+                .await;
+        }
+
+        serde_json::json!({
+            "applied": true,
+            "state": next_state.as_str(),
+            "task_id": task_id.unwrap_or_default(),
+            "error_code": "",
+        })
+    }
+
+    /// Единственный эффект принятого предложения: строка в списке задач.
+    ///
+    /// Оба вида — обычная запись `work_items` в статусе `backlog`, то есть
+    /// ничего не запускающая сама. Напоминание отличается явным `non_goals`:
+    /// «не выполняется автоматически» записано в данных, а не подразумевается.
+    /// `source_ref` несёт `episode_id` — тот же провенанс, по которому
+    /// удаление эпизода находит своих кандидатов памяти.
+    async fn create_proposal_effect(
+        &self,
+        record: &evohime_local_storage::ambient_store::AmbientProposalRecord,
+        idempotency_key: &str,
+    ) -> Result<String, evohime_listener_contract::AmbientErrorCode> {
+        use evohime_listener_contract::AmbientErrorCode as Code;
+
+        // Проектная строка для услышанного заводится один раз и переиспользуется:
+        // `work_items.project_id` — внешний ключ, и задача без проекта не
+        // сохранится.
+        self.journal
+            .create_project(
+                AMBIENT_PROPOSAL_PROJECT_ID,
+                "Услышанное",
+                "",
+                Some(AMBIENT_PROPOSAL_PROJECT_ID),
+            )
+            .await
+            .map_err(|_| Code::StorageFailed)?;
+
+        let task_id = uuid::Uuid::new_v4().to_string();
+        let non_goals = if record.kind == evohime_listener_contract::ProposalKind::Reminder {
+            AMBIENT_REMINDER_NON_GOAL.to_owned()
+        } else {
+            String::new()
+        };
+        let item = evohime_local_storage::WorkItemRecord {
+            id: task_id.clone(),
+            project_id: AMBIENT_PROPOSAL_PROJECT_ID.to_owned(),
+            parent_id: None,
+            title: record.title.clone(),
+            description: String::new(),
+            source_ref: record.source_episode_id.clone(),
+            acceptance_criteria: String::new(),
+            non_goals,
+            // `backlog`, а не `ready`: подбор следующей задачи берёт только
+            // `ready`, поэтому принятое предложение не начинает выполняться
+            // само по себе.
+            status: "backlog".to_owned(),
+            priority: 0,
+            estimate: None,
+            complexity: None,
+            attempt_count: 0,
+            version: 1,
+        };
+        // Тот же dedup-путь, что у `CreateTask`: повторный запрос с этим
+        // ключом не создаёт второй записи, а возвращает **ту** задачу, что
+        // была создана первым кликом. Свежий идентификатор здесь был бы
+        // ссылкой в пустоту.
+        if let Some(replay) = self
+            .journal
+            .record_deduplicated(
+                AMBIENT_PROPOSAL_CLIENT_ID,
+                idempotency_key,
+                &record.proposal_id,
+                b"",
+            )
+            .await
+            .map_err(|_| Code::StorageFailed)?
+        {
+            return String::from_utf8(replay).map_err(|_| Code::StorageFailed);
+        }
+        self.journal
+            .create_work_item(&item)
+            .await
+            .map_err(|_| Code::StorageFailed)?;
+        self.journal
+            .record_deduplicated(
+                AMBIENT_PROPOSAL_CLIENT_ID,
+                idempotency_key,
+                &record.proposal_id,
+                task_id.as_bytes(),
+            )
+            .await
+            .map_err(|_| Code::StorageFailed)?;
+        Ok(task_id)
     }
 
     async fn dispatch_create_project(
@@ -8623,42 +8935,316 @@ mod tests {
         assert_eq!(read_back["quiet_hours"][0]["start_minute"], 23 * 60);
     }
 
+    /// Кладёт готовое предложение в базу моста.
+    async fn seed_proposal(
+        bridge: &IpcBridge,
+        proposal_id: &str,
+        kind: evohime_listener_contract::ProposalKind,
+        subject: &str,
+        episode_id: Option<&str>,
+        now_ms: u64,
+    ) {
+        use crate::ambient_proactivity as proactivity;
+        let subject_key = proactivity::subject_key(subject);
+        let record = crate::ambient::proposal_record(
+            proposal_id,
+            &proactivity::proposal_key(kind, &subject_key, now_ms),
+            &proactivity::mute_key(kind, &subject_key),
+            kind,
+            &subject_key,
+            subject,
+            "Напомнить купить хлеб",
+            episode_id,
+            now_ms,
+        );
+        bridge
+            .journal()
+            .record_ambient_proposal(&record)
+            .await
+            .expect("предложение записывается");
+    }
+
+    fn resolve_command(
+        proposal_id: &str,
+        accepted: bool,
+        mute: bool,
+        idempotency_key: &str,
+    ) -> generated::command_envelope::Command {
+        generated::command_envelope::Command::ResolveAmbientProposal(
+            generated::ResolveAmbientProposal {
+                proposal_id: proposal_id.into(),
+                accepted,
+                idempotency_key: idempotency_key.into(),
+                mute,
+            },
+        )
+    }
+
     /// Решения по несуществующему предложению не бывает: команда честно
-    /// отвечает «не применено», а не выдумывает успех.
+    /// отвечает «не применено», а не выдумывает успех. Пустой ключ
+    /// идемпотентности отвергается там же.
     #[tokio::test]
     async fn resolving_an_unknown_proposal_is_not_applied() {
-        let (bridge, _directory) = ambient_bridge("ambient-proposal");
-        let (event_type, payload) = ambient_call(
+        let (bridge, _directory) = ambient_bridge("ambient-proposal-unknown");
+        let (event_type, payload) =
+            ambient_call(&bridge, resolve_command("prop-1", true, false, "idem-1")).await;
+        assert_eq!(event_type, "ambient.proposal_resolved");
+        assert_eq!(payload["applied"], false);
+        assert_eq!(payload["error_code"], "INVALID_ARGUMENT");
+
+        seed_proposal(
             &bridge,
-            generated::command_envelope::Command::ResolveAmbientProposal(
-                generated::ResolveAmbientProposal {
-                    proposal_id: "prop-1".into(),
-                    accepted: true,
-                },
-            ),
+            "prop-1",
+            evohime_listener_contract::ProposalKind::Reminder,
+            "хлеб",
+            None,
+            crate::task_memory::now_millis(),
         )
         .await;
-        assert_eq!(event_type, "ambient.proposal");
-        assert_eq!(payload["applied"], false);
+        let (_, without_key) =
+            ambient_call(&bridge, resolve_command("prop-1", true, false, "   ")).await;
+        assert_eq!(
+            without_key["applied"], false,
+            "принятие без ключа идемпотентности не проходит"
+        );
+        assert_eq!(without_key["error_code"], "INVALID_ARGUMENT");
+    }
 
+    /// Повторный клик по карточке возвращает первое решение и не создаёт
+    /// вторую задачу.
+    #[tokio::test]
+    async fn a_repeated_resolve_with_the_same_key_creates_no_second_task() {
+        let (bridge, _directory) = ambient_bridge("ambient-proposal-idempotent");
+        seed_proposal(
+            &bridge,
+            "prop-1",
+            evohime_listener_contract::ProposalKind::Suggestion,
+            "отчёт",
+            None,
+            crate::task_memory::now_millis(),
+        )
+        .await;
+        let (_, first) =
+            ambient_call(&bridge, resolve_command("prop-1", true, false, "idem-1")).await;
+        assert_eq!(first["applied"], true);
+        assert_eq!(first["state"], "accepted");
+        let task_id = first["task_id"]
+            .as_str()
+            .expect("задача создана")
+            .to_owned();
+        assert!(!task_id.is_empty());
+
+        let (_, second) =
+            ambient_call(&bridge, resolve_command("prop-1", true, false, "idem-1")).await;
+        assert_eq!(second["applied"], true, "повтор отвечает первым решением");
+        assert_eq!(second["task_id"], task_id);
+
+        let tasks = bridge
+            .journal()
+            .list_work_items(AMBIENT_PROPOSAL_PROJECT_ID)
+            .await
+            .expect("задачи читаются");
+        assert_eq!(tasks.len(), 1, "двойной клик не породил вторую задачу");
+        assert_eq!(tasks[0].status, "backlog", "принятое не запускается само");
+    }
+
+    /// Принятое напоминание — неисполняемая запись: это записано в данных, а
+    /// не подразумевается. Провенанс ведёт к эпизоду-источнику.
+    #[tokio::test]
+    async fn an_accepted_reminder_is_a_non_executable_row_with_provenance() {
+        let (bridge, _directory) = ambient_bridge("ambient-proposal-reminder");
+        let now_ms = crate::task_memory::now_millis();
         bridge
-            .ambient()
-            .register_proposal(
-                "prop-1".into(),
+            .journal()
+            .open_ambient_episode(
+                "ep-1",
+                "whisper-base-q5_1",
+                "base-q5_1",
+                evohime_listener_contract::ExtractionState::Done,
+                now_ms,
+            )
+            .await
+            .expect("эпизод открывается");
+        seed_proposal(
+            &bridge,
+            "prop-1",
+            evohime_listener_contract::ProposalKind::Reminder,
+            "хлеб",
+            Some("ep-1"),
+            now_ms,
+        )
+        .await;
+        let (_, payload) =
+            ambient_call(&bridge, resolve_command("prop-1", true, false, "idem-1")).await;
+        assert_eq!(payload["applied"], true);
+        let tasks = bridge
+            .journal()
+            .list_work_items(AMBIENT_PROPOSAL_PROJECT_ID)
+            .await
+            .expect("задачи читаются");
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].non_goals, AMBIENT_REMINDER_NON_GOAL);
+        assert_eq!(tasks[0].source_ref.as_deref(), Some("ep-1"));
+    }
+
+    /// Отклонение задачу не создаёт, а mute переживает рестарт Core: он живёт
+    /// строкой таблицы, а не полем реестра в памяти процесса.
+    #[tokio::test]
+    async fn muting_a_subject_survives_a_core_restart() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let database = directory.path().join("ambient-proposal-mute.db");
+        let now_ms = crate::task_memory::now_millis();
+        {
+            let journal = EventJournal::open(&database).expect("journal opens");
+            let (coordinator, _events) =
+                TaskCoordinator::new_with_journal(8, None, journal.clone());
+            let bridge = IpcBridge::with_coordinator(journal, coordinator)
+                .with_ambient_data_dir(directory.path().to_path_buf());
+            seed_proposal(
+                &bridge,
+                "prop-1",
                 evohime_listener_contract::ProposalKind::Reminder,
+                "хлеб",
+                None,
+                now_ms,
             )
             .await;
-        let (_, payload) = ambient_call(
+            let (_, payload) =
+                ambient_call(&bridge, resolve_command("prop-1", false, true, "idem-1")).await;
+            assert_eq!(payload["applied"], true);
+            assert_eq!(payload["state"], "muted");
+            assert_eq!(payload["task_id"], "", "заглушённое задач не создаёт");
+            assert!(bridge
+                .journal()
+                .list_work_items(AMBIENT_PROPOSAL_PROJECT_ID)
+                .await
+                .expect("задачи читаются")
+                .is_empty());
+        }
+        // Новый процесс: реестр пуст, единственный источник истины — база.
+        let journal = EventJournal::open(&database).expect("journal reopens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal.clone(), coordinator)
+            .with_ambient_data_dir(directory.path().to_path_buf());
+        let subject_key = crate::ambient_proactivity::subject_key("хлеб");
+        let mute_key = crate::ambient_proactivity::mute_key(
+            evohime_listener_contract::ProposalKind::Reminder,
+            &subject_key,
+        );
+        assert!(
+            bridge.proactivity().is_muted(&journal, &mute_key).await,
+            "mute обязан пережить рестарт"
+        );
+        // И он глушит предложение из другой временной корзины — то есть с
+        // другим `proposal_key`.
+        let later = crate::ambient::proposal_record(
+            "prop-2",
+            &crate::ambient_proactivity::proposal_key(
+                evohime_listener_contract::ProposalKind::Reminder,
+                &subject_key,
+                now_ms + 5 * 60 * 60 * 1000,
+            ),
+            &mute_key,
+            evohime_listener_contract::ProposalKind::Reminder,
+            &subject_key,
+            "хлеб",
+            "Напомнить купить хлеб",
+            None,
+            now_ms + 5 * 60 * 60 * 1000,
+        );
+        assert_eq!(
+            journal.record_ambient_proposal(&later).await,
+            Ok(evohime_local_storage::ambient_store::ProposalInsert::Muted)
+        );
+    }
+
+    /// Список карточек — единственный путь для человекочитаемого текста, и он
+    /// не показывает просроченное как ждущее ответа.
+    #[tokio::test]
+    async fn the_proposal_list_carries_the_card_text_and_hides_expired_cards() {
+        let (bridge, _directory) = ambient_bridge("ambient-proposal-list");
+        let now_ms = crate::task_memory::now_millis();
+        seed_proposal(
             &bridge,
-            generated::command_envelope::Command::ResolveAmbientProposal(
-                generated::ResolveAmbientProposal {
-                    proposal_id: "prop-1".into(),
-                    accepted: true,
-                },
+            "prop-fresh",
+            evohime_listener_contract::ProposalKind::Reminder,
+            "хлеб",
+            None,
+            now_ms,
+        )
+        .await;
+        seed_proposal(
+            &bridge,
+            "prop-stale",
+            evohime_listener_contract::ProposalKind::Suggestion,
+            "отчёт",
+            None,
+            now_ms - 2 * crate::ambient_proactivity::PROPOSAL_LIFETIME_MS,
+        )
+        .await;
+        let (event_type, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::ListAmbientProposals(
+                generated::ListAmbientProposals { limit: 50 },
             ),
         )
         .await;
+        assert_eq!(event_type, "ambient.proposals");
+        let rows = payload["proposals"].as_array().expect("список карточек");
+        assert_eq!(rows.len(), 1, "просроченная карточка снята со списка");
+        assert_eq!(rows[0]["proposal_id"], "prop-fresh");
+        assert_eq!(rows[0]["title"], "Напомнить купить хлеб");
+        assert_eq!(payload["max_per_hour"], 3);
+        assert_eq!(payload["max_per_day"], 10);
+        assert_eq!(payload["min_interval_ms"], 600_000);
+    }
+
+    /// Ни при каких входных данных `ambient.proposal` в журнале не несёт ни
+    /// текста карточки, ни темы человеческими словами.
+    #[tokio::test]
+    async fn the_journalled_proposal_event_carries_no_card_text() {
+        let (bridge, _directory) = ambient_bridge("ambient-proposal-privacy");
+        let now_ms = crate::task_memory::now_millis();
+        seed_proposal(
+            &bridge,
+            "prop-1",
+            evohime_listener_contract::ProposalKind::Reminder,
+            "секретный пароль от банка",
+            None,
+            now_ms,
+        )
+        .await;
+        let (_, payload) =
+            ambient_call(&bridge, resolve_command("prop-1", false, false, "idem-1")).await;
         assert_eq!(payload["applied"], true);
+        assert_eq!(payload["state"], "declined");
+
+        let journal = bridge.journal();
+        let database = journal.database().lock().await;
+        let events = database.read_events_after(0, 100).expect("журнал читается");
+        let proposal_events: Vec<_> = events
+            .into_iter()
+            .filter(|event| event.event_type == "ambient.proposal")
+            .collect();
+        assert_eq!(proposal_events.len(), 1);
+        for event in proposal_events {
+            let body = String::from_utf8(event.payload).expect("payload is JSON");
+            assert!(!body.contains("секретный"), "{body} несёт тему словами");
+            assert!(
+                !body.contains("Напомнить купить хлеб"),
+                "{body} несёт текст карточки"
+            );
+            let value: serde_json::Value = serde_json::from_str(&body).expect("payload parses");
+            for key in value.as_object().expect("object").keys() {
+                assert!(
+                    !matches!(
+                        key.as_str(),
+                        "title" | "subject" | "canonical_subject" | "text"
+                    ),
+                    "ambient.proposal раскрывает {key}"
+                );
+            }
+        }
     }
 
     /// «Забыть последние 5 минут» удаляет то, что попало в окно, и оставляет

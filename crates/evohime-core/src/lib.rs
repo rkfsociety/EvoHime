@@ -1123,6 +1123,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 pub mod ambient;
+pub mod ambient_proactivity;
 pub mod audit;
 pub mod build;
 pub mod capability_registry;
@@ -3313,6 +3314,14 @@ impl EventJournal {
         database.add_dependency(from_id, to_id, kind)
     }
 
+    pub async fn list_work_items(
+        &self,
+        project_id: &str,
+    ) -> Result<Vec<WorkItemRecord>, StorageError> {
+        let database = self.database.lock().await;
+        database.list_work_items(project_id)
+    }
+
     pub async fn list_task_graph(
         &self,
         project_id: &str,
@@ -4198,6 +4207,11 @@ pub struct ToolAgent {
     /// Per-workspace rate limit, token budget and circuit breaker for memory
     /// extraction. Shared across turns because the limits are hourly.
     extraction_guard: Arc<Mutex<crate::memory_extraction::ExtractionGuard>>,
+    /// Потолок и счётчики ограниченной проактивности (04.7).
+    ///
+    /// `None` означает, что в этой сборке проактивности нет вовсе: предложение
+    /// не создаётся, а не создаётся «без потолка».
+    proactivity: Option<crate::ambient::AmbientProactivityRegistry>,
 }
 
 const DEFAULT_TOOL_ITERATIONS: usize = 32;
@@ -4224,7 +4238,17 @@ impl ToolAgent {
             extraction_guard: Arc::new(
                 Mutex::new(crate::memory_extraction::ExtractionGuard::new()),
             ),
+            proactivity: None,
         }
+    }
+
+    /// Подключает реестр ограниченной проактивности.
+    pub fn with_proactivity(
+        mut self,
+        proactivity: crate::ambient::AmbientProactivityRegistry,
+    ) -> Self {
+        self.proactivity = Some(proactivity);
+        self
     }
 
     /// Shares the shell's model selection with this agent.
@@ -5185,6 +5209,13 @@ impl ToolAgent {
                         "reason": "kind_not_allowed_from_ambient",
                     }),
                 );
+                // 04.6 отбрасывает `constraint` и `decision` до persistence
+                // именно потому, что они влияют на действия. 04.7 не
+                // воскрешает их как память: они становятся ограниченным
+                // предложением, которое само по себе ничего не делает и ждёт
+                // клика. Потолок, mute и закрытый список эффектов проверяются
+                // внутри.
+                self.propose_from_ambient(episode_id, &candidate).await;
                 continue;
             }
             let raised = extraction::apply_ambient_privacy_floor(&mut candidate);
@@ -5310,6 +5341,141 @@ impl ToolAgent {
                 evohime_listener_contract::ExtractionState::Done,
             )
             .await;
+    }
+
+    /// Превращает услышанное действие в ограниченное предложение (04.7).
+    ///
+    /// Всё, что здесь может произойти, — появление карточки в очереди и
+    /// строка `ambient.proposal` в журнале. Ни задачи, ни инструмента, ни
+    /// файла, ни сети: закрытый список эффектов проверяется до любого
+    /// эффекта, и запрещённому эффекту просто нечего вернуть.
+    ///
+    /// Превышение потолка **отбрасывает** предложение со счётчиком в трассе,
+    /// а не ставит его в очередь: иначе после часа тишины пользователь
+    /// получил бы десять карточек разом.
+    async fn propose_from_ambient(
+        &self,
+        episode_id: &str,
+        candidate: &crate::memory_extraction::Candidate,
+    ) {
+        use crate::ambient_proactivity as proactivity;
+        use evohime_local_storage::ambient_store::ProposalInsert;
+
+        let (Some(journal), Some(registry)) = (self.journal.as_ref(), self.proactivity.as_ref())
+        else {
+            return;
+        };
+        let Some(kind) = ambient_proposal_kind(candidate.kind) else {
+            return;
+        };
+        if candidate.statement.trim().is_empty() {
+            return;
+        }
+        let now_ms = task_memory::now_millis();
+        let subject_key = proactivity::subject_key(&candidate.canonical_subject);
+        let mute_key = proactivity::mute_key(kind, &subject_key);
+        let proposal_key = proactivity::proposal_key(kind, &subject_key, now_ms);
+
+        let authorized = match registry.decide(journal, kind, &mute_key, now_ms).await {
+            Ok(authorized) => authorized,
+            Err(rejection) => {
+                write_model_trace(
+                    "ambient.proposal.dropped",
+                    serde_json::json!({
+                        "episode_id": episode_id,
+                        "kind": kind.as_str(),
+                        "reason": rejection.as_str(),
+                    }),
+                );
+                return;
+            }
+        };
+        debug_assert!(
+            authorized.effect().is_proactively_allowed(),
+            "авторизованным может быть только эффект из закрытого списка"
+        );
+
+        let proposal_id = uuid::Uuid::new_v4().to_string();
+        let record = crate::ambient::proposal_record(
+            &proposal_id,
+            &proposal_key,
+            &mute_key,
+            kind,
+            &subject_key,
+            &candidate.canonical_subject,
+            &candidate.statement,
+            Some(episode_id),
+            now_ms,
+        );
+        match journal.record_ambient_proposal(&record).await {
+            Ok(ProposalInsert::Created) => {
+                // Счётчик поднимается только после появления карточки:
+                // отброшенное хранилищем предложение не должно съедать час.
+                registry.commit(journal, now_ms).await;
+                let Ok(typed_id) = evohime_listener_contract::ProposalId::new(proposal_id.clone())
+                else {
+                    return;
+                };
+                let _ = registry
+                    .publish(
+                        journal,
+                        &evohime_listener_contract::AmbientLogEvent::Proposal {
+                            proposal_id: typed_id,
+                            episode_id: evohime_listener_contract::EpisodeId::new(
+                                episode_id.to_owned(),
+                            )
+                            .ok(),
+                            kind,
+                            subject_key: subject_key.clone(),
+                            proposal_state: evohime_listener_contract::ProposalState::Proposed,
+                        },
+                    )
+                    .await;
+                write_model_trace(
+                    "ambient.proposal.created",
+                    serde_json::json!({
+                        "episode_id": episode_id,
+                        "proposal_id": proposal_id,
+                        "kind": kind.as_str(),
+                        "subject_key": subject_key.as_str(),
+                    }),
+                );
+            }
+            Ok(ProposalInsert::Duplicate {
+                proposal_id,
+                occurrences,
+            }) => {
+                // Бюджет не тратится: второй карточки не появилось.
+                write_model_trace(
+                    "ambient.proposal.duplicate",
+                    serde_json::json!({
+                        "episode_id": episode_id,
+                        "proposal_id": proposal_id,
+                        "occurrences": occurrences,
+                    }),
+                );
+            }
+            Ok(ProposalInsert::Muted) => {
+                write_model_trace(
+                    "ambient.proposal.dropped",
+                    serde_json::json!({
+                        "episode_id": episode_id,
+                        "kind": kind.as_str(),
+                        "reason": "muted",
+                    }),
+                );
+            }
+            Err(code) => {
+                write_model_trace(
+                    "ambient.proposal.dropped",
+                    serde_json::json!({
+                        "episode_id": episode_id,
+                        "kind": kind.as_str(),
+                        "reason": code.as_str(),
+                    }),
+                );
+            }
+        }
     }
 
     /// Builds the bounded extractor context of one episode.
@@ -7213,6 +7379,7 @@ impl TaskExecutor for ToolAgent {
             // Shared, not cloned: the hourly candidate/token limits and the
             // circuit breaker have to hold across concurrent tasks.
             extraction_guard: Arc::clone(&self.extraction_guard),
+            proactivity: self.proactivity.clone(),
         };
         Box::pin(async move {
             agent
@@ -7247,6 +7414,7 @@ impl TaskExecutor for ToolAgent {
             selected_model: self.selected_model.clone(),
             receipt_keys: self.receipt_keys.clone(),
             extraction_guard: Arc::clone(&self.extraction_guard),
+            proactivity: self.proactivity.clone(),
         };
         Box::pin(async move {
             agent
@@ -7275,6 +7443,7 @@ impl TaskExecutor for ToolAgent {
             // Shared, not cloned: the ambient budgets and the malformed
             // breaker are hourly and have to hold across episodes.
             extraction_guard: Arc::clone(&self.extraction_guard),
+            proactivity: self.proactivity.clone(),
         };
         Box::pin(async move {
             agent.run_ambient_memory_extraction(&episode_id).await;
@@ -10946,6 +11115,27 @@ JSON вида {\"candidates\":[...]} без markdown и пояснений. Ка
 /// честной, а очередь подтверждения дополняется ambient-кандидатами явно, а
 /// не тем, что они притворились записями текущего воркспейса.
 pub const AMBIENT_MEMORY_SCOPE_ID: &str = "ambient";
+
+/// Какие услышанные утверждения становятся ограниченным предложением (04.7).
+///
+/// Ровно те два вида, которые 04.6 отказывается делать памятью, потому что
+/// они влияют на действия: решение («сделаю X») предлагается задачей,
+/// ограничение («не забыть про X») — неисполняемым напоминанием. Всё
+/// остальное остаётся кандидатом в память и предложением не становится:
+/// предпочтение или факт не требуют действия.
+pub fn ambient_proposal_kind(
+    kind: crate::memory_extraction::MemoryKind,
+) -> Option<evohime_listener_contract::ProposalKind> {
+    match kind {
+        crate::memory_extraction::MemoryKind::Decision => {
+            Some(evohime_listener_contract::ProposalKind::Suggestion)
+        }
+        crate::memory_extraction::MemoryKind::Constraint => {
+            Some(evohime_listener_contract::ProposalKind::Reminder)
+        }
+        _ => None,
+    }
+}
 
 /// Ambient extraction mode for this process. Отсутствие переменной — это
 /// `pending`; мусор в ней — `off`, а не молчаливое включение.

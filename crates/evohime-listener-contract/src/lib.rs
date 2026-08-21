@@ -25,7 +25,7 @@ mod proactivity;
 mod state;
 
 pub use error::{AmbientErrorCode, ContractError};
-pub use ids::{DeviceId, EngineVersion, EpisodeId, ProposalId, MAX_ID_BYTES};
+pub use ids::{DeviceId, EngineVersion, EpisodeId, ProposalId, SubjectKey, MAX_ID_BYTES};
 pub use limits::{
     AmbientLimits, MAX_DEDUP_WINDOW_MS, MAX_EPISODE_MS, MAX_FRAME_MS, MAX_UTTERANCE_MS,
     MAX_WINDOW_MS, MIN_FRAME_MS,

@@ -6,17 +6,10 @@
 
 ## С чего начинать
 
-Этап 02 Local SLM fallback и routing реализован и удалён из каталога. Его
-контракт живёт в [`../architecture.md`](../architecture.md), состояние — в
-[`../current-state.md`](../current-state.md). Следующим независимым
-направлением остаётся план 03.
-
-План Local Agentic RAG реализован целиком и удалён из каталога: его контракт
-живёт в [`../architecture.md`](../architecture.md), состояние — в
-[`../current-state.md`](../current-state.md). Вместе с ним снялись блокирующие
-зависимости этапов бывшего плана 04 (теперь 03), а оставшиеся планы
-перенумерованы подряд с 01, как того требует правило нумерации. Брать их можно
-в порядке номеров.
+Планы 01–04 реализованы целиком и удалены из каталога: их контракты живут в
+[`../architecture.md`](../architecture.md), подтверждённое состояние — в
+[`../current-state.md`](../current-state.md). Единственный незавершённый план —
+05 Provenance и реконструируемость model request; начинать надо с этапа 05.1.
 
 ## Правило нумерации
 
@@ -41,14 +34,10 @@
 | План | Обзор | Блокирующие зависимости |
 | --- | --- | --- |
 | 03 Специализированные child workflows | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
-| 04 Постоянное слушание и ambient-память | [обзор](04-0-ambient-listening.md) | — |
+| 04 Постоянное слушание и ambient-память | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
 | 05 Provenance и реконструируемость model request | [обзор](05-0-model-request-provenance.md) | — |
 
 ```text
-04.1 контракт (реализован) ── 04.2 хранение (реализован) ──
-04.3 листенер (реализован) ── 04.4 движок (реализован) ── 04.5 UI (реализован) ──
-04.6 память ── 04.7 проактивность  (независимый путь)
-
 05.1 контракт ── 05.2 хранение ── 05.3 интеграция ─┬── 05.4 evidence ─┬── 05.6 shadowing
                                                    │                  │
                                                    │                  └── 05.8 удаление и retention
@@ -57,15 +46,9 @@
                                                    └── 05.7 recovery  (независимый путь)
 ```
 
-План 04 опирается только на уже реализованные Memory Extraction, permissions,
-desktop IPC, local storage и supervisor, поэтому блокирующих зависимостей от
-01–03 у него нет. Единственная связь с планом 01 — receipts на проактивные
-эффекты — объявлена опциональной с описанной деградацией в этапе 04.7.
-
 План 05 опирается только на уже реализованные model gateway/routing, Context
 Budget Manager, SQLite persistence, signed receipts и recovery foundation, а
-значит блокирующих зависимостей у него тоже нет: незавершённые этапы 04 его не
-держат. Ambient и scheduled model calls при их появлении подключаются к общему
+значит блокирующих зависимостей у него тоже нет. Ambient и scheduled model calls при их появлении подключаются к общему
 provenance pipeline новым `request_kind`, а не отдельным механизмом.
 
 Внутри плана 05 три обратные связи объявлены опциональными с описанной
@@ -82,8 +65,8 @@ provenance pipeline новым `request_kind`, а не отдельным мех
 а контракт — в [`../architecture.md`](../architecture.md).
 
 Так уже удалены планы Memory Extraction (коммиты `0d67554`, `4b376c6`), Context
-Budget Manager, Local Agentic RAG и план 01 Signed hash-chain receipts
-целиком (этапы 01.1 Canonical contract, 01.2 Key lifecycle,
+Budget Manager, Local Agentic RAG, план 04 Постоянное слушание и ambient-память
+и план 01 Signed hash-chain receipts целиком (этапы 01.1 Canonical contract, 01.2 Key lifecycle,
 01.3 Runtime integration, 01.4 Chain storage и export). Их контракты живут в
 [`../architecture.md`](../architecture.md), подтверждённое состояние — в
 [`../current-state.md`](../current-state.md),
@@ -101,7 +84,8 @@ receipts_v1, signed checkpoints, retention/compaction, verified_pruned,
 chain-aware offline verifier, ListReceipts/VerifyReceipts/ExportReceipts IPC).
 Планы 02 и 03 тоже реализованы целиком и удалены из каталога по правилу выше,
 поэтому упоминания «следующий незавершённый этап — 02.1» здесь больше нет.
-Незавершёнными остаются этапы 04.6–04.7 и весь план 05.
+План 04 реализован целиком (этапы 04.1–04.7) и удалён из каталога по тому же
+правилу. Незавершённым остаётся весь план 05.
 
 ## Что здесь не хранится
 

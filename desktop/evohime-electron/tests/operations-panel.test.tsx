@@ -34,6 +34,32 @@ function metadata(id: string, overrides: Record<string, unknown> = {}) {
   }
 }
 
+/** Одна карточка предложения ровно в том виде, в каком её отдаёт ядро. */
+function proposal(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    proposal_id: id,
+    kind: 'reminder',
+    subject: 'хлеб',
+    title: 'Напомнить купить хлеб',
+    source_episode_id: 'ep-1',
+    created_at_ms: 1_770_000_000_000,
+    expires_at_ms: 1_770_086_400_000,
+    occurrences: 1,
+    state: 'proposed',
+    ...overrides
+  }
+}
+
+function proposalList(proposals: Array<Record<string, unknown>>) {
+  return event('ambient.proposals', {
+    proposals,
+    max_per_hour: 3,
+    max_per_day: 10,
+    min_interval_ms: 600_000,
+    error_code: ''
+  })
+}
+
 beforeEach(() => {
   calls.length = 0
   const api: EvoHimeApiV1 = {
@@ -221,5 +247,94 @@ describe('operations panel', () => {
       newId: 'new-1',
       reason: 'user_choice'
     })
+  })
+
+  /**
+   * Карточка приходит отдельным списком, а не подмешивается в `memory.pending`:
+   * это разные очереди с разными решениями.
+   */
+  it('shows a heard proposal as a card with the ceiling spelled out', async () => {
+    render(<OperationsPanel connection="connected" events={[proposalList([proposal('p-1')])]} />)
+    await waitFor(() => {
+      expect(screen.getByText('Напомнить купить хлеб')).toBeTruthy()
+    })
+    expect(screen.getByText(/не больше 3 в час и 10 в сутки/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Напомнить' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Больше не предлагать такое' })).toBeTruthy()
+  })
+
+  /**
+   * Повтор не плодит карточки: одна строка со счётчиком, а не две одинаковые.
+   */
+  it('renders a repeated proposal once, with its counter', async () => {
+    render(
+      <OperationsPanel
+        connection="connected"
+        events={[proposalList([proposal('p-1', { occurrences: 3 })])]}
+      />
+    )
+    await waitFor(() => {
+      expect(screen.getByText(/упомянуто 3 раза/)).toBeTruthy()
+    })
+    expect(screen.getAllByText(/Напомнить купить хлеб/)).toHaveLength(1)
+  })
+
+  /**
+   * Каждое решение уходит в ядро с ключом идемпотентности: без него двойной
+   * клик по карточке породил бы две задачи.
+   */
+  it('sends every decision with an idempotency key and the mute flag', async () => {
+    render(<OperationsPanel connection="connected" events={[proposalList([proposal('p-1')])]} />)
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Напомнить' })).toBeTruthy()
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Напомнить' }))
+    await waitFor(() => {
+      expect(calls.some((call) => call.command === 'ambient.resolveProposal')).toBe(true)
+    })
+    const decision = calls.find((call) => call.command === 'ambient.resolveProposal')
+    expect(decision?.payload).toMatchObject({
+      proposalId: 'p-1',
+      accepted: true,
+      mute: false
+    })
+    expect(
+      typeof (decision?.payload as { idempotencyKey?: string }).idempotencyKey === 'string' &&
+        (decision?.payload as { idempotencyKey: string }).idempotencyKey.length > 0
+    ).toBe(true)
+  })
+
+  it('sends the mute flag when the user asks not to be offered this again', async () => {
+    render(<OperationsPanel connection="connected" events={[proposalList([proposal('p-1')])]} />)
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Больше не предлагать такое' })).toBeTruthy()
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Больше не предлагать такое' }))
+    await waitFor(() => {
+      expect(calls.some((call) => call.command === 'ambient.resolveProposal')).toBe(true)
+    })
+    expect(calls.find((call) => call.command === 'ambient.resolveProposal')?.payload).toMatchObject({
+      accepted: false,
+      mute: true
+    })
+  })
+
+  /** Решённое и просроченное в очереди не висит. */
+  it('never shows a resolved or expired proposal as waiting', async () => {
+    render(
+      <OperationsPanel
+        connection="connected"
+        events={[
+          proposalList([
+            proposal('p-accepted', { state: 'accepted' }),
+            proposal('p-expired', { state: 'expired', title: 'Старое предложение' })
+          ])
+        ]}
+      />
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Предложений нет: Ева ничего не предлагает.')).toBeTruthy()
+    })
+    expect(screen.queryByText('Старое предложение')).toBeNull()
   })
 })

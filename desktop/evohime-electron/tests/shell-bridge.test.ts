@@ -811,14 +811,39 @@ describe('ambient listening bridge', () => {
     invoke('ambient.listEpisodes', { limit: 10 })
     invoke('ambient.getEpisode', { episodeId: 'ep-1' })
     invoke('ambient.getPolicy', {})
-    invoke('ambient.resolveProposal', { proposalId: 'prop-1', accepted: true })
+    invoke('ambient.listProposals', { limit: 25 })
+    invoke('ambient.resolveProposal', {
+      proposalId: 'prop-1',
+      accepted: true,
+      idempotencyKey: 'idem-1'
+    })
     expect(sent).toEqual([
       { getAmbientStatus: {} },
       { listAmbientEpisodes: { sinceMs: 0, limit: 10, cursor: '' } },
       { getAmbientEpisode: { episodeId: 'ep-1' } },
       { getAmbientPolicy: {} },
-      { resolveAmbientProposal: { proposalId: 'prop-1', accepted: true } }
+      { listAmbientProposals: { limit: 25 } },
+      {
+        resolveAmbientProposal: {
+          proposalId: 'prop-1',
+          accepted: true,
+          idempotencyKey: 'idem-1',
+          mute: false
+        }
+      }
     ])
+  })
+
+  /**
+   * Принятие создаёт задачу, поэтому запрос без ключа идемпотентности не
+   * должен доходить до ядра вовсе: двойной клик породил бы две задачи.
+   */
+  it('refuses a proposal decision without an idempotency key', () => {
+    expect(invoke('ambient.resolveProposal', { proposalId: 'prop-1', accepted: true })).toMatchObject({
+      ok: false,
+      code: 'invalid-payload'
+    })
+    expect(sent).toHaveLength(0)
   })
 
   /** Доступность хоткея знает только main; ядру этот вопрос не задаётся. */

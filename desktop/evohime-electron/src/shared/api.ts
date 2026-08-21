@@ -280,6 +280,67 @@ export interface AmbientPolicy {
   readonly retention_days: number
 }
 
+/** Что предложение сделает, если его принять. */
+export type AmbientProposalKind = 'suggestion' | 'reminder'
+
+export type AmbientProposalState = 'proposed' | 'accepted' | 'declined' | 'muted' | 'expired'
+
+/**
+ * Одна карточка ограниченного предложения (этап 04.7).
+ *
+ * Человекочитаемый `title` приходит только командой `ambient.listProposals`:
+ * durable-событие `ambient.proposal` его не несёт — по той же причине, по
+ * которой `memory.pending` не несёт `statement`.
+ */
+export interface AmbientProposal {
+  readonly proposal_id: string
+  readonly kind: AmbientProposalKind
+  readonly subject: string
+  readonly title: string
+  readonly source_episode_id: string
+  readonly created_at_ms: number
+  readonly expires_at_ms: number
+  /** Сколько раз это предложили. Повтор поднимает счётчик, а не плодит карточки. */
+  readonly occurrences: number
+  readonly state: AmbientProposalState
+}
+
+/**
+ * Список карточек и потолок проактивности.
+ *
+ * Потолок неизменяем: оболочка его показывает, но поднять не может — это
+ * снимок контракта 04.1, а не настройка.
+ */
+export interface AmbientProposalList {
+  readonly proposals: readonly AmbientProposal[]
+  readonly max_per_hour: number
+  readonly max_per_day: number
+  readonly min_interval_ms: number
+  readonly error_code: string
+}
+
+/** Ответ на решение по карточке. */
+export interface AmbientProposalResolution {
+  readonly applied: boolean
+  readonly state: AmbientProposalState | ''
+  readonly task_id: string
+  readonly error_code: string
+}
+
+/**
+ * Полезная нагрузка durable-события `ambient.proposal`.
+ *
+ * Ни текста карточки, ни темы человеческими словами здесь нет: тема сведена к
+ * bounded-токену `subject_key`.
+ */
+export interface AmbientProposalEvent {
+  readonly proposal_id: string
+  readonly episode_id: string | null
+  readonly kind: AmbientProposalKind
+  readonly subject_key: string
+  readonly proposal_state: AmbientProposalState
+}
+
 /** Доступен ли глобальный хоткей паузы, и почему нет. */
 export interface AmbientHotkeyStatus {
   readonly combination: string
@@ -385,6 +446,7 @@ export const RENDERER_COMMANDS = [
   'ambient.getPolicy',
   'ambient.savePolicy',
   'ambient.resolveProposal',
+  'ambient.listProposals',
   // Не команда ядра: доступность глобального хоткея знает только main, и
   // спросить её больше негде. Без этого ответа панель молча изображала бы
   // работающую третью точку входа.
@@ -576,7 +638,18 @@ export interface CommandPayloads {
     windowTitleBlocklist: readonly string[]
     retentionDays: number
   }
-  'ambient.resolveProposal': { proposalId: string; accepted: boolean }
+  /**
+   * Решение по карточке. `idempotencyKey` обязателен: принятие создаёт задачу,
+   * и без ключа двойной клик породил бы две. `mute` — третий исход помимо
+   * «принять» и «отклонить»: больше не предлагать такое.
+   */
+  'ambient.resolveProposal': {
+    proposalId: string
+    accepted: boolean
+    idempotencyKey: string
+    mute?: boolean
+  }
+  'ambient.listProposals': { limit?: number }
   'ambient.hotkeyStatus': Record<string, never>
 }
 
@@ -680,7 +753,8 @@ export interface CommandResults {
    * Ambient-команды отвечают отдельным Core-событием (`ambient.listening`,
    * `ambient.status`, `ambient.episodes`, `ambient.episode`,
    * `ambient.deleted`, `ambient.forgotten`, `ambient.policy`,
-   * `ambient.policy_saved`, `ambient.proposal`); здесь — только факт
+   * `ambient.policy_saved`, `ambient.proposal_resolved`, `ambient.proposals`);
+   * здесь — только факт
    * постановки команды в очередь.
    */
   'ambient.setListening': { accepted: boolean }
@@ -692,6 +766,7 @@ export interface CommandResults {
   'ambient.getPolicy': { accepted: boolean }
   'ambient.savePolicy': { accepted: boolean }
   'ambient.resolveProposal': { accepted: boolean }
+  'ambient.listProposals': { accepted: boolean }
   'ambient.hotkeyStatus': AmbientHotkeyStatus
 }
 

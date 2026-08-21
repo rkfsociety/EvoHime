@@ -9,11 +9,18 @@ use std::path::{Path, PathBuf};
 
 use evohime_listener_contract::{
     AmbientErrorCode, AmbientLogEvent, AmbientPolicy, ExtractionState, ListeningReason,
-    ListeningState, ProposalKind, DEFAULT_RETENTION_DAYS, MAX_DEDUP_WINDOW_MS, MAX_RETENTION_DAYS,
+    ListeningState, ProactivityBudget, ProposalKind, ProposalState, SubjectKey,
+    DEFAULT_RETENTION_DAYS, MAX_DEDUP_WINDOW_MS, MAX_RETENTION_DAYS,
 };
 use evohime_local_storage::ambient_store::{
-    AmbientDeletion, AmbientEpisodeRecord, AmbientPurge, AmbientStoreError, AmbientStoreSql,
-    AmbientTombstoneRecord, AmbientUtteranceRecord, REASON_USER_REQUEST, SPEAKER_UNVERIFIED,
+    AmbientDeletion, AmbientEpisodeRecord, AmbientProposalRecord, AmbientPurge, AmbientStoreError,
+    AmbientStoreSql, AmbientTombstoneRecord, AmbientUtteranceRecord, ProactivityCountersRow,
+    ProposalInsert, REASON_USER_REQUEST, SPEAKER_UNVERIFIED,
+};
+
+use crate::ambient_proactivity::{
+    decide_proposal, effect_of, AuthorizedEffect, ProposalRejection, RollingCounters,
+    PROPOSAL_LIFETIME_MS,
 };
 
 /// Имя файла политики в data dir.
@@ -275,6 +282,13 @@ fn harden(_: &Path) -> Result<(), String> {
 pub fn event_task_id(event: &AmbientLogEvent) -> String {
     match event {
         AmbientLogEvent::Transcript { episode_id, .. } => episode_id.to_string(),
+        // Предложение адресуется своему эпизоду по той же причине: удаление
+        // источника обязано унести и строку `ambient.proposal`, а ищется она
+        // по индексу `idx_events_task_sequence`, а не сканом payload.
+        AmbientLogEvent::Proposal {
+            episode_id: Some(episode_id),
+            ..
+        } => episode_id.to_string(),
         _ => SESSION_TASK_ID.to_owned(),
     }
 }
@@ -342,10 +356,6 @@ pub enum ListenerControl {
 struct AmbientRegistryInner {
     status: AmbientStatusSnapshot,
     control: Option<tokio::sync::mpsc::Sender<ListenerControl>>,
-    /// Предложения, ожидающие решения пользователя. Наполняется этапом 04.7;
-    /// до него реестр пуст, и `resolve_proposal` честно отвечает «нет
-    /// такого», а не «применено».
-    proposals: std::collections::HashMap<String, ProposalKind>,
 }
 
 /// Реестр состояния постоянного слушания.
@@ -448,16 +458,222 @@ impl AmbientListeningRegistry {
     pub async fn engine_ready(&self) -> bool {
         self.inner.lock().await.status.engine_ready
     }
+}
 
-    /// Регистрирует предложение, ожидающее решения (этап 04.7).
-    pub async fn register_proposal(&self, proposal_id: String, kind: ProposalKind) {
-        self.inner.lock().await.proposals.insert(proposal_id, kind);
+/// Минуты, прошедшие с полуночи по локальным часам.
+///
+/// Тихие часы пользователь задаёт по своим часам, а не по UTC: окно «с 23:00
+/// до 07:00» в UTC означало бы у него совсем другое время суток.
+pub fn local_minute_of_day() -> u32 {
+    use chrono::Timelike;
+    let now = chrono::Local::now();
+    now.hour() * 60 + now.minute()
+}
+
+/// Реестр ограниченной проактивности (план 04.7).
+///
+/// По тому же образцу, что [`AmbientListeningRegistry`]: общего `CoreState` в
+/// проекте нет, поэтому счётчики окна живут в собственном клонируемом реестре.
+/// Потолок [`ProactivityBudget`] неизменяем и приходит из контракта 04.1 — его
+/// нельзя поднять в рантайме; меняются только счётчики, и они переживают
+/// рестарт строкой таблицы v26.
+#[derive(Clone, Default)]
+pub struct AmbientProactivityRegistry {
+    inner: std::sync::Arc<tokio::sync::Mutex<ProactivityInner>>,
+}
+
+struct ProactivityInner {
+    budget: ProactivityBudget,
+    counters: RollingCounters,
+    muted: std::collections::HashSet<String>,
+    loaded: bool,
+    data_dir: Option<PathBuf>,
+    coordinator: Option<crate::TaskCoordinator>,
+}
+
+impl Default for ProactivityInner {
+    fn default() -> Self {
+        Self {
+            budget: ProactivityBudget::DEFAULT,
+            counters: RollingCounters::default(),
+            muted: std::collections::HashSet::new(),
+            loaded: false,
+            data_dir: None,
+            coordinator: None,
+        }
+    }
+}
+
+impl AmbientProactivityRegistry {
+    /// Каталог политики. Как и у моста, `None` означает продовый путь из
+    /// окружения: поле существует ради тестов, чтобы соседние тесты не
+    /// зависели друг от друга через переменную процесса.
+    pub async fn set_data_dir(&self, directory: PathBuf) {
+        self.inner.lock().await.data_dir = Some(directory);
     }
 
-    /// Снимает предложение с ожидания. `None` означает «такого предложения
-    /// нет или оно уже решено» — и это отвечается честно, а не «применено».
-    pub async fn resolve_proposal(&self, proposal_id: &str) -> Option<ProposalKind> {
-        self.inner.lock().await.proposals.remove(proposal_id)
+    /// Подключает координатор, чтобы записанное предложение будило открытое
+    /// окно. Без этого сигнала `push_journal_tail` узнал бы о карточке только
+    /// со следующим событием задачи.
+    pub async fn attach_coordinator(&self, coordinator: crate::TaskCoordinator) {
+        self.inner.lock().await.coordinator = Some(coordinator);
+    }
+
+    pub async fn budget(&self) -> ProactivityBudget {
+        self.inner.lock().await.budget
+    }
+
+    async fn data_dir(&self) -> PathBuf {
+        self.inner
+            .lock()
+            .await
+            .data_dir
+            .clone()
+            .unwrap_or_else(data_dir)
+    }
+
+    /// Поднимает счётчики и mute-ключи из базы ровно один раз.
+    ///
+    /// Сбой чтения не открывает проактивность: реестр остаётся незагруженным
+    /// и попробует снова, а не считает, что бюджет пуст и mute-ключей нет.
+    pub async fn ensure_loaded(&self, journal: &crate::EventJournal) {
+        if self.inner.lock().await.loaded {
+            return;
+        }
+        let counters = journal.load_ambient_counters().await;
+        let mutes = journal.list_ambient_mute_keys().await;
+        let (Ok(counters), Ok(mutes)) = (counters, mutes) else {
+            return;
+        };
+        let mut guard = self.inner.lock().await;
+        if let Some(row) = counters {
+            guard.counters = RollingCounters {
+                hour_started_at_ms: row.hour_started_at_ms.max(0) as u64,
+                hour_count: row.hour_count.max(0) as u32,
+                day_started_at_ms: row.day_started_at_ms.max(0) as u64,
+                day_count: row.day_count.max(0) as u32,
+                last_proposed_at_ms: row.last_proposed_at_ms.map(|value| value.max(0) as u64),
+            };
+        }
+        guard.muted = mutes.into_iter().collect();
+        guard.loaded = true;
+    }
+
+    /// Полное решение «предлагать ли сейчас».
+    ///
+    /// Счётчик **не** увеличивается здесь: он растёт только после того, как
+    /// карточка действительно появилась ([`Self::commit`]). Иначе отброшенное
+    /// хранилищем предложение съедало бы часовой потолок.
+    pub async fn decide(
+        &self,
+        journal: &crate::EventJournal,
+        kind: ProposalKind,
+        mute_key: &str,
+        now_ms: u64,
+    ) -> Result<AuthorizedEffect, ProposalRejection> {
+        self.ensure_loaded(journal).await;
+        let policy = load_policy(&self.data_dir().await);
+        let guard = self.inner.lock().await;
+        decide_proposal(
+            effect_of(kind),
+            guard.muted.contains(mute_key),
+            &policy,
+            &guard.budget,
+            guard.counters,
+            now_ms,
+            local_minute_of_day(),
+        )
+    }
+
+    /// Учитывает показанную карточку и сохраняет окно.
+    pub async fn commit(&self, journal: &crate::EventJournal, now_ms: u64) {
+        let counters = {
+            let mut guard = self.inner.lock().await;
+            guard.counters = guard.counters.record(now_ms);
+            guard.counters
+        };
+        let _ = journal
+            .save_ambient_counters(ProactivityCountersRow {
+                hour_started_at_ms: i64::try_from(counters.hour_started_at_ms).unwrap_or(i64::MAX),
+                hour_count: i64::from(counters.hour_count),
+                day_started_at_ms: i64::try_from(counters.day_started_at_ms).unwrap_or(i64::MAX),
+                day_count: i64::from(counters.day_count),
+                last_proposed_at_ms: counters
+                    .last_proposed_at_ms
+                    .map(|value| i64::try_from(value).unwrap_or(i64::MAX)),
+            })
+            .await;
+    }
+
+    /// «Больше не предлагать такое». Ключ без времени, поэтому mute переживает
+    /// смену временной корзины, а строка таблицы — рестарт Core.
+    pub async fn mute(
+        &self,
+        journal: &crate::EventJournal,
+        mute_key: &str,
+        kind: ProposalKind,
+        subject_key: &str,
+        now_ms: u64,
+    ) -> Result<(), AmbientErrorCode> {
+        journal
+            .mute_ambient_subject(mute_key, kind, subject_key, now_ms)
+            .await?;
+        self.inner.lock().await.muted.insert(mute_key.to_owned());
+        Ok(())
+    }
+
+    pub async fn is_muted(&self, journal: &crate::EventJournal, mute_key: &str) -> bool {
+        self.ensure_loaded(journal).await;
+        self.inner.lock().await.muted.contains(mute_key)
+    }
+
+    /// Публикует ambient-событие и будит push журнала.
+    pub async fn publish(
+        &self,
+        journal: &crate::EventJournal,
+        event: &AmbientLogEvent,
+    ) -> Result<i64, AmbientErrorCode> {
+        let sequence = journal.append_ambient_event(event).await?;
+        if let Some(coordinator) = self.inner.lock().await.coordinator.as_ref() {
+            coordinator.notify_journalled(sequence.max(0) as u64);
+        }
+        Ok(sequence)
+    }
+}
+
+/// Собирает строку предложения для хранилища.
+///
+/// Срок жизни считает Core: 24 часа молчания — это ответ «нет».
+#[allow(clippy::too_many_arguments)]
+pub fn proposal_record(
+    proposal_id: &str,
+    proposal_key: &str,
+    mute_key: &str,
+    kind: ProposalKind,
+    subject_key: &SubjectKey,
+    subject: &str,
+    title: &str,
+    source_episode_id: Option<&str>,
+    now_ms: u64,
+) -> AmbientProposalRecord {
+    AmbientProposalRecord {
+        proposal_id: proposal_id.to_owned(),
+        proposal_key: proposal_key.to_owned(),
+        mute_key: mute_key.to_owned(),
+        kind,
+        subject_key: subject_key.as_str().to_owned(),
+        subject: subject.to_owned(),
+        title: title.to_owned(),
+        source_episode_id: source_episode_id.map(str::to_owned),
+        source_deleted_at: None,
+        source_deleted_reason: None,
+        created_at: timestamp_ms(now_ms),
+        updated_at: timestamp_ms(now_ms),
+        expires_at: timestamp_ms(now_ms.saturating_add(PROPOSAL_LIFETIME_MS)),
+        occurrences: 1,
+        state: ProposalState::Proposed,
+        accepted_task_id: None,
+        idempotency_key: None,
     }
 }
 
@@ -683,6 +899,120 @@ impl crate::EventJournal {
             &cutoff_at(now_ms, EVENT_RETENTION_DAYS),
         )
         .map_err(|error| store_error_code(&error))
+    }
+
+    // ------------------------------------------------------------------
+    // Ограниченная проактивность (план 04.7).
+    // ------------------------------------------------------------------
+
+    /// Записывает предложение. `expires_at` считается здесь, а не вызывающим:
+    /// срок жизни карточки — политика Core, ровно как срок метаданных эпизода.
+    pub async fn record_ambient_proposal(
+        &self,
+        record: &AmbientProposalRecord,
+    ) -> Result<ProposalInsert, AmbientErrorCode> {
+        let database = self.database.lock().await;
+        AmbientStoreSql::record_proposal(database.connection(), record)
+            .map_err(|error| store_error_code(&error))
+    }
+
+    pub async fn get_ambient_proposal(
+        &self,
+        proposal_id: &str,
+    ) -> Result<Option<AmbientProposalRecord>, AmbientErrorCode> {
+        let database = self.database.lock().await;
+        AmbientStoreSql::get_proposal(database.connection(), proposal_id)
+            .map_err(|error| store_error_code(&error))
+    }
+
+    pub async fn find_ambient_proposal_by_idempotency(
+        &self,
+        idempotency_key: &str,
+    ) -> Result<Option<AmbientProposalRecord>, AmbientErrorCode> {
+        let database = self.database.lock().await;
+        AmbientStoreSql::find_proposal_by_idempotency(database.connection(), idempotency_key)
+            .map_err(|error| store_error_code(&error))
+    }
+
+    pub async fn list_open_ambient_proposals(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<AmbientProposalRecord>, AmbientErrorCode> {
+        let database = self.database.lock().await;
+        AmbientStoreSql::list_open_proposals(database.connection(), limit)
+            .map_err(|error| store_error_code(&error))
+    }
+
+    /// Переводит предложение в терминальное состояние. `Ok(false)` — «уже
+    /// решено или такого нет».
+    pub async fn resolve_ambient_proposal_row(
+        &self,
+        proposal_id: &str,
+        state: ProposalState,
+        now_ms: u64,
+        accepted_task_id: Option<&str>,
+        idempotency_key: Option<&str>,
+    ) -> Result<bool, AmbientErrorCode> {
+        let database = self.database.lock().await;
+        AmbientStoreSql::resolve_proposal(
+            database.connection(),
+            proposal_id,
+            state,
+            &timestamp_ms(now_ms),
+            accepted_task_id,
+            idempotency_key,
+        )
+        .map_err(|error| store_error_code(&error))
+    }
+
+    pub async fn mute_ambient_subject(
+        &self,
+        mute_key: &str,
+        kind: ProposalKind,
+        subject_key: &str,
+        now_ms: u64,
+    ) -> Result<(), AmbientErrorCode> {
+        let database = self.database.lock().await;
+        AmbientStoreSql::mute_subject(
+            database.connection(),
+            mute_key,
+            kind,
+            subject_key,
+            &timestamp_ms(now_ms),
+        )
+        .map_err(|error| store_error_code(&error))
+    }
+
+    pub async fn list_ambient_mute_keys(&self) -> Result<Vec<String>, AmbientErrorCode> {
+        let database = self.database.lock().await;
+        AmbientStoreSql::list_mute_keys(database.connection())
+            .map_err(|error| store_error_code(&error))
+    }
+
+    pub async fn expire_stale_ambient_proposals(
+        &self,
+        now_ms: u64,
+    ) -> Result<usize, AmbientErrorCode> {
+        let database = self.database.lock().await;
+        AmbientStoreSql::expire_stale_proposals(database.connection(), &timestamp_ms(now_ms))
+            .map_err(|error| store_error_code(&error))
+    }
+
+    pub async fn load_ambient_counters(
+        &self,
+    ) -> Result<Option<ProactivityCountersRow>, AmbientErrorCode> {
+        let database = self.database.lock().await;
+        AmbientStoreSql::load_counters(database.connection())
+            .map_err(|error| store_error_code(&error))
+    }
+
+    pub async fn save_ambient_counters(
+        &self,
+        row: ProactivityCountersRow,
+    ) -> Result<(), AmbientErrorCode> {
+        let database = self.database.lock().await;
+        AmbientStoreSql::save_counters(database.connection(), row)
+            .map_err(|error| store_error_code(&error))
     }
 
     /// Публикует ambient-событие в durable journal.
@@ -945,6 +1275,229 @@ mod tests {
                 .await,
             Err(AmbientErrorCode::InvalidArgument)
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Ограниченная проактивность (план 04.7).
+    // ------------------------------------------------------------------
+
+    async fn seeded_registry(
+        journal: &crate::EventJournal,
+        directory: &Path,
+    ) -> AmbientProactivityRegistry {
+        // Явная политика без пауз и тихих часов: тест про потолок не должен
+        // зависеть от того, который сейчас час у машины.
+        save_policy(
+            directory,
+            &AmbientPolicy {
+                paused: false,
+                quiet_hours: Vec::new(),
+                process_blocklist: Vec::new(),
+                window_title_blocklist: Vec::new(),
+                retention_days: DEFAULT_RETENTION_DAYS,
+            },
+        )
+        .expect("policy saves");
+        let registry = AmbientProactivityRegistry::default();
+        registry.set_data_dir(directory.to_path_buf()).await;
+        registry.ensure_loaded(journal).await;
+        registry
+    }
+
+    fn seed_proposal_record(
+        proposal_id: &str,
+        subject: &str,
+        episode_id: Option<&str>,
+        now_ms: u64,
+    ) -> AmbientProposalRecord {
+        let kind = ProposalKind::Reminder;
+        let subject_key = crate::ambient_proactivity::subject_key(subject);
+        proposal_record(
+            proposal_id,
+            &crate::ambient_proactivity::proposal_key(kind, &subject_key, now_ms),
+            &crate::ambient_proactivity::mute_key(kind, &subject_key),
+            kind,
+            &subject_key,
+            subject,
+            "Напомнить купить хлеб",
+            episode_id,
+            now_ms,
+        )
+    }
+
+    /// Часовой потолок держится и после рестарта: счётчик живёт строкой
+    /// таблицы, а не полем реестра в памяти процесса. Иначе перезапуск Core
+    /// обнулял бы потолок и делал его необязательным.
+    #[tokio::test]
+    async fn the_hourly_cap_survives_a_restart_of_the_registry() {
+        let (journal, directory) = temporary_journal("ambient-proactivity-cap");
+        let registry = seeded_registry(&journal, directory.path()).await;
+        let mut now = NOW_MS;
+        for index in 0..3 {
+            let subject = format!("тема {index}");
+            let key = crate::ambient_proactivity::mute_key(
+                ProposalKind::Reminder,
+                &crate::ambient_proactivity::subject_key(&subject),
+            );
+            registry
+                .decide(&journal, ProposalKind::Reminder, &key, now)
+                .await
+                .expect("три предложения за час укладываются в потолок");
+            registry.commit(&journal, now).await;
+            now += 11 * 60 * 1000;
+        }
+        // Свежий реестр — тот же, что после перезапуска процесса.
+        let restarted = AmbientProactivityRegistry::default();
+        restarted.set_data_dir(directory.path().to_path_buf()).await;
+        restarted.ensure_loaded(&journal).await;
+        let key = crate::ambient_proactivity::mute_key(
+            ProposalKind::Reminder,
+            &crate::ambient_proactivity::subject_key("четвёртая тема"),
+        );
+        assert_eq!(
+            restarted
+                .decide(&journal, ProposalKind::Reminder, &key, now)
+                .await,
+            Err(crate::ambient_proactivity::ProposalRejection::Denied(
+                evohime_listener_contract::ProactivityDenial::HourlyCapReached
+            )),
+            "перезапуск не обнуляет часовой потолок"
+        );
+        // И отброшенное не копится: через час доступен ровно один слот, а не
+        // отложенная очередь.
+        assert!(restarted
+            .decide(
+                &journal,
+                ProposalKind::Reminder,
+                &key,
+                NOW_MS + 2 * 60 * 60 * 1000
+            )
+            .await
+            .is_ok());
+    }
+
+    /// Удаление эпизода-источника переводит его предложения в `expired` с
+    /// причиной `source_deleted` и уносит строку `ambient.proposal` из
+    /// журнала — тем же механизмом, что и остальные ambient-строки.
+    #[tokio::test]
+    async fn deleting_the_source_episode_expires_its_proposal_and_its_journal_row() {
+        let (journal, _directory) = temporary_journal("ambient-proposal-source");
+        seed_episode(&journal, "ep-1", NOW_MS, "надо не забыть про хлеб").await;
+        let record = seed_proposal_record("prop-1", "хлеб", Some("ep-1"), NOW_MS);
+        assert_eq!(
+            journal.record_ambient_proposal(&record).await,
+            Ok(ProposalInsert::Created)
+        );
+        journal
+            .append_ambient_event(&AmbientLogEvent::Proposal {
+                proposal_id: evohime_listener_contract::ProposalId::new("prop-1").unwrap(),
+                episode_id: Some(evohime_listener_contract::EpisodeId::new("ep-1").unwrap()),
+                kind: ProposalKind::Reminder,
+                subject_key: SubjectKey::new(record.subject_key.clone()).unwrap(),
+                proposal_state: ProposalState::Proposed,
+            })
+            .await
+            .expect("событие публикуется");
+
+        let deletion = journal
+            .delete_ambient_episode("ep-1", NOW_MS + 1_000)
+            .await
+            .expect("эпизод удаляется");
+        assert_eq!(deletion.proposals_expired, 1);
+
+        let stored = journal
+            .get_ambient_proposal("prop-1")
+            .await
+            .expect("чтение")
+            .expect("след предложения остаётся");
+        assert_eq!(stored.state, ProposalState::Expired);
+        assert_eq!(
+            stored.source_deleted_reason.as_deref(),
+            Some("source_deleted")
+        );
+        assert!(
+            stored.source_episode_id.is_none(),
+            "внешний ключ обнуляется, но уже после пометки"
+        );
+        assert!(journal
+            .list_open_ambient_proposals(10)
+            .await
+            .expect("чтение")
+            .is_empty());
+
+        let database = journal.database().lock().await;
+        let remaining = database.read_events_after(0, 100).expect("журнал читается");
+        assert!(
+            remaining
+                .iter()
+                .all(|event| event.event_type != "ambient.proposal"),
+            "строка ambient.proposal обязана уйти вместе с эпизодом"
+        );
+    }
+
+    /// Молчание сутки снимает карточку с ожидания на обычном retention-прогоне.
+    #[tokio::test]
+    async fn an_unanswered_proposal_expires_on_the_retention_pass() {
+        let (journal, _directory) = temporary_journal("ambient-proposal-expiry");
+        let stale = seed_proposal_record(
+            "prop-stale",
+            "хлеб",
+            None,
+            NOW_MS - 2 * crate::ambient_proactivity::PROPOSAL_LIFETIME_MS,
+        );
+        let fresh = seed_proposal_record("prop-fresh", "отчёт", None, NOW_MS);
+        journal
+            .record_ambient_proposal(&stale)
+            .await
+            .expect("запись");
+        journal
+            .record_ambient_proposal(&fresh)
+            .await
+            .expect("запись");
+
+        let purge = journal.purge_ambient(NOW_MS).await.expect("retention");
+        assert_eq!(purge.proposals_expired, 1);
+        let open = journal
+            .list_open_ambient_proposals(10)
+            .await
+            .expect("чтение");
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0].proposal_id, "prop-fresh");
+    }
+
+    /// Повтор той же темы поднимает счётчик и **не** тратит часовой потолок:
+    /// иначе разговор об одном и том же за десять минут выел бы весь бюджет.
+    #[tokio::test]
+    async fn a_duplicate_proposal_neither_creates_a_card_nor_spends_the_budget() {
+        let (journal, directory) = temporary_journal("ambient-proposal-duplicate");
+        let registry = seeded_registry(&journal, directory.path()).await;
+        let first = seed_proposal_record("prop-1", "хлеб", None, NOW_MS);
+        assert_eq!(
+            journal.record_ambient_proposal(&first).await,
+            Ok(ProposalInsert::Created)
+        );
+        registry.commit(&journal, NOW_MS).await;
+
+        let again = seed_proposal_record("prop-2", "хлеб", None, NOW_MS + 60_000);
+        assert_eq!(
+            journal.record_ambient_proposal(&again).await,
+            Ok(ProposalInsert::Duplicate {
+                proposal_id: "prop-1".to_owned(),
+                occurrences: 2,
+            })
+        );
+        let open = journal
+            .list_open_ambient_proposals(10)
+            .await
+            .expect("чтение");
+        assert_eq!(open.len(), 1, "второй карточки не появилось");
+        assert_eq!(open[0].occurrences, 2);
+        let counters = journal
+            .load_ambient_counters()
+            .await
+            .expect("чтение")
+            .expect("строка счётчиков");
+        assert_eq!(counters.hour_count, 1, "дубликат бюджета не потратил");
     }
 
     #[test]

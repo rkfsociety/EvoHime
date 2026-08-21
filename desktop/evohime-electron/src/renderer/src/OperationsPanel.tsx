@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import type { ConnectionState, CoreEvent } from '@shared/api'
+import type { AmbientProposal, AmbientProposalList, ConnectionState, CoreEvent } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 
@@ -88,6 +88,11 @@ const TRUST_LABELS: Record<string, string> = {
   ambient: 'услышано'
 }
 
+const PROPOSAL_KIND_LABELS: Record<string, string> = {
+  suggestion: 'предложенная задача',
+  reminder: 'напоминание'
+}
+
 /** Источник кандидата в фильтре очереди. */
 type SourceFilter = 'all' | 'ambient' | 'dialog'
 
@@ -121,6 +126,8 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
   const [draft, setDraft] = useState('')
   const [embeddingEnabled, setEmbeddingEnabled] = useState(false)
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
+  const [proposals, setProposals] = useState<AmbientProposalList | null>(null)
+  const [deciding, setDeciding] = useState<string | null>(null)
   const [knowledgeQuery, setKnowledgeQuery] = useState('')
 
   const connected = CONNECTED_STATES.includes(connection)
@@ -161,6 +168,12 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
     () => pending.filter((record) => record.source_trust === 'ambient').length,
     [pending]
   )
+  // Показываются только ждущие решения карточки. Решённое и просроченное ядро
+  // и так не отдаёт, но полагаться на это молча нельзя.
+  const openProposals = useMemo(
+    () => (proposals?.proposals ?? []).filter((proposal) => proposal.state === 'proposed'),
+    [proposals]
+  )
   const conflicts = useMemo(
     () => parsePayload<readonly MemoryConflict[]>(latest(events, 'memory.conflicts'), 'conflicts') ?? [],
     [events]
@@ -189,6 +202,15 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
     void api.invoke('core.getIndexStatus', { workspacePath })
   }, [api, connected, workspacePath])
 
+  // Предложения не привязаны к воркспейсу: речь у стола не принадлежит
+  // рабочему каталогу, поэтому список запрашивается отдельно от очереди
+  // памяти и не ждёт выбранной папки.
+  const refreshProposals = useCallback(async () => {
+    if (!api || !connected) return
+    const outcome = await api.invoke('ambient.listProposals', { limit: 50 })
+    if (!outcome.ok) setMessage(outcome.message)
+  }, [api, connected])
+
   const updateIndex = useCallback(async (rebuild: boolean) => {
     if (!api || !workspacePath) return
     setMessage(rebuild ? 'Полная пересборка индекса запущена…' : 'Инкрементальная индексация запущена…')
@@ -212,6 +234,24 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  const proposalListEvent = latest(events, 'ambient.proposals')
+  useEffect(() => {
+    if (!proposalListEvent) return
+    try {
+      setProposals(JSON.parse(proposalListEvent.payload) as AmbientProposalList)
+    } catch {
+      setProposals(null)
+    }
+  }, [proposalListEvent])
+
+  // Каждая durable-запись `ambient.proposal` — сигнал «список изменился», а не
+  // сам список: текста карточки в ней нет, поэтому её нельзя отрисовать, но по
+  // ней можно перечитать.
+  const proposalSignal = events.filter((event) => event.eventType === 'ambient.proposal').length
+  useEffect(() => {
+    void refreshProposals()
+  }, [refreshProposals, proposalSignal])
 
   useEffect(() => {
     const visible = new Set(visiblePending.map((record) => record.id))
@@ -270,6 +310,34 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
       refresh()
     },
     [api, refresh]
+  )
+
+  // Решение по карточке. Ключ идемпотентности считается один раз на карточку и
+  // на решение: повторный клик по той же кнопке возвращает первое решение, а
+  // не создаёт вторую задачу.
+  const decideProposal = useCallback(
+    async (proposal: AmbientProposal, choice: 'accept' | 'decline' | 'mute') => {
+      if (!api || deciding !== null) return
+      setDeciding(proposal.proposal_id)
+      const outcome = await api.invoke('ambient.resolveProposal', {
+        proposalId: proposal.proposal_id,
+        accepted: choice === 'accept',
+        mute: choice === 'mute',
+        idempotencyKey: `proposal-${proposal.proposal_id}-${choice}`
+      })
+      setMessage(
+        outcome.ok
+          ? choice === 'accept'
+            ? 'Решение отправлено в Core: запись появится в списке задач.'
+            : choice === 'mute'
+              ? 'Больше не предлагать такое: решение отправлено в Core.'
+              : 'Предложение отклонено.'
+          : outcome.message
+      )
+      setDeciding(null)
+      await refreshProposals()
+    },
+    [api, deciding, refreshProposals]
   )
 
   const resolveConflict = useCallback(
@@ -390,6 +458,57 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
       </section>
 
       {message ? <p className="empty-state">{message}</p> : null}
+
+      <section className="operations-timeline" aria-label="Предложения по услышанному">
+        <h3>Предложения по услышанному</h3>
+        <p>
+          Ева может предложить, но не может сделать. Любое из этих действий выполняется только
+          твоим кликом.
+          {proposals
+            ? ` Потолок: не больше ${proposals.max_per_hour} в час и ${proposals.max_per_day} в сутки.`
+            : ''}
+        </p>
+        {openProposals.length === 0 ? (
+          <p className="empty-state">Предложений нет: Ева ничего не предлагает.</p>
+        ) : (
+          <ol className="operations-timeline" aria-label="Карточки предложений">
+            {openProposals.map((proposal) => (
+              <li key={proposal.proposal_id}>
+                <code>{PROPOSAL_KIND_LABELS[proposal.kind] ?? proposal.kind}</code>
+                <span className="operations-badge operations-badge--ambient">услышано</span>
+                <span>
+                  {proposal.title}
+                  {proposal.occurrences > 1 ? ` · упомянуто ${proposal.occurrences} раза` : ''}
+                  {proposal.source_episode_id ? '' : ' · источник удалён'}
+                </span>
+                <div className="operations-actions">
+                  <button
+                    type="button"
+                    disabled={deciding !== null}
+                    onClick={() => void decideProposal(proposal, 'accept')}
+                  >
+                    {proposal.kind === 'reminder' ? 'Напомнить' : 'Создать задачу'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deciding !== null}
+                    onClick={() => void decideProposal(proposal, 'decline')}
+                  >
+                    Не надо
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deciding !== null}
+                    onClick={() => void decideProposal(proposal, 'mute')}
+                  >
+                    Больше не предлагать такое
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
 
       {pending.length > 0 ? (
         <>

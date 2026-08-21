@@ -979,10 +979,31 @@ function dispatch(
     case 'ambient.resolveProposal': {
       const value = asRecord(payload)
       const proposalId = asBoundedString(value['proposalId'])
-      if (proposalId === null || typeof value['accepted'] !== 'boolean') {
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      // Ключ идемпотентности обязателен и здесь, и в ядре: принятие создаёт
+      // задачу, и запрос без ключа не должен доходить до Core вовсе.
+      if (proposalId === null || idempotencyKey === null || typeof value['accepted'] !== 'boolean') {
         return failure('invalid-payload', 'Некорректное решение по предложению.')
       }
-      return accepted(client.send({ resolveAmbientProposal: { proposalId, accepted: value['accepted'] } }))
+      return accepted(
+        client.send({
+          resolveAmbientProposal: {
+            proposalId,
+            accepted: value['accepted'],
+            idempotencyKey,
+            mute: value['mute'] === true
+          }
+        })
+      )
+    }
+
+    case 'ambient.listProposals': {
+      const value = asRecord(payload)
+      const limit = value['limit'] === undefined ? 50 : asBoundedNumber(value['limit'], 200)
+      if (limit === null) {
+        return failure('invalid-payload', 'Некорректный лимит списка предложений.')
+      }
+      return accepted(client.send({ listAmbientProposals: { limit } }))
     }
 
     case 'ambient.hotkeyStatus':

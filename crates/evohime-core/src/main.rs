@@ -87,6 +87,11 @@ async fn main() {
     // One selection shared by the agent and the IPC bridge: the shell changes
     // it, the next request picks it up without a Core restart.
     let selected_model = evohime_core::SelectedModel::default();
+    // Один реестр проактивности на процесс: производитель предложений внутри
+    // агента и мост, отвечающий на клик, обязаны считать один и тот же
+    // потолок. Координатор подключается ниже — он рождается позже агента.
+    let proactivity = evohime_core::ambient::AmbientProactivityRegistry::default();
+    proactivity.set_data_dir(data_dir.clone()).await;
     let executor = model_config
         .and_then(|config| evohime_model_gateway::ModelGateway::from_config(&config).ok())
         .map(|gateway| {
@@ -99,6 +104,7 @@ async fn main() {
                 .with_journal(journal.clone())
                 .with_receipt_keys(receipt_keys.clone())
                 .with_routing_approvals(routing_approvals.clone())
+                .with_proactivity(proactivity.clone())
                 .with_selected_model(selected_model.clone()),
             ) as std::sync::Arc<dyn evohime_core::TaskExecutor>
         });
@@ -180,6 +186,7 @@ async fn main() {
     coordinator
         .attach_routing_approvals(routing_approvals)
         .await;
+    proactivity.attach_coordinator(coordinator.clone()).await;
     let bridge = evohime_core::IpcBridge::with_coordinator_and_approvals(
         journal,
         coordinator,
@@ -188,7 +195,9 @@ async fn main() {
         model_snapshot,
         gateway_config,
     )
-    .with_selected_model(selected_model);
+    .with_selected_model(selected_model)
+    .with_proactivity(proactivity)
+    .with_ambient_data_dir(data_dir.clone());
     let logger = match evohime_core::StructuredLogger::open(data_dir.join("logs/core.jsonl")) {
         Ok(logger) => std::sync::Arc::new(logger),
         Err(error) => {

@@ -1,6 +1,6 @@
 use crate::{
     error::AmbientErrorCode,
-    ids::{DeviceId, EngineVersion, EpisodeId, ProposalId},
+    ids::{DeviceId, EngineVersion, EpisodeId, ProposalId, SubjectKey},
     state::{ListeningReason, ListeningState},
 };
 use serde::{Deserialize, Serialize};
@@ -27,6 +27,7 @@ pub const ALLOWED_LOG_FIELDS: &[&str] = &[
     "trigger",
     "proposal_id",
     "kind",
+    "subject_key",
     "proposal_state",
     "code",
 ];
@@ -89,20 +90,80 @@ pub enum RetentionTrigger {
 }
 
 /// The two effects ambient proactivity is allowed to produce.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+///
+/// This is the closed list of 04.7: a card in the UI and a non-executable
+/// reminder. Running a task, calling a tool, writing a file or going to the
+/// network have no representation here, so a proactive effect outside the
+/// list is unrepresentable rather than merely forbidden.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProposalKind {
     Suggestion,
     Reminder,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+impl ProposalKind {
+    pub const ALL: [ProposalKind; 2] = [ProposalKind::Suggestion, ProposalKind::Reminder];
+
+    /// Wire and storage form; the same two spellings are the `CHECK`
+    /// constraint of `ambient_proposals.kind` in schema v26.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            ProposalKind::Suggestion => "suggestion",
+            ProposalKind::Reminder => "reminder",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.as_str() == value)
+    }
+}
+
+/// Lifecycle of one bounded proposal.
+///
+/// Five states, and `ambient_proposals.state` in schema v26 carries the same
+/// five spellings. `Muted` is terminal for this card *and* records that the
+/// subject must not be proposed again; `Expired` is what an unanswered card
+/// becomes after 24 hours and what a proposal becomes when its source episode
+/// is deleted.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProposalState {
-    Pending,
+    Proposed,
     Accepted,
-    Dismissed,
+    Declined,
+    Muted,
     Expired,
+}
+
+impl ProposalState {
+    pub const ALL: [ProposalState; 5] = [
+        ProposalState::Proposed,
+        ProposalState::Accepted,
+        ProposalState::Declined,
+        ProposalState::Muted,
+        ProposalState::Expired,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            ProposalState::Proposed => "proposed",
+            ProposalState::Accepted => "accepted",
+            ProposalState::Declined => "declined",
+            ProposalState::Muted => "muted",
+            ProposalState::Expired => "expired",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|state| state.as_str() == value)
+    }
+
+    /// A resolved proposal never moves again: a second click cannot turn a
+    /// declined card into an accepted one.
+    pub const fn is_terminal(self) -> bool {
+        !matches!(self, ProposalState::Proposed)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -145,7 +206,17 @@ pub enum AmbientLogEvent {
     },
     Proposal {
         proposal_id: ProposalId,
+        /// Эпизод-источник. `None` означает, что источника уже нет: карточку
+        /// решают после удаления транскрипта. Поле существует ради удаления —
+        /// `task_id` ambient-строки журнала выводится из него, поэтому
+        /// `ambient.proposal` исчезает вместе с эпизодом по тому же индексу,
+        /// что и `ambient.transcript`.
+        episode_id: Option<EpisodeId>,
         kind: ProposalKind,
+        /// Bounded, opaque form of the canonical subject. The card's text has
+        /// no field here at all: it is read back with a command, exactly as
+        /// `memory.pending` withholds `statement`.
+        subject_key: SubjectKey,
         proposal_state: ProposalState,
     },
     Error {
@@ -178,7 +249,13 @@ impl AmbientLogEvent {
                 "extraction_state",
             ],
             AmbientLogEvent::Retention { .. } => &["deleted_count", "trigger"],
-            AmbientLogEvent::Proposal { .. } => &["proposal_id", "kind", "proposal_state"],
+            AmbientLogEvent::Proposal { .. } => &[
+                "proposal_id",
+                "episode_id",
+                "kind",
+                "subject_key",
+                "proposal_state",
+            ],
             AmbientLogEvent::Error { .. } => &["code", "state"],
         }
     }
@@ -244,8 +321,10 @@ mod tests {
             },
             AmbientLogEvent::Proposal {
                 proposal_id: ProposalId::new("prop-1").unwrap(),
+                episode_id: Some(EpisodeId::new("ep-1").unwrap()),
                 kind: ProposalKind::Reminder,
-                proposal_state: ProposalState::Pending,
+                subject_key: SubjectKey::new("a1b2c3d4e5f60718").unwrap(),
+                proposal_state: ProposalState::Proposed,
             },
             AmbientLogEvent::Error {
                 code: AmbientErrorCode::StorageFailed,
@@ -326,6 +405,33 @@ mod tests {
             );
         }
         assert_eq!(ExtractionState::parse("extracted"), None);
+    }
+
+    #[test]
+    fn proposal_kinds_and_states_round_trip_through_their_storage_form() {
+        for kind in ProposalKind::ALL {
+            assert_eq!(ProposalKind::parse(kind.as_str()), Some(kind));
+            assert_eq!(
+                serde_json::to_value(kind).unwrap(),
+                Value::String(kind.as_str().to_owned())
+            );
+        }
+        assert_eq!(ProposalKind::parse("run_the_task"), None);
+        for state in ProposalState::ALL {
+            assert_eq!(ProposalState::parse(state.as_str()), Some(state));
+            assert_eq!(
+                serde_json::to_value(state).unwrap(),
+                Value::String(state.as_str().to_owned())
+            );
+        }
+        assert_eq!(ProposalState::parse("pending"), None);
+        assert!(!ProposalState::Proposed.is_terminal());
+        for state in ProposalState::ALL
+            .into_iter()
+            .filter(|state| *state != ProposalState::Proposed)
+        {
+            assert!(state.is_terminal(), "{state:?} must not move again");
+        }
     }
 
     #[test]

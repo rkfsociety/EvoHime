@@ -1016,13 +1016,52 @@ message SaveAmbientPolicyResult {
   string error_code = 2;
 }
 
+// Решение пользователя по ограниченному предложению (этап 04.7).
+//
+// `idempotency_key` обязателен: принятие создаёт задачу через штатный
+// dedup-путь Core, и без ключа двойной клик по карточке породил бы две
+// задачи. По тому же образцу он есть у `ConfirmMemory`.
+//
+// `mute` — третий исход помимо «принять» и «отклонить»: «больше не
+// предлагать такое». Он идёт по ключу без времени, поэтому переживает и смену
+// временной корзины, и перезапуск Core.
 message ResolveAmbientProposal {
   string proposal_id = 1;
   bool accepted = 2;
+  string idempotency_key = 3;
+  bool mute = 4;
 }
 
 message ResolveAmbientProposalResult {
   bool applied = 1;
+  string state = 2;
+  string task_id = 3;
+  string error_code = 4;
+}
+
+// Одна карточка предложения. Человекочитаемый текст приходит только этой
+// командой: durable journal его не несёт (см. `ambient.proposal`).
+message AmbientProposalSummary {
+  string proposal_id = 1;
+  string kind = 2;
+  string subject = 3;
+  string title = 4;
+  string source_episode_id = 5;
+  int64 created_at_ms = 6;
+  int64 expires_at_ms = 7;
+  int32 occurrences = 8;
+  string state = 9;
+}
+
+message ListAmbientProposals {
+  int32 limit = 1;
+}
+
+message AmbientProposalList {
+  repeated AmbientProposalSummary proposals = 1;
+  int32 max_per_hour = 2;
+  int32 max_per_day = 3;
+  int64 min_interval_ms = 4;
 }
 
 message CommandEnvelope {
@@ -1138,6 +1177,7 @@ message CommandEnvelope {
     GetAmbientPolicy get_ambient_policy = 113;
     SaveAmbientPolicy save_ambient_policy = 114;
     ResolveAmbientProposal resolve_ambient_proposal = 115;
+    ListAmbientProposals list_ambient_proposals = 116;
   }
 }
 

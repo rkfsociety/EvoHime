@@ -27,7 +27,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 25;
+pub const SCHEMA_VERSION: u32 = 26;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -2997,6 +2997,76 @@ impl LocalDatabase {
                 PRAGMA user_version = 25;",
             )?;
         }
+        if current < 26 {
+            // Этап 04.7: ограниченные проактивные предложения.
+            //
+            // Два ключа, а не один. `proposal_key` (kind + subject + округлённое
+            // время) стоит под `UNIQUE` и отвечает за дедупликацию; постоянный
+            // mute живёт отдельной таблицей по `mute_key` (kind + subject, без
+            // времени). Один ключ на обе роли не работает: со временем внутри
+            // mute заглушил бы ровно одну временную корзину и молча перестал бы
+            // действовать, а без времени `UNIQUE` запретил бы любое повторное
+            // предложение по той же теме после истечения предыдущего.
+            //
+            // `source_episode_id` — nullable с `ON DELETE SET NULL`: связь не
+            // блокирует удаление источника. Пара `source_deleted_at` /
+            // `source_deleted_reason` под `CHECK` «оба NULL либо оба
+            // заполнены»: пока источник жив, они пусты, поэтому «обязательными»
+            // их называть нельзя.
+            //
+            // Счётчики бюджета — одна строка на ambient-профиль: потолок 04.1
+            // неизменяем, а текущее состояние окна обязано пережить рестарт,
+            // иначе перезапуск Core обнулял бы часовой лимит.
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS ambient_proposals (
+                    proposal_id TEXT PRIMARY KEY NOT NULL,
+                    proposal_key TEXT NOT NULL UNIQUE,
+                    mute_key TEXT NOT NULL,
+                    kind TEXT NOT NULL CHECK(kind IN ('suggestion','reminder')),
+                    subject_key TEXT NOT NULL,
+                    subject TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    source_episode_id TEXT
+                        REFERENCES ambient_episodes(episode_id) ON DELETE SET NULL,
+                    source_deleted_at TEXT,
+                    source_deleted_reason TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    occurrences INTEGER NOT NULL DEFAULT 1,
+                    state TEXT NOT NULL CHECK(state IN
+                        ('proposed','accepted','declined','muted','expired')),
+                    accepted_task_id TEXT,
+                    idempotency_key TEXT,
+                    CHECK((source_deleted_at IS NULL AND source_deleted_reason IS NULL)
+                       OR (source_deleted_at IS NOT NULL AND source_deleted_reason IS NOT NULL))
+                );
+                CREATE TABLE IF NOT EXISTS ambient_proposal_mutes (
+                    mute_key TEXT PRIMARY KEY NOT NULL,
+                    kind TEXT NOT NULL CHECK(kind IN ('suggestion','reminder')),
+                    subject_key TEXT NOT NULL,
+                    muted_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS ambient_proactivity_counters (
+                    profile_id TEXT PRIMARY KEY NOT NULL,
+                    hour_started_at_ms INTEGER NOT NULL,
+                    hour_count INTEGER NOT NULL,
+                    day_started_at_ms INTEGER NOT NULL,
+                    day_count INTEGER NOT NULL,
+                    last_proposed_at_ms INTEGER
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_ambient_proposal_idempotency
+                    ON ambient_proposals(idempotency_key)
+                    WHERE idempotency_key IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS idx_ambient_proposal_state
+                    ON ambient_proposals(state, expires_at);
+                CREATE INDEX IF NOT EXISTS idx_ambient_proposal_source
+                    ON ambient_proposals(source_episode_id);
+                CREATE INDEX IF NOT EXISTS idx_ambient_proposal_mute
+                    ON ambient_proposals(mute_key);
+                PRAGMA user_version = 26;",
+            )?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -3244,6 +3314,72 @@ mod tests {
         let _ = std::fs::remove_file(&backup_path);
     }
 
+    /// Этап 04.7: таблицы предложений приезжают миграцией v26 поверх живого
+    /// ambient-хранилища v25 и не трогают его строк.
+    #[test]
+    fn migrates_schema_25_to_proactivity_schema_26_without_touching_ambient_rows() {
+        let path = temp_database_path("migration-25-to-26-proactivity");
+        let _ = std::fs::remove_file(&path);
+        let backup_path = path.with_extension("db.bak");
+        let _ = std::fs::remove_file(&backup_path);
+        {
+            let connection = rusqlite::Connection::open(&path).expect("legacy database opens");
+            connection
+                .execute_batch(
+                    "CREATE TABLE ambient_episodes (
+                        episode_id TEXT PRIMARY KEY NOT NULL,
+                        started_at TEXT NOT NULL,
+                        ended_at TEXT,
+                        utterance_count INTEGER NOT NULL,
+                        speech_ms INTEGER NOT NULL,
+                        engine_version TEXT NOT NULL,
+                        model_id TEXT NOT NULL,
+                        extraction_state TEXT NOT NULL,
+                        expires_at TEXT NOT NULL
+                     );
+                     INSERT INTO ambient_episodes VALUES
+                        ('ep-1','2026-08-21T10:00:00.000Z',NULL,1,900,'whisper','base',
+                         'done','2026-09-20T10:00:00.000Z');
+                     PRAGMA user_version = 25;",
+                )
+                .expect("v25 schema seeds");
+        }
+        let database = LocalDatabase::open(&path).expect("migration succeeds");
+        assert_eq!(database.schema_version().unwrap(), SCHEMA_VERSION);
+        assert!(
+            backup_path.exists(),
+            "pre-migration backup must be written before schema 26 applies"
+        );
+        let preserved: String = database
+            .connection()
+            .query_row("SELECT episode_id FROM ambient_episodes", [], |row| {
+                row.get(0)
+            })
+            .expect("ambient row survives");
+        assert_eq!(preserved, "ep-1");
+        for table in [
+            "ambient_proposals",
+            "ambient_proposal_mutes",
+            "ambient_proactivity_counters",
+        ] {
+            let exists: i64 = database
+                .connection()
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(exists, 1, "{table} must exist after migration to schema 26");
+        }
+        drop(database);
+        let reopened = LocalDatabase::open(&path).expect("second open is a no-op");
+        assert_eq!(reopened.schema_version().unwrap(), SCHEMA_VERSION);
+        drop(reopened);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&backup_path);
+    }
+
     /// Схема физически не может хранить аудио: ни одна ambient-колонка не
     /// объявлена как BLOB, поэтому «PCM не пишется на диск» — свойство
     /// таблицы, а не дисциплины вызывающего кода.
@@ -3257,6 +3393,9 @@ mod tests {
             "ambient_episodes",
             "ambient_utterances",
             "ambient_tombstones",
+            "ambient_proposals",
+            "ambient_proposal_mutes",
+            "ambient_proactivity_counters",
         ] {
             let mut statement = database
                 .connection()

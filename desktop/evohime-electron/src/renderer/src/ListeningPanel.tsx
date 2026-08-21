@@ -4,6 +4,7 @@ import type {
   AmbientEpisodeSummary,
   AmbientHotkeyStatus,
   AmbientPolicy,
+  AmbientProposalList,
   AmbientQuietHours,
   AmbientStatus,
   AmbientUtterance,
@@ -173,6 +174,7 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
     episode_id: string
     utterances: readonly AmbientUtterance[]
   }>(events, 'ambient.episode')
+  const proposalList = latestPayload<AmbientProposalList>(events, 'ambient.proposals')
   const storedPolicy = latestPayload<AmbientPolicy>(events, 'ambient.policy')
   const policySaved = latestPayload<{ applied: boolean; error_code: string }>(
     events,
@@ -201,6 +203,7 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
     void api.invoke('ambient.getStatus', {})
     void api.invoke('ambient.listEpisodes', { limit: 50 })
     void api.invoke('ambient.getPolicy', {})
+    void api.invoke('ambient.listProposals', { limit: 50 })
   }, [api, connected])
 
   // При открытии панель сперва спрашивает состояние: полагаться на то, что
@@ -408,6 +411,26 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
             {status.engine_version ? ` · ${status.engine_version}` : ''}.
           </p>
         ) : null}
+      </section>
+
+      <section className="listening__block" aria-label="Проактивность">
+        <h4>Предложения</h4>
+        <p>
+          По услышанному Ева может предложить задачу или напоминание — и больше ничего. Ни запуска
+          задач, ни вызова инструментов, ни записи файлов, ни сети без твоего клика: это инвариант
+          ядра, а не настройка на этой странице.
+        </p>
+        {proposalList ? (
+          <p role="status">
+            Ждут решения: {proposalList.proposals.length}. Потолок — не больше{' '}
+            {proposalList.max_per_hour} в час и {proposalList.max_per_day} в сутки, не чаще одного
+            раз в {Math.round(proposalList.min_interval_ms / 60000)} минут. Сверх потолка
+            предложение отбрасывается, а не копится в очередь. Решать карточки — во вкладке «Память
+            и автоматизация».
+          </p>
+        ) : (
+          <p>Состояние предложений ещё не получено.</p>
+        )}
       </section>
 
       <section className="listening__block" aria-label="Удаление записанного">

@@ -250,4 +250,37 @@ describe('панель «Слух»', () => {
     expect(clockToMinutes('24:00')).toBeNull()
     expect(clockToMinutes('не время')).toBeNull()
   })
+
+  /**
+   * Панель называет потолок и то, что сверх него предложение отбрасывается, —
+   * иначе «Ева ничего не предложила» и «Ева упёрлась в потолок» выглядели бы
+   * одинаково.
+   */
+  it('называет потолок проактивности и запрашивает список предложений', async () => {
+    render(
+      <ListeningPanel
+        connection="connected"
+        events={[
+          event('ambient.proposals', {
+            proposals: [],
+            max_per_hour: 3,
+            max_per_day: 10,
+            min_interval_ms: 600_000,
+            error_code: ''
+          })
+        ]}
+      />
+    )
+    await waitFor(() => {
+      expect(calls.some((call) => call.command === 'ambient.listProposals')).toBe(true)
+    })
+    expect(screen.getByText(/не больше 3 в час и 10 в сутки/)).toBeTruthy()
+    expect(screen.getByText(/отбрасывается, а не копится в очередь/)).toBeTruthy()
+  })
+
+  /** Без ответа ядра панель не утверждает, что предложений нет. */
+  it('не выдумывает пустой список предложений, пока ядро не ответило', () => {
+    render(<ListeningPanel connection="connected" events={[]} />)
+    expect(screen.getByText('Состояние предложений ещё не получено.')).toBeTruthy()
+  })
 })
