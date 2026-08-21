@@ -35,6 +35,7 @@
 | 12 | [pipecat-ai/pipecat](https://github.com/pipecat-ai/pipecat) | Исследовано | Frame-based realtime orchestration, workers/bus/jobs, transports/serializers, RTVI, tool lifecycle, metrics и behavioral evals | Адаптировать frame/event/worker/eval контракты; Python runtime и внешние transport-интеграции не подключать |
 | 13 | [openai/whisper](https://github.com/openai/whisper) | Исследовано | Локальный multilingual seq2seq ASR, 16 kHz preprocessing, 30-секундные окна, language detection, timestamps и quality fallback | Адаптировать ASR-контракты, model manifest и evaluation; Python runtime не подключать, текущий listener остаётся на whisper.cpp |
 | 14 | [jianfch/stable-ts](https://github.com/jianfch/stable-ts) | Исследовано | Whisper post-processing: silence suppression/VAD, stable word timestamps, alignment/refinement, deterministic regrouping и structured result | Адаптировать post-processing/evaluation идеи; archived Python package и Silero/PyTorch dependencies не подключать |
+| 15 | [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) | Исследовано | Speaker diarization pipeline, speaker segmentation/embeddings, overlap-aware Annotation, VAD и RTTM export | Рассматривать как optional offline enrichment; не подключать gated Python/PyTorch runtime и не трактовать кластеры как identity |
 
 ## Карточки исследований
 
@@ -2534,6 +2535,222 @@ manifest, segmentation, deduplication и model-ladder policy.
   regroup replay, русская речь/noise/silence fixtures, cancellation of refine,
   no URL egress, no unbounded audio retention и корректное восстановление
   после restart.
+
+### 15. pyannote/speaker-diarization-3.1
+
+- Источник: [модельная страница Hugging Face](https://huggingface.co/pyannote/speaker-diarization-3.1),
+  [pyannote.audio toolkit](https://github.com/pyannote/pyannote-audio),
+  [зависимая segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
+- Дата проверки: 2026-08-21
+- Ревизия модели: `84fd25912480287da0247647c3d2b4853cb3ee5d`
+  (`lastModified: 2024-05-10` по Hugging Face model API).
+- Статус: gated model. Репозиторий виден публично, но для файлов нужно
+  принять условия модели, принять условия `pyannote/segmentation-3.0` и
+  создать Hugging Face access token; gated form запрашивает контактные поля.
+- Лицензия модели: MIT по model card. Лицензии pyannote.audio, PyTorch,
+  segmentation/embedding checkpoints, обучающих датасетов и любых
+  quantized/converted artifacts проверяются отдельно.
+- Состав: `pyannote.audio` Pipeline для speaker diarization, pure-PyTorch
+  speaker segmentation и speaker embedding stages. Версия 3.1 повторяет
+  pipeline 3.0, но убирает problematic `onnxruntime`; оба stages выполняются
+  в PyTorch. Требуется `pyannote.audio>=3.1`.
+- Вход/выход: mono audio at 16 kHz; stereo/multichannel автоматически
+  downmix-ится усреднением, другие sample rates resample-ятся. Pipeline
+  возвращает `pyannote.core.Annotation` с временными интервалами и
+  anonymous speaker labels; результат можно экспортировать в RTTM.
+- Назначение: определить, когда какой анонимный speaker cluster говорит,
+  включая overlapped speech. Это speaker diarization, а не ASR, voiceprint
+  identification или подтверждение личности.
+- Краткий вывод: модель потенциально полезна для разделения ambient
+  transcript по говорящим, но только как отдельный opt-in/offline enrichment.
+  Gated access, Python/PyTorch runtime, дополнительный audio retention и
+  privacy-риск голосовых признаков не позволяют включать её в базовый
+  microphone path Евы сейчас.
+
+#### Что изучено
+
+- **Pipeline contract.** `Pipeline.from_pretrained()` загружает конфигурацию
+  и связанные model artifacts, после чего `pipeline(audio)` возвращает
+  `Annotation`. Можно обрабатывать файл целиком или передавать waveform и
+  sample rate из памяти/конкретного excerpt; это удобная граница для
+  отдельного Core job, но не готовый desktop IPC contract.
+- **Segmentation stage.** Зависимая `segmentation-3.0` принимает 10 секунд
+  mono 16 kHz и выдаёт frame-by-class powerset matrix. Классы включают
+  non-speech, одиночных speakers и пары одновременно говорящих speakers.
+  Таким образом overlap моделируется явно, а не теряется при выборе одного
+  максимального speaker.
+- **Embedding/clustering stage.** Полный diarization pipeline добавляет
+  speaker embedding и связывает локальные speech turns в anonymous labels.
+  Метка `SPEAKER_00`/`SPEAKER_01` стабильна только в пределах конкретного
+  inference context; она не является глобальным именем человека и не должна
+  переноситься между episodes без отдельного consented identity layer.
+- **VAD и overlap.** Pipeline работает автоматически без ручного VAD и без
+  обязательного `num_speakers`; при этом можно задать `num_speakers`,
+  `min_speakers` и `max_speakers`. Benchmark использует строгий DER setup
+  без forgiveness collar и с учётом overlapped speech; это полезнее для
+  оценки ambient-сценариев, чем обычная только-один-speaker accuracy.
+- **Input normalization.** Автоматический downmix/resample удобен, но может
+  скрыть ошибку в capture contract. Для Евы нужно до вызова pipeline явно
+  записывать исходный sample rate/channel layout и результат normalization;
+  model input не должен silently менять provenance audio.
+- **Compute modes.** Pipeline работает на CPU по умолчанию и может быть
+  отправлен на CUDA. Model card 3.0 указывает около 1.5 минут на час записи
+  для neural inference + clustering на V100/Cascade Lake; это benchmark
+  reference, а не гарантия на Windows CPU/GPU Евы. Для 3.1 собственный
+  hardware/latency profile в рамках исследования не запускался.
+- **Progress и bounds.** `ProgressHook` позволяет наблюдать processing
+  progress; speaker-count bounds уменьшают неопределённость, если контекст
+  заранее известен. Оба параметра должны стать Core-owned job settings с
+  bounded values, а не управляться transcript или model output.
+- **Model access.** Загрузка из Hugging Face требует token и принятия условий
+  двух gated repositories. На странице нет доступного Inference Provider;
+  типичный путь — локальный Python/PyTorch inference. Runtime HF token нельзя
+  помещать в Electron, SQLite, логи или обычный Core environment.
+- **Current upstream direction.** В актуальном README pyannote.audio legacy
+  pipeline 3.1 сравнивается с более новым `speaker-diarization-community-1`,
+  который улучшает speaker counting/assignment. Поэтому 3.1 следует считать
+  reference/legacy candidate, а не автоматически выбирать для нового плана.
+- **Telemetry.** Текущий pyannote.audio toolkit содержит optional telemetry:
+  при включении он может отправлять anonymous pipeline origin, class, audio
+  duration и speaker-count parameters. Для local-first Евы telemetry должна
+  быть default-deny и проверяться отдельно от model inference.
+- **Benchmarks.** 3.1 model card показывает DER/false alarm/miss/confusion на
+  AISHELL-4, AliMeeting, AMI, AVA-AVD, DIHARD, MSDWild, REPERE и VoxConverse.
+  Эти цифры полезны для сравнения pipeline, но не подтверждают качество на
+  русской бытовой речи, микрофоне Windows или ambient episode Евы.
+
+#### Что можем использовать в Еве
+
+- **Optional diarization enrichment.** Ввести отдельный post-processing/job
+  слой: `ambient_utterance + audio window -> speaker_spans`. Не включать его
+  в базовую транскрипцию и не задерживать появление обычного utterance.
+  Если job недоступен или отменён, transcript должен оставаться полноценным
+  с текущим speaker state `unverified`.
+- **Span-based schema.** Перенять модель `Annotation` как список
+  `{start_ms, end_ms, cluster_id, overlap}`. Не добавлять один обязательный
+  `speaker_id` к utterance: один utterance может пересекать несколько
+  speakers или не иметь достаточно уверенного сопоставления. Mapping между
+  ASR segments и diarization spans должен хранить overlap/IoU и uncertainty.
+- **Anonymous cluster semantics.** Записывать только episode-scoped
+  `speaker_cluster_id` вроде `cluster-0`, с признаком `unverified`. Не
+  пытаться по голосу назвать человека, сопоставлять cluster с identity или
+  строить voiceprint без отдельного явного consent/permission дизайна.
+- **Overlap-aware transcript.** Если diarization возвращает два активных
+  speakers, Core должен сохранить overlap как событие/спаны, а не выбрать
+  одного говорящего и потерять информацию. UI может показывать
+  `multiple-speakers`/`uncertain`, но не должен превращать это в уверенную
+  реплику конкретного пользователя.
+- **Known speaker-count bounds.** Для контролируемых meeting/room sessions
+  можно передать bounded `min_speakers`/`max_speakers` или exact count. Эти
+  значения должны приходить из user/session policy и попадать в redacted
+  provenance; модель не должна сама менять их в процессе.
+- **RTTM/evidence export.** RTTM-подобное представление подходит как
+  interoperable export для offline tools и evaluation. Внутри Core нужен
+  versioned serde schema с episode ID, source audio hash, model revision,
+  normalization, thresholds и processing status; RTTM строится как export,
+  а не хранится единственным источником истины.
+- **Diarization metrics.** Перенять DER decomposition: false alarm, missed
+  speech, confusion и overlap-aware scoring. Для Евы добавить cluster purity,
+  assignment stability across chunks, latency, cancellation и privacy tests.
+- **Batch/offline job lifecycle.** `ProgressHook` и excerpt processing
+  подсказывают контракт bounded job: `queued -> running -> partial ->
+  completed/cancelled/failed`, с progress, deadline, heartbeat и no-audio
+  retention after completion. Результат связывать с transcript revision, а
+  не менять уже опубликованный utterance незаметно.
+- **Model manifest/pinning.** Зафиксировать model revision, dependent
+  segmentation revision, pyannote.audio compatibility, PyTorch backend,
+  checksum/size/license manifest и telemetry setting. Gated download должен
+  происходить только в контролируемой поставке/подготовке runtime, не во
+  время обычного запуска и не через Electron.
+- **Local-only policy.** Если когда-либо появится diarization provider,
+  разрешить только локальный host за supervisor/Core IPC либо явно
+  permissioned provider. Audio, embeddings, access token и raw Annotation не
+  должны уходить в HF/pyannote cloud без отдельного egress approval.
+- **Evaluation fixtures.** Добавить короткие русские fixtures с одним,
+  двумя и тремя speakers, overlap, speaker changes, silence, noise,
+  multichannel downmix, resampling, unknown speaker и cancellation mid-job.
+  Результат проверять по spans и anonymous cluster consistency, а не только
+  по transcript text.
+
+#### Ограничения и риски
+
+- **Gated Hugging Face access.** Нужны пользовательские условия, контактные
+  данные, HF token и доступ к зависимому gated `segmentation-3.0`. Это
+  неприемлемо как скрытая runtime-зависимость local-first продукта; token
+  нельзя распространять в installer или хранить в пользовательском profile
+  без отдельной secret policy.
+- **Voice privacy.** Diarization использует speaker embeddings внутри
+  pipeline. Даже если наружу выдаются только anonymous labels, raw audio,
+  embeddings и длительные cluster histories могут быть биометрически
+  чувствительными. В Еве не сохранять embeddings/voiceprints по умолчанию,
+  ограничить retention и проводить отдельный consent review.
+- **Anonymous labels are not identity.** Cluster assignment может меняться
+  между episodes, chunks, model revisions и recovery runs. Нельзя отвечать
+  на вопрос «кто говорил» только по `SPEAKER_00`; максимум — «какой
+  anonymous cluster говорил в этом episode».
+- **Overlap and error modes.** Cross-talk, room echo, music, far-field mic,
+  short utterances и одновременная речь дают false alarm/miss/confusion.
+  Ошибка diarization не должна удалять ASR transcript или менять его текст.
+- **Batch latency.** Full diarization включает segmentation, embeddings и
+  clustering; это тяжелее текущего low-latency listener. Нельзя запускать
+  модель на каждом audio frame или блокировать ambient capture ожиданием
+  полного episode.
+- **Python/PyTorch mismatch.** `pyannote.audio` — Python-first PyTorch
+  toolkit с FFmpeg/torch audio ecosystem. Прямое встраивание создаст второй
+  runtime и packaging/supervisor boundary, что не соответствует архитектуре
+  EvoHime.
+- **Implicit normalization.** Автоматические downmix/resample могут скрыть
+  неправильный capture input и сделать timestamps/quality incomparable. Все
+  преобразования должны быть зафиксированы в provenance и bounded по размеру.
+- **Telemetry and egress.** Optional pyannote telemetry нужно отключать
+  явно; HF model fetching и возможные provider/cloud alternatives создают
+  network egress. Не считать MIT license разрешением на передачу microphone
+  audio или metadata третьей стороне.
+- **Legacy model.** Текущий pyannote.audio README называет 3.1 legacy по
+  сравнению с `community-1`; выбор 3.1 без benchmark против successor может
+  закрепить худшее speaker counting/assignment. При этом community-1 тоже
+  требует отдельной проверки лицензии, gated access, ресурса и Windows
+  packaging.
+- **Model/data licensing.** MIT страницы модели не распространяется
+  автоматически на upstream datasets, dependent checkpoints, PyTorch,
+  FFmpeg или converted/quantized files. Перед поставкой нужен полный
+  component manifest.
+- **Storage conflict.** Текущий ambient storage намеренно не содержит audio
+  BLOB. Без короткого opt-in audio buffer diarization нельзя надёжно выполнить
+  после того, как listener уже выбросил PCM; добавлять скрытую запись ради
+  модели нельзя.
+
+#### Предварительное решение
+
+`адаптировать anonymous span schema, overlap semantics, DER evaluation,
+offline job lifecycle, model manifest и privacy policy`; `наблюдать за 3.1 как
+legacy reference`; `не подключать gated pyannote Python/PyTorch pipeline,
+HF token, speaker embeddings или cloud/provider diarization в базовый runtime
+Евы`.
+
+Модель может появиться только после отдельного opt-in дизайна ambient audio:
+ограниченный in-memory/temporary buffer, явное разрешение, retention/erase,
+локальный host, bounded job и отдельная проверка community-1 против 3.1. До
+этого текущая семантика `speaker=unverified` остаётся источником истины.
+
+#### Связь с EvoHime
+
+- Текущие `ambient_episodes`/`ambient_utterances` и правило, что аудио не
+  хранится в SQLite, не менять в рамках исследования. Diarization не должна
+  автоматически добавлять BLOB или persistent voiceprint.
+- Будущий design-only контракт может содержать `speaker_spans` с
+  episode-scoped anonymous cluster, overlap, confidence/uncertainty,
+  model_revision, audio_revision и processing status; speaker identity
+  остаётся `unverified`.
+- Core владеет microphone permission, bounded audio lifetime, model access,
+  cancellation, provenance, redaction и storage; Electron показывает только
+  redacted diarization state через authenticated IPC.
+- Критерии будущей проверки: gated credentials не попадают в продуктовые
+  логи/installer, telemetry и egress default-deny, model artifacts pinned,
+  no embeddings persisted, overlap не теряется, ASR не блокируется batch job,
+  cancellation очищает audio/model state, cluster IDs не трактуются как
+  identity, DER/cluster metrics воспроизводимы на русских fixtures и
+  retention/forget удаляют временный audio вместе с derived spans.
 
 ## Итог для будущего плана
 
