@@ -205,6 +205,177 @@ runtime-зависимость Евы`.
   redacted provenance, deterministic replay и negative tests на prompt
   injection/SSRF/secret leakage.
 
+### 2. LangChain
+
+- Источник: https://github.com/langchain-ai/langchain
+- Дата проверки: 2026-08-21
+- Ревизия/commit: `2a91b2f5841e240ece7f344822cad8f17237ac22`
+- Лицензия исходного кода: MIT
+- Состав: Python-монорепозиторий с `langchain-core`, активным `langchain`
+  v1, legacy `langchain-classic`, `langgraph`-based agent runtime,
+  партнёрскими integrations, text splitters, model profiles и
+  стандартизированными тестами.
+- Назначение: composable framework для LLM applications и agent loops с
+  tools, structured output, middleware, checkpoint/store, streaming и
+  provider integrations.
+- Краткий вывод: очень полезен как каталог проверенных контрактов и
+  сценариев тестирования. Целиком подключать к Еве нельзя и не нужно: текущая
+  архитектура Евы уже имеет Rust Core, собственный model gateway, workflow,
+  SQLite, approvals, context budget и provenance.
+
+#### Что изучено
+
+- `langchain-core` задаёт типизированные messages, `BaseTool`,
+  `StructuredTool`, JSON/Pydantic args schemas, `ToolMessage`, обработку
+  tool errors и `return_direct`;
+- `langchain.agents.create_agent` строит цикл model → tool calls → tool results
+  → model до terminal condition, умеет structured response, middleware,
+  checkpointing, store, interrupts и streaming;
+- `AgentMiddleware` предоставляет хуки `before_agent`, `before_model`,
+  `after_model`, `after_agent`, `wrap_model_call` и `wrap_tool_call`. Request
+  можно менять через immutable `override`, а middleware может retry, short-circuit,
+  менять model/tools/system message и делать bounded state updates;
+- `HumanInTheLoopMiddleware` описывает per-tool approval с решениями
+  `approve`, `edit`, `reject`, `respond`, динамическим `when`-predicate,
+  bounded action request и привязкой решения к `tool_call_id`;
+- `ModelCallLimitMiddleware` считает model calls на уровне run и thread и
+  завершает выполнение с явным `end` либо поднимает ошибку;
+- `ModelRetryMiddleware` задаёт max retries, фильтр retryable errors,
+  exponential backoff, jitter, max delay и политику поведения после исчерпания
+  попыток;
+- `PIIMiddleware` имеет deterministic detectors для email, credit card, IP,
+  MAC и URL, custom regex/callable detector и стратегии `block`, `redact`,
+  `mask`, `hash`. Он применяет обработку к input, AI output, tool results и
+  streaming surfaces, включая tool-call arguments;
+- `ContextEditingMiddleware` применяет последовательность bounded edits к
+  tool results перед model call, поддерживает approximate/exact/custom token
+  counter и immutable replacement списка messages;
+- `ModelProfile` описывает lifecycle, context/output limits, modalities,
+  reasoning, tool calling, tool choice, streaming tool calls, structured
+  output, attachments и temperature. `langchain-model-profiles` генерирует
+  профили из `models.dev`, применяет provider augmentations и предупреждает о
+  неизвестных ключах/расхождении версий;
+- `langchain-tests` задаёт общий набор unit/integration conformance tests для
+  chat-model integrations. Unit tests запрещают network, integration tests
+  отделены и явно требуют credentials;
+- монорепозиторий использует `uv`, отдельные `pyproject.toml`/`uv.lock` для
+  пакетов, editable local sources и партнёрские пакеты. `langchain-core` имеет
+  обязательную зависимость от `langsmith`, хотя tracing должен быть выключен в
+  unit-тестах.
+
+#### Что можем использовать в Еве
+
+- **Middleware как conceptual pipeline.** Сопоставить hook-порядок
+  `before_model → model → after_model` и `wrap_tool_call` с Core-owned
+  policy pipeline. Полезно для будущих независимых стадий: context assembly,
+  policy snapshot, approval check, dispatch, result redaction и audit. В Еве
+  это должны быть typed Rust stages, а не Python callbacks.
+- **Approval contract для UI/IPC-сравнения.** Использовать набор действий
+  `approve/edit/reject/respond`, `tool_call_id`, dynamic predicate и batch
+  review как материал для проверки уже существующего EvoHime approval UX.
+  Edit должен заново проходить canonicalization, exact-call hash и policy
+  recheck; решение не может напрямую менять Core state.
+- **Tool schema discipline.** Использовать идею единого tool manifest с
+  именем, описанием, JSON schema аргументов, async execution, `return_direct`,
+  typed result/error и отдельным artifact. Это хорошо ложится на текущие
+  `ToolSpec`, tool loadout, capability registry и receipts Евы.
+- **Explicit run/thread budgets.** Разделение лимитов run и durable thread
+  полезно для eval fixtures и diagnostics: отдельно показывать исчерпание
+  model calls, tool calls, wall clock, tokens и cost. В EvoHime уже есть
+  `run_policy`; можно использовать LangChain как сравнительный набор edge
+  cases, не дублируя механизм.
+- **Retry semantics.** Взять как reference для классификации retryable
+  provider failures, capped exponential backoff и jitter. В Еве retry должен
+  сохранять request-attempt lineage, policy/route hashes, idempotency и
+  `unknown_outcome` semantics; превращать окончательную ошибку в обычный
+  успешный AI message нельзя.
+- **Полная redaction surface.** Использовать перечень поверхностей из
+  `PIIMiddleware` как checklist для Core: user input, model output, tool
+  arguments, tool output, stream events, state snapshots и diagnostics. Сами
+  detectors и правила Ева должна держать deterministic/core-owned, расширяя
+  их только через versioned policy.
+- **Context edit strategy.** Идея staged edits и injectable token counter
+  полезна для сравнения с `context-budget`: approximate counter как быстрый
+  fallback, provider tokenizer как optional exact path, а каждая правка должна
+  быть отражена в immutable ledger с причиной и hash.
+- **Model capability profiles.** Это наиболее практически полезная часть:
+  перенять поля и workflow обновления профилей для `model_context_limits` и
+  model gateway — limits, modalities, tool calling, structured output,
+  reasoning и model lifecycle. Источник и timestamp должны быть видны,
+  stale/missing profile должен вести к conservative fallback, а не к
+  безусловному разрешению capability.
+- **Provider conformance tests.** Использовать `langchain-tests` как идею для
+  общего Rust/Electron compatibility matrix: каждый provider обязан пройти
+  одинаковые проверки messages, tool calls, structured output, usage,
+  cancellation, timeout, errors и redaction. Network tests держать отдельно
+  от deterministic unit suite.
+- **State graph and checkpoint vocabulary.** Термины state, checkpoint,
+  interrupt, resume, store и structured response полезны для документации и
+  acceptance tests workflow runtime Евы. Уже реализованный Rust workflow
+  runtime должен оставаться источником истины.
+
+#### Ограничения и риски
+
+- **Архитектурное дублирование.** `langchain` v1 зависит от Python `pydantic`,
+  `langchain-core` и `langgraph`; перенос этого стека в Windows desktop Core
+  добавит отдельный runtime, packaging, lifecycle и security boundary.
+- **Middleware не является самостоятельной policy boundary.** Approval,
+  redaction и limits действуют только если конкретный agent собран с нужным
+  middleware. Tool без записи в `interrupt_on` auto-approved, а `False` явно
+  отключает interrupt. Для Евы security policy не должна зависеть от состава
+  пользовательской конфигурации agent.
+- **Состояние mutable и графовое.** LangChain/LangGraph допускает state
+  updates, commands и повторные tool/model hops; прямое заимствование может
+  нарушить EvoHime invariants о Core ownership, exact-call receipts и
+  atomic approval redemption.
+- **Retry failure может маскироваться.** `ModelRetryMiddleware` допускает
+  возврат искусственного `AIMessage` после исчерпания попыток. Для Евы это
+  опасно: provider failure, cancellation и unknown outcome должны оставаться
+  typed terminal states, а не выглядеть как нормальный ответ модели.
+- **PII detection ограничена эвристиками.** Built-in regex/validators полезны
+  как deterministic baseline, но не дают полной защиты от secrets, бинарных
+  payloads, произвольных credentials или prompt injection. Их нельзя считать
+  заменой существующей EvoHime redaction/provenance policy.
+- **Streaming redaction сложна.** Потоковые chunks требуют буферизации
+  границ токенов и повторной проверки tool-call JSON; частичная обработка
+  может пропустить значение, разбитое между chunks. Это только checklist и
+  test design, не готовый безопасный компонент.
+- **Внешняя телеметрия и ecosystem coupling.** `langchain-core` зависит от
+  `langsmith`; provider integrations и tracing могут отправлять данные наружу
+  при включённых переменных окружения. Для local-first Евы любой такой egress
+  должен быть явным, redacted и Core-policy governed.
+- **Model profiles могут устареть.** Данные приходят из внешнего
+  `models.dev`, refresh выполняется отдельно и profile format помечен beta.
+  Нельзя принимать capability только по имени модели; нужен provider probe,
+  timestamp, version и conservative fallback.
+- **Масштаб и частота изменений.** Монорепозиторий очень большой и активно
+  меняется; прямое копирование отдельных API создаст долг сопровождения и
+  риск подтянуть legacy/classic semantics вместо текущего v1.
+- **Лицензия не снимает dependency risks.** MIT разрешает использовать код с
+  сохранением copyright notice, но лицензии партнёрских SDK, моделей,
+  `models.dev`, LangGraph и LangSmith нужно проверять отдельно перед любым
+  включением в поставку.
+
+#### Предварительное решение
+
+`адаптировать контракты, поля профилей и тестовые идеи`; `не подключать
+LangChain/LangGraph как runtime Евы и не переносить middleware напрямую`.
+
+#### Связь с EvoHime
+
+- уже покрыто и не дублировать: Core-first agent loop, structured tool
+  registry, approval/receipts, run budgets, context-budget, model gateway,
+  durable workflow/checkpoints, redaction и provenance;
+- наиболее ценные кандидаты для будущего плана: расширение model capability
+  profiles, conformance matrix для providers, полный redaction-surface audit
+  и acceptance tests для approval edit/reject/respond;
+- возможное заимствование кода ограничить изолированными MIT utility-идеями
+  после отдельной license/security проверки; приоритет — собственная Rust
+  реализация по контракту, а не Python dependency;
+- критерии проверки: no new runtime/network boundary, deterministic tests без
+  network, explicit provider egress, typed terminal failures, approval
+  recheck после edit, bounded stream redaction и conservative profile fallback.
+
 ## Итог для будущего плана
 
 Этот раздел заполняется после завершения набора исследований:
