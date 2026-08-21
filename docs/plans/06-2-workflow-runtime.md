@@ -46,14 +46,17 @@
    Stateful child capabilities и tools с side effects выполняются
    последовательно, если их adapter явно не объявляет безопасную
    concurrency-семантику.
-5. Перед каждым effect повторно проверять graph hash, run policy, grants,
+5. Ставить узел в очередь только после получения и валидации всех обязательных
+   входов. Для list/batch данных зафиксировать bounded item iteration и не
+   допускать неограниченного размножения node executions.
+6. Перед каждым effect повторно проверять graph hash, run policy, grants,
    selected capability, context allowlist и approval exact-call hash.
-6. Реализовать recovery после Core restart: running nodes становятся
+7. Реализовать recovery после Core restart: running nodes становятся
    `interrupted` или `unknown_outcome` по существующему provenance marker;
    blind retry запрещён.
-7. Добавить bounded cancellation, timeout, retry/backoff и dead-letter для
+8. Добавить bounded cancellation, timeout, retry/backoff и dead-letter для
    workflow-level failures, не смешивая их с child report status.
-8. Публиковать typed durable events для timeline, replay и diagnostics.
+9. Публиковать typed durable events для timeline, replay и diagnostics.
    События получают устойчивую корреляцию `workflow_run_id`, `node_id`,
    `attempt_id`, `tool_call_id` и `model_request_id`; внешний tracing export
    остаётся optional и не является источником истины.
@@ -68,6 +71,7 @@
 - проверка, что child не может поднять grants/budget или запустить nested child;
 - MCP session restart, untrusted server rejection, tool allowlist и cancellation;
 - Context Provider timeout, deleted source, stale evidence и unavailable source;
+- обязательный input, batch iteration и explicit failure-branch semantics;
 - повторный вызов stateful child capability не возникает из-за
   parallel tool calls или replay;
 - `cargo test -p evohime-core -p evohime-local-storage`.

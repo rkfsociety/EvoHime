@@ -39,6 +39,11 @@
 11. Попытки cycle, route injection, grant escalation, nested child, path escape,
     unbounded loop и oversized payload отклоняются до эффекта.
 12. Старые IPC-клиенты продолжают работать с additive workflow protocol.
+13. Block schema fixture с невалидным обязательным входом не запускает узел;
+    явная failure-ветвь продолжает только разрешённый fallback, а неподключённая
+    ошибка блокирует downstream.
+14. Изменение template/block version во время активного запуска не меняет его
+    graph snapshot; расписание сохраняет timezone и bounded input snapshot.
 
 ## Документация и закрытие
 
@@ -49,7 +54,7 @@
 - обновить `docs/features/task-dependency-graphs.md`, чтобы он ссылался на
   канонический contract и не описывал неподключённое поведение;
 - проверить внутренние ссылки, `git diff --check`, generated protocol и
-  отсутствие CAMEL/Python как runtime-зависимости;
+  отсутствие CAMEL/AutoGPT/Python/Docker как runtime-зависимости;
 - проверить, что prompts, responses, workspace text и credentials не уходят в
   observability export без явного opt-in; локальный redacted trace остаётся
   authoritative projection поверх receipts/provenance;

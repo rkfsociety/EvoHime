@@ -1,4 +1,4 @@
-# План 06 — CAMEL-inspired Research Workforce и workflow orchestration для Евы
+# План 06 — CAMEL/AutoGPT-inspired workflow orchestration для Евы
 
 Статус: проект плана, реализация не начата.
 
@@ -17,7 +17,9 @@ MCP toolkit и evaluations — но не добавляет CAMEL как зав�
 поставляемый Windows runtime.
 
 Исполнительным контуром остаются Rust Core, существующие child contracts,
-`run_policy`, receipts, SQLite и authenticated Electron IPC.
+`run_policy`, receipts, SQLite и authenticated Electron IPC. AutoGPT используется
+как reference для block-контрактов, execution context, шаблонов, библиотеки
+workflow и расписаний; его Python/Docker runtime в продукт не переносится.
 
 ## Что именно заимствуем
 
@@ -34,6 +36,14 @@ MCP toolkit и evaluations — но не добавляет CAMEL как зав�
   recheck и signed receipts;
 - tracing/evaluation → корреляция workflow/node/tool/model событий,
   сравнение с single-agent baseline и deterministic сценарии проверки.
+- AutoGPT blocks → стабильный versioned block/capability identity, typed
+  input/output schemas, test fixtures и bounded execution context для каждого
+  узла;
+- AutoGPT data-flow → запуск узла только после валидации обязательных входов,
+  bounded fan-out/fan-in и явные failure branches вместо неявного продолжения;
+- AutoGPT Agent Library/Scheduling → Core-owned локальные workflow-шаблоны,
+  immutable snapshot запуска и подключение расписаний supervisor после готовности
+  durable workflow runtime.
 
 Не входят в план CAMEL memory/storage/RAG как замена локальным memory/RAG,
 локальный code executor, произвольный Python/Node sidecar, внешний HTTP runtime,
@@ -73,6 +83,12 @@ end-to-end сценария.
 6. При недоступности optional модели или embeddings workflow продолжает работу
    по deterministic fallback либо завершается typed `unknown/degraded`, но не
    подтверждает результат вслепую.
+7. Ошибка узла не превращается автоматически в успешное продолжение: продолжение
+   допускается только через явно объявленную и проверенную failure-ветвь с теми же
+   ограничениями policy, budget и approval.
+8. Импортируемый workflow JSON является только данными для валидации. Он не может
+   содержать inline Python/Node/shell, произвольный URL, секрет или dynamic code
+   reference.
 
 ## Этапы
 
@@ -91,6 +107,20 @@ end-to-end сценария.
   — coordinator, planner, workers, failure handling и fan-in reference;
 - [CAMEL MCPToolkit](https://raw.githubusercontent.com/camel-ai/camel/master/camel/toolkits/mcp_toolkit.py)
   — discovery/lifecycle reference для MCP tools.
+- [AutoGPT Agent Builder](https://github.com/Significant-Gravitas/AutoGPT/blob/master/docs/platform/agent-builder-guide.md)
+  — визуальная модель input/action/output blocks и versioned graph saves;
+- [AutoGPT Data Flow & Execution](https://github.com/Significant-Gravitas/AutoGPT/blob/master/docs/platform/data-flow-and-execution.md)
+  — readiness обязательных входов, typed pins, parallel branches и error flow;
+- [AutoGPT Blocks](https://github.com/Significant-Gravitas/AutoGPT/blob/master/docs/platform/new_blocks.md)
+  — schemas, stable block IDs, test input/output, credentials и webhook metadata;
+- [AutoGPT Scheduling & Triggers](https://github.com/Significant-Gravitas/AutoGPT/blob/master/docs/platform/scheduling-and-triggers.md)
+  — schedule/trigger product semantics, применяемые только через локальный
+  supervisor-owned контур Евы;
+- [AutoGPT Classic status](https://github.com/Significant-Gravitas/AutoGPT/blob/master/classic/README.md)
+  — подтверждает, что исторический autonomous loop не является runtime reference;
+- [PolyForm Shield](https://polyformproject.org/licenses/shield/1.0.0) — лицензия
+  `autogpt_platform`; код платформы не копируется без отдельной юридической
+  проверки.
 
 ## Критерий готовности плана
 

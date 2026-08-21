@@ -39,7 +39,13 @@
    `Исследование репозитория`, `План → реализация → ревью`,
    `Параллельное security review`. Шаблоны являются Core-owned versioned
    definitions, а не динамически загружаемыми Python agents.
-6. Обеспечить старому Electron-клиенту graceful handling неизвестных
+6. Для каждого шаблона показывать version, input schema, required capabilities,
+   schedule eligibility и безопасный preview. Запущенный workflow использует
+   snapshot шаблона и не меняется после редактирования библиотеки.
+7. Подключить расписание только как supervisor-owned trigger с сохранёнными
+   входами и timezone. Webhook/event trigger до появления доверенного adapter
+   остаётся `unavailable` и не открывает новый HTTP runtime.
+8. Обеспечить старому Electron-клиенту graceful handling неизвестных
    additive events и состояния `unknown_state`/`core_unavailable`.
 
 ## Проверки

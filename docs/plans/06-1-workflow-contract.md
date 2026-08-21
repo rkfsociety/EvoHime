@@ -41,9 +41,15 @@ capability-as-tool, но остаётся безопасным для Rust Core.
    и не рассылает произвольный broadcast-контекст всем узлам.
 5. Описать acceptance contract узла: output schema, required evidence,
    allowed statuses и retryable error classes.
-6. Добавить canonical hash definition и нормализованный JSON для provenance,
+6. Зафиксировать block/capability identity: стабильный `block_id`, версия
+   capability, display metadata, input/output schema, test fixture и bounded
+   execution context (`workflow_run_id`, `node_id`, `attempt_id`). Изменение
+   схемы или поведения требует новой версии, а не silent mutation.
+7. Описать явные failure outputs/ветви. Неподключённая ошибка не должна
+   маскироваться как успешный output или разрешать зависимому узлу запуск.
+8. Добавить canonical hash definition и нормализованный JSON для provenance,
    чтобы graph snapshot можно было связать с model-request и receipts.
-7. Удалить или запретить в public contract любые пути к inline script,
+9. Удалить или запретить в public contract любые пути к inline script,
    произвольному Python, shell и неразрешённым dynamic refs.
 
 ## Проверки
@@ -55,6 +61,8 @@ capability-as-tool, но остаётся безопасным для Rust Core.
 - тесты на MCP registry identity, tool allowlist и запрет model-controlled server
   selection;
 - тесты на Context Provider identity, stale evidence и parent-subset budget;
+- fixtures на schema validation, test input/output и block-version mismatch;
+- тесты на обязательные входы, явную failure-ветвь и запрет silent success;
 - негативные тесты на nested child, capability escalation, unbounded loop,
   unknown action и unknown route;
 - `cargo fmt --check` и targeted `cargo test -p evohime-core`.
