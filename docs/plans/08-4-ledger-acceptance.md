@@ -7,29 +7,40 @@
 
 ## Deterministic acceptance fixtures
 
-- action → tool call → observation → successful typed receipt;
+- action → tool call → observation → successful typed receipt linked to signed
+  `receipts_v1`;
+- legacy event mapping с воспроизводимым `event_id` и сохранённым
+  `sequence_id`;
 - approval approve/reject/expiry;
 - timeout, cancellation, provider failure и unknown result;
+- pre-dispatch restart (`interrupted`/resumable) и post-dispatch restart
+  (`unknown_outcome`/blocked без blind retry);
 - reconnect во время каждой промежуточной фазы;
 - duplicate IPC delivery и duplicate terminal attempt;
 - SQLite failure с полным rollback;
-- supervisor restart с `stuck`/`unknown_outcome` без blind retry;
-- replay gap, stale Core revision и bounded snapshot;
+- supervisor restart с recovery decision, `stuck`/`dead_letter` только по
+  bounded rule и `unknown_outcome` без blind retry;
+- replay gap, stale `core_instance_id`/`session_epoch` и bounded typed snapshot;
+- workflow `run_sequence` ↔ global ledger event linkage;
 - secret/PII/raw output redaction.
 
 ## Release checks
 
-- `cargo test` для Core, local storage, desktop IPC и receipt integration;
+- `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc`
+  и targeted `evohime-receipts`/model-provenance integration tests;
 - `npm run check:protocol`, `npm run typecheck`, `npm test`;
-- migration, backup, rollback и package smoke;
+- migration v29→v30, legacy fixtures, backup, rollback и package smoke;
 - security review для redaction, approval binding, frame/payload limits и
   renderer isolation;
-- `git diff --check` и проверка всех внутренних Markdown-ссылок.
+- `git diff --check`, проверка всех внутренних Markdown-ссылок и отсутствие
+  ссылок на удаляемые plan files после closure.
 
 ## Закрытие
 
 После прохождения критериев контракт переносится в `docs/architecture.md`,
 подтверждённое состояние — в `docs/current-state.md`, а исполняемые файлы
-плана 08 удаляются по правилу репозитория. Если хотя бы один критерий не
-закрыт, план остаётся в каталоге с секцией о фактически реализованном и
-оставшемся поведении.
+плана 08 удаляются по правилу репозитория. Перед удалением обновляются
+`docs/plans/README.md`, `docs/development-plan.md` и все ссылки/таблицы,
+которые называют 08 незавершённым. Если хотя бы один критерий не закрыт,
+план остаётся в каталоге с секцией о фактически реализованном и оставшемся
+поведении; частичное наличие кода не считается closure.

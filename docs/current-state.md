@@ -100,7 +100,7 @@ Core и supervisor — внутренние компоненты установ�
 - выбор модели в чате (`ModelPicker`) с разделением каталога на free/paid; выбор применяется без перезапуска Core через IPC `SelectModelRequest`;
 - настройки провайдера собраны в один блок (`ProviderForm`) вместо прежнего `SettingsPanel`; отдельный `WorkspacePicker` убран — папка выбирается из панели проектов;
 - `RecoveryBanner` показывает подтверждённое Core состояние восстановления;
-- после перезапуска Core durable build-effect и обычные agent-run проходят lease heartbeat; подтверждённый terminal event приходит в UI как `RESUMABLE`, а неподтверждённый результат остаётся `BLOCKED`; storage schema — v24;
+- после перезапуска Core durable build-effect и обычные agent-run проходят lease heartbeat; подтверждённый terminal event приходит в UI как `RESUMABLE`, а неподтверждённый результат остаётся `BLOCKED`; текущая общая storage schema — v29;
 - `OperationsPanel` («Память и Pulse») — очередь подтверждения памяти и конфликты (только metadata, с действиями «сохранить»/«отклонить»/«заменить»), typed read-only projection child workflow (timeline, role/state/revision/budget, lease и dead-letter) и schedule-событий, а также управление локальным индексом workspace: status, update/rebuild/cancel, optional embeddings и bounded search;
 - specialized child workflows реализованы в Core: versioned typed request/report, correlation и atomic per-parent sequence, schema/size/provenance/grant revalidation, coordinator state machine, monotonic lease recovery, bounded transport retry/revision, durable checkpoint/dead-letter retention и deterministic fan-in. Context allowlist и ArtifactStore offload/read policy не допускают произвольный child context или raw Sensitive/Secret output; audit rejection и trace projection разделены;
 - Context Budget Manager: перед каждым model call Core собирает контекст под bounded budget вместо отправки всего накопленного диалога. Профиль модели, обязательный минимум, конечная лестница сокращения, детерминированный `content_hash` и immutable `context_ledger` с hash реализованы в `crates/context-budget`; ledger, scratchpad, content-addressed artifact store и RAG generation storage живут в SQLite (schema v19). Отказ сборки доходит до UI как `BudgetUnavailable` с кодом и стадией, а не как молчаливый обрыв. Сжатие истории выполняет отдельный bounded вызов model gateway с deterministic fallback, tool schemas ограничены loadout детерминированного intent router, а вызов вне loadout отклоняется до эффекта. Событие `ModelContext` получило additive projection состава и причин сокращения; добавлены команды просмотра ledger и scratchpad, `summarize now`, очистки scratchpad, `pin/unpin item` и чтения артефакта. См. `docs/architecture.md`;
@@ -213,7 +213,7 @@ Legacy web UI, HTTP server, browser launcher и PostgreSQL migrations удале
 ## Provenance model requests
 
 После этапов 05.1–05.9 checkout содержит канонический model-request contract,
-SQLite provenance repository (schema 28, internal provenance schema 2),
+SQLite provenance repository в общей schema v29 (internal provenance schema 2),
 durable request/response/tool/source/shadow/tombstone tables, Core checkpoint
 API, startup recovery/retention hooks и offline bundle boundary. Existing
 receipt contract remains backward-compatible; request linkage is additive.

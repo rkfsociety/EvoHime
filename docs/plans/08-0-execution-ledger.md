@@ -9,19 +9,28 @@ memory и evaluation должны видеть одну воспроизводи
 
 ## Что уже есть в checkout
 
-- append-only `events` с глобальной sequence и bounded replay;
-- диагностический replay gap и Core/session revision в IPC envelope;
-- signed `receipts_v1` для execution/approval audit;
-- recovery и unknown-outcome semantics для model requests;
-- Core/SQLite как durable source of truth.
+- append-only `events` с канонической глобальной `sequence_id` и bounded replay;
+- `core_instance_id`/`session_epoch`, `ReplayGap` и `FullSnapshot` в IPC, но
+  пока без typed execution projection;
+- signed `receipts_v1` для execution/approval audit и отдельный model-request
+  provenance;
+- durable workflow runtime 06 со своими `workflow_run_events.run_sequence`,
+  lease и recovery;
+- текущая общая SQLite schema v29, Core/SQLite как durable source of truth.
 
-Новый план не заменяет эти контракты и не создаёт вторую базу данных.
+Новый план не заменяет эти контракты и не создаёт вторую базу данных. Ledger
+становится канонической глобальной последовательностью typed execution events.
+`workflow_run_events.run_sequence` остаётся bounded per-run projection и должен
+ссылаться на глобальное событие, а не конкурировать с `events.sequence_id`.
+`receipts_v1`, model provenance и context ledgers остаются доменными
+immutable-слоями, связанными по IDs и hashes.
 
 ## Границы
 
-Входит: устойчивые `run_id`, `session_id`, `event_id`, typed action/tool/
-observation/receipt/failure events, атомарные state transitions, redaction,
-reconnect/replay и supervisor recovery.
+Входит: устойчивые `run_id`, логический `session_id`, `event_id`, typed
+action/tool/observation/receipt/failure events, атомарные state transitions,
+legacy mapping, redaction, reconnect/replay, bounded snapshot и Core startup
+recovery.
 
 Не входит: UI как durable state, произвольный unversioned JSON, новая база,
 model-generated authority для опасных действий, внешний telemetry backend или
@@ -31,16 +40,20 @@ model-generated authority для опасных действий, внешний
 
 ### Блокирующие
 
-- текущие `EventJournal`, `LocalDatabase`, authenticated desktop IPC и schema
-  migration/backup path;
-- существующие `receipts_v1`, approval policy и model provenance.
+- текущие `EventJournal`, `LocalDatabase` (schema v29), workflow storage,
+  authenticated desktop IPC и schema migration/backup path;
+- текущий durable workflow runtime 06: его run/node/attempt state и recovery
+  должны сохранить compatibility и получить linkage на ledger events;
+- существующие `receipts_v1`, approval policy и model provenance; ledger не
+  переписывает их таблицы без явной cross-reference migration.
 
 ### Опциональные
 
-- планы 06–07 могут использовать новые projections после их появления, но не
-  блокируют выполнение плана 08;
-- evaluation harness из 06-4 и telemetry из 07-4 используются при наличии,
-  иначе план поставляется со своими deterministic fixtures.
+- план 07 и его telemetry могут использовать новую projection после её
+  появления, но не блокируют выполнение плана 08;
+- общий evaluation harness (`crates/evohime-core/src/evals.rs`,
+  `tests/evals/`) и telemetry из 07-4 используются при наличии, иначе план
+  поставляется со своими deterministic fixtures.
 
 ## Этапы
 
@@ -53,7 +66,10 @@ model-generated authority для опасных действий, внешний
 
 ## Готово, когда
 
-Каждый action имеет начало и связанный typed receipt либо typed failure; запись
-атомарна; replay сохраняет порядок и сообщает gap/stale revision; restart не
-создаёт blind retry; renderer получает только bounded redacted projection и не
-может менять durable ledger напрямую.
+Каждый новый action имеет начало и ровно один terminal outcome (typed receipt,
+typed failure, cancellation или explicit unknown outcome); запись и переход
+проекции атомарны; legacy rows доступны через детерминированный mapping; replay
+сохраняет глобальный порядок и сообщает gap по `sequence_id`, а смена
+`core_instance_id`/`session_epoch` не смешивает поколения projection; restart
+не создаёт blind retry; renderer получает только bounded redacted projection и
+не может менять durable ledger напрямую.
