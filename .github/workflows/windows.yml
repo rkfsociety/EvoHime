@@ -83,9 +83,12 @@ jobs:
             echo "native=$native"
           } >> "$GITHUB_OUTPUT"
 
+  # Условие — `native`, а не `rust`: этот job исполняет гейты из scripts/, поэтому
+  # правка самого гейта обязана его запускать. Иначе коммит, меняющий только
+  # scripts/, доходил до сборки установщика, ни разу не прогнав эти гейты.
   rust-native:
     needs: changes
-    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.electron == 'true'
+    if: needs.changes.outputs.native == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -121,9 +124,11 @@ jobs:
           path: artifacts/eval-gate/summary.jsonl
           if-no-files-found: ignore
 
+  # Здесь та же причина: шаги job'а вызывают scripts/postinstall-allowlist.mjs и
+  # npm-скрипты оболочки, а собранный им пакет уходит в установщик.
   electron-shell:
     needs: changes
-    if: needs.changes.outputs.electron == 'true' || needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.native == 'true'
     runs-on: windows-latest
     defaults:
       run:
@@ -198,7 +203,9 @@ jobs:
           if-no-files-found: ignore
 
   build-native:
-    needs: [changes, rust-native, windows-check]
+    # electron-shell тоже в needs: установщик упаковывает собранную им оболочку,
+    # поэтому его падение обязано останавливать публикацию.
+    needs: [changes, rust-native, electron-shell, windows-check]
     # Пропущенная зависимость не должна пропускать этот job, а упавшая — должна
     # его остановить: needs.* даёт skipped, поэтому условие пишется явно.
     if: >-
