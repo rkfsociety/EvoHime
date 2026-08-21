@@ -300,11 +300,15 @@ REQUEST_REDACTED
 REQUEST_RETENTION_PRUNED
 REQUEST_LEDGER_MISMATCH
 REQUEST_EVIDENCE_EVICTED
+REQUEST_SHADOW_CONTENT_COMPACTED
 ```
 
 На IPC boundary не использовать generic string errors вместо typed contract.
-Любая ошибка из этого списка блокирует dispatch (fail closed), а audit event
-может содержать только bounded код и безопасную диагностическую projection.
+Любая ошибка из этого списка, обнаруженная на provenance commit/checkpoint,
+блокирует dispatch (fail closed). Read-only resolver может вернуть отдельный
+typed статус недоступности historical source без блокировки уже проверяемого
+текущего request; audit event при этом содержит только bounded код и
+безопасную диагностическую projection.
 
 ## Тесты
 

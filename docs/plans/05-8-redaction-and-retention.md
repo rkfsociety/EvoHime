@@ -34,7 +34,7 @@ Envelope с полным system prompt и messages по умолчанию ст�
 2. `model_request_sources.source_hash` удалённого источника тумбстоунится по тому же правилу, что и сам источник: для ambient-высказывания и `forget_window` хеш удаляется, для `forget` памяти сохраняется digest. Оставлять хеш короткого удалённого текста в provenance запрещено — это восстановимость перебором, ровно та, ради которой ambient-tombstone его не хранит. `envelope_hash` это правило не затрагивает: он покрывает весь request целиком и перебору не поддаётся.
 3. Такой envelope переходит в состояние `redacted` и перестаёт быть полностью реконструируемым. Это явное наблюдаемое состояние, а не тихая потеря данных: verifier обязан отличать `redacted` от повреждения и от несовпадения хеша.
 4. Canonical hash оригинала и подписанный request receipt остаются. Цепочка receipts не переписывается: доказательство того, что request был именно такой, сохраняется, восстановимость текста — нет. Это тот же приём, что уже применён к `verified_pruned` в receipts.
-5. У самого provenance-хранилища должен быть собственный retention, согласованный с retention receipts: envelope и captured evidence старше срока сжимаются до metadata + hash. Без этого append-only shadowing из [05.6](05-6-compaction-shadowing.md) даёт неограниченный рост локальной SQLite, потому что вытесненные из контекста `A`, `B`, `C` не удаляются никогда.
+5. У самого provenance-хранилища должен быть собственный retention, согласованный с retention receipts: envelope, captured evidence и таблицы `context_shadowed_originals`/`context_shadow_blocks` из [05.6](05-6-compaction-shadowing.md) старше срока сжимаются до metadata + hash по правилам источника. Без этого append-only shadowing из [05.6](05-6-compaction-shadowing.md) даёт неограниченный рост локальной SQLite, потому что вытесненные из контекста `A`, `B`, `C` не удаляются никогда.
 6. Остаточное окно в бэкапах называется пользователю так же прямо, как для ambient-транскриптов, и вращается той же продовой константой.
 7. Удаление блока по `refcount = 0` не считается редактированием envelope: блок исчезает только тогда, когда на него не ссылается ни один живой envelope.
 
@@ -46,6 +46,7 @@ Envelope с полным system prompt и messages по умолчанию ст�
 
 - тумбстоун `source_hash` по правилу источника: ambient — без хеша, память — digest;
 - переход в `redacted` не меняет `envelope_hash`;
+- shadow rows и их captured blocks обрабатываются в той же транзакции, что и `model_request_sources`/envelope; временный `metadata_hash_only` из 05.6 не маскируется под `REQUEST_SOURCE_MISSING`;
 - retention сжимает envelope до metadata + hash и выставляет `retention_pruned`.
 
 ### Integration

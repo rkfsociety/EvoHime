@@ -32,9 +32,10 @@ ContextEvidenceRef {
 
 `ContextEvidenceRef` не является вторым списком контекста. Это тип элемента
 `ContextProjection.entries[].source_refs[]` из [05.1](05-1-canonical-request-contract.md)
-и [05.6](05-6-compaction-shadowing.md). `projection` — ссылка на projection,
-в которой evidence было включено: как минимум `projection_id` и
-`projection_entry_id`; содержимое projection в ссылке не дублируется.
+и [05.6](05-6-compaction-shadowing.md). `projection` — ссылка на ту же
+projection через `ledger_id`/`context_projection_hash` и
+`projection_entry_id`; отдельный `projection_id` не вводится, а содержимое
+projection в ссылке не дублируется.
 
 Маппинг на нормализованную таблицу [05.2](05-2-durable-storage.md) такой:
 
