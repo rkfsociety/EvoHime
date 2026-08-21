@@ -519,7 +519,7 @@ async fn run_listener_supervision(
         .unwrap_or(3);
     let mut restarts = 0;
     loop {
-        let job = match JobObject::create_with_limits(Some(256 * 1024 * 1024), Some(20)) {
+        let job = match JobObject::create_with_limits(Some(LISTENER_MEMORY_LIMIT_BYTES), Some(20)) {
             Ok(job) => job,
             Err(error) => {
                 let _ = logger.write("listener.job_failed", json!({"error": error.to_string()}));
@@ -567,6 +567,11 @@ async fn run_listener_supervision(
         .await;
     }
 }
+
+// The bundled `small` Whisper model is roughly 465 MiB on disk and its
+// resident context needs additional memory. The previous 256 MiB cap caused
+// Windows to fail-fast the listener while it loaded an otherwise valid engine.
+const LISTENER_MEMORY_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 #[derive(Clone)]
 struct SupervisorSessionContext {
@@ -988,6 +993,11 @@ mod tests {
             Some(PathBuf::from("C:\\EvoHime\\data"))
         );
         std::env::remove_var("EVOHIME_TEST_PATH");
+    }
+
+    #[test]
+    fn listener_memory_limit_fits_the_bundled_small_model() {
+        assert!(super::LISTENER_MEMORY_LIMIT_BYTES >= 1536 * 1024 * 1024);
     }
 
     #[test]

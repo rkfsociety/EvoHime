@@ -14,6 +14,7 @@ import { ProviderStore } from './provider-store'
 import { ReloadLimiter } from './recovery'
 import { hardenProcess, hardenSession, isProduction, type HardeningOptions } from './security'
 import { broadcast, registerShellBridge } from './shell-bridge'
+import { supervisorEnvironment } from './supervisor-env'
 import { createTray, type TrayController } from './tray'
 import { BuildLog } from './update/build-log'
 import { BUILD_WORKER_FLAG, runBuildWorkerProcess } from './update/build-worker'
@@ -437,14 +438,17 @@ async function ensureSupervisorSession(
     detached: false,
     windowsHide: true,
     stdio: 'ignore',
-    env: {
-      ...process.env,
-      // Credentials stored through the settings surface win over anything the
-      // ambient environment carries, so the UI is the single source of truth.
-      ...(providers?.environment() ?? {}),
-      EVOHIME_CORE_EXE: coreExecutablePath() ?? process.env['EVOHIME_CORE_EXE'],
-      EVOHIME_DATA_DIR: dataDirectory()
-    }
+    env: supervisorEnvironment(
+      {
+        ...process.env,
+        // Credentials stored through the settings surface win over anything
+        // the ambient environment carries, so the UI is the single source of
+        // truth.
+        ...(providers?.environment() ?? {})
+      },
+      coreExecutablePath(),
+      dataDirectory()
+    )
   })
   supervisorProcess = child
   child.once('error', (error) => {
