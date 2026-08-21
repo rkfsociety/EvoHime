@@ -1591,7 +1591,11 @@ mod tests {
         let dacl =
             evohime_desktop_ipc::windows_security::file_dacl_sddl(&policy_path(directory.path()))
                 .expect("DACL reads");
-        assert_eq!(dacl, format!("D:P(A;;FA;;;{sid})(A;;FA;;;SY)"));
+        let expected = evohime_desktop_ipc::windows_security::normalize_dacl_sddl(&format!(
+            "D:P(A;;FA;;;{sid})(A;;FA;;;SY)"
+        ))
+        .expect("expected DACL normalizes");
+        assert_eq!(dacl, expected);
     }
 
     #[test]

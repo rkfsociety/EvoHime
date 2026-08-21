@@ -226,6 +226,50 @@ pub fn file_dacl_sddl(path: &std::path::Path) -> io::Result<String> {
     Ok(sddl)
 }
 
+/// Приводит DACL в SDDL к канонической форме Windows.
+///
+/// `ConvertSecurityDescriptorToStringSecurityDescriptorW` печатает известные
+/// учётные записи двухбуквенными алиасами (`SY` — LocalSystem, `LA` — встроенный
+/// Administrator и т. д.), поэтому строку, собранную из «сырого» SID, нельзя
+/// сравнивать с выводом системы напрямую: на машине, где процесс запущен от
+/// встроенного администратора, тот же самый дескриптор печатается как `LA`.
+/// Прогон ожидаемой строки через тот же round-trip убирает эту разницу, не
+/// ослабляя проверку: сравниваются канонические формы одного дескриптора.
+pub fn normalize_dacl_sddl(sddl: &str) -> io::Result<String> {
+    use windows_sys::Win32::Security::Authorization::ConvertSecurityDescriptorToStringSecurityDescriptorW;
+
+    let wide: Vec<u16> = sddl.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+    let parsed = unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            wide.as_ptr(),
+            SDDL_REVISION_1,
+            &mut descriptor,
+            std::ptr::null_mut(),
+        )
+    };
+    if parsed == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut text = std::ptr::null_mut();
+    let converted = unsafe {
+        ConvertSecurityDescriptorToStringSecurityDescriptorW(
+            descriptor,
+            SDDL_REVISION_1,
+            DACL_SECURITY_INFORMATION,
+            &mut text,
+            std::ptr::null_mut(),
+        )
+    };
+    unsafe { LocalFree(descriptor as HLOCAL) };
+    if converted == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let canonical = unsafe { wide_to_string(text) };
+    unsafe { LocalFree(text as HLOCAL) };
+    Ok(canonical)
+}
+
 struct OwnedHandle(HANDLE);
 
 impl Drop for OwnedHandle {
@@ -372,6 +416,18 @@ mod tests {
     }
 
     #[test]
+    fn dacl_normalization_replaces_well_known_sids_with_their_aliases() {
+        // Именно из-за этой замены сравнивать «сырую» строку с выводом системы
+        // нельзя: S-1-5-18 печатается как SY, а на машине под встроенным
+        // администратором SID учётки печатается как LA.
+        assert_eq!(
+            normalize_dacl_sddl("D:P(A;;FA;;;S-1-5-18)").expect("normalizes"),
+            "D:P(A;;FA;;;SY)"
+        );
+        assert!(normalize_dacl_sddl("not-a-descriptor").is_err());
+    }
+
+    #[test]
     fn a_hardened_file_is_readable_by_its_owner_only() {
         let sid = current_user_sid().expect("current user SID");
         let path = std::env::temp_dir().join(format!(
@@ -382,7 +438,9 @@ mod tests {
         std::fs::write(&path, b"{}").expect("file writes");
         harden_file_owner_only(&path).expect("DACL applies");
         let dacl = file_dacl_sddl(&path).expect("DACL reads back");
-        assert_eq!(dacl, format!("D:P(A;;FA;;;{sid})(A;;FA;;;SY)"));
+        let expected = normalize_dacl_sddl(&format!("D:P(A;;FA;;;{sid})(A;;FA;;;SY)"))
+            .expect("expected DACL normalizes");
+        assert_eq!(dacl, expected);
         let _ = std::fs::remove_file(&path);
     }
 }
