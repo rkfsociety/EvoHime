@@ -6,39 +6,57 @@
 предложить действие, но не получает права самостоятельно менять filesystem,
 network, процессы или секреты.
 
+План 09 — это hardening существующих контуров и их сведение в единый Core-owned
+контракт. Он не должен создавать второй execution runtime, второй approval
+registry или переносить authority в renderer.
+
 ## Что уже есть в checkout
 
-- Core-owned permissions и approval tokens;
-- exact-call recheck и signed receipts;
-- supervisor-owned secret references и DPAPI boundary;
-- execution ledger плана 08 для terminal outcomes;
-- bounded tool/runtime limits и cancellation paths.
+- `evohime-permissions`: typed permissions/modes, hard policy rules, session
+  overrides, scoped path grants и canonical exact-call approval identity;
+- `evohime-tool-runtime`: `ToolRegistry` с preflight, permission checks,
+  bounded previews, `WorkspaceSandbox`, network capability и cancellation;
+- `evohime-receipts`: durable action/approval intent, canonical call hash,
+  monotonic expiry, atomic claim и claim-time policy recheck;
+- `run_policy`, model-request provenance, EventJournal и authenticated IPC;
+- supervisor-owned provider/secret boundary. Секретные значения не являются
+  capability и не должны попадать в snapshot, prompt, argv, renderer или log.
 
-План 09 усиливает существующие границы и не переносит policy в renderer или
-второй execution runtime.
+Это не означает, что план 09 уже выполнен: `PermissionEngine` всё ещё содержит
+legacy/in-memory approval state, а общий Core-owned capability snapshot и
+единый gate для всех effect paths отсутствуют.
 
 ## Границы
 
-Входит: capability snapshot на run, permissions, workspace/network scope,
-Core-owned path resolver, approval lifecycle, preflight/postflight hooks,
-redaction и bounded input/output.
+Входит: versioned capability snapshot на run/action, immutable policy hash,
+workspace и network scope, Core-owned resolver, durable approval lifecycle,
+typed outcomes, preflight/postflight hooks, redaction и bounded
+input/output.
 
 Не входит: unrestricted desktop control, host-full-access режим, обязательный
-внешний egress, модельная оценка риска как authority или обход supervisor/Core.
+внешний egress, модельная оценка риска как authority, прямой renderer/tool
+доступ к workspace или обход supervisor/Core.
 
 ## Зависимости
 
 ### Блокирующие
 
-- план 08 для canonical call, receipt, terminal event и execution linkage;
-- существующие Core policy, permissions, supervisor secret boundary и
-  authenticated IPC.
+- план 08: устойчивые action/run identifiers, typed terminal events,
+  execution linkage, receipt linkage и replay/recovery semantics;
+- текущие `evohime-permissions`, `evohime-tool-runtime`, `evohime-receipts`,
+  supervisor secret boundary и authenticated desktop IPC.
+
+План 08 является зависимостью, а не уже существующим результатом: до его
+завершения 09 нельзя принимать как durable ledger integration.
 
 ### Опциональные
 
-- browser, voice и vision adapters получают capability-scoped session после
-  появления своих планов; до этого policy поддерживает builtin tools;
-- catalog metadata из плана 07-2 не обязательна: используется manifest hash.
+- план 07-2 [`toolkit-catalog-lifecycle`](07-2-toolkit-catalog-lifecycle.md):
+  если catalog metadata отсутствует, snapshot использует установленный
+  manifest identity/hash и typed `unavailable` для неизвестного adapter;
+- browser, voice и vision adapters из планов 13–15: до их появления snapshot
+  содержит пустой adapter scope, а вызов получает `unavailable` и не имеет
+  fallback на unrestricted access.
 
 ## Этапы
 
@@ -51,7 +69,9 @@ redaction и bounded input/output.
 
 ## Готово, когда
 
-Опасное действие нельзя выполнить без действующего policy/approval; все
-проверки находятся в Core; approval нельзя перенести на другой call/scope;
-rejection, timeout и cancellation видны в execution ledger; секреты не
-попадают в renderer, receipts или логи открытым текстом.
+Каждый effect path (`ToolRegistry`, terminal, workflow adapters и будущие
+provider/MCP/browser adapters) вызывает один Core policy gate; dangerous action
+без действующего policy/approval не запускается; approval нельзя перенести на
+другой task/session/run/action/call/scope/snapshot; rejection, expiry,
+cancellation и unknown outcome имеют durable typed linkage; секреты не
+попадают в renderer, preview, receipts или logs открытым текстом.
