@@ -25,6 +25,7 @@
 |---|---|---|---|---|
 | 3 | [run-llama/llama_index](https://github.com/run-llama/llama_index) | Исследовано | RAG-контракты, ingestion, workflow и evaluation | Адаптировать идеи; runtime не подключать |
 | 4 | [openinterpreter/openinterpreter](https://github.com/openinterpreter/openinterpreter) | Исследовано | Execution policy, sandbox, approvals, ACP и typed protocol | Адаптировать security/protocol идеи; runtime не подключать |
+| 5 | [OthersideAI/self-operating-computer](https://github.com/OthersideAI/self-operating-computer) | Исследовано | Computer-use loop, screenshot/OCR и action schema | Адаптировать идеи; прямое управление desktop не включать по умолчанию |
 
 ## Карточки исследований
 
@@ -750,6 +751,186 @@ negative-test идеи`; `не подключать Open Interpreter/Codex runti
   deny-read/write and child-process escape tests, bounded protocol frames,
   authenticated approval responses, cancellation/cleanup after crash,
   redacted audit events и сохранение Core/supervisor ownership invariants.
+
+### 5. Self-Operating Computer
+
+- Источник: https://github.com/OthersideAI/self-operating-computer
+- Дата проверки: 2026-08-21
+- Ревизия/commit: `fac568eea7da5e24f8bc91bfc1211b65679177eb`
+- Последний commit в checkout: 2025-09-19, `Fix typo in README description`.
+- Версия пакета: `1.5.8`.
+- Лицензия исходного кода: MIT, copyright OthersideAI 2023.
+- Состав: Python CLI `operate`, `pyautogui` desktop control, screenshots,
+  OCR через EasyOCR, YOLOv8 Set-of-Mark labels, OpenAI/Anthropic/Google/Qwen
+  adapters, Ollama/LLaVA local path, optional voice mode и простой `evaluate.py`.
+- Назначение: multimodal model получает screenshot и objective, возвращает
+  JSON-последовательность действий `click`, `write`, `press` или `done`, после
+  чего framework исполняет их на локальном desktop. README заявляет поддержку
+  Windows, macOS и Linux с X server.
+- Краткий вывод: полезный ранний reference для computer-use action contract,
+  coordinate normalization, OCR/SoM grounding, screenshot compression и
+  goal-based evaluation. Это не безопасный execution runtime для Евы:
+  действия выполняются напрямую через `pyautogui`, без sandbox, per-action
+  approval, capability policy, provenance или redaction.
+
+#### Что изучено
+
+- Основной цикл в `operate/operate.py`: получает objective, строит system
+  prompt, до десяти раз запрашивает у модели следующий action batch, исполняет
+  его и завершает работу по `done` либо после лимита loop count.
+- Канонический action schema предельно мала: `click` с координатами или OCR
+  text, `write` с текстом, `press`/hotkey со списком клавиш и `done` с summary.
+  Модель может вернуть несколько действий за один ответ.
+- Координаты могут передаваться как доля ширины/высоты экрана. Runtime
+  переводит проценты в текущие pixel dimensions, перемещает мышь и кликает.
+  Для `press` клавиши нажимаются и отпускаются группой; `write` печатает
+  посимвольно через `pyautogui`.
+- Перед каждым vision request делается screenshot с курсором. Для разных
+  providers изображение отправляется как base64 data URL, JPEG сжатие либо
+  resize до ограниченного размера. В history сохраняются system prompt,
+  user image message и JSON ответа assistant.
+- OCR path получает текст кнопки от модели, запускает EasyOCR по screenshot,
+  ищет совпадение, вычисляет центр bounding box и подставляет координаты.
+  Set-of-Mark path использует YOLOv8 для красных `~N` labels и таблицу
+  bounding-box coordinates.
+- Prompt templates специально ограничивают модель четырьмя операциями и
+  содержат platform-specific советы для открытия браузера, поиска приложений,
+  ввода URL и повторного осмотра screenshot после действия.
+- Provider adapters поддерживают GPT-4o/GPT-4.1/o1 vision, Claude 3, Gemini,
+  Qwen-VL и Ollama/LLaVA. При ошибке JSON/provider/OCR код меняет prompt либо
+  откатывается к GPT-4o; некоторые fallback-пути вызываются рекурсивно.
+- Конфигурация загружает `.env`, принимает несколько API keys и при первом
+  запуске дописывает введённый ключ в локальный `.env`. Ollama может работать
+  через локальный host, но базовый cloud flow отправляет полные screenshots
+  выбранному provider.
+- `evaluate.py` содержит только два сценария (`Go to Github.com` и `Go to
+  Youtube.com and play a video`), после выполнения проверяет финальный
+  screenshot отдельным GPT-4o judge и ожидает строгое JSON `guideline_met` и
+  `reason`.
+- В репозитории нет отдельного sandbox, permission profile, action approval,
+  window/app allowlist, secret redaction, signed receipt или typed durable
+  session state. Ошибки низкоуровневого keyboard/mouse вызова печатаются и
+  подавляются.
+- Полный test suite не запускался; анализ выполнен по исходникам, setup,
+  requirements, README и evaluation harness. Последняя ревизия заметно
+  старше текущей даты, поэтому provider APIs и инструкции требуют повторной
+  проверки перед любым использованием.
+
+#### Что можем использовать в Еве
+
+- **Минимальный computer-use action contract.** Взять как основу отдельного
+  будущего typed tool: `click`, `type`, `key_press`, `scroll`, `wait`, `finish`,
+  где каждый action имеет id, display/window target, coordinate frame, reason,
+  timeout, expected effect и policy classification. Четыре операции проекта —
+  хороший baseline, но для Евы их нужно расширить только после capability
+  design.
+- **Screenshot provenance.** Каждый кадр должен иметь capture id, timestamp,
+  display/window bounds, DPI/scale, cursor state, image hash и redaction
+  status. Action обязан ссылаться на конкретный кадр; после изменения окна
+  координатный план устаревает и требует нового observation.
+- **Coordinate normalization.** Нормализация в относительные координаты
+  переносима между разрешениями, но должна включать display id, viewport,
+  scale factor и bounds validation. Перед кликом Core должен проверить, что
+  target остаётся в разрешённом окне и не изменился после screenshot.
+- **OCR/visual grounding fallback.** Сочетание vision model, OCR text lookup и
+  visual labels можно использовать как альтернативные способы grounding:
+  text → bounding box → center и label → box → click. В Еве результат должен
+  быть evidence с confidence, source frame и bounded ambiguity; низкая
+  уверенность ведёт к запросу пользователя, а не к повторному клику.
+- **Screenshot compression policy.** Сжатие/resize перед cloud vision уменьшает
+  cost и latency. В Еве сначала применять deterministic redaction/region crop,
+  затем bounded JPEG/PNG encoding; оригинал хранить локально только при
+  явной необходимости и с lifecycle/retention policy.
+- **Observation-action loop.** Полезен общий контракт: capture → model plan →
+  validate → approval/policy → execute one bounded action → capture again →
+  verify expected state. Нельзя исполнять произвольный batch действий из одного
+  ответа без повторной проверки каждого side effect.
+- **Goal-based UI evaluation.** Идея objective + observable final-state
+  guideline полезна для offline fixtures: «страница открыта», «диалог закрыт»,
+  «файл сохранён». В Еве judge должен дополняться deterministic UI/API/state
+  checks, а LLM-оценка оставаться advisory и иметь `unknown`/invalid result.
+- **Provider capability matrix.** Набор разных vision/local providers может
+  стать fixture matrix для model gateway: image input, OCR, structured JSON,
+  max image size, latency, local/cloud egress и fallback behavior.
+- **Voice-to-objective boundary.** Voice mode можно рассматривать как отдельный
+  input adapter: audio → transcript → user confirmation → objective. Голос не
+  должен напрямую превращаться в desktop side effect без тех же approval,
+  preview и audit правил.
+- **Human-visible action preview.** Текстовая печать `thought/action` в CLI
+  показывает полезный UX-паттерн, но в Еве превью должно показывать нормализованный
+  target, actual key sequence, redacted text, risk и ожидаемый эффект, а не
+  доверять свободному model thought.
+- **Computer-use evaluation fixtures.** Перенять классы сценариев для будущего
+  benchmark: browser navigation, login form без отправки секрета, file picker,
+  dialog confirmation, wrong-window focus, DPI scaling, OCR ambiguity,
+  disappearing target, timeout и cancel during action.
+
+#### Ограничения и риски
+
+- **Нет технической sandbox boundary.** `pyautogui` управляет реальным
+  пользовательским desktop; модель может открыть сайты, ввести текст, нажать
+  подтверждение или отправить данные. В проекте нет capability allowlist,
+  restricted desktop/session, window isolation или Core-owned approval.
+- **Cloud egress screenshots.** Полный экран может содержать пароли,
+  переписку, документы, токены и уведомления. Код отправляет base64 screenshot
+  внешнему provider без обязательной redaction, region crop, consent или
+  provenance ledger.
+- **Действия не подтверждаются поштучно.** Ответ может содержать несколько
+  кликов/вводов, и `operate()` исполняет их последовательно после одного ответа
+  модели. Ошибка после частичного исполнения не даёт безопасного rollback.
+- **Координаты хрупки и гоняются с UI.** Изменение окна, DPI, scaling,
+  multi-monitor layout, cursor position, animation или modal dialog может
+  направить клик в другой target. OCR match по substring также может выбрать
+  неоднозначный элемент.
+- **Низкоуровневые ошибки подавляются.** `OperatingSystem.write/press/mouse`
+  печатают exception и продолжают цикл; это затрудняет точный terminal state,
+  receipt и безопасную компенсацию.
+- **JSON-контракт не валидируется схемой.** `clean_json` обрезает markdown
+  fences и затем вызывает `json.loads`; нет строгой Pydantic/JSON Schema
+  валидации диапазонов координат, допустимых клавиш, размера текста и числа
+  действий.
+- **Fallback может повторить side effect.** После ошибки provider/OCR код
+  возвращается к другому model path, а уже изменённая history может повторно
+  запланировать действие. Нужны idempotency/action hash и explicit unknown
+  outcome, которых здесь нет.
+- **Секреты сохраняются небезопасно.** Введённые API keys дописываются в
+  plaintext `.env`; это несовместимо с DPAPI/safeStorage и Core-owned secret
+  boundary EvoHime.
+- **Старые и тяжёлые зависимости.** Requirements содержат жёстко pinned
+  версии 2023 года, одновременно тянут OpenAI/Anthropic/Google/Ollama,
+  EasyOCR, Ultralytics, PyTorch-related stack и platform GUI dependencies.
+  Это повышает packaging, supply-chain и update risks, а лицензии моделей и
+  weights нужно проверять отдельно.
+- **Evaluation слабая и зависит от judge.** Два сценария и один финальный
+  screenshot не обнаруживают промежуточный вред, утечку данных, неправильное
+  окно или ошибочное действие; GPT judge сам может ошибиться.
+- **Проект, вероятно, не является текущим источником computer-use API.** При
+  последнем commit в 2025 году его prompts/providers отражают старые модели и
+  форматы. Использовать как исторический reference и test-idea source, а не
+  как актуальный provider abstraction.
+
+#### Предварительное решение
+
+`адаптировать action/screenshot/grounding/evaluation идеи для отдельного
+computer-use capability`; `не подключать PyAutoGUI framework и не разрешать
+прямое desktop управление без отдельного sandbox, approval и audit дизайна`.
+
+#### Связь с EvoHime
+
+- уже покрыто и не дублировать: Core-owned tools, capability/approval policy,
+  supervisor lifecycle, bounded execution, model gateway, redaction,
+  provenance, cancellation и receipts;
+- наиболее ценные кандидаты для будущего плана: отдельный computer-use
+  action schema, screenshot provenance/redaction, OCR/vision grounding,
+  observation-action verification loop и UI evaluation fixtures;
+- desktop control должен быть отдельным opt-in capability с default deny,
+  ограниченными окнами/приложениями, подтверждением опасных actions и
+  локальным/изолированным vision path; renderer не должен вызывать pyautogui
+  или provider напрямую;
+- критерии проверки: no raw-screen egress by default, bounded/cropped/redacted
+  screenshots, frame-bound action hashes, target revalidation, per-action
+  approval for side effects, typed unknown outcomes, cancel/timeout cleanup,
+  deterministic UI fixtures и сохранение Core/supervisor ownership.
 
 ## Итог для будущего плана
 
