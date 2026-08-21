@@ -414,7 +414,9 @@ impl ModelGateway {
     ) -> Result<TokenStream, ProviderError> {
         let provider = self.provider_for_route(route)?;
         Ok(match model {
-            Some(model) if !model.trim().is_empty() => provider.stream_chat_with_model(model, messages),
+            Some(model) if !model.trim().is_empty() => {
+                provider.stream_chat_with_model(model, messages)
+            }
             _ => provider.stream_chat(messages),
         })
     }
@@ -426,7 +428,9 @@ impl ModelGateway {
         messages: &[ChatMessage],
         tools: &[ToolSpec],
     ) -> Result<ChatResult, ProviderError> {
-        self.provider_for_route(route)?.chat_with_tools(model, messages, tools).await
+        self.provider_for_route(route)?
+            .chat_with_tools(model, messages, tools)
+            .await
     }
 
     /// Policy entry point used by Core's agent loop. The caller supplies only
