@@ -26,6 +26,7 @@
 | 3 | [run-llama/llama_index](https://github.com/run-llama/llama_index) | Исследовано | RAG-контракты, ingestion, workflow и evaluation | Адаптировать идеи; runtime не подключать |
 | 4 | [openinterpreter/openinterpreter](https://github.com/openinterpreter/openinterpreter) | Исследовано | Execution policy, sandbox, approvals, ACP и typed protocol | Адаптировать security/protocol идеи; runtime не подключать |
 | 5 | [OthersideAI/self-operating-computer](https://github.com/OthersideAI/self-operating-computer) | Исследовано | Computer-use loop, screenshot/OCR и action schema | Адаптировать идеи; прямое управление desktop не включать по умолчанию |
+| 6 | [simular-ai/Agent-S](https://github.com/simular-ai/Agent-S) | Исследовано | Разделение worker/grounding, reflection, bounded trajectory и UI evaluation | Адаптировать computer-use/evaluation идеи; runtime не подключать |
 
 ## Карточки исследований
 
@@ -931,6 +932,155 @@ computer-use capability`; `не подключать PyAutoGUI framework и не
   screenshots, frame-bound action hashes, target revalidation, per-action
   approval for side effects, typed unknown outcomes, cancel/timeout cleanup,
   deterministic UI fixtures и сохранение Core/supervisor ownership.
+
+### 6. Agent S
+
+- Источник: https://github.com/simular-ai/Agent-S
+- Дата проверки: 2026-08-21
+- Ревизия/commit: `bffdb59c60cbbb38c3a190b2e91da12039e4063c`
+- Последний commit в checkout: 2026-07-31, `Update README.md`.
+- Лицензия исходного кода: Apache-2.0.
+- Версия Python-пакета в `setup.py`: `0.3.2`; заявлен Python `>=3.9, <=3.12`.
+- Состав: поколения `s1`, `s2`, `s2_5`, `s3`, Python CLI/API, visual
+  grounding через UI-TARS-подобную модель, OCR/Tesseract, optional local
+  code environment, BBoN/comparative judge и evaluation sets для OSWorld,
+  WindowsAgentArena и AndroidWorld.
+- Назначение: framework для автономного управления GUI через Agent-Computer
+  Interface; README позиционирует Agent S3 как исследовательскую систему для
+  сложных desktop-задач и приводит benchmark-результаты.
+- Краткий вывод: это самый содержательный из изученных computer-use
+  reference по разделению планирования и grounding, bounded visual history,
+  reflection и offline evaluation. Его runtime нельзя переносить в Еву:
+  модель генерирует исполняемый Python-код для `pyautogui`, а включаемый
+  `LocalEnv` запускает произвольный Python/Bash с правами текущего пользователя.
+
+#### Что изучено
+
+- `AgentS3` создаёт `Worker`, который получает инструкцию и screenshot,
+  хранит ограниченную историю визуальной траектории (по умолчанию 8 image
+  turns), при необходимости запускает отдельный reflection agent и передаёт
+  результат следующему шагу генерации.
+- `OSWorldACI` отделяет worker-модель от grounding-модели: UI-TARS-подобный
+  endpoint получает screenshot и описание элемента, возвращает координату,
+  после чего ACI масштабирует её из `grounding_width/height` в фактический
+  размер экрана. Есть отдельный OCR-путь через Tesseract для поиска слов и
+  bounding boxes.
+- ACI-примитивы (`click`, `type`, `drag_and_drop`, `scroll`, `hotkey`, `open`,
+  `done` и другие) не исполняют действие сами, а строят Python-строку с
+  `pyautogui`; README показывает финальный `exec(action[0])` на стороне
+  вызывающего кода.
+- `enable_local_env` подключает `LocalEnv`: Python выполняется через
+  `sys.executable -c`, Bash — через `/bin/bash -lc` с timeout 30 секунд для
+  shell-пути. В CLI есть явное предупреждение, но нет отдельной sandbox,
+  capability policy или per-action approval.
+- Worker передаёт в reflection не только текущий screenshot, но и историю
+  последнего действия; reflection классифицирует прогресс/циклы и возвращает
+  совет worker-модели. История изображений обрезается отдельным flush-путём
+  для long-context и non-long-context моделей.
+- В дереве есть BBoN/comparative judge для выбора лучшей из нескольких
+  траекторий и evaluation-наборы. Это полезно для offline benchmark, но не
+  должно означать автоматический запуск нескольких desktop-траекторий на
+  пользовательской машине.
+- README описывает Linux/macOS/Windows, single-monitor ограничение,
+  обязательное согласование grounding-разрешения с координатами, Tesseract,
+  несколько cloud providers и локальные/vLLM/Hugging Face endpoints.
+- Исследование выполнено по checkout, README, setup/requirements, S3 agents,
+  grounding, worker, local environment, memory prompts и evaluation-коду;
+  зависимости не устанавливались, GUI и внешние model endpoints не
+  запускались.
+
+#### Что можем использовать в Еве
+
+- **Разделение planner и visual grounding.** В будущей computer-use
+  capability можно оставить сильную worker-модель для намерения/плана и
+  отдельный grounding adapter для OCR/визуального поиска target. Это лучше
+  оформлять как typed evidence, а не как доверенную координату: Core должен
+  проверить confidence, frame id, bounds и допустимое окно перед действием.
+- **Bounded trajectory и reflection.** Ограниченная история кадров, действий,
+  наблюдаемого результата и короткая reflection-проверка полезны для
+  обнаружения циклов, отсутствия прогресса и устаревшего плана. В Еве
+  reflection остаётся advisory signal и не получает права менять policy,
+  approval, secrets или capability profile.
+- **Координатный контракт.** Идею явных `grounding_width/height` можно
+  перенять для контракта `display_id + viewport + DPI/scale + coordinate
+  frame`. Перед исполнением нужно повторно проверить bounds, активное окно,
+  frame hash и соответствие target текущему screenshot.
+- **Комбинация visual/OCR grounding.** UI-TARS/vision, OCR word boxes и
+  текстовый поиск можно использовать как независимые grounding strategies с
+  confidence, ambiguity и provenance. Низкая уверенность должна приводить к
+  запросу уточнения или отказу, а не к повторным кликам наугад.
+- **Offline behavior selection.** BBoN/comparative judge полезен для
+  оценки нескольких гипотез плана в изолированном benchmark или dry-run.
+  Для live desktop разрешать только один выбранный план, с policy/approval и
+  проверкой каждого side effect.
+- **UI benchmark fixtures.** Сценарии OSWorld/WAA/AndroidWorld и локальные
+  evaluation sets можно использовать как источник классов тестов: DPI и
+  single/multi-monitor, wrong-window focus, OCR ambiguity, disappearing
+  target, modal dialog, cancel/timeout, observable final state и recovery.
+  Результаты Agent S фиксировать как внешние research claims, а не как
+  гарантию качества EvoHime.
+- **Модельная матрица.** Раздельные параметры main provider и grounding
+  provider дают хороший шаблон для capability matrix model gateway: vision,
+  structured output, максимальный размер изображения, latency, local/cloud
+  egress и fallback. Локальный endpoint должен быть явным opt-in с
+  проверкой происхождения модели и лицензии весов.
+- **Action preview и наблюдаемость.** Информация `plan`, `plan_code`,
+  `reflection`, frame и execution result показывает, какие поля пригодны для
+  audit/UX. В Еве нужно показывать нормализованный target, риск, redacted
+  input и ожидаемый эффект, а не свободный model thought и не сырой Python.
+
+#### Ограничения и риски
+
+- **Произвольное выполнение кода.** ACI формирует Python-строки, а пример
+  README исполняет их через `exec`. `LocalEnv` дополнительно допускает
+  произвольный Python/Bash от имени текущего пользователя; это несовместимо
+  с Core-owned tool policy, supervisor sandbox и approval boundary Евы.
+- **Нет доказанной границы desktop-безопасности.** В checkout нет
+  permission profile, allowlist окон/приложений, per-action approval,
+  signed receipt, target revalidation или rollback после частично выполненной
+  траектории. Предупреждение CLI снижает риск только организационно.
+- **Скриншоты могут уйти провайдеру.** Полный экран способен содержать
+  пароли, документы, переписку и токены. До любого будущего computer-use
+  egress нужны deterministic redaction, crop, retention и provenance policy;
+  raw screen нельзя отправлять по умолчанию.
+- **Координаты хрупки.** Single-monitor assumption, DPI/scaling, изменение
+  окна, анимации и modal dialog могут сделать координату неверной. OCR и
+  visual model также могут выбрать неоднозначный target; требуется fail-closed
+  ambiguity handling.
+- **Широкая Python-зависимость.** Requirements включают GUI automation,
+  OCR, provider SDK и тяжёлые ML-пакеты; часть зависимостей не pinned. Это
+  повышает supply-chain, packaging и maintenance cost и не соответствует
+  Rust Core runtime EvoHime.
+- **Лицензии моделей отдельны.** Apache-2.0 относится к коду репозитория;
+  UI-TARS/другие модели, веса, inference endpoints и provider terms нужно
+  проверять отдельно до любого распространения или сетевой интеграции.
+- **Benchmark claims не перепроверялись.** Проценты OSWorld и других
+  наборов взяты из README Agent S; в журнале они не считаются подтверждённым
+  продуктовым SLA.
+
+#### Предварительное решение
+
+`адаптировать идеи planner/grounding, trajectory, reflection и evaluation`;
+`не подключать Agent S, PyAutoGUI, LocalEnv и выполнение model-generated
+Python/Bash как runtime-зависимость Евы`.
+
+#### Связь с EvoHime
+
+- будущий computer-use слой должен быть отдельной capability с default deny,
+  Core-owned typed actions, supervisor-isolated execution, screenshot
+  redaction/provenance, cancellation, timeout, receipts и per-action approval;
+  Electron renderer не должен получать прямой доступ к экрану, provider или
+  desktop automation.
+- уже существующие в EvoHime model gateway, capability/approval policy,
+  redaction, provenance, Core state ownership и supervisor lifecycle нужно
+  использовать как источники истины, а не дублировать Python-слоями Agent S.
+- возможная будущая работа: спроектировать computer-use action/evidence
+  schema, безопасный grounding adapter и offline UI fixtures после закрытия
+  базовых policy/IPC зависимостей; этот журнал не создаёт такой план.
+- критерии проверки: отсутствие raw-screen egress по умолчанию, bounded и
+  redacted frames, frame-bound action hash, повторная проверка target/window,
+  typed unknown outcome после частичного действия, per-action approval,
+  cancel/timeout cleanup и deterministic final-state tests.
 
 ## Итог для будущего плана
 
