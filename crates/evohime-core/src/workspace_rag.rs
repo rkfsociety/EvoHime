@@ -940,15 +940,19 @@ fn same_file_identity(left: &fs::Metadata, right: &fs::Metadata) -> bool {
 fn decode_text(bytes: &[u8]) -> (String, &'static str, &'static str) {
     if bytes.starts_with(&[0xff, 0xfe]) {
         let words = bytes[2..]
-            .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| u16::from_le_bytes(*pair))
             .collect::<Vec<_>>();
         return (String::from_utf16_lossy(&words), "utf-16le", "valid");
     }
     if bytes.starts_with(&[0xfe, 0xff]) {
         let words = bytes[2..]
-            .chunks_exact(2)
-            .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| u16::from_be_bytes(*pair))
             .collect::<Vec<_>>();
         return (String::from_utf16_lossy(&words), "utf-16be", "valid");
     }
@@ -2577,12 +2581,14 @@ fn decode_source_range(
                 ));
             }
             let units = slice
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|pair| {
                     if little_endian {
-                        u16::from_le_bytes([pair[0], pair[1]])
+                        u16::from_le_bytes(*pair)
                     } else {
-                        u16::from_be_bytes([pair[0], pair[1]])
+                        u16::from_be_bytes(*pair)
                     }
                 })
                 .collect::<Vec<_>>();
@@ -2893,8 +2899,10 @@ fn decode_vector(bytes: &[u8]) -> Option<Vec<f32>> {
     }
     Some(
         bytes
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|chunk| f32::from_le_bytes(*chunk))
             .collect(),
     )
 }

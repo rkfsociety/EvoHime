@@ -87,7 +87,9 @@ fn read_wav_mono_16k(path: &std::path::Path) -> Vec<f32> {
     assert_eq!(sample_rate, 16_000, "fixture must be 16 kHz");
     assert_eq!(bits, 16, "fixture must be 16-bit PCM");
     bytes[44..]
-        .chunks_exact(2)
-        .map(|pair| i16::from_le_bytes([pair[0], pair[1]]) as f32 / i16::MAX as f32)
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| i16::from_le_bytes(*pair) as f32 / i16::MAX as f32)
         .collect()
 }

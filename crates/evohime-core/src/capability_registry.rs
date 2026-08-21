@@ -384,7 +384,7 @@ fn hex_decode(value: &str) -> Result<Vec<u8>, ()> {
     }
     let mut bytes = Vec::with_capacity(value.len() / 2);
     let raw = value.as_bytes();
-    for chunk in raw.chunks_exact(2) {
+    for chunk in raw.as_chunks::<2>().0 {
         let pair = std::str::from_utf8(chunk).map_err(|_| ())?;
         bytes.push(u8::from_str_radix(pair, 16).map_err(|_| ())?);
     }

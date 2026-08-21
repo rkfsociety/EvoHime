@@ -7598,6 +7598,10 @@ impl TaskCoordinator {
         )
     }
 
+    // `SendError` по контракту tokio возвращает вызывающему саму неотправленную
+    // команду, поэтому размер Err-варианта здесь неизбежен и боксировать его нельзя
+    // без слома API диспетчеризации.
+    #[allow(clippy::result_large_err)]
     pub async fn dispatch(
         &self,
         command: CoreCommand,
