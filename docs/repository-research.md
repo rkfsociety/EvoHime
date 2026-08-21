@@ -36,6 +36,7 @@
 | 13 | [openai/whisper](https://github.com/openai/whisper) | Исследовано | Локальный multilingual seq2seq ASR, 16 kHz preprocessing, 30-секундные окна, language detection, timestamps и quality fallback | Адаптировать ASR-контракты, model manifest и evaluation; Python runtime не подключать, текущий listener остаётся на whisper.cpp |
 | 14 | [jianfch/stable-ts](https://github.com/jianfch/stable-ts) | Исследовано | Whisper post-processing: silence suppression/VAD, stable word timestamps, alignment/refinement, deterministic regrouping и structured result | Адаптировать post-processing/evaluation идеи; archived Python package и Silero/PyTorch dependencies не подключать |
 | 15 | [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) | Исследовано | Speaker diarization pipeline, speaker segmentation/embeddings, overlap-aware Annotation, VAD и RTTM export | Рассматривать как optional offline enrichment; не подключать gated Python/PyTorch runtime и не трактовать кластеры как identity |
+| 16 | [vocodedev/vocode-core](https://github.com/vocodedev/vocode-core) | Исследовано | Streaming voice-agent loop, typed STT/LLM/TTS/action contracts, barge-in, endpointing, transcript events и telephony adapters | Адаптировать lifecycle/interrupt/tool/evaluation идеи; Python SDK, cloud actions и telephony runtime не подключать |
 
 ## Карточки исследований
 
@@ -2751,6 +2752,61 @@ HF token, speaker embeddings или cloud/provider diarization в базовый
   cancellation очищает audio/model state, cluster IDs не трактуются как
   identity, DER/cluster metrics воспроизводимы на русских fixtures и
   retention/forget удаляют временный audio вместе с derived spans.
+
+### 16. Vocode Core
+
+- **Источник:** [vocodedev/vocode-core](https://github.com/vocodedev/vocode-core), [README](https://github.com/vocodedev/vocode-core/blob/main/README.md)
+- **Дата проверки:** 2026-08-21
+- **Ревизия/commit:** `e054c33a72787b6a4920f91eb8598ad0bafb4240`
+- **Лицензия исходного кода:** MIT
+- **Состав:** Python SDK `vocode`, версия `0.1.114a2`, `StreamingConversation`, provider adapters для transcriber/agent/synthesizer, локальный microphone I/O, WebSocket/LiveKit и telephony-интеграции.
+- **Назначение:** построение real-time voice agents для микрофона, телефонных звонков, Zoom и streaming transport.
+- **Краткий вывод:** это полезный практический reference для жизненного цикла одной голосовой сессии, barge-in и событийного transcript. Сам runtime Еве не подходит: репозиторий Python-first, последний основной commit датирован 2024-11-15, зависим от большого набора внешних провайдеров и допускает небезопасные для Core внешние actions.
+
+#### Что изучено
+
+- `StreamingConversation` разделяет конвейер на transcriptions, agent responses, synthesis, output device, filler audio и actions. Между этапами используются очереди и отдельные workers, а provider-specific классы скрываются за типизированными конфигурациями.
+- `Transcription` содержит сообщение, confidence, `is_final`, `is_interrupt`, признак того, что бот говорил во время распознавания, и длительность. Endpointing поддерживает временной и пунктуационный cutoff; interrupt confidence и mute во время TTS задаются конфигурацией.
+- Barge-in реализован через interruptible events: очередь дренируется, output device останавливается, текущие agent/response/action tasks отменяются, а оборванное сообщение остаётся в transcript как неполное. Backchannel и короткие реплики фильтруются политикой чувствительности.
+- Synthesis выдаёт аудио чанками; у событий есть обработчики play/interrupt, filler audio и метрики TTFB. Это позволяет отделить генерацию текста от фактического воспроизведения и зафиксировать задержки.
+- `ActionConfig` и Pydantic-модели строят JSON-схемы function calls и phrase triggers. Transcript/EventLog публикует human/bot/action start/action finish события и полный transcript по завершении сессии.
+- `ExecuteExternalAction` подписывает HTTP payload через HMAC и использует timeout/retries. В repository также есть adapters для Twilio/Vonage, WebSocket, LiveKit и других транспортов, но они не являются частью нужной desktop-границы Евы.
+- Worker-слой допускает async и thread-backed обработчики через `janus`. При этом очереди не ограничены, отмена потоков кооперативная, а комментарий в коде отмечает незавершённость контроля concurrency.
+- Источник содержит pytest/pytest-asyncio тестовую инфраструктуру, однако исследование ограничилось чтением исходников и compile-only проверкой; `compileall` выявил warning о неэкранированном `\\w`, но синтаксическая ошибка не обнаружена.
+
+#### Что можем использовать в Еве
+
+- **Контракт voice session.** Самостоятельно оформить в Rust Core отдельный lifecycle `capture -> partial/final transcript -> agent -> synthesis -> output -> receipt`, не перенося Python implementation.
+- **Типизированные transcript events.** Ввести design-only формы `voice_transcript_delta` и `voice_transcript_final` с confidence, duration, endpoint reason, interruption и revision. Сохранять стабильную финализацию отдельно от промежуточных гипотез.
+- **Политику endpointing и barge-in.** Адаптировать time/punctuation endpoint, minimum interrupt confidence, low/high sensitivity и backchannel suppression. Решения должны приниматься Core с bounded таймерами и уже существующими permission/cancellation правилами.
+- **Interruptible event model.** Полезны явные `interruptible`, `terminal/uninterruptible`, correlation id и stop token для каждого output/action события. В реализации Евы нужны bounded priority queues, гарантированная отмена и явный `unknown outcome`, если внешний side effect уже начался.
+- **Потоковый TTS/output contract.** Использовать аудиочанки, `on_play`/`on_interrupt`, progressive text и TTFB/TTFA/latency metrics для receipts и диагностики. Сырые аудиоданные не сохранять по умолчанию.
+- **Typed action schemas.** Взять идею Pydantic/JSON Schema и trigger separation, но расширить каждый action capability, approval requirement, idempotency key, timeout, redacted input/output и receipt. HMAC считать только транспортной аутентификацией, а не разрешением на действие.
+- **Event log как observability.** Перенять typed action start/finish и transcript-complete события как append-only redacted события в Core/SQLite; mutable transcript из Vocode не делать источником правды и не писать raw action payload без redaction/retention policy.
+- **Provider conformance matrix.** Сохранить единый контракт для текущего локального whisper.cpp и будущих STT/LLM/TTS adapters, добавив fake/offline providers и interruption/reconnect fixtures.
+- **Transport adapters как изолированный слой.** WebSocket/LiveKit/telephony можно рассматривать как будущие transport reference, но для Евы UI остаётся через authenticated `desktop-ipc-v1`, а внешняя сеть — отдельной permissioned capability.
+
+#### Ограничения и риски
+
+- **Runtime mismatch и возраст.** Python `asyncio`/threads/`janus` создают второй runtime рядом с Rust Core. Основная ветка имеет последний commit от 2024-11-15 и README просит community maintainers; provider APIs и совместимость нельзя считать актуальными без отдельной проверки.
+- **Backpressure и cancellation.** Unbounded queues, cooperative `task.cancel()` и невозможность надёжно остановить thread-backed provider не отвечают требованиям bounded execution. После interrupt внешний provider может продолжить работу, поэтому результат должен быть `unknown`, а не автоматически считаться отменённым.
+- **External action surface.** Конфигурация принимает URL и signing secret и делает HTTP POST с retries. Не видны обязательные SSRF allowlist, bounded response, redirect policy, idempotency/replay protection, capability scope, approval и durable receipt. Такой механизм нельзя подключать к Core напрямую.
+- **Секреты, сеть и приватность.** Quickstart использует `.env` и ключи облачных STT/LLM/TTS. Transcript и action events могут содержать raw PII и параметры действий; telemetry/Sentry и provider egress требуют явной policy. MIT исходников не покрывает условия моделей, облачных API и телефонных данных.
+- **Transcript storage.** Mutable in-memory transcript и полный `TranscriptCompleteEvent` не задают миграций, retention, forget или redaction boundary. В Еве это особенно важно для ambient context: Vocode не является основанием добавлять audio BLOB, voiceprint или raw action logs.
+- **Telephony и consent.** Запись звонков, номера, DTMF, transfer и внешние webhook требуют отдельного согласия, privacy review и сетевой политики; для базового desktop продукта это лишняя поверхность.
+- **Интеграционные обещания.** Единый adapter API не устраняет различия в streaming, reconnect, rate limits, billing, latency и семантике provider interruption. Каждая интеграция должна проходить собственные contract/e2e tests.
+
+#### Предварительное решение
+
+`адаптировать` lifecycle голосовой сессии, typed contracts, interrupt/endpoint policy, chunked output, action schema и evaluation ideas; `наблюдать` за проектом как reference; `не подключать` Vocode Python SDK, telephony stack и прямой внешний action executor в runtime Евы.
+
+#### Связь с EvoHime
+
+- Текущий Rust listener и ambient storage остаются источником истины. Новые Vocode-подобные события должны проходить через Core, supervisor и authenticated `desktop-ipc-v1`; Electron только отображает redacted state.
+- Будущий design-only контракт может использовать события `voice_session`, `voice_transcript_delta`, `voice_transcript_final`, `voice_control`, `voice_output_chunk`, `voice_action_call`, `voice_receipt` и `voice_metric` с sequence/correlation id.
+- Для ambient режима сохраняются текущие ограничения: speaker остаётся `unverified`, audio не превращается в persistent SQLite BLOB, а diarization/embeddings не появляются из-за voice-agent orchestration.
+- Перед реализацией нужны bounded queues, cancellation/interrupt precedence, approval и idempotency semantics, redaction/retention, offline fake providers, reconnect tests, TTFB/latency metrics и проверка crash/restart с незавершённым action.
+- По сравнению с Pipecat Vocode даёт более конкретную семантику одной разговорной сессии и barge-in; Pipecat остаётся более сильным reference для frame/worker/bus orchestration. Оба проекта не следует добавлять в runtime одновременно.
 
 ## Итог для будущего плана
 
