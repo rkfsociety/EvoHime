@@ -41,6 +41,7 @@
 | 18 | [Qwen/Qwen2-VL collection](https://huggingface.co/collections/Qwen/qwen2-vl) | Исследовано | Vision-language models для image/video understanding, OCR, multilingual visual QA, dynamic resolution и локальных quantized variants | Рассматривать как optional vision backend/PoC; не подключать к базовому runtime до GPU/memory/licensing/privacy плана |
 | 19 | [mPLUG/DocOwl2](https://huggingface.co/mPLUG/DocOwl2) | Исследовано | OCR-free multi-page document understanding, high-resolution DocCompressor, page evidence, cross-page QA и document benchmark suite | Рассматривать как optional document-worker PoC; адаптировать page/evidence/evaluation contracts, custom Python/CUDA runtime не подключать напрямую |
 | 20 | [mem0ai/mem0](https://github.com/mem0ai/mem0) | Исследовано | Long-term memory API, scoped user/agent/run memory, additive extraction, SQLite history, hybrid retrieval, expiration и entity linking | Адаптировать memory contracts, provenance, hybrid retrieval и forget semantics; Python SDK, cloud service, default telemetry и raw-memory storage не подключать напрямую |
+| 21 | [letta-ai/letta](https://github.com/letta-ai/letta) | Исследовано | Stateful agent, memory blocks, recall, git-backed MemFS, context lifecycle, memory tools, sandbox confinement и persistent agent identity | Адаптировать layered-memory/context/approval contracts и историю изменений; `letta-code`, Cloud, App Server и архивную V1 напрямую не подключать |
 
 ## Карточки исследований
 
@@ -3058,6 +3059,70 @@ HF token, speaker embeddings или cloud/provider diarization в базовый
 - Ambient/transcript facts поступают в memory только после redaction и явной policy. Текущие правила сохраняются: `speaker=unverified`, audio BLOB не добавляется в SQLite, raw ambient capture не превращается автоматически в long-term memory.
 - Реалистичный порядок: typed schema/provenance и scope → candidate extraction/fake LLM → deterministic sensitivity/approval → SQLite/FTS5 hybrid retrieval → entity/temporal enrichment → forget/reconciliation → benchmark/crash-restart tests. Acceptance criteria: no default egress, no cross-workspace retrieval, complete forget receipt, bounded latency/storage, source citations, stale/conflict handling и safe recovery после частичного сбоя.
 - По сравнению с LlamaIndex/LangChain Mem0 фокусируется на personalized long-term memory lifecycle, но для Евы его нужно встроить как bounded Core subsystem, а не как ещё один orchestration/RAG framework.
+
+### 21. Letta (MemGPT) / Letta Code
+
+- **Источник:** [letta-ai/letta](https://github.com/letta-ai/letta), актуальный исходный код [letta-ai/letta-code](https://github.com/letta-ai/letta-code), [документация Letta Code](https://docs.letta.com/letta-code/)
+- **Дата проверки:** 2026-08-21
+- **Ревизия/commit:** `letta-code` `95aa5b411a89921f677e3e355e209bfad9455593`; package `@letta-ai/letta-code` `0.30.28`; `letta-ai/letta` на `main` является landing page
+- **Лицензия исходного кода:** Apache-2.0. В LICENSE отдельно исключены брендовые материалы Letta; лицензии зависимостей, моделей, каналов и облачного сервиса проверяются отдельно.
+- **Состав:** TypeScript/Bun-проект с CLI и desktop/web surfaces, agent harness, локальным backend, optional Letta Cloud/App Server, messaging channels, MCP, skills, hooks, schedules, subagents и git-backed MemFS.
+- **Назначение:** persistent/stateful agents с identity, опытом и памятью, которая сохраняется между сообщениями, разговорами, перезапусками и средами выполнения.
+- **Краткий вывод:** Letta даёт сильную reference-архитектуру для слоёв памяти, context engineering, typed memory writes, истории изменений и изоляции memory-worker. Runtime и cloud-модель не подходят как прямая зависимость Евы; ценность — в контрактах, тестовых идеях и security boundaries.
+
+#### Что изучено
+
+- Ссылка `letta-ai/letta` больше не является актуальным runtime: README направляет в `letta-ai/letta-code`, а историческая V1 на `archive` обозначена авторами как unsupported и без security updates. Анализ кода выполнен по актуальному `letta-code`, а не по архивной Python-системе.
+- Архитектура разделяет несколько видов состояния: неизменяемый recall всей истории сообщений, recent messages текущего диалога, summaries после compaction, memory blocks, external memory/skills и agent identity. Recall ищется отдельным recall-subagent, поэтому вся история не помещается автоматически в каждый prompt.
+- Стандартные memory blocks создаются из prompt-assets (`persona`, `human`) и становятся частью system prompt. `system/`-файлы считаются in-context memory; остальные markdown-файлы представлены metadata/описанием и читаются по необходимости. В коде есть read-only block label для защищённых блоков.
+- Инструмент `memory` предоставляет явные операции `create`, `str_replace`, `insert`, `delete`, `rename`, `update_description` с обязательным непустым `reason`. Файлы ограничены memory directory, требуют frontmatter с description, запрещают path traversal и не позволяют изменить `read_only`-блок.
+- `memory_apply_patch` вводит patch/hunk-формат с exact context. При несовпадении текущего файла операция отклоняется с диагностикой вместо молчаливого overwrite; add/update/delete проверяют существование, frontmatter и границы каталога.
+- Каждая запись сначала требует чистого memory-repository, затем коммитится с agent identity в author/email; для remote MemFS harness после хода пытается синхронизировать clean commits. Git даёт diff, rollback, provenance автора и переносимость памяти между окружениями, но также создаёт sync/conflict и egress surface.
+- MemFS имеет scoped path по `agent_id`, local и remote режимы, создание checkout, fast-forward pull/rebase/push, pre-commit проверки frontmatter и ограничения для memory worktrees. В актуальном локальном backend состояние может оставаться на машине без Letta Cloud.
+- Для memory subagents есть fail-closed confinement: процесс не запускается без поддержанного sandbox backend, writable roots ограничены собственной memory directory/worktrees и harness state, а memory других агентов закрыта.
+- Tool permissions отделяют read-only инструменты от опасных действий. При этом `memory` и `memory_apply_patch` в текущей конфигурации отмечены как не требующие approval; это осознанная возможность self-editing, но не готовый security baseline для чувствительной локальной Евы.
+- Agent prompt прямо допускает self-evolution: агент может менять memory, skills, prompts и harness через mods. Есть subagents, hooks, cron/heartbeat и channels, благодаря чему агент работает за пределами одного интерактивного хода.
+- Package требует Node `>=22.19.0`, использует Bun как package manager и зависит от Letta client, MCP SDK, React/Ink, WebSocket, terminal/desktop и channel libraries. Это отдельная TypeScript/Bun ecosystem, а не библиотека для Rust Core.
+- Проверка была read-only: checkout `letta-code` чистый на указанной ревизии; сборку и полный test suite внешнего проекта не запускал, потому что задача — исследование, а не его разработка.
+
+#### Что можем использовать в Еве
+
+- **Layered memory contract.** Перенять разделение на bounded in-context blocks, archival/searchable memory, immutable conversation recall, procedural skills и ephemeral current context. Для Евы каноническое хранение остаётся в Rust Core/SQLite и существующем Local Agentic RAG, а не в отдельном MemFS runtime.
+- **Core memory blocks.** Ввести ограниченные типизированные блоки для identity, user preferences, project facts и текущего working state. Каждый блок должен иметь schema/version, byte/token budget, scope, sensitivity, provenance, revision и optional expiration; oversized block не должен незаметно разрастаться внутри system prompt.
+- **Typed memory operations.** Перенять отдельные read, search, propose/add, revise/supersede, forget, history и reset операции. LLM предлагает изменение через typed tool, но только Core решает scope, redaction, sensitivity, approval, transaction и итоговый status.
+- **Patch/diff semantics.** Идея `memory_apply_patch` полезна для безопасного изменения memory: exact anchors, bounded patch, конфликт при устаревшей версии и понятный diff. В SQLite это лучше выразить через optimistic revision/CAS, append-only change event и reversible snapshot, не создавая второй Git-репозиторий в продукте.
+- **In-context versus external discovery.** Хранить в system context только компактный индекс и правила поведения; подробности, цитаты и историю оставлять в FTS5/semantic archive. Это напрямую усиливает существующий context budget и context ledger EvoHime.
+- **Recall worker.** Отдельный read-only worker/subagent для поиска старых разговоров и evidence может снижать prompt size. Результат должен возвращать redacted excerpts, source event/citation, relevance reason и uncertainty, а не произвольный transcript.
+- **Scoped identity.** Перенять привязку memory к устойчивой agent identity, но расширить её до `workspace_id`, `profile_id`, `chat_id`, `repository_id`, `source_event_id` и capability scope. Все scope выводятся Core из authenticated context; поля от LLM или renderer не являются authorization.
+- **Memory audit trail.** Полезны обязательные reason, actor, timestamp, old/new revision, affected paths и receipt. Для Евы это можно объединить с существующим event journal, export JSONL и backup/migration guarantees.
+- **Confinement pattern.** Перенять fail-closed правило для фоновых memory/consolidation workers: без доступного sandbox работа не запускается; writable roots ограничены собственным scope, temporary worktree и служебным каталогом; память соседнего workspace/agent недоступна.
+- **Context maintenance.** Идеи compaction, `/doctor`, dreaming/sleeptime и memory quality audit можно использовать как bounded Core jobs с cancellation, checkpoint, retry/recovery, token budget и понятным пользовательским receipt. Они не должны менять policy, identity или capability silently.
+- **Self-evolution boundary.** Разделить в Еве user memory, procedural knowledge, system policy и executable capability. Агент может предложить изменение факта/процедуры, но не получает право менять approval policy, sandbox, provider secrets, IPC permissions или собственный Core.
+- **Memory UI.** Перенять представление дерева/блоков, diff, source history и affected paths как основу для прозрачного Electron UI. Renderer только показывает данные Core и отправляет intent; он не открывает SQLite, memory files или workspace напрямую.
+- **Test ideas.** Добавить fixtures на restart/recompile, stale revision conflict, oversized blocks, read-only policy, path traversal, cross-scope search, concurrent writes, failed sync, partial forget, prompt injection inside memory, sandbox absence и exact citation preservation.
+
+#### Ограничения и риски
+
+- **Runtime mismatch.** `letta-code` — Node/Bun/TypeScript CLI/harness с Letta client и optional server/cloud. Прямое подключение вернёт в EvoHime второй runtime, второй lifecycle и внешнюю модель хранения вместо Rust Core-first архитектуры.
+- **Self-modifying prompt injection.** Пользовательский текст, workspace-файл или найденная web-страница могут попытаться записать persistent instruction в memory block, skill, hook или prompt. In-context memory имеет повышенную долговечность и приоритет, поэтому нужны provenance, trust level, redaction, immutable policy blocks и approval для чувствительных изменений.
+- **Approval gap.** В текущем Letta Code memory tools не требуют approval. Для Евы нельзя переносить это поведение: даже «обычная» запись памяти может сохранить PII, ошибочный факт, prompt injection или изменить последующие решения.
+- **Git/remote privacy.** Git history хранит старые версии и удалённые строки; remote MemFS может синхронизировать их на внешний сервер. Для EvoHime это конфликтует с local-first, retention/forget и секретами, если не добавить encryption, redaction, tombstone и проверяемое удаление всех производных копий.
+- **Scope leakage.** Общая agent identity, несколько разговоров, subagents, channels и remote environments увеличивают риск cross-conversation/cross-agent retrieval. Простого `agent_id` недостаточно для workspace ACL, role, export или provider policy.
+- **Unbounded self-evolution.** Возможность менять skills, prompts и harness полезна для исследований, но опасна в desktop-продукте: persistent change может обойти approval, привести к RCE через hook/mod или изменить security posture после одного prompt injection.
+- **External egress.** Letta Cloud, channels, remote environments, telemetry, MCP и provider APIs создают network/data-egress paths. В базовой Еве они должны быть выключены или оформлены отдельными capability с явным consent и receipt.
+- **License boundary.** Apache-2.0 допускает адаптацию кода при соблюдении условий, но не даёт права на Letta trademarks/brand assets и не покрывает модели, npm dependencies, cloud service или данные пользователей. Предпочтительнее перенимать идеи и собственные Rust-контракты.
+- **Operational complexity.** Git sync, background reflection, cron, hooks, channels и subagents требуют recovery/observability. Не следует добавлять их одновременно с memory schema: каждая поверхность должна иметь отдельный capability, cancellation и failure receipt.
+
+#### Предварительное решение
+
+`адаптировать` layered-memory model, bounded core blocks, recall worker, typed patch/history contracts, scoped identity, memory audit и fail-closed confinement; `наблюдать` за Letta Code research вокруг dreaming, self-improvement и agent memory; `не подключать` `letta-code`, Letta Cloud/App Server, channels, archive V1 и git-backed remote MemFS в базовый runtime Евы.
+
+#### Связь с EvoHime
+
+- Letta подтверждает направление для будущего Core-owned memory subsystem поверх текущих SQLite/FTS5/RAG и context-budget механизмов: компактный always-in-context слой плюс архив с citations и неизменяемый transcript recall.
+- Будущие IPC-команды могут быть `memory.block.get`, `memory.block.propose`, `memory.block.commit`, `memory.search`, `memory.recall`, `memory.history`, `memory.supersede` и `memory.forget`; Core сам устанавливает scope и approval outcome, Electron отображает diff/receipt.
+- Любая запись из ambient/transcript проходит текущие redaction и policy rules; `speaker=unverified`, отсутствие audio BLOB и запрет автоматического превращения raw capture в long-term memory сохраняются.
+- Практический критерий пригодности: после перезапуска и compaction Ева воспроизводит только разрешённые факты с citations, не смешивает workspace scopes, отклоняет stale patch, сохраняет audit/revision history, полностью обрабатывает forget и не запускает memory-worker без sandbox/permission.
 
 ## Итог для будущего плана
 
