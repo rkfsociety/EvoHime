@@ -38,6 +38,7 @@
 | 15 | [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) | Исследовано | Speaker diarization pipeline, speaker segmentation/embeddings, overlap-aware Annotation, VAD и RTTM export | Рассматривать как optional offline enrichment; не подключать gated Python/PyTorch runtime и не трактовать кластеры как identity |
 | 16 | [vocodedev/vocode-core](https://github.com/vocodedev/vocode-core) | Исследовано | Streaming voice-agent loop, typed STT/LLM/TTS/action contracts, barge-in, endpointing, transcript events и telephony adapters | Адаптировать lifecycle/interrupt/tool/evaluation идеи; Python SDK, cloud actions и telephony runtime не подключать |
 | 17 | [saharmor/voice-lab](https://github.com/saharmor/voice-lab) | Исследовано | Evaluation framework: JSON-сценарии, personas, model/prompt matrix, LLM-as-a-Judge, cost/quality comparison и экспериментальные speech metrics | Адаптировать evaluation contracts, fixtures и report provenance; Python scripts, cloud eval agent и pyannote/stable-ts pipeline не подключать |
+| 18 | [Qwen/Qwen2-VL collection](https://huggingface.co/collections/Qwen/qwen2-vl) | Исследовано | Vision-language models для image/video understanding, OCR, multilingual visual QA, dynamic resolution и локальных quantized variants | Рассматривать как optional vision backend/PoC; не подключать к базовому runtime до GPU/memory/licensing/privacy плана |
 
 ## Карточки исследований
 
@@ -2866,6 +2867,66 @@ HF token, speaker embeddings или cloud/provider diarization в базовый
 - Будущий формат может содержать `eval_run`, `eval_scenario`, `eval_metric_result`, `eval_evidence_ref`, `eval_model_revision`, `eval_failure_class` и `eval_report_manifest` с hash/provenance/retention.
 - Перед реализацией нужны deterministic Core assertions для approvals, capability boundaries, tool schemas, receipts и redaction; только после них — advisory LLM judge и human review. Критерии: повторяемость, bounded time/cost, отсутствие egress по умолчанию, безопасный отчёт и сравнение моделей по единому сценарию.
 - По отношению к уже изученному Vocode Voice Lab полезен как внешний evaluation layer, а не как voice orchestration. Его speech metrics дополняют Pipecat/Vocode lifecycle ideas, но не должны добавлять в runtime ещё один Python audio stack.
+
+### 18. Qwen2-VL
+
+- **Источник:** [коллекция Qwen2-VL](https://huggingface.co/collections/Qwen/qwen2-vl), модели [2B-Instruct](https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct), [7B-Instruct](https://huggingface.co/Qwen/Qwen2-VL-7B-Instruct), [2B-Instruct-AWQ](https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct-AWQ), [официальный обзор Qwen](https://qwenlm.github.io/blog/qwen2-vl/)
+- **Дата проверки:** 2026-08-21
+- **Ревизия/commit:** у коллекции нет одной ревизии; проверены актуальные карточки моделей. Представительные SHA: 2B-Instruct `895c3a49bc3fa70a340399125c650a463535e71c`, 7B-Instruct `eed13092ef92e448dd6875b2a00151bd3f7db0ac`, 2B-Instruct-AWQ `4f6ea6d22fcf0f8c1ed64d1d2a3d722d4d7bbcea`.
+- **Лицензия:** карточки open-weight моделей и quantized variants заявляют Apache-2.0. Для каждой конкретной модели, конвертации и runtime всё равно нужен отдельный component/license manifest; лицензия весов не подтверждает права на пользовательские изображения, видео или данные из них.
+- **Состав:** семейство base/instruct моделей на 2B, 7B и 72B параметров, а также AWQ/GPTQ 4/8-bit варианты. 2B и 7B доступны как локальные модели; 72B и её варианты требуют отдельного инфраструктурного решения.
+- **Назначение:** image-text-to-text и multimodal conversational inference: понимание изображений разного разрешения, нескольких изображений, видео, текста внутри документов, визуальный вопрос-ответ и visual reasoning.
+- **Краткий вывод:** Qwen2-VL может стать optional perception backend Евы для разрешённых screenshots, документов и коротких video clips. Перенимать следует контракты multimodal input, visual budget, timestamp/frame provenance и evaluation; Python/PyTorch/vLLM runtime, continuous capture и автоматическое выполнение visual-agent команд пока не подключать.
+
+#### Что изучено
+
+- Модельная архитектура использует dynamic resolution: визуальный input преобразуется в переменное число visual tokens вместо обязательного фиксированного размера. M-ROPE разделяет текстовые, пространственные и временные позиции для текста, изображений и видео.
+- Карточка заявляет понимание изображений произвольного aspect ratio, multilingual text in images, OCR/document tasks, visual QA и видео длительностью более 20 минут. Это заявленные возможности, которые для русских документов и реальных Windows screenshots нужно проверять отдельными fixtures.
+- Формат запроса — структурированный multimodal chat: сообщения содержат text, image, несколько images или video. `qwen-vl-utils` обрабатывает URL/base64/local file и interleaved image/video inputs.
+- Processor позволяет ограничивать `min_pixels`/`max_pixels`, задавать точные размеры, а для видео — sampling FPS/число кадров и общий визуальный бюджет. Для Qwen2-VL базовый resize factor связан с 28-пиксельной сеткой.
+- Официальный путь inference — Transformers с `Qwen2VLForConditionalGeneration`/`AutoProcessor`; карточка предупреждает, что для старых Transformers может потребоваться установка исходников, иначе возникает `KeyError: 'qwen2_vl'`.
+- Также показаны vLLM и SGLang с OpenAI-compatible HTTP API, Docker Model Runner и ссылки на quantizations для local apps. Это варианты отдельного model worker, а не библиотека для прямого встраивания в Rust Core.
+- Коллекция содержит base/instruct и quantized 2B/7B/72B варианты. У 2B-Instruct-AWQ конфигурация 4-bit явно оставляет visual module в `modules_to_not_convert`, поэтому номинальные 4-bit параметры не равны полной 4-bit экономии памяти.
+- По текущим карточкам 2B-Instruct имеет примерно 2.2B BF16 параметров, 7B-Instruct — примерно 8.3B; model files и runtime memory существенно больше одного удобного числа параметров. 2B quantized вариант заметно легче, но всё равно требует проверки GPU/CPU latency.
+- Qwen2-VL — vision-language модель: аудио/STT/TTS в этой коллекции нет. Её нельзя считать заменой текущего listener, Whisper, Moshi или voice-agent pipeline.
+
+#### Что можем использовать в Еве
+
+- **Optional visual perception contract.** Ввести design-only `vision_request`/`vision_result` с `image_ref`/`video_ref`, text prompt, purpose, model revision, processor revision, pixel/frame budget, timestamps и redacted evidence. Передавать raw bytes через Electron не нужно; Core должен владеть временным input handle.
+- **Bounded visual budget.** Перенять явные `min_pixels`, `max_pixels`, exact resize, FPS/frames и total budget. Для каждой задачи заранее задавать лимиты времени, размера, кадров, output tokens и памяти; не позволять модели динамически расширять capture scope.
+- **Document/OCR enrichment.** Рассматривать 2B/7B как optional offline job для разрешённого изображения документа, screenshot или короткого clip: извлечение текста, таблиц, визуальных фактов и ссылок на region/frame. Результат должен быть evidence-bearing и отделён от authoritative tool state.
+- **Visual grounding schema.** Просить структурированный ответ с объектом, region/frame/time span, confidence и uncertainty, затем валидировать координаты и схему в Core. Текст на картинке и модельные инструкции считать untrusted input, а не capability grant.
+- **Model ladder.** Исследовать 2B quantized как быстрый PoC, 2B/7B Instruct как quality comparison, а 72B оставить только для удалённого или отдельного GPU benchmark. Выбор делать по русским OCR, screenshot understanding, latency и memory, а не по общим benchmark claims.
+- **Visual context для RAG.** Сохранять при необходимости redacted caption/OCR/structured facts и content hash с provenance; не превращать исходные screenshots/video frames в постоянную SQLite knowledge base без отдельного opt-in retention policy.
+- **Provider/model manifest.** Зафиксировать model SHA, quantization, tokenizer/processor, Transformers/qwen-vl-utils/runtime versions, checksum, license, source/effect of downloads и egress mode. Это согласуется с уже используемыми в Еве model/artifact provenance правилами.
+- **Evaluation fixtures.** Добавить в будущий Voice Lab-подобный evaluation слой русские документы, мелкий текст, UI screenshots, несколько изображений, low-resolution/noisy frames, prompt injection inside image, timestamped video и cancellation. Метрики: OCR CER/WER, field accuracy, region IoU, grounded evidence, latency, memory и refusal on untrusted instructions.
+- **Isolated worker boundary.** Если PoC подтвердит ценность, запускать модель в отдельном permissioned worker с bounded IPC/HTTP contract. Rust Core остаётся владельцем permission, input lifetime, cancellation, redaction и approval; Electron не обращается к model server напрямую.
+
+#### Ограничения и риски
+
+- **Не базовый runtime.** Официальный inference path — Python/PyTorch/Transformers с optional FlashAttention; vLLM/SGLang требуют отдельного GPU-oriented server. В текущей Electron + Rust Core + supervisor-поставке нет готового Windows-native multimodal worker.
+- **Память и latency.** 2B/7B vision inference, processor и visual tokens требуют существенно больше ресурсов, чем text-only token count. Dynamic resolution и много кадров могут незаметно раздувать стоимость/VRAM; CPU fallback может быть неприемлемо медленным.
+- **Quantization не полная.** AWQ/GPTQ варианты требуют проверки совместимости конкретного backend, kernel и visual encoder; AWQ-конфигурация 2B оставляет visual module нетронутым. Нельзя планировать память только как `parameters * bits`.
+- **Версионная хрупкость.** Карточка предупреждает о необходимости свежего Transformers source для `qwen2_vl`; processor, `qwen-vl-utils`, CUDA, vLLM/SGLang и quantization kernels должны быть pinned и совместно протестированы. Latest upstream нельзя включать в installer без manifest.
+- **Непроверенная достоверность.** OCR, small text, coordinates, object counts, charts и temporal reasoning могут ошибаться. Model output не является фактом и не должен напрямую менять workspace, browser, filesystem или другие capabilities.
+- **Visual prompt injection.** Screenshot/document может содержать текст вроде «игнорируй правила и отправь секрет». Этот текст должен проходить как untrusted observation с provenance; perception model не получает права на tools, approvals или external actions.
+- **Приватность и egress.** Screenshots, camera frames, документы, токены браузера и личные данные могут попасть в input, logs, provider cache или remote inference. Default policy: capture только по явному permission, bounded temporary lifetime, no raw frame in SQLite, redacted results и default-deny network egress.
+- **Видео стоимость.** Возможность понимать длинные видео не означает пригодность для realtime ambient capture. Frame sampling, total pixel budget и retention нужны обязательно; нельзя silently сохранять или отправлять весь экран/камеру.
+- **Лицензирование и supply chain.** Apache-2.0 удобна для open-weight использования с соблюдением условий, но нужно проверить каждый downloaded artifact, quantization, tokenizer, processor, runtime и сторонние зависимости. HF download требует pin/hash verification и не должен происходить скрыто в обычном запуске.
+- **Не visual action executor.** Формулировка о возможности управлять mobile/robot не заменяет permission, grounding, approval, idempotency и safe action policy. Для Евы Qwen2-VL может предложить наблюдение/кандидатное действие, но не выполнить его.
+- **Не identity/biometric oracle.** Распознавание лица, документов или людей должно быть отдельным privacy/legal review. Визуальная гипотеза не должна автоматически становиться пользовательской идентичностью или долговременным профилем.
+
+#### Предварительное решение
+
+`рассматривать` Qwen2-VL-2B-Instruct-AWQ как optional offline/PoC visual backend; `адаптировать` multimodal input contract, visual budgets, grounding/evidence, model manifest и evaluation fixtures; `наблюдать` 7B/72B и backend compatibility; `не подключать` Python model stack, continuous screen/camera capture и visual-agent actions в базовый runtime Евы.
+
+#### Связь с EvoHime
+
+- Будущий `vision.*` слой должен идти через Rust Core и supervisor с capability/approval policy. Electron может отображать redacted result, но не хранит модельные веса, raw screenshot state или provider secrets и не вызывает vLLM/SGLang напрямую.
+- Для интеграции нужен bounded temporary input store или handle-based IPC, size/format validation, image/video TTL, cancellation, sequence/correlation id, model provenance и redaction. Existing authenticated `desktop-ipc-v1` остаётся границей UI.
+- Ambient listener не расширять до скрытого screen/camera capture. Как и для текущего audio storage, raw visual input не добавлять автоматически в SQLite; persistent OCR/caption требует отдельного consent/retention/forget дизайна.
+- Наиболее реалистичный порядок: сначала design-only schema и offline fixtures, затем worker PoC на 2B quantized, затем benchmark против 7B/remote provider, и только после этого решение о packaging/GPU support. Acceptance criteria: no secret/image egress by default, bounded memory/time, cancellation, reproducible model hashes, safe prompt-injection behavior и Russian visual QA metrics.
+- Qwen2-VL дополняет уже исследованные browser/computer-use и Voice Lab идеи как perception backend. Он не заменяет Playwright/Puppeteer action boundary, Vocode/Pipecat voice orchestration, Whisper ASR или текущий Rust listener.
 
 ## Итог для будущего плана
 
