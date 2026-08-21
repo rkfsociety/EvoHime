@@ -51,9 +51,12 @@ context_projection
 previous_request_hash?
 ```
 
-`status` — обязательное lifecycle-поле committed request (`active`, `redacted`
-или `retention_pruned`), но это не model-visible payload и оно не входит в
-canonical bytes. Переход в terminal status не меняет envelope или его hash.
+`status` — обязательное lifecycle-поле committed request. Допустимые значения
+задаются общим storage-контрактом: `active`, `completed`, `failed`,
+`interrupted`, `unknown_outcome`, `redacted` и `retention_pruned`. Это не
+model-visible payload и поле не входит в canonical bytes. Переход в terminal
+или retention status не меняет envelope или его hash; `completed_at` хранится
+отдельно и остаётся `NULL`, пока terminal outcome не зафиксирован.
 `dispatch_at`, если он нужен для аудита, хранится в записи dispatch/ledger, а
 не в canonical envelope.
 
