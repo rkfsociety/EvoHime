@@ -2,11 +2,16 @@ import { useEffect, useState } from 'react'
 
 import { ListenerRuntimeSection } from './ListenerRuntimeSection'
 import { ProviderForm } from './ProviderForm'
+import { SafetyPanel } from './SafetyPanel'
+
+import type { ConnectionState, CoreEvent } from '@shared/api'
 
 type SettingsTab = 'provider' | 'workspace' | 'speech' | 'appearance' | 'security'
 
 interface SettingsModalProps {
   readonly workspace: string | null
+  readonly connection: ConnectionState
+  readonly events: readonly CoreEvent[]
   readonly onClose: () => void
 }
 
@@ -18,7 +23,7 @@ const TABS: readonly { readonly id: SettingsTab; readonly label: string }[] = [
   { id: 'security', label: 'Безопасность' }
 ]
 
-export function SettingsModal({ workspace, onClose }: SettingsModalProps): React.JSX.Element {
+export function SettingsModal({ workspace, connection, events, onClose }: SettingsModalProps): React.JSX.Element {
   const [tab, setTab] = useState<SettingsTab>('provider')
 
   useEffect(() => {
@@ -65,7 +70,7 @@ export function SettingsModal({ workspace, onClose }: SettingsModalProps): React
             {tab === 'workspace' ? <WorkspaceSettings workspace={workspace} /> : null}
             {tab === 'speech' ? <ListenerRuntimeSection /> : null}
             {tab === 'appearance' ? <InfoSettings title="Внешний вид" text="Тёмная тема и компактная плотность интерфейса используются как основной режим EvoHime." /> : null}
-            {tab === 'security' ? <InfoSettings title="Безопасность" text="Секреты провайдера шифруются средствами Windows и не возвращаются в интерфейс после сохранения." /> : null}
+            {tab === 'security' ? <SafetyPanel connection={connection} events={events} /> : null}
           </div>
         </div>
       </section>

@@ -11,7 +11,7 @@ pub use engine::{
 };
 
 use evohime_listener_audio::{EnergyVad, Segmenter};
-use evohime_listener_contract::{AmbientLimits, AmbientPolicy, ListeningState};
+use evohime_listener_contract::{AmbientLimits, AmbientPolicy, ListeningReason, ListeningState};
 use std::path::PathBuf;
 use std::time::Instant;
 use tokio::sync::watch;
@@ -126,6 +126,14 @@ pub enum EngineNotice {
 pub struct ListenerRuntime {
     pub policy: AmbientPolicy,
     pub state: ListeningState,
+    /// Включено ли слушание вообще. Отличается от `policy.paused`: выключение
+    /// — это `Stopped`, пауза — `PausedByUser`, и пользователь видит разные
+    /// строки. Процесс поднимается выключенным: микрофон не открывается,
+    /// пока Core не попросит явно.
+    pub enabled: bool,
+    /// Выбранное устройство захвата; пустая строка — «устройство системы по
+    /// умолчанию».
+    pub device_id: String,
     engine: Box<dyn SpeechEngine>,
     segmenter: Segmenter,
     vad: EnergyVad,
@@ -148,6 +156,8 @@ impl ListenerRuntime {
         Self {
             policy,
             state: ListeningState::Stopped,
+            enabled: false,
+            device_id: String::new(),
             engine,
             segmenter: Segmenter::new(limits, 16_000),
             vad: EnergyVad::default(),
@@ -178,6 +188,34 @@ impl ListenerRuntime {
         self.state = self.state.transition(next).map_err(|e| e.to_string())?;
         let _ = self.state_tx.send(self.state);
         Ok(())
+    }
+
+    /// Состояние, которого требует текущая конфигурация.
+    ///
+    /// Функция чистая: часы и здоровье движка передаёт вызывающий. Порядок
+    /// проверок и есть приоритет причин — сначала то, что делает захват
+    /// невозможным, потом то, что его запрещает.
+    pub fn desired_state(
+        &self,
+        minute_of_day: u32,
+        engine_ready: bool,
+    ) -> (ListeningState, ListeningReason) {
+        if !engine_ready {
+            return (
+                ListeningState::EngineUnavailable,
+                ListeningReason::EngineUnavailable,
+            );
+        }
+        if !self.enabled {
+            return (ListeningState::Stopped, ListeningReason::UserRequest);
+        }
+        if self.policy.paused {
+            return (ListeningState::PausedByUser, ListeningReason::UserRequest);
+        }
+        if self.policy.is_quiet_at(minute_of_day) {
+            return (ListeningState::PausedByPolicy, ListeningReason::QuietHours);
+        }
+        (ListeningState::Listening, ListeningReason::UserRequest)
     }
 
     pub fn reset_buffers(&mut self) {
@@ -313,7 +351,7 @@ pub fn backoff(attempt: u32) -> std::time::Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use evohime_listener_contract::ListeningReason;
+    use evohime_listener_contract::QuietHours;
 
     fn listening(engine: Box<dyn SpeechEngine>) -> ListenerRuntime {
         let (tx, _rx) = watch::channel(ListeningState::Stopped);
@@ -433,6 +471,86 @@ mod tests {
         ])));
         runtime.policy.paused = true;
         assert!(speak(&mut runtime, 1_000).is_empty());
+    }
+
+    /// Выключение и пауза — разные состояния: пользователь видит «выключено»
+    /// и «на паузе» разными строками, и слить их значило бы соврать про то,
+    /// что именно он нажал.
+    #[test]
+    fn disabled_and_paused_are_different_states() {
+        let (tx, _rx) = watch::channel(ListeningState::Stopped);
+        let mut runtime = ListenerRuntime::new(
+            AmbientPolicy::default(),
+            Box::new(FixtureEngine::new(Vec::new())),
+            tx,
+        );
+        assert_eq!(
+            runtime.desired_state(12 * 60, true),
+            (ListeningState::Stopped, ListeningReason::UserRequest)
+        );
+        runtime.enabled = true;
+        runtime.policy.paused = true;
+        assert_eq!(
+            runtime.desired_state(12 * 60, true),
+            (ListeningState::PausedByUser, ListeningReason::UserRequest)
+        );
+        runtime.policy.paused = false;
+        assert_eq!(
+            runtime.desired_state(12 * 60, true),
+            (ListeningState::Listening, ListeningReason::UserRequest)
+        );
+    }
+
+    /// Тихие часы закрывают поток сами, без команды снаружи.
+    #[test]
+    fn quiet_hours_close_the_stream_without_a_command() {
+        let (tx, _rx) = watch::channel(ListeningState::Stopped);
+        let mut runtime = ListenerRuntime::new(
+            AmbientPolicy {
+                quiet_hours: vec![QuietHours::new(23 * 60, 7 * 60).unwrap()],
+                ..AmbientPolicy::default()
+            },
+            Box::new(FixtureEngine::new(Vec::new())),
+            tx,
+        );
+        runtime.enabled = true;
+        assert_eq!(
+            runtime.desired_state(2 * 60, true),
+            (ListeningState::PausedByPolicy, ListeningReason::QuietHours)
+        );
+        assert_eq!(
+            runtime.desired_state(12 * 60, true),
+            (ListeningState::Listening, ListeningReason::UserRequest)
+        );
+    }
+
+    /// Без движка микрофон не открывается ни при каком намерении: это первая
+    /// проверка, а не последняя.
+    #[test]
+    fn a_missing_engine_outranks_every_intent() {
+        let (tx, _rx) = watch::channel(ListeningState::Stopped);
+        let mut runtime = ListenerRuntime::new(
+            AmbientPolicy::default(),
+            Box::new(NullEngine::new(EngineUnavailable::FileMissing)),
+            tx,
+        );
+        runtime.enabled = true;
+        assert_eq!(
+            runtime.desired_state(12 * 60, false),
+            (
+                ListeningState::EngineUnavailable,
+                ListeningReason::EngineUnavailable
+            )
+        );
+    }
+
+    /// Пауза достижима и из выключенного состояния: иначе включение «сразу на
+    /// паузе» показало бы «выключено».
+    #[test]
+    fn pause_is_reachable_from_a_stopped_listener() {
+        assert!(ListeningState::Stopped.can_transition(ListeningState::PausedByUser));
+        assert!(ListeningState::Starting.can_transition(ListeningState::PausedByUser));
+        assert!(!ListeningState::PausedByUser.is_capturing());
     }
 
     #[test]

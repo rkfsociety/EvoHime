@@ -6,6 +6,7 @@ import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 import {
   PROVIDER_KINDS,
   RENDERER_COMMANDS,
+  type AmbientHotkeyStatus,
   type CommandFailure,
   type PermissionMode,
   type ProviderKind,
@@ -66,6 +67,12 @@ export interface ShellBridgeOptions {
   readonly updates: UpdateService
   /** Owns the speech runtime download; the renderer only observes and asks. */
   readonly listenerRuntime: ListenerRuntimeService
+  /**
+   * Доступен ли глобальный хоткей паузы. Знает только main: комбинацию мог
+   * занять другой процесс, и тогда третья точка входа честно объявляется
+   * недоступной, а не изображается работающей.
+   */
+  readonly ambientHotkey: () => AmbientHotkeyStatus
   readonly log: ShellLog
 }
 
@@ -111,7 +118,7 @@ function dispatch(
   command: RendererCommand,
   payload: unknown
 ): unknown {
-  const { client, workspaces, providers, chats, restartCore, updates, listenerRuntime, log } =
+  const { client, workspaces, providers, chats, restartCore, updates, listenerRuntime, ambientHotkey, log } =
     options
   switch (command) {
     case 'shell.getState':
@@ -889,7 +896,147 @@ function dispatch(
     // ход загрузки — событиями, чтобы окно не ждало ответа минутами.
     case 'listener.downloadRuntime':
       return listenerRuntime.download().then((value) => ({ ok: true, value }))
+
+    // Постоянное слушание (план 04.5). Оболочка только пересылает: ядро
+    // заново проверяет capability, политику и подтверждение удаления.
+    case 'ambient.setListening': {
+      const value = asRecord(payload)
+      const deviceId = asOptionalBoundedString(value['deviceId'])
+      if (typeof value['enabled'] !== 'boolean' || typeof value['paused'] !== 'boolean' || deviceId === null) {
+        return failure('invalid-payload', 'Некорректные параметры слушания.')
+      }
+      return accepted(
+        client.send({
+          setAmbientListening: { enabled: value['enabled'], paused: value['paused'], deviceId }
+        })
+      )
+    }
+
+    case 'ambient.getStatus':
+      return accepted(client.send({ getAmbientStatus: {} }))
+
+    case 'ambient.listEpisodes': {
+      const value = asRecord(payload)
+      const cursor = asOptionalBoundedString(value['cursor'])
+      const limit = value['limit'] === undefined ? 50 : asBoundedNumber(value['limit'], 200)
+      const sinceMs = value['sinceMs'] === undefined ? 0 : value['sinceMs']
+      if (cursor === null || limit === null || typeof sinceMs !== 'number' || !Number.isFinite(sinceMs) || sinceMs < 0) {
+        return failure('invalid-payload', 'Некорректные параметры списка эпизодов.')
+      }
+      return accepted(client.send({ listAmbientEpisodes: { sinceMs, limit, cursor } }))
+    }
+
+    case 'ambient.getEpisode': {
+      const episodeId = asBoundedString(asRecord(payload)['episodeId'])
+      if (episodeId === null) return failure('invalid-payload', 'Не указан эпизод.')
+      return accepted(client.send({ getAmbientEpisode: { episodeId } }))
+    }
+
+    // Подтверждение проверяется и здесь, и в ядре. Оболочка не является
+    // границей безопасности: без `confirmed` ядро откажет и при обходе UI.
+    case 'ambient.deleteTranscripts': {
+      const value = asRecord(payload)
+      const all = value['all'] === true
+      const episodeIds = all ? [] : asAmbientEpisodeIds(value['episodeIds'])
+      if (value['confirmed'] !== true) {
+        return failure('invalid-payload', 'Удаление требует подтверждения.')
+      }
+      if (episodeIds === null) return failure('invalid-payload', 'Некорректный список эпизодов.')
+      return accepted(client.send({ deleteAmbientTranscripts: { episodeIds, all, confirmed: true } }))
+    }
+
+    case 'ambient.forgetWindow': {
+      const value = asRecord(payload)
+      const windowMs = asBoundedNumber(value['windowMs'], 24 * 60 * 60 * 1000)
+      if (value['confirmed'] !== true) {
+        return failure('invalid-payload', 'Удаление требует подтверждения.')
+      }
+      if (windowMs === null) return failure('invalid-payload', 'Некорректное окно удаления.')
+      return accepted(client.send({ forgetAmbientWindow: { windowMs, confirmed: true } }))
+    }
+
+    case 'ambient.getPolicy':
+      return accepted(client.send({ getAmbientPolicy: {} }))
+
+    case 'ambient.savePolicy': {
+      const value = asRecord(payload)
+      const quietHours = asQuietHours(value['quietHours'])
+      const blocklistPatterns = asAmbientPatterns(value['blocklistPatterns'])
+      const windowTitleBlocklist = asAmbientPatterns(value['windowTitleBlocklist'])
+      const retentionDays = asBoundedNumber(value['retentionDays'], 90)
+      if (quietHours === null || blocklistPatterns === null || windowTitleBlocklist === null || retentionDays === null) {
+        return failure('invalid-payload', 'Некорректная политика слушания.')
+      }
+      return accepted(
+        client.send({
+          saveAmbientPolicy: {
+            policy: { quietHours, blocklistPatterns, windowTitleBlocklist, retentionDays }
+          }
+        })
+      )
+    }
+
+    case 'ambient.resolveProposal': {
+      const value = asRecord(payload)
+      const proposalId = asBoundedString(value['proposalId'])
+      if (proposalId === null || typeof value['accepted'] !== 'boolean') {
+        return failure('invalid-payload', 'Некорректное решение по предложению.')
+      }
+      return accepted(client.send({ resolveAmbientProposal: { proposalId, accepted: value['accepted'] } }))
+    }
+
+    case 'ambient.hotkeyStatus':
+      return { ok: true, value: ambientHotkey() }
   }
+}
+
+/**
+ * Ограниченный список эпизодов для удаления. Ядро всё равно проверит каждый
+ * идентификатор; здесь отсекается только заведомый мусор.
+ */
+function asAmbientEpisodeIds(value: unknown): string[] | null {
+  if (value === undefined) return []
+  if (!Array.isArray(value) || value.length > 200) return null
+  const ids = value.map((entry) => asBoundedString(entry))
+  return ids.every((id): id is string => id !== null) ? ids : null
+}
+
+/**
+ * Шаблоны чёрного списка. Полная проверка (глоб без метасимволов регулярных
+ * выражений, лимиты) живёт в контракте 04.1 и выполняется ядром.
+ */
+function asAmbientPatterns(value: unknown): string[] | null {
+  if (value === undefined) return []
+  if (!Array.isArray(value) || value.length > 64) return null
+  const patterns = value.map((entry) => asBoundedString(entry))
+  return patterns.every((pattern): pattern is string => pattern !== null) ? patterns : null
+}
+
+/** Окна тишины в минутах суток; полуоткрытые и, возможно, через полночь. */
+function asQuietHours(value: unknown): { startMinute: number; endMinute: number }[] | null {
+  if (value === undefined) return []
+  if (!Array.isArray(value) || value.length > 16) return null
+  const windows = value.map((entry) => {
+    const record = asRecord(entry)
+    const startMinute = record['startMinute']
+    const endMinute = record['endMinute']
+    if (
+      typeof startMinute !== 'number' ||
+      typeof endMinute !== 'number' ||
+      !Number.isInteger(startMinute) ||
+      !Number.isInteger(endMinute) ||
+      startMinute < 0 ||
+      endMinute < 0 ||
+      startMinute >= 1440 ||
+      endMinute >= 1440
+    ) {
+      return null
+    }
+    return { startMinute, endMinute }
+  })
+  return windows.every((window): window is { startMinute: number; endMinute: number } => window !== null)
+    ? windows
+    : null
 }
 
 function accepted(result: 'queued' | 'queue-full'): unknown {

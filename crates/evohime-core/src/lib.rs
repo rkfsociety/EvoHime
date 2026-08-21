@@ -6914,6 +6914,12 @@ pub struct TaskCoordinator {
     commands: mpsc::Sender<CoreCommand>,
     state: Arc<Mutex<CoordinatorState>>,
     journalled: tokio::sync::watch::Receiver<u64>,
+    /// Тот же канал, по которому координатор сообщает о записанном событии.
+    ///
+    /// Нужен производителям, которые пишут в журнал напрямую (ambient-путь):
+    /// pipe-сервер сбрасывает хвост журнала только по этому сигналу, и без
+    /// него запись легла бы в базу, но не дошла бы до открытого окна.
+    journalled_tx: Arc<tokio::sync::watch::Sender<u64>>,
 }
 
 struct CoordinatorState {
@@ -6962,6 +6968,16 @@ impl TaskCoordinator {
         let _ = self.state.lock().await.events.send(event);
     }
 
+    /// Сообщает, что в журнал легла запись, минуя broadcast координатора.
+    ///
+    /// Ambient-события пишутся прямо в журнал: у них нет варианта `CoreEvent`
+    /// и не должно быть — иначе текстовые поля `CoreEvent` стали бы для них
+    /// доступны. Сигнал остаётся общим, поэтому оболочка получает их так же
+    /// быстро, как события задач.
+    pub fn notify_journalled(&self, sequence: u64) {
+        let _ = self.journalled_tx.send(sequence);
+    }
+
     pub async fn attach_routing_approvals(&self, approvals: RoutingApprovalRegistry) {
         self.state.lock().await.routing_approvals = approvals;
     }
@@ -7004,8 +7020,10 @@ impl TaskCoordinator {
         // lands — not when the event was broadcast. Watching the broadcast
         // directly raced the writer and left the last event of a task unsent.
         let (journalled, journalled_rx) = tokio::sync::watch::channel(0_u64);
+        let journalled = Arc::new(journalled);
         if let Some(journal) = journal {
             let mut journal_receiver = events.subscribe();
+            let journalled = Arc::clone(&journalled);
             tokio::spawn(async move {
                 while let Ok(event) = journal_receiver.recv().await {
                     if let Ok(sequence) = journal.record(&event).await {
@@ -7032,6 +7050,7 @@ impl TaskCoordinator {
                 commands,
                 state,
                 journalled: journalled_rx,
+                journalled_tx: journalled,
             },
             event_rx,
         )

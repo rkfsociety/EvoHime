@@ -236,6 +236,7 @@ beforeEach(() => {
     },
     updates: updates as never,
     listenerRuntime: listenerRuntime as never,
+    ambientHotkey: () => ({ combination: 'Control+Alt+M', registered: true }),
     log: () => {}
   })
   listenerCalls.length = 0
@@ -726,5 +727,106 @@ describe('listener runtime bridge', () => {
       value: listenerRuntimeStatus
     })
     expect(listenerCalls).toEqual(['status', 'check', 'download'])
+  })
+})
+
+describe('ambient listening bridge', () => {
+  /** Оболочка только пересылает: ядро заново проверяет всё, что важно. */
+  it('forwards the three-field listening command as one Core command', () => {
+    expect(invoke('ambient.setListening', { enabled: true, paused: false, deviceId: 'mic-2' })).toEqual({
+      ok: true,
+      value: { accepted: true }
+    })
+    expect(sent).toEqual([
+      { setAmbientListening: { enabled: true, paused: false, deviceId: 'mic-2' } }
+    ])
+  })
+
+  it('refuses a listening command whose fields are not booleans', () => {
+    expect(invoke('ambient.setListening', { enabled: 'да', paused: false })).toMatchObject({
+      ok: false,
+      code: 'invalid-payload'
+    })
+    expect(sent).toHaveLength(0)
+  })
+
+  /**
+   * Подтверждение проверяется и здесь, и в ядре. Отправить удаление без него
+   * нельзя даже в обход панели.
+   */
+  it('never forwards an unconfirmed deletion', () => {
+    expect(invoke('ambient.deleteTranscripts', { all: true, confirmed: false })).toMatchObject({
+      ok: false,
+      code: 'invalid-payload'
+    })
+    expect(invoke('ambient.forgetWindow', { windowMs: 300_000, confirmed: false })).toMatchObject({
+      ok: false,
+      code: 'invalid-payload'
+    })
+    expect(sent).toHaveLength(0)
+  })
+
+  it('forwards a confirmed deletion and a confirmed forget window', () => {
+    invoke('ambient.deleteTranscripts', { episodeIds: ['ep-1'], confirmed: true })
+    invoke('ambient.forgetWindow', { windowMs: 300_000, confirmed: true })
+    expect(sent).toEqual([
+      { deleteAmbientTranscripts: { episodeIds: ['ep-1'], all: false, confirmed: true } },
+      { forgetAmbientWindow: { windowMs: 300_000, confirmed: true } }
+    ])
+  })
+
+  it('forwards the policy whole and refuses a malformed quiet window', () => {
+    invoke('ambient.savePolicy', {
+      quietHours: [{ startMinute: 1380, endMinute: 420 }],
+      blocklistPatterns: ['zoom*.exe'],
+      windowTitleBlocklist: [],
+      retentionDays: 14
+    })
+    expect(sent).toEqual([
+      {
+        saveAmbientPolicy: {
+          policy: {
+            quietHours: [{ startMinute: 1380, endMinute: 420 }],
+            blocklistPatterns: ['zoom*.exe'],
+            windowTitleBlocklist: [],
+            retentionDays: 14
+          }
+        }
+      }
+    ])
+    sent.length = 0
+    expect(
+      invoke('ambient.savePolicy', {
+        quietHours: [{ startMinute: 5000, endMinute: 10 }],
+        blocklistPatterns: [],
+        windowTitleBlocklist: [],
+        retentionDays: 14
+      })
+    ).toMatchObject({ ok: false, code: 'invalid-payload' })
+    expect(sent).toHaveLength(0)
+  })
+
+  it('reads the status, the episodes, one episode and the policy', () => {
+    invoke('ambient.getStatus', {})
+    invoke('ambient.listEpisodes', { limit: 10 })
+    invoke('ambient.getEpisode', { episodeId: 'ep-1' })
+    invoke('ambient.getPolicy', {})
+    invoke('ambient.resolveProposal', { proposalId: 'prop-1', accepted: true })
+    expect(sent).toEqual([
+      { getAmbientStatus: {} },
+      { listAmbientEpisodes: { sinceMs: 0, limit: 10, cursor: '' } },
+      { getAmbientEpisode: { episodeId: 'ep-1' } },
+      { getAmbientPolicy: {} },
+      { resolveAmbientProposal: { proposalId: 'prop-1', accepted: true } }
+    ])
+  })
+
+  /** Доступность хоткея знает только main; ядру этот вопрос не задаётся. */
+  it('answers the hotkey question without touching Core', () => {
+    expect(invoke('ambient.hotkeyStatus', {})).toEqual({
+      ok: true,
+      value: { combination: 'Control+Alt+M', registered: true }
+    })
+    expect(sent).toHaveLength(0)
   })
 })

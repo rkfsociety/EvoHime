@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react'
 
-import type { ConnectionState, CoreEvent, ShellState, UserIdentity } from '@shared/api'
+import type {
+  ConnectionState,
+  CoreEvent,
+  ListeningReason,
+  ListeningState,
+  ShellState,
+  UserIdentity
+} from '@shared/api'
 import type { UpdateStatus } from '@shared/update'
 import { shortCommit } from '@shared/update'
 
@@ -13,6 +20,7 @@ import { SettingsModal } from './SettingsModal'
 import { OperationsPanel } from './OperationsPanel'
 import { PlanReviewPanel } from './PlanReviewPanel'
 import { OverviewPanel } from './OverviewPanel'
+import { ListeningPanel, REASON_TEXTS, STATE_TITLES } from './ListeningPanel'
 import { TracePanel } from './TracePanel'
 
 /**
@@ -38,7 +46,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'listening'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -54,6 +62,7 @@ const VIEWS: readonly ViewDescriptor[] = [
   { id: 'overview', label: 'Обзор', icon: '◉' },
   { id: 'reviews', label: 'Ревью планов', icon: '✓' },
   { id: 'operations', label: 'Память и Pulse', icon: '◌' },
+  { id: 'listening', label: 'Слух', icon: '🎙' },
 ]
 
 /** Not a nav row: reached through the gear next to the account. */
@@ -194,6 +203,7 @@ export function App(): React.JSX.Element {
           >
             Трейс
           </button>
+          <ListeningIndicator events={events} />
           <span className={`status-pill status-pill--${connection}`}>{STATE_LABELS[connection]}</span>
         </header>
 
@@ -217,12 +227,20 @@ export function App(): React.JSX.Element {
               {view === 'overview' ? <OverviewPanel connection={connection} events={events} workspace={workspace} /> : null}
               {view === 'reviews' ? <PlanReviewPanel connection={connection} events={events} /> : null}
               {view === 'operations' ? <OperationsPanel connection={connection} events={events} /> : null}
+              {view === 'listening' ? <ListeningPanel connection={connection} events={events} /> : null}
             </div>
           )}
         </div>
       </main>
 
-      {settingsOpen ? <SettingsModal workspace={workspace} onClose={() => setSettingsOpen(false)} /> : null}
+      {settingsOpen ? (
+        <SettingsModal
+          workspace={workspace}
+          connection={connection}
+          events={events}
+          onClose={() => setSettingsOpen(false)}
+        />
+      ) : null}
 
       {traceOpen ? (
         <TracePanel
@@ -250,6 +268,45 @@ export function App(): React.JSX.Element {
 
       {update ? <UpdateGate status={update} /> : null}
     </div>
+  )
+}
+
+/**
+ * Индикатор записи в шапке. Виден на любой вкладке: узнать, слушают ли тебя,
+ * нельзя ставить в зависимость от того, какой раздел открыт.
+ *
+ * Fail-visible: пока состояние не пришло, показывается «проверка состояния» с
+ * предупреждением, а не «выключено». Утверждать, что микрофон выключен, можно
+ * только зная это.
+ */
+function ListeningIndicator({ events }: { readonly events: readonly CoreEvent[] }): React.JSX.Element {
+  const payload = events
+    .filter((event) => event.eventType === 'ambient.state' || event.eventType === 'ambient.status')
+    .at(-1)
+  let state: ListeningState | null = null
+  let reason: ListeningReason | null = null
+  if (payload) {
+    try {
+      const value = JSON.parse(payload.payload) as { state?: ListeningState; reason?: ListeningReason }
+      state = value.state ?? null
+      reason = value.reason ?? null
+    } catch {
+      state = null
+    }
+  }
+  const unknown = state === null || state === 'engine_unavailable'
+  const live = state === 'listening' || state === 'starting'
+  const title = state === null ? 'Слушание: проверка состояния…' : STATE_TITLES[state]
+  const tooltip = reason === null ? title : `${title} — ${REASON_TEXTS[reason]}`
+  return (
+    <span
+      className={`listening-pill${live ? ' listening-pill--live' : ''}${unknown ? ' listening-pill--unknown' : ''}`}
+      role="status"
+      title={tooltip}
+    >
+      <span aria-hidden="true">{live ? '🎙' : unknown ? '⚠️' : '⏸'}</span>
+      {title}
+    </span>
   )
 }
 

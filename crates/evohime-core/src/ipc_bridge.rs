@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     ApprovalCoordinator, CoreCommand, CoreEvent, EventJournal, SelectedModel, TaskCoordinator,
 };
+use evohime_listener_contract::{ListeningReason, ListeningState};
 use evohime_local_storage::WorkItemRecord;
 use evohime_model_gateway::ModelGatewayConfig;
 use evohime_permissions::{Permission, PermissionMode};
@@ -76,6 +77,18 @@ pub struct IpcBridge {
     review_results: Arc<tokio::sync::Mutex<HashMap<String, crate::plan_review::ReviewResult>>>,
     revision_tasks: Arc<tokio::sync::Mutex<HashMap<String, CancellationToken>>>,
     revision_results: Arc<tokio::sync::Mutex<HashMap<String, crate::plan_review::RevisionResult>>>,
+    /// Единственный источник истины о состоянии постоянного слушания.
+    ///
+    /// Трей, глобальный хоткей и панель «Слух» — три точки входа одной и той
+    /// же команды `SetAmbientListening`; своей копии состояния у них нет, и
+    /// обновляются они только событием `ambient.state`.
+    ambient: crate::ambient::AmbientListeningRegistry,
+    /// Каталог, в котором лежат политика и намерение слушания.
+    ///
+    /// `None` означает продовый путь из окружения. Поле существует ради
+    /// тестов: подмена переменной окружения на процесс сделала бы соседние
+    /// тесты зависимыми друг от друга.
+    ambient_data_dir: Option<std::path::PathBuf>,
 }
 
 fn runtime_identity() -> (String, u64) {
@@ -149,6 +162,8 @@ impl IpcBridge {
             review_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             revision_tasks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             revision_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            ambient: crate::ambient::AmbientListeningRegistry::default(),
+            ambient_data_dir: None,
         }
     }
 
@@ -170,6 +185,8 @@ impl IpcBridge {
             review_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             revision_tasks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             revision_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            ambient: crate::ambient::AmbientListeningRegistry::default(),
+            ambient_data_dir: None,
         }
     }
 
@@ -198,7 +215,48 @@ impl IpcBridge {
             review_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             revision_tasks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             revision_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            ambient: crate::ambient::AmbientListeningRegistry::default(),
+            ambient_data_dir: None,
         }
+    }
+
+    /// Разделяемый реестр состояния слушания.
+    pub fn ambient(&self) -> crate::ambient::AmbientListeningRegistry {
+        self.ambient.clone()
+    }
+
+    /// Подключает готовый реестр: `main.rs` создаёт его до моста, чтобы
+    /// endpoint листенера и мост говорили об одном и том же состоянии.
+    pub fn with_ambient(mut self, ambient: crate::ambient::AmbientListeningRegistry) -> Self {
+        self.ambient = ambient;
+        self
+    }
+
+    /// Каталог политики и намерения слушания.
+    pub fn with_ambient_data_dir(mut self, directory: std::path::PathBuf) -> Self {
+        self.ambient_data_dir = Some(directory);
+        self
+    }
+
+    fn ambient_data_dir(&self) -> std::path::PathBuf {
+        self.ambient_data_dir
+            .clone()
+            .unwrap_or_else(crate::ambient::data_dir)
+    }
+
+    /// Пишет ambient-событие в durable journal и будит push к оболочке.
+    ///
+    /// Без второго шага запись легла бы в базу, но открытое окно узнало бы о
+    /// ней только со следующим событием задачи.
+    pub async fn publish_ambient(
+        &self,
+        event: &evohime_listener_contract::AmbientLogEvent,
+    ) -> Result<i64, evohime_listener_contract::AmbientErrorCode> {
+        let sequence = self.journal.append_ambient_event(event).await?;
+        if let Some(coordinator) = &self.coordinator {
+            coordinator.notify_journalled(sequence.max(0) as u64);
+        }
+        Ok(sequence)
     }
 
     /// Shares the agent's model selection so `SelectModelRequest` can change it.
@@ -2106,9 +2164,500 @@ impl IpcBridge {
                 self.write_response(writer, "routing.decision", result)
                     .await?;
             }
+            Some(generated::command_envelope::Command::SetAmbientListening(request)) => {
+                let result = self.dispatch_set_ambient_listening(request).await;
+                self.write_response(writer, "ambient.listening", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::GetAmbientStatus(_)) => {
+                let result = self.dispatch_get_ambient_status().await;
+                self.write_response(writer, "ambient.status", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::ListAmbientEpisodes(request)) => {
+                let result = self.dispatch_list_ambient_episodes(request).await;
+                self.write_response(writer, "ambient.episodes", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::GetAmbientEpisode(request)) => {
+                let result = self.dispatch_get_ambient_episode(request).await;
+                self.write_response(writer, "ambient.episode", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::DeleteAmbientTranscripts(request)) => {
+                let result = self.dispatch_delete_ambient_transcripts(request).await;
+                self.write_response(writer, "ambient.deleted", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::ForgetAmbientWindow(request)) => {
+                let result = self.dispatch_forget_ambient_window(request).await;
+                self.write_response(writer, "ambient.forgotten", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::GetAmbientPolicy(_)) => {
+                let result = self.dispatch_get_ambient_policy().await;
+                self.write_response(writer, "ambient.policy", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::SaveAmbientPolicy(request)) => {
+                let result = self.dispatch_save_ambient_policy(request).await;
+                self.write_response(writer, "ambient.policy_saved", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::ResolveAmbientProposal(request)) => {
+                let result = self.dispatch_resolve_ambient_proposal(request).await;
+                self.write_response(writer, "ambient.proposal", serde_json::to_vec(&result)?)
+                    .await?;
+            }
             None => {}
         }
         Ok(())
+    }
+
+    // ------------------------------------------------------------------
+    // Постоянное слушание (план 04.5).
+    //
+    // Девять команд ходят прямо через мост, а не через очередь задач: им
+    // нужны журнал, разрешения и реестр состояния, и ни одна из них не
+    // запускает агента. Ответ уходит JSON-полезной нагрузкой тем же
+    // `write_response`, что и у чеков.
+    // ------------------------------------------------------------------
+
+    /// Включение, пауза и смена устройства — одна команда с тремя полями.
+    ///
+    /// Порядок здесь и есть контракт: сперва проверки, потом сохранение
+    /// намерения на диск, потом команда листенеру. Намерение переживает
+    /// отсутствие листенера — иначе включение при упавшем процессе молча
+    /// пропало бы, а пользователь считал бы, что микрофон включён.
+    async fn dispatch_set_ambient_listening(
+        &self,
+        request: generated::SetAmbientListening,
+    ) -> serde_json::Value {
+        use evohime_listener_contract::AmbientErrorCode as Code;
+
+        let data_dir = self.ambient_data_dir();
+        let snapshot = self.ambient.snapshot().await;
+
+        // Идентификатор устройства проходит bounded-контракт 04.1: через это
+        // поле нельзя протащить фразу.
+        if !request.device_id.is_empty()
+            && evohime_listener_contract::DeviceId::new(request.device_id.clone()).is_err()
+        {
+            return listening_result(snapshot.state, Some(Code::InvalidArgument));
+        }
+        if !request.device_id.is_empty()
+            && !snapshot
+                .devices
+                .iter()
+                .any(|device| device.device_id == request.device_id)
+        {
+            return listening_result(snapshot.state, Some(Code::DeviceDisconnected));
+        }
+
+        // Микрофон открывается только явным именованным вызовом: общий режим
+        // доступа его не трогает (инвариант 04.1), поэтому и здесь он
+        // выставляется отдельно и по имени.
+        if let Some(tools) = &self.tools {
+            tools
+                .permissions()
+                .set_mode(
+                    Permission::MicrophoneListen,
+                    if request.enabled {
+                        PermissionMode::Allow
+                    } else {
+                        PermissionMode::Deny
+                    },
+                )
+                .await;
+        }
+
+        let mut policy = crate::ambient::load_policy(&data_dir);
+        policy.paused = request.paused;
+        if crate::ambient::save_policy(&data_dir, &policy).is_err() {
+            return listening_result(snapshot.state, Some(Code::StorageFailed));
+        }
+        let control = crate::ambient::AmbientControl {
+            enabled: request.enabled,
+            device_id: if request.device_id.is_empty() {
+                snapshot.active_device_id.clone()
+            } else {
+                request.device_id.clone()
+            },
+        };
+        if crate::ambient::save_control(&data_dir, &control).is_err() {
+            return listening_result(snapshot.state, Some(Code::StorageFailed));
+        }
+
+        let sent = self
+            .ambient
+            .send(crate::ambient::ListenerControl::Policy(Box::new((
+                policy,
+                control.clone(),
+            ))))
+            .await;
+        if let Err(code) = sent {
+            // Листенера нет. Намерение уже сохранено и применится при его
+            // следующем подключении, но утверждать, что микрофон включён,
+            // нельзя.
+            self.ambient
+                .set_state(
+                    ListeningState::EngineUnavailable,
+                    ListeningReason::EngineUnavailable,
+                    None,
+                )
+                .await;
+            self.publish_ambient_state().await;
+            return listening_result(ListeningState::EngineUnavailable, Some(code));
+        }
+
+        // Устройство занято другим приложением — включать нечего, и
+        // оптимистичное «запускаюсь» здесь было бы враньём.
+        if request.enabled && snapshot.state == ListeningState::DeviceConflict {
+            return listening_result(snapshot.state, Some(Code::DeviceConflict));
+        }
+
+        // Оптимистичное состояние: настоящее приедет от листенера отдельным
+        // `ambient.state`, и именно оно останется в реестре.
+        let (state, reason) = if !request.enabled {
+            (ListeningState::Stopped, ListeningReason::UserRequest)
+        } else if request.paused {
+            (ListeningState::PausedByUser, ListeningReason::UserRequest)
+        } else {
+            (ListeningState::Starting, ListeningReason::UserRequest)
+        };
+        let device_id = control.device_id.clone();
+        if self.ambient.set_state(state, reason, Some(device_id)).await {
+            self.publish_ambient_state().await;
+        }
+        let engine_ready = self.ambient.engine_ready().await;
+        let failure =
+            (request.enabled && !request.paused && !engine_ready).then_some(Code::EngineNotReady);
+        listening_result(state, failure)
+    }
+
+    /// Публикует текущее состояние реестра одним `ambient.state`.
+    async fn publish_ambient_state(&self) {
+        let snapshot = self.ambient.snapshot().await;
+        let _ = self
+            .publish_ambient(&evohime_listener_contract::AmbientLogEvent::State {
+                state: snapshot.state,
+                reason: snapshot.reason,
+                active_device_id: evohime_listener_contract::DeviceId::new(
+                    snapshot.active_device_id,
+                )
+                .ok(),
+            })
+            .await;
+    }
+
+    async fn dispatch_get_ambient_status(&self) -> serde_json::Value {
+        let snapshot = self.ambient.snapshot().await;
+        serde_json::json!({
+            "state": snapshot.state,
+            "reason": snapshot.reason,
+            "active_device_id": snapshot.active_device_id,
+            "engine_version": snapshot.engine_version,
+            "engine_ready": snapshot.engine_ready,
+            "devices": snapshot.devices,
+            "watching_devices": snapshot.watching_devices,
+        })
+    }
+
+    /// Список эпизодов. Текста здесь нет: он отдаётся только
+    /// `GetAmbientEpisode` и только по явному клику пользователя.
+    async fn dispatch_list_ambient_episodes(
+        &self,
+        request: generated::ListAmbientEpisodes,
+    ) -> serde_json::Value {
+        let limit = if request.limit <= 0 {
+            50usize
+        } else {
+            (request.limit as usize).min(200)
+        };
+        // Стор отдаёт свежие первыми и не умеет курсора, поэтому окно
+        // вырезается здесь: берётся на одну строку больше запрошенного, и
+        // лишняя строка и есть ответ на вопрос «есть ли ещё».
+        let records = match self.journal.list_ambient_episodes(limit * 4).await {
+            Ok(records) => records,
+            Err(code) => return serde_json::json!({ "error_code": code.as_str() }),
+        };
+        let mut rows: Vec<serde_json::Value> = Vec::new();
+        let mut skipping = !request.cursor.is_empty();
+        let mut next_cursor = String::new();
+        for record in records {
+            if skipping {
+                if record.episode_id == request.cursor {
+                    skipping = false;
+                }
+                continue;
+            }
+            let started_at_ms = parse_timestamp_ms(&record.started_at);
+            if request.since_ms > 0 && started_at_ms < request.since_ms {
+                continue;
+            }
+            if rows.len() == limit {
+                next_cursor = record.episode_id;
+                break;
+            }
+            rows.push(serde_json::json!({
+                "episode_id": record.episode_id,
+                "started_at_ms": started_at_ms,
+                "speech_duration_ms": record.speech_ms,
+                "utterance_count": record.utterance_count,
+                "extraction_state": record.extraction_state.as_str(),
+            }));
+        }
+        serde_json::json!({ "episodes": rows, "next_cursor": next_cursor })
+    }
+
+    /// Единственный путь, по которому распознанный текст пересекает границу
+    /// IPC. Вызывается только явным раскрытием эпизода в панели.
+    async fn dispatch_get_ambient_episode(
+        &self,
+        request: generated::GetAmbientEpisode,
+    ) -> serde_json::Value {
+        if request.episode_id.is_empty() {
+            return serde_json::json!({
+                "error_code": evohime_listener_contract::AmbientErrorCode::InvalidArgument.as_str()
+            });
+        }
+        match self
+            .journal
+            .list_ambient_utterances(&request.episode_id, 500)
+            .await
+        {
+            Ok(records) => serde_json::json!({
+                "episode_id": request.episode_id,
+                "utterances": records
+                    .into_iter()
+                    .map(|record| serde_json::json!({
+                        "utterance_id": record.utterance_id,
+                        "started_at_ms": parse_timestamp_ms(&record.started_at),
+                        "duration_ms": record.duration_ms,
+                        "text": record.text,
+                        "language": record.language,
+                        "redacted": record.redacted,
+                    }))
+                    .collect::<Vec<_>>(),
+            }),
+            Err(code) => serde_json::json!({ "error_code": code.as_str() }),
+        }
+    }
+
+    /// Удаление транскриптов. Без `confirmed` команда отвергается здесь, а не
+    /// только модальным окном оболочки: обход UI не должен давать больше прав.
+    async fn dispatch_delete_ambient_transcripts(
+        &self,
+        request: generated::DeleteAmbientTranscripts,
+    ) -> serde_json::Value {
+        use evohime_listener_contract::AmbientErrorCode as Code;
+        if !request.confirmed {
+            return serde_json::json!({
+                "deleted_count": 0,
+                "error_code": Code::ConfirmationRequired.as_str(),
+            });
+        }
+        let now_ms = crate::task_memory::now_millis();
+        let targets: Vec<String> = if request.all {
+            match self.journal.list_ambient_episodes(500).await {
+                Ok(records) => records.into_iter().map(|r| r.episode_id).collect(),
+                Err(code) => {
+                    return serde_json::json!({
+                        "deleted_count": 0,
+                        "error_code": code.as_str(),
+                    })
+                }
+            }
+        } else {
+            request.episode_ids
+        };
+        if targets.is_empty() && !request.all {
+            return serde_json::json!({
+                "deleted_count": 0,
+                "error_code": Code::InvalidArgument.as_str(),
+            });
+        }
+        let mut deleted = 0u32;
+        for episode_id in targets {
+            match self
+                .journal
+                .delete_ambient_episode(&episode_id, now_ms)
+                .await
+            {
+                Ok(deletion) => {
+                    deleted = deleted.saturating_add(deletion.utterances_removed as u32)
+                }
+                Err(code) => {
+                    return serde_json::json!({
+                        "deleted_count": deleted,
+                        "error_code": code.as_str(),
+                    })
+                }
+            }
+        }
+        let _ = self
+            .publish_ambient(&evohime_listener_contract::AmbientLogEvent::Retention {
+                deleted_count: deleted,
+                trigger: evohime_listener_contract::RetentionTrigger::Manual,
+            })
+            .await;
+        serde_json::json!({ "deleted_count": deleted, "error_code": "" })
+    }
+
+    /// «Забыть последние N минут». Окно приходит в миллисекундах и
+    /// округляется вверх: половина минуты — это тоже минута, и оставить её
+    /// значило бы не забыть то, что просили забыть.
+    async fn dispatch_forget_ambient_window(
+        &self,
+        request: generated::ForgetAmbientWindow,
+    ) -> serde_json::Value {
+        use evohime_listener_contract::AmbientErrorCode as Code;
+        if !request.confirmed {
+            return serde_json::json!({
+                "deleted_count": 0,
+                "error_code": Code::ConfirmationRequired.as_str(),
+            });
+        }
+        if request.window_ms <= 0 {
+            return serde_json::json!({
+                "deleted_count": 0,
+                "error_code": Code::InvalidArgument.as_str(),
+            });
+        }
+        let minutes = u32::try_from((request.window_ms + 59_999) / 60_000).unwrap_or(u32::MAX);
+        let now_ms = crate::task_memory::now_millis();
+        match self.journal.forget_ambient_window(minutes, now_ms).await {
+            Ok(deletion) => {
+                let deleted = deletion.utterances_removed as u32;
+                let _ = self
+                    .publish_ambient(&evohime_listener_contract::AmbientLogEvent::Retention {
+                        deleted_count: deleted,
+                        trigger: evohime_listener_contract::RetentionTrigger::ForgetWindow,
+                    })
+                    .await;
+                serde_json::json!({ "deleted_count": deleted, "error_code": "" })
+            }
+            Err(code) => serde_json::json!({
+                "deleted_count": 0,
+                "error_code": code.as_str(),
+            }),
+        }
+    }
+
+    fn ambient_policy_json(policy: &evohime_listener_contract::AmbientPolicy) -> serde_json::Value {
+        serde_json::json!({
+            "quiet_hours": policy
+                .quiet_hours
+                .iter()
+                .map(|window| serde_json::json!({
+                    "start_minute": window.start_minute,
+                    "end_minute": window.end_minute,
+                }))
+                .collect::<Vec<_>>(),
+            "blocklist_patterns": policy.process_blocklist,
+            "window_title_blocklist": policy.window_title_blocklist,
+            "retention_days": policy.retention_days,
+        })
+    }
+
+    async fn dispatch_get_ambient_policy(&self) -> serde_json::Value {
+        let policy = crate::ambient::load_policy(&self.ambient_data_dir());
+        Self::ambient_policy_json(&policy)
+    }
+
+    /// Сохранение политики. Невалидная политика не применяется целиком:
+    /// частичное применение превратило бы «запретить zoom» в «слушать всё».
+    async fn dispatch_save_ambient_policy(
+        &self,
+        request: generated::SaveAmbientPolicy,
+    ) -> serde_json::Value {
+        use evohime_listener_contract::AmbientErrorCode as Code;
+        let Some(incoming) = request.policy else {
+            return serde_json::json!({ "applied": false, "error_code": Code::InvalidArgument.as_str() });
+        };
+        let data_dir = self.ambient_data_dir();
+        let previous = crate::ambient::load_policy(&data_dir);
+        let mut quiet_hours = Vec::new();
+        for window in &incoming.quiet_hours {
+            let (Ok(start), Ok(end)) = (
+                u32::try_from(window.start_minute),
+                u32::try_from(window.end_minute),
+            ) else {
+                return serde_json::json!({ "applied": false, "error_code": Code::PolicyInvalid.as_str() });
+            };
+            match evohime_listener_contract::QuietHours::new(start, end) {
+                Ok(window) => quiet_hours.push(window),
+                Err(error) => {
+                    return serde_json::json!({
+                        "applied": false,
+                        "error_code": error.code().as_str(),
+                    })
+                }
+            }
+        }
+        let Ok(retention_days) = u32::try_from(incoming.retention_days) else {
+            return serde_json::json!({ "applied": false, "error_code": Code::PolicyInvalid.as_str() });
+        };
+        let policy = evohime_listener_contract::AmbientPolicy {
+            // Пауза не редактируется политикой: она принадлежит переключателю
+            // и меняется только `SetAmbientListening`.
+            paused: previous.paused,
+            quiet_hours,
+            process_blocklist: incoming.blocklist_patterns,
+            window_title_blocklist: incoming.window_title_blocklist,
+            retention_days,
+        };
+        if let Err(error) = policy.validate() {
+            return serde_json::json!({
+                "applied": false,
+                "error_code": error.code().as_str(),
+            });
+        }
+        if crate::ambient::save_policy(&data_dir, &policy).is_err() {
+            return serde_json::json!({ "applied": false, "error_code": Code::StorageFailed.as_str() });
+        }
+        // Сохранённая политика ничего не значит, пока листенер её не получил:
+        // недоступный листенер называется своим кодом, а не «применено».
+        let control = crate::ambient::load_control(&data_dir);
+        match self
+            .ambient
+            .send(crate::ambient::ListenerControl::Policy(Box::new((
+                policy, control,
+            ))))
+            .await
+        {
+            Ok(()) => serde_json::json!({ "applied": true, "error_code": "" }),
+            Err(code) => serde_json::json!({ "applied": false, "error_code": code.as_str() }),
+        }
+    }
+
+    /// Решение по ограниченному предложению (этап 04.7). До появления самих
+    /// предложений реестр пуст, и команда отвечает `applied: false` вместо
+    /// вымышленного успеха.
+    async fn dispatch_resolve_ambient_proposal(
+        &self,
+        request: generated::ResolveAmbientProposal,
+    ) -> serde_json::Value {
+        let Ok(proposal_id) =
+            evohime_listener_contract::ProposalId::new(request.proposal_id.clone())
+        else {
+            return serde_json::json!({ "applied": false });
+        };
+        let Some(kind) = self.ambient.resolve_proposal(proposal_id.as_str()).await else {
+            return serde_json::json!({ "applied": false });
+        };
+        let _ = self
+            .publish_ambient(&evohime_listener_contract::AmbientLogEvent::Proposal {
+                proposal_id,
+                kind,
+                proposal_state: if request.accepted {
+                    evohime_listener_contract::ProposalState::Accepted
+                } else {
+                    evohime_listener_contract::ProposalState::Dismissed
+                },
+            })
+            .await;
+        serde_json::json!({ "applied": true })
     }
 
     async fn dispatch_create_project(
@@ -4439,6 +4988,29 @@ impl IpcBridge {
         .await?;
         Ok(())
     }
+}
+
+/// Результат `SetAmbientListening` в одном месте: неизвестный код не
+/// притворяется успехом, а пустая строка означает «ошибки не было».
+fn listening_result(
+    state: evohime_listener_contract::ListeningState,
+    code: Option<evohime_listener_contract::AmbientErrorCode>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "state": state,
+        "error_code": code.map(|code| code.as_str()).unwrap_or(""),
+    })
+}
+
+/// Разбирает отметку времени ambient-строки в миллисекунды эпохи.
+///
+/// Формат задаёт `crate::ambient::timestamp_ms`; неразбираемое значение
+/// становится нулём, а не «сейчас»: выдуманное время выглядело бы как
+/// свежий эпизод.
+fn parse_timestamp_ms(value: &str) -> i64 {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .map(|value| value.timestamp_millis())
+        .unwrap_or(0)
 }
 
 /// Builds a stage 01.4 `ReceiptFilter` from bounded IPC request fields. Empty
@@ -7556,5 +8128,577 @@ mod tests {
         assert!(destination.join("receipts.jsonl").exists());
 
         let _ = std::fs::remove_dir_all(&data_root);
+    }
+
+    // ------------------------------------------------------------------
+    // Постоянное слушание (план 04.5): девять команд и их коды ошибок.
+    // ------------------------------------------------------------------
+
+    /// Мост поверх временной базы и временного каталога данных.
+    ///
+    /// Каталог берётся полем, а не переменной окружения: подмена окружения
+    /// сделала бы соседние тесты зависимыми от порядка запуска.
+    fn ambient_bridge(name: &str) -> (IpcBridge, tempfile::TempDir) {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let journal =
+            EventJournal::open(directory.path().join(format!("{name}.db"))).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal, coordinator)
+            .with_ambient_data_dir(directory.path().to_path_buf());
+        (bridge, directory)
+    }
+
+    async fn ambient_call(
+        bridge: &IpcBridge,
+        command: generated::command_envelope::Command,
+    ) -> (String, serde_json::Value) {
+        let (mut client, server) = duplex(256 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        let envelope = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "ambient-request".into(),
+            client_id: "ambient-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(command),
+        };
+        transport::write_frame(&mut client, &envelope.encode_to_vec())
+            .await
+            .expect("request writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("request serves");
+        let response = transport::read_frame(&mut client)
+            .await
+            .expect("response reads");
+        let event = generated::EventEnvelope::decode(response.as_slice()).expect("event decodes");
+        let payload = serde_json::from_slice(&event.payload).unwrap_or(serde_json::Value::Null);
+        (event.event_type, payload)
+    }
+
+    /// Подключает фиктивный листенер: команда уезжает в канал и остаётся там.
+    fn attach_fake_listener(
+        bridge: &IpcBridge,
+    ) -> tokio::sync::mpsc::Receiver<crate::ambient::ListenerControl> {
+        let (tx, rx) = tokio::sync::mpsc::channel(8);
+        let registry = bridge.ambient();
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(registry.attach_control(tx))
+        });
+        rx
+    }
+
+    /// Без листенера включение не притворяется успехом: намерение сохранено,
+    /// но состояние честно называется недоступным.
+    #[tokio::test]
+    async fn enabling_without_a_listener_reports_that_the_listener_is_missing() {
+        let (bridge, directory) = ambient_bridge("ambient-no-listener");
+        let (event_type, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::SetAmbientListening(
+                generated::SetAmbientListening {
+                    enabled: true,
+                    paused: false,
+                    device_id: String::new(),
+                },
+            ),
+        )
+        .await;
+        assert_eq!(event_type, "ambient.listening");
+        assert_eq!(payload["error_code"], "LISTENER_UNAVAILABLE");
+        assert_eq!(payload["state"], "engine_unavailable");
+        // Намерение всё равно сохранено: следующее подключение листенера его
+        // применит, а не начнёт с выключенного микрофона.
+        assert!(crate::ambient::load_control(directory.path()).enabled);
+    }
+
+    /// Движок не готов — включение отвечает `ENGINE_NOT_READY`, а не молчит.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn enabling_without_an_engine_reports_engine_not_ready() {
+        let (bridge, _directory) = ambient_bridge("ambient-engine");
+        let mut control = attach_fake_listener(&bridge);
+        let (_, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::SetAmbientListening(
+                generated::SetAmbientListening {
+                    enabled: true,
+                    paused: false,
+                    device_id: String::new(),
+                },
+            ),
+        )
+        .await;
+        assert_eq!(payload["error_code"], "ENGINE_NOT_READY");
+        assert_eq!(payload["state"], "starting");
+        assert!(matches!(
+            control.try_recv(),
+            Ok(crate::ambient::ListenerControl::Policy(_))
+        ));
+    }
+
+    /// Занятое устройство называется своим кодом и не превращается в
+    /// «запускаюсь».
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_busy_device_reports_a_conflict() {
+        let (bridge, _directory) = ambient_bridge("ambient-conflict");
+        let _control = attach_fake_listener(&bridge);
+        bridge
+            .ambient()
+            .set_state(
+                ListeningState::DeviceConflict,
+                ListeningReason::DeviceConflict,
+                None,
+            )
+            .await;
+        let (_, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::SetAmbientListening(
+                generated::SetAmbientListening {
+                    enabled: true,
+                    paused: false,
+                    device_id: String::new(),
+                },
+            ),
+        )
+        .await;
+        assert_eq!(payload["error_code"], "DEVICE_CONFLICT");
+        assert_eq!(payload["state"], "device_conflict");
+    }
+
+    /// Неизвестное устройство не выбирается: подмена на умолчание означала бы
+    /// слушать не тем микрофоном, который выбрал пользователь.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn selecting_a_missing_device_is_refused() {
+        let (bridge, _directory) = ambient_bridge("ambient-device");
+        let _control = attach_fake_listener(&bridge);
+        let (_, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::SetAmbientListening(
+                generated::SetAmbientListening {
+                    enabled: true,
+                    paused: false,
+                    device_id: "mic-that-left".into(),
+                },
+            ),
+        )
+        .await;
+        assert_eq!(payload["error_code"], "DEVICE_DISCONNECTED");
+    }
+
+    /// Фраза в поле идентификатора устройства — это попытка протащить текст
+    /// через метаданные, и она отбивается контрактом 04.1.
+    #[tokio::test]
+    async fn a_phrase_in_a_device_id_is_refused() {
+        let (bridge, _directory) = ambient_bridge("ambient-device-id");
+        let (_, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::SetAmbientListening(
+                generated::SetAmbientListening {
+                    enabled: true,
+                    paused: false,
+                    device_id: "позвони маме завтра".into(),
+                },
+            ),
+        )
+        .await;
+        assert_eq!(payload["error_code"], "INVALID_ARGUMENT");
+    }
+
+    /// Снимок статуса отвечает всегда: панель открывается, не дожидаясь
+    /// события.
+    #[tokio::test]
+    async fn status_answers_before_any_event_arrives() {
+        let (bridge, _directory) = ambient_bridge("ambient-status");
+        let (event_type, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::GetAmbientStatus(generated::GetAmbientStatus {}),
+        )
+        .await;
+        assert_eq!(event_type, "ambient.status");
+        assert_eq!(payload["state"], "engine_unavailable");
+        assert_eq!(payload["engine_ready"], false);
+        assert!(payload["devices"].as_array().expect("devices").is_empty());
+    }
+
+    /// Список эпизодов не несёт текста; текст отдаётся только явным запросом
+    /// одного эпизода.
+    #[tokio::test]
+    async fn text_is_absent_from_the_listing_and_present_only_on_demand() {
+        let (bridge, _directory) = ambient_bridge("ambient-episodes");
+        let journal = bridge.journal();
+        journal
+            .open_ambient_episode(
+                "ep-1",
+                "whisper-base-q5_1",
+                "whisper-base-q5_1",
+                evohime_listener_contract::ExtractionState::Disabled,
+                1_700_000_000_000,
+            )
+            .await
+            .expect("episode opens");
+        journal
+            .insert_ambient_utterance(
+                &crate::ambient::AmbientUtteranceInput {
+                    utterance_id: "ep-1-0".into(),
+                    episode_id: "ep-1".into(),
+                    sequence: 0,
+                    started_at_ms: 1_700_000_000_000,
+                    duration_ms: 1_200,
+                    text: "надо купить хлеб".into(),
+                    language: "ru".into(),
+                    avg_logprob: -0.2,
+                    redacted: false,
+                },
+                7,
+                2_000,
+            )
+            .await
+            .expect("utterance stored");
+
+        let (event_type, listing) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::ListAmbientEpisodes(
+                generated::ListAmbientEpisodes {
+                    since_ms: 0,
+                    limit: 10,
+                    cursor: String::new(),
+                },
+            ),
+        )
+        .await;
+        assert_eq!(event_type, "ambient.episodes");
+        let serialized = listing.to_string();
+        assert!(
+            !serialized.contains("надо купить хлеб"),
+            "listing leaked transcript text"
+        );
+        assert_eq!(listing["episodes"][0]["episode_id"], "ep-1");
+        assert_eq!(listing["episodes"][0]["utterance_count"], 1);
+
+        let (event_type, detail) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::GetAmbientEpisode(generated::GetAmbientEpisode {
+                episode_id: "ep-1".into(),
+            }),
+        )
+        .await;
+        assert_eq!(event_type, "ambient.episode");
+        assert_eq!(detail["utterances"][0]["text"], "надо купить хлеб");
+    }
+
+    /// Неподтверждённое удаление отвергается ядром, а не только модальным
+    /// окном оболочки: обход UI не даёт больше прав.
+    #[tokio::test]
+    async fn deleting_without_confirmation_is_refused_by_core() {
+        let (bridge, _directory) = ambient_bridge("ambient-delete");
+        let (_, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::DeleteAmbientTranscripts(
+                generated::DeleteAmbientTranscripts {
+                    episode_ids: vec!["ep-1".into()],
+                    all: false,
+                    confirmed: false,
+                },
+            ),
+        )
+        .await;
+        assert_eq!(payload["error_code"], "CONFIRMATION_REQUIRED");
+        assert_eq!(payload["deleted_count"], 0);
+
+        let (_, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::ForgetAmbientWindow(
+                generated::ForgetAmbientWindow {
+                    window_ms: 5 * 60 * 1000,
+                    confirmed: false,
+                },
+            ),
+        )
+        .await;
+        assert_eq!(payload["error_code"], "CONFIRMATION_REQUIRED");
+    }
+
+    /// Удаление действительно удаляет текст и вычищает ambient-строки
+    /// журнала: событие об эпизоде не переживает сам эпизод.
+    #[tokio::test]
+    async fn deleting_removes_the_text_and_its_journal_rows() {
+        let (bridge, _directory) = ambient_bridge("ambient-delete-real");
+        let journal = bridge.journal();
+        journal
+            .open_ambient_episode(
+                "ep-2",
+                "whisper-base-q5_1",
+                "whisper-base-q5_1",
+                evohime_listener_contract::ExtractionState::Disabled,
+                1_700_000_000_000,
+            )
+            .await
+            .expect("episode opens");
+        journal
+            .insert_ambient_utterance(
+                &crate::ambient::AmbientUtteranceInput {
+                    utterance_id: "ep-2-0".into(),
+                    episode_id: "ep-2".into(),
+                    sequence: 0,
+                    started_at_ms: 1_700_000_000_000,
+                    duration_ms: 900,
+                    text: "это надо забыть".into(),
+                    language: "ru".into(),
+                    avg_logprob: -0.1,
+                    redacted: false,
+                },
+                7,
+                2_000,
+            )
+            .await
+            .expect("utterance stored");
+        bridge
+            .publish_ambient(&evohime_listener_contract::AmbientLogEvent::Transcript {
+                episode_id: evohime_listener_contract::EpisodeId::new("ep-2").unwrap(),
+                started_at_ms: 1_700_000_000_000,
+                utterance_count: 1,
+                extraction_state: evohime_listener_contract::ExtractionState::Disabled,
+            })
+            .await
+            .expect("transcript event published");
+
+        let (_, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::DeleteAmbientTranscripts(
+                generated::DeleteAmbientTranscripts {
+                    episode_ids: vec!["ep-2".into()],
+                    all: false,
+                    confirmed: true,
+                },
+            ),
+        )
+        .await;
+        assert_eq!(payload["deleted_count"], 1);
+        assert!(journal
+            .list_ambient_utterances("ep-2", 10)
+            .await
+            .expect("utterances read")
+            .is_empty());
+        let replay = journal
+            .replay_bounded(0, 256)
+            .await
+            .expect("journal replays");
+        assert!(
+            !replay
+                .events
+                .iter()
+                .any(|event| event.task_id == "ep-2" && event.event_type == "ambient.transcript"),
+            "episode journal rows outlived the episode"
+        );
+    }
+
+    /// Ни одно ambient-событие не несёт ни текста, ни его хеша.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn ambient_events_never_carry_text_or_its_hash() {
+        let (bridge, _directory) = ambient_bridge("ambient-events");
+        let _control = attach_fake_listener(&bridge);
+        let _ = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::SetAmbientListening(
+                generated::SetAmbientListening {
+                    enabled: true,
+                    paused: true,
+                    device_id: String::new(),
+                },
+            ),
+        )
+        .await;
+        let replay = bridge
+            .journal()
+            .replay_bounded(0, 256)
+            .await
+            .expect("journal replays");
+        let ambient_rows: Vec<_> = replay
+            .events
+            .iter()
+            .filter(|event| event.event_type.starts_with("ambient."))
+            .collect();
+        assert!(!ambient_rows.is_empty(), "no ambient event was published");
+        for event in ambient_rows {
+            let payload: serde_json::Value =
+                serde_json::from_slice(&event.payload).expect("ambient payload is json");
+            let object = payload.as_object().expect("ambient payload is an object");
+            for forbidden in ["text", "text_hash", "transcript", "utterance"] {
+                assert!(
+                    !object.contains_key(forbidden),
+                    "{} leaked {forbidden}",
+                    event.event_type
+                );
+            }
+        }
+    }
+
+    /// Политика применяется целиком или не применяется вовсе.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_invalid_policy_is_refused_whole() {
+        let (bridge, directory) = ambient_bridge("ambient-policy");
+        let mut control = attach_fake_listener(&bridge);
+
+        let (event_type, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::SaveAmbientPolicy(generated::SaveAmbientPolicy {
+                policy: Some(generated::AmbientPolicy {
+                    quiet_hours: vec![generated::QuietHours {
+                        start_minute: 23 * 60,
+                        end_minute: 7 * 60,
+                    }],
+                    blocklist_patterns: vec!["zoom*.exe".into()],
+                    retention_days: 14,
+                    window_title_blocklist: vec!["*банк*".into()],
+                }),
+            }),
+        )
+        .await;
+        assert_eq!(event_type, "ambient.policy_saved");
+        assert_eq!(payload["applied"], true);
+        assert!(matches!(
+            control.try_recv(),
+            Ok(crate::ambient::ListenerControl::Policy(_))
+        ));
+
+        let (_, refused) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::SaveAmbientPolicy(generated::SaveAmbientPolicy {
+                policy: Some(generated::AmbientPolicy {
+                    quiet_hours: Vec::new(),
+                    blocklist_patterns: vec!["^bank.*$".into()],
+                    retention_days: 14,
+                    window_title_blocklist: Vec::new(),
+                }),
+            }),
+        )
+        .await;
+        assert_eq!(refused["applied"], false);
+        assert_eq!(refused["error_code"], "INVALID_ARGUMENT");
+
+        let (_, over_retention) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::SaveAmbientPolicy(generated::SaveAmbientPolicy {
+                policy: Some(generated::AmbientPolicy {
+                    quiet_hours: Vec::new(),
+                    blocklist_patterns: Vec::new(),
+                    retention_days: 365,
+                    window_title_blocklist: Vec::new(),
+                }),
+            }),
+        )
+        .await;
+        assert_eq!(over_retention["error_code"], "POLICY_INVALID");
+
+        // Отвергнутая политика не затёрла сохранённую.
+        let stored = crate::ambient::load_policy(directory.path());
+        assert_eq!(stored.retention_days, 14);
+        assert_eq!(stored.process_blocklist, vec!["zoom*.exe".to_string()]);
+
+        let (event_type, read_back) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::GetAmbientPolicy(generated::GetAmbientPolicy {}),
+        )
+        .await;
+        assert_eq!(event_type, "ambient.policy");
+        assert_eq!(read_back["retention_days"], 14);
+        assert_eq!(read_back["quiet_hours"][0]["start_minute"], 23 * 60);
+    }
+
+    /// Решения по несуществующему предложению не бывает: команда честно
+    /// отвечает «не применено», а не выдумывает успех.
+    #[tokio::test]
+    async fn resolving_an_unknown_proposal_is_not_applied() {
+        let (bridge, _directory) = ambient_bridge("ambient-proposal");
+        let (event_type, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::ResolveAmbientProposal(
+                generated::ResolveAmbientProposal {
+                    proposal_id: "prop-1".into(),
+                    accepted: true,
+                },
+            ),
+        )
+        .await;
+        assert_eq!(event_type, "ambient.proposal");
+        assert_eq!(payload["applied"], false);
+
+        bridge
+            .ambient()
+            .register_proposal(
+                "prop-1".into(),
+                evohime_listener_contract::ProposalKind::Reminder,
+            )
+            .await;
+        let (_, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::ResolveAmbientProposal(
+                generated::ResolveAmbientProposal {
+                    proposal_id: "prop-1".into(),
+                    accepted: true,
+                },
+            ),
+        )
+        .await;
+        assert_eq!(payload["applied"], true);
+    }
+
+    /// «Забыть последние 5 минут» удаляет то, что попало в окно, и оставляет
+    /// то, что в него не попало.
+    #[tokio::test]
+    async fn forgetting_a_window_removes_only_that_window() {
+        let (bridge, _directory) = ambient_bridge("ambient-forget");
+        let journal = bridge.journal();
+        let now_ms = crate::task_memory::now_millis();
+        journal
+            .open_ambient_episode(
+                "ep-3",
+                "whisper-base-q5_1",
+                "whisper-base-q5_1",
+                evohime_listener_contract::ExtractionState::Disabled,
+                now_ms - 60 * 60 * 1000,
+            )
+            .await
+            .expect("episode opens");
+        for (sequence, offset_ms) in [(0i64, 60 * 60 * 1000u64), (1, 60 * 1000)] {
+            journal
+                .insert_ambient_utterance(
+                    &crate::ambient::AmbientUtteranceInput {
+                        utterance_id: format!("ep-3-{sequence}"),
+                        episode_id: "ep-3".into(),
+                        sequence,
+                        started_at_ms: now_ms - offset_ms,
+                        duration_ms: 800,
+                        text: format!("фраза {sequence}"),
+                        language: "ru".into(),
+                        avg_logprob: -0.1,
+                        redacted: false,
+                    },
+                    7,
+                    2_000,
+                )
+                .await
+                .expect("utterance stored");
+        }
+
+        let (event_type, payload) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::ForgetAmbientWindow(
+                generated::ForgetAmbientWindow {
+                    window_ms: 5 * 60 * 1000,
+                    confirmed: true,
+                },
+            ),
+        )
+        .await;
+        assert_eq!(event_type, "ambient.forgotten");
+        assert_eq!(payload["deleted_count"], 1);
+        let left = journal
+            .list_ambient_utterances("ep-3", 10)
+            .await
+            .expect("utterances read");
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].sequence, 0);
     }
 }

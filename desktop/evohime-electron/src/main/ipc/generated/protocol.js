@@ -18045,6 +18045,3678 @@ export const evohime = $root.evohime = (() => {
                 return ReadContextArtifact;
             })();
 
+            /**
+             * ListeningState enum.
+             * @name evohime.desktop.v1.ListeningState
+             * @enum {number}
+             * @property {number} LISTENING_STATE_UNKNOWN=0 LISTENING_STATE_UNKNOWN value
+             * @property {number} LISTENING_STATE_STOPPED=1 LISTENING_STATE_STOPPED value
+             * @property {number} LISTENING_STATE_STARTING=2 LISTENING_STATE_STARTING value
+             * @property {number} LISTENING_STATE_LISTENING=3 LISTENING_STATE_LISTENING value
+             * @property {number} LISTENING_STATE_PAUSED_BY_USER=4 LISTENING_STATE_PAUSED_BY_USER value
+             * @property {number} LISTENING_STATE_PAUSED_BY_POLICY=5 LISTENING_STATE_PAUSED_BY_POLICY value
+             * @property {number} LISTENING_STATE_DEVICE_CONFLICT=6 LISTENING_STATE_DEVICE_CONFLICT value
+             * @property {number} LISTENING_STATE_DEVICE_DISCONNECTED=7 LISTENING_STATE_DEVICE_DISCONNECTED value
+             * @property {number} LISTENING_STATE_ENGINE_UNAVAILABLE=8 LISTENING_STATE_ENGINE_UNAVAILABLE value
+             * @property {number} LISTENING_STATE_DENIED=9 LISTENING_STATE_DENIED value
+             */
+            v1.ListeningState = (function() {
+                const valuesById = $Object.create(null), values = $Object.create(valuesById);
+                values[valuesById[0] = "LISTENING_STATE_UNKNOWN"] = 0;
+                values[valuesById[1] = "LISTENING_STATE_STOPPED"] = 1;
+                values[valuesById[2] = "LISTENING_STATE_STARTING"] = 2;
+                values[valuesById[3] = "LISTENING_STATE_LISTENING"] = 3;
+                values[valuesById[4] = "LISTENING_STATE_PAUSED_BY_USER"] = 4;
+                values[valuesById[5] = "LISTENING_STATE_PAUSED_BY_POLICY"] = 5;
+                values[valuesById[6] = "LISTENING_STATE_DEVICE_CONFLICT"] = 6;
+                values[valuesById[7] = "LISTENING_STATE_DEVICE_DISCONNECTED"] = 7;
+                values[valuesById[8] = "LISTENING_STATE_ENGINE_UNAVAILABLE"] = 8;
+                values[valuesById[9] = "LISTENING_STATE_DENIED"] = 9;
+                return values;
+            })();
+
+            /**
+             * ListeningReason enum.
+             * @name evohime.desktop.v1.ListeningReason
+             * @enum {number}
+             * @property {number} LISTENING_REASON_UNKNOWN=0 LISTENING_REASON_UNKNOWN value
+             * @property {number} LISTENING_REASON_USER_REQUEST=1 LISTENING_REASON_USER_REQUEST value
+             * @property {number} LISTENING_REASON_QUIET_HOURS=2 LISTENING_REASON_QUIET_HOURS value
+             * @property {number} LISTENING_REASON_BLOCKLIST=3 LISTENING_REASON_BLOCKLIST value
+             * @property {number} LISTENING_REASON_STOP_WORD=4 LISTENING_REASON_STOP_WORD value
+             * @property {number} LISTENING_REASON_PERMISSION_DENIED=5 LISTENING_REASON_PERMISSION_DENIED value
+             * @property {number} LISTENING_REASON_DEVICE_CONFLICT=6 LISTENING_REASON_DEVICE_CONFLICT value
+             * @property {number} LISTENING_REASON_DEVICE_DISCONNECTED=7 LISTENING_REASON_DEVICE_DISCONNECTED value
+             * @property {number} LISTENING_REASON_ENGINE_UNAVAILABLE=8 LISTENING_REASON_ENGINE_UNAVAILABLE value
+             * @property {number} LISTENING_REASON_ENGINE_DEGRADED=9 LISTENING_REASON_ENGINE_DEGRADED value
+             * @property {number} LISTENING_REASON_SYSTEM_SLEEP=10 LISTENING_REASON_SYSTEM_SLEEP value
+             * @property {number} LISTENING_REASON_STORAGE_FAILED=11 LISTENING_REASON_STORAGE_FAILED value
+             */
+            v1.ListeningReason = (function() {
+                const valuesById = $Object.create(null), values = $Object.create(valuesById);
+                values[valuesById[0] = "LISTENING_REASON_UNKNOWN"] = 0;
+                values[valuesById[1] = "LISTENING_REASON_USER_REQUEST"] = 1;
+                values[valuesById[2] = "LISTENING_REASON_QUIET_HOURS"] = 2;
+                values[valuesById[3] = "LISTENING_REASON_BLOCKLIST"] = 3;
+                values[valuesById[4] = "LISTENING_REASON_STOP_WORD"] = 4;
+                values[valuesById[5] = "LISTENING_REASON_PERMISSION_DENIED"] = 5;
+                values[valuesById[6] = "LISTENING_REASON_DEVICE_CONFLICT"] = 6;
+                values[valuesById[7] = "LISTENING_REASON_DEVICE_DISCONNECTED"] = 7;
+                values[valuesById[8] = "LISTENING_REASON_ENGINE_UNAVAILABLE"] = 8;
+                values[valuesById[9] = "LISTENING_REASON_ENGINE_DEGRADED"] = 9;
+                values[valuesById[10] = "LISTENING_REASON_SYSTEM_SLEEP"] = 10;
+                values[valuesById[11] = "LISTENING_REASON_STORAGE_FAILED"] = 11;
+                return values;
+            })();
+
+            /**
+             * ExtractionState enum.
+             * @name evohime.desktop.v1.ExtractionState
+             * @enum {number}
+             * @property {number} EXTRACTION_STATE_UNKNOWN=0 EXTRACTION_STATE_UNKNOWN value
+             * @property {number} EXTRACTION_STATE_DISABLED=1 EXTRACTION_STATE_DISABLED value
+             * @property {number} EXTRACTION_STATE_PENDING=2 EXTRACTION_STATE_PENDING value
+             * @property {number} EXTRACTION_STATE_DONE=3 EXTRACTION_STATE_DONE value
+             * @property {number} EXTRACTION_STATE_FAILED=4 EXTRACTION_STATE_FAILED value
+             */
+            v1.ExtractionState = (function() {
+                const valuesById = $Object.create(null), values = $Object.create(valuesById);
+                values[valuesById[0] = "EXTRACTION_STATE_UNKNOWN"] = 0;
+                values[valuesById[1] = "EXTRACTION_STATE_DISABLED"] = 1;
+                values[valuesById[2] = "EXTRACTION_STATE_PENDING"] = 2;
+                values[valuesById[3] = "EXTRACTION_STATE_DONE"] = 3;
+                values[valuesById[4] = "EXTRACTION_STATE_FAILED"] = 4;
+                return values;
+            })();
+
+            v1.AmbientDevice = (function() {
+
+                /**
+                 * Properties of an AmbientDevice.
+                 * @typedef {Object} evohime.desktop.v1.AmbientDevice.$Properties
+                 * @property {string|null} [deviceId] AmbientDevice deviceId
+                 * @property {string|null} [displayName] AmbientDevice displayName
+                 * @property {boolean|null} [isDefault] AmbientDevice isDefault
+                 * @property {boolean|null} [isActive] AmbientDevice isActive
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of an AmbientDevice.
+                 * @memberof evohime.desktop.v1
+                 * @interface IAmbientDevice
+                 * @augments evohime.desktop.v1.AmbientDevice.$Properties
+                 * @deprecated Use evohime.desktop.v1.AmbientDevice.$Properties instead.
+                 */
+
+                /**
+                 * Shape of an AmbientDevice.
+                 * @typedef {evohime.desktop.v1.AmbientDevice.$Properties} evohime.desktop.v1.AmbientDevice.$Shape
+                 */
+
+                /**
+                 * Constructs a new AmbientDevice.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents an AmbientDevice.
+                 * @constructor
+                 * @param {evohime.desktop.v1.AmbientDevice.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const AmbientDevice = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * AmbientDevice deviceId.
+                 * @member {string} deviceId
+                 * @memberof evohime.desktop.v1.AmbientDevice
+                 * @instance
+                 */
+                AmbientDevice.prototype.deviceId = "";
+
+                /**
+                 * AmbientDevice displayName.
+                 * @member {string} displayName
+                 * @memberof evohime.desktop.v1.AmbientDevice
+                 * @instance
+                 */
+                AmbientDevice.prototype.displayName = "";
+
+                /**
+                 * AmbientDevice isDefault.
+                 * @member {boolean} isDefault
+                 * @memberof evohime.desktop.v1.AmbientDevice
+                 * @instance
+                 */
+                AmbientDevice.prototype.isDefault = false;
+
+                /**
+                 * AmbientDevice isActive.
+                 * @member {boolean} isActive
+                 * @memberof evohime.desktop.v1.AmbientDevice
+                 * @instance
+                 */
+                AmbientDevice.prototype.isActive = false;
+
+                /**
+                 * Encodes the specified AmbientDevice message. Does not implicitly {@link evohime.desktop.v1.AmbientDevice.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.AmbientDevice
+                 * @static
+                 * @param {evohime.desktop.v1.AmbientDevice.$Properties} message AmbientDevice message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                AmbientDevice.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.deviceId != null && $Object.hasOwnProperty.call(message, "deviceId") && message.deviceId !== "")
+                        writer.uint32(/* id 1, wireType 2 =*/10).string(message.deviceId);
+                    if (message.displayName != null && $Object.hasOwnProperty.call(message, "displayName") && message.displayName !== "")
+                        writer.uint32(/* id 2, wireType 2 =*/18).string(message.displayName);
+                    if (message.isDefault != null && $Object.hasOwnProperty.call(message, "isDefault") && message.isDefault !== false)
+                        writer.uint32(/* id 3, wireType 0 =*/24).bool(message.isDefault);
+                    if (message.isActive != null && $Object.hasOwnProperty.call(message, "isActive") && message.isActive !== false)
+                        writer.uint32(/* id 4, wireType 0 =*/32).bool(message.isActive);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes an AmbientDevice message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.AmbientDevice
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.AmbientDevice & evohime.desktop.v1.AmbientDevice.$Shape} AmbientDevice
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                AmbientDevice.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.AmbientDevice(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.deviceId = value;
+                                else
+                                    delete message.deviceId;
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.displayName = value;
+                                else
+                                    delete message.displayName;
+                                continue;
+                            }
+                        case 3: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.bool())
+                                    message.isDefault = value;
+                                else
+                                    delete message.isDefault;
+                                continue;
+                            }
+                        case 4: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.bool())
+                                    message.isActive = value;
+                                else
+                                    delete message.isActive;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for AmbientDevice
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.AmbientDevice
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                AmbientDevice.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.AmbientDevice";
+                };
+
+                return AmbientDevice;
+            })();
+
+            v1.AmbientEpisodeSummary = (function() {
+
+                /**
+                 * Properties of an AmbientEpisodeSummary.
+                 * @typedef {Object} evohime.desktop.v1.AmbientEpisodeSummary.$Properties
+                 * @property {string|null} [episodeId] AmbientEpisodeSummary episodeId
+                 * @property {number|null} [startedAtMs] AmbientEpisodeSummary startedAtMs
+                 * @property {number|null} [speechDurationMs] AmbientEpisodeSummary speechDurationMs
+                 * @property {number|null} [utteranceCount] AmbientEpisodeSummary utteranceCount
+                 * @property {evohime.desktop.v1.ExtractionState|null} [extractionState] AmbientEpisodeSummary extractionState
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of an AmbientEpisodeSummary.
+                 * @memberof evohime.desktop.v1
+                 * @interface IAmbientEpisodeSummary
+                 * @augments evohime.desktop.v1.AmbientEpisodeSummary.$Properties
+                 * @deprecated Use evohime.desktop.v1.AmbientEpisodeSummary.$Properties instead.
+                 */
+
+                /**
+                 * Shape of an AmbientEpisodeSummary.
+                 * @typedef {evohime.desktop.v1.AmbientEpisodeSummary.$Properties} evohime.desktop.v1.AmbientEpisodeSummary.$Shape
+                 */
+
+                /**
+                 * Constructs a new AmbientEpisodeSummary.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents an AmbientEpisodeSummary.
+                 * @constructor
+                 * @param {evohime.desktop.v1.AmbientEpisodeSummary.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const AmbientEpisodeSummary = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * AmbientEpisodeSummary episodeId.
+                 * @member {string} episodeId
+                 * @memberof evohime.desktop.v1.AmbientEpisodeSummary
+                 * @instance
+                 */
+                AmbientEpisodeSummary.prototype.episodeId = "";
+
+                /**
+                 * AmbientEpisodeSummary startedAtMs.
+                 * @member {number} startedAtMs
+                 * @memberof evohime.desktop.v1.AmbientEpisodeSummary
+                 * @instance
+                 */
+                AmbientEpisodeSummary.prototype.startedAtMs = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
+
+                /**
+                 * AmbientEpisodeSummary speechDurationMs.
+                 * @member {number} speechDurationMs
+                 * @memberof evohime.desktop.v1.AmbientEpisodeSummary
+                 * @instance
+                 */
+                AmbientEpisodeSummary.prototype.speechDurationMs = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
+
+                /**
+                 * AmbientEpisodeSummary utteranceCount.
+                 * @member {number} utteranceCount
+                 * @memberof evohime.desktop.v1.AmbientEpisodeSummary
+                 * @instance
+                 */
+                AmbientEpisodeSummary.prototype.utteranceCount = 0;
+
+                /**
+                 * AmbientEpisodeSummary extractionState.
+                 * @member {evohime.desktop.v1.ExtractionState} extractionState
+                 * @memberof evohime.desktop.v1.AmbientEpisodeSummary
+                 * @instance
+                 */
+                AmbientEpisodeSummary.prototype.extractionState = 0;
+
+                /**
+                 * Encodes the specified AmbientEpisodeSummary message. Does not implicitly {@link evohime.desktop.v1.AmbientEpisodeSummary.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.AmbientEpisodeSummary
+                 * @static
+                 * @param {evohime.desktop.v1.AmbientEpisodeSummary.$Properties} message AmbientEpisodeSummary message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                AmbientEpisodeSummary.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.episodeId != null && $Object.hasOwnProperty.call(message, "episodeId") && message.episodeId !== "")
+                        writer.uint32(/* id 1, wireType 2 =*/10).string(message.episodeId);
+                    if (message.startedAtMs != null && $Object.hasOwnProperty.call(message, "startedAtMs") && (typeof message.startedAtMs === "object" ? message.startedAtMs.low || message.startedAtMs.high : message.startedAtMs !== 0))
+                        writer.uint32(/* id 2, wireType 0 =*/16).int64(message.startedAtMs);
+                    if (message.speechDurationMs != null && $Object.hasOwnProperty.call(message, "speechDurationMs") && (typeof message.speechDurationMs === "object" ? message.speechDurationMs.low || message.speechDurationMs.high : message.speechDurationMs !== 0))
+                        writer.uint32(/* id 3, wireType 0 =*/24).int64(message.speechDurationMs);
+                    if (message.utteranceCount != null && $Object.hasOwnProperty.call(message, "utteranceCount") && message.utteranceCount !== 0)
+                        writer.uint32(/* id 4, wireType 0 =*/32).int32(message.utteranceCount);
+                    if (message.extractionState != null && $Object.hasOwnProperty.call(message, "extractionState") && message.extractionState !== 0)
+                        writer.uint32(/* id 5, wireType 0 =*/40).int32(message.extractionState);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes an AmbientEpisodeSummary message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.AmbientEpisodeSummary
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.AmbientEpisodeSummary & evohime.desktop.v1.AmbientEpisodeSummary.$Shape} AmbientEpisodeSummary
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                AmbientEpisodeSummary.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.AmbientEpisodeSummary(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.episodeId = value;
+                                else
+                                    delete message.episodeId;
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 0)
+                                    break;
+                                if (typeof (value = reader.int64()) === "object" ? value.low || value.high : value !== 0)
+                                    message.startedAtMs = value;
+                                else
+                                    delete message.startedAtMs;
+                                continue;
+                            }
+                        case 3: {
+                                if (wireType !== 0)
+                                    break;
+                                if (typeof (value = reader.int64()) === "object" ? value.low || value.high : value !== 0)
+                                    message.speechDurationMs = value;
+                                else
+                                    delete message.speechDurationMs;
+                                continue;
+                            }
+                        case 4: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.int32())
+                                    message.utteranceCount = value;
+                                else
+                                    delete message.utteranceCount;
+                                continue;
+                            }
+                        case 5: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.int32())
+                                    message.extractionState = value;
+                                else
+                                    delete message.extractionState;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for AmbientEpisodeSummary
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.AmbientEpisodeSummary
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                AmbientEpisodeSummary.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.AmbientEpisodeSummary";
+                };
+
+                return AmbientEpisodeSummary;
+            })();
+
+            v1.Utterance = (function() {
+
+                /**
+                 * Properties of an Utterance.
+                 * @typedef {Object} evohime.desktop.v1.Utterance.$Properties
+                 * @property {string|null} [utteranceId] Utterance utteranceId
+                 * @property {number|null} [startedAtMs] Utterance startedAtMs
+                 * @property {number|null} [durationMs] Utterance durationMs
+                 * @property {string|null} [text] Utterance text
+                 * @property {string|null} [language] Utterance language
+                 * @property {boolean|null} [redacted] Utterance redacted
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of an Utterance.
+                 * @memberof evohime.desktop.v1
+                 * @interface IUtterance
+                 * @augments evohime.desktop.v1.Utterance.$Properties
+                 * @deprecated Use evohime.desktop.v1.Utterance.$Properties instead.
+                 */
+
+                /**
+                 * Shape of an Utterance.
+                 * @typedef {evohime.desktop.v1.Utterance.$Properties} evohime.desktop.v1.Utterance.$Shape
+                 */
+
+                /**
+                 * Constructs a new Utterance.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents an Utterance.
+                 * @constructor
+                 * @param {evohime.desktop.v1.Utterance.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const Utterance = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * Utterance utteranceId.
+                 * @member {string} utteranceId
+                 * @memberof evohime.desktop.v1.Utterance
+                 * @instance
+                 */
+                Utterance.prototype.utteranceId = "";
+
+                /**
+                 * Utterance startedAtMs.
+                 * @member {number} startedAtMs
+                 * @memberof evohime.desktop.v1.Utterance
+                 * @instance
+                 */
+                Utterance.prototype.startedAtMs = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
+
+                /**
+                 * Utterance durationMs.
+                 * @member {number} durationMs
+                 * @memberof evohime.desktop.v1.Utterance
+                 * @instance
+                 */
+                Utterance.prototype.durationMs = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
+
+                /**
+                 * Utterance text.
+                 * @member {string} text
+                 * @memberof evohime.desktop.v1.Utterance
+                 * @instance
+                 */
+                Utterance.prototype.text = "";
+
+                /**
+                 * Utterance language.
+                 * @member {string} language
+                 * @memberof evohime.desktop.v1.Utterance
+                 * @instance
+                 */
+                Utterance.prototype.language = "";
+
+                /**
+                 * Utterance redacted.
+                 * @member {boolean} redacted
+                 * @memberof evohime.desktop.v1.Utterance
+                 * @instance
+                 */
+                Utterance.prototype.redacted = false;
+
+                /**
+                 * Encodes the specified Utterance message. Does not implicitly {@link evohime.desktop.v1.Utterance.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.Utterance
+                 * @static
+                 * @param {evohime.desktop.v1.Utterance.$Properties} message Utterance message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                Utterance.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.utteranceId != null && $Object.hasOwnProperty.call(message, "utteranceId") && message.utteranceId !== "")
+                        writer.uint32(/* id 1, wireType 2 =*/10).string(message.utteranceId);
+                    if (message.startedAtMs != null && $Object.hasOwnProperty.call(message, "startedAtMs") && (typeof message.startedAtMs === "object" ? message.startedAtMs.low || message.startedAtMs.high : message.startedAtMs !== 0))
+                        writer.uint32(/* id 2, wireType 0 =*/16).int64(message.startedAtMs);
+                    if (message.durationMs != null && $Object.hasOwnProperty.call(message, "durationMs") && (typeof message.durationMs === "object" ? message.durationMs.low || message.durationMs.high : message.durationMs !== 0))
+                        writer.uint32(/* id 3, wireType 0 =*/24).int64(message.durationMs);
+                    if (message.text != null && $Object.hasOwnProperty.call(message, "text") && message.text !== "")
+                        writer.uint32(/* id 4, wireType 2 =*/34).string(message.text);
+                    if (message.language != null && $Object.hasOwnProperty.call(message, "language") && message.language !== "")
+                        writer.uint32(/* id 5, wireType 2 =*/42).string(message.language);
+                    if (message.redacted != null && $Object.hasOwnProperty.call(message, "redacted") && message.redacted !== false)
+                        writer.uint32(/* id 6, wireType 0 =*/48).bool(message.redacted);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes an Utterance message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.Utterance
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.Utterance & evohime.desktop.v1.Utterance.$Shape} Utterance
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                Utterance.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.Utterance(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.utteranceId = value;
+                                else
+                                    delete message.utteranceId;
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 0)
+                                    break;
+                                if (typeof (value = reader.int64()) === "object" ? value.low || value.high : value !== 0)
+                                    message.startedAtMs = value;
+                                else
+                                    delete message.startedAtMs;
+                                continue;
+                            }
+                        case 3: {
+                                if (wireType !== 0)
+                                    break;
+                                if (typeof (value = reader.int64()) === "object" ? value.low || value.high : value !== 0)
+                                    message.durationMs = value;
+                                else
+                                    delete message.durationMs;
+                                continue;
+                            }
+                        case 4: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.text = value;
+                                else
+                                    delete message.text;
+                                continue;
+                            }
+                        case 5: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.language = value;
+                                else
+                                    delete message.language;
+                                continue;
+                            }
+                        case 6: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.bool())
+                                    message.redacted = value;
+                                else
+                                    delete message.redacted;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for Utterance
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.Utterance
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                Utterance.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.Utterance";
+                };
+
+                return Utterance;
+            })();
+
+            v1.QuietHours = (function() {
+
+                /**
+                 * Properties of a QuietHours.
+                 * @typedef {Object} evohime.desktop.v1.QuietHours.$Properties
+                 * @property {number|null} [startMinute] QuietHours startMinute
+                 * @property {number|null} [endMinute] QuietHours endMinute
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of a QuietHours.
+                 * @memberof evohime.desktop.v1
+                 * @interface IQuietHours
+                 * @augments evohime.desktop.v1.QuietHours.$Properties
+                 * @deprecated Use evohime.desktop.v1.QuietHours.$Properties instead.
+                 */
+
+                /**
+                 * Shape of a QuietHours.
+                 * @typedef {evohime.desktop.v1.QuietHours.$Properties} evohime.desktop.v1.QuietHours.$Shape
+                 */
+
+                /**
+                 * Constructs a new QuietHours.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents a QuietHours.
+                 * @constructor
+                 * @param {evohime.desktop.v1.QuietHours.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const QuietHours = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * QuietHours startMinute.
+                 * @member {number} startMinute
+                 * @memberof evohime.desktop.v1.QuietHours
+                 * @instance
+                 */
+                QuietHours.prototype.startMinute = 0;
+
+                /**
+                 * QuietHours endMinute.
+                 * @member {number} endMinute
+                 * @memberof evohime.desktop.v1.QuietHours
+                 * @instance
+                 */
+                QuietHours.prototype.endMinute = 0;
+
+                /**
+                 * Encodes the specified QuietHours message. Does not implicitly {@link evohime.desktop.v1.QuietHours.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.QuietHours
+                 * @static
+                 * @param {evohime.desktop.v1.QuietHours.$Properties} message QuietHours message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                QuietHours.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.startMinute != null && $Object.hasOwnProperty.call(message, "startMinute") && message.startMinute !== 0)
+                        writer.uint32(/* id 1, wireType 0 =*/8).int32(message.startMinute);
+                    if (message.endMinute != null && $Object.hasOwnProperty.call(message, "endMinute") && message.endMinute !== 0)
+                        writer.uint32(/* id 2, wireType 0 =*/16).int32(message.endMinute);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes a QuietHours message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.QuietHours
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.QuietHours & evohime.desktop.v1.QuietHours.$Shape} QuietHours
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                QuietHours.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.QuietHours(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.int32())
+                                    message.startMinute = value;
+                                else
+                                    delete message.startMinute;
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.int32())
+                                    message.endMinute = value;
+                                else
+                                    delete message.endMinute;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for QuietHours
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.QuietHours
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                QuietHours.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.QuietHours";
+                };
+
+                return QuietHours;
+            })();
+
+            v1.AmbientPolicy = (function() {
+
+                /**
+                 * Properties of an AmbientPolicy.
+                 * @typedef {Object} evohime.desktop.v1.AmbientPolicy.$Properties
+                 * @property {Array.<evohime.desktop.v1.QuietHours.$Properties>|null} [quietHours] AmbientPolicy quietHours
+                 * @property {Array.<string>|null} [blocklistPatterns] AmbientPolicy blocklistPatterns
+                 * @property {number|null} [retentionDays] AmbientPolicy retentionDays
+                 * @property {Array.<string>|null} [windowTitleBlocklist] AmbientPolicy windowTitleBlocklist
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of an AmbientPolicy.
+                 * @memberof evohime.desktop.v1
+                 * @interface IAmbientPolicy
+                 * @augments evohime.desktop.v1.AmbientPolicy.$Properties
+                 * @deprecated Use evohime.desktop.v1.AmbientPolicy.$Properties instead.
+                 */
+
+                /**
+                 * Shape of an AmbientPolicy.
+                 * @typedef {evohime.desktop.v1.AmbientPolicy.$Properties} evohime.desktop.v1.AmbientPolicy.$Shape
+                 */
+
+                /**
+                 * Constructs a new AmbientPolicy.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents an AmbientPolicy.
+                 * @constructor
+                 * @param {evohime.desktop.v1.AmbientPolicy.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const AmbientPolicy = function (properties) {
+                    this.quietHours = [];
+                    this.blocklistPatterns = [];
+                    this.windowTitleBlocklist = [];
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * AmbientPolicy quietHours.
+                 * @member {Array.<evohime.desktop.v1.QuietHours.$Properties>} quietHours
+                 * @memberof evohime.desktop.v1.AmbientPolicy
+                 * @instance
+                 */
+                AmbientPolicy.prototype.quietHours = $util.emptyArray;
+
+                /**
+                 * AmbientPolicy blocklistPatterns.
+                 * @member {Array.<string>} blocklistPatterns
+                 * @memberof evohime.desktop.v1.AmbientPolicy
+                 * @instance
+                 */
+                AmbientPolicy.prototype.blocklistPatterns = $util.emptyArray;
+
+                /**
+                 * AmbientPolicy retentionDays.
+                 * @member {number} retentionDays
+                 * @memberof evohime.desktop.v1.AmbientPolicy
+                 * @instance
+                 */
+                AmbientPolicy.prototype.retentionDays = 0;
+
+                /**
+                 * AmbientPolicy windowTitleBlocklist.
+                 * @member {Array.<string>} windowTitleBlocklist
+                 * @memberof evohime.desktop.v1.AmbientPolicy
+                 * @instance
+                 */
+                AmbientPolicy.prototype.windowTitleBlocklist = $util.emptyArray;
+
+                /**
+                 * Encodes the specified AmbientPolicy message. Does not implicitly {@link evohime.desktop.v1.AmbientPolicy.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.AmbientPolicy
+                 * @static
+                 * @param {evohime.desktop.v1.AmbientPolicy.$Properties} message AmbientPolicy message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                AmbientPolicy.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.quietHours != null && message.quietHours.length)
+                        for (let i = 0; i < message.quietHours.length; ++i)
+                            $root.evohime.desktop.v1.QuietHours.encode(message.quietHours[i], writer.uint32(/* id 1, wireType 2 =*/10).fork(), _depth + 1).ldelim();
+                    if (message.blocklistPatterns != null && message.blocklistPatterns.length)
+                        for (let i = 0; i < message.blocklistPatterns.length; ++i)
+                            writer.uint32(/* id 2, wireType 2 =*/18).string(message.blocklistPatterns[i]);
+                    if (message.retentionDays != null && $Object.hasOwnProperty.call(message, "retentionDays") && message.retentionDays !== 0)
+                        writer.uint32(/* id 3, wireType 0 =*/24).int32(message.retentionDays);
+                    if (message.windowTitleBlocklist != null && message.windowTitleBlocklist.length)
+                        for (let i = 0; i < message.windowTitleBlocklist.length; ++i)
+                            writer.uint32(/* id 4, wireType 2 =*/34).string(message.windowTitleBlocklist[i]);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes an AmbientPolicy message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.AmbientPolicy
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.AmbientPolicy & evohime.desktop.v1.AmbientPolicy.$Shape} AmbientPolicy
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                AmbientPolicy.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.AmbientPolicy(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 2)
+                                    break;
+                                if (!(message.quietHours && message.quietHours.length))
+                                    message.quietHours = [];
+                                message.quietHours.push($root.evohime.desktop.v1.QuietHours.decode(reader, reader.uint32(), $undefined, _depth + 1));
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 2)
+                                    break;
+                                if (!(message.blocklistPatterns && message.blocklistPatterns.length))
+                                    message.blocklistPatterns = [];
+                                message.blocklistPatterns.push(reader.stringVerify());
+                                continue;
+                            }
+                        case 3: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.int32())
+                                    message.retentionDays = value;
+                                else
+                                    delete message.retentionDays;
+                                continue;
+                            }
+                        case 4: {
+                                if (wireType !== 2)
+                                    break;
+                                if (!(message.windowTitleBlocklist && message.windowTitleBlocklist.length))
+                                    message.windowTitleBlocklist = [];
+                                message.windowTitleBlocklist.push(reader.stringVerify());
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for AmbientPolicy
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.AmbientPolicy
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                AmbientPolicy.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.AmbientPolicy";
+                };
+
+                return AmbientPolicy;
+            })();
+
+            v1.SetAmbientListening = (function() {
+
+                /**
+                 * Properties of a SetAmbientListening.
+                 * @typedef {Object} evohime.desktop.v1.SetAmbientListening.$Properties
+                 * @property {boolean|null} [enabled] SetAmbientListening enabled
+                 * @property {boolean|null} [paused] SetAmbientListening paused
+                 * @property {string|null} [deviceId] SetAmbientListening deviceId
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of a SetAmbientListening.
+                 * @memberof evohime.desktop.v1
+                 * @interface ISetAmbientListening
+                 * @augments evohime.desktop.v1.SetAmbientListening.$Properties
+                 * @deprecated Use evohime.desktop.v1.SetAmbientListening.$Properties instead.
+                 */
+
+                /**
+                 * Shape of a SetAmbientListening.
+                 * @typedef {evohime.desktop.v1.SetAmbientListening.$Properties} evohime.desktop.v1.SetAmbientListening.$Shape
+                 */
+
+                /**
+                 * Constructs a new SetAmbientListening.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents a SetAmbientListening.
+                 * @constructor
+                 * @param {evohime.desktop.v1.SetAmbientListening.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const SetAmbientListening = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * SetAmbientListening enabled.
+                 * @member {boolean} enabled
+                 * @memberof evohime.desktop.v1.SetAmbientListening
+                 * @instance
+                 */
+                SetAmbientListening.prototype.enabled = false;
+
+                /**
+                 * SetAmbientListening paused.
+                 * @member {boolean} paused
+                 * @memberof evohime.desktop.v1.SetAmbientListening
+                 * @instance
+                 */
+                SetAmbientListening.prototype.paused = false;
+
+                /**
+                 * SetAmbientListening deviceId.
+                 * @member {string} deviceId
+                 * @memberof evohime.desktop.v1.SetAmbientListening
+                 * @instance
+                 */
+                SetAmbientListening.prototype.deviceId = "";
+
+                /**
+                 * Encodes the specified SetAmbientListening message. Does not implicitly {@link evohime.desktop.v1.SetAmbientListening.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.SetAmbientListening
+                 * @static
+                 * @param {evohime.desktop.v1.SetAmbientListening.$Properties} message SetAmbientListening message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                SetAmbientListening.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.enabled != null && $Object.hasOwnProperty.call(message, "enabled") && message.enabled !== false)
+                        writer.uint32(/* id 1, wireType 0 =*/8).bool(message.enabled);
+                    if (message.paused != null && $Object.hasOwnProperty.call(message, "paused") && message.paused !== false)
+                        writer.uint32(/* id 2, wireType 0 =*/16).bool(message.paused);
+                    if (message.deviceId != null && $Object.hasOwnProperty.call(message, "deviceId") && message.deviceId !== "")
+                        writer.uint32(/* id 3, wireType 2 =*/26).string(message.deviceId);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes a SetAmbientListening message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.SetAmbientListening
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.SetAmbientListening & evohime.desktop.v1.SetAmbientListening.$Shape} SetAmbientListening
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                SetAmbientListening.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.SetAmbientListening(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.bool())
+                                    message.enabled = value;
+                                else
+                                    delete message.enabled;
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.bool())
+                                    message.paused = value;
+                                else
+                                    delete message.paused;
+                                continue;
+                            }
+                        case 3: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.deviceId = value;
+                                else
+                                    delete message.deviceId;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for SetAmbientListening
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.SetAmbientListening
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                SetAmbientListening.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.SetAmbientListening";
+                };
+
+                return SetAmbientListening;
+            })();
+
+            v1.SetAmbientListeningResult = (function() {
+
+                /**
+                 * Properties of a SetAmbientListeningResult.
+                 * @typedef {Object} evohime.desktop.v1.SetAmbientListeningResult.$Properties
+                 * @property {evohime.desktop.v1.ListeningState|null} [state] SetAmbientListeningResult state
+                 * @property {string|null} [errorCode] SetAmbientListeningResult errorCode
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of a SetAmbientListeningResult.
+                 * @memberof evohime.desktop.v1
+                 * @interface ISetAmbientListeningResult
+                 * @augments evohime.desktop.v1.SetAmbientListeningResult.$Properties
+                 * @deprecated Use evohime.desktop.v1.SetAmbientListeningResult.$Properties instead.
+                 */
+
+                /**
+                 * Shape of a SetAmbientListeningResult.
+                 * @typedef {evohime.desktop.v1.SetAmbientListeningResult.$Properties} evohime.desktop.v1.SetAmbientListeningResult.$Shape
+                 */
+
+                /**
+                 * Constructs a new SetAmbientListeningResult.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents a SetAmbientListeningResult.
+                 * @constructor
+                 * @param {evohime.desktop.v1.SetAmbientListeningResult.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const SetAmbientListeningResult = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * SetAmbientListeningResult state.
+                 * @member {evohime.desktop.v1.ListeningState} state
+                 * @memberof evohime.desktop.v1.SetAmbientListeningResult
+                 * @instance
+                 */
+                SetAmbientListeningResult.prototype.state = 0;
+
+                /**
+                 * SetAmbientListeningResult errorCode.
+                 * @member {string} errorCode
+                 * @memberof evohime.desktop.v1.SetAmbientListeningResult
+                 * @instance
+                 */
+                SetAmbientListeningResult.prototype.errorCode = "";
+
+                /**
+                 * Encodes the specified SetAmbientListeningResult message. Does not implicitly {@link evohime.desktop.v1.SetAmbientListeningResult.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.SetAmbientListeningResult
+                 * @static
+                 * @param {evohime.desktop.v1.SetAmbientListeningResult.$Properties} message SetAmbientListeningResult message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                SetAmbientListeningResult.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.state != null && $Object.hasOwnProperty.call(message, "state") && message.state !== 0)
+                        writer.uint32(/* id 1, wireType 0 =*/8).int32(message.state);
+                    if (message.errorCode != null && $Object.hasOwnProperty.call(message, "errorCode") && message.errorCode !== "")
+                        writer.uint32(/* id 2, wireType 2 =*/18).string(message.errorCode);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes a SetAmbientListeningResult message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.SetAmbientListeningResult
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.SetAmbientListeningResult & evohime.desktop.v1.SetAmbientListeningResult.$Shape} SetAmbientListeningResult
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                SetAmbientListeningResult.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.SetAmbientListeningResult(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.int32())
+                                    message.state = value;
+                                else
+                                    delete message.state;
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.errorCode = value;
+                                else
+                                    delete message.errorCode;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for SetAmbientListeningResult
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.SetAmbientListeningResult
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                SetAmbientListeningResult.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.SetAmbientListeningResult";
+                };
+
+                return SetAmbientListeningResult;
+            })();
+
+            v1.GetAmbientStatus = (function() {
+
+                /**
+                 * Properties of a GetAmbientStatus.
+                 * @typedef {Object} evohime.desktop.v1.GetAmbientStatus.$Properties
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of a GetAmbientStatus.
+                 * @memberof evohime.desktop.v1
+                 * @interface IGetAmbientStatus
+                 * @augments evohime.desktop.v1.GetAmbientStatus.$Properties
+                 * @deprecated Use evohime.desktop.v1.GetAmbientStatus.$Properties instead.
+                 */
+
+                /**
+                 * Shape of a GetAmbientStatus.
+                 * @typedef {evohime.desktop.v1.GetAmbientStatus.$Properties} evohime.desktop.v1.GetAmbientStatus.$Shape
+                 */
+
+                /**
+                 * Constructs a new GetAmbientStatus.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents a GetAmbientStatus.
+                 * @constructor
+                 * @param {evohime.desktop.v1.GetAmbientStatus.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const GetAmbientStatus = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * Encodes the specified GetAmbientStatus message. Does not implicitly {@link evohime.desktop.v1.GetAmbientStatus.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.GetAmbientStatus
+                 * @static
+                 * @param {evohime.desktop.v1.GetAmbientStatus.$Properties} message GetAmbientStatus message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                GetAmbientStatus.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes a GetAmbientStatus message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.GetAmbientStatus
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.GetAmbientStatus & evohime.desktop.v1.GetAmbientStatus.$Shape} GetAmbientStatus
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                GetAmbientStatus.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.GetAmbientStatus();
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        reader.skipType(tag & 7, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for GetAmbientStatus
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.GetAmbientStatus
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                GetAmbientStatus.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.GetAmbientStatus";
+                };
+
+                return GetAmbientStatus;
+            })();
+
+            v1.AmbientStatus = (function() {
+
+                /**
+                 * Properties of an AmbientStatus.
+                 * @typedef {Object} evohime.desktop.v1.AmbientStatus.$Properties
+                 * @property {evohime.desktop.v1.ListeningState|null} [state] AmbientStatus state
+                 * @property {evohime.desktop.v1.ListeningReason|null} [reason] AmbientStatus reason
+                 * @property {string|null} [activeDeviceId] AmbientStatus activeDeviceId
+                 * @property {string|null} [engineVersion] AmbientStatus engineVersion
+                 * @property {boolean|null} [engineReady] AmbientStatus engineReady
+                 * @property {Array.<evohime.desktop.v1.AmbientDevice.$Properties>|null} [devices] AmbientStatus devices
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of an AmbientStatus.
+                 * @memberof evohime.desktop.v1
+                 * @interface IAmbientStatus
+                 * @augments evohime.desktop.v1.AmbientStatus.$Properties
+                 * @deprecated Use evohime.desktop.v1.AmbientStatus.$Properties instead.
+                 */
+
+                /**
+                 * Shape of an AmbientStatus.
+                 * @typedef {evohime.desktop.v1.AmbientStatus.$Properties} evohime.desktop.v1.AmbientStatus.$Shape
+                 */
+
+                /**
+                 * Constructs a new AmbientStatus.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents an AmbientStatus.
+                 * @constructor
+                 * @param {evohime.desktop.v1.AmbientStatus.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const AmbientStatus = function (properties) {
+                    this.devices = [];
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * AmbientStatus state.
+                 * @member {evohime.desktop.v1.ListeningState} state
+                 * @memberof evohime.desktop.v1.AmbientStatus
+                 * @instance
+                 */
+                AmbientStatus.prototype.state = 0;
+
+                /**
+                 * AmbientStatus reason.
+                 * @member {evohime.desktop.v1.ListeningReason} reason
+                 * @memberof evohime.desktop.v1.AmbientStatus
+                 * @instance
+                 */
+                AmbientStatus.prototype.reason = 0;
+
+                /**
+                 * AmbientStatus activeDeviceId.
+                 * @member {string} activeDeviceId
+                 * @memberof evohime.desktop.v1.AmbientStatus
+                 * @instance
+                 */
+                AmbientStatus.prototype.activeDeviceId = "";
+
+                /**
+                 * AmbientStatus engineVersion.
+                 * @member {string} engineVersion
+                 * @memberof evohime.desktop.v1.AmbientStatus
+                 * @instance
+                 */
+                AmbientStatus.prototype.engineVersion = "";
+
+                /**
+                 * AmbientStatus engineReady.
+                 * @member {boolean} engineReady
+                 * @memberof evohime.desktop.v1.AmbientStatus
+                 * @instance
+                 */
+                AmbientStatus.prototype.engineReady = false;
+
+                /**
+                 * AmbientStatus devices.
+                 * @member {Array.<evohime.desktop.v1.AmbientDevice.$Properties>} devices
+                 * @memberof evohime.desktop.v1.AmbientStatus
+                 * @instance
+                 */
+                AmbientStatus.prototype.devices = $util.emptyArray;
+
+                /**
+                 * Encodes the specified AmbientStatus message. Does not implicitly {@link evohime.desktop.v1.AmbientStatus.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.AmbientStatus
+                 * @static
+                 * @param {evohime.desktop.v1.AmbientStatus.$Properties} message AmbientStatus message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                AmbientStatus.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.state != null && $Object.hasOwnProperty.call(message, "state") && message.state !== 0)
+                        writer.uint32(/* id 1, wireType 0 =*/8).int32(message.state);
+                    if (message.reason != null && $Object.hasOwnProperty.call(message, "reason") && message.reason !== 0)
+                        writer.uint32(/* id 2, wireType 0 =*/16).int32(message.reason);
+                    if (message.activeDeviceId != null && $Object.hasOwnProperty.call(message, "activeDeviceId") && message.activeDeviceId !== "")
+                        writer.uint32(/* id 3, wireType 2 =*/26).string(message.activeDeviceId);
+                    if (message.engineVersion != null && $Object.hasOwnProperty.call(message, "engineVersion") && message.engineVersion !== "")
+                        writer.uint32(/* id 4, wireType 2 =*/34).string(message.engineVersion);
+                    if (message.engineReady != null && $Object.hasOwnProperty.call(message, "engineReady") && message.engineReady !== false)
+                        writer.uint32(/* id 5, wireType 0 =*/40).bool(message.engineReady);
+                    if (message.devices != null && message.devices.length)
+                        for (let i = 0; i < message.devices.length; ++i)
+                            $root.evohime.desktop.v1.AmbientDevice.encode(message.devices[i], writer.uint32(/* id 6, wireType 2 =*/50).fork(), _depth + 1).ldelim();
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes an AmbientStatus message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.AmbientStatus
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.AmbientStatus & evohime.desktop.v1.AmbientStatus.$Shape} AmbientStatus
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                AmbientStatus.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.AmbientStatus(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.int32())
+                                    message.state = value;
+                                else
+                                    delete message.state;
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.int32())
+                                    message.reason = value;
+                                else
+                                    delete message.reason;
+                                continue;
+                            }
+                        case 3: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.activeDeviceId = value;
+                                else
+                                    delete message.activeDeviceId;
+                                continue;
+                            }
+                        case 4: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.engineVersion = value;
+                                else
+                                    delete message.engineVersion;
+                                continue;
+                            }
+                        case 5: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.bool())
+                                    message.engineReady = value;
+                                else
+                                    delete message.engineReady;
+                                continue;
+                            }
+                        case 6: {
+                                if (wireType !== 2)
+                                    break;
+                                if (!(message.devices && message.devices.length))
+                                    message.devices = [];
+                                message.devices.push($root.evohime.desktop.v1.AmbientDevice.decode(reader, reader.uint32(), $undefined, _depth + 1));
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for AmbientStatus
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.AmbientStatus
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                AmbientStatus.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.AmbientStatus";
+                };
+
+                return AmbientStatus;
+            })();
+
+            v1.ListAmbientEpisodes = (function() {
+
+                /**
+                 * Properties of a ListAmbientEpisodes.
+                 * @typedef {Object} evohime.desktop.v1.ListAmbientEpisodes.$Properties
+                 * @property {number|null} [sinceMs] ListAmbientEpisodes sinceMs
+                 * @property {number|null} [limit] ListAmbientEpisodes limit
+                 * @property {string|null} [cursor] ListAmbientEpisodes cursor
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of a ListAmbientEpisodes.
+                 * @memberof evohime.desktop.v1
+                 * @interface IListAmbientEpisodes
+                 * @augments evohime.desktop.v1.ListAmbientEpisodes.$Properties
+                 * @deprecated Use evohime.desktop.v1.ListAmbientEpisodes.$Properties instead.
+                 */
+
+                /**
+                 * Shape of a ListAmbientEpisodes.
+                 * @typedef {evohime.desktop.v1.ListAmbientEpisodes.$Properties} evohime.desktop.v1.ListAmbientEpisodes.$Shape
+                 */
+
+                /**
+                 * Constructs a new ListAmbientEpisodes.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents a ListAmbientEpisodes.
+                 * @constructor
+                 * @param {evohime.desktop.v1.ListAmbientEpisodes.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const ListAmbientEpisodes = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * ListAmbientEpisodes sinceMs.
+                 * @member {number} sinceMs
+                 * @memberof evohime.desktop.v1.ListAmbientEpisodes
+                 * @instance
+                 */
+                ListAmbientEpisodes.prototype.sinceMs = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
+
+                /**
+                 * ListAmbientEpisodes limit.
+                 * @member {number} limit
+                 * @memberof evohime.desktop.v1.ListAmbientEpisodes
+                 * @instance
+                 */
+                ListAmbientEpisodes.prototype.limit = 0;
+
+                /**
+                 * ListAmbientEpisodes cursor.
+                 * @member {string} cursor
+                 * @memberof evohime.desktop.v1.ListAmbientEpisodes
+                 * @instance
+                 */
+                ListAmbientEpisodes.prototype.cursor = "";
+
+                /**
+                 * Encodes the specified ListAmbientEpisodes message. Does not implicitly {@link evohime.desktop.v1.ListAmbientEpisodes.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.ListAmbientEpisodes
+                 * @static
+                 * @param {evohime.desktop.v1.ListAmbientEpisodes.$Properties} message ListAmbientEpisodes message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                ListAmbientEpisodes.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.sinceMs != null && $Object.hasOwnProperty.call(message, "sinceMs") && (typeof message.sinceMs === "object" ? message.sinceMs.low || message.sinceMs.high : message.sinceMs !== 0))
+                        writer.uint32(/* id 1, wireType 0 =*/8).int64(message.sinceMs);
+                    if (message.limit != null && $Object.hasOwnProperty.call(message, "limit") && message.limit !== 0)
+                        writer.uint32(/* id 2, wireType 0 =*/16).int32(message.limit);
+                    if (message.cursor != null && $Object.hasOwnProperty.call(message, "cursor") && message.cursor !== "")
+                        writer.uint32(/* id 3, wireType 2 =*/26).string(message.cursor);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes a ListAmbientEpisodes message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.ListAmbientEpisodes
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.ListAmbientEpisodes & evohime.desktop.v1.ListAmbientEpisodes.$Shape} ListAmbientEpisodes
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                ListAmbientEpisodes.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.ListAmbientEpisodes(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 0)
+                                    break;
+                                if (typeof (value = reader.int64()) === "object" ? value.low || value.high : value !== 0)
+                                    message.sinceMs = value;
+                                else
+                                    delete message.sinceMs;
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.int32())
+                                    message.limit = value;
+                                else
+                                    delete message.limit;
+                                continue;
+                            }
+                        case 3: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.cursor = value;
+                                else
+                                    delete message.cursor;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for ListAmbientEpisodes
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.ListAmbientEpisodes
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                ListAmbientEpisodes.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.ListAmbientEpisodes";
+                };
+
+                return ListAmbientEpisodes;
+            })();
+
+            v1.AmbientEpisodeList = (function() {
+
+                /**
+                 * Properties of an AmbientEpisodeList.
+                 * @typedef {Object} evohime.desktop.v1.AmbientEpisodeList.$Properties
+                 * @property {Array.<evohime.desktop.v1.AmbientEpisodeSummary.$Properties>|null} [episodes] AmbientEpisodeList episodes
+                 * @property {string|null} [nextCursor] AmbientEpisodeList nextCursor
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of an AmbientEpisodeList.
+                 * @memberof evohime.desktop.v1
+                 * @interface IAmbientEpisodeList
+                 * @augments evohime.desktop.v1.AmbientEpisodeList.$Properties
+                 * @deprecated Use evohime.desktop.v1.AmbientEpisodeList.$Properties instead.
+                 */
+
+                /**
+                 * Shape of an AmbientEpisodeList.
+                 * @typedef {evohime.desktop.v1.AmbientEpisodeList.$Properties} evohime.desktop.v1.AmbientEpisodeList.$Shape
+                 */
+
+                /**
+                 * Constructs a new AmbientEpisodeList.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents an AmbientEpisodeList.
+                 * @constructor
+                 * @param {evohime.desktop.v1.AmbientEpisodeList.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const AmbientEpisodeList = function (properties) {
+                    this.episodes = [];
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * AmbientEpisodeList episodes.
+                 * @member {Array.<evohime.desktop.v1.AmbientEpisodeSummary.$Properties>} episodes
+                 * @memberof evohime.desktop.v1.AmbientEpisodeList
+                 * @instance
+                 */
+                AmbientEpisodeList.prototype.episodes = $util.emptyArray;
+
+                /**
+                 * AmbientEpisodeList nextCursor.
+                 * @member {string} nextCursor
+                 * @memberof evohime.desktop.v1.AmbientEpisodeList
+                 * @instance
+                 */
+                AmbientEpisodeList.prototype.nextCursor = "";
+
+                /**
+                 * Encodes the specified AmbientEpisodeList message. Does not implicitly {@link evohime.desktop.v1.AmbientEpisodeList.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.AmbientEpisodeList
+                 * @static
+                 * @param {evohime.desktop.v1.AmbientEpisodeList.$Properties} message AmbientEpisodeList message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                AmbientEpisodeList.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.episodes != null && message.episodes.length)
+                        for (let i = 0; i < message.episodes.length; ++i)
+                            $root.evohime.desktop.v1.AmbientEpisodeSummary.encode(message.episodes[i], writer.uint32(/* id 1, wireType 2 =*/10).fork(), _depth + 1).ldelim();
+                    if (message.nextCursor != null && $Object.hasOwnProperty.call(message, "nextCursor") && message.nextCursor !== "")
+                        writer.uint32(/* id 2, wireType 2 =*/18).string(message.nextCursor);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes an AmbientEpisodeList message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.AmbientEpisodeList
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.AmbientEpisodeList & evohime.desktop.v1.AmbientEpisodeList.$Shape} AmbientEpisodeList
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                AmbientEpisodeList.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.AmbientEpisodeList(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 2)
+                                    break;
+                                if (!(message.episodes && message.episodes.length))
+                                    message.episodes = [];
+                                message.episodes.push($root.evohime.desktop.v1.AmbientEpisodeSummary.decode(reader, reader.uint32(), $undefined, _depth + 1));
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.nextCursor = value;
+                                else
+                                    delete message.nextCursor;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for AmbientEpisodeList
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.AmbientEpisodeList
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                AmbientEpisodeList.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.AmbientEpisodeList";
+                };
+
+                return AmbientEpisodeList;
+            })();
+
+            v1.GetAmbientEpisode = (function() {
+
+                /**
+                 * Properties of a GetAmbientEpisode.
+                 * @typedef {Object} evohime.desktop.v1.GetAmbientEpisode.$Properties
+                 * @property {string|null} [episodeId] GetAmbientEpisode episodeId
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of a GetAmbientEpisode.
+                 * @memberof evohime.desktop.v1
+                 * @interface IGetAmbientEpisode
+                 * @augments evohime.desktop.v1.GetAmbientEpisode.$Properties
+                 * @deprecated Use evohime.desktop.v1.GetAmbientEpisode.$Properties instead.
+                 */
+
+                /**
+                 * Shape of a GetAmbientEpisode.
+                 * @typedef {evohime.desktop.v1.GetAmbientEpisode.$Properties} evohime.desktop.v1.GetAmbientEpisode.$Shape
+                 */
+
+                /**
+                 * Constructs a new GetAmbientEpisode.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents a GetAmbientEpisode.
+                 * @constructor
+                 * @param {evohime.desktop.v1.GetAmbientEpisode.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const GetAmbientEpisode = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * GetAmbientEpisode episodeId.
+                 * @member {string} episodeId
+                 * @memberof evohime.desktop.v1.GetAmbientEpisode
+                 * @instance
+                 */
+                GetAmbientEpisode.prototype.episodeId = "";
+
+                /**
+                 * Encodes the specified GetAmbientEpisode message. Does not implicitly {@link evohime.desktop.v1.GetAmbientEpisode.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.GetAmbientEpisode
+                 * @static
+                 * @param {evohime.desktop.v1.GetAmbientEpisode.$Properties} message GetAmbientEpisode message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                GetAmbientEpisode.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.episodeId != null && $Object.hasOwnProperty.call(message, "episodeId") && message.episodeId !== "")
+                        writer.uint32(/* id 1, wireType 2 =*/10).string(message.episodeId);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes a GetAmbientEpisode message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.GetAmbientEpisode
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.GetAmbientEpisode & evohime.desktop.v1.GetAmbientEpisode.$Shape} GetAmbientEpisode
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                GetAmbientEpisode.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.GetAmbientEpisode(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.episodeId = value;
+                                else
+                                    delete message.episodeId;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for GetAmbientEpisode
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.GetAmbientEpisode
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                GetAmbientEpisode.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.GetAmbientEpisode";
+                };
+
+                return GetAmbientEpisode;
+            })();
+
+            v1.AmbientEpisodeDetail = (function() {
+
+                /**
+                 * Properties of an AmbientEpisodeDetail.
+                 * @typedef {Object} evohime.desktop.v1.AmbientEpisodeDetail.$Properties
+                 * @property {string|null} [episodeId] AmbientEpisodeDetail episodeId
+                 * @property {Array.<evohime.desktop.v1.Utterance.$Properties>|null} [utterances] AmbientEpisodeDetail utterances
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of an AmbientEpisodeDetail.
+                 * @memberof evohime.desktop.v1
+                 * @interface IAmbientEpisodeDetail
+                 * @augments evohime.desktop.v1.AmbientEpisodeDetail.$Properties
+                 * @deprecated Use evohime.desktop.v1.AmbientEpisodeDetail.$Properties instead.
+                 */
+
+                /**
+                 * Shape of an AmbientEpisodeDetail.
+                 * @typedef {evohime.desktop.v1.AmbientEpisodeDetail.$Properties} evohime.desktop.v1.AmbientEpisodeDetail.$Shape
+                 */
+
+                /**
+                 * Constructs a new AmbientEpisodeDetail.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents an AmbientEpisodeDetail.
+                 * @constructor
+                 * @param {evohime.desktop.v1.AmbientEpisodeDetail.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const AmbientEpisodeDetail = function (properties) {
+                    this.utterances = [];
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * AmbientEpisodeDetail episodeId.
+                 * @member {string} episodeId
+                 * @memberof evohime.desktop.v1.AmbientEpisodeDetail
+                 * @instance
+                 */
+                AmbientEpisodeDetail.prototype.episodeId = "";
+
+                /**
+                 * AmbientEpisodeDetail utterances.
+                 * @member {Array.<evohime.desktop.v1.Utterance.$Properties>} utterances
+                 * @memberof evohime.desktop.v1.AmbientEpisodeDetail
+                 * @instance
+                 */
+                AmbientEpisodeDetail.prototype.utterances = $util.emptyArray;
+
+                /**
+                 * Encodes the specified AmbientEpisodeDetail message. Does not implicitly {@link evohime.desktop.v1.AmbientEpisodeDetail.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.AmbientEpisodeDetail
+                 * @static
+                 * @param {evohime.desktop.v1.AmbientEpisodeDetail.$Properties} message AmbientEpisodeDetail message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                AmbientEpisodeDetail.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.episodeId != null && $Object.hasOwnProperty.call(message, "episodeId") && message.episodeId !== "")
+                        writer.uint32(/* id 1, wireType 2 =*/10).string(message.episodeId);
+                    if (message.utterances != null && message.utterances.length)
+                        for (let i = 0; i < message.utterances.length; ++i)
+                            $root.evohime.desktop.v1.Utterance.encode(message.utterances[i], writer.uint32(/* id 2, wireType 2 =*/18).fork(), _depth + 1).ldelim();
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes an AmbientEpisodeDetail message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.AmbientEpisodeDetail
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.AmbientEpisodeDetail & evohime.desktop.v1.AmbientEpisodeDetail.$Shape} AmbientEpisodeDetail
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                AmbientEpisodeDetail.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.AmbientEpisodeDetail(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.episodeId = value;
+                                else
+                                    delete message.episodeId;
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 2)
+                                    break;
+                                if (!(message.utterances && message.utterances.length))
+                                    message.utterances = [];
+                                message.utterances.push($root.evohime.desktop.v1.Utterance.decode(reader, reader.uint32(), $undefined, _depth + 1));
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for AmbientEpisodeDetail
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.AmbientEpisodeDetail
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                AmbientEpisodeDetail.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.AmbientEpisodeDetail";
+                };
+
+                return AmbientEpisodeDetail;
+            })();
+
+            v1.DeleteAmbientTranscripts = (function() {
+
+                /**
+                 * Properties of a DeleteAmbientTranscripts.
+                 * @typedef {Object} evohime.desktop.v1.DeleteAmbientTranscripts.$Properties
+                 * @property {Array.<string>|null} [episodeIds] DeleteAmbientTranscripts episodeIds
+                 * @property {boolean|null} [all] DeleteAmbientTranscripts all
+                 * @property {boolean|null} [confirmed] DeleteAmbientTranscripts confirmed
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of a DeleteAmbientTranscripts.
+                 * @memberof evohime.desktop.v1
+                 * @interface IDeleteAmbientTranscripts
+                 * @augments evohime.desktop.v1.DeleteAmbientTranscripts.$Properties
+                 * @deprecated Use evohime.desktop.v1.DeleteAmbientTranscripts.$Properties instead.
+                 */
+
+                /**
+                 * Shape of a DeleteAmbientTranscripts.
+                 * @typedef {evohime.desktop.v1.DeleteAmbientTranscripts.$Properties} evohime.desktop.v1.DeleteAmbientTranscripts.$Shape
+                 */
+
+                /**
+                 * Constructs a new DeleteAmbientTranscripts.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents a DeleteAmbientTranscripts.
+                 * @constructor
+                 * @param {evohime.desktop.v1.DeleteAmbientTranscripts.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const DeleteAmbientTranscripts = function (properties) {
+                    this.episodeIds = [];
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * DeleteAmbientTranscripts episodeIds.
+                 * @member {Array.<string>} episodeIds
+                 * @memberof evohime.desktop.v1.DeleteAmbientTranscripts
+                 * @instance
+                 */
+                DeleteAmbientTranscripts.prototype.episodeIds = $util.emptyArray;
+
+                /**
+                 * DeleteAmbientTranscripts all.
+                 * @member {boolean} all
+                 * @memberof evohime.desktop.v1.DeleteAmbientTranscripts
+                 * @instance
+                 */
+                DeleteAmbientTranscripts.prototype.all = false;
+
+                /**
+                 * DeleteAmbientTranscripts confirmed.
+                 * @member {boolean} confirmed
+                 * @memberof evohime.desktop.v1.DeleteAmbientTranscripts
+                 * @instance
+                 */
+                DeleteAmbientTranscripts.prototype.confirmed = false;
+
+                /**
+                 * Encodes the specified DeleteAmbientTranscripts message. Does not implicitly {@link evohime.desktop.v1.DeleteAmbientTranscripts.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.DeleteAmbientTranscripts
+                 * @static
+                 * @param {evohime.desktop.v1.DeleteAmbientTranscripts.$Properties} message DeleteAmbientTranscripts message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                DeleteAmbientTranscripts.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.episodeIds != null && message.episodeIds.length)
+                        for (let i = 0; i < message.episodeIds.length; ++i)
+                            writer.uint32(/* id 1, wireType 2 =*/10).string(message.episodeIds[i]);
+                    if (message.all != null && $Object.hasOwnProperty.call(message, "all") && message.all !== false)
+                        writer.uint32(/* id 2, wireType 0 =*/16).bool(message.all);
+                    if (message.confirmed != null && $Object.hasOwnProperty.call(message, "confirmed") && message.confirmed !== false)
+                        writer.uint32(/* id 3, wireType 0 =*/24).bool(message.confirmed);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes a DeleteAmbientTranscripts message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.DeleteAmbientTranscripts
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.DeleteAmbientTranscripts & evohime.desktop.v1.DeleteAmbientTranscripts.$Shape} DeleteAmbientTranscripts
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                DeleteAmbientTranscripts.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.DeleteAmbientTranscripts(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 2)
+                                    break;
+                                if (!(message.episodeIds && message.episodeIds.length))
+                                    message.episodeIds = [];
+                                message.episodeIds.push(reader.stringVerify());
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.bool())
+                                    message.all = value;
+                                else
+                                    delete message.all;
+                                continue;
+                            }
+                        case 3: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.bool())
+                                    message.confirmed = value;
+                                else
+                                    delete message.confirmed;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for DeleteAmbientTranscripts
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.DeleteAmbientTranscripts
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                DeleteAmbientTranscripts.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.DeleteAmbientTranscripts";
+                };
+
+                return DeleteAmbientTranscripts;
+            })();
+
+            v1.DeleteAmbientTranscriptsResult = (function() {
+
+                /**
+                 * Properties of a DeleteAmbientTranscriptsResult.
+                 * @typedef {Object} evohime.desktop.v1.DeleteAmbientTranscriptsResult.$Properties
+                 * @property {number|null} [deletedCount] DeleteAmbientTranscriptsResult deletedCount
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of a DeleteAmbientTranscriptsResult.
+                 * @memberof evohime.desktop.v1
+                 * @interface IDeleteAmbientTranscriptsResult
+                 * @augments evohime.desktop.v1.DeleteAmbientTranscriptsResult.$Properties
+                 * @deprecated Use evohime.desktop.v1.DeleteAmbientTranscriptsResult.$Properties instead.
+                 */
+
+                /**
+                 * Shape of a DeleteAmbientTranscriptsResult.
+                 * @typedef {evohime.desktop.v1.DeleteAmbientTranscriptsResult.$Properties} evohime.desktop.v1.DeleteAmbientTranscriptsResult.$Shape
+                 */
+
+                /**
+                 * Constructs a new DeleteAmbientTranscriptsResult.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents a DeleteAmbientTranscriptsResult.
+                 * @constructor
+                 * @param {evohime.desktop.v1.DeleteAmbientTranscriptsResult.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const DeleteAmbientTranscriptsResult = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * DeleteAmbientTranscriptsResult deletedCount.
+                 * @member {number} deletedCount
+                 * @memberof evohime.desktop.v1.DeleteAmbientTranscriptsResult
+                 * @instance
+                 */
+                DeleteAmbientTranscriptsResult.prototype.deletedCount = 0;
+
+                /**
+                 * Encodes the specified DeleteAmbientTranscriptsResult message. Does not implicitly {@link evohime.desktop.v1.DeleteAmbientTranscriptsResult.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.DeleteAmbientTranscriptsResult
+                 * @static
+                 * @param {evohime.desktop.v1.DeleteAmbientTranscriptsResult.$Properties} message DeleteAmbientTranscriptsResult message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                DeleteAmbientTranscriptsResult.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.deletedCount != null && $Object.hasOwnProperty.call(message, "deletedCount") && message.deletedCount !== 0)
+                        writer.uint32(/* id 1, wireType 0 =*/8).int32(message.deletedCount);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes a DeleteAmbientTranscriptsResult message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.DeleteAmbientTranscriptsResult
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.DeleteAmbientTranscriptsResult & evohime.desktop.v1.DeleteAmbientTranscriptsResult.$Shape} DeleteAmbientTranscriptsResult
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                DeleteAmbientTranscriptsResult.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.DeleteAmbientTranscriptsResult(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.int32())
+                                    message.deletedCount = value;
+                                else
+                                    delete message.deletedCount;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for DeleteAmbientTranscriptsResult
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.DeleteAmbientTranscriptsResult
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                DeleteAmbientTranscriptsResult.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.DeleteAmbientTranscriptsResult";
+                };
+
+                return DeleteAmbientTranscriptsResult;
+            })();
+
+            v1.ForgetAmbientWindow = (function() {
+
+                /**
+                 * Properties of a ForgetAmbientWindow.
+                 * @typedef {Object} evohime.desktop.v1.ForgetAmbientWindow.$Properties
+                 * @property {number|null} [windowMs] ForgetAmbientWindow windowMs
+                 * @property {boolean|null} [confirmed] ForgetAmbientWindow confirmed
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of a ForgetAmbientWindow.
+                 * @memberof evohime.desktop.v1
+                 * @interface IForgetAmbientWindow
+                 * @augments evohime.desktop.v1.ForgetAmbientWindow.$Properties
+                 * @deprecated Use evohime.desktop.v1.ForgetAmbientWindow.$Properties instead.
+                 */
+
+                /**
+                 * Shape of a ForgetAmbientWindow.
+                 * @typedef {evohime.desktop.v1.ForgetAmbientWindow.$Properties} evohime.desktop.v1.ForgetAmbientWindow.$Shape
+                 */
+
+                /**
+                 * Constructs a new ForgetAmbientWindow.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents a ForgetAmbientWindow.
+                 * @constructor
+                 * @param {evohime.desktop.v1.ForgetAmbientWindow.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const ForgetAmbientWindow = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * ForgetAmbientWindow windowMs.
+                 * @member {number} windowMs
+                 * @memberof evohime.desktop.v1.ForgetAmbientWindow
+                 * @instance
+                 */
+                ForgetAmbientWindow.prototype.windowMs = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
+
+                /**
+                 * ForgetAmbientWindow confirmed.
+                 * @member {boolean} confirmed
+                 * @memberof evohime.desktop.v1.ForgetAmbientWindow
+                 * @instance
+                 */
+                ForgetAmbientWindow.prototype.confirmed = false;
+
+                /**
+                 * Encodes the specified ForgetAmbientWindow message. Does not implicitly {@link evohime.desktop.v1.ForgetAmbientWindow.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.ForgetAmbientWindow
+                 * @static
+                 * @param {evohime.desktop.v1.ForgetAmbientWindow.$Properties} message ForgetAmbientWindow message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                ForgetAmbientWindow.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.windowMs != null && $Object.hasOwnProperty.call(message, "windowMs") && (typeof message.windowMs === "object" ? message.windowMs.low || message.windowMs.high : message.windowMs !== 0))
+                        writer.uint32(/* id 1, wireType 0 =*/8).int64(message.windowMs);
+                    if (message.confirmed != null && $Object.hasOwnProperty.call(message, "confirmed") && message.confirmed !== false)
+                        writer.uint32(/* id 2, wireType 0 =*/16).bool(message.confirmed);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes a ForgetAmbientWindow message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.ForgetAmbientWindow
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.ForgetAmbientWindow & evohime.desktop.v1.ForgetAmbientWindow.$Shape} ForgetAmbientWindow
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                ForgetAmbientWindow.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.ForgetAmbientWindow(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 0)
+                                    break;
+                                if (typeof (value = reader.int64()) === "object" ? value.low || value.high : value !== 0)
+                                    message.windowMs = value;
+                                else
+                                    delete message.windowMs;
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.bool())
+                                    message.confirmed = value;
+                                else
+                                    delete message.confirmed;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for ForgetAmbientWindow
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.ForgetAmbientWindow
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                ForgetAmbientWindow.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.ForgetAmbientWindow";
+                };
+
+                return ForgetAmbientWindow;
+            })();
+
+            v1.ForgetAmbientWindowResult = (function() {
+
+                /**
+                 * Properties of a ForgetAmbientWindowResult.
+                 * @typedef {Object} evohime.desktop.v1.ForgetAmbientWindowResult.$Properties
+                 * @property {number|null} [deletedCount] ForgetAmbientWindowResult deletedCount
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of a ForgetAmbientWindowResult.
+                 * @memberof evohime.desktop.v1
+                 * @interface IForgetAmbientWindowResult
+                 * @augments evohime.desktop.v1.ForgetAmbientWindowResult.$Properties
+                 * @deprecated Use evohime.desktop.v1.ForgetAmbientWindowResult.$Properties instead.
+                 */
+
+                /**
+                 * Shape of a ForgetAmbientWindowResult.
+                 * @typedef {evohime.desktop.v1.ForgetAmbientWindowResult.$Properties} evohime.desktop.v1.ForgetAmbientWindowResult.$Shape
+                 */
+
+                /**
+                 * Constructs a new ForgetAmbientWindowResult.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents a ForgetAmbientWindowResult.
+                 * @constructor
+                 * @param {evohime.desktop.v1.ForgetAmbientWindowResult.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const ForgetAmbientWindowResult = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * ForgetAmbientWindowResult deletedCount.
+                 * @member {number} deletedCount
+                 * @memberof evohime.desktop.v1.ForgetAmbientWindowResult
+                 * @instance
+                 */
+                ForgetAmbientWindowResult.prototype.deletedCount = 0;
+
+                /**
+                 * Encodes the specified ForgetAmbientWindowResult message. Does not implicitly {@link evohime.desktop.v1.ForgetAmbientWindowResult.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.ForgetAmbientWindowResult
+                 * @static
+                 * @param {evohime.desktop.v1.ForgetAmbientWindowResult.$Properties} message ForgetAmbientWindowResult message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                ForgetAmbientWindowResult.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.deletedCount != null && $Object.hasOwnProperty.call(message, "deletedCount") && message.deletedCount !== 0)
+                        writer.uint32(/* id 1, wireType 0 =*/8).int32(message.deletedCount);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes a ForgetAmbientWindowResult message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.ForgetAmbientWindowResult
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.ForgetAmbientWindowResult & evohime.desktop.v1.ForgetAmbientWindowResult.$Shape} ForgetAmbientWindowResult
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                ForgetAmbientWindowResult.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.ForgetAmbientWindowResult(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.int32())
+                                    message.deletedCount = value;
+                                else
+                                    delete message.deletedCount;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for ForgetAmbientWindowResult
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.ForgetAmbientWindowResult
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                ForgetAmbientWindowResult.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.ForgetAmbientWindowResult";
+                };
+
+                return ForgetAmbientWindowResult;
+            })();
+
+            v1.GetAmbientPolicy = (function() {
+
+                /**
+                 * Properties of a GetAmbientPolicy.
+                 * @typedef {Object} evohime.desktop.v1.GetAmbientPolicy.$Properties
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of a GetAmbientPolicy.
+                 * @memberof evohime.desktop.v1
+                 * @interface IGetAmbientPolicy
+                 * @augments evohime.desktop.v1.GetAmbientPolicy.$Properties
+                 * @deprecated Use evohime.desktop.v1.GetAmbientPolicy.$Properties instead.
+                 */
+
+                /**
+                 * Shape of a GetAmbientPolicy.
+                 * @typedef {evohime.desktop.v1.GetAmbientPolicy.$Properties} evohime.desktop.v1.GetAmbientPolicy.$Shape
+                 */
+
+                /**
+                 * Constructs a new GetAmbientPolicy.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents a GetAmbientPolicy.
+                 * @constructor
+                 * @param {evohime.desktop.v1.GetAmbientPolicy.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const GetAmbientPolicy = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * Encodes the specified GetAmbientPolicy message. Does not implicitly {@link evohime.desktop.v1.GetAmbientPolicy.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.GetAmbientPolicy
+                 * @static
+                 * @param {evohime.desktop.v1.GetAmbientPolicy.$Properties} message GetAmbientPolicy message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                GetAmbientPolicy.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes a GetAmbientPolicy message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.GetAmbientPolicy
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.GetAmbientPolicy & evohime.desktop.v1.GetAmbientPolicy.$Shape} GetAmbientPolicy
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                GetAmbientPolicy.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.GetAmbientPolicy();
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        reader.skipType(tag & 7, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for GetAmbientPolicy
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.GetAmbientPolicy
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                GetAmbientPolicy.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.GetAmbientPolicy";
+                };
+
+                return GetAmbientPolicy;
+            })();
+
+            v1.SaveAmbientPolicy = (function() {
+
+                /**
+                 * Properties of a SaveAmbientPolicy.
+                 * @typedef {Object} evohime.desktop.v1.SaveAmbientPolicy.$Properties
+                 * @property {evohime.desktop.v1.AmbientPolicy.$Properties|null} [policy] SaveAmbientPolicy policy
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of a SaveAmbientPolicy.
+                 * @memberof evohime.desktop.v1
+                 * @interface ISaveAmbientPolicy
+                 * @augments evohime.desktop.v1.SaveAmbientPolicy.$Properties
+                 * @deprecated Use evohime.desktop.v1.SaveAmbientPolicy.$Properties instead.
+                 */
+
+                /**
+                 * Shape of a SaveAmbientPolicy.
+                 * @typedef {evohime.desktop.v1.SaveAmbientPolicy.$Properties} evohime.desktop.v1.SaveAmbientPolicy.$Shape
+                 */
+
+                /**
+                 * Constructs a new SaveAmbientPolicy.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents a SaveAmbientPolicy.
+                 * @constructor
+                 * @param {evohime.desktop.v1.SaveAmbientPolicy.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const SaveAmbientPolicy = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * SaveAmbientPolicy policy.
+                 * @member {evohime.desktop.v1.AmbientPolicy.$Properties|null|undefined} policy
+                 * @memberof evohime.desktop.v1.SaveAmbientPolicy
+                 * @instance
+                 */
+                SaveAmbientPolicy.prototype.policy = null;
+
+                /**
+                 * Encodes the specified SaveAmbientPolicy message. Does not implicitly {@link evohime.desktop.v1.SaveAmbientPolicy.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.SaveAmbientPolicy
+                 * @static
+                 * @param {evohime.desktop.v1.SaveAmbientPolicy.$Properties} message SaveAmbientPolicy message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                SaveAmbientPolicy.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.policy != null && $Object.hasOwnProperty.call(message, "policy"))
+                        $root.evohime.desktop.v1.AmbientPolicy.encode(message.policy, writer.uint32(/* id 1, wireType 2 =*/10).fork(), _depth + 1).ldelim();
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes a SaveAmbientPolicy message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.SaveAmbientPolicy
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.SaveAmbientPolicy & evohime.desktop.v1.SaveAmbientPolicy.$Shape} SaveAmbientPolicy
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                SaveAmbientPolicy.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.SaveAmbientPolicy(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 2)
+                                    break;
+                                message.policy = $root.evohime.desktop.v1.AmbientPolicy.decode(reader, reader.uint32(), $undefined, _depth + 1, message.policy);
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for SaveAmbientPolicy
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.SaveAmbientPolicy
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                SaveAmbientPolicy.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.SaveAmbientPolicy";
+                };
+
+                return SaveAmbientPolicy;
+            })();
+
+            v1.SaveAmbientPolicyResult = (function() {
+
+                /**
+                 * Properties of a SaveAmbientPolicyResult.
+                 * @typedef {Object} evohime.desktop.v1.SaveAmbientPolicyResult.$Properties
+                 * @property {boolean|null} [applied] SaveAmbientPolicyResult applied
+                 * @property {string|null} [errorCode] SaveAmbientPolicyResult errorCode
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of a SaveAmbientPolicyResult.
+                 * @memberof evohime.desktop.v1
+                 * @interface ISaveAmbientPolicyResult
+                 * @augments evohime.desktop.v1.SaveAmbientPolicyResult.$Properties
+                 * @deprecated Use evohime.desktop.v1.SaveAmbientPolicyResult.$Properties instead.
+                 */
+
+                /**
+                 * Shape of a SaveAmbientPolicyResult.
+                 * @typedef {evohime.desktop.v1.SaveAmbientPolicyResult.$Properties} evohime.desktop.v1.SaveAmbientPolicyResult.$Shape
+                 */
+
+                /**
+                 * Constructs a new SaveAmbientPolicyResult.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents a SaveAmbientPolicyResult.
+                 * @constructor
+                 * @param {evohime.desktop.v1.SaveAmbientPolicyResult.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const SaveAmbientPolicyResult = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * SaveAmbientPolicyResult applied.
+                 * @member {boolean} applied
+                 * @memberof evohime.desktop.v1.SaveAmbientPolicyResult
+                 * @instance
+                 */
+                SaveAmbientPolicyResult.prototype.applied = false;
+
+                /**
+                 * SaveAmbientPolicyResult errorCode.
+                 * @member {string} errorCode
+                 * @memberof evohime.desktop.v1.SaveAmbientPolicyResult
+                 * @instance
+                 */
+                SaveAmbientPolicyResult.prototype.errorCode = "";
+
+                /**
+                 * Encodes the specified SaveAmbientPolicyResult message. Does not implicitly {@link evohime.desktop.v1.SaveAmbientPolicyResult.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.SaveAmbientPolicyResult
+                 * @static
+                 * @param {evohime.desktop.v1.SaveAmbientPolicyResult.$Properties} message SaveAmbientPolicyResult message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                SaveAmbientPolicyResult.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.applied != null && $Object.hasOwnProperty.call(message, "applied") && message.applied !== false)
+                        writer.uint32(/* id 1, wireType 0 =*/8).bool(message.applied);
+                    if (message.errorCode != null && $Object.hasOwnProperty.call(message, "errorCode") && message.errorCode !== "")
+                        writer.uint32(/* id 2, wireType 2 =*/18).string(message.errorCode);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes a SaveAmbientPolicyResult message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.SaveAmbientPolicyResult
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.SaveAmbientPolicyResult & evohime.desktop.v1.SaveAmbientPolicyResult.$Shape} SaveAmbientPolicyResult
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                SaveAmbientPolicyResult.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.SaveAmbientPolicyResult(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.bool())
+                                    message.applied = value;
+                                else
+                                    delete message.applied;
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.errorCode = value;
+                                else
+                                    delete message.errorCode;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for SaveAmbientPolicyResult
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.SaveAmbientPolicyResult
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                SaveAmbientPolicyResult.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.SaveAmbientPolicyResult";
+                };
+
+                return SaveAmbientPolicyResult;
+            })();
+
+            v1.ResolveAmbientProposal = (function() {
+
+                /**
+                 * Properties of a ResolveAmbientProposal.
+                 * @typedef {Object} evohime.desktop.v1.ResolveAmbientProposal.$Properties
+                 * @property {string|null} [proposalId] ResolveAmbientProposal proposalId
+                 * @property {boolean|null} [accepted] ResolveAmbientProposal accepted
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of a ResolveAmbientProposal.
+                 * @memberof evohime.desktop.v1
+                 * @interface IResolveAmbientProposal
+                 * @augments evohime.desktop.v1.ResolveAmbientProposal.$Properties
+                 * @deprecated Use evohime.desktop.v1.ResolveAmbientProposal.$Properties instead.
+                 */
+
+                /**
+                 * Shape of a ResolveAmbientProposal.
+                 * @typedef {evohime.desktop.v1.ResolveAmbientProposal.$Properties} evohime.desktop.v1.ResolveAmbientProposal.$Shape
+                 */
+
+                /**
+                 * Constructs a new ResolveAmbientProposal.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents a ResolveAmbientProposal.
+                 * @constructor
+                 * @param {evohime.desktop.v1.ResolveAmbientProposal.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const ResolveAmbientProposal = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * ResolveAmbientProposal proposalId.
+                 * @member {string} proposalId
+                 * @memberof evohime.desktop.v1.ResolveAmbientProposal
+                 * @instance
+                 */
+                ResolveAmbientProposal.prototype.proposalId = "";
+
+                /**
+                 * ResolveAmbientProposal accepted.
+                 * @member {boolean} accepted
+                 * @memberof evohime.desktop.v1.ResolveAmbientProposal
+                 * @instance
+                 */
+                ResolveAmbientProposal.prototype.accepted = false;
+
+                /**
+                 * Encodes the specified ResolveAmbientProposal message. Does not implicitly {@link evohime.desktop.v1.ResolveAmbientProposal.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.ResolveAmbientProposal
+                 * @static
+                 * @param {evohime.desktop.v1.ResolveAmbientProposal.$Properties} message ResolveAmbientProposal message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                ResolveAmbientProposal.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.proposalId != null && $Object.hasOwnProperty.call(message, "proposalId") && message.proposalId !== "")
+                        writer.uint32(/* id 1, wireType 2 =*/10).string(message.proposalId);
+                    if (message.accepted != null && $Object.hasOwnProperty.call(message, "accepted") && message.accepted !== false)
+                        writer.uint32(/* id 2, wireType 0 =*/16).bool(message.accepted);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes a ResolveAmbientProposal message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.ResolveAmbientProposal
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.ResolveAmbientProposal & evohime.desktop.v1.ResolveAmbientProposal.$Shape} ResolveAmbientProposal
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                ResolveAmbientProposal.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.ResolveAmbientProposal(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.proposalId = value;
+                                else
+                                    delete message.proposalId;
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.bool())
+                                    message.accepted = value;
+                                else
+                                    delete message.accepted;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for ResolveAmbientProposal
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.ResolveAmbientProposal
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                ResolveAmbientProposal.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.ResolveAmbientProposal";
+                };
+
+                return ResolveAmbientProposal;
+            })();
+
+            v1.ResolveAmbientProposalResult = (function() {
+
+                /**
+                 * Properties of a ResolveAmbientProposalResult.
+                 * @typedef {Object} evohime.desktop.v1.ResolveAmbientProposalResult.$Properties
+                 * @property {boolean|null} [applied] ResolveAmbientProposalResult applied
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of a ResolveAmbientProposalResult.
+                 * @memberof evohime.desktop.v1
+                 * @interface IResolveAmbientProposalResult
+                 * @augments evohime.desktop.v1.ResolveAmbientProposalResult.$Properties
+                 * @deprecated Use evohime.desktop.v1.ResolveAmbientProposalResult.$Properties instead.
+                 */
+
+                /**
+                 * Shape of a ResolveAmbientProposalResult.
+                 * @typedef {evohime.desktop.v1.ResolveAmbientProposalResult.$Properties} evohime.desktop.v1.ResolveAmbientProposalResult.$Shape
+                 */
+
+                /**
+                 * Constructs a new ResolveAmbientProposalResult.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents a ResolveAmbientProposalResult.
+                 * @constructor
+                 * @param {evohime.desktop.v1.ResolveAmbientProposalResult.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const ResolveAmbientProposalResult = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * ResolveAmbientProposalResult applied.
+                 * @member {boolean} applied
+                 * @memberof evohime.desktop.v1.ResolveAmbientProposalResult
+                 * @instance
+                 */
+                ResolveAmbientProposalResult.prototype.applied = false;
+
+                /**
+                 * Encodes the specified ResolveAmbientProposalResult message. Does not implicitly {@link evohime.desktop.v1.ResolveAmbientProposalResult.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.ResolveAmbientProposalResult
+                 * @static
+                 * @param {evohime.desktop.v1.ResolveAmbientProposalResult.$Properties} message ResolveAmbientProposalResult message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                ResolveAmbientProposalResult.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.applied != null && $Object.hasOwnProperty.call(message, "applied") && message.applied !== false)
+                        writer.uint32(/* id 1, wireType 0 =*/8).bool(message.applied);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes a ResolveAmbientProposalResult message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.ResolveAmbientProposalResult
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.ResolveAmbientProposalResult & evohime.desktop.v1.ResolveAmbientProposalResult.$Shape} ResolveAmbientProposalResult
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                ResolveAmbientProposalResult.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.ResolveAmbientProposalResult(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.bool())
+                                    message.applied = value;
+                                else
+                                    delete message.applied;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for ResolveAmbientProposalResult
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.ResolveAmbientProposalResult
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                ResolveAmbientProposalResult.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.ResolveAmbientProposalResult";
+                };
+
+                return ResolveAmbientProposalResult;
+            })();
+
             v1.CommandEnvelope = (function() {
 
                 /**
@@ -18152,7 +21824,16 @@ export const evohime = $root.evohime = (() => {
                  * @property {evohime.desktop.v1.StopRevision.$Properties|null} [stopRevision] CommandEnvelope stopRevision
                  * @property {evohime.desktop.v1.SaveRevisedPlan.$Properties|null} [saveRevisedPlan] CommandEnvelope saveRevisedPlan
                  * @property {evohime.desktop.v1.ResolveRoutingDecision.$Properties|null} [resolveRoutingDecision] CommandEnvelope resolveRoutingDecision
-                 * @property {"handshake"|"replayEvents"|"startTask"|"stopTask"|"resolveApproval"|"modelConfig"|"modelCatalog"|"permissionMode"|"createProject"|"createTask"|"updateTaskStatus"|"addTaskEdge"|"getTaskGraph"|"nextReadyTask"|"importPrd"|"getTaskHistory"|"getTaskContext"|"getTaskPlanSpec"|"applyApprovedBuild"|"prepareBuild"|"getTaskSnapshot"|"restoreTaskSnapshot"|"getBuildPolicy"|"saveBuildPolicy"|"resyncRequest"|"runDoctor"|"saveResearchEvidence"|"listResearchEvidence"|"createMemory"|"listMemory"|"searchMemory"|"archiveMemory"|"forgetMemory"|"installCapability"|"listCapabilities"|"matchCapabilities"|"removeCapability"|"requestChildHandoff"|"listChildHandoffs"|"submitChildRequest"|"submitChildReport"|"runResearchFetch"|"listWorkspace"|"readWorkspaceFile"|"gitStatus"|"gitDiff"|"terminalExecute"|"exportDoctorLogs"|"getCapabilitySelection"|"pinCapabilitySelection"|"replaceCapabilitySelection"|"submitFeedback"|"listFeedback"|"createDatabaseBackup"|"prepareDatabaseRestore"|"restoreDatabase"|"selectModel"|"cancelDatabaseOperation"|"getMemory"|"listMemoryPending"|"getMemoryConflicts"|"confirmMemory"|"rejectMemory"|"supersedeMemory"|"reviseMemoryCandidate"|"startPlanReview"|"stopPlanReview"|"listPlanReviews"|"getPlanReview"|"exportPlanReview"|"clearPlanReviewHistory"|"getContextLedger"|"listTaskScratchpad"|"clearTaskScratchpad"|"summarizeContextNow"|"pinContextItem"|"readContextArtifact"|"indexWorkspace"|"rebuildIndex"|"searchWorkspaceKnowledge"|"getIndexStatus"|"cancelWorkspaceIndex"|"rotateReceiptKey"|"trustReceiptGenesis"|"getReceiptKeyStatus"|"createNewReceiptGenesis"|"closePendingReceiptAction"|"setReceiptAuditSamplingRate"|"reconcilePendingReceiptAction"|"unquarantineReceiptAction"|"listReceipts"|"verifyReceipts"|"exportReceipts"|"revisePlan"|"stopRevision"|"saveRevisedPlan"|"resolveRoutingDecision"} [command] CommandEnvelope command
+                 * @property {evohime.desktop.v1.SetAmbientListening.$Properties|null} [setAmbientListening] CommandEnvelope setAmbientListening
+                 * @property {evohime.desktop.v1.GetAmbientStatus.$Properties|null} [getAmbientStatus] CommandEnvelope getAmbientStatus
+                 * @property {evohime.desktop.v1.ListAmbientEpisodes.$Properties|null} [listAmbientEpisodes] CommandEnvelope listAmbientEpisodes
+                 * @property {evohime.desktop.v1.GetAmbientEpisode.$Properties|null} [getAmbientEpisode] CommandEnvelope getAmbientEpisode
+                 * @property {evohime.desktop.v1.DeleteAmbientTranscripts.$Properties|null} [deleteAmbientTranscripts] CommandEnvelope deleteAmbientTranscripts
+                 * @property {evohime.desktop.v1.ForgetAmbientWindow.$Properties|null} [forgetAmbientWindow] CommandEnvelope forgetAmbientWindow
+                 * @property {evohime.desktop.v1.GetAmbientPolicy.$Properties|null} [getAmbientPolicy] CommandEnvelope getAmbientPolicy
+                 * @property {evohime.desktop.v1.SaveAmbientPolicy.$Properties|null} [saveAmbientPolicy] CommandEnvelope saveAmbientPolicy
+                 * @property {evohime.desktop.v1.ResolveAmbientProposal.$Properties|null} [resolveAmbientProposal] CommandEnvelope resolveAmbientProposal
+                 * @property {"handshake"|"replayEvents"|"startTask"|"stopTask"|"resolveApproval"|"modelConfig"|"modelCatalog"|"permissionMode"|"createProject"|"createTask"|"updateTaskStatus"|"addTaskEdge"|"getTaskGraph"|"nextReadyTask"|"importPrd"|"getTaskHistory"|"getTaskContext"|"getTaskPlanSpec"|"applyApprovedBuild"|"prepareBuild"|"getTaskSnapshot"|"restoreTaskSnapshot"|"getBuildPolicy"|"saveBuildPolicy"|"resyncRequest"|"runDoctor"|"saveResearchEvidence"|"listResearchEvidence"|"createMemory"|"listMemory"|"searchMemory"|"archiveMemory"|"forgetMemory"|"installCapability"|"listCapabilities"|"matchCapabilities"|"removeCapability"|"requestChildHandoff"|"listChildHandoffs"|"submitChildRequest"|"submitChildReport"|"runResearchFetch"|"listWorkspace"|"readWorkspaceFile"|"gitStatus"|"gitDiff"|"terminalExecute"|"exportDoctorLogs"|"getCapabilitySelection"|"pinCapabilitySelection"|"replaceCapabilitySelection"|"submitFeedback"|"listFeedback"|"createDatabaseBackup"|"prepareDatabaseRestore"|"restoreDatabase"|"selectModel"|"cancelDatabaseOperation"|"getMemory"|"listMemoryPending"|"getMemoryConflicts"|"confirmMemory"|"rejectMemory"|"supersedeMemory"|"reviseMemoryCandidate"|"startPlanReview"|"stopPlanReview"|"listPlanReviews"|"getPlanReview"|"exportPlanReview"|"clearPlanReviewHistory"|"getContextLedger"|"listTaskScratchpad"|"clearTaskScratchpad"|"summarizeContextNow"|"pinContextItem"|"readContextArtifact"|"indexWorkspace"|"rebuildIndex"|"searchWorkspaceKnowledge"|"getIndexStatus"|"cancelWorkspaceIndex"|"rotateReceiptKey"|"trustReceiptGenesis"|"getReceiptKeyStatus"|"createNewReceiptGenesis"|"closePendingReceiptAction"|"setReceiptAuditSamplingRate"|"reconcilePendingReceiptAction"|"unquarantineReceiptAction"|"listReceipts"|"verifyReceipts"|"exportReceipts"|"revisePlan"|"stopRevision"|"saveRevisedPlan"|"resolveRoutingDecision"|"setAmbientListening"|"getAmbientStatus"|"listAmbientEpisodes"|"getAmbientEpisode"|"deleteAmbientTranscripts"|"forgetAmbientWindow"|"getAmbientPolicy"|"saveAmbientPolicy"|"resolveAmbientProposal"} [command] CommandEnvelope command
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -18269,9 +21950,18 @@ export const evohime = $root.evohime = (() => {
                  *   stopRevision?: evohime.desktop.v1.StopRevision.$Shape|null;
                  *   saveRevisedPlan?: evohime.desktop.v1.SaveRevisedPlan.$Shape|null;
                  *   resolveRoutingDecision?: evohime.desktop.v1.ResolveRoutingDecision.$Shape|null;
+                 *   setAmbientListening?: evohime.desktop.v1.SetAmbientListening.$Shape|null;
+                 *   getAmbientStatus?: evohime.desktop.v1.GetAmbientStatus.$Shape|null;
+                 *   listAmbientEpisodes?: evohime.desktop.v1.ListAmbientEpisodes.$Shape|null;
+                 *   getAmbientEpisode?: evohime.desktop.v1.GetAmbientEpisode.$Shape|null;
+                 *   deleteAmbientTranscripts?: evohime.desktop.v1.DeleteAmbientTranscripts.$Shape|null;
+                 *   forgetAmbientWindow?: evohime.desktop.v1.ForgetAmbientWindow.$Shape|null;
+                 *   getAmbientPolicy?: evohime.desktop.v1.GetAmbientPolicy.$Shape|null;
+                 *   saveAmbientPolicy?: evohime.desktop.v1.SaveAmbientPolicy.$Shape|null;
+                 *   resolveAmbientProposal?: evohime.desktop.v1.ResolveAmbientProposal.$Shape|null;
                  *   $unknowns?: Array.<Uint8Array>;
                  * } & (
-                 *   ({ command?: undefined; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "handshake"; handshake: evohime.desktop.v1.Handshake.$Shape; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "replayEvents"; handshake?: null; replayEvents: evohime.desktop.v1.ReplayEvents.$Shape; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "startTask"; handshake?: null; replayEvents?: null; startTask: evohime.desktop.v1.StartTask.$Shape; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "stopTask"; handshake?: null; replayEvents?: null; startTask?: null; stopTask: evohime.desktop.v1.StopTask.$Shape; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "resolveApproval"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval: evohime.desktop.v1.ResolveApproval.$Shape; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "modelConfig"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig: evohime.desktop.v1.ModelConfigRequest.$Shape; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "modelCatalog"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog: evohime.desktop.v1.ModelCatalogRequest.$Shape; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "permissionMode"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode: evohime.desktop.v1.PermissionModeRequest.$Shape; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "createProject"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject: evohime.desktop.v1.CreateProject.$Shape; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "createTask"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask: evohime.desktop.v1.CreateTask.$Shape; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "updateTaskStatus"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus: evohime.desktop.v1.UpdateTaskStatus.$Shape; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "addTaskEdge"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge: evohime.desktop.v1.AddTaskEdge.$Shape; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "getTaskGraph"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph: evohime.desktop.v1.GetTaskGraph.$Shape; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "nextReadyTask"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask: evohime.desktop.v1.NextReadyTask.$Shape; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "importPrd"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd: evohime.desktop.v1.ImportPrd.$Shape; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "getTaskHistory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory: evohime.desktop.v1.GetTaskHistory.$Shape; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "getTaskContext"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext: evohime.desktop.v1.GetTaskContext.$Shape; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "getTaskPlanSpec"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec: evohime.desktop.v1.GetTaskPlanSpec.$Shape; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "applyApprovedBuild"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild: evohime.desktop.v1.ApplyApprovedBuild.$Shape; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "prepareBuild"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild: evohime.desktop.v1.PrepareBuild.$Shape; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "getTaskSnapshot"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot: evohime.desktop.v1.GetTaskSnapshot.$Shape; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "restoreTaskSnapshot"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot: evohime.desktop.v1.RestoreTaskSnapshot.$Shape; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "getBuildPolicy"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy: evohime.desktop.v1.GetBuildPolicy.$Shape; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "saveBuildPolicy"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy: evohime.desktop.v1.SaveBuildPolicy.$Shape; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "resyncRequest"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest: evohime.desktop.v1.ResyncRequest.$Shape; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "runDoctor"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor: evohime.desktop.v1.RunDoctor.$Shape; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "saveResearchEvidence"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence: evohime.desktop.v1.SaveResearchEvidence.$Shape; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "listResearchEvidence"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence: evohime.desktop.v1.ListResearchEvidence.$Shape; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "createMemory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory: evohime.desktop.v1.CreateMemory.$Shape; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "listMemory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory: evohime.desktop.v1.ListMemory.$Shape; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "searchMemory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory: evohime.desktop.v1.SearchMemory.$Shape; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "archiveMemory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory: evohime.desktop.v1.ArchiveMemory.$Shape; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "forgetMemory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory: evohime.desktop.v1.ForgetMemory.$Shape; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "installCapability"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability: evohime.desktop.v1.InstallCapability.$Shape; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "listCapabilities"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities: evohime.desktop.v1.ListCapabilities.$Shape; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "matchCapabilities"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities: evohime.desktop.v1.MatchCapabilities.$Shape; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "removeCapability"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability: evohime.desktop.v1.RemoveCapability.$Shape; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "requestChildHandoff"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff: evohime.desktop.v1.RequestChildHandoff.$Shape; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "listChildHandoffs"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs: evohime.desktop.v1.ListChildHandoffs.$Shape; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "submitChildRequest"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest: evohime.desktop.v1.SubmitChildRequest.$Shape; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "submitChildReport"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport: evohime.desktop.v1.SubmitChildReport.$Shape; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "runResearchFetch"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch: evohime.desktop.v1.RunResearchFetch.$Shape; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "listWorkspace"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace: evohime.desktop.v1.ListWorkspace.$Shape; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "readWorkspaceFile"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile: evohime.desktop.v1.ReadWorkspaceFile.$Shape; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "gitStatus"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus: evohime.desktop.v1.GitStatus.$Shape; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "gitDiff"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff: evohime.desktop.v1.GitDiff.$Shape; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "terminalExecute"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute: evohime.desktop.v1.TerminalExecute.$Shape; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "exportDoctorLogs"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs: evohime.desktop.v1.ExportDoctorLogs.$Shape; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "getCapabilitySelection"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection: evohime.desktop.v1.GetCapabilitySelection.$Shape; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "pinCapabilitySelection"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection: evohime.desktop.v1.PinCapabilitySelection.$Shape; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "replaceCapabilitySelection"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection: evohime.desktop.v1.ReplaceCapabilitySelection.$Shape; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "submitFeedback"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback: evohime.desktop.v1.SubmitFeedback.$Shape; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "listFeedback"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback: evohime.desktop.v1.ListFeedback.$Shape; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "createDatabaseBackup"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup: evohime.desktop.v1.CreateDatabaseBackup.$Shape; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "prepareDatabaseRestore"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore: evohime.desktop.v1.PrepareDatabaseRestore.$Shape; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "restoreDatabase"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase: evohime.desktop.v1.RestoreDatabase.$Shape; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "selectModel"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel: evohime.desktop.v1.SelectModelRequest.$Shape; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "cancelDatabaseOperation"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation: evohime.desktop.v1.CancelDatabaseOperation.$Shape; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "getMemory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory: evohime.desktop.v1.GetMemory.$Shape; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "listMemoryPending"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending: evohime.desktop.v1.ListMemoryPending.$Shape; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "getMemoryConflicts"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts: evohime.desktop.v1.GetMemoryConflicts.$Shape; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "confirmMemory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory: evohime.desktop.v1.ConfirmMemory.$Shape; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "rejectMemory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory: evohime.desktop.v1.RejectMemory.$Shape; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "supersedeMemory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory: evohime.desktop.v1.SupersedeMemory.$Shape; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "reviseMemoryCandidate"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate: evohime.desktop.v1.ReviseMemoryCandidate.$Shape; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "startPlanReview"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview: evohime.desktop.v1.StartPlanReview.$Shape; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "stopPlanReview"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview: evohime.desktop.v1.StopPlanReview.$Shape; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "listPlanReviews"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews: evohime.desktop.v1.ListPlanReviews.$Shape; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "getPlanReview"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview: evohime.desktop.v1.GetPlanReview.$Shape; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "exportPlanReview"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview: evohime.desktop.v1.ExportPlanReview.$Shape; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "clearPlanReviewHistory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory: evohime.desktop.v1.ClearPlanReviewHistory.$Shape; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "getContextLedger"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger: evohime.desktop.v1.GetContextLedger.$Shape; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "listTaskScratchpad"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad: evohime.desktop.v1.ListTaskScratchpad.$Shape; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "clearTaskScratchpad"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad: evohime.desktop.v1.ClearTaskScratchpad.$Shape; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "summarizeContextNow"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow: evohime.desktop.v1.SummarizeContextNow.$Shape; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "pinContextItem"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem: evohime.desktop.v1.PinContextItem.$Shape; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "readContextArtifact"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact: evohime.desktop.v1.ReadContextArtifact.$Shape; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "indexWorkspace"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace: evohime.desktop.v1.IndexWorkspace.$Shape; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "rebuildIndex"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex: evohime.desktop.v1.RebuildIndex.$Shape; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "searchWorkspaceKnowledge"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge: evohime.desktop.v1.SearchWorkspaceKnowledge.$Shape; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "getIndexStatus"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus: evohime.desktop.v1.GetIndexStatus.$Shape; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "cancelWorkspaceIndex"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex: evohime.desktop.v1.CancelWorkspaceIndex.$Shape; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "rotateReceiptKey"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey: evohime.desktop.v1.RotateReceiptKey.$Shape; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "trustReceiptGenesis"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis: evohime.desktop.v1.TrustReceiptGenesis.$Shape; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "getReceiptKeyStatus"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus: evohime.desktop.v1.GetReceiptKeyStatus.$Shape; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "createNewReceiptGenesis"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis: evohime.desktop.v1.CreateNewReceiptGenesis.$Shape; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "closePendingReceiptAction"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction: evohime.desktop.v1.ClosePendingReceiptAction.$Shape; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "setReceiptAuditSamplingRate"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate: evohime.desktop.v1.SetReceiptAuditSamplingRate.$Shape; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "reconcilePendingReceiptAction"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction: evohime.desktop.v1.ReconcilePendingReceiptAction.$Shape; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "unquarantineReceiptAction"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction: evohime.desktop.v1.UnquarantineReceiptAction.$Shape; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "listReceipts"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts: evohime.desktop.v1.ListReceipts.$Shape; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "verifyReceipts"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts: evohime.desktop.v1.VerifyReceipts.$Shape; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "exportReceipts"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts: evohime.desktop.v1.ExportReceipts.$Shape; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "revisePlan"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan: evohime.desktop.v1.RevisePlan.$Shape; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "stopRevision"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision: evohime.desktop.v1.StopRevision.$Shape; saveRevisedPlan?: null; resolveRoutingDecision?: null }|{ command?: "saveRevisedPlan"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan: evohime.desktop.v1.SaveRevisedPlan.$Shape; resolveRoutingDecision?: null }|{ command?: "resolveRoutingDecision"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision: evohime.desktop.v1.ResolveRoutingDecision.$Shape })
+                 *   ({ command?: undefined; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "handshake"; handshake: evohime.desktop.v1.Handshake.$Shape; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "replayEvents"; handshake?: null; replayEvents: evohime.desktop.v1.ReplayEvents.$Shape; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "startTask"; handshake?: null; replayEvents?: null; startTask: evohime.desktop.v1.StartTask.$Shape; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "stopTask"; handshake?: null; replayEvents?: null; startTask?: null; stopTask: evohime.desktop.v1.StopTask.$Shape; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "resolveApproval"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval: evohime.desktop.v1.ResolveApproval.$Shape; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "modelConfig"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig: evohime.desktop.v1.ModelConfigRequest.$Shape; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "modelCatalog"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog: evohime.desktop.v1.ModelCatalogRequest.$Shape; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "permissionMode"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode: evohime.desktop.v1.PermissionModeRequest.$Shape; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "createProject"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject: evohime.desktop.v1.CreateProject.$Shape; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "createTask"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask: evohime.desktop.v1.CreateTask.$Shape; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "updateTaskStatus"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus: evohime.desktop.v1.UpdateTaskStatus.$Shape; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "addTaskEdge"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge: evohime.desktop.v1.AddTaskEdge.$Shape; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "getTaskGraph"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph: evohime.desktop.v1.GetTaskGraph.$Shape; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "nextReadyTask"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask: evohime.desktop.v1.NextReadyTask.$Shape; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "importPrd"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd: evohime.desktop.v1.ImportPrd.$Shape; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "getTaskHistory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory: evohime.desktop.v1.GetTaskHistory.$Shape; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "getTaskContext"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext: evohime.desktop.v1.GetTaskContext.$Shape; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "getTaskPlanSpec"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec: evohime.desktop.v1.GetTaskPlanSpec.$Shape; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "applyApprovedBuild"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild: evohime.desktop.v1.ApplyApprovedBuild.$Shape; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "prepareBuild"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild: evohime.desktop.v1.PrepareBuild.$Shape; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "getTaskSnapshot"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot: evohime.desktop.v1.GetTaskSnapshot.$Shape; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "restoreTaskSnapshot"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot: evohime.desktop.v1.RestoreTaskSnapshot.$Shape; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "getBuildPolicy"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy: evohime.desktop.v1.GetBuildPolicy.$Shape; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "saveBuildPolicy"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy: evohime.desktop.v1.SaveBuildPolicy.$Shape; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "resyncRequest"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest: evohime.desktop.v1.ResyncRequest.$Shape; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "runDoctor"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor: evohime.desktop.v1.RunDoctor.$Shape; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "saveResearchEvidence"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence: evohime.desktop.v1.SaveResearchEvidence.$Shape; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "listResearchEvidence"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence: evohime.desktop.v1.ListResearchEvidence.$Shape; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "createMemory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory: evohime.desktop.v1.CreateMemory.$Shape; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "listMemory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory: evohime.desktop.v1.ListMemory.$Shape; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "searchMemory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory: evohime.desktop.v1.SearchMemory.$Shape; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "archiveMemory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory: evohime.desktop.v1.ArchiveMemory.$Shape; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "forgetMemory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory: evohime.desktop.v1.ForgetMemory.$Shape; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "installCapability"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability: evohime.desktop.v1.InstallCapability.$Shape; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "listCapabilities"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities: evohime.desktop.v1.ListCapabilities.$Shape; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "matchCapabilities"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities: evohime.desktop.v1.MatchCapabilities.$Shape; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "removeCapability"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability: evohime.desktop.v1.RemoveCapability.$Shape; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "requestChildHandoff"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff: evohime.desktop.v1.RequestChildHandoff.$Shape; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "listChildHandoffs"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs: evohime.desktop.v1.ListChildHandoffs.$Shape; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "submitChildRequest"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest: evohime.desktop.v1.SubmitChildRequest.$Shape; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "submitChildReport"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport: evohime.desktop.v1.SubmitChildReport.$Shape; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "runResearchFetch"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch: evohime.desktop.v1.RunResearchFetch.$Shape; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "listWorkspace"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace: evohime.desktop.v1.ListWorkspace.$Shape; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "readWorkspaceFile"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile: evohime.desktop.v1.ReadWorkspaceFile.$Shape; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "gitStatus"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus: evohime.desktop.v1.GitStatus.$Shape; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "gitDiff"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff: evohime.desktop.v1.GitDiff.$Shape; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "terminalExecute"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute: evohime.desktop.v1.TerminalExecute.$Shape; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "exportDoctorLogs"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs: evohime.desktop.v1.ExportDoctorLogs.$Shape; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "getCapabilitySelection"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection: evohime.desktop.v1.GetCapabilitySelection.$Shape; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "pinCapabilitySelection"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection: evohime.desktop.v1.PinCapabilitySelection.$Shape; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "replaceCapabilitySelection"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection: evohime.desktop.v1.ReplaceCapabilitySelection.$Shape; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "submitFeedback"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback: evohime.desktop.v1.SubmitFeedback.$Shape; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "listFeedback"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback: evohime.desktop.v1.ListFeedback.$Shape; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "createDatabaseBackup"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup: evohime.desktop.v1.CreateDatabaseBackup.$Shape; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "prepareDatabaseRestore"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore: evohime.desktop.v1.PrepareDatabaseRestore.$Shape; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "restoreDatabase"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase: evohime.desktop.v1.RestoreDatabase.$Shape; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "selectModel"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel: evohime.desktop.v1.SelectModelRequest.$Shape; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "cancelDatabaseOperation"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation: evohime.desktop.v1.CancelDatabaseOperation.$Shape; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "getMemory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory: evohime.desktop.v1.GetMemory.$Shape; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "listMemoryPending"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending: evohime.desktop.v1.ListMemoryPending.$Shape; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "getMemoryConflicts"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts: evohime.desktop.v1.GetMemoryConflicts.$Shape; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "confirmMemory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory: evohime.desktop.v1.ConfirmMemory.$Shape; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "rejectMemory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory: evohime.desktop.v1.RejectMemory.$Shape; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "supersedeMemory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory: evohime.desktop.v1.SupersedeMemory.$Shape; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "reviseMemoryCandidate"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate: evohime.desktop.v1.ReviseMemoryCandidate.$Shape; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "startPlanReview"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview: evohime.desktop.v1.StartPlanReview.$Shape; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "stopPlanReview"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview: evohime.desktop.v1.StopPlanReview.$Shape; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "listPlanReviews"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews: evohime.desktop.v1.ListPlanReviews.$Shape; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "getPlanReview"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview: evohime.desktop.v1.GetPlanReview.$Shape; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "exportPlanReview"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview: evohime.desktop.v1.ExportPlanReview.$Shape; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "clearPlanReviewHistory"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory: evohime.desktop.v1.ClearPlanReviewHistory.$Shape; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "getContextLedger"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger: evohime.desktop.v1.GetContextLedger.$Shape; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "listTaskScratchpad"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad: evohime.desktop.v1.ListTaskScratchpad.$Shape; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "clearTaskScratchpad"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad: evohime.desktop.v1.ClearTaskScratchpad.$Shape; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "summarizeContextNow"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow: evohime.desktop.v1.SummarizeContextNow.$Shape; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "pinContextItem"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem: evohime.desktop.v1.PinContextItem.$Shape; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "readContextArtifact"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact: evohime.desktop.v1.ReadContextArtifact.$Shape; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "indexWorkspace"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace: evohime.desktop.v1.IndexWorkspace.$Shape; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "rebuildIndex"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex: evohime.desktop.v1.RebuildIndex.$Shape; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "searchWorkspaceKnowledge"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge: evohime.desktop.v1.SearchWorkspaceKnowledge.$Shape; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "getIndexStatus"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus: evohime.desktop.v1.GetIndexStatus.$Shape; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "cancelWorkspaceIndex"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex: evohime.desktop.v1.CancelWorkspaceIndex.$Shape; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "rotateReceiptKey"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey: evohime.desktop.v1.RotateReceiptKey.$Shape; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "trustReceiptGenesis"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis: evohime.desktop.v1.TrustReceiptGenesis.$Shape; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "getReceiptKeyStatus"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus: evohime.desktop.v1.GetReceiptKeyStatus.$Shape; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "createNewReceiptGenesis"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis: evohime.desktop.v1.CreateNewReceiptGenesis.$Shape; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "closePendingReceiptAction"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction: evohime.desktop.v1.ClosePendingReceiptAction.$Shape; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "setReceiptAuditSamplingRate"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate: evohime.desktop.v1.SetReceiptAuditSamplingRate.$Shape; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "reconcilePendingReceiptAction"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction: evohime.desktop.v1.ReconcilePendingReceiptAction.$Shape; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "unquarantineReceiptAction"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction: evohime.desktop.v1.UnquarantineReceiptAction.$Shape; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "listReceipts"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts: evohime.desktop.v1.ListReceipts.$Shape; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "verifyReceipts"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts: evohime.desktop.v1.VerifyReceipts.$Shape; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "exportReceipts"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts: evohime.desktop.v1.ExportReceipts.$Shape; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "revisePlan"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan: evohime.desktop.v1.RevisePlan.$Shape; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "stopRevision"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision: evohime.desktop.v1.StopRevision.$Shape; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "saveRevisedPlan"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan: evohime.desktop.v1.SaveRevisedPlan.$Shape; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "resolveRoutingDecision"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision: evohime.desktop.v1.ResolveRoutingDecision.$Shape; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "setAmbientListening"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening: evohime.desktop.v1.SetAmbientListening.$Shape; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "getAmbientStatus"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus: evohime.desktop.v1.GetAmbientStatus.$Shape; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "listAmbientEpisodes"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes: evohime.desktop.v1.ListAmbientEpisodes.$Shape; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "getAmbientEpisode"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode: evohime.desktop.v1.GetAmbientEpisode.$Shape; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "deleteAmbientTranscripts"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts: evohime.desktop.v1.DeleteAmbientTranscripts.$Shape; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "forgetAmbientWindow"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow: evohime.desktop.v1.ForgetAmbientWindow.$Shape; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "getAmbientPolicy"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy: evohime.desktop.v1.GetAmbientPolicy.$Shape; saveAmbientPolicy?: null; resolveAmbientProposal?: null }|{ command?: "saveAmbientPolicy"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy: evohime.desktop.v1.SaveAmbientPolicy.$Shape; resolveAmbientProposal?: null }|{ command?: "resolveAmbientProposal"; handshake?: null; replayEvents?: null; startTask?: null; stopTask?: null; resolveApproval?: null; modelConfig?: null; modelCatalog?: null; permissionMode?: null; createProject?: null; createTask?: null; updateTaskStatus?: null; addTaskEdge?: null; getTaskGraph?: null; nextReadyTask?: null; importPrd?: null; getTaskHistory?: null; getTaskContext?: null; getTaskPlanSpec?: null; applyApprovedBuild?: null; prepareBuild?: null; getTaskSnapshot?: null; restoreTaskSnapshot?: null; getBuildPolicy?: null; saveBuildPolicy?: null; resyncRequest?: null; runDoctor?: null; saveResearchEvidence?: null; listResearchEvidence?: null; createMemory?: null; listMemory?: null; searchMemory?: null; archiveMemory?: null; forgetMemory?: null; installCapability?: null; listCapabilities?: null; matchCapabilities?: null; removeCapability?: null; requestChildHandoff?: null; listChildHandoffs?: null; submitChildRequest?: null; submitChildReport?: null; runResearchFetch?: null; listWorkspace?: null; readWorkspaceFile?: null; gitStatus?: null; gitDiff?: null; terminalExecute?: null; exportDoctorLogs?: null; getCapabilitySelection?: null; pinCapabilitySelection?: null; replaceCapabilitySelection?: null; submitFeedback?: null; listFeedback?: null; createDatabaseBackup?: null; prepareDatabaseRestore?: null; restoreDatabase?: null; selectModel?: null; cancelDatabaseOperation?: null; getMemory?: null; listMemoryPending?: null; getMemoryConflicts?: null; confirmMemory?: null; rejectMemory?: null; supersedeMemory?: null; reviseMemoryCandidate?: null; startPlanReview?: null; stopPlanReview?: null; listPlanReviews?: null; getPlanReview?: null; exportPlanReview?: null; clearPlanReviewHistory?: null; getContextLedger?: null; listTaskScratchpad?: null; clearTaskScratchpad?: null; summarizeContextNow?: null; pinContextItem?: null; readContextArtifact?: null; indexWorkspace?: null; rebuildIndex?: null; searchWorkspaceKnowledge?: null; getIndexStatus?: null; cancelWorkspaceIndex?: null; rotateReceiptKey?: null; trustReceiptGenesis?: null; getReceiptKeyStatus?: null; createNewReceiptGenesis?: null; closePendingReceiptAction?: null; setReceiptAuditSamplingRate?: null; reconcilePendingReceiptAction?: null; unquarantineReceiptAction?: null; listReceipts?: null; verifyReceipts?: null; exportReceipts?: null; revisePlan?: null; stopRevision?: null; saveRevisedPlan?: null; resolveRoutingDecision?: null; setAmbientListening?: null; getAmbientStatus?: null; listAmbientEpisodes?: null; getAmbientEpisode?: null; deleteAmbientTranscripts?: null; forgetAmbientWindow?: null; getAmbientPolicy?: null; saveAmbientPolicy?: null; resolveAmbientProposal: evohime.desktop.v1.ResolveAmbientProposal.$Shape })
                  * )} evohime.desktop.v1.CommandEnvelope.$Shape
                  */
 
@@ -19106,17 +22796,89 @@ export const evohime = $root.evohime = (() => {
                  */
                 CommandEnvelope.prototype.resolveRoutingDecision = null;
 
+                /**
+                 * CommandEnvelope setAmbientListening.
+                 * @member {evohime.desktop.v1.SetAmbientListening.$Properties|null|undefined} setAmbientListening
+                 * @memberof evohime.desktop.v1.CommandEnvelope
+                 * @instance
+                 */
+                CommandEnvelope.prototype.setAmbientListening = null;
+
+                /**
+                 * CommandEnvelope getAmbientStatus.
+                 * @member {evohime.desktop.v1.GetAmbientStatus.$Properties|null|undefined} getAmbientStatus
+                 * @memberof evohime.desktop.v1.CommandEnvelope
+                 * @instance
+                 */
+                CommandEnvelope.prototype.getAmbientStatus = null;
+
+                /**
+                 * CommandEnvelope listAmbientEpisodes.
+                 * @member {evohime.desktop.v1.ListAmbientEpisodes.$Properties|null|undefined} listAmbientEpisodes
+                 * @memberof evohime.desktop.v1.CommandEnvelope
+                 * @instance
+                 */
+                CommandEnvelope.prototype.listAmbientEpisodes = null;
+
+                /**
+                 * CommandEnvelope getAmbientEpisode.
+                 * @member {evohime.desktop.v1.GetAmbientEpisode.$Properties|null|undefined} getAmbientEpisode
+                 * @memberof evohime.desktop.v1.CommandEnvelope
+                 * @instance
+                 */
+                CommandEnvelope.prototype.getAmbientEpisode = null;
+
+                /**
+                 * CommandEnvelope deleteAmbientTranscripts.
+                 * @member {evohime.desktop.v1.DeleteAmbientTranscripts.$Properties|null|undefined} deleteAmbientTranscripts
+                 * @memberof evohime.desktop.v1.CommandEnvelope
+                 * @instance
+                 */
+                CommandEnvelope.prototype.deleteAmbientTranscripts = null;
+
+                /**
+                 * CommandEnvelope forgetAmbientWindow.
+                 * @member {evohime.desktop.v1.ForgetAmbientWindow.$Properties|null|undefined} forgetAmbientWindow
+                 * @memberof evohime.desktop.v1.CommandEnvelope
+                 * @instance
+                 */
+                CommandEnvelope.prototype.forgetAmbientWindow = null;
+
+                /**
+                 * CommandEnvelope getAmbientPolicy.
+                 * @member {evohime.desktop.v1.GetAmbientPolicy.$Properties|null|undefined} getAmbientPolicy
+                 * @memberof evohime.desktop.v1.CommandEnvelope
+                 * @instance
+                 */
+                CommandEnvelope.prototype.getAmbientPolicy = null;
+
+                /**
+                 * CommandEnvelope saveAmbientPolicy.
+                 * @member {evohime.desktop.v1.SaveAmbientPolicy.$Properties|null|undefined} saveAmbientPolicy
+                 * @memberof evohime.desktop.v1.CommandEnvelope
+                 * @instance
+                 */
+                CommandEnvelope.prototype.saveAmbientPolicy = null;
+
+                /**
+                 * CommandEnvelope resolveAmbientProposal.
+                 * @member {evohime.desktop.v1.ResolveAmbientProposal.$Properties|null|undefined} resolveAmbientProposal
+                 * @memberof evohime.desktop.v1.CommandEnvelope
+                 * @instance
+                 */
+                CommandEnvelope.prototype.resolveAmbientProposal = null;
+
                 // OneOf field names bound to virtual getters and setters
                 let $oneOfFields;
 
                 /**
                  * CommandEnvelope command.
-                 * @member {"handshake"|"replayEvents"|"startTask"|"stopTask"|"resolveApproval"|"modelConfig"|"modelCatalog"|"permissionMode"|"createProject"|"createTask"|"updateTaskStatus"|"addTaskEdge"|"getTaskGraph"|"nextReadyTask"|"importPrd"|"getTaskHistory"|"getTaskContext"|"getTaskPlanSpec"|"applyApprovedBuild"|"prepareBuild"|"getTaskSnapshot"|"restoreTaskSnapshot"|"getBuildPolicy"|"saveBuildPolicy"|"resyncRequest"|"runDoctor"|"saveResearchEvidence"|"listResearchEvidence"|"createMemory"|"listMemory"|"searchMemory"|"archiveMemory"|"forgetMemory"|"installCapability"|"listCapabilities"|"matchCapabilities"|"removeCapability"|"requestChildHandoff"|"listChildHandoffs"|"submitChildRequest"|"submitChildReport"|"runResearchFetch"|"listWorkspace"|"readWorkspaceFile"|"gitStatus"|"gitDiff"|"terminalExecute"|"exportDoctorLogs"|"getCapabilitySelection"|"pinCapabilitySelection"|"replaceCapabilitySelection"|"submitFeedback"|"listFeedback"|"createDatabaseBackup"|"prepareDatabaseRestore"|"restoreDatabase"|"selectModel"|"cancelDatabaseOperation"|"getMemory"|"listMemoryPending"|"getMemoryConflicts"|"confirmMemory"|"rejectMemory"|"supersedeMemory"|"reviseMemoryCandidate"|"startPlanReview"|"stopPlanReview"|"listPlanReviews"|"getPlanReview"|"exportPlanReview"|"clearPlanReviewHistory"|"getContextLedger"|"listTaskScratchpad"|"clearTaskScratchpad"|"summarizeContextNow"|"pinContextItem"|"readContextArtifact"|"indexWorkspace"|"rebuildIndex"|"searchWorkspaceKnowledge"|"getIndexStatus"|"cancelWorkspaceIndex"|"rotateReceiptKey"|"trustReceiptGenesis"|"getReceiptKeyStatus"|"createNewReceiptGenesis"|"closePendingReceiptAction"|"setReceiptAuditSamplingRate"|"reconcilePendingReceiptAction"|"unquarantineReceiptAction"|"listReceipts"|"verifyReceipts"|"exportReceipts"|"revisePlan"|"stopRevision"|"saveRevisedPlan"|"resolveRoutingDecision"|undefined} command
+                 * @member {"handshake"|"replayEvents"|"startTask"|"stopTask"|"resolveApproval"|"modelConfig"|"modelCatalog"|"permissionMode"|"createProject"|"createTask"|"updateTaskStatus"|"addTaskEdge"|"getTaskGraph"|"nextReadyTask"|"importPrd"|"getTaskHistory"|"getTaskContext"|"getTaskPlanSpec"|"applyApprovedBuild"|"prepareBuild"|"getTaskSnapshot"|"restoreTaskSnapshot"|"getBuildPolicy"|"saveBuildPolicy"|"resyncRequest"|"runDoctor"|"saveResearchEvidence"|"listResearchEvidence"|"createMemory"|"listMemory"|"searchMemory"|"archiveMemory"|"forgetMemory"|"installCapability"|"listCapabilities"|"matchCapabilities"|"removeCapability"|"requestChildHandoff"|"listChildHandoffs"|"submitChildRequest"|"submitChildReport"|"runResearchFetch"|"listWorkspace"|"readWorkspaceFile"|"gitStatus"|"gitDiff"|"terminalExecute"|"exportDoctorLogs"|"getCapabilitySelection"|"pinCapabilitySelection"|"replaceCapabilitySelection"|"submitFeedback"|"listFeedback"|"createDatabaseBackup"|"prepareDatabaseRestore"|"restoreDatabase"|"selectModel"|"cancelDatabaseOperation"|"getMemory"|"listMemoryPending"|"getMemoryConflicts"|"confirmMemory"|"rejectMemory"|"supersedeMemory"|"reviseMemoryCandidate"|"startPlanReview"|"stopPlanReview"|"listPlanReviews"|"getPlanReview"|"exportPlanReview"|"clearPlanReviewHistory"|"getContextLedger"|"listTaskScratchpad"|"clearTaskScratchpad"|"summarizeContextNow"|"pinContextItem"|"readContextArtifact"|"indexWorkspace"|"rebuildIndex"|"searchWorkspaceKnowledge"|"getIndexStatus"|"cancelWorkspaceIndex"|"rotateReceiptKey"|"trustReceiptGenesis"|"getReceiptKeyStatus"|"createNewReceiptGenesis"|"closePendingReceiptAction"|"setReceiptAuditSamplingRate"|"reconcilePendingReceiptAction"|"unquarantineReceiptAction"|"listReceipts"|"verifyReceipts"|"exportReceipts"|"revisePlan"|"stopRevision"|"saveRevisedPlan"|"resolveRoutingDecision"|"setAmbientListening"|"getAmbientStatus"|"listAmbientEpisodes"|"getAmbientEpisode"|"deleteAmbientTranscripts"|"forgetAmbientWindow"|"getAmbientPolicy"|"saveAmbientPolicy"|"resolveAmbientProposal"|undefined} command
                  * @memberof evohime.desktop.v1.CommandEnvelope
                  * @instance
                  */
                 $Object.defineProperty(CommandEnvelope.prototype, "command", {
-                    get: $util.oneOfGetter($oneOfFields = ["handshake", "replayEvents", "startTask", "stopTask", "resolveApproval", "modelConfig", "modelCatalog", "permissionMode", "createProject", "createTask", "updateTaskStatus", "addTaskEdge", "getTaskGraph", "nextReadyTask", "importPrd", "getTaskHistory", "getTaskContext", "getTaskPlanSpec", "applyApprovedBuild", "prepareBuild", "getTaskSnapshot", "restoreTaskSnapshot", "getBuildPolicy", "saveBuildPolicy", "resyncRequest", "runDoctor", "saveResearchEvidence", "listResearchEvidence", "createMemory", "listMemory", "searchMemory", "archiveMemory", "forgetMemory", "installCapability", "listCapabilities", "matchCapabilities", "removeCapability", "requestChildHandoff", "listChildHandoffs", "submitChildRequest", "submitChildReport", "runResearchFetch", "listWorkspace", "readWorkspaceFile", "gitStatus", "gitDiff", "terminalExecute", "exportDoctorLogs", "getCapabilitySelection", "pinCapabilitySelection", "replaceCapabilitySelection", "submitFeedback", "listFeedback", "createDatabaseBackup", "prepareDatabaseRestore", "restoreDatabase", "selectModel", "cancelDatabaseOperation", "getMemory", "listMemoryPending", "getMemoryConflicts", "confirmMemory", "rejectMemory", "supersedeMemory", "reviseMemoryCandidate", "startPlanReview", "stopPlanReview", "listPlanReviews", "getPlanReview", "exportPlanReview", "clearPlanReviewHistory", "getContextLedger", "listTaskScratchpad", "clearTaskScratchpad", "summarizeContextNow", "pinContextItem", "readContextArtifact", "indexWorkspace", "rebuildIndex", "searchWorkspaceKnowledge", "getIndexStatus", "cancelWorkspaceIndex", "rotateReceiptKey", "trustReceiptGenesis", "getReceiptKeyStatus", "createNewReceiptGenesis", "closePendingReceiptAction", "setReceiptAuditSamplingRate", "reconcilePendingReceiptAction", "unquarantineReceiptAction", "listReceipts", "verifyReceipts", "exportReceipts", "revisePlan", "stopRevision", "saveRevisedPlan", "resolveRoutingDecision"]),
+                    get: $util.oneOfGetter($oneOfFields = ["handshake", "replayEvents", "startTask", "stopTask", "resolveApproval", "modelConfig", "modelCatalog", "permissionMode", "createProject", "createTask", "updateTaskStatus", "addTaskEdge", "getTaskGraph", "nextReadyTask", "importPrd", "getTaskHistory", "getTaskContext", "getTaskPlanSpec", "applyApprovedBuild", "prepareBuild", "getTaskSnapshot", "restoreTaskSnapshot", "getBuildPolicy", "saveBuildPolicy", "resyncRequest", "runDoctor", "saveResearchEvidence", "listResearchEvidence", "createMemory", "listMemory", "searchMemory", "archiveMemory", "forgetMemory", "installCapability", "listCapabilities", "matchCapabilities", "removeCapability", "requestChildHandoff", "listChildHandoffs", "submitChildRequest", "submitChildReport", "runResearchFetch", "listWorkspace", "readWorkspaceFile", "gitStatus", "gitDiff", "terminalExecute", "exportDoctorLogs", "getCapabilitySelection", "pinCapabilitySelection", "replaceCapabilitySelection", "submitFeedback", "listFeedback", "createDatabaseBackup", "prepareDatabaseRestore", "restoreDatabase", "selectModel", "cancelDatabaseOperation", "getMemory", "listMemoryPending", "getMemoryConflicts", "confirmMemory", "rejectMemory", "supersedeMemory", "reviseMemoryCandidate", "startPlanReview", "stopPlanReview", "listPlanReviews", "getPlanReview", "exportPlanReview", "clearPlanReviewHistory", "getContextLedger", "listTaskScratchpad", "clearTaskScratchpad", "summarizeContextNow", "pinContextItem", "readContextArtifact", "indexWorkspace", "rebuildIndex", "searchWorkspaceKnowledge", "getIndexStatus", "cancelWorkspaceIndex", "rotateReceiptKey", "trustReceiptGenesis", "getReceiptKeyStatus", "createNewReceiptGenesis", "closePendingReceiptAction", "setReceiptAuditSamplingRate", "reconcilePendingReceiptAction", "unquarantineReceiptAction", "listReceipts", "verifyReceipts", "exportReceipts", "revisePlan", "stopRevision", "saveRevisedPlan", "resolveRoutingDecision", "setAmbientListening", "getAmbientStatus", "listAmbientEpisodes", "getAmbientEpisode", "deleteAmbientTranscripts", "forgetAmbientWindow", "getAmbientPolicy", "saveAmbientPolicy", "resolveAmbientProposal"]),
                     set: $util.oneOfSetter($oneOfFields)
                 });
 
@@ -19340,6 +23102,24 @@ export const evohime = $root.evohime = (() => {
                         $root.evohime.desktop.v1.SaveRevisedPlan.encode(message.saveRevisedPlan, writer.uint32(/* id 105, wireType 2 =*/842).fork(), _depth + 1).ldelim();
                     if (message.resolveRoutingDecision != null && $Object.hasOwnProperty.call(message, "resolveRoutingDecision"))
                         $root.evohime.desktop.v1.ResolveRoutingDecision.encode(message.resolveRoutingDecision, writer.uint32(/* id 106, wireType 2 =*/850).fork(), _depth + 1).ldelim();
+                    if (message.setAmbientListening != null && $Object.hasOwnProperty.call(message, "setAmbientListening"))
+                        $root.evohime.desktop.v1.SetAmbientListening.encode(message.setAmbientListening, writer.uint32(/* id 107, wireType 2 =*/858).fork(), _depth + 1).ldelim();
+                    if (message.getAmbientStatus != null && $Object.hasOwnProperty.call(message, "getAmbientStatus"))
+                        $root.evohime.desktop.v1.GetAmbientStatus.encode(message.getAmbientStatus, writer.uint32(/* id 108, wireType 2 =*/866).fork(), _depth + 1).ldelim();
+                    if (message.listAmbientEpisodes != null && $Object.hasOwnProperty.call(message, "listAmbientEpisodes"))
+                        $root.evohime.desktop.v1.ListAmbientEpisodes.encode(message.listAmbientEpisodes, writer.uint32(/* id 109, wireType 2 =*/874).fork(), _depth + 1).ldelim();
+                    if (message.getAmbientEpisode != null && $Object.hasOwnProperty.call(message, "getAmbientEpisode"))
+                        $root.evohime.desktop.v1.GetAmbientEpisode.encode(message.getAmbientEpisode, writer.uint32(/* id 110, wireType 2 =*/882).fork(), _depth + 1).ldelim();
+                    if (message.deleteAmbientTranscripts != null && $Object.hasOwnProperty.call(message, "deleteAmbientTranscripts"))
+                        $root.evohime.desktop.v1.DeleteAmbientTranscripts.encode(message.deleteAmbientTranscripts, writer.uint32(/* id 111, wireType 2 =*/890).fork(), _depth + 1).ldelim();
+                    if (message.forgetAmbientWindow != null && $Object.hasOwnProperty.call(message, "forgetAmbientWindow"))
+                        $root.evohime.desktop.v1.ForgetAmbientWindow.encode(message.forgetAmbientWindow, writer.uint32(/* id 112, wireType 2 =*/898).fork(), _depth + 1).ldelim();
+                    if (message.getAmbientPolicy != null && $Object.hasOwnProperty.call(message, "getAmbientPolicy"))
+                        $root.evohime.desktop.v1.GetAmbientPolicy.encode(message.getAmbientPolicy, writer.uint32(/* id 113, wireType 2 =*/906).fork(), _depth + 1).ldelim();
+                    if (message.saveAmbientPolicy != null && $Object.hasOwnProperty.call(message, "saveAmbientPolicy"))
+                        $root.evohime.desktop.v1.SaveAmbientPolicy.encode(message.saveAmbientPolicy, writer.uint32(/* id 114, wireType 2 =*/914).fork(), _depth + 1).ldelim();
+                    if (message.resolveAmbientProposal != null && $Object.hasOwnProperty.call(message, "resolveAmbientProposal"))
+                        $root.evohime.desktop.v1.ResolveAmbientProposal.encode(message.resolveAmbientProposal, writer.uint32(/* id 115, wireType 2 =*/922).fork(), _depth + 1).ldelim();
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -20093,6 +23873,69 @@ export const evohime = $root.evohime = (() => {
                                     break;
                                 message.resolveRoutingDecision = $root.evohime.desktop.v1.ResolveRoutingDecision.decode(reader, reader.uint32(), $undefined, _depth + 1, message.resolveRoutingDecision);
                                 message.command = "resolveRoutingDecision";
+                                continue;
+                            }
+                        case 107: {
+                                if (wireType !== 2)
+                                    break;
+                                message.setAmbientListening = $root.evohime.desktop.v1.SetAmbientListening.decode(reader, reader.uint32(), $undefined, _depth + 1, message.setAmbientListening);
+                                message.command = "setAmbientListening";
+                                continue;
+                            }
+                        case 108: {
+                                if (wireType !== 2)
+                                    break;
+                                message.getAmbientStatus = $root.evohime.desktop.v1.GetAmbientStatus.decode(reader, reader.uint32(), $undefined, _depth + 1, message.getAmbientStatus);
+                                message.command = "getAmbientStatus";
+                                continue;
+                            }
+                        case 109: {
+                                if (wireType !== 2)
+                                    break;
+                                message.listAmbientEpisodes = $root.evohime.desktop.v1.ListAmbientEpisodes.decode(reader, reader.uint32(), $undefined, _depth + 1, message.listAmbientEpisodes);
+                                message.command = "listAmbientEpisodes";
+                                continue;
+                            }
+                        case 110: {
+                                if (wireType !== 2)
+                                    break;
+                                message.getAmbientEpisode = $root.evohime.desktop.v1.GetAmbientEpisode.decode(reader, reader.uint32(), $undefined, _depth + 1, message.getAmbientEpisode);
+                                message.command = "getAmbientEpisode";
+                                continue;
+                            }
+                        case 111: {
+                                if (wireType !== 2)
+                                    break;
+                                message.deleteAmbientTranscripts = $root.evohime.desktop.v1.DeleteAmbientTranscripts.decode(reader, reader.uint32(), $undefined, _depth + 1, message.deleteAmbientTranscripts);
+                                message.command = "deleteAmbientTranscripts";
+                                continue;
+                            }
+                        case 112: {
+                                if (wireType !== 2)
+                                    break;
+                                message.forgetAmbientWindow = $root.evohime.desktop.v1.ForgetAmbientWindow.decode(reader, reader.uint32(), $undefined, _depth + 1, message.forgetAmbientWindow);
+                                message.command = "forgetAmbientWindow";
+                                continue;
+                            }
+                        case 113: {
+                                if (wireType !== 2)
+                                    break;
+                                message.getAmbientPolicy = $root.evohime.desktop.v1.GetAmbientPolicy.decode(reader, reader.uint32(), $undefined, _depth + 1, message.getAmbientPolicy);
+                                message.command = "getAmbientPolicy";
+                                continue;
+                            }
+                        case 114: {
+                                if (wireType !== 2)
+                                    break;
+                                message.saveAmbientPolicy = $root.evohime.desktop.v1.SaveAmbientPolicy.decode(reader, reader.uint32(), $undefined, _depth + 1, message.saveAmbientPolicy);
+                                message.command = "saveAmbientPolicy";
+                                continue;
+                            }
+                        case 115: {
+                                if (wireType !== 2)
+                                    break;
+                                message.resolveAmbientProposal = $root.evohime.desktop.v1.ResolveAmbientProposal.decode(reader, reader.uint32(), $undefined, _depth + 1, message.resolveAmbientProposal);
+                                message.command = "resolveAmbientProposal";
                                 continue;
                             }
                         }

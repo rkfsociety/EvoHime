@@ -78,10 +78,17 @@ impl ListeningState {
     pub const fn allowed_next(self) -> &'static [ListeningState] {
         use ListeningState::*;
         match self {
-            Stopped => &[Starting, Denied],
+            // `PausedByUser` доступен и из `Stopped`, и из `Starting`:
+            // пользователь может включить слушание уже на паузе (кнопка
+            // паузы в трее нажата до включения), и притворяться, что такого
+            // намерения не было, значило бы показать «выключено» там, где
+            // человек выбрал «на паузе». Микрофон при этом всё равно закрыт:
+            // `is_capturing` истинно только для `Listening`.
+            Stopped => &[Starting, PausedByUser, Denied],
             Starting => &[
                 Listening,
                 Stopped,
+                PausedByUser,
                 PausedByPolicy,
                 DeviceConflict,
                 DeviceDisconnected,

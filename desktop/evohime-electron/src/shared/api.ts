@@ -180,6 +180,112 @@ export interface PlanRevisionResult {
   readonly contextFiles: readonly string[]
 }
 
+/**
+ * Состояние постоянного слушания, как его называет контракт 04.1.
+ *
+ * Значения совпадают со снимком, который отдаёт Core: оболочка ничего не
+ * переименовывает, чтобы строка в интерфейсе соответствовала строке в
+ * журнале.
+ */
+export type ListeningState =
+  | 'stopped'
+  | 'starting'
+  | 'listening'
+  | 'paused_by_user'
+  | 'paused_by_policy'
+  | 'device_conflict'
+  | 'device_disconnected'
+  | 'engine_unavailable'
+  | 'denied'
+
+export type ListeningReason =
+  | 'user_request'
+  | 'quiet_hours'
+  | 'blocklist'
+  | 'stop_word'
+  | 'permission_denied'
+  | 'device_conflict'
+  | 'device_disconnected'
+  | 'engine_unavailable'
+  | 'engine_degraded'
+  | 'system_sleep'
+  | 'storage_failed'
+  | 'unknown'
+
+export type AmbientExtractionState = 'disabled' | 'pending' | 'done' | 'failed'
+
+/** Закрытый набор кодов ошибок ambient-команд. */
+export type AmbientErrorCode =
+  | 'LISTENER_UNAVAILABLE'
+  | 'DEVICE_CONFLICT'
+  | 'DEVICE_DISCONNECTED'
+  | 'PERMISSION_DENIED'
+  | 'POLICY_INVALID'
+  | 'ENGINE_NOT_READY'
+  | 'STORAGE_FAILED'
+  | 'CONFIRMATION_REQUIRED'
+  | 'INVALID_ARGUMENT'
+
+export interface AmbientDevice {
+  readonly device_id: string
+  readonly display_name: string
+  readonly is_default: boolean
+  readonly is_active: boolean
+}
+
+/** Полезная нагрузка события `ambient.status`. */
+export interface AmbientStatus {
+  readonly state: ListeningState
+  readonly reason: ListeningReason
+  readonly active_device_id: string
+  readonly engine_version: string
+  readonly engine_ready: boolean
+  readonly devices: readonly AmbientDevice[]
+  /**
+   * Живёт ли подписка на смену устройств. `false` означает, что список —
+   * снимок, который сам не обновится: панель обязана это сказать, а не
+   * показывать устаревший список как живой.
+   */
+  readonly watching_devices: boolean
+}
+
+/** Строка списка эпизодов. Текста здесь нет по построению. */
+export interface AmbientEpisodeSummary {
+  readonly episode_id: string
+  readonly started_at_ms: number
+  readonly speech_duration_ms: number
+  readonly utterance_count: number
+  readonly extraction_state: AmbientExtractionState
+}
+
+export interface AmbientUtterance {
+  readonly utterance_id: string
+  readonly started_at_ms: number
+  readonly duration_ms: number
+  readonly text: string
+  readonly language: string
+  readonly redacted: boolean
+}
+
+export interface AmbientQuietHours {
+  readonly start_minute: number
+  readonly end_minute: number
+}
+
+export interface AmbientPolicy {
+  readonly quiet_hours: readonly AmbientQuietHours[]
+  /** Шаблоны имён процессов. */
+  readonly blocklist_patterns: readonly string[]
+  readonly window_title_blocklist: readonly string[]
+  readonly retention_days: number
+}
+
+/** Доступен ли глобальный хоткей паузы, и почему нет. */
+export interface AmbientHotkeyStatus {
+  readonly combination: string
+  readonly registered: boolean
+}
+
 export type PermissionMode = 'ask' | 'read_only' | 'full'
 
 /**
@@ -269,7 +375,20 @@ export const RENDERER_COMMANDS = [
   'update.skip',
   'listener.getRuntimeStatus',
   'listener.checkRuntime',
-  'listener.downloadRuntime'
+  'listener.downloadRuntime',
+  'ambient.setListening',
+  'ambient.getStatus',
+  'ambient.listEpisodes',
+  'ambient.getEpisode',
+  'ambient.deleteTranscripts',
+  'ambient.forgetWindow',
+  'ambient.getPolicy',
+  'ambient.savePolicy',
+  'ambient.resolveProposal',
+  // Не команда ядра: доступность глобального хоткея знает только main, и
+  // спросить её больше негде. Без этого ответа панель молча изображала бы
+  // работающую третью точку входа.
+  'ambient.hotkeyStatus'
 ] as const
 
 export type RendererCommand = (typeof RENDERER_COMMANDS)[number]
@@ -434,6 +553,31 @@ export interface CommandPayloads {
   'listener.getRuntimeStatus': Record<string, never>
   'listener.checkRuntime': Record<string, never>
   'listener.downloadRuntime': Record<string, never>
+  /**
+   * `enabled=false` — выключено; `enabled=true, paused=true` — пауза;
+   * `enabled=true, paused=false` — запуск или продолжение. Пустой `deviceId`
+   * означает «не менять устройство».
+   */
+  'ambient.setListening': { enabled: boolean; paused: boolean; deviceId?: string }
+  'ambient.getStatus': Record<string, never>
+  'ambient.listEpisodes': { sinceMs?: number; limit?: number; cursor?: string }
+  'ambient.getEpisode': { episodeId: string }
+  /** `confirmed` обязателен: ядро отвергает неподтверждённое удаление. */
+  'ambient.deleteTranscripts': { episodeIds?: readonly string[]; all?: boolean; confirmed: boolean }
+  'ambient.forgetWindow': { windowMs: number; confirmed: boolean }
+  'ambient.getPolicy': Record<string, never>
+  'ambient.savePolicy': {
+    /**
+     * Окна тишины в форме команды: поля именуются как в остальном
+     * renderer-API, а не как в снимке политики от ядра.
+     */
+    quietHours: readonly { startMinute: number; endMinute: number }[]
+    blocklistPatterns: readonly string[]
+    windowTitleBlocklist: readonly string[]
+    retentionDays: number
+  }
+  'ambient.resolveProposal': { proposalId: string; accepted: boolean }
+  'ambient.hotkeyStatus': Record<string, never>
 }
 
 export interface CommandResults {
@@ -532,6 +676,23 @@ export interface CommandResults {
   'listener.checkRuntime': ListenerRuntimeStatus
   /** Долгая загрузка: статус приходит и событиями по мере прогресса. */
   'listener.downloadRuntime': ListenerRuntimeStatus
+  /**
+   * Ambient-команды отвечают отдельным Core-событием (`ambient.listening`,
+   * `ambient.status`, `ambient.episodes`, `ambient.episode`,
+   * `ambient.deleted`, `ambient.forgotten`, `ambient.policy`,
+   * `ambient.policy_saved`, `ambient.proposal`); здесь — только факт
+   * постановки команды в очередь.
+   */
+  'ambient.setListening': { accepted: boolean }
+  'ambient.getStatus': { accepted: boolean }
+  'ambient.listEpisodes': { accepted: boolean }
+  'ambient.getEpisode': { accepted: boolean }
+  'ambient.deleteTranscripts': { accepted: boolean }
+  'ambient.forgetWindow': { accepted: boolean }
+  'ambient.getPolicy': { accepted: boolean }
+  'ambient.savePolicy': { accepted: boolean }
+  'ambient.resolveProposal': { accepted: boolean }
+  'ambient.hotkeyStatus': AmbientHotkeyStatus
 }
 
 export type CommandFailureCode =

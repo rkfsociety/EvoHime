@@ -2241,3 +2241,278 @@ select:focus {
   gap: 8px;
   margin-top: 12px;
 }
+
+/* Постоянное слушание (план 04.5): индикатор в шапке и панель «Слух». */
+
+.listening-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+/* Активная запись читается издалека: это то самое, что пользователь обязан
+   заметить, не вглядываясь. */
+.listening-pill--live {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.listening-pill--unknown {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+.listening {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 20px;
+  max-width: 860px;
+}
+
+.listening__header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.listening__state {
+  margin: 0;
+  font-size: 22px;
+}
+
+.listening__state--listening,
+.listening__state--starting {
+  color: var(--danger);
+}
+
+.listening__state--engine_unavailable,
+.listening__state--device_disconnected,
+.listening__state--device_conflict,
+.listening__state--unknown {
+  color: var(--warning);
+}
+
+.listening__reason {
+  margin: 0;
+  color: var(--fg-muted);
+}
+
+.listening__hotkey {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.listening__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.listening__actions button {
+  padding: 6px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.listening__actions button:disabled {
+  color: var(--fg-faint);
+  cursor: not-allowed;
+}
+
+.listening__danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.listening__error {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+}
+
+.listening__warning {
+  margin: 0;
+  color: var(--warning);
+}
+
+.listening__block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+
+.listening__block h4 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.listening__block p {
+  margin: 0;
+  color: var(--fg-muted);
+}
+
+.listening__devices,
+.listening__episodes,
+.listening__quiet,
+.listening__utterances {
+  margin: 0;
+  padding: 0 0 0 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.listening__utterances {
+  padding-left: 20px;
+  list-style: decimal;
+  color: var(--fg);
+}
+
+.listening__devices button {
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.listening__devices button[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+
+.listening__episode-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.listening__episode-row button {
+  margin-left: auto;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.listening__quiet li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.listening__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.listening__field textarea,
+.listening__field input,
+.listening__quiet input {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--fg);
+  font-family: inherit;
+}
+
+.listening__modal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 55%);
+  z-index: 40;
+}
+
+.listening__modal-window {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 420px;
+  padding: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+}
+
+.listening__modal-window h4 {
+  margin: 0;
+}
+
+.listening__modal-window p {
+  margin: 0;
+  color: var(--fg-muted);
+}
+
+.safety__capabilities {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.safety__capability {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.safety__capability span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.safety__capability small {
+  color: var(--fg-muted);
+}
+
+/* Микрофон выделен намеренно: он единственный не подчиняется общему режиму. */
+.safety__capability--microphone {
+  border-color: var(--accent);
+}
+
+.safety__capability button {
+  margin-left: auto;
+  padding: 6px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--fg);
+  cursor: pointer;
+}

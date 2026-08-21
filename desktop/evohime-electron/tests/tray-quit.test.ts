@@ -55,7 +55,7 @@ describe('tray quit policy', () => {
 
   it('hides the window instead of closing it while keep-alive is on', () => {
     const window = fakeWindow()
-    createTray({ window: window as never, log: () => undefined })
+    createTray({ window: window as never, log: () => undefined, onToggleListening: () => undefined })
 
     expect(close()).toBe(true)
     expect(window.hidden).toBe(true)
@@ -63,7 +63,7 @@ describe('tray quit policy', () => {
 
   it('lets the window close once an update asked to quit', () => {
     const window = fakeWindow()
-    const tray = createTray({ window: window as never, log: () => undefined })
+    const tray = createTray({ window: window as never, log: () => undefined, onToggleListening: () => undefined })
 
     tray.forceQuit()
 

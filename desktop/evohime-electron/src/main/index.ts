@@ -1,9 +1,9 @@
-import { app, BrowserWindow, Notification, safeStorage } from 'electron'
+import { app, BrowserWindow, globalShortcut, Notification, safeStorage } from 'electron'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
 
-import type { ShellState } from '@shared/api'
+import type { AmbientHotkeyStatus, ListeningState, ShellState } from '@shared/api'
 
 import { ChatStore } from './chat-store'
 import { JsonlLogger } from './diagnostics/logger'
@@ -99,11 +99,16 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
     client.on('state', (state: ShellState) => broadcast({ kind: 'state', state }))
     client.on('core-event', (event) => {
       broadcast({ kind: 'core-event', event })
+      observeAmbientEvent(event.eventType, event.payload)
       notifyWhenHidden(event.eventType)
     })
 
     mainWindow = createMainWindow({ ...hardening, onRendererFailure: handleRendererFailure })
-    tray = createTray({ window: mainWindow, log })
+    tray = createTray({
+      window: mainWindow,
+      log,
+      onToggleListening: requestAmbientListening
+    })
     updates = createUpdateService()
     listenerRuntime = createListenerRuntimeService()
 
@@ -120,8 +125,13 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
       restartCore,
       updates,
       listenerRuntime: listenerRuntime!,
+      ambientHotkey: ambientHotkeyStatus,
       log
     })
+
+    // Третья точка входа поднимается здесь, а не в панели: она глобальная и
+    // должна работать при скрытом окне.
+    registerAmbientHotkey()
 
     // Nothing may hold the installed binaries open while a staged rebuild is
     // swapped in, so the gate runs before the supervisor is started. An updater
@@ -146,6 +156,14 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
       packaged: app.isPackaged
     })
     client.start()
+    // Состояние слушания спрашивается сразу: панель может быть закрыта, а
+    // трей обязан показывать правду с первой секунды.
+    requestAmbientStatus()
+    // Состояние речевого рантайма выясняется на старте, чтобы «Слух» не
+    // предлагал включить микрофон при неустановленном движке.
+    void listenerRuntime.check().catch((error: unknown) => {
+      log('warn', 'shell.listener_runtime_check_failed', { error })
+    })
   })
 
   app.on('window-all-closed', () => {
@@ -154,9 +172,20 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
     }
   })
 
+  app.on('will-quit', () => {
+    // Хоткей снимается явно: незанятая комбинация после выхода — часть
+    // контракта с другими приложениями.
+    globalShortcut.unregisterAll()
+    ambientHotkeyRegistered = false
+  })
+
   app.on('before-quit', () => {
     client?.stop()
     updates?.stop()
+    if (ambientStatusTimer) {
+      clearTimeout(ambientStatusTimer)
+      ambientStatusTimer = null
+    }
     if (supervisorLivenessTimer) {
       clearInterval(supervisorLivenessTimer)
       supervisorLivenessTimer = null
@@ -168,6 +197,108 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
     tray?.destroy()
     log('info', 'shell.stopping', {})
   })
+}
+
+/**
+ * Глобальный хоткей паузы микрофона.
+ *
+ * Третья точка входа наравне с треем и панелью. Комбинацию может занять
+ * другое приложение — тогда `register` возвращает `false`, и оболочка
+ * говорит об этом, а не делает вид, что хоткей работает.
+ */
+const AMBIENT_HOTKEY = 'Control+Alt+M'
+
+/**
+ * Сколько ждать ответа на `GetAmbientStatus`, прежде чем считать состояние
+ * неизвестным. Молчание дольше этого — не «выключено», а «неизвестно».
+ */
+const AMBIENT_STATUS_TIMEOUT_MS = 5_000
+
+let ambientState: ListeningState | null = null
+let ambientStatusTimer: NodeJS.Timeout | null = null
+let ambientHotkeyRegistered = false
+
+/** Доступность хоткея в том виде, в каком её показывает панель «Слух». */
+function ambientHotkeyStatus(): AmbientHotkeyStatus {
+  return { combination: AMBIENT_HOTKEY, registered: ambientHotkeyRegistered }
+}
+
+/**
+ * Регистрирует хоткей паузы.
+ *
+ * Занятая комбинация — штатный исход, а не ошибка запуска: приложение
+ * работает дальше, а панель показывает, что третья точка входа недоступна.
+ */
+function registerAmbientHotkey(): void {
+  try {
+    ambientHotkeyRegistered = globalShortcut.register(AMBIENT_HOTKEY, () => {
+      const paused = ambientState === 'listening' || ambientState === 'starting'
+      log('info', 'shell.ambient_hotkey', { paused })
+      requestAmbientListening(paused)
+    })
+  } catch (error) {
+    ambientHotkeyRegistered = false
+    log('warn', 'shell.ambient_hotkey_failed', { error })
+  }
+  if (!ambientHotkeyRegistered) {
+    log('warn', 'shell.ambient_hotkey_taken', { combination: AMBIENT_HOTKEY })
+  }
+}
+
+/**
+ * Единственный путь к смене состояния слушания из main-процесса.
+ *
+ * Трей и хоткей не меняют состояние сами: они отправляют команду и ждут
+ * `ambient.state`. Локальной копии, способной разойтись с панелью, нет.
+ */
+function requestAmbientListening(paused: boolean): void {
+  client?.send({ setAmbientListening: { enabled: true, paused, deviceId: '' } })
+}
+
+/**
+ * Спрашивает состояние слушания и заводит таймер недоверия.
+ *
+ * Ответ приходит событием `ambient.status`; если он не пришёл за отведённое
+ * время, состояние становится неизвестным, а индикатор — предупреждающим.
+ */
+function requestAmbientStatus(): void {
+  if (client?.send({ getAmbientStatus: {} }) !== 'queued') {
+    setAmbientState(null)
+    return
+  }
+  if (ambientStatusTimer) clearTimeout(ambientStatusTimer)
+  ambientStatusTimer = setTimeout(() => {
+    ambientStatusTimer = null
+    log('warn', 'shell.ambient_status_timeout', {})
+    setAmbientState(null)
+  }, AMBIENT_STATUS_TIMEOUT_MS)
+  ambientStatusTimer.unref?.()
+}
+
+function setAmbientState(state: ListeningState | null): void {
+  ambientState = state
+  tray?.setListeningState(state)
+}
+
+/**
+ * Разбирает ambient-событие Core.
+ *
+ * Ответ с ошибкой или неразбираемая полезная нагрузка означают «состояние
+ * неизвестно», а не «выключено»: это ровно тот случай, когда индикатор
+ * обязан предупреждать.
+ */
+function observeAmbientEvent(eventType: string, payload: string): void {
+  if (eventType !== 'ambient.state' && eventType !== 'ambient.status') return
+  if (ambientStatusTimer) {
+    clearTimeout(ambientStatusTimer)
+    ambientStatusTimer = null
+  }
+  try {
+    const value = JSON.parse(payload) as { state?: unknown }
+    setAmbientState(typeof value.state === 'string' ? (value.state as ListeningState) : null)
+  } catch {
+    setAmbientState(null)
+  }
 }
 
 /**

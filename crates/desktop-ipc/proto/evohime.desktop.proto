@@ -846,6 +846,185 @@ message ReadContextArtifact {
   string locator = 2;
 }
 
+// ---------------------------------------------------------------------------
+// Ambient listening (план 04.5). Транспорт для типов контракта 04.1
+// (`evohime-listener-contract`), а не второй источник истины: набор значений
+// повторяет `ListeningState`, `ListeningReason` и `ExtractionState` этого
+// крейта, и расширяется только вместе с ним.
+// ---------------------------------------------------------------------------
+
+enum ListeningState {
+  // Состояние неизвестно: листенер не ответил или ещё не поднялся. UI обязан
+  // показать «проверка состояния», а не «выключено».
+  LISTENING_STATE_UNKNOWN = 0;
+  LISTENING_STATE_STOPPED = 1;
+  LISTENING_STATE_STARTING = 2;
+  LISTENING_STATE_LISTENING = 3;
+  LISTENING_STATE_PAUSED_BY_USER = 4;
+  LISTENING_STATE_PAUSED_BY_POLICY = 5;
+  LISTENING_STATE_DEVICE_CONFLICT = 6;
+  LISTENING_STATE_DEVICE_DISCONNECTED = 7;
+  LISTENING_STATE_ENGINE_UNAVAILABLE = 8;
+  LISTENING_STATE_DENIED = 9;
+}
+
+enum ListeningReason {
+  LISTENING_REASON_UNKNOWN = 0;
+  LISTENING_REASON_USER_REQUEST = 1;
+  LISTENING_REASON_QUIET_HOURS = 2;
+  LISTENING_REASON_BLOCKLIST = 3;
+  LISTENING_REASON_STOP_WORD = 4;
+  LISTENING_REASON_PERMISSION_DENIED = 5;
+  LISTENING_REASON_DEVICE_CONFLICT = 6;
+  LISTENING_REASON_DEVICE_DISCONNECTED = 7;
+  LISTENING_REASON_ENGINE_UNAVAILABLE = 8;
+  LISTENING_REASON_ENGINE_DEGRADED = 9;
+  LISTENING_REASON_SYSTEM_SLEEP = 10;
+  LISTENING_REASON_STORAGE_FAILED = 11;
+}
+
+enum ExtractionState {
+  EXTRACTION_STATE_UNKNOWN = 0;
+  EXTRACTION_STATE_DISABLED = 1;
+  EXTRACTION_STATE_PENDING = 2;
+  EXTRACTION_STATE_DONE = 3;
+  EXTRACTION_STATE_FAILED = 4;
+}
+
+// Одно устройство захвата. Отображаемое имя ограничено по длине: список
+// приходит из системы и не обязан быть коротким.
+message AmbientDevice {
+  string device_id = 1;
+  string display_name = 2;
+  bool is_default = 3;
+  bool is_active = 4;
+}
+
+// Строка списка эпизодов. Текста здесь нет и не будет: он отдаётся только
+// `GetAmbientEpisode` по явному запросу пользователя.
+message AmbientEpisodeSummary {
+  string episode_id = 1;
+  int64 started_at_ms = 2;
+  int64 speech_duration_ms = 3;
+  int32 utterance_count = 4;
+  ExtractionState extraction_state = 5;
+}
+
+// Одно распознанное высказывание. Единственное место контракта, где текст
+// пересекает границу IPC.
+message Utterance {
+  string utterance_id = 1;
+  int64 started_at_ms = 2;
+  int64 duration_ms = 3;
+  string text = 4;
+  string language = 5;
+  bool redacted = 6;
+}
+
+// Полуоткрытое окно тишины [start_minute, end_minute) в локальных минутах
+// суток; окно может пересекать полночь.
+message QuietHours {
+  int32 start_minute = 1;
+  int32 end_minute = 2;
+}
+
+message AmbientPolicy {
+  repeated QuietHours quiet_hours = 1;
+  repeated string blocklist_patterns = 2;
+  int32 retention_days = 3;
+  // Отдельно от blocklist_patterns: шаблон процесса и шаблон заголовка окна
+  // проверяются по разным строкам, и склеивание их в один список стирало бы
+  // разницу между «блокировать zoom.exe» и «блокировать окно с таким текстом».
+  repeated string window_title_blocklist = 4;
+}
+
+// enabled=false → Stopped; enabled=true, paused=true → PausedByUser;
+// enabled=true, paused=false → запуск или продолжение. `device_id` меняет
+// устройство только после проверки capability и политики.
+message SetAmbientListening {
+  bool enabled = 1;
+  bool paused = 2;
+  string device_id = 3;
+}
+
+message SetAmbientListeningResult {
+  ListeningState state = 1;
+  string error_code = 2;
+}
+
+message GetAmbientStatus {}
+
+message AmbientStatus {
+  ListeningState state = 1;
+  ListeningReason reason = 2;
+  string active_device_id = 3;
+  string engine_version = 4;
+  bool engine_ready = 5;
+  repeated AmbientDevice devices = 6;
+}
+
+message ListAmbientEpisodes {
+  int64 since_ms = 1;
+  int32 limit = 2;
+  string cursor = 3;
+}
+
+message AmbientEpisodeList {
+  repeated AmbientEpisodeSummary episodes = 1;
+  string next_cursor = 2;
+}
+
+message GetAmbientEpisode {
+  string episode_id = 1;
+}
+
+message AmbientEpisodeDetail {
+  string episode_id = 1;
+  repeated Utterance utterances = 2;
+}
+
+// `confirmed` обязателен и для `all=true`, и для списка идентификаторов: Core
+// отвергает неподтверждённое удаление, поэтому модальное окно оболочки не
+// является единственной границей безопасности.
+message DeleteAmbientTranscripts {
+  repeated string episode_ids = 1;
+  bool all = 2;
+  bool confirmed = 3;
+}
+
+message DeleteAmbientTranscriptsResult {
+  int32 deleted_count = 1;
+}
+
+message ForgetAmbientWindow {
+  int64 window_ms = 1;
+  bool confirmed = 2;
+}
+
+message ForgetAmbientWindowResult {
+  int32 deleted_count = 1;
+}
+
+message GetAmbientPolicy {}
+
+message SaveAmbientPolicy {
+  AmbientPolicy policy = 1;
+}
+
+message SaveAmbientPolicyResult {
+  bool applied = 1;
+  string error_code = 2;
+}
+
+message ResolveAmbientProposal {
+  string proposal_id = 1;
+  bool accepted = 2;
+}
+
+message ResolveAmbientProposalResult {
+  bool applied = 1;
+}
+
 message CommandEnvelope {
   ProtocolVersion protocol = 1;
   string request_id = 2;
@@ -950,6 +1129,15 @@ message CommandEnvelope {
     StopRevision stop_revision = 104;
     SaveRevisedPlan save_revised_plan = 105;
     ResolveRoutingDecision resolve_routing_decision = 106;
+    SetAmbientListening set_ambient_listening = 107;
+    GetAmbientStatus get_ambient_status = 108;
+    ListAmbientEpisodes list_ambient_episodes = 109;
+    GetAmbientEpisode get_ambient_episode = 110;
+    DeleteAmbientTranscripts delete_ambient_transcripts = 111;
+    ForgetAmbientWindow forget_ambient_window = 112;
+    GetAmbientPolicy get_ambient_policy = 113;
+    SaveAmbientPolicy save_ambient_policy = 114;
+    ResolveAmbientProposal resolve_ambient_proposal = 115;
   }
 }
 

@@ -8,8 +8,8 @@
 use std::path::{Path, PathBuf};
 
 use evohime_listener_contract::{
-    AmbientErrorCode, AmbientLogEvent, AmbientPolicy, ExtractionState, ListeningState,
-    DEFAULT_RETENTION_DAYS, MAX_DEDUP_WINDOW_MS, MAX_RETENTION_DAYS,
+    AmbientErrorCode, AmbientLogEvent, AmbientPolicy, ExtractionState, ListeningReason,
+    ListeningState, ProposalKind, DEFAULT_RETENTION_DAYS, MAX_DEDUP_WINDOW_MS, MAX_RETENTION_DAYS,
 };
 use evohime_local_storage::ambient_store::{
     AmbientDeletion, AmbientEpisodeRecord, AmbientPurge, AmbientStoreError, AmbientStoreSql,
@@ -157,6 +157,76 @@ pub fn save_policy(data_dir: &Path, policy: &AmbientPolicy) -> Result<(), String
     Ok(())
 }
 
+/// Имя файла с намерением пользователя по слушанию.
+pub const CONTROL_FILE_NAME: &str = "ambient-control.json";
+
+/// Что пользователь выбрал в панели «Слух»: включено ли слушание вообще и
+/// каким устройством.
+///
+/// Живёт отдельно от [`AmbientPolicy`]: политика — это правила (тишина,
+/// чёрные списки, срок хранения) из контракта 04.1, а это — переключатель и
+/// выбор микрофона. Смешать их значило бы завести в side-effect-free
+/// контракте поле, которого там быть не должно.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AmbientControl {
+    /// Слушание выключено по умолчанию. Значение по умолчанию здесь — это не
+    /// стиль, а требование: неизвестное намерение не должно открывать
+    /// микрофон.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Выбранное устройство; пустая строка — «устройство системы».
+    #[serde(default)]
+    pub device_id: String,
+}
+
+pub fn control_path(data_dir: &Path) -> PathBuf {
+    data_dir.join(CONTROL_FILE_NAME)
+}
+
+/// Читает намерение. Отсутствующий или повреждённый файл означает
+/// «выключено»: молчание безопаснее догадки.
+pub fn load_control(data_dir: &Path) -> AmbientControl {
+    std::fs::read(control_path(data_dir))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<AmbientControl>(&bytes).ok())
+        .unwrap_or_default()
+}
+
+/// Пишет намерение тем же атомарным путём, что и политику: временный файл,
+/// `sync_all`, owner-only ACL, замена.
+pub fn save_control(data_dir: &Path, control: &AmbientControl) -> Result<(), String> {
+    let path = control_path(data_dir);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let bytes = serde_json::to_vec_pretty(control).map_err(|error| error.to_string())?;
+    let temporary = path.with_extension(format!("tmp-{}", uuid::Uuid::new_v4()));
+    {
+        use std::io::Write;
+        let mut file = std::fs::File::create(&temporary).map_err(|error| error.to_string())?;
+        file.write_all(&bytes).map_err(|error| error.to_string())?;
+        file.sync_all().map_err(|error| error.to_string())?;
+    }
+    if let Err(error) = harden(&temporary) {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(error);
+    }
+    if let Err(error) = replace_file(&temporary, &path) {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(error);
+    }
+    harden(&path)
+}
+
+/// Каталог данных Core: тот же, из которого поднимается всё остальное
+/// ambient-состояние.
+pub fn data_dir() -> PathBuf {
+    std::env::var_os("EVOHIME_DATA_DIR")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("LOCALAPPDATA").map(|p| PathBuf::from(p).join("EvoHime")))
+        .unwrap_or_else(|| PathBuf::from(".evohime"))
+}
+
 #[cfg(windows)]
 fn harden(path: &Path) -> Result<(), String> {
     evohime_desktop_ipc::windows_security::harden_file_owner_only(path)
@@ -206,6 +276,188 @@ pub fn event_task_id(event: &AmbientLogEvent) -> String {
     match event {
         AmbientLogEvent::Transcript { episode_id, .. } => episode_id.to_string(),
         _ => SESSION_TASK_ID.to_owned(),
+    }
+}
+
+/// Одно устройство захвата в снимке состояния.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct AmbientDeviceInfo {
+    pub device_id: String,
+    pub display_name: String,
+    pub is_default: bool,
+    pub is_active: bool,
+}
+
+/// Снимок того, что панель «Слух», трей и хоткей показывают пользователю.
+///
+/// Единственный источник истины живёт в Core: три точки входа отправляют одну
+/// и ту же команду и ждут события, а не рисуют себе состояние сами.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct AmbientStatusSnapshot {
+    pub state: ListeningState,
+    pub reason: ListeningReason,
+    pub active_device_id: String,
+    pub engine_version: String,
+    pub engine_ready: bool,
+    pub devices: Vec<AmbientDeviceInfo>,
+    /// Живёт ли подписка на смену устройств. `false` означает, что список —
+    /// снимок, который сам не обновится, и панель обязана это сказать.
+    pub watching_devices: bool,
+}
+
+impl Default for AmbientStatusSnapshot {
+    /// Стартовое состояние — «неизвестно», а не «выключено».
+    ///
+    /// Пока процесс листенера не подключился, Core не знает, читается ли
+    /// микрофон, и обязан сказать именно это: `EngineUnavailable` попадает в
+    /// `ListeningState::is_degraded`, и индикатор показывает «проверка
+    /// состояния» с предупреждением, а не спокойное «выключено».
+    fn default() -> Self {
+        Self {
+            state: ListeningState::EngineUnavailable,
+            reason: ListeningReason::EngineUnavailable,
+            active_device_id: String::new(),
+            engine_version: String::new(),
+            engine_ready: false,
+            devices: Vec::new(),
+            watching_devices: false,
+        }
+    }
+}
+
+/// Команда процессу листенера. Отправляется только из Core: у трея, хоткея и
+/// панели своего канала к листенеру нет.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ListenerControl {
+    Enabled(bool),
+    Paused(bool),
+    SelectDevice(String),
+    ResetBuffers,
+    /// Полная политика целиком: тихие часы и чёрные списки меняются вместе, а
+    /// не по одному полю, поэтому listener получает новый снимок, а не патч.
+    Policy(Box<(AmbientPolicy, AmbientControl)>),
+}
+
+#[derive(Default)]
+struct AmbientRegistryInner {
+    status: AmbientStatusSnapshot,
+    control: Option<tokio::sync::mpsc::Sender<ListenerControl>>,
+    /// Предложения, ожидающие решения пользователя. Наполняется этапом 04.7;
+    /// до него реестр пуст, и `resolve_proposal` честно отвечает «нет
+    /// такого», а не «применено».
+    proposals: std::collections::HashMap<String, ProposalKind>,
+}
+
+/// Реестр состояния постоянного слушания.
+///
+/// По образцу `RoutingApprovalRegistry`: общего `CoreState` в проекте нет,
+/// поэтому состояние живёт в собственном разделяемом реестре, а `IpcBridge`
+/// держит на него ссылку.
+#[derive(Clone, Default)]
+pub struct AmbientListeningRegistry {
+    inner: std::sync::Arc<tokio::sync::Mutex<AmbientRegistryInner>>,
+}
+
+impl AmbientListeningRegistry {
+    /// Подключает канал к живому процессу листенера.
+    pub async fn attach_control(&self, control: tokio::sync::mpsc::Sender<ListenerControl>) {
+        self.inner.lock().await.control = Some(control);
+    }
+
+    /// Снимает канал: листенер отвалился. Состояние при этом не «выключено»,
+    /// а `EngineUnavailable` — иначе пользователь прочитал бы отказ связи как
+    /// собственное решение выключить микрофон.
+    pub async fn detach_control(&self) {
+        let mut guard = self.inner.lock().await;
+        guard.control = None;
+        guard.status.engine_ready = false;
+        guard.status.devices.clear();
+        guard.status.watching_devices = false;
+        guard.status.state = ListeningState::EngineUnavailable;
+        guard.status.reason = ListeningReason::EngineUnavailable;
+    }
+
+    pub async fn snapshot(&self) -> AmbientStatusSnapshot {
+        self.inner.lock().await.status.clone()
+    }
+
+    /// Отправляет команду листенеру. Отсутствие канала — это
+    /// `LISTENER_UNAVAILABLE`, а не тихий успех.
+    pub async fn send(&self, control: ListenerControl) -> Result<(), AmbientErrorCode> {
+        let sender = {
+            let guard = self.inner.lock().await;
+            guard.control.clone()
+        };
+        let sender = sender.ok_or(AmbientErrorCode::ListenerUnavailable)?;
+        sender
+            .send(control)
+            .await
+            .map_err(|_| AmbientErrorCode::ListenerUnavailable)
+    }
+
+    /// Записывает состояние, о котором сообщил листенер.
+    ///
+    /// `true` означает «изменилось» — только тогда публикуется
+    /// `ambient.state`: повтор состояния не является изменением.
+    pub async fn set_state(
+        &self,
+        state: ListeningState,
+        reason: ListeningReason,
+        active_device_id: Option<String>,
+    ) -> bool {
+        let mut guard = self.inner.lock().await;
+        if let Some(device_id) = active_device_id {
+            guard.status.active_device_id = device_id;
+        }
+        if guard.status.state == state && guard.status.reason == reason {
+            return false;
+        }
+        guard.status.state = state;
+        guard.status.reason = reason;
+        true
+    }
+
+    pub async fn set_devices(
+        &self,
+        devices: Vec<AmbientDeviceInfo>,
+        active_device_id: String,
+        watching: bool,
+    ) {
+        let mut guard = self.inner.lock().await;
+        guard.status.active_device_id = active_device_id;
+        guard.status.watching_devices = watching;
+        guard.status.devices = devices;
+        let active = guard.status.active_device_id.clone();
+        for device in &mut guard.status.devices {
+            device.is_active = if active.is_empty() {
+                device.is_default
+            } else {
+                device.device_id == active
+            };
+        }
+    }
+
+    pub async fn set_engine(&self, version: String, ready: bool) {
+        let mut guard = self.inner.lock().await;
+        if !version.is_empty() {
+            guard.status.engine_version = version;
+        }
+        guard.status.engine_ready = ready;
+    }
+
+    pub async fn engine_ready(&self) -> bool {
+        self.inner.lock().await.status.engine_ready
+    }
+
+    /// Регистрирует предложение, ожидающее решения (этап 04.7).
+    pub async fn register_proposal(&self, proposal_id: String, kind: ProposalKind) {
+        self.inner.lock().await.proposals.insert(proposal_id, kind);
+    }
+
+    /// Снимает предложение с ожидания. `None` означает «такого предложения
+    /// нет или оно уже решено» — и это отвечается честно, а не «применено».
+    pub async fn resolve_proposal(&self, proposal_id: &str) -> Option<ProposalKind> {
+        self.inner.lock().await.proposals.remove(proposal_id)
     }
 }
 
