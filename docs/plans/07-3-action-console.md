@@ -48,8 +48,10 @@ affected resources, нет idempotency key при повторной доста�
    менять из renderer.
 3. Расширить IPC-контракт решения: к `{ approvalId, granted }` добавить
    idempotency key, опциональную причину отклонения и команду отмены. Старый
-   payload остаётся валидным, повторная доставка того же ключа не создаёт
-   второй эффект.
+   payload остаётся валидным: если ключ не прислан, Core детерминированно
+   выводит compatibility key из immutable `approvalId` и решения. Повторная
+   доставка того же ключа не создаёт второй эффект, а конфликт решения
+   возвращает фактическое состояние запроса.
 4. В Electron сделать карточки состояний:
    pending, approved, rejected, expired, cancelled, executing, succeeded,
    failed и policy-denied.
@@ -57,7 +59,9 @@ affected resources, нет idempotency key при повторной доста�
    «отклонить с пояснением», если они совместимы с существующей policy. Не
    добавлять бессрочное разрешение без отдельного явного policy flow.
 6. После reconnect/replay показывать ту же карточку по durable event/request
-   identity, не создавая повторный effect.
+   identity. Создание action request, binding approval и terminal transition
+   должны быть durable до публикации projection event, поэтому reconnect не
+   создаёт повторный effect и не превращает неизвестный результат в успех.
 7. Redact secrets, full prompts, arbitrary paths и raw tool output до IPC;
    подробности доступны только через bounded audit/reference projection.
 

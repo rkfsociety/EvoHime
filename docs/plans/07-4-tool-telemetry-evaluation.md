@@ -24,16 +24,16 @@
   существующий `EventJournal` и provenance, а после — становится проекцией
   ledger-событий без смены correlation fields;
 - общий deterministic evaluation harness (`crates/evohime-core/src/evals.rs`,
-  `tests/evals/`), уже покрывающий workflow orchestration.
-  До его появления сценарии из пункта 6 живут отдельным deterministic test
-  suite внутри 07 и запускаются самостоятельно; при появлении 06-4 они
-  переносятся в общий harness без изменения ожидаемых terminal states.
+  `tests/evals/`), уже покрывающий workflow orchestration. Сценарии из
+  пункта 6 добавляются в этот общий harness с отдельными fixture IDs и не
+  требуют отдельного workflow-evaluation этапа.
 
 ## Что уже есть в коде
 
 - `crates/evohime-core/src/observability.rs` задаёт bounded redacted hook
-  events (`before_tool`, `after_tool`, `after_task`) с лимитами на количество
-  полей, длину значений и размер события;
+  events (`before_context`, `before_tool`, `after_tool`, `before_commit`,
+  `after_task`) с лимитами на количество полей, длину значений и размер
+  события;
 - `crates/evohime-core/src/run_policy.rs` уже считает `RunUsage` (итерации,
   wall clock, tool calls, tokens, `cost_micros`) и даёт `RunStopReason`;
 - `crates/evohime-model-provenance` фиксирует `request_id`,

@@ -35,8 +35,9 @@ LLM judge как единственное доказательство или с
 
 - 07-4 может поставлять tool-specific metrics; без него план использует
   bounded generic model/tool events;
-- 06-4 workflow harness может быть общим runner; без него запускаются
-  standalone fixtures.
+- общий workflow/evaluation harness (`crates/evohime-core/src/evals.rs`,
+  `tests/evals/`) может быть общим runner; если отдельная fixture-группа ещё
+  не подключена, запускаются bounded standalone fixtures.
 
 ## Этапы
 

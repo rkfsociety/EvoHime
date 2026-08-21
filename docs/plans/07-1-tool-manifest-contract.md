@@ -19,11 +19,9 @@ permission/approval decision, loadout selection, telemetry и provenance без
 
 ### Опциональные
 
-- Core-owned MCP registry entry уже существует
-  (`crates/evohime-core/src/workflow_registry.rs`: server identity, tool
-  allowlist, transport, host allowlist). Manifest 07-1 может ссылаться на него
-  напрямую; запись с неподдержанным транспортом возвращает typed
-  `transport_unavailable` и не попадает в loadout.
+- remote signed catalog из 07-2. Без него builtin и уже зарегистрированные
+  Core-owned MCP identity получают manifest из статического реестра; внешние
+  package metadata не нужны для проверки контракта.
 
 ## Что уже есть в коде
 
@@ -34,6 +32,14 @@ permission/approval decision, loadout selection, telemetry и provenance без
   сборке `ToolSpec` для модели;
 - preflight (`ToolPreflightDecision`), one-shot approval id, exact-call recheck
   и permission engine уже работают;
+- `crates/evohime-core/src/workflow_registry.rs` уже разрешает workflow
+  identity по `server_id`, transport, endpoint и tool allowlist и возвращает
+  bounded `transport_unavailable`/host/allowlist errors. Этот реестр не
+  содержит input/output schema tool-а и не заменяет `tool/manifest/v1`;
+- `capability_registry::CapabilityManifest` уже является подписанным
+  manifest-ом ролей и skills. Его trust root и storage нельзя смешивать с
+  execution manifest tool-а, но их hash/provenance-проверки должны быть
+  переиспользованы там, где это применимо;
 - `crates/tool-runtime/src/tools/mcp.rs` реализует `mcp.call`, принимающий URL
   из аргументов вызова под env-allowlist `EVOHIME_MCP_ALLOWED_HOSTS`.
 
@@ -66,10 +72,15 @@ model request и receipt. Два источника описания (`ToolDefin
    unknown capability, missing schema, invalid scope, unsupported version,
    undeclared secret/network access и parent-subset violation должны давать
    bounded typed error.
-8. Привести `mcp.call` к манифесту: объявить его network domains и подготовить
-   переход на registry-owned server identity, чтобы URL перестал приходить из
-   аргументов модели. До готовности registry поведение не меняется, но
-   ограничение фиксируется в manifest и проверяется тестом.
+8. Привести `mcp.call` к манифесту: объявить network domains и связать новый
+   model/workflow loadout с `WorkflowRegistry` по `server_id` и `tool_name`,
+   чтобы endpoint не выбирался из аргументов модели. Для уже существующего
+   прямого IPC/tool payload временно оставить compatibility adapter только в
+   Core: он обязан разрешить endpoint через registry/allowlist, пометить
+   вызов как legacy-compatible и не допустить его в новый model loadout.
+   После миграции клиентов поле произвольного `url` удаляется из canonical
+   model schema; до этого legacy-путь остаётся явно ограниченным и покрытым
+   negative tests.
 
 ## Проверки
 

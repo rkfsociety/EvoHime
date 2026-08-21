@@ -48,8 +48,15 @@ SuperAGI используется только как reference. Его runtime 
 - `crates/evohime-model-provenance` и `crates/evohime-receipts` дают
   provenance-записи (`request_id`, `logical_request_id`, `parent_request_id`,
   `attempt`) и подписанные receipts;
+- `crates/evohime-core/src/capability_registry.rs` и
+  `crates/evohime-local-storage/src/capability_store.rs` уже проверяют и
+  хранят подписанные capability manifests для ролей и skills, включая
+  allowed tools/domains, риск, hash, запрет install scripts и совместимость
+  обновления. Это соседний trust-контур, а не tool manifest и не toolkit
+  catalog; 07 не должен подменять его второй несогласованной реализацией;
 - `crates/evohime-core/src/observability.rs` фиксирует bounded redacted hook
-  events (`before_tool`, `after_tool`, лимиты полей и размера события);
+  events (`before_context`, `before_tool`, `after_tool`, `before_commit`,
+  `after_task`, лимиты полей и размера события);
 - Electron уже показывает approval-карточку инструмента в
   `desktop/evohime-electron/src/renderer/src/TaskTimeline.tsx` и решает её через
   IPC `core.resolveApproval`, а Operations Panel показывает лимиты запуска.
@@ -65,11 +72,14 @@ SuperAGI используется только как reference. Его runtime 
   expired/cancelled/policy-denied в проекции;
 - сводной telemetry по стоимости, задержкам и retries на уровне запуска.
 
-Существующий инструмент `mcp.call`
-(`crates/tool-runtime/src/tools/mcp.rs`) принимает URL из аргументов вызова и
-ограничен только env-allowlist `EVOHIME_MCP_ALLOWED_HOSTS` и SSRF-проверкой.
-Это прямо противоречит границе 3 ниже, поэтому его перевод на Core-owned
-registry entry входит в объём 07-1/07-2, а не считается уже выполненным.
+Core-owned `WorkflowRegistry` уже фиксирует server identity, endpoint,
+transport и allowlist для workflow MCP-узлов, но существующий прямой
+`mcp.call` (`crates/tool-runtime/src/tools/mcp.rs`) всё ещё принимает URL из
+аргументов вызова и ограничен env-allowlist `EVOHIME_MCP_ALLOWED_HOSTS` и
+SSRF-проверкой. Это прямо противоречит границе 3 ниже: 07-1 должен связать
+новый tool manifest с registry-owned identity, а 07-2 — не создавать второй
+MCP-каталог, а добавить catalog metadata поверх этой identity. До миграции
+legacy-вызов не считается безопасным registry-bound loadout.
 
 Перечисленные компоненты не заменяются. План добавляет поверх них недостающий
 единый контракт описания toolkit-а и понятную пользовательскую проекцию
@@ -108,8 +118,9 @@ registry entry входит в объём 07-1/07-2, а не считается 
 ### Опциональные
 
 - общий deterministic evaluation harness (`crates/evohime-core/src/evals.rs`,
-  `tests/evals/`). При необходимости проверки 07 выполняются отдельным
-  deterministic test suite;
+  `tests/evals/`) уже используется workflow orchestration; 07-4 расширяет
+  его tool/approval/telemetry-сценариями и не зависит от отдельного будущего
+  workflow-evaluation этапа;
 - optional embeddings. Без них tool discovery и telemetry работают на
   metadata/FTS5 и не требуют vector backend;
 - подписанный внешний каталог. До появления signing pipeline доверие строится
