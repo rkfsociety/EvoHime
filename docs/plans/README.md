@@ -8,11 +8,12 @@
 
 Планы 01–05 реализованы целиком и удалены из каталога: их контракты живут в
 [`../architecture.md`](../architecture.md), подтверждённое состояние — в
-[`../current-state.md`](../current-state.md). В каталоге остаются три
-незавершённых направления: сначала план 06, затем план 07 и план 08. Их обзоры:
-[`06-0-workflow-orchestration.md`](06-0-workflow-orchestration.md) и
+[`../current-state.md`](../current-state.md). В каталоге остаются четыре
+незавершённых направления: сначала план 06, затем планы 07, 08 и 09. Их обзоры:
+[`06-0-workflow-orchestration.md`](06-0-workflow-orchestration.md),
 [`07-0-superagi-inspired-tooling.md`](07-0-superagi-inspired-tooling.md),
-[`08-0-execution-ledger.md`](08-0-execution-ledger.md).
+[`08-0-execution-ledger.md`](08-0-execution-ledger.md) и
+[`09-0-policy-and-capabilities.md`](09-0-policy-and-capabilities.md).
 
 ## Правило нумерации
 
@@ -44,12 +45,13 @@
 | 06 CAMEL/AutoGPT-inspired workflow orchestration для Евы | проектируется; обзор в [`06-0-workflow-orchestration.md`](06-0-workflow-orchestration.md) | 06-1 зависит от существующих workflow/child contracts; 06-2 от 06-1; 06-3 от 06-2; 06-4 от 06-3 |
 | 07 SuperAGI-inspired tool manifests, Action Console и telemetry | предложен; обзор в [`07-0-superagi-inspired-tooling.md`](07-0-superagi-inspired-tooling.md) | 07-0 блокируется 06-1 и 06-3; 07-1 от 07-0; 07-2 от 07-1; 07-3 от 07-1 и 06-3; 07-4 от 07-1 и 07-3 |
 | 08 Core-owned execution ledger и typed receipts | проектируется; обзор в [`08-0-execution-ledger.md`](08-0-execution-ledger.md) | 08-1 от текущих EventJournal/receipts/IPC; 08-2 от 08-1; 08-3 от 08-2; 08-4 от 08-3 |
+| 09 Policy, capabilities и approval | проектируется; обзор в [`09-0-policy-and-capabilities.md`](09-0-policy-and-capabilities.md) | 09-1 от плана 08 и текущей policy; 09-2 от 09-1; 09-3 от 09-2; 09-4 от 09-3 |
 
 Порядок незавершённых этапов задаётся так: сначала последовательно выполняется
 06-1 → 06-2 → 06-3 → 06-4, затем 07-1 → 07-2 → 07-3 → 07-4, затем
-08-1 → 08-2 → 08-3 → 08-4. Обзоры 06-0, 07-0 и 08-0 не являются
-исполняемыми этапами; они фиксируют границы и граф
-зависимостей соответствующего плана. План 07-4 может использовать общий
+08-1 → 08-2 → 08-3 → 08-4, затем 09-1 → 09-2 → 09-3 → 09-4. Обзоры 06-0,
+07-0, 08-0 и 09-0 не являются исполняемыми этапами; они фиксируют границы и
+граф зависимостей соответствующего плана. План 07-4 может использовать общий
 evaluation harness из 06-4 как опциональную зависимость, но не блокирует его
 отсутствие.
 
@@ -88,5 +90,5 @@ offline verify/export перенесены в архитектуру и current-
 
 Статус реализации. Подтверждённое состояние checkout живёт в
 [`../current-state.md`](../current-state.md), исполняемый цикл — в
-[`../development-plan.md`](../development-plan.md), долгосрочные направления —
-в [`../roadmap.md`](../roadmap.md).
+[`../development-plan.md`](../development-plan.md), долгосрочные направления — в
+[`../roadmap.md`](../roadmap.md).
