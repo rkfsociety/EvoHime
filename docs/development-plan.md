@@ -38,7 +38,8 @@ Foundation текущего цикла завершён: обходы permission
 model-request provenance реализованы и перенесены в канонические
 `architecture.md`/`current-state.md`. Ближайший исполняемый план — 06:
 workflow orchestration поверх существующего typed workflow-контракта и child
-runtime. crewAI не является runtime-зависимостью продукта.
+runtime. AutoGen используется только как архитектурный reference и не является
+runtime-зависимостью продукта.
 
 ## Текущий статус
 
