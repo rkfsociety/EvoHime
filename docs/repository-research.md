@@ -37,6 +37,7 @@
 | 14 | [jianfch/stable-ts](https://github.com/jianfch/stable-ts) | Исследовано | Whisper post-processing: silence suppression/VAD, stable word timestamps, alignment/refinement, deterministic regrouping и structured result | Адаптировать post-processing/evaluation идеи; archived Python package и Silero/PyTorch dependencies не подключать |
 | 15 | [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) | Исследовано | Speaker diarization pipeline, speaker segmentation/embeddings, overlap-aware Annotation, VAD и RTTM export | Рассматривать как optional offline enrichment; не подключать gated Python/PyTorch runtime и не трактовать кластеры как identity |
 | 16 | [vocodedev/vocode-core](https://github.com/vocodedev/vocode-core) | Исследовано | Streaming voice-agent loop, typed STT/LLM/TTS/action contracts, barge-in, endpointing, transcript events и telephony adapters | Адаптировать lifecycle/interrupt/tool/evaluation идеи; Python SDK, cloud actions и telephony runtime не подключать |
+| 17 | [saharmor/voice-lab](https://github.com/saharmor/voice-lab) | Исследовано | Evaluation framework: JSON-сценарии, personas, model/prompt matrix, LLM-as-a-Judge, cost/quality comparison и экспериментальные speech metrics | Адаптировать evaluation contracts, fixtures и report provenance; Python scripts, cloud eval agent и pyannote/stable-ts pipeline не подключать |
 
 ## Карточки исследований
 
@@ -2807,6 +2808,64 @@ HF token, speaker embeddings или cloud/provider diarization в базовый
 - Для ambient режима сохраняются текущие ограничения: speaker остаётся `unverified`, audio не превращается в persistent SQLite BLOB, а diarization/embeddings не появляются из-за voice-agent orchestration.
 - Перед реализацией нужны bounded queues, cancellation/interrupt precedence, approval и idempotency semantics, redaction/retention, offline fake providers, reconnect tests, TTFB/latency metrics и проверка crash/restart с незавершённым action.
 - По сравнению с Pipecat Vocode даёт более конкретную семантику одной разговорной сессии и barge-in; Pipecat остаётся более сильным reference для frame/worker/bus orchestration. Оба проекта не следует добавлять в runtime одновременно.
+
+### 17. Voice Lab
+
+- **Источник:** [saharmor/voice-lab](https://github.com/saharmor/voice-lab), [README](https://github.com/saharmor/voice-lab/blob/main/README.md)
+- **Дата проверки:** 2026-08-21
+- **Ревизия/commit:** `8b89fdf101784dfa116710f58edc988cc7332957`
+- **Лицензия исходного кода:** Apache-2.0; в репозитории есть `NOTICE` с требованием attribution/link-back.
+- **Состав:** Python-пакеты `core`, `llm_testing`, `speech_testing`, `eval_agent`, `web_eval`, JSON-конфигурации сценариев и метрик, HTML report generation. GitHub показывает 122 commits; последний исследованный commit датирован 2025-05-02.
+- **Назначение:** тестирование и оценка voice/LLM agents по моделям, system prompts, personas и заданным критериям. README прямо отмечает, что основной готовый сценарий пока тестирует text-часть voice agent; speech-анализ остаётся экспериментальным направлением.
+- **Краткий вывод:** для Евы ценнее всего не код выполнения, а отдельный evaluation layer: versioned scenarios, simulated personas, structured rubric, evidence, model/prompt matrix, cost/latency/quality comparison и пост-фактум speech metrics. Репозиторий не следует добавлять в runtime или делать его LLM judge единственным release gate.
+
+#### Что изучено
+
+- `llm_testing` хранит сценарий в JSON: набор моделей и prompts, initial message, strict function tool `end_conversation`, success criteria, persona, traits, mood, response style и additional context. Это позволяет прогонять один контракт на нескольких конфигурациях и проверять role switching/jailbreak-сценарии.
+- `GoalBasedTestRunner` чередует ответ voice agent и ответ симулированного callee-persona, ограничивает историю для persona, поддерживает tool call завершения и передаёт полный conversation history в evaluator.
+- `eval_metrics.json` задаёт именованные метрики с типом `success_flag` или `range_score`. `LLMConversationEvaluator` просит structured Pydantic output: summary, score, threshold, reasoning и evidence/quotes по каждому metric.
+- В сценариях уже предусмотрены adversarial cases: раздражительный собеседник, недостижимая цена, jailbreak со сменой роли и проверка обязательных подтверждений. Это хороший материал для будущих regression fixtures, но не доказательство безопасности реального действия.
+- `speech_testing` экспериментально объединяет pyannote diarization, точные timestamps stable-whisper, word-to-speaker overlap mapping, LLM mapping `SPEAKER_00/01` в `voice_agent/callee`, detection of interruptions и pauses дольше двух секунд.
+- Есть альтернативный двухканальный VAD/noise-reduction прототип и `eval_agent` с Gemini bidi WebSocket: PCM 16 kHz input, 24 kHz output, asyncio tasks, audio queue и опциональный interruption во время воспроизведения.
+- `core/utils/generate_report.py` строит HTML-отчёт по результатам и показывает conversation history вместе с метриками. Это полезный формат для человека, но строки transcript вставляются в HTML-рендер, поэтому для EvoHime требуется escaping/redaction.
+- Проверка `python -m compileall` для checkout прошла без syntax errors. Runtime/import/e2e прогон не выполнялся: speech-модули требуют внешние модели и keys, а в коде видны несовпадающие imports и зависимости, которые не полностью перечислены в requirements.
+
+#### Что можем использовать в Еве
+
+- **Отдельный evaluation artifact.** Оформить независимый от runtime пакет/запуск, где scenario содержит agent contract revision, prompt revision, provider/model revision, persona, bounded context, tool schemas и success criteria. Core не должен зависеть от evaluator для обычного выполнения.
+- **Typed metric contract.** Адаптировать поля `metric name`, `output type`, `score`, `success threshold`, `reasoning`, `evidence` и `summary`. Evidence хранить как redacted references/quoted spans с message ids и provenance, а не как безусловно полный transcript.
+- **Scenario matrix.** Прогонять одну задачу по нескольким model/prompt/provider configurations и сравнивать quality, latency, token/cost estimate, tool correctness, interruption handling и failure class. Это лучше подходит для выбора поставщика и регрессий, чем субъективный ручной просмотр.
+- **Persona simulator.** Использовать typed persona с traits, mood, response style, knowledge/context и adversarial behavior для offline fake conversations. Включить role-switching, jailbreak, ambiguity, silence, refusal, repeated request и early termination.
+- **Termination evidence.** Идея строгого `end_conversation` tool полезна как contract test: завершение допускается только при ясном reason, who-ended и последних сообщениях-доказательствах. В Еве это должно быть наблюдением/оценкой, а не полномочием обходить Core approval.
+- **Speech evaluation metrics.** Адаптировать bounded `speaker_span`, overlap/interruption span, pause duration, ASR confidence и turn latency для анализа уже разрешённого transcript/audio buffer. Нельзя из LLM speaker mapping выводить личность; неизвестный speaker остаётся unknown/unverified.
+- **Replay and report bundle.** Генерировать отчёт с scenario/config/metric files, revision hashes, transcript hash, model/provider revisions, score/evidence и failed fixture ids. Отчёт должен быть безопасно экранирован, redacted и воспроизводим без доступа к secrets.
+- **LLM-as-a-Judge как advisory signal.** Использовать structured judge для triage и сравнений, с фиксированными rubric/thresholds, повторными прогонами и human review для спорных случаев. Hard security/approval invariants проверять детерминированными assertions в Core.
+- **Attribution discipline.** Если будут заимствоваться отдельные Apache-2.0 элементы, сохранить LICENSE/NOTICE и attribution; предпочтительнее перенять форматы и идеи, написав реализацию в Rust/TypeScript самостоятельно.
+
+#### Ограничения и риски
+
+- **Не runtime.** Репозиторий Python-script-first, без стабильного сервиса, schema migration, bounded job manager, durable result store или Core security boundary. Встраивание создаст второй execution/evaluation runtime и не нужно для desktop-продукта.
+- **LLM judge не является oracle.** Оценщик может быть необъективен, недетерминирован, подвержен prompt injection из transcript и совпадать с тестируемой моделью. `reasoning`/`evidence` — полезные объяснения, но не криптографическое доказательство и не единственный критерий релиза.
+- **Секреты и PII.** Примеры содержат synthetic credit-card context, а запуск использует `OPENAI_API_KEY`, `GEMINI_API_KEY` и `HUGGING_FACE_TOKEN`. Transcript, persona context и HTML reports могут содержать PII; в Еве нужны fake secrets, redaction, retention и default-deny egress.
+- **Экспериментальная speech-часть.** `speech_testing/transcribe.py` импортирует `faster_whisper` и символ `REQUIRED_AUDIO_TYPE`, не согласованный с локальным `data_types.py`; root requirements не покрывает все используемые `pydub`, `webrtcvad`, `noisereduce` и faster-whisper imports. Compile-only успех не означает исполнимость.
+- **Diarization and identity.** Pyannote требует gated model/token и тяжёлый Python/PyTorch runtime. LLM mapping anonymous speaker labels по задаче и transcript ошибается при трёх участниках, overlap и role ambiguity; это не identity verification и не должно менять ASR text.
+- **Cloud egress.** Gemini bidi example отправляет microphone PCM в Google, а Silero VAD загружается через `torch.hub`; OpenAI judge и HF diarization также требуют внешние сервисы/модели. Для local-first Евы это только permissioned evaluation job, не обычный listener path.
+- **Realtime prototype limitations.** Audio queue не ограничена, cancellation/cleanup кооперативны, `config=None` конфликтует с последующим `config.get`, а обработка interruptions выбирает между пропуском input и попыткой interrupt. Эти решения нельзя принимать как Core guarantees.
+- **Report safety.** HTML generator вставляет данные conversation history в markup; если результат содержит `<script>` или служебные секреты, отчёт может стать XSS/PII каналом. Нужны escaping, CSP, redaction и безопасное открытие локального файла.
+- **Speech metric quality.** Простое пересечение временных сегментов чувствительно к ошибкам diarization, VAD, clock drift и неравномерным timestamps; pause threshold в две секунды — heuristic, а не универсальная UX-норма. Нужны fixtures, uncertainty и dataset-specific calibration.
+- **Test quality/maintenance.** README и code paths выглядят как исследовательский prototype: standalone eval agent помечен coming soon, часть contribution items не реализована, а актуальность провайдерских SDK и моделей требует отдельной проверки.
+
+#### Предварительное решение
+
+`адаптировать` evaluation artifacts, scenario/persona schema, metric/evidence contract, model/prompt matrix, deterministic assertions и safe report provenance; `наблюдать` за speech/eval-agent частями; `не подключать` Python Voice Lab, LLM judge как единственный gate, cloud bidi runtime и pyannote pipeline в базовый runtime Евы.
+
+#### Связь с EvoHime
+
+- Evaluation должен быть отдельным offline/CI job поверх Core IPC/test-agent harness и не переносить runtime state из Rust Core в Electron. Его входом могут быть redacted transcript events, tool receipts и voice metrics, а не сырые secrets/audio по умолчанию.
+- Для текущего listener полезны fixtures с partial/final ASR, overlap, interruption, pause, unknown speaker и cancellation. Они должны уважать существующее правило ambient storage: speaker остаётся `unverified`, persistent audio BLOB не добавляется.
+- Будущий формат может содержать `eval_run`, `eval_scenario`, `eval_metric_result`, `eval_evidence_ref`, `eval_model_revision`, `eval_failure_class` и `eval_report_manifest` с hash/provenance/retention.
+- Перед реализацией нужны deterministic Core assertions для approvals, capability boundaries, tool schemas, receipts и redaction; только после них — advisory LLM judge и human review. Критерии: повторяемость, bounded time/cost, отсутствие egress по умолчанию, безопасный отчёт и сравнение моделей по единому сценарию.
+- По отношению к уже изученному Vocode Voice Lab полезен как внешний evaluation layer, а не как voice orchestration. Его speech metrics дополняют Pipecat/Vocode lifecycle ideas, но не должны добавлять в runtime ещё один Python audio stack.
 
 ## Итог для будущего плана
 
