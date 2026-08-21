@@ -42,6 +42,7 @@
 | 19 | [mPLUG/DocOwl2](https://huggingface.co/mPLUG/DocOwl2) | Исследовано | OCR-free multi-page document understanding, high-resolution DocCompressor, page evidence, cross-page QA и document benchmark suite | Рассматривать как optional document-worker PoC; адаптировать page/evidence/evaluation contracts, custom Python/CUDA runtime не подключать напрямую |
 | 20 | [mem0ai/mem0](https://github.com/mem0ai/mem0) | Исследовано | Long-term memory API, scoped user/agent/run memory, additive extraction, SQLite history, hybrid retrieval, expiration и entity linking | Адаптировать memory contracts, provenance, hybrid retrieval и forget semantics; Python SDK, cloud service, default telemetry и raw-memory storage не подключать напрямую |
 | 21 | [letta-ai/letta](https://github.com/letta-ai/letta) | Исследовано | Stateful agent, memory blocks, recall, git-backed MemFS, context lifecycle, memory tools, sandbox confinement и persistent agent identity | Адаптировать layered-memory/context/approval contracts и историю изменений; `letta-code`, Cloud, App Server и архивную V1 напрямую не подключать |
+| 22 | [AgentOps-AI/agentops](https://github.com/AgentOps-AI/agentops) | Исследовано | OpenTelemetry traces/spans, LLM/tool/workflow semantic conventions, token/cost/latency metrics, session replay и evaluation validation | Адаптировать event/trace/metrics contracts и local observability; Python SDK, облачный OTLP и self-hosted dashboard напрямую не подключать |
 
 ## Карточки исследований
 
@@ -3123,6 +3124,73 @@ HF token, speaker embeddings или cloud/provider diarization в базовый
 - Будущие IPC-команды могут быть `memory.block.get`, `memory.block.propose`, `memory.block.commit`, `memory.search`, `memory.recall`, `memory.history`, `memory.supersede` и `memory.forget`; Core сам устанавливает scope и approval outcome, Electron отображает diff/receipt.
 - Любая запись из ambient/transcript проходит текущие redaction и policy rules; `speaker=unverified`, отсутствие audio BLOB и запрет автоматического превращения raw capture в long-term memory сохраняются.
 - Практический критерий пригодности: после перезапуска и compaction Ева воспроизводит только разрешённые факты с citations, не смешивает workspace scopes, отклоняет stale patch, сохраняет audit/revision history, полностью обрабатывает forget и не запускает memory-worker без sandbox/permission.
+
+### 22. AgentOps
+
+- **Источник:** [AgentOps-AI/agentops](https://github.com/AgentOps-AI/agentops), [документация](https://docs.agentops.ai/), [README SDK](https://github.com/AgentOps-AI/agentops/blob/main/README.md)
+- **Дата проверки:** 2026-08-21
+- **Ревизия/commit:** `f8e907b92dabe47232978023fdcb01e2a7d4b752`; Python SDK `0.4.21`; checkout `main` на этой ревизии
+- **Лицензия:** корневой Python SDK — MIT. Каталог `app/` (FastAPI API, Next.js dashboard и self-hosted platform) содержит отдельный `LICENSE` под Elastic License 2.0; лицензии интеграций и зависимостей проверяются отдельно.
+- **Состав:** Python SDK поверх OpenTelemetry, decorators/context managers, provider/framework instrumentation, semantic conventions, OTLP exporters, metrics, validation helpers и legacy events; отдельный app-стек с FastAPI, Next.js, Supabase, ClickHouse и Docker Compose.
+- **Назначение:** observability для AI agents: session replay, execution graph, LLM/tool/workflow spans, token usage, cost/latency/error metrics, framework integrations и evaluation/debugging.
+- **Краткий вывод:** AgentOps полезен как reference для Core-owned telemetry schema и UI-диагностики, особенно для иерархии run → model/tool → result/error и унификации token/cost/latency. Python SDK и внешний backend создадут второй runtime и network egress; в базовую Еву их не подключать.
+
+#### Что изучено
+
+- Root README описывает session replay, step-by-step execution graphs, LLM cost management, framework integrations и self-hosting. Public SDK и dashboard — разные части проекта с разными лицензиями и операционными требованиями.
+- SDK строится вокруг OpenTelemetry `TracerProvider`, `BatchSpanProcessor`, OTLP HTTP exporter и `MeterProvider`; queue size, flush interval, endpoint и custom exporter/processor конфигурируются. Сессия является root span, вложенные agent/workflow/operation/tool/LLM spans наследуют текущий context.
+- Public API имеет `init`, `start_trace`, `end_trace`, `update_trace_metadata`, decorators `session`, `agent`, `task`, `workflow`, `operation`, `tool`, `guardrail`, `track_endpoint` и legacy-совместимость `start_session/end_session/ToolEvent/LLMEvent`.
+- Decorator factory обрабатывает sync/async функции, sync/async generators и классы; записывает input/output, exception, tags, version и custom attributes. Для endpoint создаются отдельные request/response spans, для streaming span завершается после исчерпания генератора.
+- Semantic conventions выделяют `agent.*`, `tool.*`, `workflow.*`, `gen_ai.*`, `operation.*`, `http.*`, trace/span/parent IDs, status и session end state. Indexed prompt/completion/tool-call fields задают стабильный формат для dashboard и анализа.
+- Tool schema включает `tool.id`, `tool.name`, `tool.description`, `tool.parameters`, `tool.result`, `tool.status`; statuses — `executing`, `succeeded`, `failed`. Workflow schema дополнительно содержит run/session IDs, step status, model/provider, message/tool counts, streaming flag и memory/storage type.
+- LLM instrumentation извлекает prompt/completion/total tokens, cached prompt/read tokens и reasoning tokens из разных provider response shapes. Есть token histogram, duration histogram, exception counter, generation-choice counter и derived token/cache efficiency.
+- Trace lifecycle имеет explicit end state `SUCCESS`, `ERROR`, `UNSET`, context manager автоматически завершает span по exception, а shutdown пытается закрыть active traces и force-flush exporters. Отдельный validation helper запрашивает trace по ID, ждёт eventual export, проверяет минимальное число spans и наличие LLM activity/metrics.
+- Authenticated OTLP exporter поддерживает dynamic JWT provider, timeout, compression, custom non-critical headers и fail-soft handling для 401/403/network/API errors. Authorization и другие критические headers нельзя переопределить пользовательскими headers.
+- Trace attributes могут содержать serialized input/output до 1 MiB на значение; `safe_serialize` превращает модели и сложные объекты в JSON или string, но это redaction/secret filtering не заменяет. Prompt, tool arguments, результаты, headers и HTTP body могут попасть в telemetry при включённом capture.
+- При создании стандартной session SDK добавляет system resource attributes: host/OS/CPU/RAM и imported libraries. Вспомогательный `get_host_env` также умеет собирать installed packages, рабочий каталог, virtualenv и disk details; `env_data_opt_out` присутствует в config/docs, но его применение к каждой точке сбора нужно проверять отдельно.
+- Self-hosted app принимает OTLP, сохраняет trace/span/event maps в ClickHouse и строит dashboard через FastAPI/Next.js; Supabase отвечает за auth/primary data. В schema есть TTL для отдельных telemetry tables, но retention/PII policy Евы нельзя считать готовой по этому примеру.
+- Unit tests покрывают session lifecycle, decorators, async/concurrent instrumentation, token counting, serialization, attributes, exporter header protection и provider fixtures. `python -m compileall -q agentops` прошёл; выбранные pytest-тесты не стартовали из-за отсутствующего dev-пакета `requests_mock` в окружении.
+
+#### Что можем использовать в Еве
+
+- **Core trace contract.** Перенять иерархию `run/session → agent turn → model call/tool call/guardrail → result/error`, связывая события через `trace_id`, `span_id`, `parent_span_id`, `correlation_id` и sequence. Это дополняет существующие Core run/task/approval receipts и Electron operations timeline.
+- **Typed semantic conventions.** Зафиксировать Rust/IPC schema для `agent`, `model`, `tool`, `workflow`, `approval`, `retrieval`, `memory`, `listener` и `supervisor` events. Имена, status enums, version и required fields должны быть каноническими, а renderer не должен придумывать их самостоятельно.
+- **Tool lifecycle.** Использовать состояния `requested/approved/running/succeeded/failed/cancelled/denied`, bounded parameters/result preview, duration, retry count и policy decision. Связать tool span с immutable approval `call_hash`, capability scope и durable receipt.
+- **LLM usage accounting.** Перенять `prompt_tokens`, `completion_tokens`, `total_tokens`, cache/read/reasoning tokens, model/provider, finish reason и streaming timing. Стоимость считать в Core по pinned model-price manifest, не доверять цене, пришедшей от provider или UI.
+- **Latency metrics.** Ввести duration/TTFT/streaming duration/chunk count, queue wait, tool execution, retrieval and approval latency. Histogram/counter semantics пригодны для локальной диагностики и budget decisions, без отправки raw prompts.
+- **Error and end-state model.** Явно различать success, error, cancelled, denied, indeterminate, timeout и crash-recovered. Это улучшит текущие supervisor/core logs и не позволит UI считать «нет ответа» успешным завершением.
+- **Context propagation.** Перенять OpenTelemetry-style current context для nested async/tool work, но реализовать его в Rust task-local execution context и IPC frames; не добавлять Python contextvars или второй telemetry SDK.
+- **Bounded capture policy.** Идею decorator `capture_request/capture_response` адаптировать как per-event capture mode: metadata-only, redacted preview, hash/citation или explicit full payload. Default для Евы — no raw prompt/secret/header/audio capture; payload size, depth and item counts ограничиваются Core.
+- **Evaluation hooks.** Перенять trace-based validation: после run проверять наличие ожидаемых spans, tool/LLM activity, terminal state, citations, approval receipts и budgets. Evaluation result должен ссылаться на trace/run IDs и fixture revision.
+- **Local replay/debug UI.** Дерево spans, timeline, session drilldown и time-to-event графики полезны для Electron OperationsPanel. UI получает redacted snapshots через IPC, а не читает OTLP/SQLite/ClickHouse напрямую.
+- **Export abstraction.** Интерфейс custom exporter/processor полезен как design-only boundary: local JSONL/SQLite sink по умолчанию, optional OTLP exporter только как явно включаемая provider/network capability с consent, redaction и bounded queue.
+- **Quality fixtures.** Перенять provider fixtures и тесты на streaming, async generators, nested spans, partial failures, exporter auth/header protection, missing usage fields, retries, flush/shutdown и concurrent runs. Добавить Windows supervisor restart, IPC replay и approval denial cases.
+- **Cost and resource dimensions.** Учитывать model/provider, workspace/project scope, run/task, prompt source, retrieval count, tool count, CPU/memory and listener/vision workload. Это позволит видеть стоимость и latency, не превращая observability в скрытое хранение пользовательского контекста.
+
+#### Ограничения и риски
+
+- **Second runtime/backend.** Python SDK требует Python/OpenTelemetry и provider-specific integrations; self-hosted platform требует FastAPI, Next.js, Supabase, ClickHouse, Docker и внешнюю auth/storage topology. Это несовместимо с Rust Core + SQLite + supervisor как единственным владельцем state.
+- **Default cloud egress.** SDK по умолчанию экспортирует traces/metrics на `otlp.agentops.ai`, использует API/JWT auth и dashboard URLs. Для local-first Евы это должно быть выключено; даже optional exporter не может отправлять данные до redaction/consent.
+- **Sensitive payload capture.** Input/output decorators сериализуют произвольные args/results и могут записать prompts, tool arguments, filesystem paths, HTTP headers/body, secrets, PII, ambient transcript или screenshots. Size limit — не privacy filter; нужен deny-by-default redaction and field policy.
+- **Environment leakage.** Host/OS/CPU/RAM/imported-libraries and helper environment data раскрывают fingerprint, working directory, installed packages и disk layout. `env_data_opt_out` нельзя принимать на доверии без теста всех collection paths; в Еве environment telemetry должна быть allow-listed and coarse-grained.
+- **Telemetry availability versus execution.** Fail-safe exporter errors и queued batch export полезны для observability, но Core execution не должен ждать сеть, менять tool outcome или терять approval receipt из-за exporter failure. Local durable event write должен быть отдельным обязательным путём.
+- **Loss and eventual consistency.** Batch queue, periodic flush, shutdown and network retry могут терять/задерживать spans. Для Евы acceptance требует SQLite transaction/sequence first, replay after restart and explicit export status.
+- **Semantic drift.** В проекте есть legacy event API и современный OpenTelemetry API, несколько provider integrations и TODO/отклонения от GenAI conventions. Не копировать поля без собственной schema governance and compatibility tests.
+- **Dashboard license boundary.** MIT относится к SDK, но `app/` лицензирован ELv2 и его hosted-service ограничения неприменимы как готовая база для redistributable EvoHime. Внешние SaaS, Supabase, ClickHouse, Sentry/PostHog/Stripe и provider licenses также отдельны.
+- **Privacy/retention mismatch.** ClickHouse tables, trace replay and indexed attributes are designed for analytics, not user-visible forget of prompts, paths, secrets or derived data. Retention and erasure must be Core-owned and verifiable.
+- **Instrumentation fragility.** Monkey-patching/provider wrappers and decorators can break across SDK versions, miss streaming branches or double-instrument calls. In EvoHime instrumentation should happen at canonical Core gateways, not by patching arbitrary user libraries.
+- **Metrics are not truth.** Token/cost values may be missing, provider-specific or estimated; dashboard success and LLM span presence do not prove task correctness, policy compliance or user authorization. Evaluation needs deterministic receipts and independent assertions.
+
+#### Предварительное решение
+
+`адаптировать` OpenTelemetry-inspired trace/span hierarchy, typed semantic conventions, tool/LLM lifecycle, token/latency/cost metrics, bounded capture modes, local replay UI and trace-based validation; `наблюдать` за AgentOps TypeScript SDK/evaluation features; `не подключать` Python SDK, default cloud OTLP, AgentOps SaaS и ELv2 self-hosted app в базовый runtime Евы.
+
+#### Связь с EvoHime
+
+- AgentOps хорошо ложится на уже существующие Core-owned events, supervisor lifecycle, approval receipts, retrieval citations и Electron OperationsPanel: нужна не внешняя observability platform, а единый локальный event/trace contract.
+- Возможные будущие IPC/read models: `run.trace`, `run.span`, `run.metrics`, `run.replay`, `run.export_status`; write-side остаётся только в Core, а Electron получает redacted snapshots с sequence/correlation IDs.
+- Для LLM/model gateway логировать usage и timing; для tools — canonical call hash, scope, approval, cancellation, output summary; для RAG/memory — query plan, source IDs, citations, freshness and redaction decision; для ambient — только уже разрешённые transcript events, без audio BLOB.
+- Базовые критерии: no network required for execution, no raw secrets/prompts by default, durable local event before optional export, bounded payload/queue, restart recovery, ordered replay, exact approval linkage, scope isolation, retention/forget and exporter failure cannot change tool result.
 
 ## Итог для будущего плана
 
