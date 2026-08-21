@@ -21,7 +21,7 @@
 
 | Файл | Раздел | Зависимости | Приоритет |
 |---|---|---|---|
-| [01-execution-ledger.md](repository-research/01-execution-ledger.md) | Журнал выполнения и typed receipts | нет | блокирующий фундамент |
+| 01 execution ledger | Журнал выполнения и typed receipts | перенесён в план 08 | блокирующий фундамент |
 | [02-policy-and-capabilities.md](repository-research/02-policy-and-capabilities.md) | Policy, permissions, scope и approval | 01 частично | блокирующий фундамент |
 | [03-ipc-adapters-and-providers.md](repository-research/03-ipc-adapters-and-providers.md) | IPC, version negotiation и provider boundary | 01–02 | блокирующий фундамент |
 | [04-memory-and-rag.md](repository-research/04-memory-and-rag.md) | Память, retrieval и forget | 01–03 | следующий слой |
@@ -51,6 +51,9 @@
 
 Файл 10 используется на каждом этапе и не является самостоятельной
 реализационной задачей.
+
+Раздел 01 перенесён в подпункты плана 08; исходный исследовательский файл
+удалён после переноса требований и критериев готовности.
 
 ## Общая архитектурная граница
 
