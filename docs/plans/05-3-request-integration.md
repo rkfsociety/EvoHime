@@ -68,6 +68,13 @@ metadata/hash-only storage были успешно записаны repository-�
 
 После successful commit provider/network failure является обычным request outcome и не удаляет envelope.
 
+До фактического вызова provider checkpoint отдельной bounded транзакцией
+выставляет и коммитит `model_requests.dispatch_at`. Если эта запись не
+закоммичена, provider не вызывается. Marker означает только «dispatch мог
+начаться»; он не является доказательством ответа. `dispatch_at IS NULL` после
+restart является доказательством отсутствия provider dispatch и используется
+этапом [05.7](05-7-crash-recovery.md) для классификации `interrupted`.
+
 Лимиты envelope из [05.1](05-1-canonical-request-contract.md) передаются в Context Budget Manager как вход планирования. Проверка перед commit остаётся backstop-ом на ошибку планировщика, а не штатным путём отказа.
 
 ### Архитектурный барьер checkpoint

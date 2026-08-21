@@ -147,7 +147,7 @@ Envelope описывает **фактически отправляемый** re
 | 05.4 Evidence provenance | [05-4](05-4-evidence-provenance.md) | 05.1, 05.2, 05.3 |
 | 05.5 Signed request receipt и tool linkage | [05-5](05-5-receipt-and-tool-linkage.md) | 05.1, 05.2, 05.3 |
 | 05.6 ContextProjection и append-only shadowing | [05-6](05-6-compaction-shadowing.md) | 05.1, 05.2, 05.4 |
-| 05.7 Crash recovery | [05-7](05-7-crash-recovery.md) | 05.2, 05.3 |
+| 05.7 Crash recovery | [05-7](05-7-crash-recovery.md) | 05.2, 05.3, 05.5 |
 | 05.8 Удаление и retention | [05-8](05-8-redaction-and-retention.md) | 05.2, 05.4 |
 | 05.9 Offline verification и export | [05-9](05-9-verify-and-export.md) | 05.1, 05.2, 05.5 |
 
@@ -155,12 +155,14 @@ Envelope описывает **фактически отправляемый** re
 05.1 контракт ── 05.2 хранение ── 05.3 интеграция ─┬── 05.4 evidence ─┬── 05.6 shadowing
                                                    │                  │
                                                    │                  └── 05.8 удаление и retention
-                                                   ├── 05.5 receipts + tool linkage ── 05.9 verify/export
-                                                   │
-                                                   └── 05.7 recovery
+                                                   └── 05.5 receipts + tool linkage ┬── 05.9 verify/export
+                                                                                    └── 05.7 recovery
 ```
 
-Стрелка означает «блокирующая зависимость от левого узла»; 05.6, 05.8 и 05.9 дополнительно зависят от 05.1 и 05.2, что видно из таблицы выше.
+Стрелка означает «блокирующая зависимость от левого узла»; 05.7 начинается
+после 05.5, потому что recovery использует authoritative
+`model_responses`/`tool_intents`. 05.6, 05.8 и 05.9 дополнительно зависят от
+05.1 и 05.2, что видно из таблицы выше.
 
 Обратные связи разрешены как опциональные с описанной деградацией и перечислены в самих файлах этапов. Три из них существенны:
 
