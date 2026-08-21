@@ -34,6 +34,7 @@
 | 11 | [kyutai-labs/moshi](https://github.com/kyutai-labs/moshi) | Исследовано | Full-duplex speech-text model, Mimi streaming codec, Rust/Candle backend, binary WebSocket protocol и audio client | Рассматривать как наиболее близкий voice-runtime кандидат; адаптировать протокол/streaming идеи, runtime не подключать до PoC и security/licensing плана |
 | 12 | [pipecat-ai/pipecat](https://github.com/pipecat-ai/pipecat) | Исследовано | Frame-based realtime orchestration, workers/bus/jobs, transports/serializers, RTVI, tool lifecycle, metrics и behavioral evals | Адаптировать frame/event/worker/eval контракты; Python runtime и внешние transport-интеграции не подключать |
 | 13 | [openai/whisper](https://github.com/openai/whisper) | Исследовано | Локальный multilingual seq2seq ASR, 16 kHz preprocessing, 30-секундные окна, language detection, timestamps и quality fallback | Адаптировать ASR-контракты, model manifest и evaluation; Python runtime не подключать, текущий listener остаётся на whisper.cpp |
+| 14 | [jianfch/stable-ts](https://github.com/jianfch/stable-ts) | Исследовано | Whisper post-processing: silence suppression/VAD, stable word timestamps, alignment/refinement, deterministic regrouping и structured result | Адаптировать post-processing/evaluation идеи; archived Python package и Silero/PyTorch dependencies не подключать |
 
 ## Карточки исследований
 
@@ -2328,6 +2329,211 @@ orchestration contract.
   hallucination rejection, language accuracy на русской речи, word timestamp
   cost, model checksum/license manifest, offline startup, supervisor restart,
   redacted provenance и отсутствие необъявленного network egress.
+
+### 14. stable-ts
+
+- Источник: [репозиторий jianfch/stable-ts](https://github.com/jianfch/stable-ts),
+  [README с API и параметрами](https://github.com/jianfch/stable-ts/blob/main/README.md)
+- Дата проверки: 2026-08-21
+- Ревизия/commit: `e312072cc024ae9fceb25b057d7d18524873a02b`
+  (`2026-05-30`, `Add note about paused development`)
+- Статус: репозиторий архивирован владельцем 2026-05-30 и read-only; README
+  сообщает, что разработка indefinitely paused.
+- Версия: `2.19.1`.
+- Лицензия: MIT, copyright Jian 2022; лицензии Whisper, Silero VAD,
+  faster-whisper, Hugging Face, MLX, Demucs и других optional components
+  проверяются отдельно.
+- Состав: Python package `stable_whisper`, Whisper word-level wrapper,
+  `WhisperResult`/`Segment`/`WordTiming`, silence stabilization, VAD/audio
+  helpers, alignment/refinement, regroup/split/merge operations, output to
+  SRT/VTT/ASS/TSV/JSON и adapters для Faster-Whisper, Hugging Face и MLX.
+- Зависимости: Python `>=3.8`, NumPy, PyTorch, torchaudio, tqdm и
+  `openai-whisper>=20230314,<=20250625`; optional extras тянут
+  faster-whisper, Transformers/Optimum/Accelerate или mlx-whisper.
+- Назначение: повысить стабильность Whisper timestamps и сделать результат
+  пригодным для субтитров, поиска, alignment и дальнейшей обработки. Это
+  post-processing library, а не отдельная ASR-модель, realtime service или
+  security boundary.
+- Краткий вывод: полезен для алгоритмов обработки word/segment timestamps и
+  для тестовых сценариев ambient transcript. Как runtime-зависимость Евы не
+  подходит из-за archived статуса, Python/PyTorch stack, mutable result model,
+  optional model downloads и отсутствия product-level lifecycle/security.
+
+#### Что изучено
+
+- **Позиционирование над Whisper.** `transcribe()` модифицирует Whisper decode,
+  добавляет preprocessing (voice isolation/noise removal, low/high-pass), а
+  затем корректирует timestamps по тишине и regrouping. `transcribe_minimal()`
+  сохраняет более близкую к upstream Whisper decode path, но всё равно
+  применяет post-processing.
+- **Silence suppression.** Алгоритм строит silent intervals по waveform
+  loudness/threshold mask или получает их от Silero VAD. Затем он двигает
+  start/end word timestamps к границам речи, учитывая `min_word_dur`,
+  `min_silence_dur`, `nonspeech_error`, положение слова и разрешение оставить
+  начало либо конец. Текст и token sequence при этом не должны заменяться
+  молчащим post-processing.
+- **VAD modes.** `vad=True` подключает Silero VAD с настраиваемым threshold,
+  sample-rate/chunk constraints и cached model instance. Без VAD stable-ts
+  использует собственную energy/silence suppression mask с `q_levels` и
+  `k_size`. README отдельно отмечает, что `suppress_silence=True` не
+  поддерживается для некоторых `AudioLoader` streaming paths.
+- **Word-level timing.** Word timings строятся через cross-attention
+  alignment/DTW и затем используются как основа для suppression и regrouping.
+  Для отдельного `align()`/`align_words()` можно передать уже известный текст
+  или segment result и получить новые временные границы без замены текста.
+  `refine()` использует другой model pass для уточнения существующих word
+  timestamps; это увеличивает latency и memory.
+- **Regrouping.** `WhisperResult.regroup()` принимает детерминированную строку
+  операций либо default algorithm `da`. Операции делят/объединяют слова и
+  segments по gap, punctuation, длине, duration, sentence boundaries и
+  instant words. История операций сохраняется в `regroup_history`, что даёт
+  полезный audit trail для воспроизводимого post-processing.
+- **Result model.** `WhisperResult` содержит language, segments и words;
+  `Segment` и `WordTiming` поддерживают offset, split, merge, pad, clamp,
+  remove, search/find, lock и conversion между word/segment level. Это
+  удобная in-memory representation, но она mutable и не является durable
+  SQLite schema или authenticated IPC payload.
+- **Streaming/file handling.** `AudioLoader` умеет читать source кусками,
+  ограничивать portions и передавать progress callback; `stream=True` в
+  основном означает chunked loading 30-second windows. Это не делает
+  Whisper decode true low-latency streaming и не задаёт cancel/restart,
+  queue/backpressure или partial transcript protocol.
+- **Alternative backends.** Adapters позволяют прогонять похожий
+  post-processing поверх Faster-Whisper, batched inference, Hugging Face и
+  MLX. Для alignment/refinement есть предупреждение о дополнительной цене,
+  особенно на Faster-Whisper. Это показывает полезную границу: стабилизация
+  результата может быть отделена от конкретного inference engine.
+- **Long-form and recovery helpers.** Есть `clip_timestamps`, progress
+  callback, `resume` из незавершённого result и операции locate/find. Для
+  локальных файлов это полезно, но resume-файл нельзя автоматически считать
+  trusted Core state: его нужно связывать с audio hash, model revision и
+  policy snapshot.
+- **Outputs.** Package умеет SRT/VTT/ASS word-level output, TSV, JSON и
+  karaoke-like formats. Для Евы это источник export/view model ideas, а не
+  внутренний storage contract: Core должен хранить typed provenance и schema
+  version, а экспорт строить отдельно.
+- **Тесты.** `test_transcribe.py` проверяет text/word timestamps на JFK
+  fixture, `test_align.py` сравнивает align/align_words, `test_refine.py`
+  проверяет изменение временных границ. В checkout выполнен `compileall`;
+  синтаксис package прошёл, но выдан SyntaxWarning об escape sequence в
+  docstring. Model-dependent tests и VAD/русские/noise fixtures не запускались.
+
+#### Что можем использовать в Еве
+
+- **Отдельный transcript post-processing stage.** После engine decode ввести
+  Core-owned этап `raw_segments -> stabilized_segments -> ambient_utterance`.
+  Engine только сообщает text/timestamps/confidence, а стабилизатор может
+  корректировать границы, split/merge и silence gaps с отдельной версией
+  алгоритма.
+- **Безопасная коррекция границ.** Перенять принцип: suppression меняет
+  temporal boundaries, но не silently rewrites recognized text/tokens. В
+  receipt хранить `raw_start/end`, `stable_start/end`, `stabilizer_revision`,
+  `silence_source` и reason, чтобы UI и audit могли отличить inference от
+  post-processing.
+- **Два режима silence detection.** Описать capability `energy_mask` и
+  `vad_model` с разными quality/cost/privacy профилями. Текущий listener уже
+  владеет segmentation и model ladder, поэтому stable-ts не должен создавать
+  второй VAD state machine; его правила можно использовать для сравнения и
+  уточнения существующего этапа.
+- **Deterministic regroup DSL.** Идея строкового `regroup_algo` полезна как
+  design pattern, но в Еве команды должны быть typed enum/serde schema, а не
+  свободная строка. Каждая операция получает bounded args, revision и
+  before/after counts; invalid chain отклоняется до изменения результата.
+- **Immutable-ish result snapshots.** `WhisperResult` показывает удобный
+  набор word/segment operations. Для Core лучше сделать immutable versioned
+  snapshots или event-based transform: `raw -> stabilized -> grouped`, с
+  сохранением raw result и возможностью deterministic replay.
+- **Alignment/refinement как опциональная команда.** Пользовательский
+  transcript editor или offline export может запросить дорогой refine/alignment
+  job. Для ambient real-time path по умолчанию отключить его, использовать
+  deadline/cancellation и не блокировать microphone/agent loop.
+- **Resume contract.** Для длинных аудиозаписей полезен checkpoint с
+  `source_hash`, source portion, last stable segment ID, model revision,
+  decoder options и post-processing revision. Это можно сопоставить с
+  existing transcript storage, но checkpoint должен быть authenticated и
+  безопасно удаляемым.
+- **Search/evidence helpers.** `find`/`locate` и сохранение segment/word
+  boundaries могут улучшить поиск по локальному transcript и citation
+  evidence. Результат поиска должен ссылаться на `episode_id`/utterance ID,
+  timestamp и provenance, а не превращаться в новую копию текста без связи.
+- **Backend conformance.** Stable-ts показывает, что один стабилизатор можно
+  проверять поверх whisper.cpp, reference Whisper и Faster-Whisper. Это
+  хороший будущий comparison harness для EvoHime, но не причина тянуть все
+  backend adapters в поставку.
+- **Regression fixtures.** Перенять классы тестов: слово пересекает
+  timestamp boundary, длинная тишина до/после слова, короткая межсловная
+  пауза, punctuation split/merge, repeated/hallucinated segment, align result
+  с другим текстом, resume после обрыва и монотонность timestamps.
+
+#### Ограничения и риски
+
+- **Проект архивирован.** Upstream development indefinitely paused, поэтому
+  новые версии Whisper/PyTorch/Transformers и Windows packaging могут сломать
+  compatibility. Нельзя добавлять stable-ts как floating dependency или
+  строить на нём долгосрочный runtime contract.
+- **Python/PyTorch dependency surface.** Package требует внешний Python,
+  PyTorch, torchaudio и FFmpeg; optional VAD тянет Silero model, а alternative
+  backends добавляют собственные runtimes. Это несовместимо с правилом
+  EvoHime о Rust Core и отсутствующем внешнем Python в поставке.
+- **Silence adjustment может скрыть речь.** Threshold/VAD ошибается на шуме,
+  шёпоте, музыке, overlap и русском акценте. Слишком агрессивная suppression
+  может двигать timestamp, удалять segment или ломать короткие слова. Нужны
+  confidence, raw boundaries и возможность отключить correction.
+- **Post-processing не лечит hallucination полностью.** Suppress silence и
+  instant-word filters уменьшают артефакты времени/тишины, но не доказывают,
+  что текст произнесён. Transcript нельзя использовать как permission,
+  approval или tool argument без Core policy и user confirmation.
+- **Mutable result и provenance gap.** Методы `remove`, `split`, `merge`,
+  `regroup` изменяют in-memory result; `regroup_history` полезен, но не
+  заменяет signed/auditable event chain. В Еве каждый transform должен быть
+  versioned, bounded и воспроизводимым.
+- **External URL/audio surface.** Поддержка URL, yt-dlp и FFmpeg удобна для
+  research, но создаёт SSRF, shell/process, egress, oversized input и privacy
+  риски. Core должен принимать только approved local/provider audio stream;
+  network fetching остаётся отдельным permissioned tool.
+- **Extra model and memory cost.** VAD, second alignment/refinement model,
+  denoiser/Demucs и dynamic attention heads могут удвоить latency/memory.
+  Нельзя включать их в microphone path без budget, cancellation и fallback.
+- **Compatibility pins.** `openai-whisper<=20250625` и optional upper bounds
+  на Transformers отражают реальную fragility monkey-patching/adapter layer.
+  Для текущего whisper.cpp ABI эти Python compatibility rules напрямую не
+  переносятся.
+- **Test coverage is narrow.** Основные fixtures — короткая англоязычная
+  речь JFK; нет доказанной точности VAD на русском, speaker overlap, noisy
+  ambient audio, long-running Windows listener, crash/restart и bounded queue.
+- **Лицензии компонентов.** MIT stable-ts не покрывает Silero VAD, Demucs,
+  PyTorch, FFmpeg, Faster-Whisper, MLX или downloaded checkpoints. Нужен
+  component/license manifest, если какие-либо алгоритмы или assets попадут в
+  поставку.
+
+#### Предварительное решение
+
+`адаптировать silence-boundary correction, deterministic regrouping,
+versioned transcript transforms, alignment/refinement job semantics и
+regression fixtures`; `наблюдать за stable-ts как archived reference`;
+`не подключать Python package, Silero VAD, yt-dlp/FFmpeg URL path и optional
+backends в desktop runtime`.
+
+Stable-ts логически дополняет Whisper, но не заменяет текущий whisper.cpp:
+Whisper задаёт ASR reference, stable-ts — post-processing reference, а
+EvoHime listener остаётся Core-owned native runtime с уже существующими
+manifest, segmentation, deduplication и model-ladder policy.
+
+#### Связь с EvoHime
+
+- Сопоставить `WordTiming`/`Segment` с текущими `ambient_utterances` и
+  listener contract только на уровне design/evaluation; исходные Rust
+  контракты в рамках исследования не менять.
+- Возможный будущий этап: отдельный deterministic `transcript-stabilizer`
+  в Rust Core, который получает raw listener segments и возвращает новую
+  versioned snapshot, сохраняя raw boundaries и provenance.
+- Для VAD/silence сравнить stable-ts rules с уже реализованной segmentation;
+  не допускать двух конкурирующих источников истины для utterance boundaries.
+- Критерии будущей проверки: монотонность и bounded timestamps, raw/stable
+  provenance, no text mutation during boundary correction, deterministic
+  regroup replay, русская речь/noise/silence fixtures, cancellation of refine,
+  no URL egress, no unbounded audio retention и корректное восстановление
+  после restart.
 
 ## Итог для будущего плана
 
