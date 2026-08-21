@@ -34,6 +34,29 @@ const REQUEST_TIMEOUT_MS = 120_000
 /** Ограниченный backoff: неудача не превращается в цикл запросов к GitHub. */
 export const RETRY_BACKOFF_MS = [15_000, 60_000, 300_000] as const
 
+/**
+ * Превращает малополезное сообщение undici `fetch failed` в текст, по которому
+ * можно понять, что чинить. Причина запроса не должна теряться на границе UI.
+ */
+export function describeListenerRuntimeError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error)
+  const message = error.message.trim()
+  if (message !== 'fetch failed') return message || 'Неизвестная ошибка установки.'
+
+  const cause = error.cause
+  if (cause instanceof Error && cause.message.trim()) {
+    return `Сетевая ошибка GitHub: ${cause.message.trim()}`
+  }
+  if (typeof cause === 'object' && cause !== null) {
+    const details = cause as { readonly code?: unknown; readonly hostname?: unknown }
+    if (typeof details.code === 'string' && typeof details.hostname === 'string') {
+      return `Сетевая ошибка GitHub: ${details.code} (${details.hostname})`
+    }
+    if (typeof details.code === 'string') return `Сетевая ошибка GitHub: ${details.code}`
+  }
+  return 'Не удалось подключиться к GitHub. Проверь подключение, прокси или VPN и повтори установку.'
+}
+
 export interface ListenerRuntimeEntry {
   readonly role: string
   readonly name: string
@@ -192,7 +215,7 @@ export class ListenerRuntimeService {
         RETRY_BACKOFF_MS[Math.min(this.failures - 1, RETRY_BACKOFF_MS.length - 1)] ??
         RETRY_BACKOFF_MS[RETRY_BACKOFF_MS.length - 1]!
       this.nextAttemptAtMs = (this.deps.now ?? Date.now)() + backoff
-      const message = error instanceof Error ? error.message : String(error)
+      const message = describeListenerRuntimeError(error)
       this.deps.log('warn', 'listener_runtime.download_failed', { message })
       return this.patch({
         state: 'failed',

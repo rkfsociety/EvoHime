@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, Notification, safeStorage } from 'electron'
+import { app, BrowserWindow, globalShortcut, net, Notification, safeStorage } from 'electron'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
@@ -322,6 +322,9 @@ function createListenerRuntimeService(): ListenerRuntimeService {
   })
   return new ListenerRuntimeService({
     toolsDirectory: join(dataDirectory(), 'tools', 'listener'),
+    // Electron's network stack honours the Windows proxy/certificate store;
+    // Node/undici fetch does not reliably do so on a desktop installation.
+    fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
     repositoryUrl: config.repositoryUrl,
     // Токен только повышает лимит анонимных запросов к GitHub; его отсутствие
     // не ошибка, поэтому неудачный поиск даёт `null`, а не отказ.

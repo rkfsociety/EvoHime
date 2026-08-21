@@ -895,7 +895,29 @@ function dispatch(
     // Загрузка идёт сотнями мегабайт: renderer получает финальный статус, а
     // ход загрузки — событиями, чтобы окно не ждало ответа минутами.
     case 'listener.downloadRuntime':
-      return listenerRuntime.download().then((value) => ({ ok: true, value }))
+      return listenerRuntime.download().then(async (value) => {
+        if (value.state !== 'ready') return { ok: true, value }
+
+        // Listener выбирает DLL и модель один раз при старте процесса. После
+        // установки его нужно поднять заново, иначе он навсегда останется на
+        // NullEngine, с которым был запущен до появления каталога tools.
+        try {
+          const restarted = await restartCore()
+          if (!restarted) {
+            return {
+              ok: true,
+              value: { ...value, message: `${value.message} Перезапусти EvoHime, чтобы открыть движок.` }
+            }
+          }
+        } catch (error) {
+          log('warn', 'shell.listener_restart_failed', { error })
+          return {
+            ok: true,
+            value: { ...value, message: `${value.message} Перезапусти EvoHime, чтобы открыть движок.` }
+          }
+        }
+        return { ok: true, value }
+      })
 
     // Постоянное слушание (план 04.5). Оболочка только пересылает: ядро
     // заново проверяет capability, политику и подтверждение удаления.

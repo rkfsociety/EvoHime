@@ -7,6 +7,7 @@ import type {
   ShellState
 } from '../src/shared/api'
 import type { ProviderUpdate } from '../src/main/provider-store'
+import type { ListenerRuntimeStatus } from '../src/shared/listener-runtime'
 import {
   CLIPBOARD_CHANNEL,
   INVOKE_CHANNEL,
@@ -183,7 +184,7 @@ const updates = {
 }
 
 /** Речевой рантайм тоже принадлежит main-процессу; мост только передаёт. */
-const listenerRuntimeStatus = {
+const listenerRuntimeStatus: ListenerRuntimeStatus = {
   state: 'missing' as const,
   installedVersion: null,
   availableVersion: '2026.08',
@@ -193,6 +194,7 @@ const listenerRuntimeStatus = {
   toolsDirectory: 'C:\\tools\\listener'
 }
 const listenerCalls: string[] = []
+let listenerDownloadStatus = listenerRuntimeStatus
 const listenerRuntime = {
   get status() {
     listenerCalls.push('status')
@@ -204,7 +206,7 @@ const listenerRuntime = {
   },
   download: async () => {
     listenerCalls.push('download')
-    return listenerRuntimeStatus
+    return listenerDownloadStatus
   }
 }
 
@@ -240,6 +242,7 @@ beforeEach(() => {
     log: () => {}
   })
   listenerCalls.length = 0
+  listenerDownloadStatus = listenerRuntimeStatus
 })
 
 describe('renderer command surface', () => {
@@ -727,6 +730,20 @@ describe('listener runtime bridge', () => {
       value: listenerRuntimeStatus
     })
     expect(listenerCalls).toEqual(['status', 'check', 'download'])
+  })
+
+  it('restarts the listener after a runtime installation succeeds', async () => {
+    listenerDownloadStatus = {
+      ...listenerRuntimeStatus,
+      state: 'ready',
+      installedVersion: 'whisper-v1.9.3-r1',
+      message: 'Установлена версия whisper-v1.9.3-r1.'
+    }
+
+    const outcome = await invoke('listener.downloadRuntime', {})
+
+    expect(outcome).toEqual({ ok: true, value: listenerDownloadStatus })
+    expect(restarts).toEqual([true])
   })
 })
 

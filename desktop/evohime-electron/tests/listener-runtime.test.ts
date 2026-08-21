@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   containedPath,
+  describeListenerRuntimeError,
   ListenerRuntimeService,
   parseManifest
 } from '../src/main/update/listener-runtime'
@@ -113,6 +114,14 @@ describe('listener runtime manifest', () => {
 })
 
 describe('listener runtime service', () => {
+  it('turns a bare fetch failure into an actionable network message', () => {
+    const error = Object.assign(new TypeError('fetch failed'), {
+      cause: Object.assign(new Error('getaddrinfo ENOTFOUND api.github.com'), { code: 'ENOTFOUND' })
+    })
+    expect(describeListenerRuntimeError(error)).toContain('api.github.com')
+    expect(describeListenerRuntimeError(error)).not.toBe('fetch failed')
+  })
+
   it('reports a missing runtime instead of pretending it is ready', async () => {
     const root = tempRoot('missing')
     const { fetch } = fixture()
