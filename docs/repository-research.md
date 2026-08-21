@@ -32,6 +32,7 @@
 | 9 | [puppeteer/puppeteer](https://github.com/puppeteer/puppeteer) / [pptr.dev](https://pptr.dev/) | Исследовано | Chromium-first CDP/BiDi client, BrowserContext, locators, interception, tracing и browser manager | Рассматривать как альтернативный isolated browser backend; runtime не подключать до packaging/security плана |
 | 10 | [fixie-ai/ultravox](https://github.com/fixie-ai/ultravox) | Исследовано | Audio-to-LLM projector, streaming text inference, conversation KV-cache, voice dataset/evaluation pipeline | Адаптировать контракты, preprocessing и eval-идеи; модельный runtime не подключать в desktop без отдельного GPU/provider плана |
 | 11 | [kyutai-labs/moshi](https://github.com/kyutai-labs/moshi) | Исследовано | Full-duplex speech-text model, Mimi streaming codec, Rust/Candle backend, binary WebSocket protocol и audio client | Рассматривать как наиболее близкий voice-runtime кандидат; адаптировать протокол/streaming идеи, runtime не подключать до PoC и security/licensing плана |
+| 12 | [pipecat-ai/pipecat](https://github.com/pipecat-ai/pipecat) | Исследовано | Frame-based realtime orchestration, workers/bus/jobs, transports/serializers, RTVI, tool lifecycle, metrics и behavioral evals | Адаптировать frame/event/worker/eval контракты; Python runtime и внешние transport-интеграции не подключать |
 
 ## Карточки исследований
 
@@ -1938,6 +1939,197 @@ transcript quality, memory и recovery.
   cancel/disconnect stops work, hidden-output redaction, no raw trajectory
   persistence, model checksum/license manifest, Windows CUDA/CPU fallback и
   supervisor crash/restart cleanup.
+
+### 12. Pipecat
+
+- Источник: [репозиторий pipecat-ai/pipecat](https://github.com/pipecat-ai/pipecat),
+  [официальная документация](https://docs.pipecat.ai/)
+- Дата проверки: 2026-08-21
+- Ревизия/commit: `bd5a2f4cd4da4e7a2c8a7b4051c82de747e42d20`
+  (`2026-08-21`, `Make a TTS service that silently returns no audio get marked unusable`)
+- Лицензия исходного кода: BSD-2-Clause; copyright Daily, 2024–2026.
+- Состав: Python framework для realtime voice agents и multimodal apps,
+  `src/pipecat`, transport/provider adapters, examples, behavioral evals и
+  клиентские SDK/интеграции. Репозиторий активно развивается; на момент
+  проверки история содержала около 11 900 commits.
+- Назначение: orchestration-слой между transport, audio/video, STT, LLM, TTS,
+  tools и UI. Pipecat не является одной моделью или готовым security boundary:
+  он организует поток событий, lifecycle и подключение провайдеров.
+- Краткий вывод: это один из наиболее полезных источников для будущего
+  voice/multimodal слоя Евы на уровне контрактов и тестов. Переносить весь
+  Python/asyncio runtime в desktop не нужно; подходящие идеи следует
+  выразить в Rust Core и authenticated desktop IPC.
+
+#### Что изучено
+
+- **Frames и processors.** Основная композиция выглядит как цепочка
+  `Processor1 -> Processor2 -> ... -> ProcessorN`. Frame — typed data или
+  control unit для audio, text, video, lifecycle, interruption, metrics и
+  function calls. `FrameProcessor` принимает, обрабатывает и передаёт frames
+  downstream или upstream; transports тоже являются processors.
+- **Приоритеты и прерывания.** Внутри processor есть отдельный путь для
+  system frames и очередь обычных data frames. System messages имеют высокий
+  приоритет, поэтому cancellation/end/interruption не должны ждать длинную
+  аудио- или текстовую очередь. `InterruptionFrame` распространяется в обе
+  стороны и сбрасывает текущую обработку; `EndFrame`/`StopFrame` относятся к
+  uninterruptible terminal frames и переживают interruption.
+- **Pipeline lifecycle.** `PipelineWorker` отправляет стартовые frames,
+  контролирует setup/start/pipeline/cancel timeouts, heartbeat и idle timeout,
+  отслеживает ошибки и гарантирует cleanup observers/tasks. Для непригодного
+  processor есть политика `CONTINUE`, `END` или `CANCEL`, а runner умеет
+  завершать короткие jobs или держать long-lived host.
+- **Workers и bus.** Worker — верхнеуровневый runnable unit с activation,
+  ready/end/cancel, job RPC и task cleanup. Typed `WorkerBus` разделяет
+  normal data и high-priority system messages, поддерживает lifecycle,
+  registry, job request/response/update/cancel и streamed job updates.
+  Есть локальная очередь и сетевые варианты на PGMQ/Redis, а `BusBridgeProcessor`
+  соединяет bus с pipeline.
+- **Tools и function calls.** `@tool` собирает tool functions на LLM worker,
+  задаёт `cancel_on_interruption` и timeout. Function-call lifecycle представлен
+  отдельными start/in-progress/result/cancel frames, а не одним непрозрачным
+  вызовом.
+- **Provider и transport abstraction.** Базовые STT/TTS/LLM services скрывают
+  различия провайдеров и streaming semantics; отдельные transports обслуживают
+  Daily/WebRTC/WebSocket/LiveKit/SmallWebRTC/локальные сценарии. Serializers
+  преобразуют frames в wire format, включая protobuf и telephony formats.
+- **RTVI.** Processor/observer формируют typed client protocol для lifecycle,
+  transcription, bot speaking, VAD, interruption, metrics, audio levels,
+  function calls и UI commands/snapshots. В RTVI отдельно задаётся уровень
+  раскрытия function-call данных; default observer configuration не должна
+  отдавать внутренние аргументы всем клиентам.
+- **Observers и metrics.** Наблюдатели читают поток без изменения поведения.
+  Есть TTFB/TTFA и turn-level breakdown, usage/latency metrics, heartbeat и
+  интеграции OpenTelemetry/Sentry. Это позволяет диагностировать realtime
+  pipeline без помещения диагностической логики в каждый provider.
+- **Behavioral evals.** YAML-сценарии задают turns с text/audio/DTMF/image и
+  ожиданиями `within_ms`, `text_contains`, отсутствием события, function call
+  с именем/аргументами и LLM judge. Harness запускает реального бота через
+  eval transport, проверяет порядок turns и агрегирует latency; suites могут
+  выполняться параллельно.
+- **Инженерные гарантии.** Тесты используют `run_test()` для отправки frames и
+  assertions, отдельный task manager для отмены/cleanup и typed Pydantic
+  models для внешних config/metrics; высокочастотные внутренние frames
+  представлены dataclass-подобными структурами.
+
+#### Что можем использовать в Еве
+
+- **Frame/event taxonomy для voice layer.** Спроектировать в Core отдельные
+  типы вроде `voice_audio_frame`, `voice_text_delta`, `voice_control`,
+  `voice_interruption`, `voice_tool_call`, `voice_metric` и
+  `voice_receipt`. Направление upstream/downstream и correlation/session IDs
+  должны быть частью контракта, а не соглашением между UI и provider.
+- **Срочные control messages.** Перенять разделение system/data: cancel,
+  permission-revoked, interrupt, disconnect и terminal events должны иметь
+  приоритет над queued audio/text data. Это хорошо сочетается с уже имеющимися
+  у EvoHime bounded IPC frames, sequence replay и Core-owned cancellation.
+- **Uninterruptible terminal semantics.** Зафиксировать, какие завершения
+  нельзя потерять при barge-in: финальный receipt, отказ policy, durable audit
+  commit и controlled session end. При этом произнесённый пользователю звук
+  не должен автоматически считаться успешным выполнением внешнего действия.
+- **Worker lifecycle для provider/child host.** Использовать состояния
+  `created -> starting -> ready -> running -> draining -> ended` плюс
+  `cancelled`, `failed` и `restarting`. Добавить setup/start/idle/heartbeat/
+  cancel deadlines, bounded cleanup и явный результат crash recovery.
+  Это может стать общим контрактом Core для listener, voice provider и child
+  agent, но supervisor остаётся владельцем процесса и Job Object.
+- **Typed job model.** Для будущих child agents и долгих voice operations
+  полезны `job_id`, `worker_id`, `request`, `progress`, `result`, `error`,
+  `cancel` и streamed updates. Job groups/fan-out можно рассматривать позже,
+  не расширяя сейчас desktop IPC без конкретного потребителя.
+- **Tool invocation metadata.** У каждого function call должны быть timeout,
+  interruption policy, capability/risk class, approval requirement,
+  idempotency key и unknown-outcome handling. Pipecat даёт хороший минимум
+  cancellation/timeout, но EvoHime обязан добавить свою approval и receipt
+  model перед side effect.
+- **Transport/serializer boundary.** Сохранить независимость voice pipeline
+  от audio codec, provider API и desktop IPC. В wire protocol разрешать только
+  versioned serde/protobuf payloads из allow-list; произвольные Python objects,
+  callbacks или `Any` из Pipecat нельзя выставлять наружу.
+- **RTVI-подобный typed UI protocol.** Использовать идею отдельного слоя
+  наблюдаемых событий: bot/user speaking, partial/final transcript, VAD,
+  function-call lifecycle, metrics и a11y/UI snapshot. Electron получает
+  redacted state через Core, а не сырые provider frames и не внутренний
+  reasoning/context.
+- **Observer-first observability.** Добавить read-only observers для TTFB,
+  TTFA, turn duration, queue depth, dropped audio, provider retries,
+  cancellation latency и final receipt. Сырые audio/text payloads должны быть
+  исключены из telemetry по умолчанию; события связываются с provenance и
+  correlation IDs.
+- **Behavioral eval suite.** Перенять сценарии `turn -> expectations`:
+  bounded first-token/audio latency, transcript fragments, interruption,
+  function-call name/args policy, cancellation, absent forbidden events и
+  redaction. Запускать на deterministic local fixtures и fake provider, а
+  реальные внешние API использовать только в явно ограниченном smoke suite.
+- **Provider conformance matrix.** Базовые STT/TTS/LLM contracts и capability
+  metadata можно использовать для сравнения listener, удалённого realtime
+  provider и будущего Moshi-подобного host. Это не означает добавление всех
+  десятков интеграций Pipecat: для Евы нужна небольшая матрица с offline,
+  streaming, interruption, cancellation, cost и privacy свойствами.
+
+#### Ограничения и риски
+
+- **Runtime mismatch.** Pipecat — Python 3.11+ и asyncio framework. EvoHime
+  не поставляет внешний Python runtime, а Core уже построен на Rust; прямое
+  встраивание создаст второй lifecycle, memory model, packaging и security
+  boundary.
+- **Frame typing недостаточно для wire security.** Внутренние frames и bus
+  могут переносить произвольные объекты, direct callbacks и local-only data.
+  Priority задаёт порядок обработки, но не authorization. На границе Евы
+  обязательны строгая схема, major version, payload limit, HMAC session,
+  sequence/replay rules и capability checks.
+- **Bus persistence/network surface.** PGMQ/Redis и внешние transports добавят
+  credentials, egress, replay и retention вопросы. Для локальной Евы это не
+  должно появиться автоматически; будущий bus обязателен к Core-owned auth,
+  bounded queue и явной политике хранения.
+- **Tool decorator не заменяет policy.** `cancel_on_interruption` и timeout
+  могут остановить обработчик, но не решают approval, idempotency, side-effect
+  receipt и ситуацию неизвестного результата после сетевого разрыва.
+- **RTVI может раскрыть лишнее.** Function-call names/args, transcripts,
+  metrics и UI commands относятся к разным уровням доверия. Нельзя считать
+  desktop client или browser transport security boundary; default должен быть
+  redacted/no-raw-args, с отдельными разрешениями на диагностическое раскрытие.
+- **Provider semantics различаются.** Streaming, reconnect, audio formats,
+  VAD, interruption и billing зависят от конкретного STT/TTS/LLM provider.
+  Унифицированный interface Pipecat не устраняет необходимость capability
+  negotiation, timeout, egress policy и provider-specific tests.
+- **Realtime evals не являются security proof.** Behavioral tests проверяют
+  пользовательское поведение и latency, но не доказывают отсутствие утечки,
+  prompt injection или корректность authorization. Они должны дополнять
+  security/permission tests и deterministic Core replay.
+- **Лицензия и SDK.** BSD-2-Clause относится к коду Pipecat; provider SDK,
+  модели, telephony services, WebRTC stack и записи для eval имеют отдельные
+  лицензии/условия. Перед поставкой нужно вести component/license manifest.
+
+#### Предварительное решение
+
+`адаптировать frame/event taxonomy, interruption/cancellation semantics,
+worker lifecycle, typed job/tool metadata, observers, RTVI-подобный UI contract
+и behavioral evals`; `не подключать Pipecat Python runtime, Pipecat Cloud,
+Redis/PGMQ bus или внешние transports как runtime-зависимости EvoHime`.
+
+Pipecat и Moshi следует рассматривать на разных уровнях: Moshi — возможный
+низкоуровневый voice runtime/provider, Pipecat — orchestration и evaluation
+patterns вокруг такого provider. Они не должны одновременно становиться
+двумя конкурирующими runtime-слоями внутри Core.
+
+#### Связь с EvoHime
+
+- Возможный design-only контракт: Core-owned `voice_session`, `voice_frame`,
+  `voice_control`, `voice_tool_call`, `voice_event`, `provider_receipt` и
+  `voice_metric`. Electron получает только authenticated, redacted state;
+  workspace, provider secrets, approvals, SQLite audit и cancellation остаются
+  в Core.
+- Идеи worker/heartbeat/idle можно сопоставить с supervisor lifecycle и
+  существующим Core task cancellation; не дублировать процессный supervisor
+  внутри Electron или Python helper.
+- Идеи RTVI и serializers проверять против `desktop-ipc-v1`: major version,
+  bounded frame size, sequence replay, HMAC proof, typed errors и no raw
+  callback/object crossing. Этот журнал implementation plan не создаёт.
+- Критерии будущей проверки: system cancellation обгоняет data queue,
+  terminal receipt переживает interruption, cancellation реально останавливает
+  provider/helper, heartbeat и crash/restart очищают ресурсы, tool approval и
+  idempotency сохраняются, события redacted/provenance-linked, latency/TTFB/
+  TTFA измеряются, а behavioral evals воспроизводимы offline.
 
 ## Итог для будущего плана
 
