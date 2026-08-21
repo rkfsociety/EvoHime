@@ -28,6 +28,7 @@
 | 5 | [OthersideAI/self-operating-computer](https://github.com/OthersideAI/self-operating-computer) | Исследовано | Computer-use loop, screenshot/OCR и action schema | Адаптировать идеи; прямое управление desktop не включать по умолчанию |
 | 6 | [simular-ai/Agent-S](https://github.com/simular-ai/Agent-S) | Исследовано | Разделение worker/grounding, reflection, bounded trajectory и UI evaluation | Адаптировать computer-use/evaluation идеи; runtime не подключать |
 | 7 | [lavague-ai/LaVague](https://github.com/lavague-ai/LaVague) | Исследовано | Web-agent loop, DOM/XPath grounding, driver abstraction, telemetry и QA fixtures | Адаптировать web-action/evidence/test идеи; runtime и extension не подключать |
+| 8 | [microsoft/playwright](https://github.com/microsoft/playwright) | Исследовано | Изолированные BrowserContext, locators/actionability, accessibility snapshots, network policy, trace и cross-browser tests | Рассматривать как возможный isolated browser backend; не подключать до отдельного packaging/security плана |
 
 ## Карточки исследований
 
@@ -1271,6 +1272,213 @@ Selenium/Playwright execution loop или Browserbase как runtime-завис�
   approval, stale/ambiguous target fail-closed, unknown outcome не повторяет
   submit, cancellation закрывает browser context, а final-state tests
   проверяют URL/DOM/receipt и отсутствие неразрешённых эффектов.
+
+### 8. Microsoft Playwright
+
+- Источник: https://github.com/microsoft/playwright
+- Дата проверки: 2026-08-21.
+- Ревизия/commit: `9642f57665db582b12dcfa5d8022808f2402fa2a`.
+- Последний commit в checkout: 2026-08-21, `feat(trace): attribute requests
+  to service workers and api request contexts (#42328)`.
+- Версия текущего monorepo package: `1.63.0-next`; требование Node.js `>=20`.
+- Лицензия: Apache-2.0; `NOTICE` отдельно указывает код, происходящий от
+  Puppeteer под Apache-2.0.
+- Состав: `playwright-core`, Node/TypeScript library, Playwright Test,
+  Chromium/Firefox/WebKit packages, Electron/WebView/Android/BiDi support,
+  trace viewer, recorder, CLI и встроенный MCP/CLI backend для AI agents.
+- Назначение: единый API web automation и E2E testing для Chromium, Firefox и
+  WebKit; текущий README также описывает CLI/MCP, которые дают LLM structured
+  browser control без обязательного vision model.
+- Краткий вывод: это наиболее зрелый кандидат из очереди для будущего
+  browser backend Евы. Полезно рассмотреть использование ограниченного
+  `playwright-core`/isolated helper, но не добавлять Playwright в renderer и
+  не считать BrowserContext, MCP allowlist или Chromium sandbox заменой
+  Core policy, supervisor isolation и approval.
+
+#### Что изучено
+
+- **BrowserContext isolation.** Каждый context имеет отдельные cookies,
+  local/session storage, IndexedDB, cache, history и tabs. CLI по умолчанию
+  держит profile в памяти; persistent profile, custom profile и CDP/extension
+  attach включаются отдельно. `storageState` позволяет сохранить/восстановить
+  cookies, credentials и origin storage, поэтому его нужно считать секретным
+  артефактом.
+- **Locator/actionability.** User-facing locators (`getByRole`, `getByLabel`,
+  `getByPlaceholder`, `getByTestId`) работают поверх accessibility/semantic
+  selectors. Перед pointer action engine ждёт visible/enabled/stable, пытается
+  прокрутить target в viewport, проверяет hit target и ждёт navigation signals;
+  retry-путь обрабатывает stale/not-visible/not-in-viewport состояния. Это
+  значительно надёжнее pixel coordinates и произвольных XPath.
+- **Structured accessibility agent surface.** Playwright MCP/CLI строит
+  snapshot accessibility tree, выдаёт transient element refs вроде `e5` и
+  принимает строго описанные tool inputs. В backend есть отдельные
+  capabilities (`core`, navigation, tabs, input, network, storage, testing,
+  vision, pdf, devtools), Zod schemas, target resolution и verify-tools для
+  visible/text/list/value assertions.
+- **Network controls.** Context/page routing позволяет abort/continue/fulfill
+  requests, мокать API и работать с HAR. Есть proxy, headers, service-worker
+  blocking, APIRequestContext и события request/response/failure. Это полезная
+  техническая точка интеграции для bounded network egress и deterministic
+  fixtures, но allowlist должен принадлежать policy Евы.
+- **Evidence and diagnostics.** Trace records actions, DOM snapshots,
+  screenshots, network activity, console messages, timing и resource bodies;
+  screenshots, video, HAR, console and network events доступны отдельными
+  options. Trace Viewer позволяет воспроизвести состояние шага и причину
+  failure.
+- **Browser lifecycle and data paths.** Есть headless/headed режимы,
+  downloads/uploads, file chooser, PDF/screenshot, permissions, geolocation,
+  client certificates, storage state, device emulation, proxy и browser
+  attach. `acceptDownloads` для обычных browser contexts нормализуется в
+  accept, если явно не переопределён.
+- **MCP/CLI guardrails.** Текущий MCP умеет `--isolated`, workspace-root
+  ограничения для `file://`, `--allow-unrestricted-file-access`, service
+  worker blocking, capability selection, output size/timeouts, browser
+  profiles и session cleanup. В исходнике прямо указано, что allowed/blocked
+  origins не являются security boundary и не действуют на redirects.
+- **Cross-platform test engineering.** Monorepo содержит отдельные suites для
+  Chromium, Firefox, WebKit, Electron, WebView, Android, BiDi, MCP, extension,
+  tracing, network, storage, downloads и test runner. Есть lint/type/doc/dependency
+  checks, generated protocol/types и browser-specific expectations.
+- Анализ выполнен по README, package metadata, `playwright-core` context,
+  locator/actionability, network, trace, MCP/CLI backend, skills/references,
+  tests, `LICENSE`, `NOTICE` и `SECURITY.md`. `npm install`, browser download и
+  тестовый suite не запускались: это исследовательская запись, не интеграция.
+
+#### Что можем использовать в Еве
+
+- **Кандидат на browser execution backend.** В отличие от LaVague/Agent S,
+  Playwright уже содержит зрелый browser lifecycle, locator engine, network
+  hooks, download/upload handling, trace и cross-browser tests. Вариант для
+  будущего плана: отдельный helper process с Playwright, запускаемый
+  supervisor и доступный Core через authenticated bounded IPC. Это не означает
+  добавление Node.js runtime в текущий product package.
+- **Task-scoped BrowserContext.** Создавать новый non-persistent context на
+  задачу, default deny permissions, explicit proxy/network rules, no inherited
+  cookies и обязательное close/cleanup. Persistent auth state только после
+  явного user action, DPAPI-protected storage и привязки к конкретному
+  workspace/provider policy.
+- **Semantic target contract.** Использовать role/name/label/test-id и
+  transient snapshot ref вместо координат. Action должен содержать
+  `context_id`, `page_id`, `snapshot_id`, `target_ref`, role/name fingerprint,
+  expected state и action hash; перед исполнением Core повторно разрешает
+  target и fail-closed реагирует на stale/ambiguous/multiple match.
+- **Actionability как reusable validator.** Проверки visible, enabled, stable,
+  in-viewport и hit-target можно превратить в precondition policy для
+  `browser.click`, `browser.fill`, `browser.select` и `browser.press`. Они не
+  должны автоматически разрешать mutation; validation и approval остаются
+  разными стадиями.
+- **Accessibility-first context.** Использовать bounded ARIA snapshot и
+  targeted search вместо полного HTML или screenshot для обычных web задач.
+  Это снижает token cost и privacy exposure. Screenshot/vision включать только
+  как explicit fallback, с crop/redaction/provenance.
+- **Network policy adapter.** На уровне BrowserContext блокировать всё, что не
+  входит в Core-issued origin/route policy, abort third-party trackers и
+  неожиданные downloads, фиксировать redirects/requests/responses в receipt и
+  иметь deterministic route/HAR fixtures. Redirect targets, DNS/private IP и
+  cross-origin requests дополнительно проверяются supervisor/Core, потому что
+  Playwright allowlist не является security boundary.
+- **Verification and final state.** Использовать locator assertions,
+  URL/DOM snapshots, response predicates, download metadata и page state как
+  deterministic evidence после каждой mutation. LLM judge может быть только
+  advisory; `success` Core должен означать проверенное expected state, а не
+  отсутствие exception.
+- **Trace as redacted diagnostic receipt.** Trace-on-failure полезен для
+  воспроизведения stale target, redirect, popup, console/network race и
+  cancellation. В Еве включать ограниченно, перед записью redacting headers,
+  cookies, form values, authorization, page text и response bodies; задавать
+  retention/size budget и удалять trace после export.
+- **Capability and cleanup matrix.** Перенять раздельные capabilities MCP и
+  test matrix для browser features. Каждая capability (`navigation`, `input`,
+  `network`, `storage`, `files`, `evaluate`, `devtools`) должна быть отдельным
+  Core permission с default deny, explicit audit и cleanup contract.
+- **Acceptance fixtures.** Из Playwright Test перенять fresh context per test,
+  retry only for test infrastructure, web-first assertions, trace on retry,
+  parallel browser projects и local deterministic HTTP fixtures. Для Евы
+  добавить policy/approval/receipt/egress assertions поверх обычных UI tests.
+
+#### Ограничения и риски
+
+- **BrowserContext не является sandbox.** Он изолирует browser state, но
+  страница и automation process всё ещё имеют сеть, downloads, file chooser,
+  JavaScript evaluation и доступ к любым явно переданным credentials/paths.
+  OS process, Job Object, filesystem/network limits и secret policy должны
+  принадлежать supervisor/Core.
+- **`evaluate` и file tools опасны.** Playwright API и MCP имеют evaluate,
+  upload/download, storage, devtools и CDP attach surfaces. Model-generated
+  JavaScript может читать DOM, менять состояние страницы или использовать
+  разрешённый origin для exfiltration; абсолютный путь upload и persistent
+  profile могут раскрыть локальные данные.
+- **Persistent/CDP/extension modes теряют изоляцию.** Attach к уже запущенному
+  Chrome, пользовательский profile или extension relay получают доступ к
+  реальным вкладкам, cookies и аккаунтам. В Еве эти режимы запрещать по
+  умолчанию; разрешать только отдельным capability с подтверждением и
+  понятным ownership/cleanup.
+- **Network flags не заменяют egress policy.** Сам Playwright предупреждает,
+  что `allowed-origins`/`blocked-origins` MCP не являются security boundary и
+  не контролируют redirects. Нужны Core-issued allowlist, redirect
+  revalidation, DNS/private-range checks, proxy policy и audit каждого
+  request/response.
+- **Browser sandbox требует явного контроля.** `chromiumSandbox` существует,
+  а MCP конфигурирует его по платформе, но его значение зависит от channel,
+  launch mode и runtime. Нельзя считать включённый Chromium sandbox заменой
+  Windows supervisor Job Object, restricted token и отдельному filesystem
+  boundary; unsupported setup должен fail-closed.
+- **Sensitive artifacts по умолчанию возможны.** `storageState` может содержать
+  cookies/localStorage/IndexedDB, downloads пишутся на диск, а trace/HAR/video
+  могут включать passwords, tokens, request headers/bodies, full DOM и
+  screenshots. Нужны redaction, encrypted storage, bounded retention и
+  no-raw-export default.
+- **Actionability не понимает намерение.** Locator может корректно кликнуть
+  опасную кнопку, а auto-wait/retry может сделать side effect после изменения
+  страницы. Нужны target semantics, action risk classification, approval,
+  idempotency/unknown outcome и final-state verification.
+- **MCP/CLI имеет широкую AI surface.** Хотя tool schemas и capability
+  selection полезны, MCP предоставляет полноценный browser control; default
+  network origins широки, `--allow-unrestricted-file-access` расширяет file
+  scope, а `--secrets`/storage/profile создают чувствительные inputs. Не
+  подключать внешний MCP server прямо к Core без authenticated IPC и policy
+  translation.
+- **Packaging и supply chain существенны.** Node `>=20`, browser binaries,
+  Chromium/Firefox/WebKit channels, native dependencies и frequent releases
+  усложняют Windows installer/update. Playwright package не является Rust
+  crate; официальный .NET/Python/Java API всё равно требует отдельного
+  runtime bridge. Проверить Apache NOTICE, browser binaries, transitive
+  licenses и reproducible pinning.
+- **Большой test suite не гарантирует продуктовую безопасность.** Upstream
+  тестирует API/browser correctness, но не специфические policy EvoHime:
+  prompt injection, secret redaction, approval spoofing, tool-call replay,
+  supervisor escape, origin policy bypass и durable receipt integrity.
+
+#### Предварительное решение
+
+`рассматривать Playwright как возможный isolated browser backend и источник
+locator/network/trace/test контрактов`; `не подключать Playwright MCP/CLI,
+CDP attach, persistent profile или browser automation в renderer до отдельного
+packaging, sandbox, egress, approval и secret-storage плана`.
+
+#### Связь с EvoHime
+
+- потенциальная интеграция должна идти через supervisor-managed browser host,
+  Core-owned typed IPC и capability registry; UI получает только состояние и
+  receipts. Внешний Node.js не добавлять в продукт без отдельного решения о
+  bundled helper; текущая архитектура Electron не даёт renderer прямой доступ
+  к workspace, provider или browser state.
+- использовать существующие EvoHime named-pipe session authentication,
+  capability/approval policy, context budget, redaction/provenance,
+  cancellation/timeout, supervisor Job Object и SQLite event ownership.
+  Playwright trace/HAR/storage не должны становиться параллельным источником
+  истины или обходить Core audit.
+- возможная будущая работа: сначала design-only `browser_observation`,
+  `browser_action`, `browser_receipt` и browser-host protocol; затем tiny
+  isolated Chromium fixture на локальном test server, network deny tests,
+  storage/download cleanup и real cancellation/restart tests. Этот журнал не
+  создаёт implementation plan.
+- критерии проверки: non-persistent context по умолчанию, sandbox/Job Object
+  health check, default-deny permissions and origins, redirect/DNS/private-IP
+  policy, no direct CDP/user-profile attach, no raw trace/storage export,
+  strict action schema, snapshot-bound target revalidation, per-mutation
+  approval, typed unknown after partial side effect, deterministic final-state
+  assertions, bounded artifacts и cleanup после crash/cancel.
 
 ## Итог для будущего плана
 
