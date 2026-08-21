@@ -8,8 +8,10 @@
 
 Планы 01–05 реализованы целиком и удалены из каталога: их контракты живут в
 [`../architecture.md`](../architecture.md), подтверждённое состояние — в
-[`../current-state.md`](../current-state.md). Текущий незавершённый план — 06,
-его обзор находится в [`06-0-workflow-orchestration.md`](06-0-workflow-orchestration.md).
+[`../current-state.md`](../current-state.md). В каталоге остаются два
+незавершённых направления: сначала план 06, затем план 07. Их обзоры:
+[`06-0-workflow-orchestration.md`](06-0-workflow-orchestration.md) и
+[`07-0-superagi-inspired-tooling.md`](07-0-superagi-inspired-tooling.md).
 
 ## Правило нумерации
 
@@ -33,33 +35,20 @@
 
 | План | Обзор | Блокирующие зависимости |
 | --- | --- | --- |
+| 01 Signed hash-chain receipts | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
+| 02 Локальный SLM fallback и routing | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
 | 03 Специализированные child workflows | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
 | 04 Постоянное слушание и ambient-память | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
 | 05 Provenance и реконструируемость model request | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
 | 06 CAMEL/AutoGPT-inspired workflow orchestration для Евы | проектируется; обзор в [`06-0-workflow-orchestration.md`](06-0-workflow-orchestration.md) | 06-1 зависит от существующих workflow/child contracts; 06-2 от 06-1; 06-3 от 06-2; 06-4 от 06-3 |
+| 07 SuperAGI-inspired tool manifests, Action Console и telemetry | предложен; обзор в [`07-0-superagi-inspired-tooling.md`](07-0-superagi-inspired-tooling.md) | 07-0 блокируется 06-1 и 06-3; 07-1 от 07-0; 07-2 от 07-1; 07-3 от 07-1 и 06-3; 07-4 от 07-1 и 07-3 |
 
-```text
-05.1 контракт ── 05.2 хранение ── 05.3 интеграция ─┬── 05.4 evidence ── 05.6 shadowing ── 05.8 retention ── 05.9 verify/export
-                                                   └── 05.5 receipts + tool linkage ────────────────────────────────┬── 05.7 recovery
-                                                                                                                      └── 05.9 verify/export
-```
-
-План 05 опирается только на уже реализованные model gateway/routing, Context
-Budget Manager, SQLite persistence, signed receipts и recovery foundation, а
-значит блокирующих зависимостей у него тоже нет. Ambient и scheduled model calls при их появлении подключаются к общему
-provenance pipeline новым `request_kind`, а не отдельным механизмом.
-
-Внутри плана 05 есть последовательность зависимых состояний: до 05.8
-хранилище 05.2 допускает только migration/fixture `hash_only`, shadowing 05.6
-живёт с временным потолком, а 05.9 ещё не может выпустить verifier,
-различающий `redacted`/`retention_pruned` и повреждение. Поэтому 05.9 явно
-блокируется завершёнными 05.4, 05.5, 05.6 и 05.8; переходные режимы остаются
-только для чтения legacy записей и не являются критерием готовности offline
-export.
-
-05.7 не является независимой веткой: после 05.5 он использует
-authoritative `model_responses` и `tool_intents` для безопасной классификации
-состояния после краша.
+Порядок незавершённых этапов задаётся так: сначала последовательно выполняется
+06-1 → 06-2 → 06-3 → 06-4, затем 07-1 → 07-2 → 07-3 → 07-4. Обзоры 06-0 и
+07-0 не являются исполняемыми этапами; они фиксируют границы и граф
+зависимостей соответствующего плана. План 07-4 может использовать общий
+evaluation harness из 06-4 как опциональную зависимость, но не блокирует его
+отсутствие.
 
 ## Что уже реализовано
 
