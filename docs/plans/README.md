@@ -8,13 +8,15 @@
 
 Планы 01–05 реализованы целиком и удалены из каталога: их контракты живут в
 [`../architecture.md`](../architecture.md), подтверждённое состояние — в
-[`../current-state.md`](../current-state.md). В каталоге остаются пять
-незавершённых направлений: сначала план 06, затем планы 07, 08, 09 и 10. Их обзоры:
+[`../current-state.md`](../current-state.md). В каталоге остаются шесть
+незавершённых направлений: сначала план 06, затем планы 07, 08, 09, 10 и 11.
+Их обзоры:
 [`06-0-workflow-orchestration.md`](06-0-workflow-orchestration.md),
 [`07-0-superagi-inspired-tooling.md`](07-0-superagi-inspired-tooling.md),
 [`08-0-execution-ledger.md`](08-0-execution-ledger.md),
-[`09-0-policy-and-capabilities.md`](09-0-policy-and-capabilities.md) и
-[`10-0-ipc-adapters-and-providers.md`](10-0-ipc-adapters-and-providers.md).
+[`09-0-policy-and-capabilities.md`](09-0-policy-and-capabilities.md),
+[`10-0-ipc-adapters-and-providers.md`](10-0-ipc-adapters-and-providers.md) и
+[`11-0-memory-and-rag.md`](11-0-memory-and-rag.md).
 
 ## Правило нумерации
 
@@ -48,14 +50,16 @@
 | 08 Core-owned execution ledger и typed receipts | проектируется; обзор в [`08-0-execution-ledger.md`](08-0-execution-ledger.md) | 08-1 от текущих EventJournal/receipts/IPC; 08-2 от 08-1; 08-3 от 08-2; 08-4 от 08-3 |
 | 09 Policy, capabilities и approval | проектируется; обзор в [`09-0-policy-and-capabilities.md`](09-0-policy-and-capabilities.md) | 09-1 от плана 08 и текущей policy; 09-2 от 09-1; 09-3 от 09-2; 09-4 от 09-3 |
 | 10 IPC, version negotiation и provider boundary | проектируется; обзор в [`10-0-ipc-adapters-and-providers.md`](10-0-ipc-adapters-and-providers.md) | 10-1 от планов 08–09 и текущего IPC; 10-2 от 10-1; 10-3 от 10-2; 10-4 от 10-3 |
+| 11 Typed memory и Core-first RAG | проектируется; обзор в [`11-0-memory-and-rag.md`](11-0-memory-and-rag.md) | 11-1 от планов 08–10 и текущего RAG; 11-2 от 11-1; 11-3 от 11-2; 11-4 от 11-3 |
 
 Порядок незавершённых этапов задаётся так: сначала последовательно выполняется
 06-1 → 06-2 → 06-3 → 06-4, затем 07-1 → 07-2 → 07-3 → 07-4, затем
 08-1 → 08-2 → 08-3 → 08-4, затем 09-1 → 09-2 → 09-3 → 09-4, затем
-10-1 → 10-2 → 10-3 → 10-4. Обзоры 06-0, 07-0, 08-0, 09-0 и 10-0 не являются
-исполняемыми этапами; они фиксируют границы и граф зависимостей соответствующего
-плана. План 07-4 может использовать общий evaluation harness из 06-4 как
-опциональную зависимость, но не блокирует его отсутствие.
+10-1 → 10-2 → 10-3 → 10-4, затем 11-1 → 11-2 → 11-3 → 11-4. Обзоры 06-0,
+07-0, 08-0, 09-0, 10-0 и 11-0 не являются исполняемыми этапами; они
+фиксируют границы и граф зависимостей соответствующего плана. План 07-4 может
+использовать общий evaluation harness из 06-4 как опциональную зависимость,
+но не блокирует его отсутствие.
 
 ## Что уже реализовано
 
