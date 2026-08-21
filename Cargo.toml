@@ -16,5 +16,6 @@ members = [
   "crates/test-stub-exitcode",
   "crates/evohime-eval",
   "crates/evohime-receipts",
+  "crates/evohime-model-provenance",
 ]
 resolver = "2"

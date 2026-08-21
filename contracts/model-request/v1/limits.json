@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "max_request_envelope_bytes": 1048576,
+  "max_system_prompt_bytes": 262144,
+  "max_message_bytes": 262144,
+  "max_tool_schema_bytes": 262144,
+  "max_tool_set_bytes": 524288,
+  "max_evidence_refs": 4096,
+  "max_source_refs_per_entry": 128,
+  "max_context_projection_bytes": 262144,
+  "max_provenance_depth": 128,
+  "max_shadow_bytes_per_task": 8388608,
+  "provenance_retention_days": 90
+}

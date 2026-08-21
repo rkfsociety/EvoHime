@@ -1,0 +1,27 @@
+{
+  "contract": "evohime.model-request",
+  "version": 1,
+  "canonicalization": "RFC8785-JCS",
+  "encoding": "UTF-8",
+  "hash_domain": "evohime-model-request-v1\\0",
+  "projection_hash_domain": "evohime-context-projection-v1\\0",
+  "limits": "limits.json",
+  "error_codes": [
+    "REQUEST_PROVENANCE_TOO_LARGE",
+    "REQUEST_PROVENANCE_INVALID",
+    "REQUEST_PROVENANCE_COMMIT_FAILED",
+    "REQUEST_SOURCE_MISSING",
+    "REQUEST_SOURCE_CHANGED",
+    "REQUEST_RECONSTRUCTION_FAILED",
+    "REQUEST_HASH_MISMATCH",
+    "REQUEST_UNSUPPORTED_VERSION",
+    "REQUEST_REDACTED",
+    "REQUEST_RETENTION_PRUNED",
+    "REQUEST_LEDGER_MISMATCH",
+    "REQUEST_LINEAGE_MISMATCH",
+    "REQUEST_RECEIPT_LINKAGE_MISMATCH",
+    "REQUEST_TOOL_LINKAGE_MISMATCH",
+    "REQUEST_SHADOW_CONTENT_COMPACTED",
+    "REQUEST_EVIDENCE_EVICTED"
+  ]
+}

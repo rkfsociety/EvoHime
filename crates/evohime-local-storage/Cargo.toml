@@ -10,8 +10,10 @@ path = "src/lib.rs"
 evohime-context-budget = { path = "../context-budget" }
 evohime-listener-contract = { path = "../evohime-listener-contract" }
 evohime-receipts = { path = "../evohime-receipts" }
+evohime-model-provenance = { path = "../evohime-model-provenance" }
 rusqlite = { version = "0.32.1", features = ["backup", "bundled"] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 serde_json = "1"
 sha2 = "0.10"
+uuid = { version = "1", features = ["v7"] }

@@ -369,7 +369,7 @@ impl ModelGateway {
         route: &str,
         messages: &[ChatMessage],
     ) -> Result<TokenStream, ProviderError> {
-        Ok(self.provider_for_route(route)?.stream_chat(messages))
+        self.dispatch_stream(route, None, messages)
     }
 
     pub fn stream_chat_for_route_with_model(
@@ -378,13 +378,7 @@ impl ModelGateway {
         model: Option<&str>,
         messages: &[ChatMessage],
     ) -> Result<TokenStream, ProviderError> {
-        let provider = self.provider_for_route(route)?;
-        Ok(match model {
-            Some(model) if !model.trim().is_empty() => {
-                provider.stream_chat_with_model(model, messages)
-            }
-            _ => provider.stream_chat(messages),
-        })
+        self.dispatch_stream(route, model, messages)
     }
 
     /// Streams a completion against the configured default route while using
@@ -406,9 +400,33 @@ impl ModelGateway {
         messages: &[ChatMessage],
         tools: &[ToolSpec],
     ) -> Result<ChatResult, ProviderError> {
-        self.provider_for_route(route)?
-            .chat_with_tools(model, messages, tools)
-            .await
+        self.dispatch_chat(route, model, messages, tools).await
+    }
+
+    /// Единственная внутренняя граница к provider implementation. Provenance
+    /// checkpoint располагается перед этим слоем; feature-код не получает
+    /// `ModelProvider` или raw dispatch handle.
+    fn dispatch_stream(
+        &self,
+        route: &str,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+    ) -> Result<TokenStream, ProviderError> {
+        let provider = self.provider_for_route(route)?;
+        Ok(match model {
+            Some(model) if !model.trim().is_empty() => provider.stream_chat_with_model(model, messages),
+            _ => provider.stream_chat(messages),
+        })
+    }
+
+    async fn dispatch_chat(
+        &self,
+        route: &str,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        tools: &[ToolSpec],
+    ) -> Result<ChatResult, ProviderError> {
+        self.provider_for_route(route)?.chat_with_tools(model, messages, tools).await
     }
 
     /// Policy entry point used by Core's agent loop. The caller supplies only

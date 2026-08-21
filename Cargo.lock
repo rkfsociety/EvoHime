@@ -727,6 +727,7 @@ dependencies = [
  "evohime-listener-ipc",
  "evohime-local-storage",
  "evohime-model-gateway",
+ "evohime-model-provenance",
  "evohime-permissions",
  "evohime-receipts",
  "evohime-tool-runtime",
@@ -832,12 +833,14 @@ version = "0.1.0"
 dependencies = [
  "evohime-context-budget",
  "evohime-listener-contract",
+ "evohime-model-provenance",
  "evohime-receipts",
  "rusqlite",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.18",
+ "uuid",
 ]
 
 [[package]]
@@ -855,6 +858,19 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "wiremock",
+]
+
+[[package]]
+name = "evohime-model-provenance"
+version = "0.1.0"
+dependencies = [
+ "evohime-receipts",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "uuid",
 ]
 
 [[package]]

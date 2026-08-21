@@ -348,3 +348,18 @@ update.json          репозиторий, ветка, launchPolicy, инте�
 Неудачное обновление не блокирует работу: установленная сборка запускается как обычно, а причина отказа показывается в UI.
 
 Безопасностные ограничения вынесены в [`../SECURITY.md`](../SECURITY.md).
+## Model request provenance v1
+
+Каждый Core model request имеет versioned canonical envelope из
+`contracts/model-request/v1/`, связь с единственным `context_ledger.id`,
+durable blocks/sources и lifecycle status. `EventJournal` предоставляет Core
+API `commit_model_request`, `mark_model_dispatch`, startup recovery и bounded
+retention; renderer не строит и не изменяет envelope.
+
+Новые записи проходят `FullForDispatch`; canonical hash использует JCS и
+domain-separated SHA-256. Retry/fallback создают отдельный request attempt с
+`parent_request_id`/`previous_request_hash`. Source capture, shadowing,
+responses/tool intents и typed tombstones хранятся в Core-owned SQLite.
+
+Offline bundle формата `evohime-provenance-export-v1` имеет allow-listed
+замкнутые секции и проверяется командой `evohime-verify provenance --bundle`.

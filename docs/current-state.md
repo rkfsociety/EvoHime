@@ -138,3 +138,10 @@ C#/WinUI compatibility и native package проверяются полным acc
 Пользовательский продукт ограничен `EvoHime-Setup.exe`, `EvoHime.exe`, локальным Core, supervisor и данными в профиле Windows. Исследовательские и экспериментальные каталоги не входят в установочный runtime.
 
 Legacy web UI, HTTP server, browser launcher и PostgreSQL migrations удалены из репозитория. Electron UI и authenticated versioned named-pipe IPC — текущая пользовательская оболочка и transport boundary; WinUI остаётся временным compatibility runtime для совместимости и тестов.
+## Provenance model requests
+
+После этапов 05.1–05.9 checkout содержит канонический model-request contract,
+SQLite provenance repository (schema 28, internal provenance schema 2),
+durable request/response/tool/source/shadow/tombstone tables, Core checkpoint
+API, startup recovery/retention hooks и offline bundle boundary. Existing
+receipt contract remains backward-compatible; request linkage is additive.

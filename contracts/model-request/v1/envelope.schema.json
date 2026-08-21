@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evohime.local/contracts/model-request/v1/envelope.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "request_id", "logical_request_id", "attempt", "ledger_id", "request_kind", "provider", "model", "route_snapshot_hash", "policy_snapshot_hash", "route_policy_hash_shared", "system_prompt", "messages", "tools", "model_parameters", "context_projection"],
+  "properties": {
+    "version": {"const": 1},
+    "request_id": {"type": "string", "minLength": 1},
+    "logical_request_id": {"type": "string", "minLength": 1},
+    "attempt": {"type": "integer", "minimum": 1},
+    "parent_request_id": {"type": "string", "minLength": 1},
+    "ledger_id": {"type": "string", "minLength": 1},
+    "request_kind": {"enum": ["agent", "plan_review", "plan_revision", "memory", "child", "scheduled", "ambient", "internal_summary"]},
+    "provider": {"type": "string", "minLength": 1},
+    "model": {"type": "string", "minLength": 1},
+    "route_snapshot_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "policy_snapshot_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "route_policy_hash_shared": {"type": "boolean"},
+    "system_prompt": {"type": "string"},
+    "messages": {"type": "array"},
+    "tools": {"type": "array"},
+    "model_parameters": {"type": "object"},
+    "context_projection": {"type": "object"},
+    "previous_request_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

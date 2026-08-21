@@ -18,6 +18,7 @@ pub mod context_ledger_store;
 pub mod feedback_store;
 pub mod memory_store;
 pub mod model_limit_store;
+pub mod model_provenance;
 pub mod reconciliation_verifier;
 pub mod research_store;
 pub mod scratchpad_store;
@@ -27,7 +28,8 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 26;
+pub const SCHEMA_VERSION: u32 = 28;
+const LEGACY_SCHEMA_VERSION: u32 = 26;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -380,7 +382,7 @@ impl LocalDatabase {
         if version > SCHEMA_VERSION {
             return Err(StorageError::UnsupportedSchema(version));
         }
-        if version < SCHEMA_VERSION {
+        if version < LEGACY_SCHEMA_VERSION {
             if existed {
                 fs::copy(&path, path.with_extension("db.bak"))?;
             }
@@ -393,6 +395,9 @@ impl LocalDatabase {
         connection.pragma_update(None, "journal_mode", "WAL")?;
         evohime_receipts::runtime::install_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        model_provenance::install_schema(&connection)
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
 

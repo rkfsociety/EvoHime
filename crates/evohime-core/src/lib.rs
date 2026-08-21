@@ -1916,6 +1916,16 @@ impl EventJournal {
         })
     }
 
+    /// Startup gate for Core: reconcile active dispatchable requests before
+    /// accepting a new model call, then run one bounded retention pass.
+    pub async fn recover_model_provenance_on_startup(&self) -> Result<(usize, usize), StorageError> {
+        let recovered = self.recover_model_requests().await?;
+        let cutoff = task_memory::now_millis() as i64
+            - evohime_model_provenance::PROVENANCE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+        let pruned = self.retain_model_provenance(cutoff).await?;
+        Ok((recovered, pruned))
+    }
+
     /// Общий доступ к базе для контрактов плана 01: ledger, scratchpad и
     /// artifact store работают против той же мигрированной базы.
     pub fn database(&self) -> &Arc<Mutex<LocalDatabase>> {
@@ -2094,6 +2104,52 @@ impl EventJournal {
             database.connection(),
         )?;
         store.append(entry)
+    }
+
+    /// Единая Core-owned граница provenance: envelope валидируется и
+    /// сохраняется до разрешения provider dispatch. Renderer этот API не
+    /// видит; он вызывается только из Core model-call orchestration.
+    pub async fn commit_model_request(
+        &self,
+        envelope: &evohime_model_provenance::ModelRequestEnvelopeV1,
+        mode: evohime_local_storage::model_provenance::CommitMode,
+    ) -> Result<evohime_local_storage::model_provenance::ModelRequestRecord, StorageError> {
+        let database = self.database.lock().await;
+        evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+            database.connection(),
+        )
+        .commit_envelope(envelope, mode)
+        .map_err(|error| StorageError::Context(error.to_string()))
+    }
+
+    /// Durable marker ставится непосредственно перед provider call. Marker
+    /// не утверждает, что provider ответил, поэтому recovery может честно
+    /// различить crash до и после возможного dispatch.
+    pub async fn mark_model_dispatch(&self, request_id: &str, at: i64) -> Result<(), StorageError> {
+        let database = self.database.lock().await;
+        evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+            database.connection(),
+        )
+        .mark_dispatch(request_id, at)
+        .map_err(|error| StorageError::Context(error.to_string()))
+    }
+
+    pub async fn recover_model_requests(&self) -> Result<usize, StorageError> {
+        let database = self.database.lock().await;
+        evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+            database.connection(),
+        )
+        .recover_active()
+        .map_err(|error| StorageError::Context(error.to_string()))
+    }
+
+    pub async fn retain_model_provenance(&self, cutoff: i64) -> Result<usize, StorageError> {
+        let database = self.database.lock().await;
+        evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+            database.connection(),
+        )
+        .retention_pass(cutoff)
+        .map_err(|error| StorageError::Context(error.to_string()))
     }
 
     /// Append-only запись фактического usage провайдера.

@@ -16,6 +16,9 @@ struct Args {
 }
 
 fn main() -> ExitCode {
+    if env::args().nth(1).as_deref() == Some("provenance") {
+        return verify_provenance_bundle();
+    }
     let Some(args) = parse_args() else {
         usage();
         return ExitCode::from(4);
@@ -226,6 +229,47 @@ fn main() -> ExitCode {
     };
     emit(&args.format, name, verification.code.unwrap_or(""));
     ExitCode::from(code)
+}
+
+/// Минимальный offline boundary для `evohime-provenance-export-v1`: verifier
+/// читает только bundle, проверяет allow-list, размеры и file hashes. Он не
+/// открывает SQLite/Core/workspace и не подставляет текущее состояние.
+fn verify_provenance_bundle() -> ExitCode {
+    let mut args = env::args().skip(2);
+    let mut bundle = None;
+    let mut format = "text".to_string();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--bundle" => bundle = args.next(),
+            "--format" => format = args.next().unwrap_or_else(|| "text".into()),
+            _ => return fail(&format, "unsupported", "EXPORT_MANIFEST_MISMATCH", 4),
+        }
+    }
+    let Some(bundle) = bundle else { return fail(&format, "unsupported", "input.unreadable", 4); };
+    let root = Path::new(&bundle);
+    let manifest: serde_json::Value = match fs::read(root.join("manifest.json")).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()) {
+        Some(value) => value,
+        None => return fail(&format, "broken", "EXPORT_MANIFEST_MISMATCH", 2),
+    };
+    if manifest["bundle_schema_version"] != 1 { return fail(&format, "unsupported", "EXPORT_MANIFEST_MISMATCH", 4); }
+    let Some(files) = manifest["files"].as_object() else { return fail(&format, "broken", "EXPORT_MANIFEST_MISMATCH", 2); };
+    let mut digest_input = b"evohime-provenance-bundle-v1\0".to_vec();
+    for (relative, expected) in files {
+        let path = Path::new(relative);
+        if path.is_absolute() || path.components().any(|component| component == std::path::Component::ParentDir) {
+            return fail(&format, "broken", "EXPORT_MANIFEST_MISMATCH", 2);
+        }
+        let bytes = match fs::read(root.join(path)) { Ok(value) if value.len() <= 16 * 1024 * 1024 => value, _ => return fail(&format, "broken", "EXPORT_MANIFEST_MISMATCH", 2) };
+        let actual = evohime_receipts::sha256_hex(&bytes);
+        if expected.as_str() != Some(actual.as_str()) { return fail(&format, "broken", "EXPORT_MANIFEST_MISMATCH", 2); }
+        digest_input.extend(relative.as_bytes()); digest_input.push(0); digest_input.extend(actual.as_bytes()); digest_input.push(b'\n');
+    }
+    if manifest["bundle_content_sha256"].as_str() != Some(evohime_receipts::sha256_hex(&digest_input).as_str()) {
+        return fail(&format, "broken", "EXPORT_MANIFEST_MISMATCH", 2);
+    }
+    let state = manifest["request_states"].as_array().and_then(|items| items.first()).and_then(|item| item["verification_state"].as_str()).unwrap_or("damaged");
+    if format == "json" { println!("{{\"status\":\"verified\",\"verification_state\":\"{}\"}}", state); } else { println!("verified: {state}"); }
+    ExitCode::SUCCESS
 }
 
 fn parse_args() -> Option<Args> {
