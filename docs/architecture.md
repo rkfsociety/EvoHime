@@ -363,3 +363,10 @@ responses/tool intents и typed tombstones хранятся в Core-owned SQLite
 
 Offline bundle формата `evohime-provenance-export-v1` имеет allow-listed
 замкнутые секции и проверяется командой `evohime-verify provenance --bundle`.
+
+Хеш снимка gateway фиксируется до dispatch и вычисляется по реальному снимку
+политики маршрутизации. В receipts ссылка на action может быть пустой, а
+идентификатор request хранится отдельно; `BEGIN IMMEDIATE` сериализует
+конкурирующие добавления в цепочку. Tool intents связаны с terminal effect
+receipts, а redaction сохраняет неизменяемое обязательство envelope и создаёт
+типизированные tombstone.

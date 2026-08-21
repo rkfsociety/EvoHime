@@ -12,7 +12,7 @@ use ring::{
     aead,
     rand::{SecureRandom, SystemRandom},
 };
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -586,6 +586,20 @@ pub struct ReceiptCheckpointRow {
     pub status: String,
 }
 
+/// Signed request-commit receipt appended to the same Ed25519 chain as tool
+/// receipts. The payload contains only identifiers and hashes; prompt bytes
+/// remain in the model-provenance block store.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignedModelRequestReceipt {
+    pub receipt_id: String,
+    pub request_id: String,
+    pub receipt_hash: String,
+    pub canonical_payload: Vec<u8>,
+    pub previous_receipt_hash: Option<String>,
+    pub key_id: String,
+    pub created_at_ms: i64,
+}
+
 /// Signing boundary.  The signer receives the SHA-256 digest of canonical
 /// payload bytes, never raw tool input or a mutable JSON representation.
 pub trait ReceiptSigner: Send + Sync {
@@ -598,8 +612,9 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
         "CREATE TABLE IF NOT EXISTS receipt_records (
            schema_version INTEGER NOT NULL DEFAULT 1,
            receipt_id TEXT PRIMARY KEY NOT NULL,
-           action_id TEXT NOT NULL,
-           receipt_kind TEXT NOT NULL CHECK(receipt_kind IN ('pre_action','post_action','refusal')),
+           action_id TEXT,
+           request_id TEXT,
+           receipt_kind TEXT NOT NULL CHECK(receipt_kind IN ('pre_action','post_action','refusal','request_commit')),
            action_status TEXT NOT NULL,
            task_id TEXT NOT NULL,
            run_id TEXT NOT NULL,
@@ -608,7 +623,8 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
            canonical_envelope BLOB NOT NULL,
            receipt_hash TEXT NOT NULL UNIQUE,
            previous_receipt_hash TEXT,
-           created_at_ms INTEGER NOT NULL
+           created_at_ms INTEGER NOT NULL,
+           source TEXT NOT NULL DEFAULT 'signed'
          );
          CREATE INDEX IF NOT EXISTS idx_receipt_records_action ON receipt_records(action_id);
          CREATE TABLE IF NOT EXISTS receipt_actions (
@@ -768,6 +784,7 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
             "schema_version",
             "INTEGER NOT NULL DEFAULT 1",
         ),
+        ("receipt_records", "request_id", "TEXT"),
         (
             "receipt_actions",
             "schema_version",
@@ -817,6 +834,51 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
                 [],
             )?;
         }
+    }
+    // SQLite cannot alter a CHECK constraint in place. Rebuild only the
+    // legacy receipt table when it predates request_commit; all existing
+    // signed action receipts are copied byte-for-byte.
+    let receipt_sql: String = connection.query_row(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='receipt_records'",
+        [],
+        |row| row.get(0),
+    )?;
+    let action_id_not_null: i64 = connection
+        .query_row(
+            "SELECT COALESCE(\"notnull\",0) FROM pragma_table_info('receipt_records') WHERE name='action_id'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?
+        .unwrap_or_default();
+    if !receipt_sql.contains("request_commit") || action_id_not_null != 0 {
+        let tx = connection.unchecked_transaction()?;
+        tx.execute_batch(
+            "ALTER TABLE receipt_records RENAME TO receipt_records_legacy;
+             CREATE TABLE receipt_records (
+               schema_version INTEGER NOT NULL DEFAULT 1,
+               receipt_id TEXT PRIMARY KEY NOT NULL,
+               action_id TEXT,
+               request_id TEXT,
+               receipt_kind TEXT NOT NULL CHECK(receipt_kind IN ('pre_action','post_action','refusal','request_commit')),
+               action_status TEXT NOT NULL,
+               task_id TEXT NOT NULL,
+               run_id TEXT NOT NULL,
+               key_id TEXT NOT NULL,
+               canonical_payload BLOB NOT NULL,
+               canonical_envelope BLOB NOT NULL,
+               receipt_hash TEXT NOT NULL UNIQUE,
+               previous_receipt_hash TEXT,
+               created_at_ms INTEGER NOT NULL,
+               source TEXT NOT NULL DEFAULT 'signed'
+             );
+             INSERT INTO receipt_records(schema_version,receipt_id,action_id,request_id,receipt_kind,action_status,task_id,run_id,key_id,canonical_payload,canonical_envelope,receipt_hash,previous_receipt_hash,created_at_ms,source)
+               SELECT schema_version,receipt_id,action_id,request_id,receipt_kind,action_status,task_id,run_id,key_id,canonical_payload,canonical_envelope,receipt_hash,previous_receipt_hash,created_at_ms,COALESCE(source,'signed')
+               FROM receipt_records_legacy;
+             DROP TABLE receipt_records_legacy;
+             CREATE INDEX IF NOT EXISTS idx_receipt_records_action ON receipt_records(action_id);",
+        )?;
+        tx.commit()?;
     }
     Ok(())
 }
@@ -1208,6 +1270,143 @@ impl<'a> ReceiptRuntime<'a> {
         install_schema(connection)?;
         connection.busy_timeout(Duration::from_secs(2))?;
         Ok(Self { connection, signer })
+    }
+
+    /// Appends a request-commit receipt to the existing signed chain. Only
+    /// identifiers and the immutable envelope hash are signed.
+    pub fn append_model_request_receipt(
+        &mut self,
+        request_id: &str,
+        logical_request_id: &str,
+        ledger_id: &str,
+        attempt: u32,
+        provider: &str,
+        model: &str,
+        envelope_hash: &str,
+        context_projection_hash: &str,
+        route_snapshot_hash: &str,
+        policy_snapshot_hash: &str,
+    ) -> Result<SignedModelRequestReceipt, RuntimeError> {
+        if request_id.is_empty()
+            || logical_request_id.is_empty()
+            || ledger_id.is_empty()
+            || attempt == 0
+            || provider.is_empty()
+            || model.is_empty()
+            || [
+                envelope_hash,
+                context_projection_hash,
+                route_snapshot_hash,
+                policy_snapshot_hash,
+            ]
+            .iter()
+            .any(|hash| {
+                hash.len() != 64
+                    || !hash
+                        .bytes()
+                        .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            })
+        {
+            return Err(RuntimeError::Code("schema_violation"));
+        }
+        require_ready(self.connection)?;
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(existing) = tx
+            .query_row(
+                "SELECT receipt_id,receipt_hash,canonical_payload,previous_receipt_hash,key_id,created_at_ms FROM receipt_records WHERE request_id=?1 AND receipt_kind='request_commit'",
+                [request_id],
+                |row| {
+                    Ok(SignedModelRequestReceipt {
+                        receipt_id: row.get(0)?,
+                        request_id: request_id.to_string(),
+                        receipt_hash: row.get(1)?,
+                        canonical_payload: row.get(2)?,
+                        previous_receipt_hash: row.get(3)?,
+                        key_id: row.get(4)?,
+                        created_at_ms: row.get(5)?,
+                    })
+                },
+            )
+            .optional()?
+        {
+            tx.commit()?;
+            return Ok(existing);
+        }
+        let key_id = self.signer.key_id()?;
+        let previous: Option<String> = tx
+            .query_row(
+                "SELECT receipt_hash FROM receipt_chain_heads WHERE key_id=?1",
+                [&key_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let receipt_id = Uuid::now_v7().to_string();
+        let created_at_ms = now_ms();
+        let payload = serde_json::json!({
+            "receipt_version": 1,
+            "payload_version": 1,
+            "receipt_domain": "model_request",
+            "receipt_type": "request_commit",
+            "receipt_id": receipt_id,
+            "request_id": request_id,
+            "logical_request_id": logical_request_id,
+            "ledger_id": ledger_id,
+            "attempt": attempt,
+            "provider": provider,
+            "model": model,
+            "request_envelope_hash": envelope_hash,
+            "context_projection_hash": context_projection_hash,
+            "route_snapshot_hash": route_snapshot_hash,
+            "policy_snapshot_hash": policy_snapshot_hash,
+            "previous_receipt_hash": previous,
+            "created_at_ms": created_at_ms,
+        });
+        let canonical_payload = canonicalize_json(
+            &serde_json::to_vec(&payload).map_err(|_| ReceiptError::InvalidJson)?,
+        )?;
+        let payload_hash = crate::sha256_hex(&canonical_payload);
+        let envelope = Envelope {
+            payload,
+            key_id: key_id.clone(),
+            signature_algorithm: "Ed25519".into(),
+            signature: self.signer.sign_payload_hash(&payload_hash)?,
+        };
+        let canonical_envelope = canonicalize_json(
+            &serde_json::to_vec(&envelope).map_err(|_| ReceiptError::InvalidJson)?,
+        )?;
+        let receipt_hash = receipt_hash(&envelope)?;
+        tx.execute(
+            "INSERT INTO receipt_records(schema_version,receipt_id,action_id,request_id,receipt_kind,action_status,task_id,run_id,key_id,canonical_payload,canonical_envelope,receipt_hash,previous_receipt_hash,created_at_ms,source) VALUES(1,?1,NULL,?2,'request_commit','committed',?3,?4,?5,?6,?7,?8,?9,?10,'signed')",
+            params![
+                receipt_id,
+                request_id,
+                logical_request_id,
+                ledger_id,
+                key_id,
+                canonical_payload,
+                canonical_envelope,
+                receipt_hash,
+                previous,
+                created_at_ms
+            ],
+        )?;
+        tx.execute(
+            "INSERT INTO receipt_chain_heads(key_id,receipt_hash,updated_at_ms) VALUES(?1,?2,?3) ON CONFLICT(key_id) DO UPDATE SET receipt_hash=excluded.receipt_hash,updated_at_ms=excluded.updated_at_ms",
+            params![key_id, receipt_hash, created_at_ms],
+        )?;
+        increment_metric_tx(&tx, "receipt_append_count", 1)?;
+        tx.commit()?;
+        Ok(SignedModelRequestReceipt {
+            receipt_id,
+            request_id: request_id.to_string(),
+            receipt_hash,
+            canonical_payload,
+            previous_receipt_hash: previous,
+            key_id,
+            created_at_ms,
+        })
     }
 
     pub fn prepare(&mut self, request: ActionRequest) -> Result<PrepareOutcome, RuntimeError> {
@@ -3621,5 +3820,59 @@ mod tests {
         let (key_id, cutoff) = &candidates[0];
         assert_eq!(key_id, "test-key");
         assert!(*cutoff > 0);
+    }
+
+    #[test]
+    fn request_commit_receipt_is_signed_and_idempotent_on_the_same_chain() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let first = runtime
+            .append_model_request_receipt(
+                "request-1",
+                "logical-1",
+                "ledger-1",
+                1,
+                "mock",
+                "model",
+                &"a".repeat(64),
+                &"b".repeat(64),
+                &"c".repeat(64),
+                &"d".repeat(64),
+            )
+            .unwrap();
+        let second = runtime
+            .append_model_request_receipt(
+                "request-1",
+                "logical-1",
+                "ledger-1",
+                1,
+                "mock",
+                "model",
+                &"a".repeat(64),
+                &"b".repeat(64),
+                &"c".repeat(64),
+                &"d".repeat(64),
+            )
+            .unwrap();
+        assert_eq!(first, second);
+        assert_eq!(first.previous_receipt_hash, None);
+        assert_eq!(
+            db.query_row("SELECT receipt_kind FROM receipt_records", [], |row| row
+                .get::<_, String>(
+                0
+            ))
+            .unwrap(),
+            "request_commit"
+        );
+        assert_eq!(
+            db.query_row(
+                "SELECT receipt_hash FROM receipt_chain_heads WHERE key_id='test-key'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            first.receipt_hash
+        );
     }
 }

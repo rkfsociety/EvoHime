@@ -665,6 +665,23 @@ impl ModelGateway {
         )
     }
 
+    /// Returns the exact immutable routing snapshot commitment used by the
+    /// policy dispatch path. Core calls this immediately before committing a
+    /// model-request envelope and passes the same request to dispatch.
+    pub fn provenance_route_snapshot_hash(
+        &self,
+        request: &RoutingRequest,
+    ) -> Result<String, ProviderError> {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        self.route_policy_snapshot(request, now_ms)
+            .map_err(|error| ProviderError::Config(error.to_string()))?
+            .round_trip_hash()
+            .map_err(|error| ProviderError::Config(error.to_string()))
+    }
+
     /// Streams a chat completion using a route chosen by the routing policy
     /// contract for the given mode, rather than a route name specified
     /// directly by the caller.

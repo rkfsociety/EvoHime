@@ -1,6 +1,7 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-21 (этап 04.7 — ограниченная проактивность; план 04 завершён).
+Обновлено: 2026-08-21 (планы 04 завершены; план 05 реализован в текущем
+checkout, включая durable model-request provenance и offline export).
 
 ## Продукт
 
@@ -110,6 +111,23 @@ Core и supervisor — внутренние компоненты установ�
 
 Read-only Git loadout расширен операциями git.log, git.show, git.blame и git.changed_files. Они зарегистрированы в Core ToolRegistry, входят в модельные схемы и read-only resilience/policy-контуры; история ограничена 100 записями, blame — 500 строками, а revision и пути проходят валидацию до запуска Git.
 
+### Model request provenance 05
+
+- canonical request envelope v1, JCS/domain-separated hashes, retry lineage и
+  известный test vector находятся в `contracts/model-request/v1/` и
+  `crates/evohime-model-provenance`;
+- перед каждым dispatch Core сохраняет immutable ledger, opaque block refs,
+  request receipt, shadow metadata и dispatch marker; ответ и tool intent
+  привязаны к конкретному request attempt;
+- startup recovery классифицирует crash до marker как `interrupted`, а после
+  marker — как `unknown_outcome`, без blind retry; retention запускается при
+  старте и далее bounded worker-ом, redaction оставляет typed tombstone;
+- export создаёт атомарный `evohime-provenance-export-v1` с ledger, route/policy,
+  responses, intents, evidence, shadow и tombstone секциями. Offline verifier
+  проверяет canonical manifest, размеры, hashes, detached Ed25519 signature и
+  внешний trust key. Намеренно неполные `redacted`, `retention_pruned`,
+  `legacy_hash_only` и `metadata_hash_only` не считаются полной реконструкцией.
+
 ### Разработка
 
 - `.env.example` описывает переменные провайдера для локального запуска; `start-dev.ps1` читает `.env` по allow-list и передаёт значения только дочерним native-процессам.
@@ -117,7 +135,11 @@ Read-only Git loadout расширен операциями git.log, git.show, g
 
 ## Последняя проверка checkout
 
-19 августа 2026 года пройдены `cargo check --workspace --all-targets` и полный
+21 августа 2026 года пройдены `cargo test -p evohime-core` (421 unit-тест,
+integration/recovery/doc-tests), `cargo test -p evohime-model-provenance -p
+evohime-local-storage -p evohime-receipts` (5 + 138 + 56 тестов, один
+receipt export test ignored по контракту), а также свежие `cargo check` и
+format/diff проверки. 19 августа 2026 года пройдены `cargo check --workspace --all-targets` и полный
 Electron-прогон (typecheck и 321 тест). 16 августа 2026 года были пройдены Rust,
 Electron, protocol, bundle, deterministic RAG/evaluation и security smoke checks;
 C#/WinUI compatibility и native package проверяются полным acceptance-прогоном. Source-update E2E
@@ -128,10 +150,9 @@ C#/WinUI compatibility и native package проверяются полным acc
 
 ## Следующие направления
 
-1. План 05: provenance и реконструируемость model request;
-2. hardening credentials, recovery и diagnostics;
-3. поддерживать Windows 10/11 CI и compatibility suite, не возвращая web runtime;
-4. informative ARM64/Insider compatibility runs.
+1. hardening credentials, recovery и diagnostics;
+2. поддерживать Windows 10/11 CI и compatibility suite, не возвращая web runtime;
+3. informative ARM64/Insider compatibility runs.
 
 ## Граница продукта
 

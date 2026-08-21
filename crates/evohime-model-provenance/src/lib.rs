@@ -194,20 +194,30 @@ impl ModelRequestEnvelopeV1 {
         if self.attempt == 0 {
             return Err(ProvenanceError::Invalid("attempt starts at one".into()));
         }
-        if self.attempt == 1 && (self.parent_request_id.is_some() || self.previous_request_hash.is_some()) {
+        if self.attempt == 1
+            && (self.parent_request_id.is_some() || self.previous_request_hash.is_some())
+        {
             return Err(ProvenanceError::LineageMismatch);
         }
-        if self.attempt > 1 && (self.parent_request_id.is_none() || self.previous_request_hash.is_none()) {
+        if self.attempt > 1
+            && (self.parent_request_id.is_none() || self.previous_request_hash.is_none())
+        {
             return Err(ProvenanceError::LineageMismatch);
         }
         if self.system_prompt.len() > MAX_SYSTEM_PROMPT_BYTES {
             return Err(ProvenanceError::TooLarge);
         }
-        if self.messages.iter().any(|m| m.content.len() > MAX_MESSAGE_BYTES) {
+        if self
+            .messages
+            .iter()
+            .any(|m| m.content.len() > MAX_MESSAGE_BYTES)
+        {
             return Err(ProvenanceError::TooLarge);
         }
         if self.tools.iter().any(|t| {
-            serde_json::to_vec(t).map(|bytes| bytes.len() > MAX_TOOL_SCHEMA_BYTES).unwrap_or(true)
+            serde_json::to_vec(t)
+                .map(|bytes| bytes.len() > MAX_TOOL_SCHEMA_BYTES)
+                .unwrap_or(true)
         }) {
             return Err(ProvenanceError::TooLarge);
         }
@@ -229,14 +239,29 @@ impl ModelRequestEnvelopeV1 {
         if self.context_projection.entries.len() > MAX_EVIDENCE_REFS {
             return Err(ProvenanceError::TooLarge);
         }
-        let source_count: usize = self.context_projection.entries.iter().map(|entry| entry.source_refs.len()).sum();
-        if source_count > MAX_EVIDENCE_REFS || self.context_projection.entries.iter().any(|entry| entry.source_refs.len() > MAX_SOURCE_REFS_PER_ENTRY) {
+        let source_count: usize = self
+            .context_projection
+            .entries
+            .iter()
+            .map(|entry| entry.source_refs.len())
+            .sum();
+        if source_count > MAX_EVIDENCE_REFS
+            || self
+                .context_projection
+                .entries
+                .iter()
+                .any(|entry| entry.source_refs.len() > MAX_SOURCE_REFS_PER_ENTRY)
+        {
             return Err(ProvenanceError::TooLarge);
         }
         if self.context_projection.context_projection_hash.is_empty() {
-            return Err(ProvenanceError::Invalid("projection hash is missing".into()));
+            return Err(ProvenanceError::Invalid(
+                "projection hash is missing".into(),
+            ));
         }
-        if self.context_projection.compute_hash()? != self.context_projection.context_projection_hash {
+        if self.context_projection.compute_hash()?
+            != self.context_projection.context_projection_hash
+        {
             return Err(ProvenanceError::HashMismatch);
         }
         Ok(())
@@ -244,7 +269,8 @@ impl ModelRequestEnvelopeV1 {
 
     pub fn canonical_bytes(&self) -> Result<Vec<u8>> {
         self.validate()?;
-        let mut value = serde_json::to_value(self).map_err(|error| ProvenanceError::Invalid(error.to_string()))?;
+        let mut value = serde_json::to_value(self)
+            .map_err(|error| ProvenanceError::Invalid(error.to_string()))?;
         normalize_tools(&mut value)?;
         let bytes = canonical_json_value(&value)?;
         if bytes.len() > MAX_REQUEST_ENVELOPE_BYTES {
@@ -270,15 +296,38 @@ impl ContextProjection {
     ) -> Result<Self> {
         let mut entries = Vec::new();
         for id in selected_ids {
-            entries.push(ProjectionEntry { projection_entry_id: id, operation: "include".into(), source_refs: Vec::new(), block_ref_id: None, drop_reason: None });
+            entries.push(ProjectionEntry {
+                projection_entry_id: id,
+                operation: "include".into(),
+                source_refs: Vec::new(),
+                block_ref_id: None,
+                drop_reason: None,
+            });
         }
         for (id, refs) in summaries {
-            entries.push(ProjectionEntry { projection_entry_id: id, operation: "summary".into(), source_refs: refs, block_ref_id: None, drop_reason: None });
+            entries.push(ProjectionEntry {
+                projection_entry_id: id,
+                operation: "summary".into(),
+                source_refs: refs,
+                block_ref_id: None,
+                drop_reason: None,
+            });
         }
         for (id, reason) in dropped {
-            entries.push(ProjectionEntry { projection_entry_id: id, operation: "prune".into(), source_refs: Vec::new(), block_ref_id: None, drop_reason: Some(reason) });
+            entries.push(ProjectionEntry {
+                projection_entry_id: id,
+                operation: "prune".into(),
+                source_refs: Vec::new(),
+                block_ref_id: None,
+                drop_reason: Some(reason),
+            });
         }
-        let mut projection = Self { ledger_id: ledger_id.into(), context_ledger_hash: context_ledger_hash.into(), entries, context_projection_hash: String::new() };
+        let mut projection = Self {
+            ledger_id: ledger_id.into(),
+            context_ledger_hash: context_ledger_hash.into(),
+            entries,
+            context_projection_hash: String::new(),
+        };
         projection.context_projection_hash = projection.compute_hash()?;
         Ok(projection)
     }
@@ -286,7 +335,8 @@ impl ContextProjection {
     pub fn compute_hash(&self) -> Result<String> {
         let mut coverage = self.clone();
         coverage.context_projection_hash.clear();
-        let coverage = serde_json::to_value(&coverage).map_err(|error| ProvenanceError::Invalid(error.to_string()))?;
+        let coverage = serde_json::to_value(&coverage)
+            .map_err(|error| ProvenanceError::Invalid(error.to_string()))?;
         let coverage = canonical_json_value(&coverage)?;
         if coverage.len() > MAX_CONTEXT_PROJECTION_BYTES {
             return Err(ProvenanceError::TooLarge);
@@ -299,30 +349,55 @@ impl ContextProjection {
 }
 
 fn normalize_tools(value: &mut Value) -> Result<()> {
-    let object = value.as_object_mut().ok_or_else(|| ProvenanceError::Invalid("envelope is not object".into()))?;
-    let tools = object.get_mut("tools").ok_or_else(|| ProvenanceError::Invalid("tools missing".into()))?;
-    let array = tools.as_array_mut().ok_or_else(|| ProvenanceError::Invalid("tools is not array".into()))?;
-    array.sort_by(|left, right| left.get("name").and_then(Value::as_str).cmp(&right.get("name").and_then(Value::as_str)));
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| ProvenanceError::Invalid("envelope is not object".into()))?;
+    let tools = object
+        .get_mut("tools")
+        .ok_or_else(|| ProvenanceError::Invalid("tools missing".into()))?;
+    let array = tools
+        .as_array_mut()
+        .ok_or_else(|| ProvenanceError::Invalid("tools is not array".into()))?;
+    array.sort_by(|left, right| {
+        left.get("name")
+            .and_then(Value::as_str)
+            .cmp(&right.get("name").and_then(Value::as_str))
+    });
     Ok(())
 }
 
 fn canonical_json<T: Serialize>(value: &T) -> Result<Vec<u8>> {
-    let value = serde_json::to_value(value).map_err(|error| ProvenanceError::Invalid(error.to_string()))?;
+    let value =
+        serde_json::to_value(value).map_err(|error| ProvenanceError::Invalid(error.to_string()))?;
     canonical_json_value(&value)
 }
 
 fn canonical_json_value(value: &Value) -> Result<Vec<u8>> {
-    canonicalize_json(&serde_json::to_vec(value).map_err(|error| ProvenanceError::Invalid(error.to_string()))?)
-        .map_err(|error| ProvenanceError::Invalid(error.to_string()))
+    canonicalize_json(
+        &serde_json::to_vec(value).map_err(|error| ProvenanceError::Invalid(error.to_string()))?,
+    )
+    .map_err(|error| ProvenanceError::Invalid(error.to_string()))
 }
 
 mod hex {
     use super::ProvenanceError;
     pub fn decode_hash(value: &str) -> super::Result<Vec<u8>> {
-        if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()) {
-            return Err(ProvenanceError::Invalid("hash must be lowercase sha256".into()));
+        if value.len() != 64
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        {
+            return Err(ProvenanceError::Invalid(
+                "hash must be lowercase sha256".into(),
+            ));
         }
-        (0..64).step_by(2).map(|index| u8::from_str_radix(&value[index..index + 2], 16).map_err(|_| ProvenanceError::Invalid("invalid hash".into()))).collect()
+        (0..64)
+            .step_by(2)
+            .map(|index| {
+                u8::from_str_radix(&value[index..index + 2], 16)
+                    .map_err(|_| ProvenanceError::Invalid("invalid hash".into()))
+            })
+            .collect()
     }
 }
 
@@ -360,10 +435,21 @@ impl ModelRequestReceiptV1 {
             return Err(ProvenanceError::UnsupportedVersion);
         }
         if self.receipt_domain != "model_request" || self.receipt_type != "request_commit" {
-            return Err(ProvenanceError::Invalid("unknown request receipt variant".into()));
+            return Err(ProvenanceError::Invalid(
+                "unknown request receipt variant".into(),
+            ));
         }
-        for hash in [&self.request_envelope_hash, &self.context_projection_hash, &self.route_snapshot_hash, &self.policy_snapshot_hash] {
-            if hash.len() != 64 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()) {
+        for hash in [
+            &self.request_envelope_hash,
+            &self.context_projection_hash,
+            &self.route_snapshot_hash,
+            &self.policy_snapshot_hash,
+        ] {
+            if hash.len() != 64
+                || !hash
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            {
                 return Err(ProvenanceError::Invalid("request receipt hash".into()));
             }
         }
@@ -396,7 +482,16 @@ pub fn is_secret_field(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     matches!(
         name.as_str(),
-        "api_key" | "apikey" | "authorization" | "cookie" | "password" | "private_key" | "secret" | "token" | "access_token" | "refresh_token"
+        "api_key"
+            | "apikey"
+            | "authorization"
+            | "cookie"
+            | "password"
+            | "private_key"
+            | "secret"
+            | "token"
+            | "access_token"
+            | "refresh_token"
     )
 }
 
@@ -405,12 +500,18 @@ pub fn validate_no_credentials(value: &Value) -> Result<()> {
         Value::Object(map) => {
             for (key, child) in map {
                 if is_secret_field(key) {
-                    return Err(ProvenanceError::Invalid("credential field is not model-visible provenance".into()));
+                    return Err(ProvenanceError::Invalid(
+                        "credential field is not model-visible provenance".into(),
+                    ));
                 }
                 validate_no_credentials(child)?;
             }
         }
-        Value::Array(items) => for item in items { validate_no_credentials(item)?; },
+        Value::Array(items) => {
+            for item in items {
+                validate_no_credentials(item)?;
+            }
+        }
         _ => {}
     }
     Ok(())
@@ -426,13 +527,63 @@ mod tests {
     use super::*;
 
     fn projection() -> ContextProjection {
-        let mut value = ContextProjection { ledger_id: "ledger".into(), context_ledger_hash: "a".repeat(64), entries: vec![ProjectionEntry { projection_entry_id: "item-1".into(), operation: "include".into(), source_refs: vec![], block_ref_id: Some("block-1".into()), drop_reason: None }], context_projection_hash: String::new() };
+        let mut value = ContextProjection {
+            ledger_id: "ledger".into(),
+            context_ledger_hash: "a".repeat(64),
+            entries: vec![ProjectionEntry {
+                projection_entry_id: "item-1".into(),
+                operation: "include".into(),
+                source_refs: vec![],
+                block_ref_id: Some("block-1".into()),
+                drop_reason: None,
+            }],
+            context_projection_hash: String::new(),
+        };
         value.context_projection_hash = value.compute_hash().unwrap();
         value
     }
 
     fn envelope() -> ModelRequestEnvelopeV1 {
-        ModelRequestEnvelopeV1 { version: 1, request_id: Uuid::now_v7().to_string(), logical_request_id: "logical".into(), attempt: 1, parent_request_id: None, ledger_id: "ledger".into(), request_kind: RequestKind::Agent, provider: "mock".into(), model: "model".into(), route_snapshot_hash: "b".repeat(64), policy_snapshot_hash: "c".repeat(64), route_policy_hash_shared: false, system_prompt: "system".into(), messages: vec![ModelMessage { role: "user".into(), content: "hello".into() }], tools: vec![ToolSchema { name: "z".into(), description: "z".into(), input_schema: serde_json::json!({"type":"object"}) }, ToolSchema { name: "a".into(), description: "a".into(), input_schema: serde_json::json!({"type":"object"}) }], model_parameters: ModelParameters { temperature: None, top_p: None, max_output_tokens: Some(10), reasoning_mode: None, provider_options: Map::new() }, context_projection: projection(), previous_request_hash: None }
+        ModelRequestEnvelopeV1 {
+            version: 1,
+            request_id: Uuid::now_v7().to_string(),
+            logical_request_id: "logical".into(),
+            attempt: 1,
+            parent_request_id: None,
+            ledger_id: "ledger".into(),
+            request_kind: RequestKind::Agent,
+            provider: "mock".into(),
+            model: "model".into(),
+            route_snapshot_hash: "b".repeat(64),
+            policy_snapshot_hash: "c".repeat(64),
+            route_policy_hash_shared: false,
+            system_prompt: "system".into(),
+            messages: vec![ModelMessage {
+                role: "user".into(),
+                content: "hello".into(),
+            }],
+            tools: vec![
+                ToolSchema {
+                    name: "z".into(),
+                    description: "z".into(),
+                    input_schema: serde_json::json!({"type":"object"}),
+                },
+                ToolSchema {
+                    name: "a".into(),
+                    description: "a".into(),
+                    input_schema: serde_json::json!({"type":"object"}),
+                },
+            ],
+            model_parameters: ModelParameters {
+                temperature: None,
+                top_p: None,
+                max_output_tokens: Some(10),
+                reasoning_mode: None,
+                provider_options: Map::new(),
+            },
+            context_projection: projection(),
+            previous_request_hash: None,
+        }
     }
 
     #[test]
@@ -440,7 +591,10 @@ mod tests {
         let one = envelope();
         let mut two = one.clone();
         two.tools.reverse();
-        assert_eq!(one.canonical_bytes().unwrap(), two.canonical_bytes().unwrap());
+        assert_eq!(
+            one.canonical_bytes().unwrap(),
+            two.canonical_bytes().unwrap()
+        );
         assert_eq!(one.envelope_hash().unwrap(), two.envelope_hash().unwrap());
     }
 
@@ -466,5 +620,16 @@ mod tests {
         let mut value = envelope();
         value.tools[1].name = value.tools[0].name.clone();
         assert!(value.validate().is_err());
+    }
+
+    #[test]
+    fn known_answer_vector_is_stable() {
+        let mut value = envelope();
+        value.request_id = "00000000-0000-7000-8000-000000000001".into();
+        value.logical_request_id = "logical-known-answer".into();
+        assert_eq!(
+            value.envelope_hash().unwrap(),
+            "ca9dcbafac4fa5ca8006245326a606cbbc8439bd7cf2cec8f9ca07a8b3197a60"
+        );
     }
 }

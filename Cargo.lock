@@ -720,6 +720,7 @@ dependencies = [
 name = "evohime-core"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "chrono",
  "evohime-context-budget",
  "evohime-desktop-ipc",
@@ -835,6 +836,7 @@ dependencies = [
  "evohime-listener-contract",
  "evohime-model-provenance",
  "evohime-receipts",
+ "hex",
  "rusqlite",
  "serde",
  "serde_json",

@@ -1096,6 +1096,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use base64::Engine;
 use evohime_local_storage::{
     BackupPreview, BackupProgress, BackupResult, EventRecord, ImportedTask, LocalDatabase,
     ProjectPolicyRecord, RecoveryState, RestoreResult, RunCheckpointRecord, RunEffectRecord,
@@ -1918,7 +1919,9 @@ impl EventJournal {
 
     /// Startup gate for Core: reconcile active dispatchable requests before
     /// accepting a new model call, then run one bounded retention pass.
-    pub async fn recover_model_provenance_on_startup(&self) -> Result<(usize, usize), StorageError> {
+    pub async fn recover_model_provenance_on_startup(
+        &self,
+    ) -> Result<(usize, usize), StorageError> {
         let recovered = self.recover_model_requests().await?;
         let cutoff = task_memory::now_millis() as i64
             - evohime_model_provenance::PROVENANCE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
@@ -2106,6 +2109,91 @@ impl EventJournal {
         store.append(entry)
     }
 
+    /// Фиксирует решения compaction/prune в append-only shadow graph до
+    /// dispatch. На этом уровне ledger уже содержит идентичности исходных
+    /// items, но не их raw payload; поэтому такие записи явно остаются
+    /// `metadata_hash_only`, а не выдаются за полную реконструкцию.
+    pub async fn record_context_shadowing(
+        &self,
+        request_id: &str,
+        ledger: &evohime_context_budget::ledger::ContextLedgerEntry,
+        source_refs: &[evohime_model_provenance::SourceRef],
+    ) -> Result<(), StorageError> {
+        let database = self.database.lock().await;
+        let repository = evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+            database.connection(),
+        );
+        for compression in &ledger.compression {
+            for original_id in &compression.source_ids {
+                let shadow_id = format!("{request_id}:summary:{original_id}");
+                repository
+                    .append_shadow_original(
+                        &evohime_local_storage::model_provenance::ShadowOriginalRecord {
+                            shadow_id,
+                            ledger_id: ledger.id.clone(),
+                            request_id: request_id.to_owned(),
+                            original_kind: "compression".into(),
+                            original_id: original_id.clone(),
+                            operation: "summary".into(),
+                            parent_shadow_id: None,
+                            content_block_hash: None,
+                            source_state: "metadata_hash_only".into(),
+                            original_content_hash: None,
+                            byte_len: 0,
+                            created_at: task_memory::now_millis() as i64,
+                        },
+                        None,
+                    )
+                    .map_err(|error| StorageError::Context(error.to_string()))?;
+            }
+        }
+        for dropped in &ledger.dropped_items {
+            let shadow_id = format!("{request_id}:prune:{}", dropped.id);
+            repository
+                .append_shadow_original(
+                    &evohime_local_storage::model_provenance::ShadowOriginalRecord {
+                        shadow_id,
+                        ledger_id: ledger.id.clone(),
+                        request_id: request_id.to_owned(),
+                        original_kind: "dropped".into(),
+                        original_id: dropped.id.clone(),
+                        operation: "prune".into(),
+                        parent_shadow_id: None,
+                        content_block_hash: None,
+                        source_state: "metadata_hash_only".into(),
+                        original_content_hash: None,
+                        byte_len: 0,
+                        created_at: task_memory::now_millis() as i64,
+                    },
+                    None,
+                )
+                .map_err(|error| StorageError::Context(error.to_string()))?;
+        }
+        for shadow in repository
+            .list_shadow_originals(request_id, 4096)
+            .map_err(|error| StorageError::Context(error.to_string()))?
+        {
+            for (source_ref_ordinal, source_ref) in source_refs.iter().enumerate() {
+                database
+                    .connection()
+                    .execute(
+                        "INSERT OR IGNORE INTO context_shadow_source_refs(shadow_id,request_id,source_ref_ordinal,source_ordinal) SELECT ?1,?2,?3,ordinal FROM model_request_sources WHERE request_id=?2 AND source_ref_id=?4",
+                        rusqlite::params![
+                            shadow.shadow_id,
+                            request_id,
+                            source_ref_ordinal as i64,
+                            source_ref.source_ref_id
+                        ],
+                    )
+                    .map_err(StorageError::from)?;
+            }
+        }
+        repository
+            .compact_shadow_for_task(&ledger.task_id)
+            .map_err(|error| StorageError::Context(error.to_string()))?;
+        Ok(())
+    }
+
     /// Единая Core-owned граница provenance: envelope валидируется и
     /// сохраняется до разрешения provider dispatch. Renderer этот API не
     /// видит; он вызывается только из Core model-call orchestration.
@@ -2134,13 +2222,146 @@ impl EventJournal {
         .map_err(|error| StorageError::Context(error.to_string()))
     }
 
-    pub async fn recover_model_requests(&self) -> Result<usize, StorageError> {
+    pub async fn append_model_request_receipt(
+        &self,
+        keys: &Arc<ReceiptKeyManager>,
+        record: &evohime_local_storage::model_provenance::ModelRequestRecord,
+    ) -> Result<(), StorageError> {
+        let mut database = self.database.lock().await;
+        let signer = CoreReceiptSigner(Arc::clone(keys));
+        let signed = {
+            let mut runtime = ReceiptRuntime::new(database.connection_mut(), &signer)
+                .map_err(|error| StorageError::Context(error.to_string()))?;
+            runtime
+                .append_model_request_receipt(
+                    &record.request_id,
+                    &record.logical_request_id,
+                    &record.ledger_id,
+                    record.attempt,
+                    &record.provider,
+                    &record.model,
+                    record.envelope_hash.as_deref().ok_or_else(|| {
+                        StorageError::Context("request receipt requires full envelope".into())
+                    })?,
+                    &record.context_projection_hash,
+                    &record.route_snapshot_hash,
+                    &record.policy_snapshot_hash,
+                )
+                .map_err(|error| StorageError::Context(error.to_string()))?
+        };
+        let repository = evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+            database.connection(),
+        );
+        repository
+            .link_request_receipt(
+                &evohime_local_storage::model_provenance::RequestReceiptRecord {
+                    receipt_id: signed.receipt_id,
+                    request_id: signed.request_id,
+                    receipt_hash: signed.receipt_hash,
+                    request_envelope_hash: record.envelope_hash.clone().unwrap_or_default(),
+                    previous_receipt_hash: signed.previous_receipt_hash,
+                    key_id: signed.key_id,
+                    created_at: signed.created_at_ms,
+                },
+                &signed.canonical_payload,
+            )
+            .map_err(|error| StorageError::Context(error.to_string()))
+    }
+
+    pub async fn export_model_provenance(
+        &self,
+        request_id: &str,
+        destination: &std::path::Path,
+        keys: &Arc<ReceiptKeyManager>,
+    ) -> Result<std::path::PathBuf, StorageError> {
+        let database = self.database.lock().await;
+        let signer = CoreReceiptSigner(Arc::clone(keys));
+        evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+            database.connection(),
+        )
+        .export_bundle(request_id, destination, &signer)
+        .map_err(|error| StorageError::Context(error.to_string()))
+    }
+
+    /// Stores the provider outcome and closes one previously dispatch-marked
+    /// request. The response body is Core-owned and never crosses IPC.
+    pub async fn record_model_response(
+        &self,
+        response: &evohime_local_storage::model_provenance::ModelResponseRecord,
+        status: evohime_model_provenance::RequestStatus,
+    ) -> Result<(), StorageError> {
+        let database = self.database.lock().await;
+        let repository = evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+            database.connection(),
+        );
+        repository
+            .insert_response(response)
+            .and_then(|_| {
+                repository.set_status(&response.request_id, status, response.completed_at)
+            })
+            .map_err(|error| StorageError::Context(error.to_string()))
+    }
+
+    pub async fn record_model_tool_intent(
+        &self,
+        intent: &evohime_local_storage::model_provenance::ToolIntentRecord,
+    ) -> Result<(), StorageError> {
         let database = self.database.lock().await;
         evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
             database.connection(),
         )
-        .recover_active()
+        .insert_tool_intent(intent)
         .map_err(|error| StorageError::Context(error.to_string()))
+    }
+
+    pub async fn link_tool_receipt(
+        &self,
+        task_id: &str,
+        tool_name: &str,
+        action_id: &str,
+        terminal_receipt_hash: &str,
+    ) -> Result<(), StorageError> {
+        let database = self.database.lock().await;
+        evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+            database.connection(),
+        )
+        .link_tool_receipt(task_id, tool_name, action_id, terminal_receipt_hash)
+        .map_err(|error| StorageError::Context(error.to_string()))
+    }
+
+    pub async fn capture_model_workspace_evidence(
+        &self,
+        request_id: &str,
+        source_ref_id: &str,
+        path: &std::path::Path,
+        source_version: &str,
+    ) -> Result<String, StorageError> {
+        let database = self.database.lock().await;
+        evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+            database.connection(),
+        )
+        .capture_workspace_evidence(request_id, source_ref_id, path, source_version)
+        .map_err(|error| StorageError::Context(error.to_string()))
+    }
+
+    pub async fn recover_model_requests(&self) -> Result<usize, StorageError> {
+        let database = self.database.lock().await;
+        let recovered = evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+            database.connection(),
+        )
+        .recover_active()
+        .map_err(|error| StorageError::Context(error.to_string()))?;
+        if recovered > 0 {
+            let payload = serde_json::to_vec(&serde_json::json!({
+                "recovered_requests": recovered,
+                "policy": "conservative_no_blind_retry",
+            }))
+            .map_err(|error| StorageError::Context(error.to_string()))?;
+            database
+                .append_event("system", "model_provenance.recovery", &payload)
+                .map_err(StorageError::from)?;
+        }
+        Ok(recovered)
     }
 
     pub async fn retain_model_provenance(&self, cutoff: i64) -> Result<usize, StorageError> {
@@ -3908,6 +4129,24 @@ pub fn spawn_receipt_retention(
     })
 }
 
+/// Model-request retention runs once at startup and then every six hours.
+/// The repository performs the policy and closure checks transactionally, so
+/// this task may safely overlap with a new request checkpoint.
+pub fn spawn_model_provenance_retention(journal: EventJournal) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            let now_ms = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map(|value| value.as_millis() as i64)
+                .unwrap_or_default();
+            let cutoff =
+                now_ms - evohime_model_provenance::PROVENANCE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+            let _ = journal.retain_model_provenance(cutoff).await;
+            tokio::time::sleep(std::time::Duration::from_secs(6 * 60 * 60)).await;
+        }
+    })
+}
+
 /// Этап 04.2 ambient retention: истёкший текст транскриптов, истёкшие
 /// метаданные эпизодов, истёкшие tombstone и состарившиеся ambient-строки
 /// durable journal.
@@ -4251,6 +4490,60 @@ impl ReceiptSigner for CoreReceiptSigner {
     }
 }
 
+impl evohime_local_storage::model_provenance::ProvenanceBundleSigner for CoreReceiptSigner {
+    fn key_id(&self) -> String {
+        // Export callers already run after receipt-key startup. The trait is
+        // synchronous, so keep a bounded owned fallback for diagnostics.
+        self.0
+            .load_signer()
+            .map(|(metadata, _)| metadata.key_id)
+            .unwrap_or_else(|_| "unknown".into())
+    }
+
+    fn sign_manifest_digest(
+        &self,
+        digest: &[u8],
+    ) -> Result<Vec<u8>, evohime_local_storage::model_provenance::ModelProvenanceError> {
+        let digest_hex = digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let (_, signature) = self.0.sign_payload_hash(&digest_hex).map_err(|error| {
+            evohime_local_storage::model_provenance::ModelProvenanceError::CommitFailed(
+                error.to_string(),
+            )
+        })?;
+        base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(signature)
+            .map_err(|error| {
+                evohime_local_storage::model_provenance::ModelProvenanceError::CommitFailed(
+                    error.to_string(),
+                )
+            })
+    }
+
+    fn public_key_hex(&self) -> Option<String> {
+        let transition = self.0.load_history().ok()?.last()?.new_public_key.clone();
+        let public = evohime_receipts::key_lifecycle::public_key_bytes(&transition).ok()?;
+        Some(public.iter().map(|byte| format!("{byte:02x}")).collect())
+    }
+
+    fn key_history_jsonl(
+        &self,
+    ) -> Result<Vec<u8>, evohime_local_storage::model_provenance::ModelProvenanceError> {
+        let mut output = Vec::new();
+        for transition in self.0.load_history().map_err(|error| {
+            evohime_local_storage::model_provenance::ModelProvenanceError::CommitFailed(
+                error.to_string(),
+            )
+        })? {
+            output.extend(serde_json::to_vec(&transition)?);
+            output.push(b'\n');
+        }
+        Ok(output)
+    }
+}
+
 pub struct ToolAgent {
     gateway: Arc<ModelGateway>,
     tools: Arc<ToolRegistry>,
@@ -4271,6 +4564,95 @@ pub struct ToolAgent {
 }
 
 const DEFAULT_TOOL_ITERATIONS: usize = 32;
+
+struct ProvenancedModelResult {
+    result: evohime_model_gateway::PolicyChatResult,
+    request_id: Option<String>,
+    request_envelope_hash: Option<String>,
+    response_id: Option<String>,
+}
+
+fn model_request_envelope(
+    logical_request_id: &str,
+    request_id: String,
+    attempt: u32,
+    parent_request_id: Option<String>,
+    previous_request_hash: Option<String>,
+    ledger: &evohime_context_budget::ledger::ContextLedgerEntry,
+    messages: &[ChatMessage],
+    specs: &[ToolSpec],
+    source_refs: &[evohime_model_provenance::SourceRef],
+    route_snapshot_hash: &str,
+) -> Result<evohime_model_provenance::ModelRequestEnvelopeV1, String> {
+    let system_prompt = messages
+        .iter()
+        .find(|message| message.role == ChatRole::System)
+        .map(|message| message.content.clone())
+        .unwrap_or_default();
+    let messages = messages
+        .iter()
+        .filter(|message| message.role != ChatRole::System)
+        .map(|message| evohime_model_provenance::ModelMessage {
+            role: message.role.as_str().to_string(),
+            content: message.content.clone(),
+        })
+        .collect::<Vec<_>>();
+    let tools = specs
+        .iter()
+        .map(|spec| evohime_model_provenance::ToolSchema {
+            name: spec.function.name.clone(),
+            description: spec.function.description.clone(),
+            input_schema: spec.function.parameters.clone(),
+        })
+        .collect::<Vec<_>>();
+    let selected_ids = ledger.selected_items.iter().map(|item| item.id.clone());
+    let dropped = ledger
+        .dropped_items
+        .iter()
+        .map(|item| (item.id.clone(), item.drop_reason.as_str().to_string()));
+    let mut summaries = ledger
+        .compression
+        .iter()
+        .map(|record| (record.summary_id.clone(), Vec::new()))
+        .collect::<Vec<_>>();
+    if !source_refs.is_empty() {
+        summaries.push(("workspace:evidence".into(), source_refs.to_vec()));
+    }
+    let projection = evohime_model_provenance::ContextProjection::from_ledger_parts(
+        ledger.id.clone(),
+        ledger.context_ledger_hash.clone(),
+        selected_ids,
+        summaries,
+        dropped,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(evohime_model_provenance::ModelRequestEnvelopeV1 {
+        version: evohime_model_provenance::CONTRACT_VERSION,
+        request_id,
+        logical_request_id: logical_request_id.to_string(),
+        attempt,
+        parent_request_id,
+        ledger_id: ledger.id.clone(),
+        request_kind: evohime_model_provenance::RequestKind::Agent,
+        provider: ledger.provider.clone(),
+        model: ledger.model.clone(),
+        route_snapshot_hash: route_snapshot_hash.to_owned(),
+        policy_snapshot_hash: route_snapshot_hash.to_owned(),
+        route_policy_hash_shared: true,
+        system_prompt,
+        messages,
+        tools,
+        model_parameters: evohime_model_provenance::ModelParameters {
+            temperature: None,
+            top_p: None,
+            max_output_tokens: None,
+            reasoning_mode: None,
+            provider_options: serde_json::Map::new(),
+        },
+        context_projection: projection,
+        previous_request_hash,
+    })
+}
 
 impl ToolAgent {
     pub fn new(gateway: Arc<ModelGateway>, tools: Arc<ToolRegistry>) -> Self {
@@ -4723,15 +5105,23 @@ impl ToolAgent {
         };
         let status = if outcome.ok { "succeeded" } else { "failed" };
         runtime.mark_returned(request.action_id).ok();
-        if runtime
-            .complete(
-                request,
-                status,
-                &output_digest,
-                (!outcome.ok).then_some("tool_error"),
+        let completion = runtime.complete(
+            request,
+            status,
+            &output_digest,
+            (!outcome.ok).then_some("tool_error"),
+        );
+        if let Ok(terminal_receipt_hash) = completion {
+            let _ = evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+                database.connection(),
             )
-            .is_err()
-        {
+            .link_tool_receipt(
+                &request.task_id,
+                &request.tool_name,
+                &request.action_id.to_string(),
+                &terminal_receipt_hash,
+            );
+        } else {
             let mut recovery_code = "signature_failed";
             let pre_hash = runtime
                 .action(request.action_id)
@@ -5664,6 +6054,19 @@ impl ToolAgent {
     ) -> Option<String> {
         use crate::memory_extraction as extraction;
 
+        // Auxiliary extraction is a model request too. Until it has a
+        // ledger-backed checkpoint (the dialog path below has one), a
+        // storage-backed Core refuses the dispatch instead of leaking an
+        // unrecorded prompt. In-memory/unit-test agents retain their legacy
+        // behavior because they have no durable provenance owner.
+        if self.journal.is_some() {
+            write_model_trace(
+                "memory.extraction.provenance_required",
+                serde_json::json!({ "task_id": task_id, "ambient": ambient }),
+            );
+            return None;
+        }
+
         let messages = vec![
             ChatMessage::text(ChatRole::System, system_prompt.to_string()),
             ChatMessage::text(ChatRole::User, context),
@@ -5938,6 +6341,13 @@ impl ToolAgent {
         messages: &[ChatMessage],
         config: &evohime_context_budget::compression::SummarizerConfig,
     ) -> Option<String> {
+        if self.journal.is_some() {
+            write_model_trace(
+                "context.summary.provenance_required",
+                serde_json::json!({ "status": "deterministic_fallback" }),
+            );
+            return None;
+        }
         // Входной лимит считается по консервативной оценке 3 байта на токен.
         let input_limit_bytes = config.input_limit_tokens as usize * 3;
         let mut input = String::new();
@@ -6068,13 +6478,18 @@ impl ToolAgent {
         task_id: &str,
         messages: &[ChatMessage],
         specs: &[ToolSpec],
+        source_refs: &[evohime_model_provenance::SourceRef],
+        workspace_root: &std::path::Path,
+        ledger: &evohime_context_budget::ledger::ContextLedgerEntry,
         config: &ProviderResilienceConfig,
         preferred_route: Option<&str>,
         task_class: Option<&str>,
         estimated_input_tokens: u32,
-    ) -> Result<evohime_model_gateway::PolicyChatResult, AgentRunError> {
+    ) -> Result<ProvenancedModelResult, AgentRunError> {
         let timeout_duration = Duration::from_secs(config.model_timeout_secs);
         let mut last_error: Option<String> = None;
+        let logical_request_id = format!("{task_id}:{}", ledger.model_call_id);
+        let mut previous_request: Option<(String, String)> = None;
 
         for attempt in 0..=config.retry_max {
             if attempt > 0 {
@@ -6099,24 +6514,100 @@ impl ToolAgent {
                 }),
             );
 
+            let routing_request = RoutingRequest {
+                required_capabilities: vec!["chat".into()],
+                max_cost_micros_per_1k_tokens: None,
+                max_latency_ms: None,
+                required_privacy: PrivacyClass::Internal,
+                allow_fallback: true,
+                preferred_route: preferred_route.map(str::to_owned),
+                task_class: task_class.map(str::to_owned),
+                offline: false,
+                allow_cloud: true,
+                estimated_input_tokens,
+                quality_delta: 0.05,
+            };
+            let route_snapshot_hash = self
+                .gateway
+                .provenance_route_snapshot_hash(&routing_request)
+                .map_err(|error| {
+                    AgentRunError::Provider(ProviderError::Config(error.to_string()))
+                })?;
+
+            let request_id = if let Some(journal) = &self.journal {
+                let request_id = uuid::Uuid::now_v7().to_string();
+                let (parent_request_id, previous_request_hash) = previous_request
+                    .as_ref()
+                    .map(|(id, hash)| (Some(id.clone()), Some(hash.clone())))
+                    .unwrap_or((None, None));
+                let envelope = model_request_envelope(
+                    &logical_request_id,
+                    request_id.clone(),
+                    attempt as u32 + 1,
+                    parent_request_id,
+                    previous_request_hash,
+                    ledger,
+                    messages,
+                    specs,
+                    source_refs,
+                    &route_snapshot_hash,
+                )
+                .map_err(AgentRunError::Internal)?;
+                let record = journal
+                    .commit_model_request(
+                        &envelope,
+                        evohime_local_storage::model_provenance::CommitMode::FullForDispatch,
+                    )
+                    .await
+                    .map_err(|error| AgentRunError::Internal(error.to_string()))?;
+                if record.payload_mode != "full" || record.envelope_hash.is_none() {
+                    return Err(AgentRunError::Internal(
+                        "REQUEST_PROVENANCE_COMMIT_FAILED: dispatch requires full payload".into(),
+                    ));
+                }
+                journal
+                    .record_context_shadowing(&request_id, ledger, source_refs)
+                    .await
+                    .map_err(|error| AgentRunError::Internal(error.to_string()))?;
+                for source in source_refs {
+                    if source.source_kind == "workspace_file" {
+                        journal
+                            .capture_model_workspace_evidence(
+                                &request_id,
+                                &source.source_ref_id,
+                                &workspace_root.join(&source.source_id),
+                                source.source_version.as_deref().unwrap_or("workspace-v1"),
+                            )
+                            .await
+                            .map_err(|error| AgentRunError::Internal(error.to_string()))?;
+                    }
+                }
+                let keys = self.receipt_keys.as_ref().ok_or_else(|| {
+                    AgentRunError::Internal(
+                        "REQUEST_PROVENANCE_COMMIT_FAILED: receipt signer unavailable".into(),
+                    )
+                })?;
+                journal
+                    .append_model_request_receipt(keys, &record)
+                    .await
+                    .map_err(|error| AgentRunError::Internal(error.to_string()))?;
+                journal
+                    .mark_model_dispatch(&request_id, task_memory::now_millis() as i64)
+                    .await
+                    .map_err(|error| AgentRunError::Internal(error.to_string()))?;
+                previous_request =
+                    Some((request_id.clone(), record.envelope_hash.unwrap_or_default()));
+                Some(request_id)
+            } else {
+                None
+            };
+
             let result: Result<evohime_model_gateway::PolicyChatResult, ProviderError> =
                 match timeout(
                     timeout_duration,
                     self.gateway.chat_with_tools_with_policy_and_route(
                         RoutingMode::Balanced,
-                        &RoutingRequest {
-                            required_capabilities: vec!["chat".into()],
-                            max_cost_micros_per_1k_tokens: None,
-                            max_latency_ms: None,
-                            required_privacy: PrivacyClass::Internal,
-                            allow_fallback: true,
-                            preferred_route: preferred_route.map(str::to_owned),
-                            task_class: task_class.map(str::to_owned),
-                            offline: false,
-                            allow_cloud: true,
-                            estimated_input_tokens,
-                            quality_delta: 0.05,
-                        },
+                        &routing_request,
                         self.selected_model.get().as_deref(),
                         messages,
                         specs,
@@ -6124,7 +6615,7 @@ impl ToolAgent {
                 )
                 .await
                 {
-                    Ok(Ok(result)) => return Ok(result),
+                    Ok(Ok(result)) => Ok(result),
                     Ok(Err(error)) => Err(error),
                     Err(_) => Err(ProviderError::Http(format!(
                         "model timeout after {} seconds",
@@ -6134,6 +6625,27 @@ impl ToolAgent {
 
             match result {
                 Err(error) => {
+                    if let (Some(journal), Some(request_id)) =
+                        (&self.journal, request_id.as_deref())
+                    {
+                        let response =
+                            evohime_local_storage::model_provenance::ModelResponseRecord {
+                                response_id: uuid::Uuid::now_v7().to_string(),
+                                request_id: request_id.to_string(),
+                                status: "failed".into(),
+                                output: None,
+                                output_hash: None,
+                                finish_reason: Some(error.to_string()),
+                                started_at: task_memory::now_millis() as i64,
+                                completed_at: Some(task_memory::now_millis() as i64),
+                            };
+                        let _ = journal
+                            .record_model_response(
+                                &response,
+                                evohime_model_provenance::RequestStatus::Failed,
+                            )
+                            .await;
+                    }
                     last_error = Some(format!("{}", error));
                     if !is_retriable_error(&error) {
                         write_model_trace(
@@ -6161,7 +6673,41 @@ impl ToolAgent {
                         ))));
                     }
                 }
-                Ok(_) => unreachable!(),
+                Ok(result) => {
+                    let mut response_id = None;
+                    if let (Some(journal), Some(request_id)) =
+                        (&self.journal, request_id.as_deref())
+                    {
+                        let id = uuid::Uuid::now_v7().to_string();
+                        let response =
+                            evohime_local_storage::model_provenance::ModelResponseRecord {
+                                response_id: id.clone(),
+                                request_id: request_id.to_string(),
+                                status: "complete".into(),
+                                output: Some(result.result.content.clone()),
+                                output_hash: None,
+                                finish_reason: Some("stop".into()),
+                                started_at: task_memory::now_millis() as i64,
+                                completed_at: Some(task_memory::now_millis() as i64),
+                            };
+                        journal
+                            .record_model_response(
+                                &response,
+                                evohime_model_provenance::RequestStatus::Completed,
+                            )
+                            .await
+                            .map_err(|error| AgentRunError::Internal(error.to_string()))?;
+                        response_id = Some(id);
+                    }
+                    return Ok(ProvenancedModelResult {
+                        result,
+                        request_id: request_id.clone(),
+                        request_envelope_hash: previous_request
+                            .as_ref()
+                            .map(|(_, hash)| hash.clone()),
+                        response_id,
+                    });
+                }
             }
         }
 
@@ -6481,6 +7027,28 @@ impl ToolAgent {
         let mut observability_sequence = 0_u64;
         let mut reroutes_used = 0_u32;
         let max_reroutes = 1_u32;
+        let provenance_source_refs = rag_validation
+            .as_ref()
+            .map(|(search, evidence_context)| {
+                search
+                    .evidence
+                    .iter()
+                    .filter(|chunk| {
+                        evidence_context
+                            .selected_block_ids
+                            .iter()
+                            .any(|id| id == &chunk.chunk_id)
+                    })
+                    .map(|chunk| evohime_model_provenance::SourceRef {
+                        source_ref_id: format!("rag:{}:{}", search.query_id, chunk.chunk_id),
+                        source_kind: "workspace_file".into(),
+                        source_id: chunk.relative_path.clone(),
+                        source_version: Some(chunk.content_hash.clone()),
+                        classification: "document".into(),
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         for iteration in 0..self.max_iterations {
             write_model_trace(
                 "model.request",
@@ -6531,11 +7099,11 @@ impl ToolAgent {
             }
             let step_loadout = assembled.loadout.clone();
 
-            let result = tokio::select! {
+            let provenance_result = tokio::select! {
                 _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
-                result = self.call_model_with_resilience(&task_id, &messages, &specs, &resilience_config, preferred_route.as_deref(), Some(task_class), assembled.ledger().estimated_prompt_tokens) => result?,
+                result = self.call_model_with_resilience(&task_id, &messages, &specs, &provenance_source_refs, &context.workspace_root, assembled.ledger(), &resilience_config, preferred_route.as_deref(), Some(task_class), assembled.ledger().estimated_prompt_tokens) => result?,
             };
-            if let Some(attempt_trace) = result.attempt_trace.as_ref() {
+            if let Some(attempt_trace) = provenance_result.result.attempt_trace.as_ref() {
                 write_model_trace(
                     "routing.attempt_trace",
                     serde_json::json!({
@@ -6547,9 +7115,9 @@ impl ToolAgent {
                     }),
                 );
             }
-            let has_tool_calls = result.result.has_tool_calls();
+            let has_tool_calls = provenance_result.result.result.has_tool_calls();
             if preferred_route.as_deref() == Some("local")
-                && result.selected_route == "cloud"
+                && provenance_result.result.selected_route == "cloud"
                 && has_tool_calls
             {
                 if let Some(registry) = &self.routing_approvals {
@@ -6567,7 +7135,7 @@ impl ToolAgent {
                             &task_id,
                             &task_id,
                             &trace_id,
-                            &result.selected_route,
+                            &provenance_result.result.selected_route,
                             timeout_ms,
                             events,
                             &cancellation,
@@ -6583,21 +7151,23 @@ impl ToolAgent {
                 task_id: task_id.clone(),
                 trace: routing_success_trace(
                     &task_id,
-                    &result.selected_route,
-                    result.fallback_chain.len(),
+                    &provenance_result.result.selected_route,
+                    provenance_result.result.fallback_chain.len(),
                     assembled.ledger().estimated_prompt_tokens,
                     &assembled.ledger().profile_version,
                     &assembled.ledger().context_ledger_hash,
                     task_class,
-                    result.decision.as_ref(),
-                    result.snapshot_hash.as_deref(),
-                    result
+                    provenance_result.result.decision.as_ref(),
+                    provenance_result.result.snapshot_hash.as_deref(),
+                    provenance_result
+                        .result
                         .attempt_trace
                         .as_ref()
                         .and_then(|trace| trace.attempts.last())
                         .map(|attempt| attempt.attempt_id)
                         .unwrap_or(0),
-                    result
+                    provenance_result
+                        .result
                         .attempt_trace
                         .as_ref()
                         .and_then(|trace| trace.attempts.last())
@@ -6605,7 +7175,7 @@ impl ToolAgent {
                         .unwrap_or_else(task_memory::now_millis),
                 ),
             });
-            let result = result.result;
+            let result = provenance_result.result.result;
             if let Some(usage) = result.usage.as_ref() {
                 // Фактический usage провайдера обновляет диагностику оценки и
                 // пишется отдельно от immutable записи ledger.
@@ -6739,6 +7309,35 @@ impl ToolAgent {
                         "Ты уже выполняла точно такой вызов {tool_name}. Его повтор удалён Core. Самостоятельно выбери следующий новый шаг: используй другой подтверждённый путь или filesystem.search, затем продолжи исследование/реализацию. Не повторяй последний вызов и не завершай задачу отчётом."
                     ),
                 ));
+            }
+            if let (Some(journal), Some(request_id), Some(request_hash), Some(response_id)) = (
+                &self.journal,
+                provenance_result.request_id.as_deref(),
+                provenance_result.request_envelope_hash.as_deref(),
+                provenance_result.response_id.as_deref(),
+            ) {
+                for (ordinal, call) in tool_calls.iter().enumerate() {
+                    let arguments: serde_json::Value = serde_json::from_str(&call.arguments)
+                        .map_err(|error| AgentRunError::Internal(error.to_string()))?;
+                    let tool_args_hash = evohime_model_provenance::canonical_args_hash(&arguments)
+                        .map_err(|error| AgentRunError::Internal(error.to_string()))?;
+                    journal
+                        .record_model_tool_intent(
+                            &evohime_local_storage::model_provenance::ToolIntentRecord {
+                                intent_id: uuid::Uuid::now_v7().to_string(),
+                                origin_request_id: request_id.to_owned(),
+                                origin_request_envelope_hash: request_hash.to_owned(),
+                                response_id: Some(response_id.to_owned()),
+                                ordinal: ordinal as u32,
+                                origin_kind: "assistant_response".into(),
+                                tool_name: call.name.clone(),
+                                tool_args_hash,
+                                state: "planned".into(),
+                            },
+                        )
+                        .await
+                        .map_err(|error| AgentRunError::Internal(error.to_string()))?;
+                }
             }
             if tool_calls.is_empty() {
                 let research_done = !delivery_requirements.research

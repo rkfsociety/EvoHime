@@ -6,10 +6,10 @@
 
 ## С чего начинать
 
-Планы 01–04 реализованы целиком и удалены из каталога: их контракты живут в
+Планы 01–05 реализованы целиком и удалены из каталога: их контракты живут в
 [`../architecture.md`](../architecture.md), подтверждённое состояние — в
-[`../current-state.md`](../current-state.md). Единственный незавершённый план —
-05 Provenance и реконструируемость model request; начинать надо с этапа 05.1.
+[`../current-state.md`](../current-state.md). Новых незавершённых планов в каталоге
+нет.
 
 ## Правило нумерации
 
@@ -35,7 +35,7 @@
 | --- | --- | --- |
 | 03 Специализированные child workflows | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
 | 04 Постоянное слушание и ambient-память | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
-| 05 Provenance и реконструируемость model request | [обзор](05-0-model-request-provenance.md) | — |
+| 05 Provenance и реконструируемость model request | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
 
 ```text
 05.1 контракт ── 05.2 хранение ── 05.3 интеграция ─┬── 05.4 evidence ── 05.6 shadowing ── 05.8 retention ── 05.9 verify/export
@@ -87,7 +87,9 @@ chain-aware offline verifier, ListReceipts/VerifyReceipts/ExportReceipts IPC).
 Планы 02 и 03 тоже реализованы целиком и удалены из каталога по правилу выше,
 поэтому упоминания «следующий незавершённый этап — 02.1» здесь больше нет.
 План 04 реализован целиком (этапы 04.1–04.7) и удалён из каталога по тому же
-правилу. Незавершённым остаётся весь план 05.
+правилу. План 05 реализован целиком: контракт, durable storage, Core integration,
+evidence/shadowing, receipts и tool linkage, recovery, redaction/retention и
+offline verify/export перенесены в архитектуру и current-state.
 
 ## Что здесь не хранится
 

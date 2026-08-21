@@ -240,6 +240,10 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+pub fn sha256_digest(bytes: &[u8]) -> [u8; 32] {
+    Sha256::digest(bytes).into()
+}
+
 pub fn receipt_hash(envelope: &Envelope) -> Result<String, ReceiptError> {
     let bytes = serde_json::to_vec(envelope).map_err(|_| ReceiptError::InvalidJson)?;
     let canonical = canonicalize_json(&bytes)?;
@@ -268,6 +272,19 @@ pub fn verify_ed25519(envelope: &Envelope, public_key: &[u8]) -> Result<(), Rece
         decode_base64url(&envelope.signature).ok_or(ReceiptError::SignatureInvalid)?;
     signature::UnparsedPublicKey::new(&signature::ED25519, public_key)
         .verify(&payload, &signature_bytes)
+        .map_err(|_| ReceiptError::SignatureInvalid)
+}
+
+/// Verifies the detached Ed25519 signature used by an exported provenance
+/// manifest. The caller is responsible for deciding whether the public key is
+/// trusted; this function only checks cryptographic validity.
+pub fn verify_ed25519_digest(
+    digest: &[u8],
+    signature_bytes: &[u8],
+    public_key: &[u8],
+) -> Result<(), ReceiptError> {
+    signature::UnparsedPublicKey::new(&signature::ED25519, public_key)
+        .verify(digest, signature_bytes)
         .map_err(|_| ReceiptError::SignatureInvalid)
 }
 
