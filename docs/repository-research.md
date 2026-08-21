@@ -40,6 +40,7 @@
 | 17 | [saharmor/voice-lab](https://github.com/saharmor/voice-lab) | Исследовано | Evaluation framework: JSON-сценарии, personas, model/prompt matrix, LLM-as-a-Judge, cost/quality comparison и экспериментальные speech metrics | Адаптировать evaluation contracts, fixtures и report provenance; Python scripts, cloud eval agent и pyannote/stable-ts pipeline не подключать |
 | 18 | [Qwen/Qwen2-VL collection](https://huggingface.co/collections/Qwen/qwen2-vl) | Исследовано | Vision-language models для image/video understanding, OCR, multilingual visual QA, dynamic resolution и локальных quantized variants | Рассматривать как optional vision backend/PoC; не подключать к базовому runtime до GPU/memory/licensing/privacy плана |
 | 19 | [mPLUG/DocOwl2](https://huggingface.co/mPLUG/DocOwl2) | Исследовано | OCR-free multi-page document understanding, high-resolution DocCompressor, page evidence, cross-page QA и document benchmark suite | Рассматривать как optional document-worker PoC; адаптировать page/evidence/evaluation contracts, custom Python/CUDA runtime не подключать напрямую |
+| 20 | [mem0ai/mem0](https://github.com/mem0ai/mem0) | Исследовано | Long-term memory API, scoped user/agent/run memory, additive extraction, SQLite history, hybrid retrieval, expiration и entity linking | Адаптировать memory contracts, provenance, hybrid retrieval и forget semantics; Python SDK, cloud service, default telemetry и raw-memory storage не подключать напрямую |
 
 ## Карточки исследований
 
@@ -2990,6 +2991,73 @@ HF token, speaker embeddings или cloud/provider diarization в базовый
 - Возможные design-only события: `document_ingest_started`, `document_page_ready`, `document_query`, `document_evidence`, `document_uncertain`, `document_job_receipt` с sequence/correlation id, source hash и model revision.
 - Реалистичный порядок: schema/fixtures и deterministic text extraction → isolated worker PoC → benchmark на русских manuals → memory/latency/security review → решение о model/backend/package. Acceptance criteria: bounded pages/pixels/memory/time, no unapproved egress, pinned custom code, safe prompt-injection handling, evidence page accuracy, cancellation и erase derived data.
 - DocOwl2 дополняет Qwen2-VL: Qwen2-VL подходит как универсальный image/video perception backend, DocOwl2 — как более узкий multi-page document backend. Оба не должны добавляться одновременно в базовую установку без capability routing и общего model manifest.
+
+### 20. Mem0
+
+- **Источник:** [mem0ai/mem0](https://github.com/mem0ai/mem0), [README](https://github.com/mem0ai/mem0/blob/main/README.md), [документация](https://docs.mem0.ai/), [исследовательская работа](https://arxiv.org/abs/2504.19413)
+- **Дата проверки:** 2026-08-21
+- **Ревизия/commit:** `feb12852c0789a1f1182b05ee0dbc386037b012f`; package version `2.0.18`; GitHub показывает 2,604 commits на момент проверки.
+- **Лицензия исходного кода:** Apache-2.0. В репозитории есть Python SDK, npm/TypeScript SDK, self-hosted server и cloud/platform integrations; лицензирование сервиса, моделей, vector stores и данных нужно рассматривать отдельно.
+- **Состав:** `Memory`/`AsyncMemory`, LLM/embedding/vector-store/reranker factories, SQLite history/messages, optional spaCy NLP, entity store, hybrid semantic/BM25/entity ranking, CLI, server и многочисленные backend adapters.
+- **Назначение:** долгосрочная память AI assistant/agent: extraction фактов из диалога, поиск релевантных memories, user/session/agent state, procedural memory, history, update/delete/expiration и multi-backend storage.
+- **Краткий вывод:** Mem0 даёт хороший reference для жизненного цикла memory, scope и retrieval, но не должен становиться второй базой знаний Евы. Уже реализованный Local Agentic RAG/SQLite Core-first слой остаётся источником истины; из Mem0 нужно перенять контракты и проверки, а не Python SDK, cloud backend или автоматическое запоминание всего transcript.
+
+#### Что изучено
+
+- Основной API разделяет `add`, `search`, `get`, `get_all`, `update`, `delete`, `delete_all`, `history`, `reset` и async-варианты. `add` принимает `user_id`, `agent_id` или `run_id`; retrieval использует явные `filters`, а отсутствие scope отклоняется.
+- `MemoryConfig` собирает LLM, embedder, vector store, optional reranker, `history_db_path`, version и custom extraction instructions. В README default LLM — OpenAI `gpt-5-mini`, default embedding — `text-embedding-3-small`, а для hybrid search предлагается Qwen embedding или comparable model.
+- Current README описывает новый April 2026 algorithm: single-pass ADD-only extraction без LLM UPDATE/DELETE, first-class agent-generated facts, entity linking, semantic+BM25+entity retrieval и temporal reasoning. README прямо предупреждает, что benchmark scores включают proprietary optimizations managed platform и не равны гарантии OSS SDK.
+- OSS-код сохраняет явные API `update`/`delete`, а extraction prompt требует ADD-only self-contained factual memories с `attributed_to`, `linked_memory_ids`, summary, recently extracted/existing memories, observation date и custom instructions. Это важное разделение: факт можно добавить, а ревизию/удаление должны контролировать отдельные операции.
+- Memory payload содержит текст, MD5 hash, metadata, `created_at`, `updated_at`, optional `expiration_date`, `memory_type`, lemmatized text и scope. SQLite history хранит old/new memory, event ADD/UPDATE/DELETE, actor/role, timestamps и deletion flag; отдельная messages table ограничивает последние 10 сообщений на session scope.
+- Retrieval сначала использует vector store, затем может добавлять normalized BM25 score, entity boost и optional reranker. Threshold применяется до hybrid scoring, есть `top_k`, metadata filter operators и `explain` с деталями semantic/BM25/entity scores.
+- Entity linking — не отдельный graph database. Опциональный spaCy extraction выделяет `PROPER`, `QUOTED`, `TOPIC`, `IDENTIFIER`, entity rows хранят `linked_memory_ids`, а поиск сущностей повышает связанные memories. В текущем OSS checkout отдельного graph-memory модуля не найдено.
+- Scope helpers валидируют и trim entity IDs, запрещают подменять `user_id`/`agent_id`/`run_id` через свободную metadata и требуют фильтры для `get_all`/`search`/`delete_all`. Это полезная защита от случайного cross-scope retrieval, но не замена полноценной Core ACL/capability policy.
+- Expiration скрывает истёкшие memories из обычного search/get_all; explicit `delete` пишет tombstone в history, удаляет vector и чистит linked entities. `delete_all` обрабатывает batches до 1000 и требует хотя бы одного scope filter; `reset` удаляет всю коллекцию и SQLite history.
+- Telemetry в OSS включена по умолчанию через `MEM0_TELEMETRY=True`: используется PostHog, anonymous/user identifier и lifecycle/hot-path events с sampling. Код redacts известные secret fields, но сама default network egress policy не соответствует local-first требованиям Евы без явного отключения/consent.
+- Test suite покрывает memory, API, integration, vector stores, LLMs, auth и telemetry. `python -m compileall` для checkout прошёл; полноценные тесты и provider integrations в этом исследовании не запускались.
+
+#### Что можем использовать в Еве
+
+- **Memory lifecycle contract.** Перенять явное разделение `propose/add`, `search`, `get`, `revise/supersede`, `forget`, `history` и `reset`, но реализовать его в Rust Core и SQLite schema v25+ с transaction/backup guarantees.
+- **Scope model.** Идею `user_id`/`agent_id`/`run_id` расширить до `workspace_id`, `profile_id`, `chat_id`, `repository_id`, `source_event_id` и capability scope. Scope должен быть установлен Core из authenticated context, а не доверяться полям, пришедшим от LLM или renderer.
+- **Additive extraction.** Перенять ADD-only candidate extraction: LLM предлагает self-contained fact, attribution, source span, observation time, sensitivity и links; отдельная deterministic policy решает, можно ли сохранить факт. Это безопаснее, чем разрешать LLM молча переписывать или удалять память.
+- **Revision semantics.** Вместо накопления конфликтующих ADD facts ввести `supersedes`, `valid_from`, `valid_to`, `confidence`, `status=proposed/accepted/superseded/forgotten` и human/Core review. Старый факт не уничтожать до успешной транзакции и сохранять provenance.
+- **Hybrid retrieval.** Объединить текущий SQLite FTS5 и semantic retrieval с нормализованным score, optional reranker/entity boost и explain details. FTS5 остаётся fallback, а retrieval result обязан содержать citations/source event ids и reason for inclusion.
+- **Entity linking как enrichment.** Перенять typed entity candidates и linked-memory index как optional boost, но не делать entity label идентичностью. Для русскоязычного EvoHime нужны собственные tokenizer/lemmatization fixtures и защита от ложных fuzzy links.
+- **Temporal retrieval.** Использовать observation time, created/updated/valid/expiration timestamps для запросов «сейчас», «раньше» и «на дату». В Core хранить timezone/precision/source of time и не подменять фактическую дату временем индексации.
+- **Expiration/forget.** Сочетать expiration, per-source retention, user-visible forget и tombstone. Критерий завершения forget должен включать primary memory, history policy, entity links, embeddings, caches, derived summaries и export/backup behavior.
+- **Procedural memory boundary.** Идею memory type для agent workflow можно адаптировать для одобренных процедур/предпочтений Евы, но procedural memory не должна становиться скрытой инструкцией с правами. Любой capability-affecting fact проходит policy/approval и provenance.
+- **Provider adapters without provider coupling.** Использовать Mem0 как reference для LLM/embedder/vector-store factories и fake/mock providers в тестах, но оставить Core-owned Rust implementations/IPC. Remote OpenAI/Qdrant/managed Mem0 — только explicit provider capability.
+- **Memory evaluation.** Перенять классы benchmark queries LoCoMo/LongMemEval/BEAM: factual recall, temporal selection, entity linking, conflict resolution, stale-memory suppression, long-context token budget и scale. Добавить русские fixtures, security leakage, forget completeness и crash/restart.
+- **Explainable result.** `score_details` и history reference полезны для UI/debug, но наружу выдавать только redacted citations, confidence/uncertainty и policy decision. Не показывать raw hidden prompt, provider secret или весь vector payload без permission.
+
+#### Ограничения и риски
+
+- **Второй runtime и datastore.** Python `mem0ai` тянет LLM, embedding, vector-store и optional NLP ecosystems; прямое подключение создаст вторую память рядом с Rust Core/SQLite RAG и размоет source of truth. npm SDK не меняет это архитектурное ограничение.
+- **Cloud defaults и telemetry.** Quickstart отправляет conversation в OpenAI LLM/embedding, а OSS telemetry по умолчанию включает PostHog egress. Локальный provider можно настроить, но default конфигурация неприемлема для sensitive ambient/workspace data.
+- **Сильные benchmark claims ограничены.** README указывает, что новые цифры managed platform содержат proprietary optimizations; их нельзя использовать как подтверждённую характеристику self-hosted OSS и нельзя переносить в acceptance criteria без собственного прогона.
+- **Raw PII persistence.** Vector payload и SQLite history хранят исходные memory strings, old/new revisions и actor/role. Нет автоматического field-level encryption/redaction/consent policy, совместимой с ЕvoHime. Memory extraction может захватить секреты, финансовые данные, credentials или приватный ambient transcript.
+- **Extraction is not truth.** LLM prompt старается извлекать всё, включая assistant recommendations и shared documents; он может hallucinate, misattribute, сохранить prompt injection или принять временное желание за постоянную preference. Нужны deterministic filters, sensitivity classifier, source evidence и review.
+- **ADD-only accumulation.** Новая algorithmic семантика не обновляет/удаляет автоматически и может накапливать stale/conflicting facts. Явные update/delete API существуют, но конфликт между extraction и lifecycle должен быть разрешён продуктовым контрактом, а не случайным порядком вызовов.
+- **Deletion atomicity и cleanup.** Vector store, SQLite history и entity store — отдельные операции; entity cleanup ошибки намеренно не ломают primary delete/update. Это повышает живучесть, но forget нельзя считать завершённым без reconciliation job и проверяемого receipt.
+- **Scope is not ACL.** `user_id`/`agent_id`/`run_id` защищают фильтры от части ошибок, но не моделируют workspace ownership, role, capability, export restrictions, encryption key или cross-agent policy. Нельзя принимать caller-supplied metadata как authorization.
+- **Entity false links.** Semantic entity matching и linked memory IDs могут связать похожие имена/проекты и усилить неправильный факт. Entity store также может сохранять PII отдельно от основной memory; erase/reconciliation должен учитывать обе копии.
+- **Language mismatch.** README NLP extra предлагает `en_core_web_sm`; BM25 lemmatization/entity extraction не гарантируют русскую морфологию. Для русского языка нужна отдельная evaluation matrix, а FTS5/tokenization fallback должен оставаться рабочим.
+- **Temporal limitations.** В OSS `add(timestamp=...)` помечен как platform-only/unsupported, хотя prompts и metadata умеют observation/expiration. Для Евы временная семантика должна быть реализована локально и транзакционно, без зависимости от managed platform.
+- **Operational consistency.** Vector insert/update/delete и SQLite history не образуют единую транзакцию. При сбое после одной операции возможны orphan vectors, missing history или stale entity links; нужны WAL/transaction journal/reconciliation в Core.
+- **License and service boundary.** Apache-2.0 разрешает адаптацию с соблюдением условий, но не лицензирует Mem0 cloud, LLM providers, embedding models, vector databases или user data. Self-host server auth — отдельная поверхность, cloud API и agent signup для Евы не нужны.
+
+#### Предварительное решение
+
+`адаптировать` scope model, additive candidate extraction, hybrid retrieval, temporal/expiration/forget contracts, entity-link enrichment, provenance и evaluation ideas; `наблюдать` за Mem0 algorithm/platform evolution; `не подключать` Python/npm SDK, managed Mem0, default PostHog telemetry и raw automatic memory writes в базовый runtime Евы.
+
+#### Связь с EvoHime
+
+- Mem0 не должен создавать отдельную memory database. Каноническое состояние остаётся в Rust Core и существующем SQLite/FTS5 Local Agentic RAG; Mem0-подобные идеи оформляются как Core-owned memory contracts и migrations.
+- Будущие IPC-команды могут быть `memory.propose`, `memory.commit`, `memory.search`, `memory.get`, `memory.supersede`, `memory.forget`, `memory.history` и `memory.reconcile`; Electron показывает только redacted result/citations и не решает scope/approval.
+- Ambient/transcript facts поступают в memory только после redaction и явной policy. Текущие правила сохраняются: `speaker=unverified`, audio BLOB не добавляется в SQLite, raw ambient capture не превращается автоматически в long-term memory.
+- Реалистичный порядок: typed schema/provenance и scope → candidate extraction/fake LLM → deterministic sensitivity/approval → SQLite/FTS5 hybrid retrieval → entity/temporal enrichment → forget/reconciliation → benchmark/crash-restart tests. Acceptance criteria: no default egress, no cross-workspace retrieval, complete forget receipt, bounded latency/storage, source citations, stale/conflict handling и safe recovery после частичного сбоя.
+- По сравнению с LlamaIndex/LangChain Mem0 фокусируется на personalized long-term memory lifecycle, но для Евы его нужно встроить как bounded Core subsystem, а не как ещё один orchestration/RAG framework.
 
 ## Итог для будущего плана
 
