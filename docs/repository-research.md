@@ -45,6 +45,7 @@
 | 22 | [AgentOps-AI/agentops](https://github.com/AgentOps-AI/agentops) | Исследовано | OpenTelemetry traces/spans, LLM/tool/workflow semantic conventions, token/cost/latency metrics, session replay и evaluation validation | Адаптировать event/trace/metrics contracts и local observability; Python SDK, облачный OTLP и self-hosted dashboard напрямую не подключать |
 | 23 | [THUDM/AgentBench](https://github.com/THUDM/AgentBench) | Исследовано | Multitask agent evaluation, isolated task workers, function-calling protocol, deterministic environments, trajectory/reward scoring и resource budgets | Адаптировать evaluation/scenario/trajectory contracts и bounded fixtures; benchmark runtime, Docker task stack, внешние datasets/services и production host actions не подключать |
 | 24 | [traceloop/openllmetry](https://github.com/traceloop/openllmetry) | Исследовано | OpenTelemetry GenAI semantic conventions, provider/vector DB instrumentation, manual spans, content policy, trajectory capture, prompt provenance и guardrail/evaluator hooks | Адаптировать typed local telemetry, usage/latency schemas, capture modes и evaluation fixtures; Python SDK, monkey-patching, OTLP/cloud export и remote guardrails напрямую не подключать |
+| 25 | [OpenBMB/AgentVerse](https://github.com/OpenBMB/AgentVerse) | Исследовано | Multi-agent task-solving pipeline, simulation environments, typed messages, role assignment, decision/execution/evaluation stages, visibility/order rules и pluggable registries | Адаптировать environment/step/reset, role/task/evaluator separation, scoped message routing и deterministic simulation fixtures; Python runtime, direct LangChain/BMTools/XAgent и uncontrolled multi-agent autonomy не подключать |
 
 ## Карточки исследований
 
@@ -3320,6 +3321,81 @@ HF token, speaker embeddings или cloud/provider diarization в базовый
 - Electron OperationsPanel получает только redacted run/span projections: timing, status, model/provider, token totals, tool/approval links, citations и bounded previews. Raw prompts, secrets, headers, full tool arguments и ambient audio/transcript остаются запрещёнными по умолчанию.
 - Evaluation runner из AgentBench может использовать локальный trajectory projection, inspired by `InMemorySpanExporter`, для проверки deterministic scenarios, guardrail outcomes, provider fallback, RAG citations и recovery. В production run evaluation must not alter policy path or bypass approval.
 - Базовые критерии: no network required for telemetry or execution; durable event before optional export; no raw content by default; explicit field-level capture consent; bounded payload/cardinality/queue; ordered replay after restart; redaction/forget across local events and exports; provider wrapper failure cannot change Core result; evaluator/guardrail outage yields explicit unknown/timeout.
+
+### 25. OpenBMB AgentVerse
+
+- **Источник:** [OpenBMB/AgentVerse](https://github.com/OpenBMB/AgentVerse), [task-solving README](https://github.com/OpenBMB/AgentVerse/blob/main/README_tasksolving_cases.md), [simulation README](https://github.com/OpenBMB/AgentVerse/blob/main/README_simulation_cases.md)
+- **Дата проверки:** 2026-08-21
+- **Ревизия/commit:** `f90c4bd9680fdd3bcff8c52c9170911a59b23478`; последний commit `2024-09-09`; пакет `agentverse 0.1.8.1`; checkout `main` чистый
+- **Лицензия:** Apache-2.0
+- **Состав:** Python framework, YAML task configs, registries для agents/LLMs/environments/rules/memory/parsers, task-solving pipeline, simulation environments, CLI/GUI commands, datasets и optional BMTools/XAgent tool services
+- **Назначение:** сборка групп LLM-агентов для решения задач и моделирование поведения нескольких агентов в управляемой среде. README выделяет два независимых направления: task-solving и simulation.
+- **Краткий вывод:** AgentVerse полезен как reference для composable environment lifecycle, typed message routing, role/pipeline decomposition и simulation fixtures. Прямое подключение не подходит: Python 3.9+ stack, старые OpenAI/LangChain/Pydantic pins, внешние tool servers, mutable in-memory state и исследовательская нестабильность simulation.
+
+#### Что изучено
+
+- `AgentVerse.from_task` и `Simulation.from_task` читают YAML, через registry создают agents, memory, LLM, tools, parser и environment. `run` выполняет `reset → step` до terminal state, `next` позволяет пошаговый запуск, `update_state` — изменять состояние environment.
+- Базовый `BaseEnvironment` задаёт `agents`, `rule`, `max_turns`, `cnt_turn`, `last_messages`, `rule_params`, async `step`, `reset`, `is_done` и отчёт по стоимости. Это простой контракт среды, пригодный для локальных evaluation fixtures.
+- `Message` — Pydantic-модель с content, sender, receiver set, sender_agent и tool_response. Специализированные сообщения (`SolverMessage`, `CriticMessage`, `ExecutorMessage`, `EvaluatorMessage`, `RoleAssignerMessage`) добавляют типовые поля для разных этапов pipeline.
+- Simulation environment разделяет правила на `order`, `visibility`, `selector`, `updater` и `describer`. На каждом шаге выбираются агенты, строится индивидуальное описание, ответы могут выполняться параллельно через `asyncio.gather`, затем сообщения фильтруются, память обновляется и видимость пересчитывается.
+- Task-solving environment отдельно композит `role_assigner`, `decision_maker`, `executor` и `evaluator`. Типичный цикл: recruit experts → build plan → execute subtasks/tools → evaluate score/advice → accept или повторить следующий round.
+- Role assignment может быть одноразовым или повторяться по раундам; decision makers поддерживают central/horizontal/vertical/dynamic/concurrent варианты; executor и evaluator являются отдельными pluggable stages. Это позволяет сравнивать orchestration strategies при одной и той же группе агентов.
+- Registry pattern позволяет регистрировать новые classes по строковому ключу и создавать их из YAML. Однако конфигурация использует mutable `pop`, глобальные registry dictionaries и динамическую загрузку, поэтому контракты не являются безопасной schema boundary сами по себе.
+- Conversation agent формирует prompt из role/environment/chat history и делает retry при ошибке parser/LLM. Tool agent выполняет цикл `model → parse AgentAction → tool → observation` до AgentFinish, а task-solving executor использует function-call-like output parser и проверяет имя функции по списку tools.
+- Chat history memory умеет bounded history по token limit и LLM-generated running summary. Summary создаётся отдельным вызовом модели, удаляет user messages из summarization input и хранит last trimmed index; это полезная идея, но не доказательный memory store.
+- Reflection memory manipulator оценивает importance/immediacy, применяет recency/relevance/importance/immediacy scoring и cosine similarity, затем генерирует вопросы/insights. Plan manipulator сохраняет LLM-generated планы в self-only memory.
+- Task-solving example показывает декларативную multi-stage задачу с role assigner, planner/solver, critics, executor, evaluator и manager, общими prompt anchors и отдельными model/temperature/token budgets для каждой роли.
+- Simulation examples включают classroom, prisoner dilemma, Pokemon и code-repair team; правила задают порядок, видимость сообщений, селекцию, обновление памяти и environment descriptions. SDE team применяет writer/tester/reviewer loop с unit-test feedback.
+- README требует Python >=3.9, OpenAI/Azure credentials для стандартных примеров, а local/vLLM/FSChat режимы требуют дополнительных серверов и зависимостей. Tool-using cases используют BMTools или XAgent ToolServer.
+- README прямо предупреждает, что simulation code refactoring идёт сейчас; для стабильного simulation-only варианта предлагается `release-0.1`. На исследуемой ревизии последний commit датирован 2024-09-09.
+- `py -m compileall -q agentverse agentverse_command` прошёл без ошибок. Полный запуск не выполнялся: он требует OpenAI/local model server, внешние tool services и example-specific data.
+
+#### Что можем использовать в Еве
+
+- **Environment lifecycle для локальных сценариев.** Адаптировать `reset`, bounded `step`, `is_done`, `update_state` и explicit `max_turns` в evaluation/scenario runner Евы. Каждый run должен иметь isolated fixture state, cancellation, deadline и durable terminal receipt.
+- **Rule composition вместо жёсткого orchestration graph.** Разделить policy для `order`, `visibility`, `selector`, `updater`, `describer` и отдельно для role assignment, planning, execution и evaluation. В Core это должны быть typed Rust strategies, выбранные из allow-listed manifest, а не произвольные Python class paths.
+- **Scoped message routing.** Перенять `sender`, `receiver` и typed message kinds как основу внутренней multi-agent communication модели. Core должен проверять receiver scope, capability и workspace/session boundaries; сообщение `all` не должно автоматически раскрывать секреты, hidden evidence или tool output всем агентам.
+- **Private/public observation model.** Simulation visibility rules полезны для тестов: агент получает только разрешённые observations, а evaluator может видеть полный fixture state. Это даст сценарии проверки leakage, least privilege и prompt-injection через сообщение другого агента.
+- **Role/pipeline separation.** Перенять отдельные role assigner, planner, critic, executor и evaluator stages как optional orchestration policy. Базовый single-agent path должен оставаться простым; multi-agent включается отдельной capability с concurrency, budget, trace и approval semantics.
+- **Deterministic scheduling fixtures.** Реализовать sequential, round-robin, concurrent и priority scheduling с фиксированным seed, bounded parallelism и cancellation. Это пригодится для воспроизводимых тестов races, duplicate tool calls, order-sensitive memory и supervisor recovery.
+- **Independent evaluator stage.** Отделить task result/effect validation от planner и executor. Evaluation может возвращать score/advice/status, но acceptance должен опираться на Core assertions: filesystem/database predicates, approval invariants, citations, no-side-effect checks и resource budgets.
+- **Stage-level telemetry.** Для каждого этапа записывать role, prompt revision, input/output hashes, selected recipients, model usage, duration, retry count, tool/approval links и terminal status. Это естественно соединяется с AgentOps/OpenLLMetry findings без внедрения их Python SDK.
+- **Typed message variants.** Зафиксировать Rust/IPC equivalents для plan, criticism, tool request, tool result, evaluator verdict, user instruction, system observation и error. Сериализация должна быть versioned и bounded, с сохранением unknown fields policy и replay compatibility.
+- **Memory visibility/update policy.** Разделить append-to-memory, private self-memory, shared group memory, tool memory и evaluator-only state. Любое изменение long-term memory проходит текущие redaction/scope/forget rules, а не записывается автоматически каждым агентом.
+- **Configurable retry and parser feedback.** Идею bounded retries при malformed model output можно использовать для provider gateway: invalid structured output получает typed feedback, остаётся в trace, но retry ограничивается budget/deadline и не превращается в бесконечный loop.
+- **Tool-use evaluation.** AgentVerse examples показывают полезную проверку полного цикла plan → function/tool call → observation → evaluator. Для Евы добавить обязательные Core policy, approval, call_hash, sandbox и cancellation; tool name/arguments должны проходить schema validation до запуска.
+- **Code-repair fixture pattern.** SDE team даёт основу для безопасного offline сценария: synthetic repository, fixed tests, writer/reviewer/tester roles, bounded iterations и feedback artifacts. Выполнять код только в supervisor-controlled ephemeral workspace, не в рабочей копии пользователя.
+- **Cost and budget by role.** Раздельные token/model/temperature/max-token settings для ролей полезны как evaluation matrix. Нужны aggregate budgets per run/role, provider rate manifest и fail-closed behavior при исчерпании бюджета.
+- **Plugin registry idea.** Перенять allow-listed registry для scenario/evaluator/policy implementations, но хранить schema/version/hash и строить только встроенные безопасные компоненты. Динамический import по строке и `eval`-подобные tool paths в production запрещены.
+
+#### Ограничения и риски
+
+- **Старый Python runtime.** `setup.py` требует Python >=3.9, но requirements pin OpenAI 1.1.0, LangChain 0.0.157, FastAPI 0.95.1, Pydantic 1.10.7 и старые auxiliary packages. Это не совместимо с Rust Core и создаёт значительный maintenance burden.
+- **Simulation нестабилен.** Авторский README сообщает о продолжающемся refactoring и рекомендует `release-0.1` для стабильной simulation-only версии. Нельзя принимать текущую main как production contract или копировать её mutable state model.
+- **LLM-driven roles не являются правами.** Role description, receiver set и evaluator score формируются конфигурацией/моделью и сами по себе не дают authorization. Capability, approval, workspace ACL и secret access должны оставаться Core-owned.
+- **Message leakage.** `receiver={"all"}`, broad visibility и broadcast memory update легко раскрывают prompts, tool outputs, user data и hidden evaluator state. Для Евы default должен быть deny-by-default и explicit recipient list.
+- **Неизолированные инструменты.** Tool agent вызывает LangChain `tool.run/arun`; task-solving examples подключают BMTools/XAgent ToolServer, browser, notebook и search. В репозитории нет сопоставимой с EvoHime supervisor policy, approval receipt, host sandbox или network egress governance.
+- **Prompt parser вместо канонического action protocol.** Часть agents парсит свободный текст и regex, function-call path использует старый OpenAI functions format. Это нельзя переносить в production tool gateway без строгих JSON schema и canonical IPC contract.
+- **Слабая durability.** Environment state, messages, memory, logs и results в основном живут в Python objects/обычных файлах; нет транзакционного SQLite event ledger, ordered replay, crash recovery или migration/forget contract.
+- **Retry и exception handling.** Retry loops широко ловят exceptions и продолжают работу; `ToolNotExistError` наследуется от `BaseException`, что усложняет корректное завершение. Для Евы нужны typed failures, cancellation propagation, max attempts и explicit unknown/timeout.
+- **Summary/reflection могут выдумывать факты.** Running summary, importance/immediacy, reflection и evaluator являются LLM-generated outputs. Их можно использовать как advisory projections, но нельзя принимать как immutable user memory, authorization или ground truth.
+- **Mutable defaults и global registries.** В моделях есть list/set/dict defaults, а registry/config mutation выполняется через `pop`. Это повышает риск cross-run state leakage и делает concurrent/replay behavior менее предсказуемым.
+- **External credentials and egress.** Стандартные examples требуют OpenAI/Azure keys; local modes требуют vLLM/FSChat; tool examples — отдельные servers. Все они расширяют network surface и могут отправить shared agent context внешним сервисам.
+- **Cost accounting устарел.** Стоимость считается локальными hard-coded maps для старых моделей и не покрывает современный provider pricing, cache/reasoning tokens или missing usage. В Еве cost должен считаться Core по версионируемому manifest.
+- **Неполная проверка результата.** Часть evaluators — LLM-based score/advice, а в `BasicEnvironment` есть произвольный threshold `8` для list scores. Такой verdict не заменяет deterministic assertions и safety evaluation.
+- **Лицензии внешних компонентов.** Apache-2.0 распространяется на AgentVerse, но BMTools, XAgent, LangChain, OpenAI SDK, datasets, models и tool servers имеют собственные лицензии/условия. Их нельзя автоматически включать в EvoHime package.
+
+#### Предварительное решение
+
+`адаптировать` environment `reset/step/is_done`, composable rule strategies, scoped sender/receiver routing, visibility policy, role/pipeline separation, deterministic scheduling, independent evaluator, typed stage telemetry, bounded retries и code-repair fixtures; `наблюдать` за AgentVerse и его simulation refactor; `не подключать` Python runtime, dynamic import registry, BMTools/XAgent servers, direct LangChain tools, LLM-only acceptance и uncontrolled multi-agent autonomy в базовый runtime Евы.
+
+#### Связь с EvoHime
+
+- AgentVerse полезен для будущего optional multi-agent orchestration layer поверх Core: Electron отображает stages/participants/decisions через IPC, а Core владеет scheduler, messages, memory scopes, tools, approvals и evaluation.
+- Возможные typed сущности: `agent_group`, `agent_role`, `agent_message`, `agent_visibility`, `agent_stage`, `agent_schedule`, `agent_tool_call`, `agent_verdict`; каждая должна иметь workspace/chat/run scope, parent/sequence IDs, schema revision и redaction outcome.
+- В evaluation harness AgentBench можно добавить fixtures для hidden-message leakage, role reassignment, parallel ordering, critic feedback, tool denial, evaluator disagreement, cancellation и restart between stages.
+- Multi-agent capability должна быть выключена по умолчанию, иметь общий run budget, per-agent context/cost limits, bounded concurrency, explicit user-visible plan и approval перед любым external side effect. Агентская роль не может расширить права пользователя.
+- Базовые критерии: deterministic reset/replay; no cross-run memory leakage; receiver/visibility enforcement; no tool execution without Core policy and approval; bounded rounds/retries/tokens; cancellation reaches every stage; durable events before UI projection; evaluator is advisory unless backed by deterministic assertions; full forget/redaction across shared and private memories.
 
 ## Итог для будущего плана
 
