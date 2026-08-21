@@ -118,10 +118,11 @@ retention-состояния; они не переписывают canonical pay
 model_request_sources
 - request_id
 - ordinal
+- source_ref_id NOT NULL UNIQUE -- opaque id, который видит envelope
 - source_kind
 - source_id
 - source_version
-- source_hash NULL             -- тумбстоунится вместе с источником, см. 05.8
+- source_hash NULL             -- NULL для privacy-protected ambient и после tombstone, см. 05.8
 - PRIMARY KEY (request_id, ordinal)
 ```
 
@@ -141,10 +142,16 @@ model_request_block_refs
 - request_id
 - ordinal
 - role (system_prompt | message | tool_schema)
+- block_ref_id NOT NULL UNIQUE   -- opaque id, который видит envelope
 - content_hash NOT NULL
 - PRIMARY KEY (request_id, ordinal)
 - FOREIGN KEY (content_hash) REFERENCES model_request_blocks(content_hash)
 ```
+
+`block_ref_id` — единственный идентификатор блока, который попадает в
+immutable envelope. При commit каждый такой ref должен быть покрыт
+соответствующей entry projection; это позволяет 05.8 вычислить source-closure
+по opaque refs и не оставить удалённый ambient block в другом request.
 
 `refcount` — число строк `model_request_block_refs`, а не число запросов.
 `last_referenced_at` обновляется при каждом новом reference, включая повторное
@@ -157,10 +164,11 @@ model_request_block_refs
 получить bytes только после такой же проверки в отдельной полной транзакции.
 
 `envelope_blob` хранит одну versioned JCS-структуру RFC 8785
-`StoredEnvelopeV1` в UTF-8 с логическими полями canonical envelope и ссылками
-на блоки по `content_hash`. В него не кладётся альтернатива вида `immutable
-artifact ref` и не попадает текст блока. При записи repository в `full` режиме
-разворачивает ссылки, строит canonical `ModelRequestEnvelopeV1` и вычисляет:
+`StoredEnvelopeV1` в UTF-8 с логическими полями canonical envelope и opaque
+ссылками на `block_ref_id`/`source_ref_id`. В него не кладётся текст блока и
+не попадают физические `content_hash`/`source_hash`. При записи repository в
+`full` режиме разрешает opaque refs, разворачивает блоки, строит canonical
+`ModelRequestEnvelopeV1` и вычисляет:
 
 ```text
 envelope_hash = lowercase_hex(
@@ -224,7 +232,8 @@ refcount. In-memory счётчик не используется.
 замыкаемую выборку одного request: строка `model_requests`, все
 `model_request_sources`, `envelope_blob`, все `model_request_block_refs` и
 соответствующие строки `model_request_blocks`, выбранные только по
-`content_hash`. Verifier получает этот набор из экспорта, а не из текущего
+`block_ref_id` и затем проверенные по `content_hash`. Verifier получает этот
+набор из экспорта, а не из текущего
 workspace или повторной сборки контекста. Для hash-only экспорта сохраняются
 `payload_mode`, `NULL bytes` и block hashes; verifier сообщает
 `REQUEST_RETENTION_PRUNED`. Отсутствующий блок в `full`-экспорте считается
@@ -291,8 +300,9 @@ model_request_block_refs(role, request_id)
 ## Immutability и hash-only
 
 После commit нельзя менять `envelope_blob`, `envelope_hash`, lineage,
-`ledger_id`, sources или block content средствами repository API. Допустимы
-только lifecycle/retention-переходы, явно перечисленные выше и в 05.8.
+`ledger_id`, opaque refs, sources или block content средствами repository API.
+Допустимы только lifecycle/retention-переходы, явно перечисленные выше и в
+05.8.
 
 До 05.8 отсутствие `bytes` при `payload_mode = hash_only` является намеренным
 неполным storage-only состоянием, а не повреждением и не разрешением на

@@ -57,15 +57,24 @@ provenance_tombstones
 - UNIQUE(request_id, subject_kind, subject_ordinal, subject_id, state)
 ```
 
+Для `request_block`/`shadow_block` tombstone идентифицирует opaque ref или
+bounded subject id, а не physical `content_hash`; physical hash удаляется
+вместе с последней допустимой storage-ссылкой. Это не позволяет tombstone
+самому стать обходом правила удаления хеша.
+
 Это typed tombstone, а не новая версия envelope. `envelope_blob` и
 `envelope_hash` никогда не переписываются: blob остаётся неизменяемым
 описателем исходного request, hash — его исходным canonical proof digest.
 Реконструктор сначала читает `model_requests.status` и tombstones; для
 помеченного subject отсутствие bytes/refs является ожидаемым состоянием, а
 не hash mismatch. Неполный или подменённый tombstone, наоборот, считается
-повреждением. Хеши в immutable envelope proof не являются `source_hash`:
-правило удаления чувствительного digest применяется к
-`model_request_sources.source_hash`, output/tool-args digest и shadow hash.
+повреждением. По правилам 05.1/05.2 blob содержит только opaque block/source
+refs, поэтому физические `source_hash` и `content_hash` можно удалить из
+repository rows и экспорта, не оставляя их внутри immutable blob. Правило
+удаления чувствительного digest применяется к
+`model_request_sources.source_hash`, output/tool-args digest и shadow hash;
+`envelope_hash` остаётся нерасширяемым proof commitment и не используется для
+реконструкции удалённого текста.
 
 ## Два режима удаления
 
@@ -82,7 +91,8 @@ Envelope с полным system prompt и messages по умолчанию ст�
 
 1. Удаление источника (`forget` памяти, удаление эпизода, `forget_window`)
    сначала строит замкнутый набор затронутых requests по
-   `model_request_sources`, shadow refs, responses и intents, а затем в одной
+   `model_request_sources`, projection-to-block refs, reverse
+   `model_request_block_refs`, shadow refs, responses и intents, а затем в одной
    `BEGIN IMMEDIATE` транзакции: (a) вставляет typed tombstones, (b) переводит
    каждый затронутый `model_requests.status` в `redacted`, (c) обрабатывает
    sources, block refs, `model_responses`, `tool_intents` и shadow rows,
@@ -90,15 +100,16 @@ Envelope с полным system prompt и messages по умолчанию ст�
    всех invariant checks делает `COMMIT`. Сбой оставляет и источник, и
    request lifecycle в прежнем состоянии. Metadata (`request_id`, `provider`,
    `model`, времена, counters, linkage) сохраняются.
-2. `model_request_sources.source_hash` удалённого источника тумбстоунится по тому же правилу, что и сам источник: для ambient-высказывания и `forget_window` хеш удаляется, для `forget` памяти сохраняется digest. Оставлять хеш короткого удалённого текста в provenance запрещено — это восстановимость перебором, ровно та, ради которой ambient-tombstone его не хранит. `envelope_hash` это правило не затрагивает: он покрывает весь request целиком и перебору не поддаётся.
+2. `model_request_sources.source_hash` удалённого источника тумбстоунится по тому же правилу, что и сам источник: для ambient-высказывания и `forget_window` хеш удаляется, для `forget` памяти сохраняется digest. Оставлять хеш короткого удалённого текста в provenance запрещено — это восстановимость перебором, ровно та, ради которой ambient-tombstone его не хранит. `envelope_hash` остаётся whole-request proof commitment, но verifier не использует его как digest источника и не выдаёт по нему удалённый текст.
 3. Typed tombstone не записывается поверх `envelope_blob` и не меняет
    `envelope_hash`. Для затронутого request удаляются его недействительные
    `model_request_block_refs`; `refcount` уменьшается ровно на число
    удалённых refs, `last_referenced_at` пересчитывается по оставшимся refs, а
-   block физически удаляется только при `refcount = 0`. Если один block
-   разделён с другим живым request, bytes не удаляются глобально: все refs,
-   связанные с удалённым source, получают собственные tombstones, а живой
-   request сохраняет свой payload.
+   block физически удаляется только при `refcount = 0`. Если block содержит
+   удалённый source, в closure включаются все request refs этого block: ни один
+   живой request не может сохранить его bytes. Shared block без удалённого
+   source остаётся у живых requests; источник нельзя смешивать с таким block
+   без явной source-attribution, иначе commit блокируется.
 4. `model_responses` и связанные `tool_intents` входят в ту же транзакцию.
    Response с затронутым output получает `status = redacted`, output/его
    content-addressed bytes удаляются, а `output_hash` получает

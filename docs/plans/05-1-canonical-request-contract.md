@@ -168,8 +168,26 @@ context_projection
 `SHA-256("evohime-context-projection-v1\\0" || context_ledger_hash_bytes ||
 JCS(projection_content_coverage))`. Поэтому он всегда связан с
 `context_ledger_hash`; второй независимый hash или независимый список
-выбранных item запрещён. Изменение ledger hash или любого model-visible
-content обязано изменить projection hash.
+выбранных item запрещён. Изменение ledger hash или любой model-visible
+structure/coverage обязано изменить projection hash. Фактические bytes
+model-visible blocks проверяются отдельно через `envelope_hash` и
+content-addressed storage; изменение bytes обязано изменить `envelope_hash`,
+даже если порядок и структура projection не изменились.
+
+### Privacy-safe storage references
+
+Canonical envelope не сериализует физические `content_hash` блоков и
+`source_hash` evidence. В `context_projection.entries[]` используются только
+opaque `block_ref_id` и `source_ref_id`; физические хеши и captured bytes живут
+в repository-строках 05.2/05.4. Это обязательно, потому что redaction ambient
+источника должна иметь возможность удалить перебираемый source/block hash,
+не переписывая уже подписанный `envelope_blob` или `envelope_hash`.
+
+При полном payload verifier разрешает opaque refs в storage и пересобирает
+logical envelope из bytes. При `redacted`/`retention_pruned` refs могут
+остаться в immutable описателе, но отсутствие соответствующих storage rows
+принимается только по typed tombstone; удалённый текст и его физический хеш
+не экспортируются.
 
 ## Exact request reconstruction
 

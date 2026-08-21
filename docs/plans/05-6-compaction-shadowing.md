@@ -76,7 +76,7 @@ ContextProjectionEntry {
     projection_entry_id
     operation              -- include | summary | prune
     source_refs[]
-    content_hash?          -- hash model-visible block, без raw content
+    block_ref_id?          -- opaque ref на model-visible block
 }
 ```
 
@@ -267,8 +267,8 @@ model-visible: S
   `selected_items`/`compression`/`dropped_items`;
 - `replace` отвергается, а replacement принимается только как `summary`;
 - `context_projection_hash` совпадает с точной формулой 05.1 и меняется при
-  изменении model-visible coverage, но не при одном лишь сохранении shadow
-  metadata;
+  изменении model-visible structure/coverage, но не при одном лишь сохранении
+  shadow metadata; изменение самих bytes проверяется через `envelope_hash`;
 - атомарная запись `model_request_sources`, shadow rows и block refs;
 - source mapping, hash/byte validation, цикл и forward reference;
 - превышение `MAX_CONTEXT_PROJECTION_BYTES` даёт typed error;

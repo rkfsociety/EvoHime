@@ -83,6 +83,35 @@ text, credentials или raw tool arguments.
 Verifier принимает legacy effect v1 и новый request variant, но отвергает
 неизвестную версию, domain/type или лишние поля.
 
+### Совместимость с текущей SQLite-схемой receipts
+
+В текущем `receipt_records` есть `CHECK(receipt_kind IN
+('pre_action','post_action','refusal'))` и `action_id TEXT NOT NULL`. Поэтому
+request receipt нельзя вставлять как обычный effect receipt или с фиктивным
+`action_id`. Миграция должна транзакционно пересоздать только эту таблицу,
+сохранив все старые rows, hashes, signatures и `previous_receipt_hash`, и
+ввести следующие совместимые правила:
+
+- добавить `receipt_kind = 'request_commit'` и nullable `action_id` только для
+  этого kind; для старых effect/refusal rows `action_id` остаётся обязательным;
+- добавить nullable `receipt_domain`, `receipt_type`, `payload_version` и
+  `request_id` с partial unique index по `request_id` для request receipts;
+- request receipt хранит `action_id = NULL`, `receipt_domain =
+  model_request`, `receipt_type = request_commit`; `task_id`/`run_id` для
+  существующих NOT NULL-колонок берутся из связанной `context_ledger` строки,
+  `action_status = committed`, но эти compatibility-поля не добавляются в
+  canonical request payload;
+- `context_ledger_receipts` получает conditional linkage: `request_id` и
+  `request_envelope_hash` обязательны для `model_request`, а legacy generic
+  rows остаются совместимыми. Вставка проверяет FK/равенство hash и
+  partial-unique request index.
+
+SQLite migration/fixture обязаны проверить старые effect rows, первый
+`request_commit`, повторный запуск и rollback. В `evohime-receipts` нужен
+request-scoped append primitive, принимающий caller transaction (или
+transaction-scoped handle); generic action append с fake action для request
+receipt запрещён.
+
 ### Chain semantics
 
 `previous_receipt_hash` — hash предыдущего receipt в существующей цепочке,

@@ -24,7 +24,8 @@ ContextEvidenceRef {
     kind
     source_id
     source_version?
-    source_hash
+    source_hash?       -- repository proof, не canonical envelope field
+    source_ref_id      -- opaque id, сериализуемый в envelope
     classification
     projection
 }
@@ -40,18 +41,20 @@ projection в ссылке не дублируется.
 Маппинг на нормализованную таблицу [05.2](05-2-durable-storage.md) такой:
 
 ```text
-ContextEvidenceRef.kind          -> model_request_sources.source_kind
-ContextEvidenceRef.source_id     -> model_request_sources.source_id
+ContextEvidenceRef.kind           -> model_request_sources.source_kind
+ContextEvidenceRef.source_id      -> model_request_sources.source_id
 ContextEvidenceRef.source_version -> model_request_sources.source_version
-ContextEvidenceRef.source_hash   -> model_request_sources.source_hash
+ContextEvidenceRef.source_ref_id  -> model_request_sources.source_ref_id
+ContextEvidenceRef.source_hash    -> model_request_sources.source_hash
 ```
 
 `classification` и `projection` являются свойствами конкретного
 model-visible envelope и сохраняются в каноническом `envelope_blob` внутри
-`context_projection.entries[].source_refs[]`. Отдельная копия описания
-контекста в `model_request_sources` не создаётся. Если storage-запросу нужны
-эти свойства, он читает и проверяет envelope, а не заводит независимый
-контекстный реестр.
+`context_projection.entries[].source_refs[]`. В envelope сериализуется только
+opaque `source_ref_id`: `source_hash` остаётся repository-only полем. Отдельная
+копия описания контекста в `model_request_sources` не создаётся; таблица хранит
+только нормализованную связь и физический hash, который тумбстоунится по
+05.8.
 
 `classification` — Core-owned уровень чувствительности источника:
 `public`, `sensitive` или `secret`. Он не позволяет renderer понизить уровень
@@ -64,10 +67,11 @@ model-visible envelope и сохраняются в каноническом `en
 идентификатор captured snapshot/chunk, для plan review — immutable revision
 плана. Для intrinsically immutable источника (`core_static`) версия может быть
 отсутствующей только если его `source_hash` и immutable artifact ref однозначно
-идентифицируют содержимое. В логическом `ContextEvidenceRef` `source_hash`
-обязателен для intact hashable evidence при commit. Физическая колонка
-`model_request_sources.source_hash` nullable только после разрешённого
-удаления ambient-источника или `forget_window`; для `forget` памяти в ней
+идентифицируют содержимое. Для intact hashable evidence `source_hash`
+обязателен в repository row при commit. Для privacy-protected ambient
+evidence и `forget_window` он не создаётся вообще: в canonical envelope
+остаётся только opaque ref. Физическая колонка `model_request_sources.source_hash`
+nullable также после разрешённого удаления; для `forget` памяти в ней
 сохраняется digest согласно [05.8](05-8-redaction-and-retention.md).
 
 Минимальные `kind`:
@@ -84,6 +88,7 @@ compaction
 tool_result
 generated_summary
 core_static
+ambient_utterance
 ```
 
 Смысл значений: `conversation_event` — зафиксированное событие диалога;
@@ -93,7 +98,8 @@ core_static
 зафиксированный reviewed plan и его revision; `system_context` — Core-owned
 системный контекст; `compaction` — результат операции сжатия; `tool_result` —
 зафиксированный результат инструмента; `generated_summary` — производное
-резюме; `core_static` — неизменяемый Core-owned источник.
+резюме; `core_static` — неизменяемый Core-owned источник; `ambient_utterance` —
+зафиксированное высказывание listener с privacy-protected deletion policy.
 
 Derived context должен хранить `source_refs[]`, образуя DAG происхождения поверх существующей линейной receipt chain.
 
@@ -152,7 +158,7 @@ Supersede не меняет факт того, что модель видела 
 
 При `forget` memory `source_hash` остаётся digest, но payload и доступ к
 стёртому тексту не сохраняются. При ambient-удалении и `forget_window`
-`source_hash` удаляется, а затронутый envelope переходит в явное
+`source_hash` не создаётся либо удаляется, а затронутый envelope переходит в явное
 `REQUEST_REDACTED`-состояние по правилам 05.8; это не повод возвращать текущую
 revision памяти или маскировать redaction под `REQUEST_SOURCE_MISSING`.
 
@@ -177,7 +183,7 @@ Parent request не должен восстанавливаться из «по�
 
 Перед commit Core разрешает каждый `source_ref` через immutable source/artifact
 registry и проверяет `source_kind`, `source_id`, `source_version` и
-`source_hash`. Сначала должен существовать захваченный immutable source state;
+`source_hash`, если policy источника требует его. Сначала должен существовать захваченный immutable source state;
 запись envelope, `model_request_sources` и block refs затем фиксируется
 атомарно по правилам 05.2. Forward reference, неизвестная revision,
 несовпадающий hash, цикл или превышение

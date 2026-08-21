@@ -93,9 +93,12 @@ context_projection_hash, route_snapshot_hash, policy_snapshot_hash,
 route_policy_hash_shared, status, lifecycle_state, tombstone_ids
 ```
 
-`model_requests/envelopes/` содержит точные canonical envelope bytes, а не
-пересобранный по текущему состоянию JSON. `block_refs.jsonl` и blocks замыкают
-system prompt, messages и tool schemas. `context_ledger/entries.jsonl`
+`model_requests/envelopes/` содержит точные `StoredEnvelopeV1` bytes с opaque
+refs, а не пересобранный по текущему состоянию JSON. Для `valid` full request
+verifier разворачивает refs и проверяет exact canonical envelope bytes; для
+`redacted`/`retention_pruned` удалённые bytes не материализуются.
+`block_refs.jsonl` и blocks замыкают system prompt, messages и tool schemas.
+`context_ledger/entries.jsonl`
 содержит canonical ledger rows, необходимые для проверки `ledger_id`,
 `context_ledger_hash` и projection. `request_snapshots/route_policy.jsonl`
 содержит redacted canonical route/policy snapshots из 05.3, их source id,
@@ -114,7 +117,8 @@ secrets никогда не попадают в bundle; credential-bearing block
 как typed redaction/tombstone.
 
 `context_evidence/sources.jsonl` содержит все direct
-`model_request_sources`, их source kind, revision, hash, payload mode и
+`model_request_sources`, их opaque source ref, source kind, revision, hash если
+он разрешён policy, payload mode и
 references на captured blocks. `context_shadowed_originals/records.jsonl`,
 `context_shadow_source_refs/refs.jsonl` и `context_shadow_blocks/` содержат
 все shadow rows, включая `parent_shadow_id`, summary/prune operation и
@@ -224,11 +228,15 @@ SQLite, renderer, workspace, memory, сеть или текущие provider set
    предыдущим receipt той же общей chain либо совпадать с подписанным
    checkpoint boundary; chain root/checkpoint из manifest должны совпадать с
    фактически экспортированной closure.
-3. **Envelope canonical hash.** Разобрать envelope указанной версии, проверить
-   duplicate/unknown fields, размер, canonical bytes и `envelope_hash`.
-   `payload_mode = full` обязан иметь все blocks, точные `byte_len` и hash.
-   Несовпадение canonical hash, blob, block bytes или порядка refs —
-   `REQUEST_HASH_MISMATCH`.
+3. **Envelope и lifecycle proof.** Разобрать envelope указанной версии,
+   проверить duplicate/unknown fields, размер, opaque refs и сохранённый
+   `envelope_hash`. Для `status = redacted`/`retention_pruned` отсутствующие
+   blocks допускаются только если каждый такой ref покрыт полным tombstone;
+   verifier сверяет `envelope_hash` с request row/receipt, но не пытается
+   пересчитать hash из намеренно удалённых bytes. Для `valid` full request все
+   blocks обязаны присутствовать, иметь точные `byte_len` и физический hash.
+   Несовпадение canonical hash, blob, block bytes или порядка refs без
+   допустимого tombstone — `REQUEST_HASH_MISMATCH`.
 4. **Ledger и projection.** Найти `ledger_id`, проверить
    `context_ledger_hash`, вычислить `context_projection_hash` по точной формуле
    05.1 и сравнить его с envelope, request row и signed request receipt.
@@ -245,20 +253,23 @@ SQLite, renderer, workspace, memory, сеть или текущие provider set
    `previous_request_hash`. Несовпадение даёт `REQUEST_LINEAGE_MISMATCH`;
    пропуск predecessor — `REQUEST_RECONSTRUCTION_FAILED`.
 6. **Source/evidence closure.** Разрешить каждый direct source ref, проверить
-   source hash, revision, captured block hash/length и source lineage. Summary
+   source hash, если он разрешён policy, revision, captured block hash/length и
+   source lineage. Summary
    обязан разрешиться до `context_shadowed_originals` и далее до всех
    transitive originals; prune обязан иметь drop reason. Отсутствующий source
-   в новой полной записи — `REQUEST_SOURCE_MISSING`, изменённый source —
-   `REQUEST_SOURCE_CHANGED`, hash/bytes mismatch — `REQUEST_HASH_MISMATCH`.
+   в новой полной записи без tombstone — `REQUEST_SOURCE_MISSING`,
+   намеренно удалённый source с полным tombstone не является ошибкой;
+   изменённый source — `REQUEST_SOURCE_CHANGED`, hash/bytes mismatch без
+   допустимого lifecycle tombstone — `REQUEST_HASH_MISMATCH`.
 7. **Response/tool closure.** Проверить `model_responses` к конкретному
    request attempt, output hash/block и status. Для каждого intent проверить
    `origin_request_id`, `origin_request_envelope_hash`, response/ordinal,
    args hash, approval exact `call_hash`, pre-action receipt, effect receipt и
    terminal result hash. Разрыв этой связи — `REQUEST_TOOL_LINKAGE_MISMATCH`.
-8. **Lifecycle classification.** После immutable checks проверить
-   `provenance_tombstones` и только затем классифицировать request как
-   `valid`, `redacted`, `retention_pruned`, `legacy_hash_only`,
-   `metadata_hash_only`, `evidence_evicted` или `damaged`.
+8. **Lifecycle classification.** Проверить полноту и соответствие
+   `provenance_tombstones` до требования полной content closure и
+   классифицировать request как `valid`, `redacted`, `retention_pruned`,
+   `legacy_hash_only`, `metadata_hash_only`, `evidence_evicted` или `damaged`.
 
 Каждый receipt signature проверяется обязательно; «подпись не нужна, потому
 что manifest подписан» недопустимо. Для request receipt дополнительно
