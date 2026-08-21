@@ -43,6 +43,7 @@
 | 20 | [mem0ai/mem0](https://github.com/mem0ai/mem0) | Исследовано | Long-term memory API, scoped user/agent/run memory, additive extraction, SQLite history, hybrid retrieval, expiration и entity linking | Адаптировать memory contracts, provenance, hybrid retrieval и forget semantics; Python SDK, cloud service, default telemetry и raw-memory storage не подключать напрямую |
 | 21 | [letta-ai/letta](https://github.com/letta-ai/letta) | Исследовано | Stateful agent, memory blocks, recall, git-backed MemFS, context lifecycle, memory tools, sandbox confinement и persistent agent identity | Адаптировать layered-memory/context/approval contracts и историю изменений; `letta-code`, Cloud, App Server и архивную V1 напрямую не подключать |
 | 22 | [AgentOps-AI/agentops](https://github.com/AgentOps-AI/agentops) | Исследовано | OpenTelemetry traces/spans, LLM/tool/workflow semantic conventions, token/cost/latency metrics, session replay и evaluation validation | Адаптировать event/trace/metrics contracts и local observability; Python SDK, облачный OTLP и self-hosted dashboard напрямую не подключать |
+| 23 | [THUDM/AgentBench](https://github.com/THUDM/AgentBench) | Исследовано | Multitask agent evaluation, isolated task workers, function-calling protocol, deterministic environments, trajectory/reward scoring и resource budgets | Адаптировать evaluation/scenario/trajectory contracts и bounded fixtures; benchmark runtime, Docker task stack, внешние datasets/services и production host actions не подключать |
 
 ## Карточки исследований
 
@@ -3191,6 +3192,66 @@ HF token, speaker embeddings или cloud/provider diarization в базовый
 - Возможные будущие IPC/read models: `run.trace`, `run.span`, `run.metrics`, `run.replay`, `run.export_status`; write-side остаётся только в Core, а Electron получает redacted snapshots с sequence/correlation IDs.
 - Для LLM/model gateway логировать usage и timing; для tools — canonical call hash, scope, approval, cancellation, output summary; для RAG/memory — query plan, source IDs, citations, freshness and redaction decision; для ambient — только уже разрешённые transcript events, без audio BLOB.
 - Базовые критерии: no network required for execution, no raw secrets/prompts by default, durable local event before optional export, bounded payload/queue, restart recovery, ordered replay, exact approval linkage, scope isolation, retention/forget and exporter failure cannot change tool result.
+
+### 23. THUDM AgentBench
+
+- **Источник:** [THUDM/AgentBench](https://github.com/THUDM/AgentBench), [описание framework](https://github.com/THUDM/AgentBench/blob/main/docs/Introduction_en.md), [AgentRL environment overview](https://github.com/THUDM/AgentRL)
+- **Дата проверки:** 2026-08-21
+- **Ревизия/commit:** `d1e4a10db08c87075c78972e48ecc182be03e2d5`; checkout `main` чистый
+- **Лицензия:** Apache-2.0 для AgentBench; AgentRL, который используется текущей FC-веткой, имеет отдельную MIT-лицензию и отдельные условия заимствования
+- **Состав:** исходная версия с Agent Client, Task Client, Task Controller/Workers и Assigner; текущая AgentBench FC интегрирована с AgentRL и контейнеризует `alfworld`, `dbbench`, `knowledgegraph`, `os_interaction` и `webshop`
+- **Назначение:** воспроизводимая многозадачная оценка LLM-агентов в интерактивных средах: от OS/DB/KG до WebShop, ALFWorld и старых карточных/диалоговых сценариев
+- **Краткий вывод:** это хороший источник архитектуры evaluation harness и контрактов сценария, сессии, action/observation, статусов, reward и независимого judge. Подключать Python/Docker benchmark как runtime Евы не нужно; полезные части следует реализовать как Core-owned локальный evaluation слой.
+
+#### Что изучено
+
+- Исходная архитектура намеренно разделяет Task Server, Agent Server и Client. Task Controller регистрирует workers и выдаёт единый API `start_sample`/`interact`, а Task Worker владеет конкретной интерактивной средой.
+- `TaskClient.run_sample` запускает сессию, передаёт историю агенту, принимает ответ, возвращает его в среду и завершает цикл по terminal status. Ошибки сети, старта, взаимодействия, недоступности worker и ошибки агента разделены и могут быть повторены.
+- Типизированные модели выделяют `SampleStatus`: running, completed, context limit, validation failed, invalid action, task limit, unknown и task error. `AgentOutput` отдельно поддерживает normal, cancelled и context-limit состояния.
+- Текущая FC-ветка использует function-calling вместо старого свободного формата ReAct. В OS task tool call имеет имя, JSON-аргументы и `tool_call_id`; action parser различает `bash_action`, `finish_action` и `answer_action`, а не принимает произвольный текст как исполняемую команду.
+- Task worker на каждый sample создаёт и уничтожает изолированную среду. В OS task это контейнерная сессия с init/start scripts, продлением lease, bounded round limit, очисткой terminal escape sequences, обрезкой длинного вывода и обязательным cleanup в `finally`.
+- Judge отделён от agent loop: после terminal answer выполняются `match` или независимые `check` scripts, затем выдаются `result`, `status` и reward/score. Общий итог сохраняет total/pass/wrong/accuracy, а клиент дополнительно считает доли статусов и длину истории.
+- Конфигурация декларативно связывает `agent × task`, concurrency и output directory. Assigner восстанавливает завершённые samples из `runs.jsonl`, сохраняет `error.jsonl`, поддерживает resume/auto-retry и распределяет работу через max-flow по свободной ёмкости agents и tasks.
+- Набор задач проверяет разные способности: OS — bounded tool use и операции в файловой системе; DB — SQL/структурированные запросы; KG — многошаговый графовый поиск; ALFWorld — состояние и planning; WebShop/Mind2Web — web interaction. В исходной версии есть Dev/Test split и многошаговые траектории.
+- Текущий deployment требует Docker Compose, AgentRL Controller, отдельные workers, Redis для allocation и Freebase service для KG. README прямо предупреждает о потреблении около 16 GB RAM WebShop и утечке памяти/диска в ALFWorld до перезапуска worker.
+- `py -m compileall -q src` на checkout прошёл; обнаружено предупреждение Python о неэкранированной regex-последовательности в OS task. Полный benchmark не запускался: он требует Docker, модели/API, datasets и тяжёлых внешних сервисов.
+
+#### Что можем использовать в Еве
+
+- **Локальный evaluation harness как отдельный слой.** Завести версионируемые `eval.scenario` fixtures, которые запускают Еву через Core/IPC и не зависят от production workspace. Сценарий должен иметь id/version, описание, required capabilities, seed/fixture revision, budgets, ожидаемый terminal predicate и независимый evaluator.
+- **Контракт сценария `reset → step → observe → evaluate`.** Перенять чёткое разделение начальной настройки, одного agent action, observation, terminal state и judge. Это удобно для тестов tool execution, RAG, memory, browser и recovery, не смешивая их с обычным chat transcript.
+- **Typed action/function-calling evaluation.** Проверять не только текст ответа, но и canonical tool name, JSON schema, аргументы, call id, policy decision, approval receipt и result. Невалидный action должен давать отдельный статус и bounded feedback, а не попадать в shell/browser executor.
+- **Набор конечных статусов.** Адаптировать различия `completed`, `cancelled`, `timeout/limit`, `invalid_action`, `validation_failed`, `denied`, `task_error`, `crash_recovered` и `context_limit`. Это пригодится для реальных acceptance-метрик, где провал по безопасности не должен сливаться с обычным неправильным ответом.
+- **Изолированный fixture environment.** Для OS-like тестов использовать временный workspace или отдельный supervisor-controlled worker; network по умолчанию выключать, задавать CPU/RAM/disk/time limits, очищать окружение после каждого sample и проверять отсутствие утечки процессов/файлов. Произвольные benchmark shell-команды на хосте не выполнять.
+- **Независимый детерминированный judge.** Перенять `match` для точных ответов и `check` для состояния/артефактов. В Еве evaluator должен проверять итоговые filesystem/database/event predicates, policy/approval invariants и citations, а не доверять заявлению модели или LLM-as-a-Judge.
+- **Trajectory и reward ledger.** Сохранять для каждого sample ordered events: run/session, step, prompt/evidence hash, action/tool call, observation preview/hash, approval, duration, status, evaluator result и resource usage. Score может включать success, safety, efficiency, latency, retries, cost и citation correctness; сырые секреты и полные prompt/tool payloads по умолчанию не сохранять.
+- **Матрица agent × task и bounded concurrency.** Использовать идею декларативных assignments для nightly/CI evaluation: несколько model/provider/prompt revisions против набора сценариев, с ограничением одновременных runs и отдельными budgets. Восстановление по JSONL/SQLite sequence после падения должно быть частью контракта.
+- **Повторяемость и split.** Разделить dev fixtures и скрытый test set, закреплять provider/model/prompt/config/fixture revision, seed, OS/runtime version и evaluator version. Результаты должны быть сравнимы только при совпадающей provenance, иначе показывать `not comparable`.
+- **Категории сценариев для Евы.** Первыми сделать локальные лёгкие варианты OS/tool safety, DB/query validation, RAG multi-hop, memory scope/forget, approval denial, cancellation, malformed tool call, provider timeout и supervisor restart. Web/browser и multimodal tasks оставить опциональными внешними workers.
+- **Worker health и recovery.** Перенять controller/worker health, heartbeat, lease renewal, capacity и restart semantics. Это особенно полезно для Windows supervisor: crash или resource exhaustion одного evaluation worker не должен ломать Core и соседние пользовательские runs.
+- **Extension contract.** Новый task должен добавлять только manifest/fixture, environment adapter, action schema и evaluator; общий runner, trace storage, cancellation, timeout, redaction и report format остаются едиными. Так можно расширять evaluation без копирования orchestration кода.
+
+#### Ограничения и риски
+
+- **Не runtime Евы.** Репозиторий закреплён на старом Python stack (`numpy~=1.23`, Pydantic 1, FastAPI и другие зависимости), а текущая FC-ветка зависит от AgentRL. Это второй runtime и не соответствует Electron + Rust Core + SQLite + supervisor.
+- **Тяжёлая и хрупкая инфраструктура.** Docker, Redis, MySQL/Freebase, browser data и task workers усложняют Windows packaging, offline-first и поддержку. Предупреждения о RAM/disk leaks требуют bounded quotas, restart policy и cleanup acceptance tests даже в отдельном evaluation service.
+- **Внешние источники снижают воспроизводимость.** KG в старой версии зависел от нестабильного online SPARQL; cloud/API providers, WebShop и реальные сайты меняют состояние. Для Евы нужны локальные fixtures, fake providers и pinned snapshots; network evaluation — отдельный opt-in класс.
+- **Нельзя смешивать версии протокола.** Старый AgentBench принимает текстовые `Think/Act`, текущий FC — function calls и AgentRL task API. Нельзя переносить старый prompt parser в production tools; каноническим источником для Евы остаются собственные IPC/tool schemas.
+- **Benchmark success не равен безопасности.** Простая accuracy/pass метрика не доказывает корректность authorization, sandbox, redaction или отсутствие side effect. Каждый сценарий должен иметь отрицательные cases и safety assertions с более высоким приоритетом, чем task reward.
+- **Side effects и секреты.** OS/DB/web tasks могут менять файлы, базы, network state и передавать контекст модели. Промышленный runner обязан использовать synthetic data, ephemeral state, allow-listed capabilities, no-network по умолчанию и отдельное consent для внешних providers.
+- **Результаты чувствительны к окружению.** Model/provider, prompt, context window, tool descriptions, concurrency, dataset split и evaluator version меняют score. Без provenance и сравнения конфигураций цифры будут вводить в заблуждение.
+- **Данные и лицензии.** Apache-2.0 покрывает код AgentBench, но datasets, Docker images, Freebase/ALFWorld/WebShop/Mind2Web и AgentRL имеют отдельные условия и attribution. Перед включением fixtures в EvoHime нужно проверить право на redistribution и не включать внешние данные в пользовательскую память.
+
+#### Предварительное решение
+
+`адаптировать` scenario/task/evaluator contracts, function-call validation, isolated fixtures, typed terminal statuses, trajectory ledger, deterministic scoring, matrix assignments, resume/retry и worker health semantics; `наблюдать` за AgentRL/FC evolution и использовать его как внешний research harness; `не подключать` Python benchmark runtime, Docker Compose stack, Redis/Freebase, внешние datasets/services и прямое выполнение benchmark actions на production host.
+
+#### Связь с EvoHime
+
+- AgentBench следует связать с будущим локальным evaluation-планом поверх Core-owned run/event storage, существующих approval/call-hash, context-budget, RAG citations и supervisor recovery. Electron должен показывать отчёт и trace через IPC, но не запускать evaluator и не читать fixtures напрямую.
+- Возможные будущие сущности: `eval_scenario`, `eval_run`, `eval_step`, `eval_assertion`, `eval_score`, `eval_artifact`; каждая должна иметь scope, fixture/evaluator revision, run/sequence IDs, policy outcome и retention/forget semantics.
+- Evaluation runner должен вызывать те же Core tool gateways, что и пользовательский режим, но в отдельном capability scope и ephemeral workspace. Нельзя создавать специальный обход approval или скрытую ветку исполнения только ради высокой benchmark accuracy.
+- Базовые критерии: offline deterministic smoke suite; zero host side effects; invalid/denied/cancelled actions classified separately; full ordered replay after restart; bounded CPU/RAM/disk/time; evaluator independent from agent answer; no raw secrets/prompts by default; reproducible score with provenance; exporter/test failure cannot alter Core execution.
 
 ## Итог для будущего плана
 
