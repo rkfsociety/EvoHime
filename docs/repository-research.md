@@ -39,6 +39,7 @@
 | 16 | [vocodedev/vocode-core](https://github.com/vocodedev/vocode-core) | Исследовано | Streaming voice-agent loop, typed STT/LLM/TTS/action contracts, barge-in, endpointing, transcript events и telephony adapters | Адаптировать lifecycle/interrupt/tool/evaluation идеи; Python SDK, cloud actions и telephony runtime не подключать |
 | 17 | [saharmor/voice-lab](https://github.com/saharmor/voice-lab) | Исследовано | Evaluation framework: JSON-сценарии, personas, model/prompt matrix, LLM-as-a-Judge, cost/quality comparison и экспериментальные speech metrics | Адаптировать evaluation contracts, fixtures и report provenance; Python scripts, cloud eval agent и pyannote/stable-ts pipeline не подключать |
 | 18 | [Qwen/Qwen2-VL collection](https://huggingface.co/collections/Qwen/qwen2-vl) | Исследовано | Vision-language models для image/video understanding, OCR, multilingual visual QA, dynamic resolution и локальных quantized variants | Рассматривать как optional vision backend/PoC; не подключать к базовому runtime до GPU/memory/licensing/privacy плана |
+| 19 | [mPLUG/DocOwl2](https://huggingface.co/mPLUG/DocOwl2) | Исследовано | OCR-free multi-page document understanding, high-resolution DocCompressor, page evidence, cross-page QA и document benchmark suite | Рассматривать как optional document-worker PoC; адаптировать page/evidence/evaluation contracts, custom Python/CUDA runtime не подключать напрямую |
 
 ## Карточки исследований
 
@@ -2927,6 +2928,68 @@ HF token, speaker embeddings или cloud/provider diarization в базовый
 - Ambient listener не расширять до скрытого screen/camera capture. Как и для текущего audio storage, raw visual input не добавлять автоматически в SQLite; persistent OCR/caption требует отдельного consent/retention/forget дизайна.
 - Наиболее реалистичный порядок: сначала design-only schema и offline fixtures, затем worker PoC на 2B quantized, затем benchmark против 7B/remote provider, и только после этого решение о packaging/GPU support. Acceptance criteria: no secret/image egress by default, bounded memory/time, cancellation, reproducible model hashes, safe prompt-injection behavior и Russian visual QA metrics.
 - Qwen2-VL дополняет уже исследованные browser/computer-use и Voice Lab идеи как perception backend. Он не заменяет Playwright/Puppeteer action boundary, Vocode/Pipecat voice orchestration, Whisper ASR или текущий Rust listener.
+
+### 19. mPLUG/DocOwl2
+
+- **Источник:** [модель mPLUG/DocOwl2](https://huggingface.co/mPLUG/DocOwl2), [официальный mPLUG-DocOwl repository](https://github.com/X-PLUG/mPLUG-DocOwl), [README модели](https://huggingface.co/mPLUG/DocOwl2/blob/main/README.md), [техническая работа](https://arxiv.org/abs/2409.03420)
+- **Дата проверки:** 2026-08-21
+- **Ревизия/commit:** HF model `205b9e18b0cb503c9ef0dde1e7b120e6925778d9`; связанный source checkout `f91a76859babfdebe7420db6133b66f06f65ecf2`.
+- **Лицензия:** Apache-2.0 для модели/source repository. Training datasets, upstream libraries, custom kernels и пользовательские документы требуют отдельного component/data/license review.
+- **Состав:** custom Transformers model code, visual encoder, high-resolution `DocCompressor`, processor, tokenizer и evaluation scripts. HF карточка помечает модель как `custom_code`; размер — около 9B параметров в BF16, model storage около 17.1 GB.
+- **Назначение:** OCR-free понимание многостраничных документов: text lookup/parsing, concise/detailed multi-page VQA, page evidence, cross-page structure и text-rich video understanding.
+- **Краткий вывод:** DocOwl2 сильнее и точнее сфокусирован на document worker, чем универсальный Qwen2-VL. Для Евы полезны page-aware input, evidence pages, bounded document budgets и benchmark contracts. Сам 9B BF16 Python/CUDA runtime слишком тяжёлый и небезопасный для прямого включения в Rust Core/Electron package.
+
+#### Что изучено
+
+- Главная идея — high-resolution `DocCompressor`: каждая страница кодируется примерно в 324 visual tokens, что уменьшает цену multi-page context и позволяет отвечать с учётом нескольких страниц.
+- README выделяет multi-page text lookup/parsing, короткие и подробные ответы с evidence pages, а также text-rich video. Пример передаёт список page images и query; вопрос может ссылаться на конкретную страницу или документ целиком.
+- HF quickstart использует `AutoTokenizer(use_fast=False)`, `AutoModel.from_pretrained(..., trust_remote_code=True, low_cpu_mem_usage=True, torch_dtype=torch.float16, device_map='auto')`, затем `init_processor(tokenizer, basic_image_size=504, crop_anchors='grid_12')` и `model.chat(...)`.
+- Custom `processor.py` принимает локальные image paths/PIL images, конвертирует RGB, строит high-resolution crops по anchor grid и добавляет page/image ordinal tokens в текстовый prompt. Порядок страниц кодируется самим списком входов.
+- `visual_compressor.py` использует FlashAttention для cross-attention; код требует CUDA tensors и float16/bfloat16. Это не portable CPU/Windows Rust implementation.
+- В репозитории опубликованы MP-DocStruct1M, MP-DocReason51K, DocDownstream-2.0 и DocGenome12K, а evaluation покрывает single-image задачи, MP-DocVQA, DUDE и NewsVideoQA. Данные и их лицензии не следует автоматически считать частью лицензии модели.
+- Benchmark scripts сохраняют JSONL predictions и считают ANLS, exact/relaxed/contain accuracy, IoU, BLEU, ROUGE, METEOR и CIDEr. Это полезный reference для document-specific evaluation, но не готовая production quality gate.
+- HF model card показывает 9B BF16 weights и отсутствие Inference Provider deployment. Значит, для использования нужен собственный local worker/GPU или отдельно организованный provider, а не готовый HF endpoint.
+- Код processor выставляет `ImageFile.LOAD_TRUNCATED_IMAGES = True` и `Image.MAX_IMAGE_PIXELS = None`. Для продукта это опасные defaults: до вызова модели Core обязан валидировать формат, размеры, pixel count, decode time и временное хранение.
+- `compileall` для checkout evaluation/source paths прошёл без syntax errors. Это не подтверждает работоспособность inference: необходимы CUDA, FlashAttention, PyTorch/Transformers compatibility, веса и все evaluation dependencies.
+
+#### Что можем использовать в Еве
+
+- **Специализированный document backend.** В архитектуре разделить `vision_image`/`vision_video` и `document_multipage` capabilities. Для многостраничного PDF/скана выбирать DocOwl-подобный worker, а не заставлять универсальную VLM обрабатывать страницы без page-aware контракта.
+- **Page manifest.** Ввести `document_id`, page number/order, source path scope, content hash, dimensions, orientation, render revision и retention. Ответы должны ссылаться на `evidence_pages`/`evidence_regions`, а не только выдавать свободный текст.
+- **Bounded document budget.** Перенять идею фиксированного page compression, но задать Core limits: максимальный размер документа, число страниц, pixel budget на страницу, суммарные visual tokens, время job, output tokens и memory estimate. Не передавать модели произвольный весь workspace.
+- **Typed query modes.** Разделить `lookup`, `extract_fields`, `summarize`, `compare_pages`, `answer_with_evidence` и `table_read`. Для каждого режима определить schema, required evidence и допустимое `uncertain/needs_review` состояние.
+- **Evidence-first output.** Результат должен содержать answer, page references, optional region/time spans, confidence/uncertainty, model revision и input hash. Evidence — ссылка на исходную страницу/фрагмент, а не утверждение модели о самом себе.
+- **OCR-free как enrichment/fallback.** Использовать визуальное понимание для сложных таблиц, layout, диаграмм и сканов после обычного text extraction/OCR, а не удалять проверенный текстовый слой. Конфликт между parser/OCR и VLM должен идти в review/uncertainty, не молча перезаписывать источник.
+- **Document RAG integration.** В существующий local Agentic RAG добавлять redacted page summaries, extracted fields и page citations с content hash. Исходные images/PDFs остаются в исходной permissioned workspace scope и не копируются в SQLite без отдельной политики.
+- **Evaluation contracts.** Адаптировать ANLS для OCR-like answers, exact/relaxed accuracy для полей и чисел, IoU для region grounding и cross-page fixtures. Добавить русские технические manuals, таблицы, чертежи, mixed orientation, small text, page references и adversarial instructions inside documents.
+- **Model manifest/custom code review.** Для любого PoC фиксировать HF SHA, source commit, custom-code files, tokenizer/processor, PyTorch/Transformers/FlashAttention versions, checksum, memory profile, license и egress. `trust_remote_code` разрешать только на pinned, reviewed artifact.
+- **Isolated worker boundary.** Если PoC успешен, запускать документный worker отдельно под supervisor/permissioned capability. Core владеет page render, file access, cancellation, retention, redaction и receipt; Electron видит только redacted progress/result.
+
+#### Ограничения и риски
+
+- **Тяжёлый runtime.** Около 9B BF16 параметров и примерно 17.1 GB model storage требуют отдельной GPU policy; веса, activation memory, high-resolution crops и FlashAttention workspace увеличивают реальное потребление. Для обычной Windows desktop поставки это неприемлемая базовая зависимость.
+- **CUDA/FlashAttention dependency.** Custom compressor импортирует `flash_attn` и проверяет CUDA/half tensors. Нет подтверждённого Rust/Candle/Windows-native backend и нет HF Inference Provider; fallback CPU не является поддержанным production path.
+- **Remote custom code.** `trust_remote_code=True` запускает Python code из model repository. Нужны pinned revision, code review, offline packaging, allowlist imports и запрет автоматического обновления весов/процессора при старте.
+- **Processor safety defaults.** Разрешение truncated images и отключение `MAX_IMAGE_PIXELS` может открыть decompression bomb, memory exhaustion или очень долгий decode. Core должен отбраковывать неподходящие inputs до custom processor, а worker — иметь memory/time watchdog.
+- **Качество и hallucination.** OCR-free модель может неправильно прочитать мелкий текст, таблицу, формулу, номер страницы или cross-page relation. Generated evidence page не доказывает ответ; проверять нужно исходный render и, где возможно, deterministic text extraction.
+- **Язык и домен.** HF card помечает язык как English, тогда как Еве нужны русские документы, технические manuals и mixed-language scans. Нужен собственный benchmark; нельзя переносить paper metrics на русские документы без измерения.
+- **Данные и приватность.** Документы могут содержать персональные данные, ключи, финансовые сведения и внутренние инструкции. Не отправлять их в remote provider по умолчанию, не писать raw pages/model prompts в логи, ограничить TTL и поддержать forget/erase для derived summaries.
+- **Prompt injection in documents.** Текст страницы может содержать инструкции «игнорируй правила», фальшивые approvals или tool commands. DocOwl получает только capability `document.read`; его вывод никогда не получает право менять workspace, browser, provider или secrets.
+- **Page explosion/DoS.** Multi-page compression снижает token cost, но не отменяет decode/render/GPU cost. Ограничить number of pages, total pixels, crop count, concurrent jobs, queue size и cancellation at every page.
+- **License boundary.** Apache-2.0 модели не покрывает автоматически MP-Doc datasets, training data, tokenizer/runtime dependencies, FlashAttention или документы пользователя. Для redistribution нужен полный manifest и attribution/license bundle.
+- **Evaluation leakage.** Benchmark answers и datasets могут попасть в local cache или reports; не смешивать их с пользовательскими workspace facts и не считать benchmark score evidence of safety or authorization.
+
+#### Предварительное решение
+
+`рассматривать` DocOwl2 как optional offline document-worker PoC; `адаптировать` page manifest, evidence contract, document budgets, deterministic fallback и evaluation metrics; `наблюдать` за quantized/portable successors; `не подключать` 9B BF16 custom Python/CUDA runtime и `trust_remote_code` в базовый runtime Евы.
+
+#### Связь с EvoHime
+
+- Будущий `document.*` capability должен идти через Rust Core: permissioned path scope, render/parse limits, temporary page handles, cancellation, redaction, retention и durable receipt. Electron не читает workspace напрямую и не запускает model code.
+- Для Local Agentic RAG DocOwl2 может быть optional enrichment для page-aware citations, но не заменяет SQLite/FTS5 source-of-truth и не должен записывать raw document images как BLOB.
+- Возможные design-only события: `document_ingest_started`, `document_page_ready`, `document_query`, `document_evidence`, `document_uncertain`, `document_job_receipt` с sequence/correlation id, source hash и model revision.
+- Реалистичный порядок: schema/fixtures и deterministic text extraction → isolated worker PoC → benchmark на русских manuals → memory/latency/security review → решение о model/backend/package. Acceptance criteria: bounded pages/pixels/memory/time, no unapproved egress, pinned custom code, safe prompt-injection handling, evidence page accuracy, cancellation и erase derived data.
+- DocOwl2 дополняет Qwen2-VL: Qwen2-VL подходит как универсальный image/video perception backend, DocOwl2 — как более узкий multi-page document backend. Оба не должны добавляться одновременно в базовую установку без capability routing и общего model manifest.
 
 ## Итог для будущего плана
 
