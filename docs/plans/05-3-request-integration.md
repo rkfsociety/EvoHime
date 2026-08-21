@@ -19,7 +19,13 @@
 
 ## Что есть в коде сейчас
 
-Единого чокпойнта нет. Гейтвей вызывается минимум из `stream_chat_with_policy`, `chat_with_tools_with_policy`, `chat_with_tools_with_policy_and_route` в `crates/evohime-core/src/lib.rs` и из саммаризатора в `crates/evohime-core/src/context_budget.rs`. Этап обязан этот чокпойнт создать, а не предположить, что он есть.
+Единого чокпойнта нет. Гейтвей вызывается из
+`stream_chat_with_policy`, `chat_with_tools_with_policy`,
+`chat_with_tools_with_policy_and_route` в `crates/evohime-core/src/lib.rs` и из
+саммаризатора в `crates/evohime-core/src/context_budget.rs`; отдельным поиском
+по provider-client и `dispatch` нужно подтвердить отсутствие дополнительных
+путей. Этап обязан создать чокпойнт и закрыть архитектурный обход, а не только
+добавить общий helper и тест на соглашение.
 
 Запись `context_ledger` сегодня **не** fail-closed: комментарий в `crates/evohime-core/src/lib.rs` фиксирует «Неудача записи — diagnostic `ledger_write_failed`, а не повтор вызова модели», то есть при неудачной durable записи model call выполняется. Этот этап меняет контракт: неудача commit становится `REQUEST_PROVENANCE_COMMIT_FAILED` и запрещает dispatch.
 
@@ -52,11 +58,43 @@ durable commit failed
 required evidence unresolved
 captured source integrity failed
 policy snapshot invalid
+payload_mode = hash_only или отсутствует обязательный полный block payload
 ```
+
+Для hash-only до 05.8 результатом checkpoint является
+`REQUEST_PROVENANCE_COMMIT_FAILED`: provider не вызывается, даже если строки
+metadata/hash-only storage были успешно записаны repository-слоем. Это
+обязательное fail-closed поведение, а не штатный degraded dispatch.
 
 После successful commit provider/network failure является обычным request outcome и не удаляет envelope.
 
 Лимиты envelope из [05.1](05-1-canonical-request-contract.md) передаются в Context Budget Manager как вход планирования. Проверка перед commit остаётся backstop-ом на ошибку планировщика, а не штатным путём отказа.
+
+### Архитектурный барьер checkpoint
+
+Ввести Core-owned `ModelRequestCheckpoint`, который является единственным
+владельцем последовательности `build/validate -> commit_envelope(FullForDispatch)
+-> dispatch`. Все публичные обёртки сначала строят envelope, затем передают
+его checkpoint; provider client и raw dispatch handle не экспортируются в
+модули feature-кода. На уровне Rust видимостью модулей/trait boundaries
+запретить прямой вызов provider из `lib.rs`, `context_budget.rs`, child,
+memory, schedule/ambient, plan review и plan revision. Тест дополнительно
+сканирует список разрешённых call sites, но компиляторная граница является
+обязательной защитой.
+
+Минимальный refactor inventory этого этапа:
+
+1. `stream_chat_with_policy`;
+2. `chat_with_tools_with_policy`;
+3. `chat_with_tools_with_policy_and_route`;
+4. summarizer в `context_budget.rs`;
+5. все child, memory, schedule/ambient, `plan_review`, `plan_revision` и
+   internal summarization пути, найденные поиском provider dispatch.
+
+Каждый пункт либо вызывает checkpoint напрямую, либо вызывает обёртку,
+которая не имеет доступа к raw provider dispatch. Добавление нового gateway
+call site после этого этапа должно быть невозможно без изменения закрытого
+интерфейса checkpoint и соответствующего compile-time/architecture test.
 
 ## Routing provenance
 
@@ -67,11 +105,22 @@ route_snapshot_hash
 policy_snapshot_hash
 ```
 
+В envelope также сохраняется `route_policy_hash_shared`. Он равен `true` ровно
+тогда, когда оба поля являются одним и тем же canonical snapshot из одного
+источника; при независимом route snapshot и policy snapshot он равен `false`,
+даже если значения случайно совпали. До выделения двух источников допустим
+один общий snapshot с явным `true`; это не скрытое предположение и не
+заглушка.
+
 `crates/model-gateway/src/lib.rs` считает один `snapshot.round_trip_hash()`, кладёт его в `RunTrace` как policy hash и при ошибке подставляет строку `snapshot-hash-unavailable`. То есть сегодня это **одно** значение, а не два, и оно может отсутствовать.
 
 Отсюда два следствия:
 
-1. На первом шаге допустимо писать в оба поля один и тот же route/policy hash, но нельзя выдавать заглушку `snapshot-hash-unavailable` за валидный snapshot: отсутствие хеша — это `policy snapshot invalid` и fail closed.
+1. На первом шаге допустимо писать в оба поля один и тот же route/policy hash с
+   `route_policy_hash_shared = true`, но нельзя выдавать заглушку
+   `snapshot-hash-unavailable` за валидный snapshot: отсутствие хеша — это
+   `policy snapshot invalid` и fail closed. В полном режиме оба значения
+   обязательны; `NULL` или placeholder не являются provenance evidence.
 2. Разделение route hash и policy hash на два независимых значения — часть работы этого этапа внутри `model-gateway`. Пункт «не менять model gateway selector» из обзора плана относится к логике выбора провайдера, а не к экспорту снапшотов: сам алгоритм routing менять не требуется.
 
 Reconstruction должна показывать:
@@ -120,8 +169,12 @@ request_kind = plan_review | plan_revision
 
 ### Unit
 
-- отказ dispatch по каждому из шести условий fail-closed;
+- отказ dispatch по каждому из семи условий fail-closed;
+- hash-only и missing full block payload возвращают
+  `REQUEST_PROVENANCE_COMMIT_FAILED` и не достигают provider;
 - отсутствие snapshot hash трактуется как `policy snapshot invalid`, а не как валидное значение;
+- shared route/policy source требует `route_policy_hash_shared = true`, а два
+  независимых источника — `false`;
 - retry и fallback дают разные `request_id` при общем `logical_request_id` и общем `ledger_id`;
 - при fallback `provider`/`model` envelope берутся фактические, а не унаследованные из ledger.
 
@@ -130,9 +183,13 @@ request_kind = plan_review | plan_revision
 1. **Simple chat:** stored envelope реконструирует logical request.
 2. **Fallback:** provider A failure + provider B дают два envelope одного logical request.
 3. **Commit failed:** искусственный отказ durable записи не приводит к provider dispatch — сегодняшнее поведение `ledger_write_failed` меняется, и тест это фиксирует.
-4. **Summarizer:** вызов саммаризатора коммитит собственный envelope `internal_summary`, а summary в родительском запросе ссылается на его `request_id`.
-5. **Envelope limit:** контекст, упирающийся в `MAX_REQUEST_ENVELOPE_BYTES`, планируется под лимит и уходит в dispatch, а не отказывается после assembly.
-6. **Plan review:** `plan_review`/`plan_revision` проходят тем же pipeline с пустым tool set.
+4. **Hash-only fail closed:** до 05.8 отсутствие полного payload не приводит к
+   provider dispatch; checkpoint возвращает `REQUEST_PROVENANCE_COMMIT_FAILED`.
+5. **Summarizer:** вызов саммаризатора коммитит собственный envelope `internal_summary`, а summary в родительском запросе ссылается на его `request_id`.
+6. **Envelope limit:** контекст, упирающийся в `MAX_REQUEST_ENVELOPE_BYTES`, планируется под лимит и уходит в dispatch, а не отказывается после assembly.
+7. **Plan review:** `plan_review`/`plan_revision` проходят тем же pipeline с пустым tool set.
+8. **Checkpoint boundary:** прямой provider dispatch из перечисленных feature
+   paths не компилируется/проваливает architecture test.
 
 ## Критерии готовности
 
@@ -140,3 +197,5 @@ request_kind = plan_review | plan_revision
 2. Неудача durable commit гарантированно запрещает dispatch.
 3. Route hash и policy hash — два независимых значения либо явно помеченный одинаковый источник.
 4. Retry/fallback не переиспользует `request_id`.
+5. До 05.8 hash-only режим никогда не приводит к provider dispatch;
+   `REQUEST_PROVENANCE_COMMIT_FAILED` наблюдаем снаружи checkpoint.

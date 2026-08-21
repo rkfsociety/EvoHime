@@ -19,12 +19,16 @@ dispatch на этом этапе ещё нет.
 ### Опциональные
 
 - [05.8](05-8-redaction-and-retention.md) — правила удаления и retention. До
-  её завершения хранилище работает в **hash-only режиме**: сохраняются
-  метаданные, хеши блоков и linkage, но captured model-visible текст в базу не
-  пишется. Реконструкция в этом режиме недоступна, а verifier/repository
-  возвращает `REQUEST_RETENTION_PRUNED`, а не generic storage error. Это
-  заранее объявленное исключение из reconstructability-инварианта 05.1;
-  полный payload включается тем же этапом 05.8, который вводит его стирание.
+  её завершения хранилище может принимать явно обозначенную **hash-only
+  запись**: сохраняются метаданные, хеши блоков и linkage, но captured
+  model-visible текст в базу не пишется. Это storage-only состояние, а не
+  успешный provenance commit перед dispatch: checkpoint обязан вернуть
+  `REQUEST_PROVENANCE_COMMIT_FAILED` и не вызывать provider, если полный
+  snapshot сохранить нельзя. Только repository/verifier при чтении уже
+  сохранённой hash-only строки возвращает `REQUEST_RETENTION_PRUNED` и
+  отличает её от повреждения. Это не исключение из
+  `MODEL_VISIBLE_MEANS_RECONSTRUCTABLE`; полный dispatchable payload вводится
+  этапом 05.8, который одновременно вводит правила его стирания.
 
 ## Что уже есть в коде сейчас
 
@@ -62,15 +66,23 @@ model_requests
 - provider
 - model
 - envelope_version
-- envelope_hash
+- payload_mode                -- full | hash_only
+- envelope_hash NULL          -- NOT NULL только при payload_mode = full
 - envelope_blob NOT NULL
 - context_projection_hash NOT NULL -- ровно hash из ModelRequestEnvelopeV1/05.1
-- route_snapshot_hash
-- policy_snapshot_hash
+- route_snapshot_hash NOT NULL
+- policy_snapshot_hash NOT NULL
+- route_policy_hash_shared NOT NULL -- 1 только для одного общего источника
 - status
 - dispatch_at NULL
 - completed_at NULL
 ```
+
+Ограничение схемы запрещает комбинации `payload_mode = full` с `NULL
+envelope_hash` и `payload_mode = hash_only` с непустым `envelope_hash`.
+`route_policy_hash_shared = 1` означает, что оба поля содержат один и тот же
+канонический snapshot и были получены из одного источника; одинаковые строки
+при независимых источниках не дают права выставить этот флаг.
 
 `previous_request_hash` обязателен для `attempt > 1`, отсутствует у первой
 попытки и равен `envelope_hash` непосредственно предыдущего committed attempt
@@ -140,12 +152,15 @@ model_request_block_refs
 `content_hash` всё равно проверяются; `bytes` может быть `NULL`. В полном
 режиме вставка или чтение блока обязаны проверить
 `SHA-256(domain || bytes) == content_hash` и совпадение `byte_len`.
+Коллизия или несовместимое содержимое существующего `content_hash` всегда
+останавливает транзакцию с `REQUEST_HASH_COLLISION`; hash-only строка может
+получить bytes только после такой же проверки в отдельной полной транзакции.
 
-`envelope_blob` хранит одну versioned JCS-структуру `StoredEnvelopeV1` с
-логическими полями canonical envelope и ссылками на блоки по `content_hash`.
-В него не кладётся альтернатива вида `immutable artifact ref` и не попадает
-текст блока. При записи repository разворачивает ссылки, строит canonical
-`ModelRequestEnvelopeV1` и вычисляет:
+`envelope_blob` хранит одну versioned JCS-структуру RFC 8785
+`StoredEnvelopeV1` в UTF-8 с логическими полями canonical envelope и ссылками
+на блоки по `content_hash`. В него не кладётся альтернатива вида `immutable
+artifact ref` и не попадает текст блока. При записи repository в `full` режиме
+разворачивает ссылки, строит canonical `ModelRequestEnvelopeV1` и вычисляет:
 
 ```text
 envelope_hash = lowercase_hex(
@@ -154,19 +169,27 @@ envelope_hash = lowercase_hex(
 ```
 
 Поэтому hash зависит от model-visible содержимого и порядка, но не от
-physical layout или дедупликации. При чтении blob разбирается по
-`envelope_version`, все ссылки разрешаются, каждый блок проверяется, затем
-заново вычисляются `context_projection_hash` и `envelope_hash`. Несовпадение
-возвращает `REQUEST_HASH_MISMATCH`; неизвестная версия —
-`REQUEST_UNSUPPORTED_VERSION`.
+physical layout или дедупликации. В `hash_only` режиме
+`expanded_canonical_bytes` недоступны по определению, поэтому
+`envelope_hash` не вычисляется и остаётся `NULL`; хеш blob не подменяет
+`envelope_hash`. Явный `payload_mode` позволяет verifier отличить допустимую
+до 05.8 неполную запись от повреждения. При чтении blob разбирается по
+`envelope_version`, все ссылки разрешаются и каждый доступный блок проверяется.
+Для `full` режима заново вычисляются `context_projection_hash` и
+`envelope_hash`; несовпадение возвращает `REQUEST_HASH_MISMATCH`, неизвестная
+версия — `REQUEST_UNSUPPORTED_VERSION`. Для `hash_only` реконструкция не
+выдаётся и возвращает `REQUEST_RETENTION_PRUNED`.
 
 ### Транзакционная запись
 
-Repository предоставляет одну операцию `commit_envelope`. Она выполняется на
-одном SQLite connection в `BEGIN IMMEDIATE` и включает все следующие шаги:
+Repository предоставляет одну операцию `commit_envelope` с явным режимом
+`FullForDispatch` или `HashOnlyStorage`. Она выполняется на одном SQLite
+connection в `BEGIN IMMEDIATE` и включает все следующие шаги:
 
-1. проверить версию/размеры/enum, `ledger_id`, hash ledger, request lineage и
-   уникальность `request_id`;
+1. проверить версию/размеры/enum, `payload_mode`, `ledger_id`, hash ledger,
+   request lineage, route/policy hash contract и уникальность `request_id`;
+   `FullForDispatch` немедленно отвергает отсутствующий полный block payload
+   как `REQUEST_PROVENANCE_COMMIT_FAILED`;
 2. для каждого блока выполнить deduplicating insert по `content_hash`, при
    конфликте проверить `byte_len` и содержимое, если оно доступно;
 3. вставить `model_requests`, `model_request_sources` и
@@ -181,6 +204,31 @@ Repository предоставляет одну операцию `commit_envelope
 невозможна. `BEGIN IMMEDIATE` получает bounded busy timeout; повторяется только
 вся транзакция при временном `SQLITE_BUSY`, а не отдельное обновление
 refcount. In-memory счётчик не используется.
+
+`HashOnlyStorage` разрешён до 05.8 только для migration/fixture и явно
+помечает строку `payload_mode = hash_only`, `envelope_hash = NULL`; такой
+результат никогда не возвращается checkpoint как dispatchable commit. Gateway
+использует только `FullForDispatch`: если payload не полный, вся операция
+откатывается и наружу возвращается `REQUEST_PROVENANCE_COMMIT_FAILED`.
+
+Миграция v26 -> v27 также атомарна: мигратор открывает `BEGIN IMMEDIATE`,
+проверяет `foreign_keys`, создаёт только новые таблицы, check constraints и
+индексы, не выполняет backfill из старого ledger, затем проверяет схему и
+делает `COMMIT`. Ошибка DDL или проверки делает `ROLLBACK`; `user_version`,
+старые ledger-строки и пользовательские данные остаются на v26. Fixture
+проверяет и сбой миграции, и идемпотентный повтор после успешного v27.
+
+## Экспортная замыкаемая выборка
+
+Для будущего [05.9](05-9-verify-and-export.md) repository определяет
+замыкаемую выборку одного request: строка `model_requests`, все
+`model_request_sources`, `envelope_blob`, все `model_request_block_refs` и
+соответствующие строки `model_request_blocks`, выбранные только по
+`content_hash`. Verifier получает этот набор из экспорта, а не из текущего
+workspace или повторной сборки контекста. Для hash-only экспорта сохраняются
+`payload_mode`, `NULL bytes` и block hashes; verifier сообщает
+`REQUEST_RETENTION_PRUNED`. Отсутствующий блок в `full`-экспорте считается
+повреждением и приводит к `REQUEST_HASH_MISMATCH`.
 
 При переходе request в `redacted` или `retention_pruned` по 05.8 repository в
 той же транзакции удаляет ставшие недействительными block refs, уменьшает
@@ -231,6 +279,7 @@ model_requests(logical_request_id, attempt)
 model_requests(parent_request_id)
 model_requests(ledger_id, attempt)
 model_request_block_refs(content_hash, request_id)
+model_request_block_refs(role, request_id)
 ```
 
 Индекс `content_hash -> requests` строится только через
@@ -245,13 +294,14 @@ model_request_block_refs(content_hash, request_id)
 `ledger_id`, sources или block content средствами repository API. Допустимы
 только lifecycle/retention-переходы, явно перечисленные выше и в 05.8.
 
-До 05.8 отсутствие `bytes` в hash-only режиме является намеренным состоянием,
-а не повреждением. Попытка реконструировать такой request возвращает
-`REQUEST_RETENTION_PRUNED`; generic `REQUEST_RECONSTRUCTION_FAILED` используется
-только для повреждённой структуры, отсутствующей ссылки при заявленном полном
-режиме или иной ошибки реконструкции. После 05.8 отсутствие обязательного
-полного блока при статусе, допускающем реконструкцию, — это уже
-`REQUEST_HASH_MISMATCH`/corruption, а не допустимая деградация.
+До 05.8 отсутствие `bytes` при `payload_mode = hash_only` является намеренным
+неполным storage-only состоянием, а не повреждением и не разрешением на
+dispatch. Попытка реконструировать такой request возвращает
+`REQUEST_RETENTION_PRUNED`; generic `REQUEST_RECONSTRUCTION_FAILED` и
+`REQUEST_HASH_MISMATCH` используются для повреждённой структуры, отсутствующей
+ссылки или bytes при `payload_mode = full`. После 05.8 новые dispatchable
+записи обязаны быть `full`; старые hash-only строки не реконструируются
+ретроактивно и сохраняют явную классификацию verifier.
 
 ## Тесты
 
@@ -275,8 +325,13 @@ model_request_block_refs(content_hash, request_id)
   blocks и refcount целиком;
 - конкурентные commits не теряют increment и не оставляют refcount меньше
   количества refs;
-- hash-only: metadata/hash сохраняются, `bytes` отсутствуют, реконструкция
-  возвращает `REQUEST_RETENTION_PRUNED`;
+- hash-only storage: metadata/block hashes сохраняются, `bytes` отсутствуют,
+  `payload_mode` явный, `envelope_hash = NULL`, реконструкция возвращает
+  `REQUEST_RETENTION_PRUNED`, а checkpoint блокирует dispatch;
+- отказ `FullForDispatch` при отсутствии bytes откатывает весь commit и
+  возвращает `REQUEST_PROVENANCE_COMMIT_FAILED`;
+- одинаковый route/policy hash принимается только с
+  `route_policy_hash_shared = 1` и общим source id;
 - каждый индекс используется соответствующим provenance-запросом.
 
 ### Migration и integration
@@ -304,7 +359,9 @@ model_request_block_refs(content_hash, request_id)
    в `BEGIN IMMEDIATE`; тест проверяет rollback при отказе в середине.
 6. При чтении проверяется соответствие `envelope_hash` развёрнутому
    содержимому и `context_projection_hash` соответствующему контракту 05.1.
-7. В hash-only режиме при отсутствии payload-блока возвращается
-   `REQUEST_RETENTION_PRUNED`.
+7. До 05.8 hash-only запись явно маркирована, не считается dispatchable
+   commit, а любой gateway dispatch при отсутствии полного snapshot
+   возвращает `REQUEST_PROVENANCE_COMMIT_FAILED` без вызова provider; verifier
+   для уже сохранённой storage-only строки возвращает `REQUEST_RETENTION_PRUNED`.
 8. При redaction/retention 05.8 тумбстоунит `source_hash`, удаляет ставшие
    недействительными block refs и уменьшает refcount в одной транзакции.
