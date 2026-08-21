@@ -33,6 +33,7 @@
 | 10 | [fixie-ai/ultravox](https://github.com/fixie-ai/ultravox) | Исследовано | Audio-to-LLM projector, streaming text inference, conversation KV-cache, voice dataset/evaluation pipeline | Адаптировать контракты, preprocessing и eval-идеи; модельный runtime не подключать в desktop без отдельного GPU/provider плана |
 | 11 | [kyutai-labs/moshi](https://github.com/kyutai-labs/moshi) | Исследовано | Full-duplex speech-text model, Mimi streaming codec, Rust/Candle backend, binary WebSocket protocol и audio client | Рассматривать как наиболее близкий voice-runtime кандидат; адаптировать протокол/streaming идеи, runtime не подключать до PoC и security/licensing плана |
 | 12 | [pipecat-ai/pipecat](https://github.com/pipecat-ai/pipecat) | Исследовано | Frame-based realtime orchestration, workers/bus/jobs, transports/serializers, RTVI, tool lifecycle, metrics и behavioral evals | Адаптировать frame/event/worker/eval контракты; Python runtime и внешние transport-интеграции не подключать |
+| 13 | [openai/whisper](https://github.com/openai/whisper) | Исследовано | Локальный multilingual seq2seq ASR, 16 kHz preprocessing, 30-секундные окна, language detection, timestamps и quality fallback | Адаптировать ASR-контракты, model manifest и evaluation; Python runtime не подключать, текущий listener остаётся на whisper.cpp |
 
 ## Карточки исследований
 
@@ -2130,6 +2131,203 @@ patterns вокруг такого provider. Они не должны однов
   provider/helper, heartbeat и crash/restart очищают ресурсы, tool approval и
   idempotency сохраняются, события redacted/provenance-linked, latency/TTFB/
   TTFA измеряются, а behavioral evals воспроизводимы offline.
+
+### 13. OpenAI Whisper
+
+- Источник: [репозиторий openai/whisper](https://github.com/openai/whisper),
+  [model card](https://github.com/openai/whisper/blob/main/model-card.md),
+  [исследовательская статья](https://arxiv.org/abs/2212.04356)
+- Дата проверки: 2026-08-21
+- Ревизия/commit: `5f86d1d86363843179951550570367b37c5d6f78`
+  (`2026-07-28`, `Fix SDPA cross-attention falling back to the math kernel during beam search`)
+- Лицензия: MIT для кода и опубликованных model weights согласно README;
+  attribution OpenAI должен сохраняться в поставке.
+- Состав: Python package `openai-whisper`, PyTorch Transformer, audio/mel
+  preprocessing, tokenizer, autoregressive decoder, word timing/DTW, CLI,
+  model downloader и тестовые fixtures. Package требует Python `>=3.8`,
+  PyTorch, NumPy, tiktoken, numba, tqdm и системный `ffmpeg` для файлового
+  декодирования.
+- Назначение: general-purpose multilingual ASR, language identification и
+  speech-to-English translation. Это модель и reference inference code, а не
+  готовый realtime service, supervisor или security boundary.
+- Краткий вывод: Whisper полезен Еве как эталон ASR-семантики, наборов
+  метрик и source для сравнения с текущим `whisper.cpp` listener. Прямой
+  Python/PyTorch runtime в Windows-поставку не добавлять: текущий listener
+  уже использует проверенный whisper.cpp DLL/runtime и лестницу моделей.
+
+#### Что изучено
+
+- **Аудиоконтракт.** Reference pipeline приводит вход к mono 16 kHz PCM,
+  использует 400-sample FFT, 160-sample hop, 80/128 mel bins и 30-секундные
+  окна (`480000` samples, `3000` mel frames). Один audio frame соответствует
+  10 ms, один audio token — 20 ms. Короткие входы дополняются нулями, длинные
+  окна обрезаются или обрабатываются последовательно.
+- **Архитектура.** Это encoder-decoder Transformer: audio encoder строит
+  features из log-Mel spectrogram, text decoder авторегрессивно выдаёт tokens.
+  Специальные tokens кодируют язык, задачу, timestamps и конец сегмента.
+  Поддерживаются language detection, transcription и translation в английский.
+- **Сегментация.** `transcribe()` сначала строит общий mel для аудиофайла,
+  затем проходит его sliding 30-second windows. Сегменты получают `start`,
+  `end`, `text`, tokens, temperature, average log probability,
+  compression ratio и no-speech probability. Встроенный API не является
+  настоящим incremental streaming API: near-realtime поверх него нужно
+  строить отдельным bounded segmenter/transport.
+- **Контекст между окнами.** По умолчанию предыдущие output tokens передаются
+  как prompt следующему окну. `condition_on_previous_text=false` уменьшает
+  риск повторяющегося loop/hallucination, но может ухудшить согласованность
+  текста между соседними сегментами. `initial_prompt` позволяет передать
+  vocabulary/proper nouns, однако это untrusted hint, а не источник истины.
+- **Decode fallback.** При слишком высоком gzip compression ratio или слишком
+  низком average log probability decoder пробует следующую temperature из
+  расписания. Сочетание no-speech probability и logprob позволяет пропускать
+  тишину. Это полезная quality policy, но не замена VAD и не доказательство,
+  что распознанный текст действительно произнесён.
+- **Timestamps.** Segment timestamps берутся из timestamp tokens. Опциональные
+  word timestamps получают alignment через cross-attention heads, median
+  filter и Dynamic Time Warping; на CUDA используется Triton path с CPU
+  fallback. Это отдельный более дорогой режим, а не бесплатное свойство
+  каждого partial transcript.
+- **Model ladder.** Доступны tiny/base/small/medium/large и multilingual
+  turbo (`large-v3-turbo`), а также English-only варианты первых размеров.
+  README указывает приблизительно: tiny/base ~1 GB VRAM, small ~2 GB,
+  medium ~5 GB, large ~10 GB, turbo ~6 GB; реальные значения зависят от
+  backend, dtype, batch и ОС. Turbo оптимизирован для быстрой транскрипции,
+  но не предназначен для speech translation.
+- **Model loading и supply chain.** Официальные checkpoints загружаются с
+  pinned Azure Edge URLs, проверяются SHA-256 и кэшируются в
+  `~/.cache/whisper`; `load_model()` также принимает локальный checkpoint и
+  `in_memory`. Автоматическая загрузка удобна для research, но для Евы
+  должна быть заменена на installer/runtime manifest и offline failure mode.
+- **CLI/output.** CLI пишет txt, vtt, srt, tsv, json и jsonl, принимает
+  language/task/model/device, clip timestamps, temperature, beam size,
+  word timestamps и thread count. Для Core нужен versioned typed event, а не
+  импорт пользовательского JSON-файла как доверенного состояния.
+- **Тесты.** `test_transcribe.py` прогоняет все официальные модели на
+  `tests/jfk.flac`, проверяет язык, текст, токены, segment/word timestamps и
+  ключевые фразы. `test_timing.py` проверяет DTW и median filter на CPU/CUDA;
+  отдельные tests покрывают tokenizer и English normalizer. В checkout
+  выполнена проверка синтаксиса package через `python -m compileall`; скачивание
+  больших моделей и полный model test suite не запускались.
+
+#### Что можем использовать в Еве
+
+- **ASR provider contract.** Взять из Whisper явные поля:
+  `audio_sample_rate`, `channels`, `segment_id`, `start_ms`, `end_ms`,
+  `text`, `language`, `language_probability`, `no_speech_probability`,
+  `avg_logprob`, `model_revision`, `is_final` и provenance. Partial/final
+  semantics, sequence и session IDs должны быть определены Core, а не выведены
+  из текста.
+- **Единый нормализованный аудиовход.** Закрепить 16 kHz mono PCM как
+  внутренний формат listener/provider boundary, если это совместимо с уже
+  реализованным listener contract. Перенять frame alignment, bounded ring
+  buffer и явную длительность; файловый `ffmpeg` subprocess из Whisper в Core
+  не переносить.
+- **Bounded segmenter вместо обещания streaming.** Использовать 30-секундное
+  окно как reference compatibility fixture, но для ambient listener иметь
+  VAD/turn-based сегменты, overlap, flush и дедупликацию. Каждое partial
+  событие должно иметь revision/segment ID, чтобы Core мог отклонить старый
+  результат после interruption или restart.
+- **Quality policy и fallback.** Добавить в provider receipt измеряемые
+  confidence/quality signals и отдельные причины `silence`, `decode_retry`,
+  `low_logprob`, `repetition_detected`, `segment_timeout`. Переключение
+  `small -> base -> tiny` и остановка при деградации уже являются частью
+  текущего listener; идеи Whisper помогают формализовать причины, но не
+  должны создавать вторую независимую ladder policy.
+- **Language/task policy.** Language detection и explicit language allow-list
+  полезны для русского и multilingual режима. Translation в английский должна
+  быть отдельной capability и event type, чтобы transcript исходной речи не
+  подменялся переводом. Пользовательский prompt/vocabulary должен проходить
+  bounded input и не может менять Core policy.
+- **Model manifest.** Перенять имя модели, размер, dtype/backend, commit,
+  checksum, license и capabilities в manifest. В текущей Еве это нужно
+  сопоставить с уже существующим listener-runtime manifest; нельзя разрешать
+  runtime скачивать произвольный checkpoint или DLL по имени.
+- **Опциональные word timestamps.** Использовать как evidence для UI и
+  alignment-aware transcript, но включать только по capability/latency policy.
+  Сохранять word boundaries и confidence можно в redacted provenance; не
+  считать timestamp precision доказательством семантической точности.
+- **Evaluation fixtures.** Перенять проверку коротких и длинных сегментов,
+  языкового определения, шумов/акцентов, silence, repeated hallucination,
+  prompt carry/reset, word timestamps, CPU/GPU fallback и final text/token
+  consistency. Добавить русские fixtures и сравнивать Python reference,
+  текущий whisper.cpp и выбранные model rungs на одинаковом аудио.
+- **Deterministic model identity.** Логировать только model revision,
+  backend, quantization, sample rate, segment policy и quality thresholds;
+  сырые аудио и полные token trajectories не писать в обычный telemetry.
+  Это помогает сопоставить ASR receipt с ambient utterance и не раскрывать
+  содержимое разговора без retention/consent решения.
+
+#### Ограничения и риски
+
+- **Нет realtime out of the box.** Model card прямо предупреждает, что
+  Whisper не предназначен для real-time transcription без дополнительной
+  обвязки. Sliding 30-second inference, autoregressive decoding и optional
+  word alignment дают задержку и усложняют barge-in/cancellation.
+- **Hallucinations и repetition.** Weakly supervised training может выдавать
+  текст, которого нет в аудио, особенно на тишине, длинных паузах и языках с
+  меньшим объёмом данных. Нельзя передавать transcript напрямую в tool
+  arguments или approval evidence без provenance, confidence и policy.
+- **Неравномерность языков.** Качество заметно зависит от языка, акцента,
+  диалекта и домена; русская речь требует отдельного benchmark, а не вывода
+  из англоязычного `jfk.flac` fixture. ASR нельзя использовать для inferred
+  attributes, subjective classification или high-risk decisions.
+- **Ресурсы.** PyTorch/large models потребляют существенную RAM/VRAM; CPU
+  fallback может не удовлетворить latency budget. Model ladder и runtime
+  degradation должны быть bounded и observable, иначе listener начнёт
+  накапливать audio или partial results.
+- **Python/PyTorch/ffmpeg mismatch.** Прямой package добавит внешний Python,
+  PyTorch, tiktoken/numba, ffmpeg subprocess и отдельный model cache, что
+  противоречит текущей поставке Electron + Rust Core. Даже локальная модель
+  не отменяет packaging, crash cleanup, cancellation и supply-chain проверки.
+- **Сетевая загрузка checkpoint.** Автоматический download создаёт network
+  egress и риск подмены/неожиданного размера; SHA-256 в upstream полезен, но
+  для Евы нужен релизный manifest, size limit, owner-only cache и отсутствие
+  скачивания во время пользовательского запуска.
+- **Audio privacy и consent.** Микрофонные записи и transcript являются
+  чувствительными данными. Upstream не задаёт retention, DPAPI/ACL, redaction,
+  deletion, audit или approval; эти свойства остаются ответственностью Core.
+- **Reference tests не покрывают продуктовые свойства.** Нет полноценной
+  проверки Windows packaging, supervisor restart, authenticated IPC,
+  long-lived streaming, cancellation, queue overflow, model corruption или
+  prompt-injection через transcript. Их нужно добавить в EvoHime conformance
+  suite.
+- **Лицензия модели и производные сборки.** MIT упрощает использование кода
+  и опубликованных weights, но конкретные quantized/converted checkpoints,
+  CUDA/Triton/PyTorch/ffmpeg и сторонние model artifacts нужно учитывать в
+  component/license manifest. Нельзя считать лицензию Python package лицензией
+  всего будущего listener-runtime.
+
+#### Предварительное решение
+
+`адаптировать ASR event contract, audio normalization, quality signals,
+manifest/checksum policy и evaluation fixtures`; `наблюдать за upstream
+Whisper как reference model`; `не подключать openai-whisper Python/PyTorch
+runtime и автоматическую загрузку моделей в desktop-поставку`.
+
+Текущий listener EvoHime уже основан на whisper.cpp с проверенным DLL,
+ABI/runtime manifest и ladder `small -> base -> tiny`. Поэтому OpenAI Whisper
+здесь не заменяет реализованный runtime: его роль — источник reference
+семантики, сравнительных fixtures и проверок качества. С Moshi Whisper
+соотносится как offline/segmented ASR baseline, а не как full-duplex voice
+runtime; с Pipecat — как provider, который должен быть скрыт за общим
+orchestration contract.
+
+#### Связь с EvoHime
+
+- Сопоставить поля Whisper с текущими `ambient_utterances`, listener contract
+  и `engine_version`; не менять эти контракты в рамках исследования.
+- Сохранить Core/supervisor ownership: Electron получает только transcript
+  state, Core владеет microphone permission, segmenter, model manifest,
+  cancellation, provenance, SQLite и redaction.
+- Для будущего этапа подготовить design-only comparison harness: одинаковый
+  PCM fixture прогоняется через текущий whisper.cpp runtime и reference
+  Whisper-compatible backend с фиксированными model revision/thresholds.
+  Этот журнал implementation plan не создаёт.
+- Критерии будущей проверки: 16 kHz mono/frame alignment, bounded audio memory,
+  partial/final ordering, cancellation при активном decode, no-speech и
+  hallucination rejection, language accuracy на русской речи, word timestamp
+  cost, model checksum/license manifest, offline startup, supervisor restart,
+  redacted provenance и отсутствие необъявленного network egress.
 
 ## Итог для будущего плана
 
