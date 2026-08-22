@@ -195,6 +195,16 @@ pub fn all_cases() -> Vec<EvalCase> {
             run: allowlist::glob_boundary_does_not_overmatch,
         },
         EvalCase {
+            category: EvalCategory::Allowlist,
+            name: "every_builtin_tool_has_a_bound_manifest_schema",
+            run: tooling::every_builtin_tool_has_a_bound_manifest_schema,
+        },
+        EvalCase {
+            category: EvalCategory::Allowlist,
+            name: "manifest_hash_changes_when_schema_changes",
+            run: tooling::manifest_hash_changes_when_schema_changes,
+        },
+        EvalCase {
             category: EvalCategory::PlanQuality,
             name: "well_formed_plan_is_accepted",
             run: plan_quality::well_formed_plan_is_accepted,
@@ -549,6 +559,47 @@ mod allowlist {
         require(
             glob_match("cargo test*", "cargo test-extra-suite"),
             "a pattern with an explicit trailing '*' should match the extension",
+        )
+    }
+}
+
+mod tooling {
+    use super::*;
+
+    pub fn every_builtin_tool_has_a_bound_manifest_schema() -> Result<(), String> {
+        let registry = evohime_tool_runtime::ToolRegistry::bootstrap();
+        for manifest in registry.manifests() {
+            manifest
+                .validate()
+                .map_err(|error| format!("{}: {error}", manifest.tool_id))?;
+            require(
+                manifest.input_schema.get("additionalProperties")
+                    != Some(&serde_json::Value::Bool(true)),
+                format!("{} exposes permissive input schema", manifest.tool_id),
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn manifest_hash_changes_when_schema_changes() -> Result<(), String> {
+        let registry = evohime_tool_runtime::ToolRegistry::bootstrap();
+        let mut manifest = registry
+            .manifest_for("filesystem.read")
+            .ok_or("filesystem.read manifest missing")?;
+        let original = manifest
+            .canonical_hash()
+            .map_err(|error| error.to_string())?;
+        manifest.input_schema = serde_json::json!({
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "extra": {"type": "string"}},
+            "additionalProperties": false
+        });
+        let changed = manifest
+            .canonical_hash()
+            .map_err(|error| error.to_string())?;
+        require(
+            original != changed,
+            "schema mutation must change manifest hash",
         )
     }
 }
