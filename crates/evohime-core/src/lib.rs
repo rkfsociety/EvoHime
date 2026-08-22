@@ -7769,6 +7769,24 @@ impl ToolAgent {
                     tool_name: call.name.clone(),
                     output: outcome.output.clone(),
                 });
+                if let Some(journal) = &self.journal {
+                    let _ = journal
+                        .record_audit(
+                            &task_id,
+                            "tool.telemetry",
+                            serde_json::to_vec(&serde_json::json!({
+                                "tool_name": call.name,
+                                "iteration": iteration,
+                                "ok": outcome.ok,
+                                "failure_kind": outcome.kind.as_ref().map(|kind| format!("{kind:?}")),
+                                "output_bytes": outcome.output.len().min(512 * 1024),
+                                "redacted": true,
+                            }))
+                            .unwrap_or_default()
+                            .as_slice(),
+                        )
+                        .await;
+                }
                 if delivery_requirements.research && outcome.ok {
                     research_observations += 1;
                     research_has_overview |= call.name == "filesystem.list";
