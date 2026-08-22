@@ -5,6 +5,42 @@
 Зафиксировать машинно проверяемый контракт событий выполнения и корреляцию
 между action, tool call, observation и terminal outcome.
 
+## Зависимости
+
+### Блокирующие
+
+- [08-0](08-0-execution-ledger.md);
+- текущий `events` journal и `EventJournal`, канонический `sequence_id`;
+- существующий словарь состояний `RunState`/`NodeState`
+  (`crates/evohime-local-storage/src/workflow_store.rs`), с которым контракт
+  обязан совпадать по именам, а не вводить синонимы;
+- `receipts_v1` (`receipt_actions`, `receipt_records`) и model-request
+  provenance как immutable-слои, на которые ссылается typed event;
+- текущий `EventEnvelope` в `crates/desktop-ipc/proto/evohime.desktop.proto`
+  как место additive-проекции.
+
+### Опциональные
+
+- `tool/manifest/v1` из 07-1: при наличии typed `ToolCall` несёт
+  `tool_id`/`version`/manifest hash. До его появления используется текущая
+  identity из `ToolRegistry` (имя инструмента и exact-call hash), поле
+  manifest hash остаётся пустым и не проверяется;
+- capability snapshot из 09-1: до его появления `ApprovalDecision` ссылается на
+  существующий approval intent, а поле snapshot hash отсутствует.
+
+## Что уже есть в коде
+
+- `events` хранит только `sequence_id`, `task_id`, `event_type`, `payload`,
+  `created_at`: нет устойчивого `event_id`, `run_id`, `session_id` и typed
+  body, а `payload` — произвольный BLOB без versioned схемы;
+- состояния и терминальность уже описаны в `RunState`/`NodeState`, включая
+  `waiting_approval`, `unknown_outcome` и `dead_letter`;
+- `interrupted`/`unknown_outcome` уже используются в model provenance;
+- signed receipt уже связывает action и подпись через `receipt_actions`.
+
+Нет единого typed события, нет correlation IDs в глобальном журнале и нет
+запрета на два terminal outcomes для одного action.
+
 ## Изменения
 
 1. Ввести `ExecutionEventV1` с bounded полями `schema_version`, `event_id`,
@@ -15,28 +51,38 @@
    фиктивный пользовательский run. Legacy rows получают отдельный `legacy`
    scope и не маскируются под новый run. `session_id` здесь означает логическую
    execution session, а не transport generation из `session_epoch`.
-2. Описать typed variants: `ActionRequest`, `ToolCall`, `Observation`,
+2. Зафиксировать `run_id` как ту же идентичность, что и `runs.id`/
+   `workflow_runs.run_id` там, где действие принадлежит workflow run: ledger не
+   заводит параллельное пространство имён. Действие вне workflow получает
+   собственный `run_id` из того же формата и не конфликтует с существующими
+   ключами.
+3. Описать typed variants: `ActionRequest`, `ToolCall`, `Observation`,
    `ToolReceipt`, `TypedFailure`, `ApprovalDecision`, `Cancellation` и
    `RecoveryDecision`. `sequence_id` — единственная глобальная durable
    sequence; `workflow_run_events.run_sequence` в неё не переименовывается.
-3. Зафиксировать state machine отдельно от event type: обычные состояния
-   `pending`, `running`, `paused`, `waiting_for_confirmation` и
-   `cancelling`; terminal outcomes `succeeded`, `failed`, `cancelled`,
-   `refused` и `unknown_outcome`. `unknown_outcome` запрещает автоматический
-   повтор, но остаётся reconciliation-required; `stuck`/`dead_letter` —
-   bounded recovery projection, а не скрытый terminal success/failure.
-4. Связать `action_id ↔ tool_call_id ↔ observation_id ↔ receipt_id` или
+4. Зафиксировать state machine отдельно от event type, переиспользуя имена
+   существующего `NodeState`. Нетерминальные: `pending`, `ready`, `running`,
+   `waiting_approval` и новое `cancelling`. Терминальные: `succeeded`,
+   `failed`, `timed_out`, `cancelled`, `denied`, `blocked`, `skipped`,
+   `degraded`, `unknown_outcome` и `dead_letter`. `unknown_outcome` запрещает
+   автоматический повтор, но остаётся reconciliation-required; `dead_letter`
+   назначается только явным bounded recovery rule и не считается скрытым
+   success/failure. Новые имена состояний (`cancelling`) добавляются в
+   `NodeState` и в таблицу допустимых переходов, а не живут только в ledger.
+5. Связать `action_id ↔ tool_call_id ↔ observation_id ↔ receipt_id` или
    `failure_id`; для approval, model request и workflow attempt определить
-   отдельные optional links и запретить ссылку на другой `run_id`/`session_id`.
-5. Включить только bounded provider/model response IDs, error class и
+   отдельные optional links (`workflow_run_id`, `node_id`, `attempt_id`,
+   `effect_id`, `model_request_id`) и запретить ссылку на другой
+   `run_id`/`session_id`.
+6. Включить только bounded provider/model response IDs, error class и
    content-addressed artifact references. Полный prompt, headers, tokens,
    credentials и raw tool output не сохраняются; для секретов допустимы
    только presence/classification и keyed digest, пригодный для сравнения,
    но не для offline dictionary lookup.
-6. Сохранить signed `receipts_v1` как отдельный integrity/audit layer. Typed
+7. Сохранить signed `receipts_v1` как отдельный integrity/audit layer. Typed
    `ToolReceipt` содержит `receipt_action_id` и `receipt_hash`, ссылается на
    существующую запись и не дублирует её canonical envelope.
-7. Для legacy `events` зафиксировать детерминированный mapping: `event_id` —
+8. Для legacy `events` зафиксировать детерминированный mapping: `event_id` —
    domain-separated digest исходных `sequence_id`, `task_id`, `event_type`,
    `payload` и `created_at`; исходная payload не переписывается, а typed
    projection помечается `legacy` и сохраняет исходную sequence.
@@ -45,9 +91,11 @@
 
 - Rust-типы и serde contract tests в Core/storage crates;
 - canonical schema/fixtures для typed payloads и таблица допустимых state
-  transitions;
+  transitions, общая для ledger и `workflow_store`;
 - additive protobuf `ExecutionEvent` projection внутри `EventEnvelope` без
-  смены IPC major; старый клиент обязан безопасно игнорировать новый oneof;
+  смены IPC major; новый oneof arm занимает свободный номер (текущие 10–13
+  заняты `ready`/`replay_gap`/`full_snapshot`/`auth_challenge`), старый клиент
+  обязан безопасно игнорировать неизвестный вариант;
 - legacy event mapping для старых записей без потери `sequence_id` и без
   попытки восстановить отсутствующие correlation IDs.
 
@@ -57,12 +105,14 @@
 - bounds на IDs, payload, error, metadata и artifact references; лимиты должны
   быть общими для storage, protobuf и Electron adapter;
 - отсутствие секретов/PII/raw output после redaction;
+- совпадение множества состояний ledger и `RunState`/`NodeState`: тест падает,
+  если появился state без mapping в обе стороны;
 - отрицательные тесты на неизвестный тип, неверную связь, illegal transition,
   два terminal outcomes и превышение размера.
 
 ## Готово, когда
 
 Любое новое событие однозначно принадлежит run/session, имеет устойчивый ID и
-versioned typed body; legacy mapping воспроизводим; terminal action нельзя
-представить одновременно с двумя исходами или с outcome, не связанным с его
-immutable receipt/failure/recovery decision.
+versioned typed body; словарь состояний един с workflow storage; legacy mapping
+воспроизводим; terminal action нельзя представить одновременно с двумя исходами
+или с outcome, не связанным с его immutable receipt/failure/recovery decision.
