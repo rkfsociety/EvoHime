@@ -231,6 +231,7 @@ async fn run_connection(
                             announced = true;
                             report_engine(&mut stream, runtime, engine_error).await?;
                             publish_devices(&mut stream, runtime, &mut devices, watching).await?;
+                            announce_state(&mut stream, runtime).await?;
                         }
                         reconcile(&mut stream, runtime, &mut capture, &frames_tx, engine_error, &devices)
                             .await?;
@@ -430,6 +431,7 @@ async fn publish_notice(
             // Лестница исчерпана: слушание остановлено, устройство закрыто.
             *capture = None;
             let _ = runtime.set_state(ListeningState::PausedByPolicy);
+            runtime.last_reason = ListeningReason::EngineDegraded;
             write_frame(
                 stream,
                 &envelope(generated::envelope::Payload::State(
@@ -484,6 +486,35 @@ async fn report_engine(
     Ok(())
 }
 
+/// Объявляет Core текущее состояние при подключении.
+///
+/// Это не переход, а снимок: у Core состояние по умолчанию —
+/// `EngineUnavailable` («листенер не на связи»), и без такого объявления оно
+/// остаётся таким до первой настоящей смены состояния. Выключенный листенер с
+/// открытым движком не менял бы состояние никогда, и панель показывала бы
+/// «нет связи» при живом соединении. `set_state` здесь не годится: повтор
+/// текущего состояния он подавляет по контракту.
+#[cfg(windows)]
+async fn announce_state(
+    stream: &mut tokio::net::windows::named_pipe::NamedPipeClient,
+    runtime: &ListenerRuntime,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let state = serde_json::to_value(runtime.state)?;
+    let reason = serde_json::to_value(runtime.last_reason)?;
+    write_frame(
+        stream,
+        &envelope(generated::envelope::Payload::State(
+            generated::StateChanged {
+                state: state.as_str().unwrap_or_default().to_owned(),
+                reason: reason.as_str().unwrap_or_default().to_owned(),
+                device_id: runtime.device_id.clone(),
+            },
+        )),
+    )
+    .await?;
+    Ok(())
+}
+
 #[cfg(windows)]
 async fn set_state(
     stream: &mut tokio::net::windows::named_pipe::NamedPipeClient,
@@ -499,6 +530,7 @@ async fn set_state(
     if runtime.set_state(state).is_err() {
         return Ok(());
     }
+    runtime.last_reason = reason;
     let device_id = runtime.device_id.clone();
     let state = serde_json::to_value(state)?;
     let reason = serde_json::to_value(reason)?;

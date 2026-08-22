@@ -134,6 +134,12 @@ pub struct ListenerRuntime {
     /// Выбранное устройство захвата; пустая строка — «устройство системы по
     /// умолчанию».
     pub device_id: String,
+    /// Причина последнего объявленного состояния.
+    ///
+    /// Хранится рядом с состоянием, потому что при новом соединении Core
+    /// обязан узнать не только «что сейчас», но и «почему»: сам переход к
+    /// этому моменту уже произошёл и второй раз не случится.
+    pub last_reason: ListeningReason,
     engine: Box<dyn SpeechEngine>,
     segmenter: Segmenter,
     vad: EnergyVad,
@@ -158,6 +164,7 @@ impl ListenerRuntime {
             state: ListeningState::Stopped,
             enabled: false,
             device_id: String::new(),
+            last_reason: ListeningReason::UserRequest,
             engine,
             segmenter: Segmenter::new(limits, 16_000),
             vad: EnergyVad::default(),
