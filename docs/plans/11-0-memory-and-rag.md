@@ -2,41 +2,85 @@
 
 ## Цель
 
-Развить существующий Local Agentic RAG/SQLite Core-first слой без создания
-второй базы знаний и без автоматического запоминания всего transcript.
+Свести существующие memory domain, memory store и workspace RAG в один
+проверяемый lifecycle: запись, retrieval, compaction и forget. План не создаёт
+вторую базу знаний, второй memory SDK и не вводит автоматическое запоминание
+всего transcript.
 
 ## Что уже есть в checkout
 
-- `workspace_rag.rs` с bounded indexing, SQLite/FTS5 generation и citations;
-- optional hybrid/vector retrieval с FTS5 fallback;
-- context budget/ledger и provenance-aware evidence;
-- Core-owned memory storage, consent/policy gates и Electron projection;
-- transactional SQLite migration, backup и rollback.
+- `crates/evohime-core/src/memory_domain.rs`: `MemoryScope` (project/task/
+  workspace), `ProvenanceRef`, `PrivacyLabel`, `MemoryStatus`, TTL через
+  `is_expired_at`, `archive`/`forget`. Домен намеренно не владеет persistence
+  и не даёт embedding/vector API;
+- `crates/evohime-core/src/memory_extraction.rs`: `MemoryKind` с
+  `default_ttl_ms`, `is_session_only`, `always_requires_approval`,
+  `MemoryScopeLevel`, `SourceTrust` с `can_ground_strict_save`,
+  `PrivacyLevel`, `ConfirmationState` и обязательный `evidence_locator`;
+- `crates/evohime-local-storage/src/memory_store.rs`: SQLite persistence,
+  валидация записи, `transition_state`, `supersede` и `supersession_chain`,
+  `expire_due`, `forget_with_tombstone`, aliases и session notes с
+  `purge_expired_session_notes`;
+- `crates/evohime-core/src/workspace_rag.rs` (~4.2k строк): bounded indexing,
+  SQLite/FTS5 generation, `QueryStrategy`/`HybridConfig`, `ScoreExplanation`
+  и `RankingExplanation`, `CitationStatus`, `SearchDiagnostics`,
+  `ContextBuildResult` и `RagLedgerProjection`;
+- `crates/evohime-core/src/context_budget.rs` и
+  `crates/evohime-local-storage/src/context_ledger_store.rs`: context plan,
+  dropped/compression projection, ledger append/usage/prune;
+- SQLite schema v29 с transactional migration, backup и rollback.
 
-План 11 закрывает единый memory lifecycle и связывает его с execution ledger,
-не заменяя существующий RAG новым memory SDK.
+План 11 закрывает разрывы между этими частями, а не переписывает их.
+
+## Решения, зафиксированные ревью
+
+1. Источник истины для typed record — существующие `memory_domain.rs` и
+   `memory_store.rs`. Новый record type не вводится: недостающие поля
+   добавляются аддитивно к текущей SQLite schema.
+2. Термин «consent» в коде отсутствует. В плане 11 он не вводится как новая
+   отдельная сущность: разрешение на запись и на выдачу выражается
+   существующими `PrivacyLevel`, `SourceTrust`, `ConfirmationState` и
+   `always_requires_approval` плюс policy/approval плана 09. Отдельный
+   consent-каталог запрещён.
+3. Retrieval остаётся в `workspace_rag.rs`. Memory retrieval переиспользует
+   его ranking/citation типы, а не создаёт второй ranker.
+4. Embeddings и hybrid retrieval — опциональный слой. Отсутствие embeddings
+   всегда даёт deterministic FTS5 fallback, а не ошибку.
+5. Compaction пишет derived summary как versioned projection со ссылками на
+   исходные event ID. Удалять исходные execution/evidence events compaction
+   не может; для receipts prefix compaction остаётся существующий
+   `compact_chain` в `evohime-receipts`.
 
 ## Границы
 
-Входит: typed records, scope/consent/provenance/confidence/TTL, evidence links,
-scratch/context/durable separation, deterministic retrieval, embeddings,
-compaction, expiry/deletion/forget и plan preview.
+Входит: аддитивные поля typed record (confidence, evidence links, execution
+event references), scope/privacy/approval gates до записи и до выдачи,
+deterministic retrieval с score breakdown, optional embeddings, context
+budget и compaction, expiry/deletion/forget и bounded projection в UI.
 
 Не входит: автоматическое запоминание всего transcript, thought без evidence
-как факт, внешняя knowledge base или UI как источник истины.
+как факт, внешняя knowledge base, второй ranker или memory SDK, UI как
+источник истины и удаление исходных events через compaction.
 
 ## Зависимости
 
 ### Блокирующие
 
-- планы 08–10 для execution events, policy, scope и authenticated projection;
-- текущие `workspace_rag.rs`, memory stores, context ledger и SQLite schema.
+- планы 08–10 после их принятия: execution events, policy/approval,
+  capability scope и authenticated projection;
+- текущие `memory_domain.rs`, `memory_extraction.rs`, `memory_store.rs`,
+  `workspace_rag.rs`, `context_budget.rs`, `context_ledger_store.rs` и
+  SQLite schema v29.
 
 ### Опциональные
 
-- local embeddings; без них retrieval работает через deterministic FTS5;
-- provider reflection; без него compaction завершается deterministic degraded/
-  unknown и не подтверждает новые факты.
+- local embeddings. Без них retrieval работает через deterministic FTS5, а
+  hybrid score breakdown содержит только lexical компоненты;
+- provider reflection. Без него compaction завершается deterministic
+  `degraded`/`unknown`, сохраняет исходные items и не подтверждает новые
+  факты;
+- telemetry плана 12. Без него retrieval/compaction метрики остаются
+  локальными счётчиками и не блокируют этапы.
 
 ## Этапы
 
@@ -49,6 +93,7 @@ compaction, expiry/deletion/forget и plan preview.
 
 ## Готово, когда
 
-Каждая memory record имеет provenance и lifecycle, retrieval объясним и
-воспроизводим, forget удаляет все derived data, compaction сохраняет ссылки на
-исходные events, а UI меняет только projection.
+Каждая memory record имеет scope, privacy, provenance и lifecycle, retrieval
+объясним и воспроизводим, forget удаляет все derived data вместе с
+tombstone, compaction сохраняет ссылки на исходные events, а UI меняет
+только projection через Core command path.

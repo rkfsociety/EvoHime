@@ -3,30 +3,70 @@
 ## Цель
 
 Управлять context budget и reflection/compaction как cancellable versioned
-projection без незаметного удаления истории.
+projection поверх существующего context ledger, без незаметного удаления
+истории.
 
-## Изменения
+## Что уже есть в checkout
 
-1. Связать retrieval output с существующим context ledger и bounded context
-   budget; обязательные элементы и причины pruning должны быть видимы.
-2. Реализовать cancellable reflection/compaction с budget, snapshot revision,
-   idempotency и deterministic fallback при provider failure.
-3. Сохранять derived summary/embedding как versioned projection со ссылками на
-   исходные event IDs, а не заменять ими историю.
-4. Применять redaction до memory write и до context projection; raw prompt и
-   full tool output не становятся durable memory автоматически.
-5. Отдавать UI только metadata, score breakdown, citations и bounded preview;
-   mutation выполняется через Core command path.
+- `context_budget.rs`: `ContextRuntime`, `assemble`/`replan`,
+  `record_actual_usage`, `ModelContextProjection`, `DroppedItemProjection`,
+  `CompressionProjection`, artifact/message offload и summarizer
+  (`deterministic_summarizer`, `model_summarizer`, `PrecomputedSummaryModel`);
+- `context_ledger_store.rs`: `append`, `record_usage`, `register_receipt`,
+  `projection`, `prune`;
+- `RagLedgerProjection` в `workspace_rag.rs`;
+- `compact_chain` в `evohime-receipts` для receipts prefix.
+
+Этап связывает retrieval output с этим ledger и добавляет cancellation,
+idempotency и source linkage summaries.
+
+## Зависимости
+
+### Блокирующие
+
+- 11-2: retrieval result с provenance и breakdown;
+- текущие `context_budget.rs` и `context_ledger_store.rs`.
+
+### Опциональные
+
+- provider reflection. Без него используется `deterministic_summarizer`, а
+  результат помечается `degraded`; новые факты не подтверждаются;
+- embeddings для derived summary. Без них summary хранится без вектора и
+  находится через FTS5.
+
+## Контракт
+
+1. Retrieval output попадает в существующий context plan/ledger: обязательные
+   элементы, dropped items и причины pruning видимы в projection.
+2. Reflection/compaction cancellable: bounded budget, snapshot revision,
+   идемпотентный ключ и deterministic fallback при provider failure. Повтор с
+   тем же ключом не создаёт вторую summary.
+3. Derived summary и embedding сохраняются как versioned projection со
+   ссылками на исходные event ID. Исходные execution/evidence events
+   compaction не удаляет; удаление receipts prefix остаётся отдельной
+   операцией `compact_chain` с checkpoint.
+4. Redaction применяется до memory write и до context projection. Raw prompt
+   и полный tool output не становятся durable memory автоматически.
+5. UI получает только metadata, score breakdown, citations и bounded
+   preview; любая mutation идёт через Core command path.
+
+## Изменения по слоям
+
+- Rust core: cancellation/idempotency в compaction, linkage summary → events;
+- storage: versioned projection rows и prune, не затрагивающий источники;
+- IPC/Electron: bounded preview и projection replay после reconnect.
 
 ## Проверки
 
 - context budget overflow и deterministic pruning;
-- compaction cancel, retry, stale snapshot и idempotent повтор;
-- provider failure с degraded/unknown результатом;
-- source event linkage для каждого summary;
-- reconnect/replay projection после Core restart.
+- compaction cancel, retry, stale snapshot и идемпотентный повтор;
+- provider failure даёт `degraded`/`unknown` без потери items;
+- у каждой summary есть ссылки на исходные event ID;
+- reconnect/replay projection после Core restart;
+- `cargo test --locked -p evohime-core -p evohime-local-storage`,
+  Electron `npm test`.
 
 ## Готово, когда
 
-Compaction не теряет происхождение данных, соблюдает budget/cancellation и не
-может скрыто удалить исходные execution или evidence events.
+Compaction не теряет происхождение данных, соблюдает budget и cancellation и
+не может скрыто удалить исходные execution или evidence events.
