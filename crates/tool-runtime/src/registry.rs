@@ -103,7 +103,11 @@ impl ToolDefinition {
             version: "1.0.0".into(),
             display_name: self.name.into(),
             description: self.description.into(),
-            input_schema: serde_json::json!({"type":"object","properties":{},"additionalProperties":false}),
+            input_schema: if self.name == tools::mcp::NAME {
+                serde_json::json!({"type":"object","properties":{"server_id":{"type":"string"},"tool_name":{"type":"string"},"params":{}},"required":["server_id","tool_name"],"additionalProperties":false})
+            } else {
+                serde_json::json!({"type":"object","properties":{},"additionalProperties":false})
+            },
             output_schema: serde_json::json!({"type":"object"}),
             capability_class: self
                 .permissions
@@ -1924,5 +1928,19 @@ mod tests {
             .expect_err("preflight must reject oversized input");
 
         assert!(matches!(error, ToolError::InvalidInput { .. }));
+    }
+
+    #[test]
+    fn every_registered_tool_has_a_valid_non_permissive_manifest() {
+        let registry = ToolRegistry::bootstrap();
+        assert!(registry.list().len() >= 50);
+        for manifest in registry.manifests() {
+            manifest.validate().expect("registered manifest validates");
+            assert_ne!(
+                manifest.input_schema.get("additionalProperties"),
+                Some(&serde_json::Value::Bool(true))
+            );
+            assert!(!manifest.canonical_hash().unwrap().is_empty());
+        }
     }
 }

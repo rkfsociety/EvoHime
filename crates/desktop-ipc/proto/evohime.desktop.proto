@@ -646,6 +646,12 @@ message RemoveCapability {
   string id = 1;
 }
 
+// Core-owned toolkit lifecycle. Installation/discovery never enables a tool.
+message ListToolkits { uint32 limit = 1; }
+message EnableToolkit { string toolkit_id = 1; string version = 2; string reason = 3; }
+message DisableToolkit { string toolkit_id = 1; string version = 2; string reason = 3; }
+message RollbackToolkit { string toolkit_id = 1; string version = 2; string reason = 3; }
+
 // Requests a bounded, redacted task handoff between child roles
 // (evohime_core::child_roles::HandoffEnvelope). Fields match
 // HandoffEnvelope::new's parameters. from_role/to_role take a ChildRole
@@ -1231,6 +1237,10 @@ message CommandEnvelope {
     GetWorkflowRun get_workflow_run = 120;
     CancelWorkflow cancel_workflow = 121;
     ListWorkflowEvents list_workflow_events = 122;
+    ListToolkits list_toolkits = 123;
+    EnableToolkit enable_toolkit = 124;
+    DisableToolkit disable_toolkit = 125;
+    RollbackToolkit rollback_toolkit = 126;
   }
 }
 

@@ -2143,6 +2143,46 @@ impl IpcBridge {
                 self.write_response(writer, "capability.removed", result)
                     .await?;
             }
+            Some(generated::command_envelope::Command::ListToolkits(request)) => {
+                let result = self.dispatch_list_toolkits(request).await?;
+                self.write_response(writer, "toolkit.list", result).await?;
+            }
+            Some(generated::command_envelope::Command::EnableToolkit(request)) => {
+                let result = self
+                    .dispatch_toolkit_status(
+                        request.toolkit_id,
+                        request.version,
+                        request.reason,
+                        "rollback",
+                    )
+                    .await?;
+                self.write_response(writer, "toolkit.enabled", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::DisableToolkit(request)) => {
+                let result = self
+                    .dispatch_toolkit_status(
+                        request.toolkit_id,
+                        request.version,
+                        request.reason,
+                        "disabled",
+                    )
+                    .await?;
+                self.write_response(writer, "toolkit.disabled", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::RollbackToolkit(request)) => {
+                let result = self
+                    .dispatch_toolkit_status(
+                        request.toolkit_id,
+                        request.version,
+                        request.reason,
+                        "enabled",
+                    )
+                    .await?;
+                self.write_response(writer, "toolkit.rolled_back", result)
+                    .await?;
+            }
             Some(generated::command_envelope::Command::GetCapabilitySelection(request)) => {
                 let result = self.dispatch_get_capability_selection(request).await?;
                 self.write_response(writer, "capability.selection", result)
@@ -4368,6 +4408,12 @@ impl IpcBridge {
         &self,
         request: generated::InstallCapability,
     ) -> Result<Vec<u8>, IpcBridgeError> {
+        let toolkit_manifest = serde_json::from_str::<serde_json::Value>(&request.manifest_json)
+            .ok()
+            .filter(|value| {
+                value.get("kind").and_then(serde_json::Value::as_str) == Some("tool/manifest/v1")
+            });
+        let toolkit_source = request.install_source.clone();
         let coordinator = self
             .coordinator
             .as_ref()
@@ -4383,11 +4429,56 @@ impl IpcBridge {
             })
             .await
             .map_err(|error| FrameError::Io(error.to_string()))?;
-        response
+        let result = response
             .await
             .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
             .map_err(FrameError::Io)
-            .map_err(IpcBridgeError::from)
+            .map_err(IpcBridgeError::from)?;
+        if let Some(manifest) = toolkit_manifest {
+            let record = evohime_local_storage::toolkit_store::ToolkitRecord {
+                toolkit_id: manifest
+                    .get("tool_id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+                version: manifest
+                    .get("version")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+                manifest_hash: serde_json::from_value::<evohime_tool_runtime::ToolManifest>(
+                    manifest.clone(),
+                )
+                .ok()
+                .and_then(|value| value.canonical_hash().ok())
+                .unwrap_or_default(),
+                source: toolkit_source,
+                package_hash: manifest
+                    .get("package_hash")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned),
+                license: manifest
+                    .get("license")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned),
+                status: "available".into(),
+                compatible_core: manifest
+                    .get("compatible_core")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+                manifest_json: serde_json::to_vec(&manifest).unwrap_or_default(),
+                created_at: String::new(),
+                updated_at: String::new(),
+            };
+            if !record.toolkit_id.is_empty() && !record.version.is_empty() {
+                let database = self.journal.database();
+                let database = database.lock().await;
+                evohime_local_storage::toolkit_store::discover(database.connection(), &record)
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+            }
+        }
+        Ok(result)
     }
 
     async fn dispatch_list_capabilities(
@@ -4460,6 +4551,55 @@ impl IpcBridge {
             .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
             .map_err(FrameError::Io)
             .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_list_toolkits(
+        &self,
+        request: generated::ListToolkits,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let database = self.journal.database();
+        let database = database.lock().await;
+        let records = evohime_local_storage::toolkit_store::list(
+            database.connection(),
+            request.limit as usize,
+        )
+        .map_err(|error| FrameError::Io(error.to_string()))?;
+        serde_json::to_vec(&serde_json::json!({"toolkits": records})).map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_toolkit_status(
+        &self,
+        toolkit_id: String,
+        version: String,
+        reason: String,
+        status: &str,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let database = self.journal.database();
+        let database = database.lock().await;
+        if status == "rollback" {
+            evohime_local_storage::toolkit_store::rollback(
+                database.connection(),
+                &toolkit_id,
+                &version,
+                &reason,
+            )
+        } else {
+            evohime_local_storage::toolkit_store::transition(
+                database.connection(),
+                &toolkit_id,
+                &version,
+                status,
+                &reason,
+            )
+        }
+        .map_err(|error| FrameError::Io(error.to_string()))?;
+        serde_json::to_vec(&serde_json::json!({
+            "toolkit_id": toolkit_id,
+            "version": version,
+            "status": status,
+            "applied": true
+        }))
+        .map_err(IpcBridgeError::from)
     }
 
     async fn dispatch_get_capability_selection(

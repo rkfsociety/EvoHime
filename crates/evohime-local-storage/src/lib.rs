@@ -22,6 +22,7 @@ pub mod model_provenance;
 pub mod reconciliation_verifier;
 pub mod research_store;
 pub mod scratchpad_store;
+pub mod toolkit_store;
 pub mod workflow_store;
 
 pub use backup::{
@@ -402,6 +403,8 @@ impl LocalDatabase {
         // способом, что receipts и model provenance, поэтому существующая база
         // получает таблицы без отдельной ветки миграции.
         workflow_store::install_schema(&connection)
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        toolkit_store::install_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })

@@ -287,12 +287,12 @@ fn tool_parameters(name: &str) -> serde_json::Value {
         "mcp.call" => serde_json::json!({
             "type": "object",
             "properties": {
-                "url": { "type": "string" },
-                "method": { "type": "string" },
+                "server_id": { "type": "string" },
+                "tool_name": { "type": "string" },
                 "params": {},
                 "timeout_ms": { "type": "integer", "minimum": 1 }
             },
-            "required": ["url", "method"],
+            "required": ["server_id", "tool_name"],
             "additionalProperties": false
         }),
         "memory.search" => serde_json::json!({
@@ -446,7 +446,11 @@ fn tool_parameters(name: &str) -> serde_json::Value {
             },
             "required": ["program"]
         }),
-        _ => serde_json::json!({ "type": "object", "additionalProperties": true }),
+        // Unknown tools are never exposed with a permissive schema. A tool
+        // without a declared contract must be rejected by loadout selection.
+        _ => {
+            serde_json::json!({ "type": "object", "properties": {}, "additionalProperties": false })
+        }
     }
 }
 
