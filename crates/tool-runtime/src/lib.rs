@@ -1,15 +1,23 @@
+pub mod action;
 mod cdp;
+pub mod manifest;
 pub mod network_capability;
 mod registry;
 mod risk;
 mod sandbox;
 mod shell_env;
 mod ssrf;
+pub mod telemetry;
+pub mod toolkit;
 mod tools;
 
+pub use action::{ActionConsole, ActionRequest, ActionStatus};
+pub use manifest::{
+    ApprovalMode, ManifestError, SideEffectClass, ToolManifest, ToolOrigin, MANIFEST_KIND,
+};
 pub use registry::{
-    ApprovalRequired, ToolContext, ToolError, ToolPreflightDecision, ToolProgress, ToolRegistry,
-    ToolResult,
+    ApprovalRequired, ToolContext, ToolDefinition, ToolError, ToolPreflightDecision, ToolProgress,
+    ToolRegistry, ToolResult,
 };
 pub use risk::{classify_call_risk, ToolRiskLevel};
 pub use sandbox::WorkspaceSandbox;
@@ -17,6 +25,8 @@ pub use ssrf::{
     allow_private_targets, assert_safe_http_url, effective_host_allowlist, host_allowlist_from_env,
     lock_host_allowlist, lock_private_override, HostAllowlistGuard, PrivateOverrideGuard,
 };
+pub use telemetry::{TelemetryBuffer, TelemetrySummary, ToolLifecycle, ToolTelemetryEvent};
+pub use toolkit::{ToolkitCatalog, ToolkitEntry, ToolkitError, ToolkitStatus};
 pub use tools::agent;
 pub use tools::archive;
 pub use tools::browser;

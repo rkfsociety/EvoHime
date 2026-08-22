@@ -7289,6 +7289,9 @@ export const evohime = $root.evohime = (() => {
                  * @typedef {Object} evohime.desktop.v1.ResolveApproval.$Properties
                  * @property {string|null} [approvalId] ResolveApproval approvalId
                  * @property {boolean|null} [granted] ResolveApproval granted
+                 * @property {string|null} [idempotencyKey] ResolveApproval idempotencyKey
+                 * @property {string|null} [rejectionReason] ResolveApproval rejectionReason
+                 * @property {boolean|null} [cancel] ResolveApproval cancel
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -7337,6 +7340,30 @@ export const evohime = $root.evohime = (() => {
                 ResolveApproval.prototype.granted = false;
 
                 /**
+                 * ResolveApproval idempotencyKey.
+                 * @member {string} idempotencyKey
+                 * @memberof evohime.desktop.v1.ResolveApproval
+                 * @instance
+                 */
+                ResolveApproval.prototype.idempotencyKey = "";
+
+                /**
+                 * ResolveApproval rejectionReason.
+                 * @member {string} rejectionReason
+                 * @memberof evohime.desktop.v1.ResolveApproval
+                 * @instance
+                 */
+                ResolveApproval.prototype.rejectionReason = "";
+
+                /**
+                 * ResolveApproval cancel.
+                 * @member {boolean} cancel
+                 * @memberof evohime.desktop.v1.ResolveApproval
+                 * @instance
+                 */
+                ResolveApproval.prototype.cancel = false;
+
+                /**
                  * Encodes the specified ResolveApproval message. Does not implicitly {@link evohime.desktop.v1.ResolveApproval.verify|verify} messages.
                  * @function encode
                  * @memberof evohime.desktop.v1.ResolveApproval
@@ -7356,6 +7383,12 @@ export const evohime = $root.evohime = (() => {
                         writer.uint32(/* id 1, wireType 2 =*/10).string(message.approvalId);
                     if (message.granted != null && $Object.hasOwnProperty.call(message, "granted") && message.granted !== false)
                         writer.uint32(/* id 2, wireType 0 =*/16).bool(message.granted);
+                    if (message.idempotencyKey != null && $Object.hasOwnProperty.call(message, "idempotencyKey") && message.idempotencyKey !== "")
+                        writer.uint32(/* id 3, wireType 2 =*/26).string(message.idempotencyKey);
+                    if (message.rejectionReason != null && $Object.hasOwnProperty.call(message, "rejectionReason") && message.rejectionReason !== "")
+                        writer.uint32(/* id 4, wireType 2 =*/34).string(message.rejectionReason);
+                    if (message.cancel != null && $Object.hasOwnProperty.call(message, "cancel") && message.cancel !== false)
+                        writer.uint32(/* id 5, wireType 0 =*/40).bool(message.cancel);
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -7406,6 +7439,33 @@ export const evohime = $root.evohime = (() => {
                                     message.granted = value;
                                 else
                                     delete message.granted;
+                                continue;
+                            }
+                        case 3: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.idempotencyKey = value;
+                                else
+                                    delete message.idempotencyKey;
+                                continue;
+                            }
+                        case 4: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.rejectionReason = value;
+                                else
+                                    delete message.rejectionReason;
+                                continue;
+                            }
+                        case 5: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.bool())
+                                    message.cancel = value;
+                                else
+                                    delete message.cancel;
                                 continue;
                             }
                         }

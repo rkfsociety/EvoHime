@@ -2243,16 +2243,17 @@ impl IpcBridge {
                 self.write_response(writer, "feedback.list", result).await?;
             }
             Some(generated::command_envelope::Command::ResolveApproval(resolve)) => {
+                // Cancellation is a terminal rejection at the existing
+                // approval boundary; the immutable approval binding remains
+                // owned by Core and old clients keep the same semantics.
+                let granted = resolve.granted && !resolve.cancel;
                 let approval_id = uuid::Uuid::parse_str(&resolve.approval_id)
                     .map_err(|error| FrameError::Io(format!("invalid approval id: {error}")))?;
                 if let Some(tools) = &self.tools {
-                    let _ = tools
-                        .permissions()
-                        .resolve(approval_id, resolve.granted)
-                        .await;
+                    let _ = tools.permissions().resolve(approval_id, granted).await;
                 }
                 if let Some(approvals) = &self.approvals {
-                    let _ = approvals.resolve(approval_id, resolve.granted).await;
+                    let _ = approvals.resolve(approval_id, granted).await;
                 }
                 // Узел workflow подтверждается той же командой, что и
                 // инструмент: отдельного пути approval у workflow нет. Если
@@ -2260,7 +2261,7 @@ impl IpcBridge {
                 // иначе он остался бы ждать уже принятого решения.
                 if self
                     .workflow_approvals
-                    .resolve(&resolve.approval_id, resolve.granted)
+                    .resolve(&resolve.approval_id, granted)
                 {
                     if let Some(run_id) = self.workflow_approvals.run_for(&resolve.approval_id) {
                         let workspace = self.journal.workflow_run_workspace(&run_id).await;
@@ -6331,6 +6332,9 @@ mod tests {
                 generated::ResolveApproval {
                     approval_id: approval_id.clone(),
                     granted: false,
+                    idempotency_key: String::new(),
+                    rejection_reason: String::new(),
+                    cancel: false,
                 },
             )),
         };

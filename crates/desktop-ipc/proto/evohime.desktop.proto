@@ -295,6 +295,9 @@ message StopTask {
 message ResolveApproval {
   string approval_id = 1;
   bool granted = 2;
+  string idempotency_key = 3;
+  string rejection_reason = 4;
+  bool cancel = 5;
 }
 
 // Decision for a Core-owned route reroute. This is not a tool approval and

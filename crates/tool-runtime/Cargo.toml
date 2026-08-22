@@ -18,6 +18,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake"] }
 base64 = "0.22"
 jsonschema = { version = "0.18", default-features = false }
+sha2 = "0.10"
 
 [dev-dependencies]
 tempfile = "3"

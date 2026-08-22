@@ -3213,6 +3213,15 @@ export namespace evohime {
                 /** ResolveApproval granted. */
                 granted: boolean;
 
+                /** ResolveApproval idempotencyKey. */
+                idempotencyKey: string;
+
+                /** ResolveApproval rejectionReason. */
+                rejectionReason: string;
+
+                /** ResolveApproval cancel. */
+                cancel: boolean;
+
                 /**
                  * Encodes the specified ResolveApproval message. Does not implicitly {@link evohime.desktop.v1.ResolveApproval.verify|verify} messages.
                  * @param message ResolveApproval message or plain object to encode
@@ -3249,6 +3258,15 @@ export namespace evohime {
 
                     /** ResolveApproval granted */
                     granted?: (boolean|null);
+
+                    /** ResolveApproval idempotencyKey */
+                    idempotencyKey?: (string|null);
+
+                    /** ResolveApproval rejectionReason */
+                    rejectionReason?: (string|null);
+
+                    /** ResolveApproval cancel */
+                    cancel?: (boolean|null);
 
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];

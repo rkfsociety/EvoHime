@@ -92,6 +92,58 @@ pub struct ToolDefinition {
     pub timeout: Duration,
 }
 
+impl ToolDefinition {
+    /// Статический adapter для legacy builtin-регистраций. Поля registry
+    /// остаются source-of-truth до полной миграции деклараций инструментов;
+    /// схема при этом всегда явная и fail-closed.
+    pub fn manifest(&self) -> crate::ToolManifest {
+        crate::ToolManifest {
+            kind: crate::MANIFEST_KIND.into(),
+            tool_id: self.name.into(),
+            version: "1.0.0".into(),
+            display_name: self.name.into(),
+            description: self.description.into(),
+            input_schema: serde_json::json!({"type":"object","properties":{},"additionalProperties":false}),
+            output_schema: serde_json::json!({"type":"object"}),
+            capability_class: self
+                .permissions
+                .first()
+                .map(|p| format!("{p:?}"))
+                .unwrap_or_else(|| "none".into()),
+            side_effect: if self.permissions.iter().any(|p| {
+                matches!(
+                    p,
+                    Permission::FilesystemWrite | Permission::ShellExecute | Permission::GitWrite
+                )
+            }) {
+                crate::SideEffectClass::Mutating
+            } else {
+                crate::SideEffectClass::ReadOnly
+            },
+            provider_identity: "builtin".into(),
+            required_permissions: self.permissions.to_vec(),
+            approval: if self.permissions.is_empty() {
+                crate::ApprovalMode::Never
+            } else {
+                crate::ApprovalMode::OnPermission
+            },
+            workspace_scope: "workspace".into(),
+            network_domains: vec![],
+            secret_references: vec![],
+            timeout_ms: self.timeout.as_millis().min(u64::MAX as u128) as u64,
+            output_size_limit: 512 * 1024,
+            retry_class: "bounded".into(),
+            supports_cancellation: true,
+            origin: crate::ToolOrigin::Builtin,
+            source_reference: "evohime://builtin".into(),
+            package_hash: None,
+            license: None,
+            compatible_core: ">=0.1".into(),
+            protocol_version: "1".into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ToolPreflightDecision {
     Allowed {
@@ -466,6 +518,13 @@ impl ToolRegistry {
         let mut items: Vec<_> = self.tools.values().collect();
         items.sort_by_key(|tool| tool.name);
         items
+    }
+
+    pub fn manifests(&self) -> Vec<crate::ToolManifest> {
+        self.list()
+            .into_iter()
+            .map(|tool| tool.manifest())
+            .collect()
     }
 
     /// Performs the exact policy/scope check without creating an in-memory
