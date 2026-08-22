@@ -49,7 +49,9 @@ effect, durable action/receipt linkage и bounded redacted projection:
 - secret/PII во входе, preview, IPC, receipts, journal, logs, export и hook
   metadata → redacted, без raw value;
 - повторный resolve approval, replay IPC и рестарт процесса → идемпотентное
-  состояние, monotonic expiry и отсутствие blind retry.
+  состояние, monotonic expiry и отсутствие blind retry;
+- отсутствие второго пути grant/claim: тест доказывает, что desktop IPC path
+  (`ipc_bridge.rs`) больше не выдаёт approval мимо Core gate.
 
 ## Release checks
 
@@ -64,8 +66,9 @@ effect, durable action/receipt linkage и bounded redacted projection:
 - `cargo fmt --check`, `git diff --check`, `npm run check:protocol`,
   `npm run typecheck`, `npm test` из `desktop/evohime-electron`;
 - SQLite migration/backup/rollback и smoke рестарта supervisor с recovery,
-  включая старую базу без snapshot-колонок, записи со старым словарём
-  `policy_decision` и прерванный approval claim;
+  включая старую базу без snapshot- и `session_id`-колонок, записи со старым
+  CHECK-словарём `policy_decision`, intents в состоянии `lost` и прерванный
+  approval claim;
 - проверка всех внутренних Markdown-ссылок и отсутствие ссылок на удаляемые
   файлы плана после closure;
 - ни одно acceptance-утверждение не опирается только на номинальный `ok`:

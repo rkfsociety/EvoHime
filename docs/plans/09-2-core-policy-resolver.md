@@ -36,9 +36,10 @@ Core-owned policy gate. Это общий путь вызова, а не нов�
   (`crates/evohime-core/src/permission_rules.rs`).
 
 Нет единой точки входа: `PermissionEngine` вызывается независимо из
-`crates/evohime-core/src/lib.rs`, `registry.rs` и
-`crates/tool-runtime/src/tools/shell.rs`, поэтому нельзя доказать, что каждый
-effect path прошёл одинаковую проверку. Нет повторной проверки непосредственно
+`crates/evohime-core/src/lib.rs`, `crates/tool-runtime/src/registry.rs` и
+`crates/tool-runtime/src/tools/shell.rs`, а `crates/evohime-core/src/ipc_bridge.rs`
+дополнительно сам выдаёт grant/claim approval, поэтому нельзя доказать, что
+каждый effect path прошёл одинаковую проверку. Нет повторной проверки непосредственно
 перед side effect и нет привязки решения к snapshot hash.
 
 ## Core policy gate
@@ -56,7 +57,8 @@ hint не является решением. Все зарегистрирова
 terminal, workflow adapters, MCP/browser и provider/worker dispatch — должны
 вызывать gate до dispatch; прямой вызов tool implementation из Core обходом
 gate запрещается тестом/контрактом. Существующие прямые обращения к
-`PermissionEngine` переводятся на gate, а не дублируют его.
+`PermissionEngine`, включая approval-путь в `ipc_bridge.rs`, переводятся на
+gate, а не дублируют его.
 
 ## Filesystem и workspace
 

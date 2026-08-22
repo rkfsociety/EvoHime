@@ -35,11 +35,18 @@ registry или переносить authority в renderer.
   `crates/tool-runtime/src/tools/shell.rs`);
 - `PermissionEngine` всё ещё держит in-memory approval state
   (`approvals: HashMap<Uuid, ApprovalRecord>`) параллельно durable intent;
-- рядом с `claim_approval_checked` остаётся `claim_approval` без policy
-  recheck, то есть обходной путь claim;
-- persisted `policy_decision` в receipts сегодня допускает только
-  `allow`/`deny`/`approval_required`, поэтому расширенный словарь outcomes
-  требует additive-миграции, а не переопределения существующих значений.
+- рядом с `claim_approval_checked` остаётся публичный `claim_approval` без
+  policy recheck, и он реально используется на боевом пути
+  (`crates/evohime-core/src/ipc_bridge.rs`), то есть обходной claim не
+  теоретический, а действующий;
+- durable `receipt_actions`/`receipt_approval_intents` не хранят `session_id`
+  и snapshot hash, поэтому привязка approval к session и snapshot требует
+  additive-колонок, а не только новых проверок в коде;
+- persisted `policy_decision` в receipts сегодня ограничен CHECK-констрейнтом
+  `allow`/`deny`/`approval_required`
+  (`crates/evohime-receipts/src/runtime.rs`), поэтому расширенный словарь
+  outcomes требует additive-миграции таблицы, а не переопределения
+  существующих значений.
 
 ## Границы
 

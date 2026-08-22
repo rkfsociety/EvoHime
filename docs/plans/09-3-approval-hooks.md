@@ -25,18 +25,23 @@
 ## Что уже есть в коде
 
 - durable approval intents со состояниями `pending`, `granted`, `denied`,
-  `expired`, `cancelled`, `claimed` и action states `awaiting_approval`,
-  `prepared`, `pending_recovery`
-  (`crates/evohime-receipts/src/runtime.rs`);
+  `expired`, `claimed`, `lost` и action states `awaiting_approval`,
+  `prepared`, `refused`, `succeeded`, `failed`, `cancelled`,
+  `pending_recovery`, `quarantined`
+  (`crates/evohime-receipts/src/runtime.rs`); отмена и неизвестный исход
+  живут на уровне action (`cancelled`, `pending_recovery`/`quarantined` с
+  `recovery_code`), а не отдельным состоянием intent;
 - monotonic deadline с boot binding: expiry считается по `clock_boot_id` и
   monotonic ms, с fallback на wall clock только между boot-ами;
 - атомарный claim с policy recheck (`claim_approval_checked`) и тесты на
   однократность claim, monotonic expiry и отказ при текущем deny.
 
-Чего нет: обходной `claim_approval` без recheck остаётся публичным API;
+Чего нет: обходной `claim_approval` без recheck остаётся публичным API и
+используется в `crates/evohime-core/src/ipc_bridge.rs`;
 `PermissionEngine` хранит собственные in-memory `approvals`/`audit`
 (`crates/permissions/src/lib.rs`) как второй источник authority; в intent не
-записываются snapshot hash, policy version и hook chain version.
+записываются `session_id`, snapshot hash, policy version и hook chain
+version.
 
 ## Единый источник approval
 
@@ -67,10 +72,16 @@ Durable state machine повторяет уже существующий сло�
 `receipt_approval_intents` и не вводит синонимов:
 
 ```text
-pending -> granted | denied | expired | cancelled
-granted -> claimed
-claimed -> terminal action outcome (succeeded/failed/unknown_outcome)
+pending -> granted | denied | expired | lost
+granted -> claimed | expired | lost
+claimed -> terminal action outcome (succeeded | failed | cancelled
+           | pending_recovery/quarantined при неизвестном исходе)
 ```
+
+Отмена пользователем не вводит состояние `cancelled` для intent: intent
+переходит в `lost`, а `cancelled` фиксируется как terminal state action.
+Новые состояния добавлять нельзя — расширение допускается только additive
+миграцией CHECK-констрейнта вместе с mapping существующих записей.
 
 `claimed` approval нельзя использовать повторно. Повторное approve/reject,
 повторный resolve после expiry и повторная доставка IPC возвращают фактическое
@@ -82,7 +93,8 @@ authenticated shell/session и существование approval; один т�
 
 1. загружает action и approval intent из durable store;
 2. проверяет expiry/boot monotonicity и state;
-3. пересчитывает policy и сравнивает task, session, run, action, tool,
+3. пересчитывает policy и сравнивает task, session (после additive-колонки),
+   run, action, tool,
    permission, normalized scope, input/call hash, snapshot hash и policy
    version;
 4. пишет pre-action receipt/ledger marker и claim;

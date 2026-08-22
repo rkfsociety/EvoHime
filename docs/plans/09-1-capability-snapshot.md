@@ -34,9 +34,9 @@ approval и execution; он не является grant, который можн
 - domain-separated canonical JSON и hash contract из receipts, который
   переиспользуется без ввода второго canonicalizer.
 
-Нет единого versioned snapshot, его canonical hash не сохраняется в approval
-intent и action, parent/child subset проверяется только в отдельных контурах,
-а persisted `policy_decision` ограничен значениями
+Нет единого versioned snapshot, его canonical hash и `session_id` не
+сохраняются в approval intent и action, parent/child subset проверяется только
+в отдельных контурах, а persisted `policy_decision` ограничен CHECK-значениями
 `allow`/`deny`/`approval_required`.
 
 ## Контракт
@@ -56,7 +56,10 @@ intent и action, parent/child subset проверяется только в о�
 - timeout, input/output size, concurrency, tool-call, token и cost budgets.
 
 `run_id`, `session_id` и `task_id` — те же идентичности, что и в ledger
-плана 08: snapshot не заводит параллельное пространство имён.
+плана 08: snapshot не заводит параллельное пространство имён. Сегодня
+`receipt_actions` и `receipt_approval_intents` хранят только `task_id` и
+`run_id`, поэтому `session_id` добавляется теми же additive-колонками, что и
+snapshot hash; до миграции session binding нельзя считать существующим.
 
 Snapshot canonicalize-ится существующим domain-separated canonical JSON
 контрактом и получает `snapshot_hash`. Неопознанная версия, дубликат identity,
