@@ -217,3 +217,27 @@ SQLite provenance repository в общей schema v29 (internal provenance schem
 durable request/response/tool/source/shadow/tombstone tables, Core checkpoint
 API, startup recovery/retention hooks и offline bundle boundary. Existing
 receipt contract remains backward-compatible; request linkage is additive.
+
+## Tooling 07 — реализовано в текущем checkout
+
+- `tool/manifest/v1` и единый schema catalog находятся в `tool-runtime`; Core
+  больше не содержит отдельную таблицу `tool_parameters`. Model loadout
+  получает canonical manifest hash, а recovery использует ту же схему.
+- Toolkit catalog durable в SQLite поддерживает discover, enable, disable и
+  атомарный rollback с audit history; quarantined/unavailable версии не
+  включаются.
+- Action Console передаёт durable approval decision с idempotency key,
+  rejection reason и cancel; Electron показывает grant/reject/cancel и
+  восстанавливает состояние из Core event replay.
+- MCP model calls принимают только Core identity (`server_id`, `tool_name`),
+  endpoint разрешается через `WorkflowRegistry`, а legacy runtime adapter
+  получает endpoint только после проверки allowlist/transport/host.
+- Tool telemetry сохраняется в EventJournal и экспортируется bounded,
+  redacted JSONL; Operations Panel показывает calls, results и approval
+  requests. Manifest/hash/policy evals зарегистрированы в deterministic eval
+  catalog.
+
+Проверки после реализации: `cargo test -p evohime-core --lib` — 477 passed,
+`cargo test -p evohime-tool-runtime --lib` — 119 passed и 1 ignored,
+Electron targeted tests — 25 passed, `npm run typecheck` и `git diff --check`
+проходят.

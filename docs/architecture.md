@@ -448,3 +448,26 @@ Offline bundle формата `evohime-provenance-export-v1` имеет allow-li
 конкурирующие добавления в цепочку. Tool intents связаны с terminal effect
 receipts, а redaction сохраняет неизменяемое обязательство envelope и создаёт
 типизированные tombstone.
+
+## Tool manifest, toolkit catalog и Action Console
+
+Каждый builtin/toolkit tool описывается versioned `tool/manifest/v1` в
+`crates/tool-runtime/src/manifest.rs`. Canonical hash манифеста прикрепляется
+к model loadout; input schema для registry, model и recovery берётся из
+единого `builtin_input_schema`, без таблицы схем в Core. `mcp.call` получает от
+модели только `server_id`, `tool_name` и `params`; endpoint разрешается Core
+`WorkflowRegistry` по allowlist сервера.
+
+Установленные toolkit-версии хранятся в SQLite `toolkit_versions`, переходы и
+rollback — в `toolkit_audit`. Rollback атомарно выключает прежнюю активную
+версию и включает выбранную; quarantined/unavailable версии не становятся
+исполняемыми.
+
+Approval Console использует durable receipt intent, exact-call binding,
+idempotency key, expiry и replay-safe решение. Electron отображает только
+Core-события и передаёт grant/reject/cancel обратно через IPC.
+
+Tool lifecycle telemetry записывается в EventJournal, экспортируется в
+bounded redacted JSONL и проецируется в Operations Panel: calls, results и
+approval requests. Детерминированные manifest/hash/policy evals находятся в
+`crates/evohime-core/src/evals.rs`.
