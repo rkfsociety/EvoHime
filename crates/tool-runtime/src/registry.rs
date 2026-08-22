@@ -103,11 +103,7 @@ impl ToolDefinition {
             version: "1.0.0".into(),
             display_name: self.name.into(),
             description: self.description.into(),
-            input_schema: if self.name == tools::mcp::NAME {
-                serde_json::json!({"type":"object","properties":{"server_id":{"type":"string"},"tool_name":{"type":"string"},"params":{}},"required":["server_id","tool_name"],"additionalProperties":false})
-            } else {
-                serde_json::json!({"type":"object","properties":{},"additionalProperties":false})
-            },
+            input_schema: crate::builtin_input_schema(self.name),
             output_schema: serde_json::json!({"type":"object"}),
             capability_class: self
                 .permissions

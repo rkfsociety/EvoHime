@@ -6,6 +6,73 @@ use thiserror::Error;
 
 pub const MANIFEST_KIND: &str = "tool/manifest/v1";
 
+/// Canonical input-schema catalog for builtin tools.  The registry and Core
+/// both consume this function; tool implementations remain responsible for
+/// semantic validation after the structural contract has been checked.
+pub fn builtin_input_schema(tool_id: &str) -> Value {
+    let string = |description: &str| serde_json::json!({"type":"string","description":description});
+    let integer = || serde_json::json!({"type":"integer","minimum":1});
+    let object = |properties: Value, required: &[&str]| serde_json::json!({"type":"object","properties":properties,"required":required,"additionalProperties":false});
+    match tool_id {
+        "filesystem.read" => object(
+            serde_json::json!({"path":string("Workspace-relative file path")}),
+            &["path"],
+        ),
+        "filesystem.write" => object(
+            serde_json::json!({"path":string("Workspace-relative file path"),"content":string("Complete UTF-8 content")}),
+            &["path", "content"],
+        ),
+        "filesystem.patch" => object(
+            serde_json::json!({"path":string("Workspace-relative file path"),"patch":string("Unified diff")}),
+            &["path", "patch"],
+        ),
+        "filesystem.search" => object(
+            serde_json::json!({"query":string("Text or pattern"),"path":string("Optional workspace path"),"glob":string("Optional glob"),"limit":integer()}),
+            &["query"],
+        ),
+        "filesystem.list" => object(
+            serde_json::json!({"path":string("Workspace-relative directory")}),
+            &[],
+        ),
+        "agent.run" => object(
+            serde_json::json!({"prompt":string("Task prompt"),"max_steps":integer(),"timeout_ms":integer(),"model_route":string("Optional model route")}),
+            &["prompt"],
+        ),
+        "memory.search" => object(
+            serde_json::json!({"query":string("Search query"),"limit":integer()}),
+            &["query"],
+        ),
+        "git.commit" => object(
+            serde_json::json!({"message":string("Commit message")}),
+            &["message"],
+        ),
+        "git.diff" | "git.log" | "git.show" | "git.blame" | "git.pull" | "git.push" => object(
+            serde_json::json!({"path":string("Optional workspace path"),"reference":string("Optional revision"),"remote":string("Optional remote"),"branch":string("Optional branch"),"force":{"type":"boolean"},"max_count":integer()}),
+            &[],
+        ),
+        "mcp.call" => object(
+            serde_json::json!({"server_id":string("Core-owned MCP server identity"),"tool_name":string("Allowlisted MCP tool"),"params":{},"timeout_ms":integer()}),
+            &["server_id", "tool_name"],
+        ),
+        "browser.open" | "browser.session.navigate" | "http.fetch" => object(
+            serde_json::json!({"url":string("URL resolved by policy"),"max_chars":integer(),"timeout_ms":integer()}),
+            &["url"],
+        ),
+        "browser.extract" => object(
+            serde_json::json!({"url":string("URL"),"selector":string("CSS selector"),"attribute":string("Optional attribute"),"limit":integer(),"timeout_ms":integer()}),
+            &["url", "selector"],
+        ),
+        "shell.execute" | "process.spawn" => object(
+            serde_json::json!({"program":string("Executable"),"args":{"type":"array","items":{"type":"string"}},"cwd":string("Working directory"),"timeout_ms":integer()}),
+            &["program"],
+        ),
+        _ => object(
+            serde_json::json!({"input":{"type":"object","description":"Tool-specific structured input"}}),
+            &[],
+        ),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolOrigin {

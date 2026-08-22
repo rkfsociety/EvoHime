@@ -6779,8 +6779,11 @@ impl ToolAgent {
             .into_iter()
             .map(|tool| {
                 let name = tool.name.to_string();
-                let mut spec =
-                    ToolSpec::function(name, tool.description, tool_parameters(tool.name));
+                let mut spec = ToolSpec::function(
+                    name,
+                    tool.description,
+                    evohime_tool_runtime::builtin_input_schema(tool.name),
+                );
                 spec.function.manifest_hash = self
                     .tools
                     .manifest_for(tool.name)
@@ -7932,7 +7935,7 @@ impl ToolAgent {
                 }
                 messages.push(ChatMessage::tool_observation(call.id, wrapped_output));
                 if failed {
-                    let schema = tool_parameters(&call.name);
+                    let schema = evohime_tool_runtime::builtin_input_schema(&call.name);
                     let description = self
                         .tools
                         .list()
@@ -12509,10 +12512,10 @@ mod tests {
         assert!(prompt.contains("git.push"));
         assert!(prompt.contains("только если пользователь явно попросил"));
 
-        let pull = super::tool_parameters("git.pull");
+        let pull = evohime_tool_runtime::builtin_input_schema("git.pull");
         assert_eq!(pull["properties"]["remote"]["type"], "string");
         assert_eq!(pull["additionalProperties"], false);
-        let push = super::tool_parameters("git.push");
+        let push = evohime_tool_runtime::builtin_input_schema("git.push");
         assert_eq!(push["properties"]["force"]["type"], "boolean");
         assert_eq!(push["additionalProperties"], false);
     }

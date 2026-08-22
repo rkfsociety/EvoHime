@@ -13,7 +13,8 @@ mod tools;
 
 pub use action::{ActionConsole, ActionRequest, ActionStatus};
 pub use manifest::{
-    ApprovalMode, ManifestError, SideEffectClass, ToolManifest, ToolOrigin, MANIFEST_KIND,
+    builtin_input_schema, ApprovalMode, ManifestError, SideEffectClass, ToolManifest, ToolOrigin,
+    MANIFEST_KIND,
 };
 pub use registry::{
     ApprovalRequired, ToolContext, ToolDefinition, ToolError, ToolPreflightDecision, ToolProgress,
