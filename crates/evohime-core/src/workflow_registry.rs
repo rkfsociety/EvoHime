@@ -421,6 +421,48 @@ impl WorkflowRegistry {
         self.mcp_servers.get(server_id)
     }
 
+    /// Resolves the Core-owned MCP endpoint for a model/workflow identity.
+    /// Callers must pass only `server_id` and `tool_name`; the endpoint is
+    /// never accepted from model arguments.
+    pub fn resolve_mcp_call(
+        &self,
+        server_id: &str,
+        tool_name: &str,
+    ) -> Result<String, BindingError> {
+        let Some(server) = self.mcp_servers.get(server_id) else {
+            return Err(BindingError::UnknownMcpServer {
+                node_id: "model-call".into(),
+                server_id: server_id.into(),
+            });
+        };
+        if !server.allowed_tools.iter().any(|tool| tool == tool_name) {
+            return Err(BindingError::McpToolNotAllowed {
+                node_id: "model-call".into(),
+                server_id: server_id.into(),
+                tool_name: tool_name.into(),
+            });
+        }
+        if !server.transport.is_available() {
+            return Err(BindingError::TransportUnavailable {
+                node_id: "model-call".into(),
+                server_id: server_id.into(),
+                transport: server.transport.as_str(),
+            });
+        }
+        if let Some(host) = server.host() {
+            if let Some(allowlist) = &self.mcp_host_allowlist {
+                if !allowlist.contains(&host) {
+                    return Err(BindingError::McpHostNotAllowed {
+                        node_id: "model-call".into(),
+                        server_id: server_id.into(),
+                        host,
+                    });
+                }
+            }
+        }
+        Ok(server.endpoint.clone())
+    }
+
     pub fn mcp_servers(&self) -> impl Iterator<Item = &McpServerEntry> {
         self.mcp_servers.values()
     }
