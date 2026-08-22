@@ -945,6 +945,11 @@ message AmbientPolicy {
   // проверяются по разным строкам, и склеивание их в один список стирало бы
   // разницу между «блокировать zoom.exe» и «блокировать окно с таким текстом».
   repeated string window_title_blocklist = 4;
+  // Голосовые команды («Ева, открой …»). Поля добавлены после первой версии
+  // сообщения, поэтому старый клиент их просто не шлёт, а Core подставляет
+  // сохранённое значение вместо того, чтобы молча выключить настройку.
+  optional bool voice_commands = 5;
+  optional bool voice_commands_autorun = 6;
 }
 
 // enabled=false → Stopped; enabled=true, paused=true → PausedByUser;
@@ -1071,6 +1076,46 @@ message AmbientProposalList {
   int32 max_per_hour = 2;
   int32 max_per_day = 3;
   int64 min_interval_ms = 4;
+}
+
+// Одна услышанная команда, ждущая решения.
+//
+// Заголовок приложения приходит только этой командой: durable journal несёт
+// лишь `app_id` (см. `ambient.voice_command`), потому что событие обязано
+// оставаться списком опознанных ключей, а не пересказом сказанного.
+message VoiceCommandSummary {
+  string command_id = 1;
+  string kind = 2;
+  string app_id = 3;
+  string title = 4;
+  int64 created_at_ms = 5;
+  int64 expires_at_ms = 6;
+}
+
+message ListVoiceCommands {
+  int32 limit = 1;
+}
+
+message VoiceCommandList {
+  repeated VoiceCommandSummary commands = 1;
+  // Требуется ли клик. `false` — пользователь разрешил автозапуск, и очередь
+  // в норме пуста: команда выполняется сразу.
+  bool requires_confirmation = 2;
+}
+
+// Решение пользователя по услышанной команде. `accepted=false` — отказ;
+// повторное решение по тому же `command_id` ничего не меняет, потому что
+// команда снимается с очереди первым же решением.
+message ResolveVoiceCommand {
+  string command_id = 1;
+  bool accepted = 2;
+}
+
+message ResolveVoiceCommandResult {
+  bool launched = 1;
+  string state = 2;
+  string app_id = 3;
+  string error_code = 4;
 }
 
 // --- Workflow orchestration (plan 06.3) -----------------------------------
@@ -1241,6 +1286,8 @@ message CommandEnvelope {
     EnableToolkit enable_toolkit = 124;
     DisableToolkit disable_toolkit = 125;
     RollbackToolkit rollback_toolkit = 126;
+    ListVoiceCommands list_voice_commands = 127;
+    ResolveVoiceCommand resolve_voice_command = 128;
   }
 }
 

@@ -1,6 +1,6 @@
 use crate::{
     error::AmbientErrorCode,
-    ids::{DeviceId, EngineVersion, EpisodeId, ProposalId, SubjectKey},
+    ids::{AppId, CommandId, DeviceId, EngineVersion, EpisodeId, ProposalId, SubjectKey},
     state::{ListeningReason, ListeningState},
 };
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,9 @@ pub const ALLOWED_LOG_FIELDS: &[&str] = &[
     "kind",
     "subject_key",
     "proposal_state",
+    "command_id",
+    "app_id",
+    "command_state",
     "code",
 ];
 
@@ -116,6 +119,77 @@ impl ProposalKind {
 
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|kind| kind.as_str() == value)
+    }
+}
+
+/// Что услышанная команда просит сделать.
+///
+/// Список закрыт по той же причине, что и [`ProposalKind`]: команда, которую
+/// Ева распознала на слух, обязана попасть в заранее известную клетку. «Всё
+/// остальное» здесь не вариант перечисления, а отсутствие команды — такая
+/// фраза остаётся обычным транскриптом.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceCommandKind {
+    /// Открыть приложение из каталога.
+    OpenApp,
+}
+
+impl VoiceCommandKind {
+    pub const ALL: [VoiceCommandKind; 1] = [VoiceCommandKind::OpenApp];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            VoiceCommandKind::OpenApp => "open_app",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.as_str() == value)
+    }
+}
+
+/// Жизненный цикл одной услышанной команды.
+///
+/// `Pending` — карточка ждёт клика; всё остальное терминально. Отдельное
+/// состояние `Failed` существует потому, что «пользователь отказался» и «не
+/// удалось запустить» — разные события для человека: первое он выбрал сам,
+/// второе обязано показать причину.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceCommandState {
+    Pending,
+    Launched,
+    Declined,
+    Expired,
+    Failed,
+}
+
+impl VoiceCommandState {
+    pub const ALL: [VoiceCommandState; 5] = [
+        VoiceCommandState::Pending,
+        VoiceCommandState::Launched,
+        VoiceCommandState::Declined,
+        VoiceCommandState::Expired,
+        VoiceCommandState::Failed,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            VoiceCommandState::Pending => "pending",
+            VoiceCommandState::Launched => "launched",
+            VoiceCommandState::Declined => "declined",
+            VoiceCommandState::Expired => "expired",
+            VoiceCommandState::Failed => "failed",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|state| state.as_str() == value)
+    }
+
+    pub const fn is_terminal(self) -> bool {
+        !matches!(self, VoiceCommandState::Pending)
     }
 }
 
@@ -219,6 +293,16 @@ pub enum AmbientLogEvent {
         subject_key: SubjectKey,
         proposal_state: ProposalState,
     },
+    /// Услышанная команда. Ни фразы, ни её обрывка здесь нет: `app_id` —
+    /// это ключ каталога приложений, то есть выбор Core из заранее известного
+    /// списка, а не то, что человек сказал. Заголовок приложения читается
+    /// отдельной командой, ровно как текст карточки предложения.
+    VoiceCommand {
+        command_id: CommandId,
+        kind: VoiceCommandKind,
+        app_id: AppId,
+        command_state: VoiceCommandState,
+    },
     Error {
         code: AmbientErrorCode,
         state: ListeningState,
@@ -233,6 +317,7 @@ impl AmbientLogEvent {
             AmbientLogEvent::Transcript { .. } => "ambient.transcript",
             AmbientLogEvent::Retention { .. } => "ambient.retention",
             AmbientLogEvent::Proposal { .. } => "ambient.proposal",
+            AmbientLogEvent::VoiceCommand { .. } => "ambient.voice_command",
             AmbientLogEvent::Error { .. } => "ambient.error",
         }
     }
@@ -256,6 +341,9 @@ impl AmbientLogEvent {
                 "subject_key",
                 "proposal_state",
             ],
+            AmbientLogEvent::VoiceCommand { .. } => {
+                &["command_id", "kind", "app_id", "command_state"]
+            }
             AmbientLogEvent::Error { .. } => &["code", "state"],
         }
     }
@@ -325,6 +413,12 @@ mod tests {
                 kind: ProposalKind::Reminder,
                 subject_key: SubjectKey::new("a1b2c3d4e5f60718").unwrap(),
                 proposal_state: ProposalState::Proposed,
+            },
+            AmbientLogEvent::VoiceCommand {
+                command_id: CommandId::new("cmd-1").unwrap(),
+                kind: VoiceCommandKind::OpenApp,
+                app_id: AppId::new("chrome").unwrap(),
+                command_state: VoiceCommandState::Pending,
             },
             AmbientLogEvent::Error {
                 code: AmbientErrorCode::StorageFailed,
@@ -435,6 +529,33 @@ mod tests {
     }
 
     #[test]
+    fn voice_command_kinds_and_states_round_trip_through_their_wire_form() {
+        for kind in VoiceCommandKind::ALL {
+            assert_eq!(VoiceCommandKind::parse(kind.as_str()), Some(kind));
+            assert_eq!(
+                serde_json::to_value(kind).unwrap(),
+                Value::String(kind.as_str().to_owned())
+            );
+        }
+        assert_eq!(VoiceCommandKind::parse("delete_everything"), None);
+        for state in VoiceCommandState::ALL {
+            assert_eq!(VoiceCommandState::parse(state.as_str()), Some(state));
+            assert_eq!(
+                serde_json::to_value(state).unwrap(),
+                Value::String(state.as_str().to_owned())
+            );
+        }
+        assert_eq!(VoiceCommandState::parse("proposed"), None);
+        assert!(!VoiceCommandState::Pending.is_terminal());
+        for state in VoiceCommandState::ALL
+            .into_iter()
+            .filter(|state| *state != VoiceCommandState::Pending)
+        {
+            assert!(state.is_terminal(), "{state:?} must not move again");
+        }
+    }
+
+    #[test]
     fn event_names_are_stable_and_unique() {
         let mut names: Vec<&str> = samples().iter().map(|e| e.event_name()).collect();
         names.sort_unstable();
@@ -448,6 +569,7 @@ mod tests {
                 "ambient.retention",
                 "ambient.state",
                 "ambient.transcript",
+                "ambient.voice_command",
             ]
         );
     }

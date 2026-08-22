@@ -278,6 +278,86 @@ describe('панель «Слух»', () => {
     expect(screen.getByText(/отбрасывается, а не копится в очередь/)).toBeTruthy()
   })
 
+  /**
+   * Услышанная команда — это карточка, а не запуск: панель обязана показать
+   * вопрос и отправить решение, а не сообщить о свершившемся факте.
+   */
+  it('показывает услышанную команду и отправляет решение по ней', async () => {
+    render(
+      <ListeningPanel
+        connection="connected"
+        events={[
+          event('ambient.voice_commands', {
+            commands: [
+              {
+                command_id: 'voice-1',
+                kind: 'open_app',
+                app_id: 'chrome',
+                title: 'Google Chrome',
+                created_at_ms: 1_700_000_000_000,
+                expires_at_ms: 1_700_000_300_000
+              }
+            ],
+            requires_confirmation: true,
+            error_code: ''
+          })
+        ]}
+      />
+    )
+    expect(screen.getByText('Открыть Google Chrome?')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: 'Открыть' }))
+    expect(calls.find((call) => call.command === 'ambient.resolveVoiceCommand')?.payload).toEqual({
+      commandId: 'voice-1',
+      accepted: true
+    })
+  })
+
+  it('называет включённый автозапуск, чтобы пустая очередь не выглядела поломкой', () => {
+    render(
+      <ListeningPanel
+        connection="connected"
+        events={[
+          event('ambient.voice_commands', {
+            commands: [],
+            requires_confirmation: false,
+            error_code: ''
+          })
+        ]}
+      />
+    )
+    expect(screen.getByText(/Автозапуск включён/)).toBeTruthy()
+  })
+
+  it('отправляет голосовые настройки вместе с остальной политикой', async () => {
+    render(
+      <ListeningPanel
+        connection="connected"
+        events={[
+          event('ambient.policy', {
+            quiet_hours: [],
+            blocklist_patterns: [],
+            window_title_blocklist: [],
+            retention_days: 7,
+            voice_commands: true,
+            voice_commands_autorun: false
+          })
+        ]}
+      />
+    )
+    await userEvent.click(
+      screen.getByRole('checkbox', { name: /Открывать сразу, без подтверждения/ })
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить политику' }))
+    expect(calls.find((call) => call.command === 'ambient.savePolicy')?.payload).toEqual({
+      quietHours: [],
+      blocklistPatterns: [],
+      windowTitleBlocklist: [],
+      retentionDays: 7,
+      voiceCommands: true,
+      voiceCommandsAutorun: true
+    })
+  })
+
   /** Без ответа ядра панель не утверждает, что предложений нет. */
   it('не выдумывает пустой список предложений, пока ядро не ответило', () => {
     render(<ListeningPanel connection="connected" events={[]} />)

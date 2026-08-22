@@ -34,6 +34,83 @@ const EPISODE_IDLE_MS: u64 = 60_000;
 /// время не пришло ни кадра, — то есть ровно в тишине.
 const IDLE_POLL_SECONDS: u64 = 20;
 
+/// Услышанная команда: разбор, карточка или запуск.
+///
+/// Запуск здесь возможен только при явно включённом автозапуске; во всех
+/// прочих случаях появляется карточка, и приложение открывает клик. Это то же
+/// правило, по которому проактивность 04.7 не имеет права вызвать инструмент:
+/// микрофон не является подтверждением.
+async fn handle_voice_command(
+    bridge: &Arc<IpcBridge>,
+    logger: &Arc<StructuredLogger>,
+    policy: &evohime_listener_contract::AmbientPolicy,
+    text: &str,
+) {
+    use crate::voice_command::{decide, Decision};
+    use evohime_listener_contract::VoiceCommandState;
+
+    let registry = bridge.voice_commands();
+    let now_ms = now_ms();
+    // Истёкшие карточки снимаются здесь же: панель узнаёт об этом событием, а
+    // не тем, что карточка перестала приходить в списке.
+    for expired in registry.expire(now_ms) {
+        publish_voice_command(bridge, &expired, VoiceCommandState::Expired).await;
+    }
+    let command_id = uuid::Uuid::new_v4().to_string();
+    let decision = decide(&registry, policy, text, now_ms, command_id);
+    let (command, state) = match decision {
+        Decision::Ignore => return,
+        Decision::Confirm(command) => (command, VoiceCommandState::Pending),
+        Decision::Autorun(command) => {
+            let launch_registry = registry.clone();
+            let launch_command = command.clone();
+            let launched = tokio::task::spawn_blocking(move || {
+                crate::voice_command::launch(&launch_registry, &launch_command, now_ms)
+            })
+            .await
+            .unwrap_or_else(|error| Err(error.to_string()));
+            match launched {
+                Ok(_) => (command, VoiceCommandState::Launched),
+                Err(error) => {
+                    let _ = logger.write(
+                        "warn",
+                        "listener.voice_command_failed",
+                        serde_json::json!({"app_id": command.app_id, "error": error}),
+                    );
+                    (command, VoiceCommandState::Failed)
+                }
+            }
+        }
+    };
+    let _ = logger.write(
+        "info",
+        "listener.voice_command",
+        serde_json::json!({"app_id": command.app_id, "state": state.as_str()}),
+    );
+    publish_voice_command(bridge, &command, state).await;
+}
+
+async fn publish_voice_command(
+    bridge: &Arc<IpcBridge>,
+    command: &crate::voice_command::PendingCommand,
+    state: evohime_listener_contract::VoiceCommandState,
+) {
+    let (Ok(command_id), Ok(app_id)) = (
+        evohime_listener_contract::CommandId::new(command.command_id.clone()),
+        evohime_listener_contract::AppId::new(command.app_id.clone()),
+    ) else {
+        return;
+    };
+    let _ = bridge
+        .publish_ambient(&AmbientLogEvent::VoiceCommand {
+            command_id,
+            kind: command.kind,
+            app_id,
+            command_state: state,
+        })
+        .await;
+}
+
 pub async fn run_windows_listener_pipe(
     context: evohime_desktop_ipc::session::LaunchContext,
     bridge: Arc<IpcBridge>,
@@ -201,6 +278,11 @@ pub async fn run_windows_listener_pipe(
                         Some(generated::envelope::Payload::Utterance(utterance)) => {
                             let policy = crate::ambient::load_policy(&data_dir);
                             let journal = bridge.journal();
+                            // Разбор команды идёт до сохранения: дальше по
+                            // конвейеру текст уходит в хранилище по значению,
+                            // а команда обязана быть услышана в тот же момент,
+                            // что и сказана.
+                            handle_voice_command(&bridge, &logger, &policy, &utterance.text).await;
                             if !utterance.continued
                                 && !open_episodes.contains_key(&utterance.episode_id)
                             {

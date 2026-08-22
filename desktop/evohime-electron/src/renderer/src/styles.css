@@ -2401,6 +2401,7 @@ select:focus {
 .listening__devices,
 .listening__episodes,
 .listening__quiet,
+.listening__voice-commands,
 .listening__utterances {
   margin: 0;
   padding: 0 0 0 0;
@@ -2454,6 +2455,27 @@ select:focus {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.listening__voice-commands li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  color: var(--fg);
+  font-size: 13px;
+}
+
+.listening__voice-commands li .listening__actions {
+  margin-left: auto;
+}
+
+.listening__toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg-muted);
+  font-size: 13px;
 }
 
 .listening__field {

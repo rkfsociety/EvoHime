@@ -11,7 +11,9 @@ import type {
   ConnectionState,
   CoreEvent,
   ListeningReason,
-  ListeningState
+  ListeningState,
+  VoiceCommandList,
+  VoiceCommandResolved
 } from '@shared/api'
 import {
   initialListenerRuntimeStatus,
@@ -175,6 +177,11 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
     utterances: readonly AmbientUtterance[]
   }>(events, 'ambient.episode')
   const proposalList = latestPayload<AmbientProposalList>(events, 'ambient.proposals')
+  const voiceCommandList = latestPayload<VoiceCommandList>(events, 'ambient.voice_commands')
+  const voiceResolved = latestPayload<VoiceCommandResolved>(events, 'ambient.voice_command_resolved')
+  // Событие журнала несёт только ключ приложения: заголовок читается списком,
+  // поэтому панель перечитывает очередь на каждое такое событие.
+  const voiceCommandEvent = events.filter((item) => item.eventType === 'ambient.voice_command').length
   const storedPolicy = latestPayload<AmbientPolicy>(events, 'ambient.policy')
   const policySaved = latestPayload<{ applied: boolean; error_code: string }>(
     events,
@@ -204,6 +211,7 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
     void api.invoke('ambient.listEpisodes', { limit: 50 })
     void api.invoke('ambient.getPolicy', {})
     void api.invoke('ambient.listProposals', { limit: 50 })
+    void api.invoke('ambient.listVoiceCommands', {})
   }, [api, connected])
 
   // При открытии панель сперва спрашивает состояние: полагаться на то, что
@@ -218,6 +226,11 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
     if (!api || !connected) return
     void api.invoke('ambient.listEpisodes', { limit: 50 })
   }, [api, connected, transcriptEvent, retentionEvent])
+
+  useEffect(() => {
+    if (!api || !connected) return
+    void api.invoke('ambient.listVoiceCommands', {})
+  }, [api, connected, voiceCommandEvent])
 
   useEffect(() => {
     if (!api) return
@@ -270,6 +283,15 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
     setExpanded(null)
   }, [api, confirming])
 
+  const resolveVoiceCommand = useCallback(
+    async (commandId: string, accepted: boolean) => {
+      if (!api) return
+      const outcome = await api.invoke('ambient.resolveVoiceCommand', { commandId, accepted })
+      if (!outcome.ok) setNotice(outcome.message)
+    },
+    [api]
+  )
+
   const savePolicy = useCallback(async () => {
     if (!api || policyDraft === null) return
     const outcome = await api.invoke('ambient.savePolicy', {
@@ -279,12 +301,15 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
       })),
       blocklistPatterns: policyDraft.blocklist_patterns,
       windowTitleBlocklist: policyDraft.window_title_blocklist,
-      retentionDays: policyDraft.retention_days
+      retentionDays: policyDraft.retention_days,
+      voiceCommands: policyDraft.voice_commands,
+      voiceCommandsAutorun: policyDraft.voice_commands_autorun
     })
     if (!outcome.ok) setNotice(outcome.message)
   }, [api, policyDraft])
 
   const episodes = episodeList?.episodes ?? []
+  const voiceCommands = voiceCommandList?.commands ?? []
   const failure = useMemo(() => {
     const codes = [
       listeningResult?.error_code,
@@ -431,6 +456,51 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
         ) : (
           <p>Состояние предложений ещё не получено.</p>
         )}
+      </section>
+
+      <section className="listening__block" aria-label="Услышанные команды">
+        <h4>Голосовые команды</h4>
+        <p>
+          Обращение по имени и глагол: «Ева, открой хром». Без имени команды нет — разговор рядом с
+          микрофоном ничего не запускает. Открывается только приложение из каталога, и по умолчанию
+          — после клика: услышанное само по себе не является подтверждением.
+        </p>
+        {voiceCommands.length === 0 ? (
+          <p>Команд, ждущих решения, нет.</p>
+        ) : (
+          <ul className="listening__voice-commands">
+            {voiceCommands.map((command) => (
+              <li key={command.command_id}>
+                <span>Открыть {command.title}?</span>
+                <div className="listening__actions">
+                  <button
+                    type="button"
+                    disabled={!api || !connected}
+                    onClick={() => void resolveVoiceCommand(command.command_id, true)}
+                  >
+                    Открыть
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!api || !connected}
+                    onClick={() => void resolveVoiceCommand(command.command_id, false)}
+                  >
+                    Не надо
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {voiceCommandList && !voiceCommandList.requires_confirmation ? (
+          <p role="status">
+            Автозапуск включён в политике: услышанная команда открывает приложение сразу, без
+            карточки.
+          </p>
+        ) : null}
+        {voiceResolved && voiceResolved.error_code === 'launch_failed' ? (
+          <p role="status">Не удалось открыть приложение. Подробности — в журнале ядра.</p>
+        ) : null}
       </section>
 
       <section className="listening__block" aria-label="Удаление записанного">
@@ -666,6 +736,28 @@ function PolicyEditor({
             })
           }
         />
+      </label>
+
+      <label className="listening__toggle">
+        <input
+          type="checkbox"
+          disabled={disabled}
+          checked={policy.voice_commands}
+          onChange={(event) => onChange({ ...policy, voice_commands: event.target.checked })}
+        />
+        Распознавать обращения «Ева, открой …»
+      </label>
+
+      <label className="listening__toggle">
+        <input
+          type="checkbox"
+          disabled={disabled || !policy.voice_commands}
+          checked={policy.voice_commands_autorun}
+          onChange={(event) =>
+            onChange({ ...policy, voice_commands_autorun: event.target.checked })
+          }
+        />
+        Открывать сразу, без подтверждения
       </label>
 
       <label className="listening__field">

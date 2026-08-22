@@ -1,4 +1,5 @@
 pub mod action;
+pub mod app_catalog;
 mod cdp;
 pub mod manifest;
 pub mod network_capability;
@@ -12,6 +13,7 @@ pub mod toolkit;
 mod tools;
 
 pub use action::{ActionConsole, ActionRequest, ActionStatus};
+pub use app_catalog::{AppCatalog, AppEntry, Resolution as AppResolution, CATALOG_FILE_NAME};
 pub use manifest::{
     builtin_input_schema, ApprovalMode, ManifestError, SideEffectClass, ToolManifest, ToolOrigin,
     MANIFEST_KIND,

@@ -28,8 +28,8 @@ use windows_sys::Win32::{
         JobObjectExtendedLimitInformation, SetInformationJobObject,
         JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0,
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE,
-        JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        JOB_OBJECT_LIMIT_PROCESS_MEMORY,
+        JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
     },
     System::Threading::{CreateEventW, CreateMutexW},
 };
@@ -202,7 +202,14 @@ impl JobObject {
             return Err(io::Error::last_os_error());
         }
         let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        // `BREAKAWAY_OK` — не ослабление `KILL_ON_JOB_CLOSE`, а условие для
+        // одного явного случая: приложение, которое Ева открыла по просьбе
+        // пользователя, принадлежит пользователю и обязано пережить перезапуск
+        // Core. Отвязка возможна только по явному флагу `CreateProcess`
+        // (`SILENT_BREAKAWAY` здесь не выставлен), поэтому дерево процессов
+        // самого Core остаётся в job и по-прежнему умирает вместе с ним.
+        limits.BasicLimitInformation.LimitFlags =
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
         if let Some(memory) = memory_bytes {
             limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY;
             limits.ProcessMemoryLimit = memory as usize;

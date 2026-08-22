@@ -38,6 +38,7 @@ pub fn classify_call_risk(tool_name: &str, _input: &Value) -> ToolRiskLevel {
         | "browser.session.read"
         | "browser.session.screenshot"
         | "memory.search"
+        | "app.list"
         | "http.fetch" => ToolRiskLevel::None,
 
         "git.pull" | "browser.session.navigate" => ToolRiskLevel::Low,
@@ -48,7 +49,11 @@ pub fn classify_call_risk(tool_name: &str, _input: &Value) -> ToolRiskLevel {
         | "mcp.call"
         | "browser.session.click"
         | "browser.session.type"
-        | "agent.run" => ToolRiskLevel::Medium,
+        | "agent.run"
+        // Запуск приложения меняет состояние рабочего стола, но не трогает
+        // ни файлы, ни сеть от имени пользователя: это `Medium`, а не `High`
+        // уровень `shell.execute`, у которого произвольная командная строка.
+        | "app.open" => ToolRiskLevel::Medium,
 
         "shell.execute" | "git.push" => ToolRiskLevel::High,
 

@@ -69,6 +69,23 @@ pub struct AmbientPolicy {
     pub window_title_blocklist: Vec<String>,
     /// Retention of transcript text, in days.
     pub retention_days: u32,
+    /// Распознавать ли адресованные Еве голосовые команды («Ева, открой …»).
+    ///
+    /// Выключение возвращает слушание к прежнему поведению: фраза остаётся
+    /// обычным транскриптом и ничего не запускает.
+    #[serde(default = "enabled_by_default")]
+    pub voice_commands: bool,
+    /// Запускать распознанную команду без подтверждения.
+    ///
+    /// По умолчанию `false`: услышанная команда показывает карточку, и
+    /// приложение открывает клик, а не микрофон. Значение `true` — осознанный
+    /// выбор пользователя, а не то, во что настройка сползает сама.
+    #[serde(default)]
+    pub voice_commands_autorun: bool,
+}
+
+const fn enabled_by_default() -> bool {
+    true
 }
 
 impl Default for AmbientPolicy {
@@ -79,6 +96,8 @@ impl Default for AmbientPolicy {
             process_blocklist: Vec::new(),
             window_title_blocklist: Vec::new(),
             retention_days: DEFAULT_RETENTION_DAYS,
+            voice_commands: true,
+            voice_commands_autorun: false,
         }
     }
 }

@@ -92,6 +92,21 @@ nothing ASCII survives, to a short fingerprint). The card's human-readable
 text never travels this way — it is read back with a command."
 );
 bounded_id!(
+    CommandId,
+    "command_id",
+    "Identifier of one heard voice command awaiting a decision."
+);
+bounded_id!(
+    AppId,
+    "app_id",
+    "Bounded key of one application in the launch catalog.
+
+It is a catalog key, not a name the user said: Core resolves speech to an
+entry first, and only the entry's key reaches an event. The human-readable
+title travels the same way as a proposal's text — it is read back with a
+command, never through the log."
+);
+bounded_id!(
     EngineVersion,
     "engine_version",
     "Speech-engine build identifier, e.g. `whisper-base-q5_1`."

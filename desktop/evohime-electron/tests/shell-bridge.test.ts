@@ -823,6 +823,66 @@ describe('ambient listening bridge', () => {
     expect(sent).toHaveLength(0)
   })
 
+  it('forwards voice-command listing and a decision, and refuses a nameless one', () => {
+    invoke('ambient.listVoiceCommands', {})
+    invoke('ambient.resolveVoiceCommand', { commandId: 'voice-1', accepted: true })
+    expect(sent).toEqual([
+      { listVoiceCommands: { limit: 8 } },
+      { resolveVoiceCommand: { commandId: 'voice-1', accepted: true } }
+    ])
+    sent.length = 0
+    expect(invoke('ambient.resolveVoiceCommand', { accepted: true })).toMatchObject({
+      ok: false,
+      code: 'invalid-payload'
+    })
+    expect(sent).toHaveLength(0)
+  })
+
+  /**
+   * Старый вызов без голосовых полей не должен молча их выключать: поля не
+   * попадают в сообщение вовсе, и Core подставляет сохранённое значение.
+   */
+  it('omits the voice fields when the caller did not set them', () => {
+    invoke('ambient.savePolicy', {
+      quietHours: [],
+      blocklistPatterns: [],
+      windowTitleBlocklist: [],
+      retentionDays: 7
+    })
+    invoke('ambient.savePolicy', {
+      quietHours: [],
+      blocklistPatterns: [],
+      windowTitleBlocklist: [],
+      retentionDays: 7,
+      voiceCommands: false,
+      voiceCommandsAutorun: true
+    })
+    expect(sent).toEqual([
+      {
+        saveAmbientPolicy: {
+          policy: {
+            quietHours: [],
+            blocklistPatterns: [],
+            windowTitleBlocklist: [],
+            retentionDays: 7
+          }
+        }
+      },
+      {
+        saveAmbientPolicy: {
+          policy: {
+            quietHours: [],
+            blocklistPatterns: [],
+            windowTitleBlocklist: [],
+            retentionDays: 7,
+            voiceCommands: false,
+            voiceCommandsAutorun: true
+          }
+        }
+      }
+    ])
+  })
+
   it('reads the status, the episodes, one episode and the policy', () => {
     invoke('ambient.getStatus', {})
     invoke('ambient.listEpisodes', { limit: 10 })

@@ -422,6 +422,20 @@ impl ToolRegistry {
             timeout: tools::filesystem_advanced::MKDIR_TIMEOUT,
         });
 
+        // ======== Desktop Applications ========
+        registry.register(ToolDefinition {
+            name: tools::app::OPEN_NAME,
+            description: tools::app::OPEN_DESCRIPTION,
+            permissions: tools::app::OPEN_PERMISSIONS,
+            timeout: tools::app::OPEN_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::app::LIST_NAME,
+            description: tools::app::LIST_DESCRIPTION,
+            permissions: tools::app::LIST_PERMISSIONS,
+            timeout: tools::app::LIST_TIMEOUT,
+        });
+
         // ======== Process Operations ========
         registry.register(ToolDefinition {
             name: tools::process::NAME,
@@ -727,6 +741,10 @@ impl ToolRegistry {
                     tools::filesystem_advanced::mkdir(ctx, input).await
                 }
 
+                // Desktop Applications
+                tools::app::OPEN_NAME => tools::app::open(ctx, input).await,
+                tools::app::LIST_NAME => tools::app::list(ctx, input).await,
+
                 // Process Operations
                 tools::process::NAME => tools::process::execute(ctx, input).await,
 
@@ -888,6 +906,10 @@ impl ToolRegistry {
                 tools::filesystem_advanced::MKDIR_NAME => {
                     tools::filesystem_advanced::mkdir(ctx, input).await
                 }
+
+                // Desktop Applications
+                tools::app::OPEN_NAME => tools::app::open(ctx, input).await,
+                tools::app::LIST_NAME => tools::app::list(ctx, input).await,
 
                 // Process Operations
                 tools::process::NAME => tools::process::execute(ctx, input).await,
@@ -1065,6 +1087,15 @@ fn approval_preview(
         .or_else(|| (tool_name == tools::shell::NAME).then(|| scope.to_string()));
 
     match tool_name {
+        tools::app::OPEN_NAME => ApprovalPreview {
+            kind: "app_open".into(),
+            summary: "Открыть приложение".into(),
+            command: input.get("app").and_then(Value::as_str).map(str::to_string),
+            cwd: None,
+            path: None,
+            details: None,
+            truncated: false,
+        },
         tools::shell::NAME => ApprovalPreview {
             kind: "command".into(),
             summary: format!(
@@ -1191,9 +1222,11 @@ mod tests {
     fn bootstrap_registers_filesystem_read() {
         let registry = ToolRegistry::bootstrap();
         let tools = registry.list();
-        assert_eq!(tools.len(), 52);
+        assert_eq!(tools.len(), 54);
         for name in [
             "agent.run",
+            "app.list",
+            "app.open",
             "archive.create",
             "archive.extract",
             "archive.list",

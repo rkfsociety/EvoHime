@@ -62,6 +62,14 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             serde_json::json!({"url":string("URL"),"selector":string("CSS selector"),"attribute":string("Optional attribute"),"limit":integer(),"timeout_ms":integer()}),
             &["url", "selector"],
         ),
+        "app.open" => object(
+            serde_json::json!({"app":string("Application name or alias from the local catalog")}),
+            &["app"],
+        ),
+        "app.list" => object(
+            serde_json::json!({"query":string("Optional substring filter"),"limit":integer()}),
+            &[],
+        ),
         "shell.execute" | "process.spawn" => object(
             serde_json::json!({"program":string("Executable"),"args":{"type":"array","items":{"type":"string"}},"cwd":string("Working directory"),"timeout_ms":integer()}),
             &["program"],

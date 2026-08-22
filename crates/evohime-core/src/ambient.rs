@@ -1295,6 +1295,8 @@ mod tests {
                 process_blocklist: Vec::new(),
                 window_title_blocklist: Vec::new(),
                 retention_days: DEFAULT_RETENTION_DAYS,
+                voice_commands: true,
+                voice_commands_autorun: false,
             },
         )
         .expect("policy saves");
@@ -1536,6 +1538,8 @@ mod tests {
             process_blocklist: vec!["bank*.exe".to_owned()],
             window_title_blocklist: Vec::new(),
             retention_days: 14,
+            voice_commands: true,
+            voice_commands_autorun: false,
         };
         save_policy(directory.path(), &policy).expect("policy saves");
         assert_eq!(load_policy(directory.path()), policy);

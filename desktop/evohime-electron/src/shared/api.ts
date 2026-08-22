@@ -278,6 +278,45 @@ export interface AmbientPolicy {
   readonly blocklist_patterns: readonly string[]
   readonly window_title_blocklist: readonly string[]
   readonly retention_days: number
+  /** Распознавать ли обращения «Ева, открой …». */
+  readonly voice_commands: boolean
+  /** Открывать услышанное без подтверждения. */
+  readonly voice_commands_autorun: boolean
+}
+
+/** Что услышанная команда просит сделать. */
+export type VoiceCommandKind = 'open_app'
+
+export type VoiceCommandState = 'pending' | 'launched' | 'declined' | 'expired' | 'failed'
+
+/**
+ * Одна услышанная команда, ждущая решения.
+ *
+ * `title` приходит только командой `ambient.listVoiceCommands`: durable-событие
+ * `ambient.voice_command` несёт лишь `app_id`, потому что журнал не пересказывает
+ * сказанное — он перечисляет опознанные ключи каталога.
+ */
+export interface VoiceCommand {
+  readonly command_id: string
+  readonly kind: VoiceCommandKind
+  readonly app_id: string
+  readonly title: string
+  readonly created_at_ms: number
+  readonly expires_at_ms: number
+}
+
+export interface VoiceCommandList {
+  readonly commands: readonly VoiceCommand[]
+  /** `false` — пользователь разрешил автозапуск, очередь в норме пуста. */
+  readonly requires_confirmation: boolean
+  readonly error_code: string
+}
+
+export interface VoiceCommandResolved {
+  readonly launched: boolean
+  readonly state: VoiceCommandState
+  readonly app_id: string
+  readonly error_code: string
 }
 
 /** Что предложение сделает, если его принять. */
@@ -566,6 +605,8 @@ export const RENDERER_COMMANDS = [
   'ambient.savePolicy',
   'ambient.resolveProposal',
   'ambient.listProposals',
+  'ambient.listVoiceCommands',
+  'ambient.resolveVoiceCommand',
   // Не команда ядра: доступность глобального хоткея знает только main, и
   // спросить её больше негде. Без этого ответа панель молча изображала бы
   // работающую третью точку входа.
@@ -764,6 +805,12 @@ export interface CommandPayloads {
     blocklistPatterns: readonly string[]
     windowTitleBlocklist: readonly string[]
     retentionDays: number
+    /**
+     * Голосовые поля необязательны: вызов без них сохраняет то, что уже стоит
+     * в политике. Явный `false` — это выключение, а отсутствие — «не трогать».
+     */
+    voiceCommands?: boolean
+    voiceCommandsAutorun?: boolean
   }
   /**
    * Решение по карточке. `idempotencyKey` обязателен: принятие создаёт задачу,
@@ -777,6 +824,9 @@ export interface CommandPayloads {
     mute?: boolean
   }
   'ambient.listProposals': { limit?: number }
+  'ambient.listVoiceCommands': { limit?: number }
+  /** Решение по услышанной команде: открыть или отказаться. */
+  'ambient.resolveVoiceCommand': { commandId: string; accepted: boolean }
   'ambient.hotkeyStatus': Record<string, never>
   'workflow.listTemplates': Record<string, never>
   'workflow.getDefinition': { templateId: string }
@@ -906,6 +956,8 @@ export interface CommandResults {
   'ambient.savePolicy': { accepted: boolean }
   'ambient.resolveProposal': { accepted: boolean }
   'ambient.listProposals': { accepted: boolean }
+  'ambient.listVoiceCommands': { accepted: boolean }
+  'ambient.resolveVoiceCommand': { accepted: boolean }
   'ambient.hotkeyStatus': AmbientHotkeyStatus
   'workflow.listTemplates': { accepted: boolean }
   'workflow.getDefinition': { accepted: boolean }

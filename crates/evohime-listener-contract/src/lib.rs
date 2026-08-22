@@ -25,14 +25,16 @@ mod proactivity;
 mod state;
 
 pub use error::{AmbientErrorCode, ContractError};
-pub use ids::{DeviceId, EngineVersion, EpisodeId, ProposalId, SubjectKey, MAX_ID_BYTES};
+pub use ids::{
+    AppId, CommandId, DeviceId, EngineVersion, EpisodeId, ProposalId, SubjectKey, MAX_ID_BYTES,
+};
 pub use limits::{
     AmbientLimits, MAX_DEDUP_WINDOW_MS, MAX_EPISODE_MS, MAX_FRAME_MS, MAX_UTTERANCE_MS,
     MAX_WINDOW_MS, MIN_FRAME_MS,
 };
 pub use log::{
     AmbientLogEvent, AmbientLogSink, EngineStatus, ExtractionState, LogLevel, ProposalKind,
-    ProposalState, RetentionTrigger, ALLOWED_LOG_FIELDS,
+    ProposalState, RetentionTrigger, VoiceCommandKind, VoiceCommandState, ALLOWED_LOG_FIELDS,
 };
 pub use policy::{
     AmbientPolicy, QuietHours, DEFAULT_RETENTION_DAYS, MAX_BLOCKLIST_ENTRIES, MAX_PATTERN_BYTES,

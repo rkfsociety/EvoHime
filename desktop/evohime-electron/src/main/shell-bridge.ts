@@ -992,10 +992,22 @@ function dispatch(
       if (quietHours === null || blocklistPatterns === null || windowTitleBlocklist === null || retentionDays === null) {
         return failure('invalid-payload', 'Некорректная политика слушания.')
       }
+      // Голосовые поля необязательны: старый вызов без них сохраняет то, что
+      // уже стоит в политике, а не выключает команды молчанием.
+      const voiceCommands = typeof value['voiceCommands'] === 'boolean' ? value['voiceCommands'] : undefined
+      const voiceCommandsAutorun =
+        typeof value['voiceCommandsAutorun'] === 'boolean' ? value['voiceCommandsAutorun'] : undefined
       return accepted(
         client.send({
           saveAmbientPolicy: {
-            policy: { quietHours, blocklistPatterns, windowTitleBlocklist, retentionDays }
+            policy: {
+              quietHours,
+              blocklistPatterns,
+              windowTitleBlocklist,
+              retentionDays,
+              ...(voiceCommands === undefined ? {} : { voiceCommands }),
+              ...(voiceCommandsAutorun === undefined ? {} : { voiceCommandsAutorun })
+            }
           }
         })
       )
@@ -1029,6 +1041,26 @@ function dispatch(
         return failure('invalid-payload', 'Некорректный лимит списка предложений.')
       }
       return accepted(client.send({ listAmbientProposals: { limit } }))
+    }
+
+    case 'ambient.listVoiceCommands': {
+      const value = asRecord(payload)
+      const limit = value['limit'] === undefined ? 8 : asBoundedNumber(value['limit'], 8)
+      if (limit === null) {
+        return failure('invalid-payload', 'Некорректный лимит списка команд.')
+      }
+      return accepted(client.send({ listVoiceCommands: { limit } }))
+    }
+
+    case 'ambient.resolveVoiceCommand': {
+      const value = asRecord(payload)
+      const commandId = asBoundedString(value['commandId'])
+      if (commandId === null || typeof value['accepted'] !== 'boolean') {
+        return failure('invalid-payload', 'Некорректное решение по команде.')
+      }
+      return accepted(
+        client.send({ resolveVoiceCommand: { commandId, accepted: value['accepted'] } })
+      )
     }
 
     case 'ambient.hotkeyStatus':

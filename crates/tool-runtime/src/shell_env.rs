@@ -95,6 +95,15 @@ pub fn apply_scrubbed_env(command: &mut tokio::process::Command) {
     }
 }
 
+/// То же для `std::process::Command`: запуск приложения происходит вне
+/// tokio-рантайма, но окружение обязано быть тем же вычищенным.
+pub fn apply_scrubbed_env_std(command: &mut std::process::Command) {
+    command.env_clear();
+    for (key, value) in build_child_env(std::env::vars_os()) {
+        command.env(key, value);
+    }
+}
+
 pub fn build_child_env<I, K, V>(vars: I) -> Vec<(OsString, OsString)>
 where
     I: IntoIterator<Item = (K, V)>,

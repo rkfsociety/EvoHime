@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod app;
 pub mod archive;
 pub mod browser;
 pub mod browser_session;

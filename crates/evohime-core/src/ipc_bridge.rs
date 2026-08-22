@@ -102,6 +102,12 @@ pub struct IpcBridge {
     /// Core-owned каталог возможностей workflow: он статичен, поэтому
     /// строится один раз на мост.
     workflow_registry: Arc<crate::workflow_registry::WorkflowRegistry>,
+    /// Очередь услышанных команд и кэш каталога приложений.
+    ///
+    /// Живёт на мосту, потому что оба конца пути ведут сюда: endpoint
+    /// листенера кладёт карточку, панель её решает. Второй экземпляр означал
+    /// бы карточку, которую некому принять.
+    voice_commands: Arc<crate::voice_command::VoiceCommandRegistry>,
 }
 
 /// Проект, под которым живут принятые предложения. Речь у стола не
@@ -237,6 +243,7 @@ impl IpcBridge {
             ambient_data_dir: None,
             proactivity: crate::ambient::AmbientProactivityRegistry::default(),
             workflow_approvals: Arc::new(crate::workflow_runtime::WorkflowApprovalRegistry::new()),
+            voice_commands: Arc::new(crate::voice_command::VoiceCommandRegistry::new()),
             workflow_registry: Arc::new(crate::workflow_registry::WorkflowRegistry::bootstrap()),
         }
     }
@@ -263,6 +270,7 @@ impl IpcBridge {
             ambient_data_dir: None,
             proactivity: crate::ambient::AmbientProactivityRegistry::default(),
             workflow_approvals: Arc::new(crate::workflow_runtime::WorkflowApprovalRegistry::new()),
+            voice_commands: Arc::new(crate::voice_command::VoiceCommandRegistry::new()),
             workflow_registry: Arc::new(crate::workflow_registry::WorkflowRegistry::bootstrap()),
         }
     }
@@ -296,6 +304,7 @@ impl IpcBridge {
             ambient_data_dir: None,
             proactivity: crate::ambient::AmbientProactivityRegistry::default(),
             workflow_approvals: Arc::new(crate::workflow_runtime::WorkflowApprovalRegistry::new()),
+            voice_commands: Arc::new(crate::voice_command::VoiceCommandRegistry::new()),
             workflow_registry: Arc::new(crate::workflow_registry::WorkflowRegistry::bootstrap()),
         }
     }
@@ -303,6 +312,10 @@ impl IpcBridge {
     /// Разделяемый реестр состояния слушания.
     pub fn ambient(&self) -> crate::ambient::AmbientListeningRegistry {
         self.ambient.clone()
+    }
+
+    pub fn voice_commands(&self) -> Arc<crate::voice_command::VoiceCommandRegistry> {
+        self.voice_commands.clone()
     }
 
     /// Подключает готовый реестр: `main.rs` создаёт его до моста, чтобы
@@ -2403,6 +2416,24 @@ impl IpcBridge {
                 self.write_response(writer, "ambient.proposals", serde_json::to_vec(&result)?)
                     .await?;
             }
+            Some(generated::command_envelope::Command::ListVoiceCommands(request)) => {
+                let result = self.dispatch_list_voice_commands(request);
+                self.write_response(
+                    writer,
+                    "ambient.voice_commands",
+                    serde_json::to_vec(&result)?,
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::ResolveVoiceCommand(request)) => {
+                let result = self.dispatch_resolve_voice_command(request).await;
+                self.write_response(
+                    writer,
+                    "ambient.voice_command_resolved",
+                    serde_json::to_vec(&result)?,
+                )
+                .await?;
+            }
             Some(generated::command_envelope::Command::ListWorkflowTemplates(_)) => {
                 let result = self.dispatch_list_workflow_templates();
                 self.write_response(writer, "workflow.templates", serde_json::to_vec(&result)?)
@@ -2781,6 +2812,8 @@ impl IpcBridge {
             "blocklist_patterns": policy.process_blocklist,
             "window_title_blocklist": policy.window_title_blocklist,
             "retention_days": policy.retention_days,
+            "voice_commands": policy.voice_commands,
+            "voice_commands_autorun": policy.voice_commands_autorun,
         })
     }
 
@@ -2830,6 +2863,14 @@ impl IpcBridge {
             process_blocklist: incoming.blocklist_patterns,
             window_title_blocklist: incoming.window_title_blocklist,
             retention_days,
+            // Поля добавлены позже самого сообщения: клиент, который о них не
+            // знает, не шлёт их вовсе, и сохранённое значение остаётся своим.
+            // Подстановка `false` вместо этого выключала бы голосовые команды
+            // при любом сохранении блок-листа старым клиентом.
+            voice_commands: incoming.voice_commands.unwrap_or(previous.voice_commands),
+            voice_commands_autorun: incoming
+                .voice_commands_autorun
+                .unwrap_or(previous.voice_commands_autorun),
         };
         if let Err(error) = policy.validate() {
             return serde_json::json!({
@@ -3410,6 +3451,127 @@ impl IpcBridge {
             .await
             .map_err(|_| Code::StorageFailed)?;
         Ok(task_id)
+    }
+
+    /// Очередь услышанных команд. Заголовок приложения приходит только здесь:
+    /// событие журнала несёт лишь ключ каталога.
+    fn dispatch_list_voice_commands(
+        &self,
+        request: generated::ListVoiceCommands,
+    ) -> serde_json::Value {
+        let now_ms = crate::task_memory::now_millis();
+        let policy = crate::ambient::load_policy(&self.ambient_data_dir());
+        let limit = usize::try_from(request.limit)
+            .unwrap_or(crate::voice_command::MAX_PENDING)
+            .clamp(1, crate::voice_command::MAX_PENDING);
+        let commands = self
+            .voice_commands
+            .list(now_ms)
+            .into_iter()
+            .take(limit)
+            .map(|command| {
+                serde_json::json!({
+                    "command_id": command.command_id,
+                    "kind": command.kind.as_str(),
+                    "app_id": command.app_id,
+                    "title": command.title,
+                    "created_at_ms": command.created_at_ms,
+                    "expires_at_ms": command.expires_at_ms(),
+                })
+            })
+            .collect::<Vec<_>>();
+        serde_json::json!({
+            "commands": commands,
+            "requires_confirmation": !policy.voice_commands_autorun,
+        })
+    }
+
+    /// Решение по услышанной команде.
+    ///
+    /// Карточка снимается с очереди до запуска, а не после: иначе двойной клик
+    /// открыл бы два окна. Второй клик поэтому находит пустоту и получает
+    /// `not_found`, а не второй запуск.
+    async fn dispatch_resolve_voice_command(
+        &self,
+        request: generated::ResolveVoiceCommand,
+    ) -> serde_json::Value {
+        use evohime_listener_contract::VoiceCommandState;
+
+        let now_ms = crate::task_memory::now_millis();
+        let Some(command) = self.voice_commands.take(&request.command_id, now_ms) else {
+            return serde_json::json!({
+                "launched": false,
+                "state": VoiceCommandState::Expired.as_str(),
+                "app_id": "",
+                "error_code": "not_found",
+            });
+        };
+        if !request.accepted {
+            self.publish_voice_command(&command, VoiceCommandState::Declined)
+                .await;
+            return serde_json::json!({
+                "launched": false,
+                "state": VoiceCommandState::Declined.as_str(),
+                "app_id": command.app_id,
+                "error_code": "",
+            });
+        }
+        let registry = self.voice_commands.clone();
+        let launch_command = command.clone();
+        let launched = tokio::task::spawn_blocking(move || {
+            crate::voice_command::launch(&registry, &launch_command, now_ms)
+        })
+        .await
+        .unwrap_or_else(|error| Err(error.to_string()));
+        match launched {
+            Ok(_) => {
+                self.publish_voice_command(&command, VoiceCommandState::Launched)
+                    .await;
+                serde_json::json!({
+                    "launched": true,
+                    "state": VoiceCommandState::Launched.as_str(),
+                    "app_id": command.app_id,
+                    "error_code": "",
+                })
+            }
+            Err(error) => {
+                self.publish_voice_command(&command, VoiceCommandState::Failed)
+                    .await;
+                // Текст ошибки идёт в трассу, а не в ответ: в нём путь к
+                // исполняемому файлу, которому в UI делать нечего.
+                crate::write_model_trace(
+                    "ambient.voice_command.launch_failed",
+                    serde_json::json!({ "app_id": command.app_id, "error": error }),
+                );
+                serde_json::json!({
+                    "launched": false,
+                    "state": VoiceCommandState::Failed.as_str(),
+                    "app_id": command.app_id,
+                    "error_code": "launch_failed",
+                })
+            }
+        }
+    }
+
+    async fn publish_voice_command(
+        &self,
+        command: &crate::voice_command::PendingCommand,
+        state: evohime_listener_contract::VoiceCommandState,
+    ) {
+        let (Ok(command_id), Ok(app_id)) = (
+            evohime_listener_contract::CommandId::new(command.command_id.clone()),
+            evohime_listener_contract::AppId::new(command.app_id.clone()),
+        ) else {
+            return;
+        };
+        let _ = self
+            .publish_ambient(&evohime_listener_contract::AmbientLogEvent::VoiceCommand {
+                command_id,
+                kind: command.kind,
+                app_id,
+                command_state: state,
+            })
+            .await;
     }
 
     async fn dispatch_create_project(
@@ -9032,6 +9194,115 @@ mod tests {
         (event.event_type, payload)
     }
 
+    #[tokio::test]
+    async fn a_voice_command_card_appears_and_is_declined_without_launching_anything() {
+        let (bridge, _directory) = ambient_bridge("ambient-voice");
+        let policy = evohime_listener_contract::AmbientPolicy::default();
+        let now_ms = crate::task_memory::now_millis();
+        let decision = crate::voice_command::decide(
+            &bridge.voice_commands(),
+            &policy,
+            "Ева, открой блокнот",
+            now_ms,
+            "voice-1".to_owned(),
+        );
+        let crate::voice_command::Decision::Confirm(command) = decision else {
+            panic!("услышанное обязано ждать клика");
+        };
+        assert_eq!(command.app_id, "notepad");
+
+        let (event_type, listed) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::ListVoiceCommands(generated::ListVoiceCommands {
+                limit: 10,
+            }),
+        )
+        .await;
+        assert_eq!(event_type, "ambient.voice_commands");
+        assert_eq!(listed["requires_confirmation"], true);
+        assert_eq!(listed["commands"][0]["command_id"], "voice-1");
+        assert_eq!(listed["commands"][0]["title"], "Блокнот");
+
+        let (event_type, declined) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::ResolveVoiceCommand(
+                generated::ResolveVoiceCommand {
+                    command_id: "voice-1".into(),
+                    accepted: false,
+                },
+            ),
+        )
+        .await;
+        assert_eq!(event_type, "ambient.voice_command_resolved");
+        assert_eq!(declined["launched"], false);
+        assert_eq!(declined["state"], "declined");
+
+        // Второй клик по решённой карточке ничего не запускает: её больше нет.
+        let (_, again) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::ResolveVoiceCommand(
+                generated::ResolveVoiceCommand {
+                    command_id: "voice-1".into(),
+                    accepted: true,
+                },
+            ),
+        )
+        .await;
+        assert_eq!(again["launched"], false);
+        assert_eq!(again["error_code"], "not_found");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn saving_a_policy_without_the_voice_fields_keeps_the_stored_value() {
+        let (bridge, _directory) = ambient_bridge("ambient-voice-policy");
+        let _control = attach_fake_listener(&bridge);
+        let (_, saved) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::SaveAmbientPolicy(generated::SaveAmbientPolicy {
+                policy: Some(generated::AmbientPolicy {
+                    quiet_hours: Vec::new(),
+                    blocklist_patterns: Vec::new(),
+                    retention_days: 7,
+                    window_title_blocklist: Vec::new(),
+                    voice_commands: Some(false),
+                    voice_commands_autorun: None,
+                }),
+            }),
+        )
+        .await;
+        assert_eq!(saved["applied"], true);
+        let (_, policy) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::GetAmbientPolicy(generated::GetAmbientPolicy {}),
+        )
+        .await;
+        assert_eq!(policy["voice_commands"], false);
+        assert_eq!(policy["voice_commands_autorun"], false);
+
+        // Старый клиент не шлёт новых полей — и не выключает их своим молчанием.
+        let (_, saved) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::SaveAmbientPolicy(generated::SaveAmbientPolicy {
+                policy: Some(generated::AmbientPolicy {
+                    quiet_hours: Vec::new(),
+                    blocklist_patterns: vec!["zoom*.exe".into()],
+                    retention_days: 7,
+                    window_title_blocklist: Vec::new(),
+                    voice_commands: None,
+                    voice_commands_autorun: None,
+                }),
+            }),
+        )
+        .await;
+        assert_eq!(saved["applied"], true);
+        let (_, policy) = ambient_call(
+            &bridge,
+            generated::command_envelope::Command::GetAmbientPolicy(generated::GetAmbientPolicy {}),
+        )
+        .await;
+        assert_eq!(policy["voice_commands"], false);
+    }
+
     /// Подключает фиктивный листенер: команда уезжает в канал и остаётся там.
     fn attach_fake_listener(
         bridge: &IpcBridge,
@@ -9406,6 +9677,8 @@ mod tests {
                     blocklist_patterns: vec!["zoom*.exe".into()],
                     retention_days: 14,
                     window_title_blocklist: vec!["*банк*".into()],
+                    voice_commands: None,
+                    voice_commands_autorun: None,
                 }),
             }),
         )
@@ -9425,6 +9698,8 @@ mod tests {
                     blocklist_patterns: vec!["^bank.*$".into()],
                     retention_days: 14,
                     window_title_blocklist: Vec::new(),
+                    voice_commands: None,
+                    voice_commands_autorun: None,
                 }),
             }),
         )
@@ -9440,6 +9715,8 @@ mod tests {
                     blocklist_patterns: Vec::new(),
                     retention_days: 365,
                     window_title_blocklist: Vec::new(),
+                    voice_commands: None,
+                    voice_commands_autorun: None,
                 }),
             }),
         )

@@ -287,7 +287,7 @@ fn append_audit_line(line: &str) {
     }
 }
 
-fn write_model_trace(event: &str, fields: serde_json::Value) {
+pub(crate) fn write_model_trace(event: &str, fields: serde_json::Value) {
     let data_dir = std::env::var_os("EVOHIME_DATA_DIR")
         .map(PathBuf::from)
         .or_else(|| {
@@ -979,6 +979,7 @@ pub mod task_memory;
 pub use task_memory::project_scope_id;
 pub mod plan_context;
 pub mod plan_review;
+pub mod voice_command;
 pub mod workflow;
 pub mod workflow_adapters;
 pub mod workflow_execution;
