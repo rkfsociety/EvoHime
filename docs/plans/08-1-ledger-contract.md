@@ -12,8 +12,9 @@
 - [08-0](08-0-execution-ledger.md);
 - текущий `events` journal и `EventJournal`, канонический `sequence_id`;
 - существующий словарь состояний `RunState`/`NodeState`
-  (`crates/evohime-local-storage/src/workflow_store.rs`), с которым контракт
-  обязан совпадать по именам, а не вводить синонимы;
+  (`crates/evohime-local-storage/src/workflow_store.rs`) и CHECK-ограничения
+  `workflow_runs.state`/`workflow_run_nodes.state`, с которыми контракт обязан
+  совпадать по именам, а не вводить синонимы;
 - `receipts_v1` (`receipt_actions`, `receipt_records`) и model-request
   provenance как immutable-слои, на которые ссылается typed event;
 - текущий `EventEnvelope` в `crates/desktop-ipc/proto/evohime.desktop.proto`
@@ -51,24 +52,32 @@
    фиктивный пользовательский run. Legacy rows получают отдельный `legacy`
    scope и не маскируются под новый run. `session_id` здесь означает логическую
    execution session, а не transport generation из `session_epoch`.
-2. Зафиксировать `run_id` как ту же идентичность, что и `runs.id`/
-   `workflow_runs.run_id` там, где действие принадлежит workflow run: ledger не
-   заводит параллельное пространство имён. Действие вне workflow получает
-   собственный `run_id` из того же формата и не конфликтует с существующими
-   ключами.
+2. Зафиксировать `run_id` как ссылку на существующего владельца, а не как новое
+   пространство имён. Поскольку в checkout уже есть два непересечённых по
+   смыслу ключа — `runs.id` и `workflow_runs.run_id` — ledger хранит пару
+   (`run_scope`, `run_id`), где `run_scope` ∈ {`workflow`, `work_item`,
+   `standalone`, `system`, `legacy`}. Для `workflow` значение равно
+   `workflow_runs.run_id`, для `work_item` — `runs.id`; уникальность и запрет
+   cross-link проверяются по паре, а не по одному `run_id`.
 3. Описать typed variants: `ActionRequest`, `ToolCall`, `Observation`,
    `ToolReceipt`, `TypedFailure`, `ApprovalDecision`, `Cancellation` и
    `RecoveryDecision`. `sequence_id` — единственная глобальная durable
    sequence; `workflow_run_events.run_sequence` в неё не переименовывается.
 4. Зафиксировать state machine отдельно от event type, переиспользуя имена
-   существующего `NodeState`. Нетерминальные: `pending`, `ready`, `running`,
+   существующего `NodeState`; `state_after` в ledger — именно action-level
+   состояние. Нетерминальные: `pending`, `ready`, `running`,
    `waiting_approval` и новое `cancelling`. Терминальные: `succeeded`,
    `failed`, `timed_out`, `cancelled`, `denied`, `blocked`, `skipped`,
    `degraded`, `unknown_outcome` и `dead_letter`. `unknown_outcome` запрещает
    автоматический повтор, но остаётся reconciliation-required; `dead_letter`
    назначается только явным bounded recovery rule и не считается скрытым
-   success/failure. Новые имена состояний (`cancelling`) добавляются в
-   `NodeState` и в таблицу допустимых переходов, а не живут только в ledger.
+   success/failure. Новое состояние `cancelling` добавляется в `NodeState`, в
+   таблицу допустимых переходов и в CHECK-ограничение
+   `workflow_run_nodes.state` (миграция — в 08-2), а не живёт только в ledger.
+   Run-level `RunState` (`completed`, `interrupted` и остальные) остаётся
+   отдельным множеством: ledger не смешивает его с action-level состояниями, а
+   фиксирует явный mapping action → run (например `succeeded` → `completed`,
+   pre-dispatch restart → `interrupted` на уровне run).
 5. Связать `action_id ↔ tool_call_id ↔ observation_id ↔ receipt_id` или
    `failure_id`; для approval, model request и workflow attempt определить
    отдельные optional links (`workflow_run_id`, `node_id`, `attempt_id`,
@@ -105,8 +114,11 @@
 - bounds на IDs, payload, error, metadata и artifact references; лимиты должны
   быть общими для storage, protobuf и Electron adapter;
 - отсутствие секретов/PII/raw output после redaction;
-- совпадение множества состояний ledger и `RunState`/`NodeState`: тест падает,
-  если появился state без mapping в обе стороны;
+- совпадение множества action-состояний ledger и `NodeState` (и их CHECK-списка
+  в SQLite): тест падает, если появился state без mapping в обе стороны;
+- полнота mapping action-состояний в `RunState` и обратного покрытия run-level
+  состояний;
+- отказ при ссылке на `run_id` с несовместимым `run_scope`;
 - отрицательные тесты на неизвестный тип, неверную связь, illegal transition,
   два terminal outcomes и превышение размера.
 
@@ -115,4 +127,5 @@
 Любое новое событие однозначно принадлежит run/session, имеет устойчивый ID и
 versioned typed body; словарь состояний един с workflow storage; legacy mapping
 воспроизводим; terminal action нельзя представить одновременно с двумя исходами
-или с outcome, не связанным с его immutable receipt/failure/recovery decision.
+или с outcome, не связанным с его immutable receipt/failure/recovery decision;
+пара (`run_scope`, `run_id`) однозначно указывает на существующего владельца.

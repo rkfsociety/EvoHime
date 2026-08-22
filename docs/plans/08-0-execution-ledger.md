@@ -23,11 +23,19 @@ memory и evaluation должны видеть одну воспроизводи
 - durable workflow runtime 06 со своими `workflow_run_events.run_sequence`,
   `workflow_runs`/`workflow_run_nodes`/`workflow_node_attempts`, lease и
   recovery;
-- готовый словарь состояний и recovery-механика: `RunState`/`NodeState` в
-  `crates/evohime-local-storage/src/workflow_store.rs` (включая
-  `waiting_approval`, `unknown_outcome`, `dead_letter`), dispatch marker и
-  идемпотентность в `run_effects.idempotency_key`, решения recovery в
-  `run_recovery`/`run_reconciliations`, аренды в `run_leases`;
+- готовый словарь состояний в
+  `crates/evohime-local-storage/src/workflow_store.rs`: run-level `RunState`
+  (`pending`, `running`, `waiting_approval`, `completed`, `failed`,
+  `cancelled`, `degraded`, `interrupted`) и action-level `NodeState`
+  (включая `waiting_approval`, `unknown_outcome`, `dead_letter`); оба
+  множества дополнительно зафиксированы CHECK-ограничениями в
+  `workflow_runs.state` и `workflow_run_nodes.state`;
+- recovery-механика в общей schema (`crates/evohime-local-storage/src/lib.rs`):
+  dispatch marker и идемпотентность в `run_effects.idempotency_key`, решения
+  recovery в `run_recovery`/`run_reconciliations`, аренды в `run_leases`;
+- два существующих пространства run-идентичности: `runs.id` (run рабочего
+  элемента в общей schema) и `workflow_runs.run_id` (workflow runtime 06); они
+  не объединены и могут пересекаться по значению;
 - `interrupted`/`unknown_outcome` уже применяются в model provenance
   (`crates/evohime-local-storage/src/model_provenance.rs`) и в workflow
   runtime;

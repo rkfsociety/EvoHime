@@ -51,9 +51,14 @@ snapshot и нет дедупликации доставки по `event_id`.
    расплывчатый «Core revision», пока для него нет отдельного monotonic
    contract.
 3. Сохранить порядок глобальной `sequence_id`, ограничение frame/payload size
-   и duplicate suppression в Electron main по `(core_instance_id,
-   session_epoch, event_id)`; для legacy событий использовать
-   `(generation, sequence_id)`. Повторная команда дополнительно дедуплицируется
+   и duplicate suppression в Electron main по `event_id`: он durable и
+   стабилен между поколениями Core, поэтому включать generation в ключ
+   дедупликации нельзя — иначе повторная доставка того же события после
+   рестарта Core пройдёт как новая. Generation используется только для сброса
+   projection и валидации cursor. Для legacy событий без `event_id` ключом
+   остаётся `sequence_id` в пределах одного `(core_instance_id,
+   session_epoch)`, поскольку без устойчивого ID межпоколенческая
+   дедупликация недоступна. Повторная команда дополнительно дедуплицируется
    Core по action/approval/idempotency key, а не только UI-состоянием.
 4. В Electron main adapter преобразовывать IPC event в bounded redacted
    projection; renderer получает только чтение и пользовательские approval

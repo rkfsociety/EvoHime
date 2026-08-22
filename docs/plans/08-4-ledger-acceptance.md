@@ -37,6 +37,8 @@
   и `unknown_outcome` без blind retry;
 - replay gap, stale `core_instance_id`/`session_epoch` и bounded typed snapshot;
 - workflow `run_sequence` ↔ global ledger event linkage;
+- отказ ledger при ссылке на `run_id` с несовместимым `run_scope`;
+- переход через `cancelling` после миграции CHECK `workflow_run_nodes.state`;
 - secret/PII/raw output redaction.
 
 ## Release checks
@@ -46,8 +48,8 @@
 - `cargo fmt --check` и `git diff --check`;
 - из `desktop/evohime-electron`: `npm run check:protocol`,
   `npm run typecheck`, `npm test`;
-- migration v26→v30 и v29→v30, legacy fixtures, backup, rollback и package
-  smoke;
+- migration v26→v30 и v29→v30 (включая пересоздание `workflow_run_nodes`),
+  legacy fixtures, backup, rollback и package smoke;
 - security review для redaction, approval binding, frame/payload limits и
   renderer isolation;
 - проверка всех внутренних Markdown-ссылок и отсутствие ссылок на удаляемые

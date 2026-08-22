@@ -15,8 +15,9 @@
 - `LocalDatabase` (schema v29, `LEGACY_SCHEMA_VERSION = 26`) и её
   transactional migration/backup path;
 - workflow storage (`workflow_runs`, `workflow_run_nodes`,
-  `workflow_node_attempts`, `workflow_run_events`) и recovery-механика
-  `run_effects`/`run_leases`/`run_recovery`/`run_reconciliations`;
+  `workflow_node_attempts`, `workflow_run_events` в `workflow_store.rs`) и
+  recovery-механика общей schema (`run_effects`, `run_leases`, `run_recovery`,
+  `run_reconciliations` в `lib.rs`);
 - `receipts_v1` storage и model provenance storage как отдельные владельцы
   своих таблиц и internal schema versions.
 
@@ -45,11 +46,20 @@ projection → глобальное событие.
 ## Изменения
 
 1. Аддитивно расширить существующий `events` journal полями typed schema,
-   `event_id`, `run_id`, `session_id` и correlation indexes; глобальный
-   `sequence_id` оставить канонической sequence. Новые typed rows валидировать
-   до commit, legacy columns/rows не перезаписывать.
+   `event_id`, `run_scope`, `run_id`, `session_id` и correlation indexes;
+   глобальный `sequence_id` оставить канонической sequence. Все новые колонки
+   добавляются как nullable или с DEFAULT, потому что `ALTER TABLE ADD COLUMN`
+   в SQLite не может добавить NOT NULL без значения по умолчанию к
+   непустой таблице; обязательность полей для новых typed rows обеспечивается
+   валидацией до commit и partial-индексом, а не NOT NULL на всей таблице.
+   Legacy columns/rows не перезаписывать. Уникальность `event_id` — partial
+   UNIQUE index по непустым значениям.
 2. Поднять storage schema с v29 до v30 через штатный transactional
-   migration/backup path. Тесты должны открыть fixtures минимально
+   migration/backup path. В ту же миграцию входит расширение CHECK-списка
+   `workflow_run_nodes.state` состоянием `cancelling`: в SQLite это требует
+   пересоздания таблицы (new table + copy + drop + rename + восстановление
+   индексов) внутри одной транзакции, с сохранением всех существующих строк и
+   ссылок из `workflow_node_attempts`. Тесты должны открыть fixtures минимально
    поддерживаемой v26 и текущей v29, сохранить legacy rows и доказать
    idempotent reopen; база ниже v26 по-прежнему отклоняется, а internal schema
    versions receipts и provenance не смешиваются с `PRAGMA user_version`.
@@ -69,8 +79,9 @@ projection → глобальное событие.
 5. При startup публиковать один bounded `supervisor_restart`/`core_start`
    event на новое Core instance и классифицировать незавершённые действия по
    уже существующему признаку — наличию dispatch marker в `run_effects`:
-   pre-dispatch без marker → `interrupted` с безопасным resumable решением по
-   контракту; marker/started без terminal outcome → `unknown_outcome` +
+   pre-dispatch без marker → action остаётся resumable (`pending`/`ready`) по
+   контракту, а run помечается run-level `interrupted`; marker/started без
+   terminal outcome → action `unknown_outcome` +
    blocked automatic retry и read-only reconciliation; pending approval →
    `waiting_approval` с обычным TTL; уже terminal action не трогать.
    `dead_letter` применять только по явному bounded recovery rule, а не ко всем
@@ -85,6 +96,8 @@ projection → глобальное событие.
 ## Проверки
 
 - migration v26→v30 и v29→v30 с сохранением legacy rows;
+- пересоздание `workflow_run_nodes` с новым CHECK: сохранены строки, индексы и
+  внешние ссылки, откат при ошибке внутри транзакции;
 - atomic write rollback при ошибке SQLite;
 - duplicate request/idempotency tests поверх существующего
   `run_effects.idempotency_key`;
