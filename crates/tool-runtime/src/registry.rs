@@ -531,6 +531,10 @@ impl ToolRegistry {
             .collect()
     }
 
+    pub fn manifest_for(&self, name: &str) -> Option<crate::ToolManifest> {
+        self.tools.get(name).map(ToolDefinition::manifest)
+    }
+
     /// Performs the exact policy/scope check without creating an in-memory
     /// approval and without dispatching a tool. Core uses this boundary to
     /// append a durable pre receipt before any effect.

@@ -6779,7 +6779,13 @@ impl ToolAgent {
             .into_iter()
             .map(|tool| {
                 let name = tool.name.to_string();
-                ToolSpec::function(name, tool.description, tool_parameters(tool.name))
+                let mut spec =
+                    ToolSpec::function(name, tool.description, tool_parameters(tool.name));
+                spec.function.manifest_hash = self
+                    .tools
+                    .manifest_for(tool.name)
+                    .and_then(|manifest| manifest.canonical_hash().ok());
+                spec
             })
             .collect::<Vec<_>>();
 

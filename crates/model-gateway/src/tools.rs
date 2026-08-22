@@ -22,6 +22,7 @@ impl ToolSpec {
                 name: name.into(),
                 description: description.into(),
                 parameters,
+                manifest_hash: None,
             },
         }
     }
@@ -32,6 +33,10 @@ pub struct FunctionSpec {
     pub name: String,
     pub description: String,
     pub parameters: Value,
+    /// Immutable Core-owned tool contract used to bind model calls to the
+    /// manifest snapshot that produced this loadout.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manifest_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
