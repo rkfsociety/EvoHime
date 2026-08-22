@@ -10,8 +10,10 @@ Core-owned policy gate. Это общий путь вызова, а не нов�
 
 ### Блокирующие
 
-- 09-1 для `CapabilitySnapshotV1`, effective action binding и typed outcomes;
-- план 08 для durable action/terminal linkage;
+- [09-1](09-1-capability-snapshot.md) для `CapabilitySnapshotV1`, effective
+  action binding и typed outcomes;
+- план 08 [`08-1`](08-1-ledger-contract.md) для durable action/terminal
+  linkage;
 - текущие `ToolRegistry`, `WorkspaceSandbox`, network capability/SSRF checks,
   supervisor boundary и cancellation token.
 
@@ -20,6 +22,24 @@ Core-owned policy gate. Это общий путь вызова, а не нов�
 - будущие adapters из планов 10, 13–15 подключаются через тот же gate; пока
   adapter не зарегистрирован, его вызов возвращает `unavailable` без попытки
   выполнить fallback напрямую.
+
+## Что уже есть в коде
+
+- `ToolRegistry` уже делает preflight, permission check и bounded preview
+  (`crates/tool-runtime/src/registry.rs`);
+- `WorkspaceSandbox` резолвит пути с раздельными `resolve_existing`,
+  `resolve_existing_for_tool` и `resolve_for_write`
+  (`crates/tool-runtime/src/sandbox.rs`);
+- network capability и SSRF checks существуют
+  (`crates/tool-runtime/src/network_capability.rs`, `ssrf.rs`);
+- hard policy rules загружаются Core
+  (`crates/evohime-core/src/permission_rules.rs`).
+
+Нет единой точки входа: `PermissionEngine` вызывается независимо из
+`crates/evohime-core/src/lib.rs`, `registry.rs` и
+`crates/tool-runtime/src/tools/shell.rs`, поэтому нельзя доказать, что каждый
+effect path прошёл одинаковую проверку. Нет повторной проверки непосредственно
+перед side effect и нет привязки решения к snapshot hash.
 
 ## Core policy gate
 
@@ -35,7 +55,8 @@ Renderer, planner, workflow coordinator и adapter могут дать hint, н�
 hint не является решением. Все зарегистрированные paths — built-in tools,
 terminal, workflow adapters, MCP/browser и provider/worker dispatch — должны
 вызывать gate до dispatch; прямой вызов tool implementation из Core обходом
-gate запрещается тестом/контрактом.
+gate запрещается тестом/контрактом. Существующие прямые обращения к
+`PermissionEngine` переводятся на gate, а не дублируют его.
 
 ## Filesystem и workspace
 
@@ -84,16 +105,17 @@ path, а результат с неизвестным эффектом фикс�
 
 ## Проверки
 
-- absolute/relative/drive-relative/UNC paths, traversal, case/normalization,
+- absolute/relative/drive-relative/UNC пути, traversal, case/normalization,
   symlink/reparse, rename race, protected path и operation mismatch;
-- HTTP/private/internal target, all-address DNS, redirects, scheme/port
-  changes, DNS rebinding, payload/timeout limits;
-- preflight allow → mutation, then recheck denial after policy/scope/input/
-  snapshot drift with zero sentinel side effect;
-- timeout/cancellation до запуска, во время запуска и после результата;
-- budget/concurrency exhaustion and unavailable adapter are distinguished from
-  deny/policy error;
-- worker/provider secret-ref boundary and direct adapter bypass tests.
+- HTTP-запросы к private/internal targets, проверка всех адресов DNS,
+  redirects, смена scheme/port, DNS rebinding, лимиты payload и timeout;
+- preflight allow → mutation, затем отказ на recheck после drift policy,
+  scope, input или snapshot — с нулевым sentinel side effect;
+- timeout и cancellation до запуска, во время запуска и после результата;
+- исчерпание budget/concurrency и отсутствующий adapter отличимы от `denied` и
+  `policy_error`;
+- boundary secret refs для worker/provider и тесты на прямой обход gate через
+  adapter, workflow или renderer.
 
 ## Готово, когда
 

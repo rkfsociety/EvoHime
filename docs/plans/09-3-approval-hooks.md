@@ -9,10 +9,12 @@
 
 ### Блокирующие
 
-- 09-1 для immutable snapshot/action binding;
-- 09-2 для preflight и recheck непосредственно перед effect;
-- план 08 для durable action, terminal event, receipt и unknown-outcome
-  recovery.
+- [09-1](09-1-capability-snapshot.md) для immutable snapshot/action binding;
+- [09-2](09-2-core-policy-resolver.md) для preflight и recheck непосредственно
+  перед effect;
+- план 08 [`08-1`](08-1-ledger-contract.md) и
+  [`08-2`](08-2-ledger-storage-and-recovery.md) для durable action, terminal
+  event, receipt и unknown-outcome recovery.
 
 ### Опциональные
 
@@ -20,13 +22,31 @@
   compatibility shell продолжает получать bounded preview и typed result;
   отсутствие новой projection не даёт права выполнить action без Core gate.
 
+## Что уже есть в коде
+
+- durable approval intents со состояниями `pending`, `granted`, `denied`,
+  `expired`, `cancelled`, `claimed` и action states `awaiting_approval`,
+  `prepared`, `pending_recovery`
+  (`crates/evohime-receipts/src/runtime.rs`);
+- monotonic deadline с boot binding: expiry считается по `clock_boot_id` и
+  monotonic ms, с fallback на wall clock только между boot-ами;
+- атомарный claim с policy recheck (`claim_approval_checked`) и тесты на
+  однократность claim, monotonic expiry и отказ при текущем deny.
+
+Чего нет: обходной `claim_approval` без recheck остаётся публичным API;
+`PermissionEngine` хранит собственные in-memory `approvals`/`audit`
+(`crates/permissions/src/lib.rs`) как второй источник authority; в intent не
+записываются snapshot hash, policy version и hook chain version.
+
 ## Единый источник approval
 
 Сохранить canonical call hash и preview derivation из `evohime-permissions`, но
 свести dangerous execution к durable approval intent/receipt path
 `evohime-receipts`. In-memory `PermissionEngine` approval records не должны
 оставаться альтернативным источником authority после migration; legacy
-callers либо получают durable intent, либо fail closed.
+callers либо получают durable intent, либо fail closed. Claim без policy
+recheck удаляется или становится приватным: единственный поддерживаемый путь —
+`claim_approval_checked`.
 
 Approval request bounded и содержит:
 
@@ -43,7 +63,8 @@ call/action binding; произвольный текст из renderer не мо
 
 ## State machine и команды
 
-Durable state machine:
+Durable state machine повторяет уже существующий словарь состояний
+`receipt_approval_intents` и не вводит синонимов:
 
 ```text
 pending -> granted | denied | expired | cancelled
@@ -89,18 +110,20 @@ Hooks — только bounded Core-owned functions, не model/plugin/renderer 
 
 ## Проверки
 
-- approve/reject/expiry/cancel, monotonic restart boundary и атомарный claim;
-- repeated resolve/delivery/execute — идемпотентны и не дают второй effect;
-- mismatch для task/session/run/action/tool/permission/scope/input/snapshot/
+- approve/reject/expiry/cancel, граница monotonic restart и атомарный claim;
+- повторные resolve/delivery/execute идемпотентны и не дают второй effect;
+- mismatch по task/session/run/action/tool/permission/scope/input/snapshot и
   policy version;
 - cancellation до dispatch, во время выполнения и после результата;
 - refusal reason как durable ledger/receipt event, включая stale и
   policy-denied;
-- hook failure, redaction, bounded input and attempt to bypass via renderer,
-  workflow or direct adapter.
+- сбой hook, redaction, bounded input и попытка обхода через renderer,
+  workflow или прямой вызов adapter;
+- отсутствие второго пути claim: тест доказывает, что claim без policy recheck
+  недоступен извне.
 
 ## Готово, когда
 
-Пользователь подтверждает именно тот bounded action, который Core atomically
-claims and executes; любое изменение call, scope, policy или snapshot делает
+Пользователь подтверждает именно тот bounded action, который Core атомарно
+claim-ит и выполняет; любое изменение call, scope, policy или snapshot делает
 approval недействительным, а повторное сообщение не создаёт новый side effect.

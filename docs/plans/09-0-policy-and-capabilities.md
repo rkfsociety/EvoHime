@@ -12,19 +12,34 @@ registry или переносить authority в renderer.
 
 ## Что уже есть в checkout
 
-- `evohime-permissions`: typed permissions/modes, hard policy rules, session
-  overrides, scoped path grants и canonical exact-call approval identity;
-- `evohime-tool-runtime`: `ToolRegistry` с preflight, permission checks,
-  bounded previews, `WorkspaceSandbox`, network capability и cancellation;
-- `evohime-receipts`: durable action/approval intent, canonical call hash,
-  monotonic expiry, atomic claim и claim-time policy recheck;
+- `evohime-permissions` (`crates/permissions/`): typed permissions/modes, hard
+  policy rules (`policy.rs`, `pattern.rs`), session overrides, scoped path
+  grants и canonical exact-call approval identity;
+- `evohime-tool-runtime` (`crates/tool-runtime/`): `ToolRegistry` с preflight,
+  permission checks, bounded previews, `WorkspaceSandbox` (`sandbox.rs`),
+  network capability и SSRF checks (`network_capability.rs`, `ssrf.rs`),
+  cancellation;
+- `evohime-receipts` (`crates/evohime-receipts/src/runtime.rs`): durable
+  action/approval intent (`receipt_actions`, `receipt_approval_intents`),
+  canonical call hash, monotonic expiry с boot binding, атомарный claim и
+  claim-time policy recheck (`claim_approval_checked`);
 - `run_policy`, model-request provenance, EventJournal и authenticated IPC;
 - supervisor-owned provider/secret boundary. Секретные значения не являются
   capability и не должны попадать в snapshot, prompt, argv, renderer или log.
 
-Это не означает, что план 09 уже выполнен: `PermissionEngine` всё ещё содержит
-legacy/in-memory approval state, а общий Core-owned capability snapshot и
-единый gate для всех effect paths отсутствуют.
+Это не означает, что план 09 уже выполнен. Чего нет:
+
+- общего Core-owned capability snapshot и единого gate для всех effect paths:
+  `PermissionEngine` вызывается из нескольких мест независимо
+  (`crates/evohime-core/src/lib.rs`, `crates/tool-runtime/src/registry.rs`,
+  `crates/tool-runtime/src/tools/shell.rs`);
+- `PermissionEngine` всё ещё держит in-memory approval state
+  (`approvals: HashMap<Uuid, ApprovalRecord>`) параллельно durable intent;
+- рядом с `claim_approval_checked` остаётся `claim_approval` без policy
+  recheck, то есть обходной путь claim;
+- persisted `policy_decision` в receipts сегодня допускает только
+  `allow`/`deny`/`approval_required`, поэтому расширенный словарь outcomes
+  требует additive-миграции, а не переопределения существующих значений.
 
 ## Границы
 
@@ -41,8 +56,9 @@ input/output.
 
 ### Блокирующие
 
-- план 08: устойчивые action/run identifiers, typed terminal events,
-  execution linkage, receipt linkage и replay/recovery semantics;
+- план 08 [`08-0-execution-ledger.md`](08-0-execution-ledger.md): устойчивые
+  action/run identifiers, typed terminal events, execution linkage, receipt
+  linkage и replay/recovery semantics;
 - текущие `evohime-permissions`, `evohime-tool-runtime`, `evohime-receipts`,
   supervisor secret boundary и authenticated desktop IPC.
 

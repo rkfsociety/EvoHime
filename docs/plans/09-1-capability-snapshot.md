@@ -6,28 +6,38 @@
 run и связывает с каждым action. Snapshot — immutable input для planning,
 approval и execution; он не является grant, который можно расширить из UI.
 
-## Что уже есть в checkout
-
-- permissions, scoped grants, `RunPolicy`, manifest hashes и exact-call hashes;
-- durable receipt/action binding, к которому можно добавить snapshot linkage.
-
-Нет единого versioned snapshot, его canonical hash не сохраняется в approval
-intent, а parent/child subset проверяется только в отдельных контурах.
-
 ## Зависимости
 
 ### Блокирующие
 
-- план 08: action/run identity, durable action linkage, bounded retention и
-  replayable terminal outcome;
+- [09-0](09-0-policy-and-capabilities.md);
+- план 08 [`08-1`](08-1-ledger-contract.md) и
+  [`08-2`](08-2-ledger-storage-and-recovery.md): action/run identity, durable
+  action linkage, bounded retention и replayable terminal outcome;
 - текущие permission, manifest, receipt и authenticated IPC contracts.
 
 ### Опциональные
 
 - будущие adapter-specific scopes: до появления adapter значение отсутствует,
   а попытка вызвать его возвращает `unavailable`, не `allow`;
-- catalog metadata из 07-2: hash установленного manifest остаётся достаточным
-  fallback для policy binding.
+- catalog metadata из [07-2](07-2-toolkit-catalog-lifecycle.md): hash
+  установленного manifest остаётся достаточным fallback для policy binding.
+
+## Что уже есть в коде
+
+- typed permissions, scoped path grants и hard policy rules
+  (`crates/permissions/src/lib.rs`, `policy.rs`);
+- `RunPolicy`, manifest hashes и canonical exact-call hashes;
+- durable action/approval binding (`receipt_actions`,
+  `receipt_approval_intents` в `crates/evohime-receipts/src/runtime.rs`), к
+  которому snapshot linkage добавляется additive-колонками;
+- domain-separated canonical JSON и hash contract из receipts, который
+  переиспользуется без ввода второго canonicalizer.
+
+Нет единого versioned snapshot, его canonical hash не сохраняется в approval
+intent и action, parent/child subset проверяется только в отдельных контурах,
+а persisted `policy_decision` ограничен значениями
+`allow`/`deny`/`approval_required`.
 
 ## Контракт
 
@@ -44,6 +54,9 @@ intent, а parent/child subset проверяется только в отдел
 - network route policy и adapter scopes как opaque, versioned references;
 - opaque `secret_ref`/purpose pairs без secret values;
 - timeout, input/output size, concurrency, tool-call, token и cost budgets.
+
+`run_id`, `session_id` и `task_id` — те же идентичности, что и в ledger
+плана 08: snapshot не заводит параллельное пространство имён.
 
 Snapshot canonicalize-ится существующим domain-separated canonical JSON
 контрактом и получает `snapshot_hash`. Неопознанная версия, дубликат identity,
@@ -82,6 +95,11 @@ Typed policy decision имеет stable `outcome` и bounded `reason_code`:
 входа в том же action; `unavailable` может быть повторен только после
 изменения availability, а `expired` требует нового snapshot/action.
 
+Расширение словаря — additive: существующие persisted значения
+`allow`/`deny`/`approval_required` сохраняют смысл и не переопределяются, новые
+outcomes добавляются миграцией вместе с детерминированным mapping старых строк.
+Offline verifier и export должны читать оба поколения записей.
+
 ## Проверки
 
 - serde/canonical round-trip, domain separation, size limits и fixed hash
@@ -94,7 +112,8 @@ Typed policy decision имеет stable `outcome` и bounded `reason_code`:
   policy version и snapshot hash;
 - snapshot/IPC/export/log fixtures доказывают отсутствие secret values и
   необрезанного input;
-- deterministic mapping всех typed outcomes и retryability.
+- deterministic mapping всех typed outcomes и retryability, включая чтение
+  записей, созданных до миграции словаря.
 
 ## Готово, когда
 
