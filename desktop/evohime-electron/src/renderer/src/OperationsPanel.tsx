@@ -140,6 +140,9 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
   const deadLetters = childProjection.filter(({ item }) => item.dead_letter === true).length
   const liveLeases = childProjection.filter(({ item }) => item.lease_live === true).length
   const pulseFailed = count('runtime.schedule_failed') + count('runtime.schedule_dead_letter')
+  const toolCalls = count('tool.started')
+  const toolOutputs = count('tool.output')
+  const approvalRequests = count('approval.required')
 
   const pendingEvent = latest(events, 'memory.pending')
   const pending = useMemo(
@@ -398,6 +401,12 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
           <strong>{pulseFailed ? 'Внимание' : 'OK'}</strong>
           <span>{pulseFailed ? 'есть ошибки расписаний' : 'ошибок не обнаружено'}</span>
           <small>{count('runtime.schedule_completed')} completed · {count('runtime.schedule_requeued')} requeued · {count('runtime.schedule_dead_letter')} dead-letter</small>
+        </article>
+        <article className={`operations-card ${toolCalls !== toolOutputs ? 'operations-card--warning' : ''}`}>
+          <h3>Инструменты</h3>
+          <strong>{toolCalls}</strong>
+          <span>вызовов в текущем replay</span>
+          <small>{toolOutputs} результатов · {approvalRequests} запросов approval</small>
         </article>
       </div>
 

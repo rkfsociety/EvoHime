@@ -433,7 +433,12 @@ describe('task timeline', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Разрешить' }))
     await waitFor(() => expect(calls.at(-1)).toEqual({
       command: 'core.resolveApproval',
-      payload: { approvalId: 'approval-1', granted: true }
+      payload: {
+        approvalId: 'approval-1',
+        granted: true,
+        idempotencyKey: 'approval:approval-1:grant',
+        cancel: false
+      }
     }))
   })
 })
