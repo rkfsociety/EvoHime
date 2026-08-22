@@ -2295,6 +2295,22 @@ impl IpcBridge {
                 if let Some(approvals) = &self.approvals {
                     let _ = approvals.resolve(approval_id, granted).await;
                 }
+                let _ = self
+                    .journal
+                    .record_audit(
+                        &resolve.approval_id,
+                        "approval.decision",
+                        serde_json::to_vec(&serde_json::json!({
+                            "approval_id": resolve.approval_id,
+                            "granted": granted,
+                            "cancelled": resolve.cancel,
+                            "idempotency_key": resolve.idempotency_key,
+                            "rejection_reason": resolve.rejection_reason,
+                        }))
+                        .unwrap_or_default()
+                        .as_slice(),
+                    )
+                    .await;
                 // Узел workflow подтверждается той же командой, что и
                 // инструмент: отдельного пути approval у workflow нет. Если
                 // идентификатор принадлежит узлу, запуск продолжается сам —

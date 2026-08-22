@@ -189,12 +189,15 @@ export function TaskTimeline({
   }, [api, taskId])
 
   const resolveApproval = useCallback(
-    async (granted: boolean) => {
+    async (granted: boolean, cancel = false) => {
       if (!api || !approval) return
       setBusy(true)
       const outcome = await api.invoke('core.resolveApproval', {
         approvalId: approval.approvalId,
-        granted
+        granted,
+        idempotencyKey: `approval:${approval.approvalId}:${granted ? 'grant' : cancel ? 'cancel' : 'reject'}`,
+        ...(granted ? {} : { rejectionReason: cancel ? 'cancelled_by_user' : 'rejected_by_user' }),
+        cancel
       })
       setBusy(false)
       if (!outcome.ok) setCommandError(outcome.message)
@@ -280,6 +283,7 @@ export function TaskTimeline({
                 <div>
                   <button type="button" onClick={() => void resolveApproval(true)} disabled={busy}>Разрешить</button>
                   <button type="button" onClick={() => void resolveApproval(false)} disabled={busy}>Отклонить</button>
+                  <button type="button" onClick={() => void resolveApproval(false, true)} disabled={busy}>Отменить</button>
                 </div>
               </li>
             ) : null}

@@ -609,7 +609,7 @@ export interface CommandPayloads {
   'workspace.forget': { path: string }
   'core.startTask': { taskId: string; prompt: string; workspacePath: string; preferredRouteHint?: 'local' | 'cloud' | null }
   'core.stopTask': { taskId: string }
-  'core.resolveApproval': { approvalId: string; granted: boolean }
+  'core.resolveApproval': { approvalId: string; granted: boolean; idempotencyKey?: string; rejectionReason?: string; cancel?: boolean }
   'core.resolveRoutingDecision': { traceId: string; approve: boolean }
   'core.listWorkspace': { workspacePath: string; relativePath: string; maxEntries?: number }
   'core.readWorkspaceFile': { workspacePath: string; relativePath: string; maxBytes?: number }

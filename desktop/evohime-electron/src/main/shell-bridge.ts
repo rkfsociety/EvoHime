@@ -210,11 +210,14 @@ function dispatch(
       const value = asRecord(payload)
       const approvalId = asBoundedString(value['approvalId'])
       const granted = value['granted']
-      if (approvalId === null || typeof granted !== 'boolean') {
+      const idempotencyKey = asOptionalBoundedString(value['idempotencyKey'])
+      const rejectionReason = asOptionalBoundedString(value['rejectionReason'])
+      const cancel = value['cancel']
+      if (approvalId === null || typeof granted !== 'boolean' || (cancel !== undefined && typeof cancel !== 'boolean')) {
         return failure('invalid-payload', 'Некорректное решение по approval.')
       }
       log('info', 'shell.command_forwarded', { command })
-      return accepted(client.send({ resolveApproval: { approvalId, granted } }))
+      return accepted(client.send({ resolveApproval: { approvalId, granted, idempotencyKey, rejectionReason, cancel: cancel ?? null } }))
     }
 
     case 'core.resolveRoutingDecision': {
