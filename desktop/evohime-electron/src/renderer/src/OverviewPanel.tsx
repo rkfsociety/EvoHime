@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import type { ConnectionState, CoreEvent } from '@shared/api'
 
 interface Props {
@@ -18,14 +20,18 @@ const LABELS: Record<string, string> = {
 
 const IMPORTANT_EVENTS = new Set(Object.keys(LABELS))
 
+/** Сколько событий показываем внутри раскрытой группы, не заливая экран. */
+const GROUP_PREVIEW_LIMIT = 6
+
 export function OverviewPanel({ connection, events, workspace }: Props): React.JSX.Element {
+  const [expanded, setExpanded] = useState<string | null>(null)
   const attention = events.filter((event) => IMPORTANT_EVENTS.has(event.eventType))
   const errors = events.filter((event) => event.eventType.includes('failed') || event.eventType.includes('error'))
-  const counts = [...IMPORTANT_EVENTS].map((eventType) => ({
+  const groups = [...IMPORTANT_EVENTS].map((eventType) => ({
     eventType,
     label: LABELS[eventType],
-    count: events.filter((event) => event.eventType === eventType).length
-  })).filter((item) => item.count > 0)
+    items: events.filter((event) => event.eventType === eventType)
+  })).filter((group) => group.items.length > 0)
 
   return (
     <section className="panel overview-panel" aria-label="Обзор состояния">
@@ -63,16 +69,48 @@ export function OverviewPanel({ connection, events, workspace }: Props): React.J
       <section className="overview-section" aria-label="Что требует внимания">
         <div className="overview-section__heading">
           <h3>Что требует внимания</h3>
-          <span>{attention.length === 0 ? 'Всё спокойно' : `${attention.length} сигналов`}</span>
+          <span>
+            {attention.length === 0
+              ? 'Всё спокойно'
+              : `${attention.length} сигналов · нажми группу, чтобы увидеть события`}
+          </span>
         </div>
-        {counts.length > 0 ? (
+        {groups.length > 0 ? (
           <ul className="overview-list">
-            {counts.map((item) => (
-              <li key={item.eventType}>
-                <span>{item.label}</span>
-                <strong>{item.count}</strong>
-              </li>
-            ))}
+            {groups.map((group) => {
+              const open = expanded === group.eventType
+              const preview = group.items.slice(0, GROUP_PREVIEW_LIMIT)
+              const hidden = group.items.length - preview.length
+              return (
+                <li key={group.eventType} className="overview-group">
+                  <button
+                    type="button"
+                    className="overview-group__toggle"
+                    aria-expanded={open}
+                    onClick={() => setExpanded(open ? null : group.eventType)}
+                  >
+                    <span className="overview-group__chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>
+                    <span>{group.label}</span>
+                    <code className="overview-group__type">{group.eventType}</code>
+                    <strong>{group.items.length}</strong>
+                  </button>
+                  {open ? (
+                    <ol className="overview-group__events">
+                      {preview.map((event) => (
+                        <li key={`${event.sequenceId}-${event.eventType}`}>
+                          <span className="overview-group__sequence">#{event.sequenceId}</span>
+                          <span className="overview-group__detail">{summarize(event.payload)}</span>
+                          {event.taskId ? <small className="overview-group__task">task: {event.taskId}</small> : null}
+                        </li>
+                      ))}
+                      {hidden > 0 ? (
+                        <li className="overview-group__more">Ещё {hidden} — остальные смотри в трейсе чата.</li>
+                      ) : null}
+                    </ol>
+                  ) : null}
+                </li>
+              )
+            })}
           </ul>
         ) : (
           <p className="empty-state">Ошибок, ожидающих решений, и проблем расписаний не обнаружено.</p>
@@ -90,6 +128,7 @@ export function OverviewPanel({ connection, events, workspace }: Props): React.J
               <li key={`${event.sequenceId}-${event.eventType}`}>
                 <span className="overview-events__dot" aria-hidden="true" />
                 <code>{event.eventType}</code>
+                <span className="overview-events__detail">{summarize(event.payload)}</span>
                 <span className="overview-events__sequence">#{event.sequenceId}</span>
               </li>
             ))}
@@ -100,6 +139,33 @@ export function OverviewPanel({ connection, events, workspace }: Props): React.J
       </section>
     </section>
   )
+}
+
+/** Поля payload, которые чаще всего и объясняют, что случилось. */
+const SUMMARY_FIELDS = ['message', 'error', 'reason', 'detail', 'details', 'summary', 'title', 'status', 'state', 'kind']
+
+/** Одна строка про событие: понятное поле payload либо усечённый payload целиком. */
+export function summarize(payload: string, limit = 140): string {
+  if (!payload) return 'без payload'
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(payload)
+  } catch {
+    return truncate(payload.replace(/\s+/g, ' ').trim(), limit)
+  }
+  if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const record = parsed as Record<string, unknown>
+    for (const field of SUMMARY_FIELDS) {
+      const value = record[field]
+      if (typeof value === 'string' && value.trim() !== '') return truncate(value.trim(), limit)
+      if (typeof value === 'number' || typeof value === 'boolean') return truncate(`${field}: ${value}`, limit)
+    }
+  }
+  return truncate(JSON.stringify(parsed) ?? String(parsed), limit)
+}
+
+function truncate(text: string, limit: number): string {
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text
 }
 
 function projectName(workspace: string): string {
