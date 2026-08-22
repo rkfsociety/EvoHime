@@ -28,8 +28,13 @@ permission/approval decision, loadout selection, telemetry и provenance без
 - `ToolDefinition` в `crates/tool-runtime/src/registry.rs` хранит только
   `name`, `description`, статический список `Permission` и timeout;
 - input schema инструментов живёт отдельно, в хардкодной таблице
-  `tool_parameters` в `crates/evohime-core/src/lib.rs`, и используется при
-  сборке `ToolSpec` для модели;
+  `tool_parameters` в `crates/evohime-core/src/lib.rs`. У неё два потребителя:
+  сборка `ToolSpec` для модели и `recovery::recovery_hint`, который по той же
+  схеме объясняет модели неудачный вызов;
+- таблица покрывает 27 имён из 52 зарегистрированных в registry инструментов.
+  Остальные попадают в default-ветку
+  `{"type":"object","additionalProperties":true}`: модель видит инструмент без
+  описания аргументов, а расхождение двух источников ничем не проверяется;
 - preflight (`ToolPreflightDecision`), one-shot approval id, exact-call recheck
   и permission engine уже работают;
 - `crates/evohime-core/src/workflow_registry.rs` уже разрешает workflow
@@ -45,8 +50,7 @@ permission/approval decision, loadout selection, telemetry и provenance без
 
 Нет версии инструмента, output schema, canonical hash, side-effect class,
 объявленных network domains/secret references и связи описания инструмента с
-model request и receipt. Два источника описания (`ToolDefinition` и
-`tool_parameters`) могут разойтись молча — сейчас это ничем не проверяется.
+model request и receipt.
 
 ## Изменения
 
@@ -64,15 +68,24 @@ model request и receipt. Два источника описания (`ToolDefin
    model request (`request_id`/`logical_request_id`) и receipt. Изменение schema
    или capability обязано менять версию/hash.
 5. Сделать manifest единственным источником описания инструмента: `ToolSpec`
-   для модели генерируется из него, а таблица `tool_parameters` в
-   `crates/evohime-core/src/lib.rs` удаляется вместе с дублирующимся описанием.
-6. Добавить adapter для существующих tools, чтобы старые builtin registrations
+   для модели и schema-подсказка в `recovery::recovery_hint` генерируются из
+   него, а таблица `tool_parameters` в `crates/evohime-core/src/lib.rs`
+   удаляется вместе с дублирующимся описанием. Оба потребителя переводятся на
+   manifest одним изменением: оставить один из них на старой таблице значит
+   сохранить прежнее расхождение.
+6. Сделать отсутствие схемы ошибкой регистрации, а не permissive fallback:
+   `{"type":"object","additionalProperties":true}` перестаёт быть значением по
+   умолчанию. Инструменты без явной input schema (`archive.*`, `cargo.*`,
+   `filesystem_advanced.*`, `git_advanced.*`, `logs.*`, `process.*` и прочие
+   из default-ветки) получают её в рамках этого этапа, иначе не попадают в
+   loadout.
+7. Добавить adapter для существующих tools, чтобы старые builtin registrations
    получили manifest без изменения поведения.
-7. Ввести Core validation до loadout и до execution:
+8. Ввести Core validation до loadout и до execution:
    unknown capability, missing schema, invalid scope, unsupported version,
    undeclared secret/network access и parent-subset violation должны давать
    bounded typed error.
-8. Привести `mcp.call` к манифесту: объявить network domains и связать новый
+9. Привести `mcp.call` к манифесту: объявить network domains и связать новый
    model/workflow loadout с `WorkflowRegistry` по `server_id` и `tool_name`,
    чтобы endpoint не выбирался из аргументов модели. Для уже существующего
    прямого IPC/tool payload временно оставить compatibility adapter только в
@@ -89,8 +102,11 @@ model request и receipt. Два источника описания (`ToolDefin
 - тесты на parent-subset permission, budget и workspace scope;
 - negative tests на undeclared network/secret, capability escalation,
   unknown tool version и manifest hash mismatch;
-- тест, что каждый зарегистрированный tool имеет manifest и что `ToolSpec`
-  собирается только из manifest (регрессия на расхождение двух источников);
+- тест, что каждый зарегистрированный tool имеет manifest с непустой input
+  schema и что `ToolSpec` и recovery-подсказка собираются только из manifest
+  (регрессия на расхождение двух источников);
+- тест, что ни один инструмент не отдаётся модели с permissive
+  `additionalProperties: true` вместо объявленной схемы;
 - compatibility tests для существующих builtin tools;
 - `cargo fmt --check` и targeted `cargo test -p evohime-tool-runtime -p evohime-core`.
 

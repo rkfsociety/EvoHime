@@ -66,7 +66,12 @@ SuperAGI используется только как reference. Его runtime 
 - единого versioned manifest: описание инструмента разорвано между
   `ToolDefinition` в `crates/tool-runtime` и хардкодной таблицей
   `tool_parameters` в `crates/evohime-core/src/lib.rs`; версии, canonical hash
-  и output schema отсутствуют;
+  и output schema отсутствуют. Расхождение уже измеримо: в registry
+  зарегистрировано 52 инструмента, а явная схема аргументов есть у 27 из них;
+  остальные (`archive.*`, `cargo.*`, `filesystem_advanced.*`, `git_advanced.*`,
+  `logs.*`, `process.*`) уходят в default-ветку
+  `{"type":"object","additionalProperties":true}` и попадают модели без
+  описания аргументов;
 - каталога toolkit-ов с provenance, статусами и rollback;
 - durable identity approval-запроса, переживающей restart, и состояний
   expired/cancelled/policy-denied в проекции;
@@ -126,6 +131,21 @@ legacy-вызов не считается безопасным registry-bound lo
 - подписанный внешний каталог. До появления signing pipeline доверие строится
   на release-channel hash manifest, allowlist и явном пользовательском
   подтверждении установки.
+
+## Границы с соседними планами
+
+Планы 08, 09 и 12 ссылаются на 07 и переиспользуют его результат; обратная
+ссылка фиксируется здесь, чтобы 07 не построил параллельные контуры:
+
+- 07-1 задаёт execution manifest инструмента, но не capability snapshot и не
+  policy resolver: это предмет плана 09, который берёт manifest hash как вход;
+- 07-4 остаётся tool-focused telemetry поверх существующих провенанса и
+  `EventJournal`. Общая telemetry-схема, cardinality и retention — предмет
+  плана 12; 07-4 не вводит собственный формат журнала и собственный экспорт,
+  несовместимый с 12-1;
+- durable история выполнения — предмет плана 08. До его появления 07-3 и 07-4
+  используют существующий `EventJournal`, а после становятся проекцией ledger
+  без переименования correlation-полей.
 
 ## Этапы
 

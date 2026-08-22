@@ -47,11 +47,17 @@ affected resources, нет idempotency key при повторной доста�
    tool args, tool id, manifest version, capability и approval binding нельзя
    менять из renderer.
 3. Расширить IPC-контракт решения: к `{ approvalId, granted }` добавить
-   idempotency key, опциональную причину отклонения и команду отмены. Старый
-   payload остаётся валидным: если ключ не прислан, Core детерминированно
-   выводит compatibility key из immutable `approvalId` и решения. Повторная
-   доставка того же ключа не создаёт второй эффект, а конфликт решения
-   возвращает фактическое состояние запроса.
+   idempotency key, опциональную причину отклонения и команду отмены. Поля
+   добавляются новыми tag numbers к `ResolveApproval` (сейчас в нём заняты
+   только `approval_id = 1` и `granted = 2`) по образцу `ConfirmMemory`, где
+   `idempotency_key = 3`; старый payload остаётся валидным.
+   Если ключ не прислан, Core выводит compatibility key детерминированно из
+   immutable `approvalId` (и поколения запроса), но **не** из значения
+   `granted`: иначе approve и reject по одному запросу дали бы разные ключи и
+   конфликт решений прошёл бы мимо idempotency-проверки. Повторная доставка
+   того же ключа не создаёт второй эффект; решение, конфликтующее с уже
+   зафиксированным terminal state, отклоняется и возвращает фактическое
+   состояние запроса, а не перезаписывает его.
 4. В Electron сделать карточки состояний:
    pending, approved, rejected, expired, cancelled, executing, succeeded,
    failed и policy-denied.
@@ -71,6 +77,8 @@ affected resources, нет idempotency key при повторной доста�
 - UI tests на reconnect, replay, expiry, duplicate click и Core unavailable;
 - negative tests на изменение args/tool/manifest через IPC;
 - approval token one-shot, idempotency key и exact-call mismatch tests;
+- тест конфликта решений: approve и reject по одному `approvalId` без явного
+  ключа не считаются двумя независимыми операциями;
 - регрессия на существующую карточку в `TaskTimeline.tsx`: старый сценарий
   «разрешить/отклонить» продолжает работать;
 - real-Core E2E: pending → approve/reject → execute/stop;

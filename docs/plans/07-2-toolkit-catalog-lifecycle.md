@@ -12,11 +12,13 @@ allowlist и rollback semantics. Каталог должен помогать п
 ### Блокирующие
 
 - [07-1](07-1-tool-manifest-contract.md);
-- существующие sha256-проверки артефактов рядом с runtime
-  (`crates/evohime-listener/src/tools_dir.rs`, `evohime.manifest.json` в
-  `crates/evohime-updater`), SQLite migrations в `crates/evohime-local-storage`
-  и permission/audit storage;
-- authenticated Core↔Electron IPC.
+- SQLite migrations в `crates/evohime-local-storage`, capability/audit storage
+  и authenticated Core↔Electron IPC.
+
+Существующие sha256-проверки артефактов
+(`crates/evohime-listener/src/tools_dir.rs`, `evohime.manifest.json` в
+`crates/evohime-updater`) — переиспользуемый код, а не блокирующая
+зависимость: они описаны ниже, в «Что уже есть в коде».
 
 ### Опциональные
 
@@ -77,7 +79,10 @@ upsert заменяет текущую строку.
 
 ## Проверки
 
-- migration/rollback и restart recovery;
+- migration/rollback и restart recovery, включая сохранение статуса
+  `enabled`/`disabled`/`quarantined` после перезапуска;
+- bounded-лимиты каталога: число записей, число версий на toolkit и размер
+  metadata-полей проверяются до записи в SQLite, как в `capability_store`;
 - hash mismatch, path escape, undeclared file и stale version tests;
 - совместимость с `capability_registry`/`capability_store`: trusted manifest
   остаётся валидным, а toolkit lifecycle не выдаёт ему новых grants;

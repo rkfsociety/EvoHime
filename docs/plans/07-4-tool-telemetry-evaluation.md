@@ -19,6 +19,10 @@
 
 - [07-2](07-2-toolkit-catalog-lifecycle.md) для catalog version/source
   metadata. Без него telemetry использует manifest hash;
+- [12](12-0-telemetry-and-evaluation.md) как общая telemetry-схема. 07-4 не
+  вводит собственный формат журнала и retention-политику: он остаётся
+  tool-focused проекцией поверх существующих provenance/`EventJournal`, а
+  12-1 позже поглощает его поля без переименования;
 - [08](08-0-execution-ledger.md) как Core-owned execution ledger. Telemetry не
   заводит собственный журнал: до появления 08 она пишет bounded события в уже
   существующий `EventJournal` и provenance, а после — становится проекцией
@@ -75,7 +79,7 @@ correlation-набора между tool call, approval и model request, нет
 - budget/cost aggregation tests with missing or degraded model metadata;
 - сверка агрегата telemetry с `RunUsage`: расхождение считается ошибкой;
 - evaluation suite с ожидаемыми terminal states;
-- `git diff --check`, targeted `cargo test -p evohime-core` и Electron
+- `cargo fmt --check`, targeted `cargo test -p evohime-core` и Electron
   telemetry/UI tests (`npm run typecheck`, `npm test`).
 
 ## Готово, когда
