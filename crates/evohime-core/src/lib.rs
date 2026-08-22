@@ -236,6 +236,35 @@ fn build_agent_system_prompt(tool_names: &[String]) -> String {
     )
 }
 
+fn resolve_model_mcp_input(
+    registry: &crate::workflow_registry::WorkflowRegistry,
+    input: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let object = input
+        .as_object()
+        .ok_or_else(|| "mcp.call requires an object input".to_string())?;
+    if object.contains_key("url") {
+        return Err("mcp.call model input cannot contain url".into());
+    }
+    let server_id = object
+        .get("server_id")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "mcp.call requires server_id".to_string())?;
+    let tool_name = object
+        .get("tool_name")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "mcp.call requires tool_name".to_string())?;
+    let endpoint = registry
+        .resolve_mcp_call(server_id, tool_name)
+        .map_err(|error| format!("mcp identity rejected: {}", error.code()))?;
+    Ok(serde_json::json!({
+        "url": endpoint,
+        "method": tool_name,
+        "params": object.get("params").cloned().unwrap_or(serde_json::Value::Null),
+        "timeout_ms": object.get("timeout_ms").cloned().unwrap_or(serde_json::Value::Null),
+    }))
+}
+
 fn audit_log_path() -> PathBuf {
     let data_dir = std::env::var_os("EVOHIME_DATA_DIR")
         .map(PathBuf::from)
@@ -4363,6 +4392,7 @@ pub struct ToolAgent {
     /// `None` означает, что в этой сборке проактивности нет вовсе: предложение
     /// не создаётся, а не создаётся «без потолка».
     proactivity: Option<crate::ambient::AmbientProactivityRegistry>,
+    workflow_registry: Arc<crate::workflow_registry::WorkflowRegistry>,
 }
 
 const DEFAULT_TOOL_ITERATIONS: usize = 32;
@@ -4480,6 +4510,7 @@ impl ToolAgent {
                 Mutex::new(crate::memory_extraction::ExtractionGuard::new()),
             ),
             proactivity: None,
+            workflow_registry: Arc::new(crate::workflow_registry::WorkflowRegistry::bootstrap()),
         }
     }
 
@@ -4510,6 +4541,14 @@ impl ToolAgent {
 
     pub fn with_routing_approvals(mut self, approvals: RoutingApprovalRegistry) -> Self {
         self.routing_approvals = Some(approvals);
+        self
+    }
+
+    pub fn with_workflow_registry(
+        mut self,
+        registry: Arc<crate::workflow_registry::WorkflowRegistry>,
+    ) -> Self {
+        self.workflow_registry = registry;
         self
     }
 
@@ -7295,8 +7334,21 @@ impl ToolAgent {
                         "arguments": call.arguments
                     }),
                 );
-                let input =
+                let mut input =
                     serde_json::from_str(&call.arguments).unwrap_or(serde_json::Value::Null);
+                if call.name == "mcp.call" {
+                    input = match resolve_model_mcp_input(&self.workflow_registry, input) {
+                        Ok(value) => value,
+                        Err(error) => {
+                            let _ = events.send(CoreEvent::ToolOutput {
+                                task_id: task_id.clone(),
+                                tool_name: call.name.clone(),
+                                output: error,
+                            });
+                            continue;
+                        }
+                    };
+                }
                 // План 01.4: вызов инструмента вне loadout отклоняется до
                 // эффекта с bounded diagnostic `loadout_miss`.
                 let loadout_miss = if step_loadout.allows(&call.name) {
@@ -7865,6 +7917,7 @@ impl TaskExecutor for ToolAgent {
             // circuit breaker have to hold across concurrent tasks.
             extraction_guard: Arc::clone(&self.extraction_guard),
             proactivity: self.proactivity.clone(),
+            workflow_registry: Arc::clone(&self.workflow_registry),
         };
         Box::pin(async move {
             agent
@@ -7900,6 +7953,7 @@ impl TaskExecutor for ToolAgent {
             receipt_keys: self.receipt_keys.clone(),
             extraction_guard: Arc::clone(&self.extraction_guard),
             proactivity: self.proactivity.clone(),
+            workflow_registry: Arc::clone(&self.workflow_registry),
         };
         Box::pin(async move {
             agent
@@ -7929,6 +7983,7 @@ impl TaskExecutor for ToolAgent {
             // breaker are hourly and have to hold across episodes.
             extraction_guard: Arc::clone(&self.extraction_guard),
             proactivity: self.proactivity.clone(),
+            workflow_registry: Arc::clone(&self.workflow_registry),
         };
         Box::pin(async move {
             agent.run_ambient_memory_extraction(&episode_id).await;
