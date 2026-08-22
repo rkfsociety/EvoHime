@@ -997,7 +997,7 @@ mod tests {
 
     #[test]
     fn listener_memory_limit_fits_the_bundled_small_model() {
-        assert!(super::LISTENER_MEMORY_LIMIT_BYTES >= 1536 * 1024 * 1024);
+        const { assert!(super::LISTENER_MEMORY_LIMIT_BYTES >= 1536 * 1024 * 1024) };
     }
 
     #[test]
