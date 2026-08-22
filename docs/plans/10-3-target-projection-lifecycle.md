@@ -9,7 +9,9 @@
 ## Что уже есть в checkout
 
 - команды workspace/task уже несут `workspace_path`, который Core обязан
-  валидировать; RAG также хранит производный workspace scope;
+  валидировать; канонический производный scope уже вычисляет
+  `workspace_scope_id` в `crates/evohime-core/src/task_memory.rs`
+  (нормализует регистр и завершающий разделитель);
 - `core_instance_id/session_epoch/sequence_id` позволяют отличать Core
   generation и journal revision;
 - Electron `CorePipeClient` при epoch change сбрасывает sequence и queued
@@ -39,7 +41,8 @@
 
    - `target_id` — stable bounded hash, не содержащий path или secret;
    - `target_generation` — monotonic counter внутри Core generation;
-   - canonical `workspace_scope`/workspace hash;
+   - canonical `workspace_scope` — значение существующего
+     `workspace_scope_id`, а не новый параллельный hash;
    - selected route/provider id и backend/adapter id;
    - `core_instance_id` и `session_epoch`.
 
@@ -96,7 +99,9 @@
 - одинаковые workspace scopes не получают доступ к чужим path/secret grants;
 - внешний эффект, начатый до switch, получает `unknown_outcome` без blind
   retry;
-- target IDs/errors/events bounded и не содержат raw secret/path/prompt.
+- target IDs/errors/events bounded и не содержат raw secret/path/prompt;
+- два разных написания одного пути (регистр, завершающий разделитель) дают
+  один и тот же `workspace_scope` и не порождают лишний target switch.
 
 ## Готово, когда
 

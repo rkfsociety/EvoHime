@@ -22,6 +22,9 @@ provider network.
   результатом fake acceptance;
 - packaging smoke: он нужен для release audit, но не заменяет contract tests.
 
+Реальный сетевой provider в матрицу не входит: все provider-сценарии идут
+через fake/mock adapter без credentials.
+
 ## Deterministic acceptance matrix
 
 ### Negotiation и session
@@ -59,7 +62,9 @@ provider network.
 - static/security test запрещает renderer imports для pipe, HTTP, protobuf,
   SQLite и filesystem;
 - `provider.*` сохраняет только shell summary и не раскрывает ключ;
-- legacy `Ready` без `core_info` остаётся совместимым для C# consumer.
+- legacy `Ready` без `core_info` остаётся совместимым для C# consumer;
+- `ProviderSummary` в renderer не содержит ключ, а `restarted` соответствует
+  фактической смене `core_instance_id/session_epoch`.
 
 ## Проверки и команды
 
@@ -67,11 +72,13 @@ provider network.
   и targeted adapter/target tests;
 - Electron из `desktop/evohime-electron`: `npm run check:protocol`, `npm run typecheck`,
   `npm test`;
-- compatibility suite: `dotnet test desktop\\EvoHime.Tests\\EvoHime.Tests.csproj -p:Platform=x64`
-  и `dotnet test desktop\\EvoHime.IpcTests\\EvoHime.IpcTests.csproj`;
-- static checks for forbidden imports/direct transport calls and redaction;
-- `git diff --check` plus packaging smoke `pwsh -File
-  scripts\\native-package.tests.ps1` when release packaging is in scope.
+- compatibility suite:
+  `dotnet test desktop/EvoHime.Tests/EvoHime.Tests.csproj -p:Platform=x64`
+  и `dotnet test desktop/EvoHime.IpcTests/EvoHime.IpcTests.csproj`;
+- static-проверки на запрещённые renderer imports, прямые transport calls и
+  redaction;
+- `git diff --check`, а когда в объёме release packaging — ещё и
+  `pwsh -File scripts/native-package.tests.ps1`.
 
 Каждый acceptance test должен указывать fixture, expected typed code,
 dispatch count и projection result. Простого `ok` или HTTP status без
@@ -80,7 +87,9 @@ dispatch count и projection result. Простого `ok` или HTTP status б
 ## Закрытие
 
 После прохождения матрицы контракт переносится в `docs/architecture.md`,
-подтверждённое состояние — в `docs/current-state.md`, generated protocol и
-compatibility references сверяются, затем удаляются все файлы плана 10.
-Удаление допустимо только после task-only commit с тестовыми доказательствами;
-неполная реализация остаётся в этих планах и не помечается выполненной.
+подтверждённое состояние и конкретные тесты — в `docs/current-state.md`,
+обновляются `docs/development-plan.md` и `docs/plans/README.md`, generated
+protocol и compatibility references сверяются, затем удаляются все файлы
+плана 10. Удаление допустимо только task-only коммитом после свежих проверок;
+неполная реализация остаётся в этих планах с явным разделом о реализованном
+и недостающем поведении и не помечается выполненной.

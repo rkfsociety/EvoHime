@@ -9,9 +9,10 @@ provider contract.
 
 ## Что уже есть в checkout
 
-- `Handshake`, `AuthChallenge`, `Ready`, `core_instance_id`, `session_epoch`,
-  `ResyncRequest`, `ReplayGap` и `FullSnapshot` в
-  `crates/desktop-ipc/proto/evohime.desktop.proto`;
+- `Handshake`, `AuthChallenge`, `ProtocolOffer`, `Ready`, `ResyncRequest`,
+  `ReplayGap` и `FullSnapshot` в
+  `crates/desktop-ipc/proto/evohime.desktop.proto`; `core_instance_id` и
+  `session_epoch` лежат в `EventEnvelope` (поля 6 и 7), а не в `Ready`;
 - Rust negotiation и bounded limits в `crates/desktop-ipc/src/lib.rs`:
   major compatibility, minor downgrade, capability intersection, 4 MiB
   frame, bounded replay/resync;
@@ -21,6 +22,10 @@ provider contract.
 - provider contract в `crates/model-gateway/src/provider_contract.rs`:
   `CapabilityMetadata`, `RoutePolicySnapshot`, `CandidateHealthSnapshot` и
   `RunHealthOverlay`;
+- Core-owned adapters: `NodeAdapter` в
+  `crates/evohime-core/src/workflow_runtime.rs`, `CoreNodeAdapter` в
+  `crates/evohime-core/src/workflow_adapters.rs` и `LocalAdapterProcess` в
+  `crates/evohime-supervisor/src/local_provider.rs`;
 - `provider.*` в Electron main: это локальная оболочка над `provider.json`,
   DPAPI/safeStorage и supervisor restart. Эти команды не являются
   provider/worker transport и не передают ключ renderer'у.
@@ -39,8 +44,16 @@ provider contract.
    истины для model providers. `ProviderAdapterInfo` допускается только как
    bounded transport/view над ними, но не как второй независимый каталог.
 5. Изменение provider credentials по-прежнему делает supervisor/Core
-   restart. Внутри живой сессии можно менять только разрешённые route/model
-   hints; это не должно выглядеть как бесконтрольная hot-swap операция.
+   restart (`provider.save`/`provider.clearKey` в
+   `desktop/evohime-electron/src/main/shell-bridge.ts` возвращают
+   `{ summary, restarted }`). Внутри живой сессии можно менять только
+   разрешённые route/model hints: `SelectModelRequest` по контракту proto
+   применяется без рестарта Core и не является hot-swap credentials.
+
+6. Новые внутренние contracts (`adapter/v1`, `ActiveTarget`) живут в Rust и
+   не создают второй wire transport. В desktop proto попадают только те
+   поля, которые реально пересекают границу main ↔ Core, аддитивно и без
+   переиспользования уже занятых field numbers.
 
 ## Границы
 

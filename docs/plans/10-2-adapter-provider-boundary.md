@@ -12,10 +12,16 @@ adapter, не перенося policy, secrets или workspace ownership в ren
   overlay;
 - routing выбирается Core, а provider credentials собираются supervisor из
   зашифрованного Electron main state;
-- `provider.get/save/clearKey` обслуживаются Electron main и используют
-  `provider.json`; renderer видит только summary;
-- Core workflow adapters уже существуют, но это orchestration adapters, а не
-  новый generic provider transport.
+- `provider.get/save/clearKey` обслуживаются Electron main
+  (`src/main/shell-bridge.ts`, `src/main/provider-store.ts`), хранят ключ в
+  `provider.json` под safeStorage/DPAPI и возвращают renderer только
+  `ProviderSummary` и флаг `restarted`;
+- Core adapters уже есть: trait `NodeAdapter`
+  (`crates/evohime-core/src/workflow_runtime.rs`), `CoreNodeAdapter`
+  (`crates/evohime-core/src/workflow_adapters.rs`) и `LocalAdapterProcess`
+  (`crates/evohime-supervisor/src/local_provider.rs`). Это orchestration и
+  process adapters, а не новый generic provider transport; `adapter/v1`
+  описывает их общий контракт, а не заменяет их.
 
 ## Зависимости
 
@@ -44,14 +50,15 @@ adapter, не перенося policy, secrets или workspace ownership в ren
    Renderer не импортирует generated protobuf, `node:net`, HTTP client,
    filesystem/SQLite API и не получает pipe/secret.
 
-2. Для Core adapters определить bounded internal contract
-   `adapter/v1`:
+2. Для Core adapters определить bounded internal contract `adapter/v1`.
+   Это Rust-контракт внутри Core; в desktop proto он не выносится и второй
+   wire transport не создаёт:
 
-   - descriptor: stable adapter id, contract version, capability metadata,
-     limits and health;
+   - descriptor: stable adapter id, версия контракта, capability metadata,
+     limits и health;
    - session: negotiated capabilities, immutable policy/capability snapshot,
-     target generation, deadline/cancellation and scope grants;
-   - request/result: correlation id, bounded input/output, typed status and
+     target generation, deadline/cancellation и scope grants;
+   - request/result: correlation id, bounded input/output, typed status и
      redacted diagnostic.
 
    Descriptor должен переиспользовать `CapabilityMetadata`,
@@ -76,9 +83,11 @@ adapter, не перенося policy, secrets или workspace ownership в ren
    - `provider.*` валидирует bounded provider/model/base URL, сохраняет ключ
      через safeStorage и возвращает summary;
    - изменение credentials перезапускает supervisor/Core и создаёт новую
-     `core_instance_id/session_epoch`;
-   - `SelectModelRequest` и route hints не меняют policy, workspace scope,
-     approval или secret boundary.
+     `core_instance_id/session_epoch`; renderer узнаёт об этом по
+     `restarted` и по смене generation, а не по локальному предположению;
+   - `SelectModelRequest` применяется без рестарта Core и не меняет policy,
+     workspace scope, approval или secret boundary; допустимые значения
+     ограничены route snapshot текущего run.
 
 5. Перед каждым dispatch Core валидирует descriptor version, negotiated
    capability, policy hash, target generation, scope и limits. Typed failures:
@@ -98,7 +107,8 @@ adapter, не перенося policy, secrets или workspace ownership в ren
   capability сверх snapshot;
 - provider request не содержит workspace path/secret, а redacted result не
   содержит raw provider error или prompt;
-- renderer static/security test не находит direct pipe/HTTP/protobuf import;
+- renderer static/security test не находит direct pipe/HTTP/protobuf/SQLite
+  import и не видит `apiKey` в `ProviderSummary`;
 - adapter calls имеют bounded timeout/cancellation и не оставляют новую
   попытку;
 - descriptor/route snapshot round-trip и limits имеют deterministic fixtures.

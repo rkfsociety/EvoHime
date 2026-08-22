@@ -7,10 +7,17 @@
 
 ## Что уже есть в checkout
 
-- `Handshake` рекламирует protocol, session epoch и capabilities;
-- Core сначала отправляет `AuthChallenge`, затем `Ready`;
-- Rust и Electron согласуют одинаковый major, выбирают меньший minor и
-  пересекают capabilities `replay`/`resync`;
+- `Handshake` рекламирует protocol, session epoch и capabilities; для
+  аддитивного offer уже есть отдельный `ProtocolOffer`;
+- Core сначала отправляет `AuthChallenge`, затем `Ready`; сейчас `Ready`
+  занимает поля 1 (`protocol`) и 2 (`core_version`);
+- `negotiate_protocol` в `crates/desktop-ipc/src/lib.rs` согласует одинаковый
+  major, выбирает меньший minor и пересекает capabilities `replay`/`resync`;
+  Electron повторяет тот же алгоритм в `protocol-version.ts`;
+- bounded limits уже заданы константами: `MAX_FRAME_BYTES` = 4 MiB,
+  `DEFAULT_RESYNC_MAX_EVENTS` = 512, `MAX_REPLAY_EVENTS` = 512,
+  `MAX_RESYNC_SNAPSHOT_BYTES` = `MAX_FRAME_BYTES - 1024`,
+  `MAX_CAPABILITIES` = 64, `MAX_CAPABILITY_NAME_BYTES` = 64;
 - `CorePipeClient` уже останавливает работу при major mismatch, сбрасывает
   sequence и очередь при смене `core_instance_id/session_epoch`, а затем
   делает bounded resync.
@@ -34,8 +41,8 @@ auth/reconnect flow.
 
 ## Контракт
 
-1. Добавить сообщение `CoreInfo` и аддитивное поле `Ready.core_info` с
-   bounded-полями:
+1. Добавить сообщение `CoreInfo` и аддитивное поле `Ready.core_info = 3`
+   (поля 1 и 2 заняты, field numbers не переиспользуются) с bounded-полями:
 
    - `ProtocolVersion protocol`;
    - `core_version`, `build_revision`, `runtime_revision` — короткие
@@ -44,18 +51,26 @@ auth/reconnect flow.
    - `feature_flags` — только informational flags, не security authority;
    - `max_frame_bytes`, `max_replay_events`, `max_snapshot_bytes`.
 
+   Каждая строка проверяется тем же bounded-правилом, что и capability names
+   (`MAX_CAPABILITY_NAME_BYTES`, непустая, без ASCII control chars), а число
+   capabilities и flags не превышает `MAX_CAPABILITIES`. Отдельного
+   negotiation-сообщения не вводится: `ProtocolOffer` и `Handshake` остаются
+   единственным offer-путём, `CoreInfo` только описывает peer.
+
    `core_instance_id` и `session_epoch` не дублируются в `CoreInfo`: для
    каждого envelope источником истины остаются существующие поля envelope.
    Старый consumer, который игнорирует `core_info`, продолжает работать по
    старому `Ready` contract.
 
-2. Использовать ровно один алгоритм на Rust и Electron: major должен
+2. Использовать ровно один алгоритм на Rust и Electron — уже существующий
+   `negotiate_protocol`/`protocol-version.ts`, а не новый: major должен
    совпадать, minor становится `min(local, peer)`, capability set —
    пересечение после bounded validation. Capability, отсутствующая в
    intersection, не может быть отправлена в рабочей команде.
 
-3. Вычислять effective limits как минимум локального и peer limit. Нулевые,
-   противоречивые или превышающие hard limit значения — typed
+3. Вычислять effective limits как `min(local, peer)`; результат никогда не
+   поднимается выше локальной hard-константы, даже если peer объявил больше.
+   Нулевые, противоречивые или превышающие hard limit значения — typed
    `unsupported`, а frame/request, превышающий effective limit, отклоняется
    до dispatch. Для `ResyncRequest` сохранить правило: `max_events=0` значит
    bounded default, значение выше лимита отвергается.
@@ -81,9 +96,11 @@ auth/reconnect flow.
 - proto: `CoreInfo` и `Ready.core_info`, без изменения существующих field
   numbers и без protocol major bump;
 - Rust: общий validator/fixture для CoreInfo и effective limits;
-- Electron: typed `CoreAvailability`/reason вместо неограниченного `reason`
-  string, при этом старые connection states должны быть мигрированы
-  совместимо;
+- Electron: аддитивные typed `CoreAvailability`/`reason class` в `ShellState`
+  (`src/shared/api.ts`); существующий union `ConnectionState`
+  (`starting`…`fatal`) и bounded `reason` string сохраняются, чтобы renderer
+  и его тесты не ломались, а typed code становится вторым полем, а не
+  заменой;
 - compatibility shell: отсутствие `core_info` трактуется как legacy peer,
   а не как повреждённый frame.
 
@@ -94,6 +111,7 @@ auth/reconnect flow.
 - unavailable Core, auth rejection, stale session и reconnect;
 - epoch/instance change сбрасывает cache, queue и sequence до resync;
 - oversized frame/request отклоняется без изменения projection;
+- `Ready` без `core_info` принимается как legacy peer, а не как ошибка;
 - один known-answer fixture для Rust, Electron и C# protocol/auth path;
 - `npm run check:protocol`, targeted Rust desktop-ipc tests и Electron
   protocol/pipe-client tests.
