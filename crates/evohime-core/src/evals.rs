@@ -1737,8 +1737,8 @@ mod workflow_orchestration {
     }
 
     /// 2. Diamond даёт bounded fan-out и детерминированный fan-in: параллельно
-    /// уходит только объявленная безопасной группа, а объединяющий узел ждёт
-    /// обе ветви.
+    ///    уходит только объявленная безопасной группа, а объединяющий узел ждёт
+    ///    обе ветви.
     pub fn diamond_fan_out_is_bounded_and_fan_in_is_deterministic() -> Result<(), String> {
         let mut left = transform("left")
             .with_input("in", PortType::Text, true)
@@ -1812,7 +1812,7 @@ mod workflow_orchestration {
     }
 
     /// 3. `AND` ждёт все ветви, `OR` принимает объявленный маршрут, а
-    /// неизвестный маршрут отклоняется контрактом.
+    ///    неизвестный маршрут отклоняется контрактом.
     pub fn and_waits_for_all_while_or_accepts_a_declared_route() -> Result<(), String> {
         let mut any = transform("any")
             .with_input("left", PortType::Text, true)
@@ -1908,7 +1908,7 @@ mod workflow_orchestration {
     }
 
     /// 5. Повтор не применяется к неповторяемым ошибкам и ограничен классами
-    /// ошибок, объявленными узлом.
+    ///    ошибок, объявленными узлом.
     pub fn retry_never_repeats_a_non_retryable_error() -> Result<(), String> {
         let mut node = transform("node");
         node.acceptance = NodeAcceptance {
@@ -1971,7 +1971,7 @@ mod workflow_orchestration {
     }
 
     /// 9. Идентичность MCP-сервера, host и имя инструмента не могут прийти из
-    /// вывода модели или из renderer.
+    ///    вывода модели или из renderer.
     pub fn mcp_identity_cannot_be_substituted() -> Result<(), String> {
         let mut registry = WorkflowRegistry::empty();
         registry.set_mcp_host_allowlist(Some(BTreeSet::from(["allowed.test".to_string()])));
@@ -2049,7 +2049,7 @@ mod workflow_orchestration {
     }
 
     /// 10. Свежесть, идентичность источника и bounded-объём контекстного
-    /// провайдера проверяются до включения данных в контекст модели.
+    ///     провайдера проверяются до включения данных в контекст модели.
     pub fn context_provider_freshness_and_scope_are_enforced() -> Result<(), String> {
         let mut registry = WorkflowRegistry::empty();
         registry.register_provider(ContextProviderEntry {
@@ -2128,7 +2128,7 @@ mod workflow_orchestration {
     }
 
     /// 11. Цикл, эскалация прав, неограниченный цикл и слишком большой batch
-    /// отклоняются до любого эффекта.
+    ///     отклоняются до любого эффекта.
     pub fn escalation_and_unbounded_shapes_are_rejected_before_any_effect() -> Result<(), String> {
         let mut looping = transform("loop");
         looping.node_type = NodeType::Loop {
@@ -2189,7 +2189,7 @@ mod workflow_orchestration {
     }
 
     /// 13. Неподключённая ошибка блокирует downstream, а объявленная
-    /// failure-ветвь продолжает только разрешённый fallback.
+    ///     failure-ветвь продолжает только разрешённый fallback.
     pub fn an_unconnected_failure_blocks_downstream_but_a_declared_branch_continues(
     ) -> Result<(), String> {
         let workflow = graph(
@@ -2242,7 +2242,7 @@ mod workflow_orchestration {
     }
 
     /// 14. Запущенный snapshot не меняется вместе с библиотекой шаблонов, а
-    /// неподдержанное расписание называется явно.
+    ///     неподдержанное расписание называется явно.
     pub fn a_started_snapshot_ignores_library_changes() -> Result<(), String> {
         let template = crate::workflow_templates::template("repository-research")
             .ok_or("template must exist")?;
@@ -2276,7 +2276,7 @@ mod workflow_orchestration {
     }
 
     /// 12. Клиент, не знающий команд workflow, продолжает согласовывать ту же
-    /// major-версию: набор команд additive.
+    ///     major-версию: набор команд additive.
     pub fn workflow_commands_stay_additive_for_older_clients() -> Result<(), String> {
         let older = ProtocolVersion::new(1, 0);
         let newer = ProtocolVersion::new(1, 7);

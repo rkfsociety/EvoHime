@@ -1727,13 +1727,10 @@ pub fn check_acceptance(node: &WorkflowNode, success: &NodeSuccess) -> Result<()
             ),
         ));
     }
-    let schema = acceptance
-        .output_schema
-        .as_ref()
-        .or_else(|| match &node.node_type {
-            NodeType::Child { child } => child.output_schema.as_ref(),
-            _ => None,
-        });
+    let schema = acceptance.output_schema.as_ref().or(match &node.node_type {
+        NodeType::Child { child } => child.output_schema.as_ref(),
+        _ => None,
+    });
     if let Some(schema) = schema {
         let Ok(parsed) = serde_json::from_str::<Value>(schema) else {
             return Err(NodeError::permanent(
