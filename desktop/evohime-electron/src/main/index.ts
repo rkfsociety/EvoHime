@@ -22,6 +22,7 @@ import { loadUpdateConfig } from './update/config'
 import { resolveGithubToken } from './update/github-token'
 import { ListenerRuntimeService } from './update/listener-runtime'
 import { UpdateService } from './update/update-service'
+import { createOverlay, type OverlayController } from './overlay'
 import { createMainWindow, focusWindow, loadRenderer } from './window'
 import { WorkspaceService, windowChooser } from './workspace-service'
 import { WorkspaceStore } from './workspace-store'
@@ -41,6 +42,7 @@ const reloadLimiter = new ReloadLimiter()
 
 let mainWindow: BrowserWindow | null = null
 let tray: TrayController | null = null
+let overlay: OverlayController | null = null
 let client: CorePipeClient | null = null
 let supervisorProcess: ChildProcess | null = null
 let supervisorLivenessTimer: NodeJS.Timeout | null = null
@@ -102,6 +104,9 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
       broadcast({ kind: 'core-event', event })
       observeAmbientEvent(event.eventType, event.payload)
       notifyWhenHidden(event.eventType)
+      // Индикатор поверх всех окон коротко вспыхивает, когда ядро распознало
+      // обращение «Ева, …» — тот же сигнал, что панель показывает карточкой.
+      if (event.eventType === 'ambient.voice_command') overlay?.flashHeard()
     })
 
     mainWindow = createMainWindow({ ...hardening, onRendererFailure: handleRendererFailure })
@@ -110,6 +115,7 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
       log,
       onToggleListening: requestAmbientListening
     })
+    overlay = createOverlay()
     updates = createUpdateService()
     listenerRuntime = createListenerRuntimeService()
 
@@ -196,6 +202,7 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
       supervisorProcess = null
     }
     tray?.destroy()
+    overlay?.destroy()
     log('info', 'shell.stopping', {})
   })
 }
@@ -279,6 +286,7 @@ function requestAmbientStatus(): void {
 function setAmbientState(state: ListeningState | null): void {
   ambientState = state
   tray?.setListeningState(state)
+  overlay?.setListeningState(state)
 }
 
 /**
