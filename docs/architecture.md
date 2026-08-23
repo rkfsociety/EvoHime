@@ -655,3 +655,12 @@ task/run, URL проходит SSRF-проверку, mutation tools требу�
 selector/type inputs bounded; отсутствие CDP configuration даёт typed failure,
 не unrestricted fallback. Browser output и screenshot остаются внутри
 workspace sandbox и не раскрывают typed text в structured output.
+
+## Voice pipeline и ambient audio
+
+Listener остаётся отдельным authenticated runtime с whisper.cpp и verified
+manifest. Capture требует microphone capability и ambient policy; audio
+таблицы не содержат PCM/blob, а transcript/utterance lifecycle ограничен
+retention, forget и bounded provenance. Quiet hours, pause, deny и deletion
+останавливают или удаляют данные до memory/proactivity gates; новый engine не
+загружается без manifest/ABI/hash/package validation.

@@ -345,3 +345,15 @@ telemetry::tests` — 2 теста прошли; `cargo fmt --all` и `git diff 
 Проверки 2026-08-23: `cargo test --locked -p evohime-tool-runtime` — 135
 тестов прошли, 1 ignored и 6 network integration tests прошли; `cargo fmt
 --all` и `git diff --check` прошли.
+
+## План 14 — voice pipeline и ambient audio — реализован
+
+- Listener использует whisper.cpp runtime с manifest/ABI/hash проверками,
+  authenticated listener pipe, 16 kHz resampling/VAD/segmentation и bounded
+  ambient policy.
+- Ambient storage не хранит PCM/blob; retention, tombstone, forget, quiet
+  hours, pause и memory/proactivity gates проверены существующими тестами.
+
+Проверки 2026-08-23: listener-related crates собраны; targeted ambient
+storage — 18 тестов, все прошли; engine E2E без поставленного runtime штатно
+не запускался.
