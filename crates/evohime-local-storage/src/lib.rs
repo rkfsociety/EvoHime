@@ -15,6 +15,7 @@ pub mod capability_store;
 pub mod child_store;
 pub mod context_command_store;
 pub mod context_ledger_store;
+pub mod execution_ledger;
 pub mod feedback_store;
 pub mod memory_store;
 pub mod model_limit_store;
