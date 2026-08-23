@@ -357,3 +357,16 @@ telemetry::tests` — 2 теста прошли; `cargo fmt --all` и `git diff 
 Проверки 2026-08-23: listener-related crates собраны; targeted ambient
 storage — 18 тестов, все прошли; engine E2E без поставленного runtime штатно
 не запускался.
+
+## План 15 — vision и document worker — реализован
+
+- Добавлен Core-owned bounded `vision/v1` input/output contract с canonical
+  artifact/correlation IDs, capability snapshot, limits, typed statuses и
+  fail-closed `backend_unavailable` без внешнего runtime.
+- Visual output не является host action authority; provenance/evidence и
+  redaction boundaries закреплены в архитектуре. Полноценный optional worker
+  не включается без отдельного packaging/security gate.
+
+Проверки 2026-08-24: `cargo test --locked -p evohime-core
+vision_contract::tests` — 2 теста прошли; `cargo fmt --all` и `git diff
+--check` прошли.

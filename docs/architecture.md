@@ -664,3 +664,12 @@ manifest. Capture требует microphone capability и ambient policy; audio
 retention, forget и bounded provenance. Quiet hours, pause, deny и deletion
 останавливают или удаляют данные до memory/proactivity gates; новый engine не
 загружается без manifest/ABI/hash/package validation.
+
+## Vision и document worker
+
+Vision остаётся optional Core-owned capability. `vision/v1` принимает только
+bounded явно переданный artifact с capability snapshot и возвращает typed
+unsupported/resource/unknown/degraded statuses; visual output не имеет host
+action authority. Worker backend отсутствует в базовом package, поэтому
+`backend_unavailable` — штатный fail-closed результат. Evidence, OCR claims и
+memory/RAG citations требуют redacted page/frame provenance.
