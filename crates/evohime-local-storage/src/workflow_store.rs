@@ -827,6 +827,7 @@ pub fn append_event(
 /// `connection` must already be inside the caller's transaction — this
 /// function never opens or commits one of its own, so the ledger event
 /// insert and this linkage row land atomically together.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn append_event_linked(
     connection: &Connection,
     run_id: &str,

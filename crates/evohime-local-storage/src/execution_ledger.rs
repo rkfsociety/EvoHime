@@ -620,12 +620,10 @@ pub fn assert_single_terminal(events: &[ExecutionEventV1]) -> Result<(), LedgerC
         let (Some(action_id), Some(state)) = (event.action_id.as_deref(), event.state_after) else {
             continue;
         };
-        if state.is_terminal() {
-            if !seen_terminal.insert(action_id) {
-                return Err(LedgerContractError::DuplicateTerminalOutcome {
-                    action_id: action_id.to_string(),
-                });
-            }
+        if state.is_terminal() && !seen_terminal.insert(action_id) {
+            return Err(LedgerContractError::DuplicateTerminalOutcome {
+                action_id: action_id.to_string(),
+            });
         }
     }
     Ok(())

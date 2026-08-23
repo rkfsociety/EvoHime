@@ -3,6 +3,7 @@ fn main() {
     std::env::set_var("PROTOC", protoc);
 
     prost_build::Config::new()
+        .boxed(".evohime.desktop.v1.EventEnvelope.event.execution_event")
         .compile_protos(&["proto/evohime.desktop.proto"], &["proto"])
         .expect("desktop IPC protobuf must compile");
     println!("cargo:rerun-if-changed=proto/evohime.desktop.proto");

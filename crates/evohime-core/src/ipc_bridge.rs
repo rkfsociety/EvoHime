@@ -746,7 +746,8 @@ impl IpcBridge {
                 payload: record.payload,
                 core_instance_id: self.core_instance_id.clone(),
                 session_epoch: self.session_epoch,
-                event: execution_event.map(generated::event_envelope::Event::ExecutionEvent),
+                event: execution_event
+                    .map(|event| generated::event_envelope::Event::ExecutionEvent(Box::new(event))),
             };
             transport::write_frame(writer, &event.encode_to_vec()).await?;
         }
