@@ -5766,6 +5766,23 @@ impl IpcBridge {
                             .map_err(|e| {
                             evohime_tool_runtime::ToolError::Execution(e.to_string())
                         })?;
+                        // План 08-4: the "observation" link of "action →
+                        // tool call → observation → receipt" — a bounded
+                        // content-addressed marker of the tool's output,
+                        // published right before the terminal receipt so a
+                        // reader sees the result was observed before it was
+                        // signed. `runtime`'s borrow of `database` has to
+                        // end (last use above) before this can borrow it.
+                        record_ledger_tool_outcome(
+                            &database,
+                            &request,
+                            context.session_id.map(|id| id.to_string()),
+                            execution_ledger::ActionState::Running,
+                            execution_ledger::ExecutionEventBody::Observation {
+                                summary_digest: digest.clone(),
+                                artifact_refs: Vec::new(),
+                            },
+                        );
                         record_ledger_tool_outcome(
                             &database,
                             &request,
@@ -6053,6 +6070,18 @@ impl IpcBridge {
                     let receipt_hash = runtime
                         .complete(&receipt_request, "succeeded", &output_digest, None)
                         .map_err(|error| FrameError::Io(error.to_string()))?;
+                    // See execute_terminal_with_receipt: the "observation"
+                    // link of "action → tool call → observation → receipt".
+                    record_ledger_tool_outcome(
+                        &database,
+                        &receipt_request,
+                        None,
+                        execution_ledger::ActionState::Running,
+                        execution_ledger::ExecutionEventBody::Observation {
+                            summary_digest: output_digest.clone(),
+                            artifact_refs: Vec::new(),
+                        },
+                    );
                     record_ledger_tool_outcome(
                         &database,
                         &receipt_request,
@@ -7869,6 +7898,25 @@ mod tests {
             )
             .expect("ledger.tool_call row exists");
         assert_eq!(tool_call_state, "running");
+
+        // The "observation" link of "action → tool call → observation →
+        // receipt" — must exist under the same action_id, between the call
+        // and the receipt.
+        let (observation_action_id, observation_payload): (String, Vec<u8>) = database
+            .connection()
+            .query_row(
+                "SELECT action_id, payload FROM events WHERE event_type = 'ledger.observation'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("ledger.observation row exists");
+        assert_eq!(observation_action_id, tool_call_action_id);
+        let observation_event: execution_ledger::ExecutionEventV1 =
+            serde_json::from_slice(&observation_payload).expect("observation event decodes");
+        assert!(matches!(
+            observation_event.body,
+            execution_ledger::ExecutionEventBody::Observation { .. }
+        ));
 
         let (receipt_action_id, receipt_state, receipt_payload): (String, String, Vec<u8>) =
             database
