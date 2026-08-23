@@ -8,11 +8,9 @@
 
 Планы 01–06, 08 и 09 реализованы целиком и удалены из каталога: их контракты
 живут в [`../architecture.md`](../architecture.md), подтверждённое состояние —
-в [`../current-state.md`](../current-state.md). В каталоге остаются восемь
-незавершённых направлений: сначала план 07, затем план 12,
-12, 13, 14, 15, 16 и 17.
+в [`../current-state.md`](../current-state.md). В каталоге остаются шесть
+незавершённых направлений: сначала план 07, затем планы 13, 14, 15, 16 и 17.
 Их обзоры:
-[`12-0-telemetry-and-evaluation.md`](12-0-telemetry-and-evaluation.md) и
 [`13-0-browser-backend.md`](13-0-browser-backend.md) и
 [`14-0-voice-and-ambient-audio.md`](14-0-voice-and-ambient-audio.md),
 [`15-0-vision-and-documents.md`](15-0-vision-and-documents.md),
@@ -52,7 +50,7 @@
 | 09 Policy, capabilities и approval | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
 | 10 IPC, version negotiation и provider boundary | реализован; контракт перенесён в [`../architecture.md`](../architecture.md), состояние — в [`../current-state.md`](../current-state.md) | — |
 | 11 Typed memory и Core-first RAG | реализован; контракт перенесён в [`../architecture.md`](../architecture.md), состояние — в [`../current-state.md`](../current-state.md) | — |
-| 12 Local telemetry и deterministic evaluation | проектируется; обзор в [`12-0-telemetry-and-evaluation.md`](12-0-telemetry-and-evaluation.md) | 12-1 от планов 08–11 и текущего event/evaluation harness; 12-2 от 12-1; 12-3 от 12-2; 12-4 от 12-3 |
+| 12 Local telemetry и deterministic evaluation | реализован; контракт перенесён в [`../architecture.md`](../architecture.md), состояние — в [`../current-state.md`](../current-state.md) | — |
 | 13 Изолированный browser backend | проектируется; обзор в [`13-0-browser-backend.md`](13-0-browser-backend.md) | 13-1 от планов 08–12 и tool-runtime; 13-2 от 13-1; 13-3 от 13-2; 13-4 от 13-3 |
 | 14 Voice pipeline и ambient audio | проектируется; обзор в [`14-0-voice-and-ambient-audio.md`](14-0-voice-and-ambient-audio.md) | 14-1 от планов 08–12 и listener; 14-2 от 14-1; 14-3 от 14-2; 14-4 от 14-3 |
 | 15 Vision и document worker | проектируется; обзор в [`15-0-vision-and-documents.md`](15-0-vision-and-documents.md) | 15-1 от планов 08–12 и решения о worker; 15-2 от 15-1; 15-3 от 15-2; 15-4 от 15-3 |
@@ -60,9 +58,9 @@
 | 17 Общие release gates и нерешённые решения | сопровождающий план; обзор в [`17-0-release-criteria-and-open-decisions.md`](17-0-release-criteria-and-open-decisions.md) | 17-1 от планов 07–16; 17-2 от 17-1; 17-3 от 17-2; 17-4 от 17-3 |
 
 Порядок незавершённых этапов задаётся так: сначала последовательно выполняется
-12-1 → 12-2 → 12-3 → 12-4, затем 13-1 → 13-2 → 13-3 → 13-4, затем
+13-1 → 13-2 → 13-3 → 13-4, затем
 14-1 → 14-2 → 14-3 → 14-4, затем 15-1 → 15-2 → 15-3 → 15-4, затем
-16-1 → 16-2 → 16-3 → 16-4 и 17-1 → 17-2 → 17-3 → 17-4. Обзоры 11-0, 12-0, 13-0, 14-0, 15-0, 16-0 и 17-0 не являются исполняемыми этапами;
+16-1 → 16-2 → 16-3 → 16-4 и 17-1 → 17-2 → 17-3 → 17-4. Обзоры 13-0, 14-0, 15-0, 16-0 и 17-0 не являются исполняемыми этапами;
 они фиксируют границы и граф зависимостей соответствующего плана.
 
 ## Что уже реализовано

@@ -319,3 +319,17 @@ passed, 2 штатно skipped; `npm run typecheck`, `npm run check:protocol`,
 -p evohime-local-storage` — 514 и 183 теста прошли; `cargo check --locked
 -p evohime-local-storage -p evohime-core`, `cargo fmt --all` и `git diff
 --check` прошли.
+
+## План 12 — local telemetry и deterministic evaluation — реализован
+
+- Добавлена bounded `telemetry/v1` projection с typed verdict, correlation
+  events, attempt/reason metadata и обязательной redaction.
+- Существующий `evals.rs` используется как offline deterministic harness;
+  telemetry report не становится source of truth и не выполняет production
+  side effects.
+- Зафиксированы typed diagnostics, fixture/replay границы, advisory judge
+  separation, repeated-trial reliability и release-gate thresholds.
+
+Проверки 2026-08-23: `cargo test --locked -p evohime-core
+telemetry::tests` — 2 теста прошли; `cargo fmt --all` и `git diff --check`
+прошли.

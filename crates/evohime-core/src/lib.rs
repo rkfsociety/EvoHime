@@ -981,6 +981,7 @@ pub mod task_memory;
 pub use task_memory::project_scope_id;
 pub mod plan_context;
 pub mod plan_review;
+pub mod telemetry;
 pub mod voice_command;
 pub mod workflow;
 pub mod workflow_adapters;

@@ -638,3 +638,13 @@ Context compaction имеет SQLite-backed operation state machine
 revision, summarizer version и связь item с `sequence_id`. UI получает только
 bounded metadata/projection; исходная execution/evidence история не удаляется
 compaction-операциями.
+
+## Local telemetry и deterministic evaluation
+
+`telemetry/v1` — bounded derived projection над Core event journal, receipts и
+model-request provenance; эти источники остаются source of truth. Projection
+проверяет correlation/event IDs, attempt, bounded event count, redaction и
+размер report. `judge_signal` хранится отдельно от deterministic gate verdict.
+Offline evals используют literal fixtures, frozen inputs и не имеют доступа к
+production filesystem, network, tools или SQLite; malformed traces получают
+typed diagnostics, а неизвестный результат не считается pass.
