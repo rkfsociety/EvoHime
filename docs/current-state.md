@@ -302,3 +302,20 @@ Electron targeted tests — 25 passed, `npm run typecheck` и `git diff --check`
 model-gateway unit tests плюс integration suites прошли; Electron — 429
 passed, 2 штатно skipped; `npm run typecheck`, `npm run check:protocol`,
 `cargo fmt --all` и `git diff --check` проходят.
+## План 11 — typed memory и Core-first RAG — реализован
+
+- Memory schema v31 идемпотентно устанавливает `record_version`, bounded
+  `evidence_refs` и `execution_event_refs`; extraction records сохраняют
+  provenance, а `secret` отвергается до SQLite.
+- Core использует typed memory-to-retrieval adapter с scope/privacy filtering,
+  deterministic ranking, bounded citations и stale-generation rejection.
+- Forget очищает содержание и provenance refs, оставляет обезличенную запись и
+  digest tombstone; повторная операция идемпотентна.
+- Context ledger получил durable compaction operation state (`planned`,
+  `running`, `cancelled`, `committed`, `failed`), unique operation key,
+  versioned projection и item-to-sequence provenance tables.
+
+Проверки 2026-08-23: `cargo test --locked -p evohime-core
+-p evohime-local-storage` — 514 и 183 теста прошли; `cargo check --locked
+-p evohime-local-storage -p evohime-core`, `cargo fmt --all` и `git diff
+--check` прошли.

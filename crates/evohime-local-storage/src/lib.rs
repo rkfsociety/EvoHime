@@ -31,7 +31,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 30;
+pub const SCHEMA_VERSION: u32 = 31;
 const LEGACY_SCHEMA_VERSION: u32 = 26;
 
 #[derive(Debug, thiserror::Error)]
@@ -64,6 +64,8 @@ pub enum StorageError {
     InvalidRunEffect(String),
     #[error("invalid recovery transition: {0}")]
     InvalidRecovery(String),
+    #[error("invalid storage input: {0}")]
+    InvalidInput(String),
     #[error("backup operation failed: {0}")]
     Backup(String),
     #[error("backup format is invalid: {0}")]
@@ -493,6 +495,10 @@ impl LocalDatabase {
         // cancelling. Тем же идемпотентным путём, вызывается после
         // workflow_store, чья таблица здесь пересобирается.
         execution_ledger::install_schema(&connection)
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        memory_store::install_schema(&connection)
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        context_ledger_store::install_compaction_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })

@@ -957,6 +957,7 @@ mod listener_pipe;
 pub mod memory_api;
 pub mod memory_domain;
 pub mod memory_extraction;
+pub mod memory_retrieval;
 pub mod observability;
 pub mod permission_rules;
 pub mod plan;
@@ -5410,6 +5411,11 @@ impl ToolAgent {
             // `unknown` both keep it out of retrieval.
             let verdict = self.verify_candidate(workspace_root, &candidate).await;
             record.extraction = evohime_local_storage::memory_store::MemoryExtractionFields {
+                record_version: 1,
+                evidence_refs: memory_provenance_source_id(&candidate.evidence)
+                    .into_iter()
+                    .collect(),
+                execution_event_refs: Vec::new(),
                 kind: candidate.kind.as_str().to_owned(),
                 canonical_subject: Some(candidate.canonical_subject.clone()),
                 confirmation_state: decision.state.as_str().to_owned(),
@@ -5700,6 +5706,11 @@ impl ToolAgent {
                 continue;
             };
             record.extraction = evohime_local_storage::memory_store::MemoryExtractionFields {
+                record_version: 1,
+                evidence_refs: memory_provenance_source_id(&candidate.evidence)
+                    .into_iter()
+                    .collect(),
+                execution_event_refs: Vec::new(),
                 kind: candidate.kind.as_str().to_owned(),
                 canonical_subject: Some(candidate.canonical_subject.clone()),
                 confirmation_state: decision.state.as_str().to_owned(),

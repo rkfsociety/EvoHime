@@ -39,6 +39,55 @@ pub const BOUNDED_REASON_CHARS: usize = 200;
 /// Диагностика неудачной записи ledger. Model call при этом не выполняется.
 pub const LEDGER_WRITE_FAILED: &str = "ledger_write_failed";
 
+pub const COMPACTION_OPERATION_KEY_BYTES: usize = 128;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompactionOperation {
+    pub operation_key: String,
+    pub scope_id: String,
+    pub snapshot_revision: i64,
+    pub state: String,
+    pub summary_id: Option<String>,
+    pub fallback: bool,
+    pub fallback_reason: Option<String>,
+}
+
+/// Идемпотентный durable state compaction. Уникальность operation key
+/// обеспечивается SQLite, а не только проверкой в памяти вызывающего кода.
+pub fn install_compaction_schema(connection: &Connection) -> Result<(), StorageError> {
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS context_compaction_operations (
+            operation_key TEXT PRIMARY KEY NOT NULL,
+            scope_id TEXT NOT NULL,
+            snapshot_revision INTEGER NOT NULL,
+            state TEXT NOT NULL CHECK(state IN ('planned','running','cancelled','committed','failed')),
+            summary_id TEXT,
+            fallback INTEGER NOT NULL DEFAULT 0 CHECK(fallback IN (0,1)),
+            fallback_reason TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_context_compaction_scope
+            ON context_compaction_operations(scope_id, snapshot_revision);
+        CREATE TABLE IF NOT EXISTS context_compaction_provenance (
+            summary_id TEXT NOT NULL,
+            source_item_id TEXT NOT NULL,
+            sequence_id INTEGER,
+            provenance_status TEXT NOT NULL CHECK(provenance_status IN ('complete','incomplete')),
+            PRIMARY KEY(summary_id, source_item_id)
+        );
+        CREATE TABLE IF NOT EXISTS context_compaction_projections (
+            summary_id TEXT PRIMARY KEY NOT NULL,
+            schema_version INTEGER NOT NULL,
+            payload_version INTEGER NOT NULL,
+            snapshot_revision INTEGER NOT NULL,
+            operation_key TEXT NOT NULL UNIQUE,
+            summarizer_version TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            committed_at INTEGER NOT NULL
+        );",
+    )?;
+    Ok(())
+}
+
 /// Bounded read-only projection записи ledger для IPC и UI (этап 01.5).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContextLedgerProjection {
@@ -105,6 +154,87 @@ impl<'a> ContextLedgerStore<'a> {
         connection.pragma_update(None, "journal_mode", "WAL")?;
         connection.busy_timeout(Duration::from_millis(u64::from(BUSY_TIMEOUT_MS)))?;
         Ok(Self { connection })
+    }
+
+    pub fn begin_compaction(
+        &self,
+        operation_key: &str,
+        scope_id: &str,
+        snapshot_revision: i64,
+    ) -> Result<CompactionOperation, StorageError> {
+        if operation_key.is_empty() || operation_key.len() > COMPACTION_OPERATION_KEY_BYTES {
+            return Err(StorageError::InvalidInput(
+                "invalid compaction operation key".into(),
+            ));
+        }
+        self.connection.execute(
+            "INSERT OR IGNORE INTO context_compaction_operations
+             (operation_key, scope_id, snapshot_revision, state)
+             VALUES (?1, ?2, ?3, 'planned')",
+            rusqlite::params![operation_key, scope_id, snapshot_revision],
+        )?;
+        self.connection.execute(
+            "UPDATE context_compaction_operations SET state = 'running'
+             WHERE operation_key = ?1 AND state = 'planned'",
+            [operation_key],
+        )?;
+        self.compaction_operation(operation_key)
+    }
+
+    pub fn finish_compaction(
+        &self,
+        operation_key: &str,
+        summary_id: &str,
+        fallback: bool,
+        fallback_reason: Option<&str>,
+    ) -> Result<CompactionOperation, StorageError> {
+        self.connection.execute(
+            "UPDATE context_compaction_operations
+             SET state = 'committed', summary_id = ?2, fallback = ?3, fallback_reason = ?4
+             WHERE operation_key = ?1 AND state = 'running'",
+            rusqlite::params![
+                operation_key,
+                summary_id,
+                i32::from(fallback),
+                fallback_reason
+            ],
+        )?;
+        self.compaction_operation(operation_key)
+    }
+
+    pub fn cancel_compaction(
+        &self,
+        operation_key: &str,
+    ) -> Result<CompactionOperation, StorageError> {
+        self.connection.execute(
+            "UPDATE context_compaction_operations SET state = 'cancelled'
+             WHERE operation_key = ?1 AND state IN ('planned', 'running')",
+            [operation_key],
+        )?;
+        self.compaction_operation(operation_key)
+    }
+
+    pub fn compaction_operation(
+        &self,
+        operation_key: &str,
+    ) -> Result<CompactionOperation, StorageError> {
+        Ok(self.connection.query_row(
+            "SELECT operation_key, scope_id, snapshot_revision, state, summary_id,
+                    fallback, fallback_reason
+             FROM context_compaction_operations WHERE operation_key = ?1",
+            [operation_key],
+            |row| {
+                Ok(CompactionOperation {
+                    operation_key: row.get(0)?,
+                    scope_id: row.get(1)?,
+                    snapshot_revision: row.get(2)?,
+                    state: row.get(3)?,
+                    summary_id: row.get(4)?,
+                    fallback: row.get::<_, i32>(5)? != 0,
+                    fallback_reason: row.get(6)?,
+                })
+            },
+        )?)
     }
 
     /// Запись ledger одной транзакцией `BEGIN IMMEDIATE`: либо появляется полная

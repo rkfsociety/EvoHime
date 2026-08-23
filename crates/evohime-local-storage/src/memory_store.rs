@@ -15,6 +15,7 @@ pub const MAX_PROVENANCE_BYTES: usize = 2 * 1024;
 pub const MAX_TIMESTAMP_BYTES: usize = 64;
 pub const MAX_QUERY_BYTES: usize = 512;
 pub const MAX_TTL_SECONDS: u64 = 366 * 24 * 60 * 60;
+pub const MAX_EVIDENCE_REFS: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -80,6 +81,12 @@ impl MemoryPrivacy {
 /// мигрированная запись.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MemoryExtractionFields {
+    #[serde(default = "default_record_version")]
+    pub record_version: u32,
+    #[serde(default)]
+    pub evidence_refs: Vec<String>,
+    #[serde(default)]
+    pub execution_event_refs: Vec<i64>,
     pub kind: String,
     /// `None` у legacy rows: точный нормализатор версионируется в Core и
     /// применяется к `title` при чтении.
@@ -104,6 +111,9 @@ impl Default for MemoryExtractionFields {
     /// пользовательский факт, никогда не проходивший через model extraction.
     fn default() -> Self {
         Self {
+            record_version: 1,
+            evidence_refs: Vec::new(),
+            execution_event_refs: Vec::new(),
             kind: "entity".to_owned(),
             canonical_subject: None,
             confirmation_state: "confirmed".to_owned(),
@@ -121,6 +131,10 @@ impl Default for MemoryExtractionFields {
             provenance_source_id: None,
         }
     }
+}
+
+fn default_record_version() -> u32 {
+    1
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -203,6 +217,22 @@ impl MemoryRecord {
             &self.extraction.validation_status,
             MAX_ID_BYTES,
         )?;
+        if self.extraction.record_version == 0
+            || self.extraction.evidence_refs.len() > MAX_EVIDENCE_REFS
+            || self.extraction.execution_event_refs.len() > MAX_EVIDENCE_REFS
+            || self
+                .extraction
+                .evidence_refs
+                .iter()
+                .any(|value| value.trim().is_empty())
+            || self
+                .extraction
+                .execution_event_refs
+                .iter()
+                .any(|value| *value < 0)
+        {
+            return Err(MemoryStoreError::InvalidEvidenceRefs);
+        }
         // `secret` не имеет представления в persistent store: такие записи
         // отвергаются до persistence, а не маскируются после.
         if self.extraction.privacy_class == "secret" {
@@ -249,6 +279,8 @@ pub enum MemoryStoreError {
     SecretNotStorable,
     #[error("confidence must be within 0.0..=1.0")]
     InvalidConfidence,
+    #[error("memory evidence references are invalid or unbounded")]
+    InvalidEvidenceRefs,
     #[error("memory record was not found")]
     NotFound,
     #[error("state transition from {from} to {to} is not allowed")]
@@ -292,6 +324,42 @@ fn redact_sensitive(value: &str) -> String {
 /// Parameterized SQL only; schema creation and migrations remain external.
 pub struct MemoryStoreSql;
 
+/// Installs the v31 typed-memory columns on every database open. It is
+/// intentionally idempotent and independent of the legacy migration ladder.
+pub fn install_schema(connection: &Connection) -> Result<(), MemoryStoreError> {
+    let exists: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'memory_entries')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        return Ok(());
+    }
+    let mut statement = connection.prepare("PRAGMA table_info(memory_entries)")?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?;
+    if !columns.iter().any(|name| name == "record_version") {
+        connection.execute(
+            "ALTER TABLE memory_entries ADD COLUMN record_version INTEGER NOT NULL DEFAULT 1",
+            [],
+        )?;
+    }
+    if !columns.iter().any(|name| name == "evidence_refs") {
+        connection.execute(
+            "ALTER TABLE memory_entries ADD COLUMN evidence_refs TEXT NOT NULL DEFAULT '[]'",
+            [],
+        )?;
+    }
+    if !columns.iter().any(|name| name == "execution_event_refs") {
+        connection.execute(
+            "ALTER TABLE memory_entries ADD COLUMN execution_event_refs TEXT NOT NULL DEFAULT '[]'",
+            [],
+        )?;
+    }
+    Ok(())
+}
+
 /// Полный список колонок в порядке, которого придерживается `map_record`.
 /// Держится в одном месте, чтобы SELECT'ы не расходились между собой.
 const COLUMNS: &str = "id, scope_kind, scope_id, title, content, provenance, privacy,
@@ -299,7 +367,8 @@ const COLUMNS: &str = "id, scope_kind, scope_id, title, content, provenance, pri
         kind, canonical_subject, confirmation_state, model_confidence,
         verification_confidence, privacy_class, source_trust, supersedes,
         superseded_by, supersession_reason, extractor_version, policy_version,
-        validation_status, validated_at, provenance_source_id";
+        validation_status, validated_at, provenance_source_id, record_version,
+        evidence_refs, execution_event_refs";
 
 /// Только те состояния, в которых запись считается активной памятью.
 const RETRIEVABLE_PREDICATE: &str = "forgotten = 0 AND archived = 0
@@ -314,10 +383,11 @@ impl MemoryStoreSql {
          kind, canonical_subject, confirmation_state, model_confidence,
          verification_confidence, privacy_class, source_trust, supersedes,
          superseded_by, supersession_reason, extractor_version, policy_version,
-         validation_status, validated_at, provenance_source_id)
+         validation_status, validated_at, provenance_source_id, record_version,
+         evidence_refs, execution_event_refs)
         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26,
-                ?27, ?28)";
+                ?27, ?28, ?29, ?30, ?31)";
     pub const ARCHIVE: &'static str =
         "UPDATE memory_entries SET archived = 1 WHERE id = ?1 AND forgotten = 0";
     /// Forget — logical deletion: statement, заголовок, provenance, canonical
@@ -326,6 +396,7 @@ impl MemoryStoreSql {
     pub const FORGET: &'static str = "UPDATE memory_entries
         SET title = '', content = '', provenance = '', canonical_subject = NULL,
             provenance_source_id = NULL, lesson_key = NULL,
+            evidence_refs = '[]', execution_event_refs = '[]',
             forgotten = 1, confirmation_state = 'forgotten'
         WHERE id = ?1";
 
@@ -416,6 +487,11 @@ impl MemoryStoreSql {
                 record.extraction.validation_status,
                 record.extraction.validated_at,
                 record.extraction.provenance_source_id,
+                record.extraction.record_version,
+                serde_json::to_string(&record.extraction.evidence_refs)
+                    .unwrap_or_else(|_| "[]".into()),
+                serde_json::to_string(&record.extraction.execution_event_refs)
+                    .unwrap_or_else(|_| "[]".into()),
             ],
         )?;
         Ok(())
@@ -1054,6 +1130,17 @@ fn map_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryRecord> {
             validation_status: row.get(25)?,
             validated_at: row.get(26)?,
             provenance_source_id: row.get(27)?,
+            record_version: row.get(28).unwrap_or(1),
+            evidence_refs: row
+                .get::<_, Option<String>>(29)
+                .unwrap_or(None)
+                .and_then(|value| serde_json::from_str(&value).ok())
+                .unwrap_or_default(),
+            execution_event_refs: row
+                .get::<_, Option<String>>(30)
+                .unwrap_or(None)
+                .and_then(|value| serde_json::from_str(&value).ok())
+                .unwrap_or_default(),
         },
     })
 }
@@ -1097,7 +1184,10 @@ mod tests {
                     policy_version TEXT NOT NULL DEFAULT 'legacy-v1',
                     validation_status TEXT NOT NULL DEFAULT 'not_required',
                     validated_at TEXT,
-                    provenance_source_id TEXT
+                    provenance_source_id TEXT,
+                    record_version INTEGER NOT NULL DEFAULT 1,
+                    evidence_refs TEXT NOT NULL DEFAULT '[]',
+                    execution_event_refs TEXT NOT NULL DEFAULT '[]'
                 );
                 CREATE TABLE memory_aliases (
                     scope_kind TEXT NOT NULL,
@@ -1446,8 +1536,10 @@ mod tests {
     fn forget_leaves_only_metadata_and_a_digest_tombstone() {
         let connection = Connection::open_in_memory().expect("sqlite opens");
         schema(&connection);
-        MemoryStoreSql::insert(&connection, &record("m-1", "конфиденциальная деталь"))
-            .expect("insert");
+        let mut source = record("m-1", "конфиденциальная деталь");
+        source.extraction.evidence_refs = vec!["evidence-1".into()];
+        source.extraction.execution_event_refs = vec![42];
+        MemoryStoreSql::insert(&connection, &source).expect("insert");
         assert!(MemoryStoreSql::forget_with_tombstone(
             &connection,
             "m-1",
@@ -1464,6 +1556,8 @@ mod tests {
         assert!(forgotten.title.is_empty());
         assert!(forgotten.provenance.is_empty());
         assert!(forgotten.extraction.canonical_subject.is_none());
+        assert!(forgotten.extraction.evidence_refs.is_empty());
+        assert!(forgotten.extraction.execution_event_refs.is_empty());
         assert_eq!(forgotten.extraction.confirmation_state, "forgotten");
 
         let (digest, reason): (String, String) = connection
@@ -1733,5 +1827,23 @@ mod tests {
             memory.validate(),
             Err(MemoryStoreError::InvalidConfidence)
         ));
+    }
+
+    #[test]
+    fn v31_columns_install_idempotently_and_round_trip_refs() {
+        let connection = Connection::open_in_memory().expect("connection");
+        schema(&connection);
+        install_schema(&connection).expect("first v31 install");
+        install_schema(&connection).expect("second v31 install");
+        let mut memory = record("refs", "with evidence");
+        memory.extraction.evidence_refs = vec!["evidence-1".into()];
+        memory.extraction.execution_event_refs = vec![42];
+        MemoryStoreSql::insert(&connection, &memory).expect("insert");
+        let loaded = MemoryStoreSql::get_by_id(&connection, "refs")
+            .expect("read")
+            .expect("row");
+        assert_eq!(loaded.extraction.record_version, 1);
+        assert_eq!(loaded.extraction.evidence_refs, vec!["evidence-1"]);
+        assert_eq!(loaded.extraction.execution_event_refs, vec![42]);
     }
 }

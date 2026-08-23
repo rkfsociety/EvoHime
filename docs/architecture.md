@@ -619,3 +619,22 @@ Tool lifecycle telemetry записывается в EventJournal, экспор�
 bounded redacted JSONL и проецируется в Operations Panel: calls, results и
 approval requests. Детерминированные manifest/hash/policy evals находятся в
 `crates/evohime-core/src/evals.rs`.
+## Typed memory, retrieval и compaction
+
+Memory extraction хранится в schema v31. `memory_entries` сохраняет bounded
+`record_version`, JSON-массивы `evidence_refs` и `execution_event_refs`; Core
+записывает их до публикации retrieval. `privacy_class=secret` отвергается до
+SQLite. Retrieval выполняется через Core-owned adapter: scope/privacy
+проверяются до ranking, порядок детерминирован по score/freshness/id, citations
+проверяют evidence и generation и не могут пересечь workspace scope.
+
+Forget — логическое удаление с обезличенной tombstone-строкой: содержание,
+provenance, evidence refs и execution refs очищаются, а digest tombstone
+сохраняется для аудита. Повторный forget не создаёт новую tombstone.
+
+Context compaction имеет SQLite-backed operation state machine
+`planned/running/cancelled/committed/failed`. Уникальный operation key
+защищён SQLite, а versioned projection и provenance linkage хранят snapshot
+revision, summarizer version и связь item с `sequence_id`. UI получает только
+bounded metadata/projection; исходная execution/evidence история не удаляется
+compaction-операциями.
