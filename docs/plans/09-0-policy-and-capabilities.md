@@ -63,14 +63,12 @@ input/output.
 
 ### Блокирующие
 
-- план 08 [`08-0-execution-ledger.md`](08-0-execution-ledger.md): устойчивые
-  action/run identifiers, typed terminal events, execution linkage, receipt
-  linkage и replay/recovery semantics;
+- реализованный план 08 (контракт — [`../architecture.md`](../architecture.md#core-owned-execution-ledger),
+  подтверждённое состояние — [`../current-state.md`](../current-state.md)):
+  устойчивые action/run identifiers, typed terminal events, execution
+  linkage, receipt linkage и replay/recovery semantics;
 - текущие `evohime-permissions`, `evohime-tool-runtime`, `evohime-receipts`,
   supervisor secret boundary и authenticated desktop IPC.
-
-План 08 является зависимостью, а не уже существующим результатом: до его
-завершения 09 нельзя принимать как durable ledger integration.
 
 ### Опциональные
 

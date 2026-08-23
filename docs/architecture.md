@@ -249,6 +249,82 @@ durable cursor. Read-only sampling, recovery state и bounded runtime counters
 Retention/compaction receipt chain по-прежнему относится к отдельному этапу
 01.4.
 
+## Core-owned execution ledger
+
+Единая typed-история выполнения поверх существующего append-only `events`
+журнала, `receipts_v1` и workflow runtime (план 08) реализована в
+`crates/evohime-local-storage/src/execution_ledger.rs` (чистый contract-слой),
+storage-методах `LocalDatabase` (`crates/evohime-local-storage/src/lib.rs`) и
+IPC-проекции в `crates/evohime-core/src/ipc_bridge.rs`.
+
+Контракт: `ExecutionEventV1` — versioned typed событие с `event_id`,
+`(run_scope, run_id)` (`workflow`/`work_item`/`standalone`/`system`/`legacy`,
+однозначно указывает на `workflow_runs.run_id` либо `runs.id`), `session_id`,
+correlation-полями (`action_id`, `tool_call_id`, `receipt_id`,
+`workflow_run_id` и др.) и bounded typed `body`
+(`ActionRequest`/`ToolCall`/`Observation`/`ToolReceipt`/`TypedFailure`/
+`ApprovalDecision`/`Cancellation`/`RecoveryDecision`). Состояния действия
+(`ActionState`) один в один совпадают со словарём
+`workflow_store::NodeState` плюс новое нетерминальное `Cancelling`; терминал
+достижим ровно один раз — `assert_single_terminal`/`ensure_single_terminal_outcome`
+отклоняют вторую терминальную запись для того же `action_id` уже на уровне
+записи в SQLite, а не только как in-memory проверка.
+
+SQLite schema поднята до v30 идемпотентными installer'ами (тем же путём, что
+receipts/model provenance/workflow store — без отдельной ветки `migrate()`,
+которая не выполняется для уже смигрированных v26+ баз): `events` получила
+nullable typed-колонки (`event_id`, `run_scope`, `run_id`, `session_id`,
+`action_id`, `effect_id`, `workflow_run_id`, `state_after`) с partial unique
+индексом на `event_id`; `workflow_run_nodes.state` CHECK пересобран под
+`cancelling`; `workflow_run_events` получила `ledger_sequence_id`/
+`ledger_event_id`, атомарно связывающие bounded per-run projection с
+глобальной durable последовательностью. `LocalDatabase::append_ledger_event`
+и `append_ledger_event_with_node_transition` публикуют typed event и (во
+втором случае) переводят `workflow_run_nodes.state` и добавляют строку
+`workflow_run_events` одной транзакцией — незаконный переход или устаревшее
+исходное состояние откатывают всё целиком, включая уже выполненный UPDATE.
+
+Startup reconciliation (`reconcile_ledger_on_startup`, вызывается из `main.rs`
+сразу после конструирования `IpcBridge`, вместе с bounded `core_start`
+событием под текущим `core_instance_id`) классифицирует незавершённые typed
+actions по наличию dispatch marker в `run_effects`: marker отсутствует —
+action остаётся как есть (уже resumable по контракту); marker открыт
+(started, не completed) — публикуется новое `unknown_outcome` событие,
+блокирующее слепой повтор; исходная строка никогда не переписывается вторым
+терминальным исходом.
+
+IPC: additive `ExecutionEvent` (oneof поле 14 в `EventEnvelope`,
+`crates/desktop-ipc/proto/evohime.desktop.proto`) проецирует typed ledger
+rows в основном replay-пути (`push_journal_tail`) без изменения generic
+`event_type`/`payload` — старый клиент безопасно игнорирует незнакомое поле
+oneof. `ReplayGap` заполняется честно (`sequence_retention_exceeded` и новый
+`stale_generation`, обнаруживаемый сверкой `core_instance_id`/`session_epoch`
+из `CommandEnvelope` с текущей identity моста), `FullSnapshot.snapshot_json`
+несёт versioned action-проекцию (`schema_version`, `core_instance_id`,
+`session_epoch`, `snapshot_sequence_id`, bounded `actions`). Electron
+(`desktop/evohime-electron/src/main/ipc/pipe-client.ts`) дедуплицирует
+доставку typed событий по durable `event_id` (`LedgerEventDedup`,
+переживает смену Core generation, в отличие от `sequence_id`).
+
+Реальные production writers: оба пути диспетчеризации терминальных tool call
+(`execute_terminal_with_receipt`, `dispatch_terminal_execute` в
+`ipc_bridge.rs`) публикуют полную цепочку `ToolCall` (Running) →
+`Observation` (bounded digest вывода) → терминальный `ToolReceipt`
+(Succeeded, со ссылкой на реальный `receipt_hash` из `receipts_v1`) или
+`TypedFailure`/`UnknownOutcome`; `ResolveApproval` и обнаружение истечения
+approval-окна внутри `grant_approval` публикуют `ApprovalDecision`
+(`Approved`/`Rejected`/`Expired`) под тем же `action_id`, что и
+`receipt_approval_intents`. Redaction-метаданные (`secrets_present`)
+вычисляются реальным сканом запроса теми же маркерами, что уже использует
+audit log (`crate::audit::contains_secret`), а не всегда пустой заглушкой.
+
+Не входит в реализованный контракт: живой cancellation-триггер для
+`dispatch_terminal_execute` (его `CancellationToken` не подключён ни к какой
+команде — существовавший до плана 08 пробел, не расширение полномочий
+задачей плана; сам ledger-контракт `Cancelling`/`Cancelled`/`Cancellation`
+полностью реализован и покрыт storage- и IPC-уровневыми тестами, просто
+дожидается живого источника события).
+
 ## Context Budget Manager
 
 Сборка контекста реализована в `crates/context-budget` (контракты и детерминированная логика), `crates/evohime-local-storage` (ledger, scratchpad, artifact store, команды) и `crates/evohime-core/src/context_budget.rs` (интеграция в agent loop). Этот раздел — канонический контракт: исходный план удалён из `docs/plans/` после реализации, как того требует правило каталога.

@@ -219,6 +219,43 @@ durable request/response/tool/source/shadow/tombstone tables, Core checkpoint
 API, startup recovery/retention hooks и offline bundle boundary. Existing
 receipt contract remains backward-compatible; request linkage is additive.
 
+## Execution ledger 08 — реализовано в текущем checkout
+
+- SQLite schema поднята до v30 (idempotent installer'ы, без ветки
+  `migrate()`): typed nullable колонки `events`, CHECK `workflow_run_nodes`
+  расширен под `cancelling`, `workflow_run_events` получила linkage на
+  глобальный `event_id`/`sequence_id`.
+- `LocalDatabase::append_ledger_event`/`append_ledger_event_with_node_transition`
+  публикуют typed event атомарно с переходом `workflow_run_nodes` и
+  `workflow_run_events`; single-terminal-outcome enforced на записи
+  (`ensure_single_terminal_outcome`), не только как in-memory helper.
+- Startup: `record_ledger_core_start` и `reconcile_ledger_on_startup`
+  вызываются из `main.rs` после конструирования `IpcBridge` — bounded
+  `core_start` событие и dispatch-marker-based классификация
+  (`run_effects`) незавершённых actions в `unknown_outcome` без слепого
+  повтора.
+- IPC: additive `ExecutionEvent` (oneof 14 в `EventEnvelope`) в основном
+  replay-пути; typed `ReplayGap` (`sequence_retention_exceeded`,
+  `stale_generation`); versioned `FullSnapshot.snapshot_json` с bounded
+  action-проекцией; Electron дедуплицирует доставку по durable `event_id`.
+- Реальные production writers: `execute_terminal_with_receipt` и
+  `dispatch_terminal_execute` публикуют полную цепочку `ToolCall` →
+  `Observation` → `ToolReceipt`/`TypedFailure` под тем же `action_id`, что и
+  подписанный `receipts_v1`; `ResolveApproval` и `grant_approval`
+  публикуют `ApprovalDecision` (approve/reject/expiry) под `action_id`
+  соответствующего `receipt_approval_intents`.
+- Известная граница: `dispatch_terminal_execute` не имеет живого
+  cancellation-триггера (пробел, существовавший до плана 08) — ledger-
+  контракт для `Cancelling`/`Cancelled` реализован и протестирован на
+  storage/IPC уровне, но не наблюдался вживую ни разу, так как отменять
+  сейчас нечем.
+
+Проверки после реализации: `cargo test -p evohime-core -p
+evohime-local-storage -p evohime-desktop-ipc -p evohime-receipts -p
+evohime-model-provenance` (505 + 182 + 33 + 56 + 5 тестов), `cargo fmt
+--check`, `git diff --check`, Electron `check:protocol`/`typecheck`/`test`
+(420 тестов, включая real-Core E2E) — все проходят.
+
 ## Tooling 07 — реализовано в текущем checkout
 
 - `tool/manifest/v1` и единый schema catalog находятся в `tool-runtime`; Core

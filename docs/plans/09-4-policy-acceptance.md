@@ -12,8 +12,9 @@
 - [09-1](09-1-capability-snapshot.md), [09-2](09-2-core-policy-resolver.md) и
   [09-3](09-3-approval-hooks.md): acceptance проверяет собранный контракт, а не
   отдельные слои;
-- план 08 и его replay/recovery/receipt acceptance
-  ([`08-4`](08-4-ledger-acceptance.md));
+- реализованный план 08 и его replay/recovery/receipt acceptance
+  (контракт — [`../architecture.md`](../architecture.md#core-owned-execution-ledger),
+  подтверждённое состояние — [`../current-state.md`](../current-state.md));
 - текущие authenticated desktop IPC, Electron adapter и compatibility suite.
 
 ### Опциональные

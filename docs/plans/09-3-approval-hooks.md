@@ -12,9 +12,8 @@
 - [09-1](09-1-capability-snapshot.md) для immutable snapshot/action binding;
 - [09-2](09-2-core-policy-resolver.md) для preflight и recheck непосредственно
   перед effect;
-- план 08 [`08-1`](08-1-ledger-contract.md) и
-  [`08-2`](08-2-ledger-storage-and-recovery.md) для durable action, terminal
-  event, receipt и unknown-outcome recovery.
+- реализованный план 08 (контракт — [`../architecture.md`](../architecture.md#core-owned-execution-ledger))
+  для durable action, terminal event, receipt и unknown-outcome recovery.
 
 ### Опциональные
 

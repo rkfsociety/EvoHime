@@ -12,8 +12,8 @@ Core-owned policy gate. Это общий путь вызова, а не нов�
 
 - [09-1](09-1-capability-snapshot.md) для `CapabilitySnapshotV1`, effective
   action binding и typed outcomes;
-- план 08 [`08-1`](08-1-ledger-contract.md) для durable action/terminal
-  linkage;
+- реализованный план 08 (контракт — [`../architecture.md`](../architecture.md#core-owned-execution-ledger))
+  для durable action/terminal linkage;
 - текущие `ToolRegistry`, `WorkspaceSandbox`, network capability/SSRF checks,
   supervisor boundary и cancellation token.
 
