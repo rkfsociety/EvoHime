@@ -5271,6 +5271,73 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// План 08-2 acceptance: `cancelling` is a real, storable transient state
+    /// for `workflow_run_nodes.state` after the CHECK-rebuild migration, not
+    /// just a value the CHECK constraint happens to tolerate. A node must be
+    /// able to pass through it (`Running -> Cancelling -> Cancelled`) via the
+    /// same atomic write path as any other transition.
+    #[test]
+    fn node_passes_through_cancelling_before_reaching_cancelled() {
+        let path = temp_database_path("ledger-cancelling-transition");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        insert_workflow_fixture(&database, "run-1", "node-1");
+
+        let cancelling_event = sample_ledger_event(
+            "event-cancelling-1",
+            "run-1",
+            "action-1",
+            crate::execution_ledger::ActionState::Cancelling,
+        );
+        database
+            .append_ledger_event_with_node_transition(
+                &cancelling_event,
+                "run-1",
+                "node-1",
+                crate::execution_ledger::ActionState::Running,
+                crate::execution_ledger::ActionState::Cancelling,
+                1_700_000_001_000,
+            )
+            .expect("Running -> Cancelling is allowed");
+        let mid_state: String = database
+            .connection()
+            .query_row(
+                "SELECT state FROM workflow_run_nodes WHERE run_id = 'run-1' AND node_id = 'node-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("node row reads");
+        assert_eq!(mid_state, "cancelling");
+
+        let cancelled_event = sample_ledger_event(
+            "event-cancelling-2",
+            "run-1",
+            "action-1",
+            crate::execution_ledger::ActionState::Cancelled,
+        );
+        database
+            .append_ledger_event_with_node_transition(
+                &cancelled_event,
+                "run-1",
+                "node-1",
+                crate::execution_ledger::ActionState::Cancelling,
+                crate::execution_ledger::ActionState::Cancelled,
+                1_700_000_002_000,
+            )
+            .expect("Cancelling -> Cancelled is allowed");
+        let final_state: String = database
+            .connection()
+            .query_row(
+                "SELECT state FROM workflow_run_nodes WHERE run_id = 'run-1' AND node_id = 'node-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("node row reads");
+        assert_eq!(final_state, "cancelled");
+        assert_eq!(database.latest_event_sequence().expect("sequence reads"), 2);
+        let _ = std::fs::remove_file(&path);
+    }
+
     #[test]
     fn illegal_transition_rolls_back_without_writing_event() {
         let path = temp_database_path("ledger-transition-illegal");
