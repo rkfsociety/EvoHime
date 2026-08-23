@@ -1285,7 +1285,11 @@ impl IpcBridge {
                     .map_err(|error| FrameError::Io(error.to_string()))?;
                     self.write_response(writer, "replay.gap", payload).await?;
                 }
-                if request.include_full_snapshot {
+                // Снапшот, не влезающий в кадр IPC, раньше обрывал соединение с
+                // оболочкой: она навсегда оставалась без состояния и рисовала
+                // «нет связи». Теперь превышение лимита деградирует до
+                // поштучной отправки тех же событий.
+                let snapshot = if request.include_full_snapshot {
                     let snapshot_json = serde_json::to_vec(&serde_json::json!({
                         "after_sequence": request.after_sequence,
                         "last_sequence": last_sequence,
@@ -1298,12 +1302,37 @@ impl IpcBridge {
                         })).collect::<Vec<_>>(),
                     }))
                     .map_err(|error| FrameError::Io(error.to_string()))?;
-                    let snapshot = generated::FullSnapshot {
+                    let candidate = generated::FullSnapshot {
                         sequence_id: last_sequence,
                         snapshot_json,
                     };
-                    evohime_desktop_ipc::validate_full_snapshot(&snapshot)
-                        .map_err(|error| FrameError::Io(error.to_string()))?;
+                    match evohime_desktop_ipc::validate_full_snapshot(&candidate) {
+                        Ok(()) => Some(candidate),
+                        Err(error) => {
+                            tracing::warn!(
+                                event = "ipc.snapshot_oversized",
+                                error = %error,
+                                events = batch.events.len(),
+                                snapshot_bytes = candidate.snapshot_json.len(),
+                                "снапшот не влез в кадр, переходим на поштучную отправку"
+                            );
+                            let payload = serde_json::to_vec(&serde_json::json!({
+                                "after_sequence": request.after_sequence,
+                                "last_sequence": last_sequence,
+                                "events": batch.events.len(),
+                                "snapshot_bytes": candidate.snapshot_json.len(),
+                                "reason": "snapshot_too_large",
+                            }))
+                            .map_err(|error| FrameError::Io(error.to_string()))?;
+                            self.write_response(writer, "replay.snapshot_skipped", payload)
+                                .await?;
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+                if let Some(snapshot) = snapshot {
                     let event = generated::EventEnvelope {
                         protocol: Some(protocol()),
                         sequence_id: last_sequence,
@@ -6242,6 +6271,84 @@ mod tests {
         assert!(
             after["reviews"].as_array().expect("reviews").is_empty(),
             "a cleared history must be empty in the very next listing"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Regression: журнал вырос, снапшот resync перестал влезать в кадр IPC,
+    /// и Core обрывал соединение с оболочкой. Оболочка переподключалась без
+    /// состояния и навсегда показывала «нет связи с процессом слушателя»,
+    /// хотя слушатель работал. Превышение лимита обязано деградировать до
+    /// поштучной отправки, а не рвать канал.
+    #[tokio::test]
+    async fn an_oversized_snapshot_degrades_instead_of_dropping_the_shell() {
+        let path =
+            std::env::temp_dir().join(format!("evohime-ipc-snapshot-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        // Payload журнала уезжает в снапшот массивом чисел, поэтому байты
+        // раздуваются в несколько раз: восьми записей хватает, чтобы перейти
+        // границу кадра.
+        for index in 0..8 {
+            journal
+                .record(&CoreEvent::TaskCompleted {
+                    task_id: format!("task-{index}"),
+                    final_message: "a".repeat(200 * 1024),
+                })
+                .await
+                .expect("event records");
+        }
+        let bridge = IpcBridge::new(journal);
+        let (client, server) = duplex(64 * 1024 * 1024);
+        let (mut client_reader, mut client_writer) = tokio::io::split(client);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+
+        let request = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "resync-1".into(),
+            client_id: "test-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::ResyncRequest(
+                generated::ResyncRequest {
+                    after_sequence: 0,
+                    max_events: 0,
+                    include_full_snapshot: true,
+                },
+            )),
+        };
+        transport::write_frame(&mut client_writer, &request.encode_to_vec())
+            .await
+            .expect("resync writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("оболочка не должна терять соединение из-за размера снапшота");
+
+        let mut seen = Vec::new();
+        loop {
+            let frame = transport::read_frame(&mut client_reader)
+                .await
+                .expect("resync response");
+            let event = generated::EventEnvelope::decode(frame.as_slice()).expect("event decodes");
+            seen.push(event.event_type.clone());
+            if event.event_type == "resync.end" {
+                break;
+            }
+        }
+
+        assert!(
+            seen.iter().any(|event| event == "replay.snapshot_skipped"),
+            "оболочку нужно предупредить о пропущенном снапшоте: {seen:?}"
+        );
+        assert!(
+            !seen.iter().any(|event| event == "replay.full_snapshot"),
+            "снапшот сверх лимита отправлять нельзя: {seen:?}"
+        );
+        assert_eq!(
+            seen.len(),
+            10,
+            "вместо снапшота оболочка обязана получить те же события поштучно: {seen:?}"
         );
         let _ = std::fs::remove_file(&path);
     }
