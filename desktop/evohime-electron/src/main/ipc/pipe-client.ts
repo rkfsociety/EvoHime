@@ -2,7 +2,13 @@ import { EventEmitter } from 'node:events'
 import { connect, type Socket } from 'node:net'
 import { randomUUID } from 'node:crypto'
 
-import type { ConnectionState, CoreEvent, ProtocolVersion, ShellState } from '@shared/api'
+import type {
+  ConnectionState,
+  CoreEvent,
+  ProtocolVersion,
+  ShellState,
+  TypedExecutionEvent
+} from '@shared/api'
 
 import type { ShellLog } from '../diagnostics/logger'
 import { backoffDelayMs, DEFAULT_BACKOFF, type BackoffOptions } from './backoff'
@@ -11,6 +17,7 @@ import { encodeFrame, FrameError, MAX_FRAME_BYTES } from './frame-codec'
 import { FrameReader } from './frame-reader'
 import { evohime } from './generated/protocol.js'
 import { handshakeProof, type LaunchContext } from './launch-context'
+import { LedgerEventDedup } from './ledger-event-dedup'
 import { LOCAL_PROTOCOL, negotiateProtocol, NegotiationError } from './protocol-version'
 
 const { CommandEnvelope, EventEnvelope } = evohime.desktop.v1
@@ -79,6 +86,11 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
   private reconnectTimer: NodeJS.Timeout | null = null
   private handshakeTimer: NodeJS.Timeout | null = null
   private authRejections = 0
+  /**
+   * Durable across a session-epoch change on purpose: `event_id` is stable
+   * between Core generations, unlike `sequence_id` (plan 08-3).
+   */
+  private readonly ledgerEventDedup = new LedgerEventDedup()
 
   constructor(options: PipeClientOptions) {
     super()
@@ -342,7 +354,24 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       }
       this.lastSequence = Math.max(this.lastSequence, sequence)
     }
+    if (!this.shouldEmit(event)) {
+      return
+    }
     this.emitCoreEvent(event)
+  }
+
+  /**
+   * Suppresses a repeat delivery of the same typed ledger event, identified
+   * by its durable `event_id` (plan 08-3). Generic (non-typed) rows have no
+   * `event_id` and are always emitted — the existing sequence/gap checks
+   * above are what guards them.
+   */
+  private shouldEmit(event: evohime.desktop.v1.EventEnvelope): boolean {
+    const eventId = event.executionEvent?.eventId
+    if (!eventId) {
+      return true
+    }
+    return this.ledgerEventDedup.observe(eventId)
   }
 
   private onReady(event: evohime.desktop.v1.EventEnvelope): void {
@@ -419,7 +448,8 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       sequenceId: Number(event.sequenceId ?? 0),
       taskId: event.taskId ?? '',
       eventType: event.eventType ?? '',
-      payload: decodePayload(event.payload)
+      payload: decodePayload(event.payload),
+      executionEvent: decodeExecutionEvent(event.executionEvent)
     })
   }
 
@@ -494,4 +524,48 @@ function decodePayload(payload: Uint8Array | null | undefined): string {
     return ''
   }
   return Buffer.from(payload).toString('utf8')
+}
+
+/**
+ * Decodes the additive `ExecutionEvent` oneof (plan 08-3) into the
+ * renderer-facing shape. `body` is parsed once here so downstream code never
+ * repeats a possibly-malformed JSON.parse; a decode failure degrades to
+ * `null` rather than dropping the whole frame.
+ */
+function decodeExecutionEvent(
+  projected: evohime.desktop.v1.IExecutionEvent | null | undefined
+): TypedExecutionEvent | null {
+  if (!projected || !projected.eventId) {
+    return null
+  }
+  let body: unknown = null
+  if (projected.bodyJson && projected.bodyJson.byteLength > 0) {
+    try {
+      body = JSON.parse(Buffer.from(projected.bodyJson).toString('utf8'))
+    } catch {
+      body = null
+    }
+  }
+  return {
+    schemaVersion: Number(projected.schemaVersion ?? 0),
+    eventId: projected.eventId,
+    runScope: projected.runScope ?? '',
+    runId: projected.runId ?? '',
+    sessionId: projected.sessionId ?? '',
+    createdAtMs: Number(projected.createdAtMs ?? 0),
+    stateAfter: projected.stateAfter ?? '',
+    actionId: projected.actionId ?? '',
+    toolCallId: projected.toolCallId ?? '',
+    observationId: projected.observationId ?? '',
+    receiptId: projected.receiptId ?? '',
+    failureId: projected.failureId ?? '',
+    workflowRunId: projected.workflowRunId ?? '',
+    nodeId: projected.nodeId ?? '',
+    attemptId: projected.attemptId ?? '',
+    effectId: projected.effectId ?? '',
+    modelRequestId: projected.modelRequestId ?? '',
+    body,
+    secretsPresent: Boolean(projected.secretsPresent),
+    redactionDigest: projected.redactionDigest ?? ''
+  }
 }

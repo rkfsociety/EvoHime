@@ -12,7 +12,7 @@ use crate::{
     ApprovalCoordinator, CoreCommand, CoreEvent, EventJournal, SelectedModel, TaskCoordinator,
 };
 use evohime_listener_contract::{ListeningReason, ListeningState};
-use evohime_local_storage::WorkItemRecord;
+use evohime_local_storage::{execution_ledger, WorkItemRecord};
 use evohime_model_gateway::ModelGatewayConfig;
 use evohime_permissions::{Permission, PermissionMode};
 use evohime_receipts::{
@@ -42,6 +42,40 @@ fn bounded_tool_error_code(error: &evohime_tool_runtime::ToolError) -> &'static 
         evohime_tool_runtime::ToolError::Execution(_) => "execution_failed",
         evohime_tool_runtime::ToolError::TimedOut(_) => "timed_out",
     }
+}
+
+/// Decodes a typed execution-ledger row (план 08-1/08-2, `payload` = JSON
+/// `ExecutionEventV1`) into the additive IPC projection (план 08-3). Never
+/// panics on malformed payload — returns `None` so the caller falls back to
+/// the generic `event_type`/`payload` path instead of dropping the frame.
+fn decode_typed_execution_event(payload: &[u8]) -> Option<generated::ExecutionEvent> {
+    let event: execution_ledger::ExecutionEventV1 = serde_json::from_slice(payload).ok()?;
+    let body_json = serde_json::to_vec(&event.body).ok()?;
+    Some(generated::ExecutionEvent {
+        schema_version: event.schema_version,
+        event_id: event.event_id,
+        run_scope: event.run_scope.as_str().to_string(),
+        run_id: event.run_id,
+        session_id: event.session_id.unwrap_or_default(),
+        created_at_ms: event.created_at_ms,
+        state_after: event
+            .state_after
+            .map(|state| state.as_str().to_string())
+            .unwrap_or_default(),
+        action_id: event.action_id.unwrap_or_default(),
+        tool_call_id: event.tool_call_id.unwrap_or_default(),
+        observation_id: event.observation_id.unwrap_or_default(),
+        receipt_id: event.receipt_id.unwrap_or_default(),
+        failure_id: event.failure_id.unwrap_or_default(),
+        workflow_run_id: event.workflow_run_id.unwrap_or_default(),
+        node_id: event.node_id.unwrap_or_default(),
+        attempt_id: event.attempt_id.unwrap_or_default(),
+        effect_id: event.effect_id.unwrap_or_default(),
+        model_request_id: event.model_request_id.unwrap_or_default(),
+        body_json,
+        secrets_present: event.redaction.secrets_present,
+        redaction_digest: event.redaction.digest.unwrap_or_default(),
+    })
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -409,6 +443,14 @@ impl IpcBridge {
         let mut last_sequence = after_sequence;
         for record in batch.events {
             last_sequence = record.sequence_id as u64;
+            // Typed ledger rows (план 08-1/08-2) carry ExecutionEventV1 JSON
+            // in payload; project it additively into the oneof without
+            // touching the generic event_type/payload backward-compat path.
+            let execution_event = record
+                .event_type
+                .starts_with("ledger.")
+                .then(|| decode_typed_execution_event(&record.payload))
+                .flatten();
             let event = generated::EventEnvelope {
                 protocol: Some(protocol()),
                 sequence_id: record.sequence_id as u64,
@@ -417,7 +459,7 @@ impl IpcBridge {
                 payload: record.payload,
                 core_instance_id: self.core_instance_id.clone(),
                 session_epoch: self.session_epoch,
-                event: None,
+                event: execution_event.map(generated::event_envelope::Event::ExecutionEvent),
             };
             transport::write_frame(writer, &event.encode_to_vec()).await?;
         }
@@ -6166,6 +6208,122 @@ mod tests {
     use super::*;
     use crate::CoreEvent;
     use tokio::io::duplex;
+
+    fn sample_typed_ledger_event(
+        event_id: &str,
+        action_id: &str,
+    ) -> execution_ledger::ExecutionEventV1 {
+        execution_ledger::ExecutionEventV1 {
+            schema_version: 1,
+            event_id: event_id.to_string(),
+            sequence_id: None,
+            run_scope: execution_ledger::RunScope::Standalone,
+            run_id: "run-ipc-1".into(),
+            session_id: Some("session-ipc-1".into()),
+            task_id: "task-ipc".into(),
+            created_at_ms: 1_700_000_000_000,
+            state_after: Some(execution_ledger::ActionState::Running),
+            action_id: Some(action_id.to_string()),
+            tool_call_id: None,
+            observation_id: None,
+            receipt_id: None,
+            failure_id: None,
+            workflow_run_id: None,
+            node_id: None,
+            attempt_id: None,
+            effect_id: None,
+            model_request_id: None,
+            body: execution_ledger::ExecutionEventBody::ToolCall {
+                tool_name: "shell".into(),
+                tool_call_hash: "hash-1".into(),
+                manifest_hash: None,
+            },
+            redaction: execution_ledger::RedactionMeta::default(),
+        }
+    }
+
+    /// Typed ledger rows written by 08-2's `append_ledger_event` must reach
+    /// the IPC replay path (план 08-3) as an additive `execution_event`
+    /// projection, without disturbing the generic backward-compat fields.
+    #[tokio::test]
+    async fn push_journal_tail_projects_typed_ledger_row_into_execution_event() {
+        let path =
+            std::env::temp_dir().join(format!("evohime-ipc-ledger-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let source_event = sample_typed_ledger_event("event-ipc-1", "action-ipc-1");
+        {
+            let database = journal.database().lock().await;
+            database
+                .append_ledger_event(&source_event)
+                .expect("typed event appends");
+        }
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal, coordinator);
+        let (mut client, mut server) = duplex(16 * 1024);
+
+        bridge
+            .push_journal_tail(&mut server, 0)
+            .await
+            .expect("tail pushes");
+        let frame = transport::read_frame(&mut client)
+            .await
+            .expect("frame reads");
+        let envelope = generated::EventEnvelope::decode(frame.as_slice()).expect("frame decodes");
+
+        assert_eq!(envelope.event_type, "ledger.tool_call");
+        assert!(
+            !envelope.payload.is_empty(),
+            "generic payload stays populated"
+        );
+        let projected = match envelope.event {
+            Some(generated::event_envelope::Event::ExecutionEvent(projected)) => projected,
+            other => panic!("expected ExecutionEvent oneof, got {other:?}"),
+        };
+        assert_eq!(projected.event_id, "event-ipc-1");
+        assert_eq!(projected.action_id, "action-ipc-1");
+        assert_eq!(projected.run_scope, "standalone");
+        assert_eq!(projected.state_after, "running");
+        let body: execution_ledger::ExecutionEventBody =
+            serde_json::from_slice(&projected.body_json).expect("body_json decodes");
+        assert_eq!(body, source_event.body);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Generic (non-`ledger.*`) rows keep flowing through the pre-08-3 path:
+    /// `execution_event` stays unset and nothing else about the frame changes.
+    #[tokio::test]
+    async fn push_journal_tail_leaves_generic_rows_unprojected() {
+        let path =
+            std::env::temp_dir().join(format!("evohime-ipc-generic-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        journal
+            .record(&CoreEvent::TaskCompleted {
+                task_id: "task-generic".into(),
+                final_message: serde_json::json!({"ok": true}).to_string(),
+            })
+            .await
+            .expect("generic event records");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal, coordinator);
+        let (mut client, mut server) = duplex(16 * 1024);
+
+        bridge
+            .push_journal_tail(&mut server, 0)
+            .await
+            .expect("tail pushes");
+        let frame = transport::read_frame(&mut client)
+            .await
+            .expect("frame reads");
+        let envelope = generated::EventEnvelope::decode(frame.as_slice()).expect("frame decodes");
+
+        assert!(
+            envelope.event.is_none(),
+            "generic row must not get a typed projection"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
 
     /// Regression: the clear marker was published on the coordinator broadcast,
     /// so the journal writer recorded it a moment later. The listing that the

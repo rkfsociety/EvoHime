@@ -123,6 +123,37 @@ function eventFrame(sequenceId: number, eventType: string, payload = ''): Uint8A
   )
 }
 
+function ledgerEventFrame(
+  sequenceId: number,
+  eventId: string,
+  coreInstanceId = CORE_INSTANCE,
+  sessionEpoch = SESSION_EPOCH
+): Uint8Array {
+  return encodeFrame(
+    EventEnvelope.encode({
+      protocol: { major: 1, minor: 0 },
+      sequenceId,
+      taskId: 'task-1',
+      eventType: 'ledger.tool_call',
+      payload: new TextEncoder().encode('{}'),
+      coreInstanceId,
+      sessionEpoch,
+      executionEvent: {
+        schemaVersion: 1,
+        eventId,
+        runScope: 'standalone',
+        runId: 'run-1',
+        sessionId: 'session-1',
+        createdAtMs: 1_700_000_000_000,
+        stateAfter: 'running',
+        bodyJson: new TextEncoder().encode(
+          JSON.stringify({ kind: 'tool_call', tool_name: 'shell' })
+        )
+      }
+    }).finish()
+  )
+}
+
 const TEST_SECRET = 'ab'.repeat(32)
 
 function launchContext(pipeName: string, secret = ''): LaunchContext {
@@ -222,6 +253,76 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
 
     expect(event.sequenceId).toBe(2)
     expect(target.state.lastSequence).toBe(2)
+    expect(event.executionEvent).toBeNull()
+  })
+
+  it('projects a typed ledger event into executionEvent', async () => {
+    const pipeName = uniquePipeName()
+    server = await startStubCore(pipeName, {
+      onCommand: (command) =>
+        command.handshake ? [readyFrame(), ledgerEventFrame(1, 'evt-single-1')] : []
+    })
+
+    const target = createClient(pipeName)
+    const received = waitForEvent(target, (event) => event.executionEvent?.eventId === 'evt-single-1')
+    target.start()
+    const event = await received
+
+    expect(event.eventType).toBe('ledger.tool_call')
+    expect(event.executionEvent?.runScope).toBe('standalone')
+    expect(event.executionEvent?.stateAfter).toBe('running')
+    expect(event.executionEvent?.body).toEqual({ kind: 'tool_call', tool_name: 'shell' })
+  })
+
+  it('suppresses a repeat delivery of the same typed ledger event_id', async () => {
+    const pipeName = uniquePipeName()
+    server = await startStubCore(pipeName, {
+      onCommand: (command) =>
+        command.handshake
+          ? [readyFrame(), ledgerEventFrame(1, 'evt-dup-1'), ledgerEventFrame(2, 'evt-dup-1')]
+          : []
+    })
+
+    const target = createClient(pipeName)
+    const received: CoreEvent[] = []
+    target.on('core-event', (event) => {
+      if (event.executionEvent?.eventId === 'evt-dup-1') {
+        received.push(event)
+      }
+    })
+    target.start()
+    await waitForState(target, (state) => state.connection === 'connected')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(received).toHaveLength(1)
+  })
+
+  it('keeps suppressing a repeat ledger event_id after a Core generation change', async () => {
+    const pipeName = uniquePipeName()
+    server = await startStubCore(pipeName, {
+      onCommand: (command) =>
+        command.handshake
+          ? [
+              readyFrame(),
+              ledgerEventFrame(1, 'evt-epoch-1'),
+              // Same durable event_id re-delivered under a new Core instance/epoch.
+              ledgerEventFrame(1, 'evt-epoch-1', 'core-instance-2', SESSION_EPOCH + 1)
+            ]
+          : []
+    })
+
+    const target = createClient(pipeName)
+    const received: CoreEvent[] = []
+    target.on('core-event', (event) => {
+      if (event.executionEvent?.eventId === 'evt-epoch-1') {
+        received.push(event)
+      }
+    })
+    target.start()
+    await waitForState(target, (state) => state.connection === 'resyncing')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(received).toHaveLength(1)
   })
 
   it('refuses an incompatible major version instead of falling back', async () => {

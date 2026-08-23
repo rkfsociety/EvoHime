@@ -11989,8 +11989,11 @@ export namespace evohime {
                 /** EventEnvelope authChallenge. */
                 authChallenge?: (evohime.desktop.v1.AuthChallenge.$Properties|null);
 
+                /** EventEnvelope executionEvent. */
+                executionEvent?: (evohime.desktop.v1.ExecutionEvent.$Properties|null);
+
                 /** EventEnvelope event. */
-                event?: ("ready"|"replayGap"|"fullSnapshot"|"authChallenge");
+                event?: ("ready"|"replayGap"|"fullSnapshot"|"authChallenge"|"executionEvent");
 
                 /**
                  * Encodes the specified EventEnvelope message. Does not implicitly {@link evohime.desktop.v1.EventEnvelope.verify|verify} messages.
@@ -12056,8 +12059,11 @@ export namespace evohime {
                     /** EventEnvelope authChallenge */
                     authChallenge?: (evohime.desktop.v1.AuthChallenge.$Properties|null);
 
+                    /** EventEnvelope executionEvent */
+                    executionEvent?: (evohime.desktop.v1.ExecutionEvent.$Properties|null);
+
                     /** EventEnvelope event */
-                    event?: ("ready"|"replayGap"|"fullSnapshot"|"authChallenge");
+                    event?: ("ready"|"replayGap"|"fullSnapshot"|"authChallenge"|"executionEvent");
 
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];
@@ -12076,10 +12082,189 @@ export namespace evohime {
                   replayGap?: evohime.desktop.v1.ReplayGap.$Shape|null;
                   fullSnapshot?: evohime.desktop.v1.FullSnapshot.$Shape|null;
                   authChallenge?: evohime.desktop.v1.AuthChallenge.$Shape|null;
+                  executionEvent?: evohime.desktop.v1.ExecutionEvent.$Shape|null;
                   $unknowns?: Uint8Array[];
                 } & (
-                  ({ event?: undefined; ready?: null; replayGap?: null; fullSnapshot?: null; authChallenge?: null }|{ event?: "ready"; ready: evohime.desktop.v1.Ready.$Shape; replayGap?: null; fullSnapshot?: null; authChallenge?: null }|{ event?: "replayGap"; ready?: null; replayGap: evohime.desktop.v1.ReplayGap.$Shape; fullSnapshot?: null; authChallenge?: null }|{ event?: "fullSnapshot"; ready?: null; replayGap?: null; fullSnapshot: evohime.desktop.v1.FullSnapshot.$Shape; authChallenge?: null }|{ event?: "authChallenge"; ready?: null; replayGap?: null; fullSnapshot?: null; authChallenge: evohime.desktop.v1.AuthChallenge.$Shape })
+                  ({ event?: undefined; ready?: null; replayGap?: null; fullSnapshot?: null; authChallenge?: null; executionEvent?: null }|{ event?: "ready"; ready: evohime.desktop.v1.Ready.$Shape; replayGap?: null; fullSnapshot?: null; authChallenge?: null; executionEvent?: null }|{ event?: "replayGap"; ready?: null; replayGap: evohime.desktop.v1.ReplayGap.$Shape; fullSnapshot?: null; authChallenge?: null; executionEvent?: null }|{ event?: "fullSnapshot"; ready?: null; replayGap?: null; fullSnapshot: evohime.desktop.v1.FullSnapshot.$Shape; authChallenge?: null; executionEvent?: null }|{ event?: "authChallenge"; ready?: null; replayGap?: null; fullSnapshot?: null; authChallenge: evohime.desktop.v1.AuthChallenge.$Shape; executionEvent?: null }|{ event?: "executionEvent"; ready?: null; replayGap?: null; fullSnapshot?: null; authChallenge?: null; executionEvent: evohime.desktop.v1.ExecutionEvent.$Shape })
                 );
+            }
+
+            /**
+             * Properties of an ExecutionEvent.
+             * @deprecated Use evohime.desktop.v1.ExecutionEvent.$Properties instead.
+             */
+            interface IExecutionEvent extends evohime.desktop.v1.ExecutionEvent.$Properties {
+            }
+
+            /** Represents an ExecutionEvent. */
+            class ExecutionEvent {
+
+                /**
+                 * Constructs a new ExecutionEvent.
+                 * @param [properties] Properties to set
+                 */
+                constructor(properties?: evohime.desktop.v1.ExecutionEvent.$Properties);
+
+                /** Unknown fields preserved while decoding when enabled */
+                $unknowns?: Uint8Array[];
+
+                /** ExecutionEvent schemaVersion. */
+                schemaVersion: number;
+
+                /** ExecutionEvent eventId. */
+                eventId: string;
+
+                /** ExecutionEvent runScope. */
+                runScope: string;
+
+                /** ExecutionEvent runId. */
+                runId: string;
+
+                /** ExecutionEvent sessionId. */
+                sessionId: string;
+
+                /** ExecutionEvent createdAtMs. */
+                createdAtMs: number;
+
+                /** ExecutionEvent stateAfter. */
+                stateAfter: string;
+
+                /** ExecutionEvent actionId. */
+                actionId: string;
+
+                /** ExecutionEvent toolCallId. */
+                toolCallId: string;
+
+                /** ExecutionEvent observationId. */
+                observationId: string;
+
+                /** ExecutionEvent receiptId. */
+                receiptId: string;
+
+                /** ExecutionEvent failureId. */
+                failureId: string;
+
+                /** ExecutionEvent workflowRunId. */
+                workflowRunId: string;
+
+                /** ExecutionEvent nodeId. */
+                nodeId: string;
+
+                /** ExecutionEvent attemptId. */
+                attemptId: string;
+
+                /** ExecutionEvent effectId. */
+                effectId: string;
+
+                /** ExecutionEvent modelRequestId. */
+                modelRequestId: string;
+
+                /** ExecutionEvent bodyJson. */
+                bodyJson: Uint8Array;
+
+                /** ExecutionEvent secretsPresent. */
+                secretsPresent: boolean;
+
+                /** ExecutionEvent redactionDigest. */
+                redactionDigest: string;
+
+                /**
+                 * Encodes the specified ExecutionEvent message. Does not implicitly {@link evohime.desktop.v1.ExecutionEvent.verify|verify} messages.
+                 * @param message ExecutionEvent message or plain object to encode
+                 * @param [writer] Writer to encode to
+                 * @returns Writer
+                 */
+                static encode(message: evohime.desktop.v1.ExecutionEvent.$Properties, writer?: $protobuf.Writer): $protobuf.Writer;
+
+                /**
+                 * Decodes an ExecutionEvent message from the specified reader or buffer.
+                 * @param reader Reader or buffer to decode from
+                 * @param [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.ExecutionEvent & evohime.desktop.v1.ExecutionEvent.$Shape} ExecutionEvent
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): evohime.desktop.v1.ExecutionEvent & evohime.desktop.v1.ExecutionEvent.$Shape;
+
+                /**
+                 * Gets the type url for ExecutionEvent
+                 * @param [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns The type url
+                 */
+                static getTypeUrl(prefix?: string): string;
+            }
+
+            namespace ExecutionEvent {
+
+                /** Properties of an ExecutionEvent. */
+                interface $Properties {
+
+                    /** ExecutionEvent schemaVersion */
+                    schemaVersion?: (number|null);
+
+                    /** ExecutionEvent eventId */
+                    eventId?: (string|null);
+
+                    /** ExecutionEvent runScope */
+                    runScope?: (string|null);
+
+                    /** ExecutionEvent runId */
+                    runId?: (string|null);
+
+                    /** ExecutionEvent sessionId */
+                    sessionId?: (string|null);
+
+                    /** ExecutionEvent createdAtMs */
+                    createdAtMs?: (number|null);
+
+                    /** ExecutionEvent stateAfter */
+                    stateAfter?: (string|null);
+
+                    /** ExecutionEvent actionId */
+                    actionId?: (string|null);
+
+                    /** ExecutionEvent toolCallId */
+                    toolCallId?: (string|null);
+
+                    /** ExecutionEvent observationId */
+                    observationId?: (string|null);
+
+                    /** ExecutionEvent receiptId */
+                    receiptId?: (string|null);
+
+                    /** ExecutionEvent failureId */
+                    failureId?: (string|null);
+
+                    /** ExecutionEvent workflowRunId */
+                    workflowRunId?: (string|null);
+
+                    /** ExecutionEvent nodeId */
+                    nodeId?: (string|null);
+
+                    /** ExecutionEvent attemptId */
+                    attemptId?: (string|null);
+
+                    /** ExecutionEvent effectId */
+                    effectId?: (string|null);
+
+                    /** ExecutionEvent modelRequestId */
+                    modelRequestId?: (string|null);
+
+                    /** ExecutionEvent bodyJson */
+                    bodyJson?: (Uint8Array|null);
+
+                    /** ExecutionEvent secretsPresent */
+                    secretsPresent?: (boolean|null);
+
+                    /** ExecutionEvent redactionDigest */
+                    redactionDigest?: (string|null);
+
+                    /** Unknown fields preserved while decoding when enabled */
+                    $unknowns?: Uint8Array[];
+                }
+
+                /** Shape of an ExecutionEvent. */
+                type $Shape = evohime.desktop.v1.ExecutionEvent.$Properties;
             }
 
             /**

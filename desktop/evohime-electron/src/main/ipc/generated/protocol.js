@@ -27818,7 +27818,8 @@ export const evohime = $root.evohime = (() => {
                  * @property {evohime.desktop.v1.ReplayGap.$Properties|null} [replayGap] EventEnvelope replayGap
                  * @property {evohime.desktop.v1.FullSnapshot.$Properties|null} [fullSnapshot] EventEnvelope fullSnapshot
                  * @property {evohime.desktop.v1.AuthChallenge.$Properties|null} [authChallenge] EventEnvelope authChallenge
-                 * @property {"ready"|"replayGap"|"fullSnapshot"|"authChallenge"} [event] EventEnvelope event
+                 * @property {evohime.desktop.v1.ExecutionEvent.$Properties|null} [executionEvent] EventEnvelope executionEvent
+                 * @property {"ready"|"replayGap"|"fullSnapshot"|"authChallenge"|"executionEvent"} [event] EventEnvelope event
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -27844,9 +27845,10 @@ export const evohime = $root.evohime = (() => {
                  *   replayGap?: evohime.desktop.v1.ReplayGap.$Shape|null;
                  *   fullSnapshot?: evohime.desktop.v1.FullSnapshot.$Shape|null;
                  *   authChallenge?: evohime.desktop.v1.AuthChallenge.$Shape|null;
+                 *   executionEvent?: evohime.desktop.v1.ExecutionEvent.$Shape|null;
                  *   $unknowns?: Array.<Uint8Array>;
                  * } & (
-                 *   ({ event?: undefined; ready?: null; replayGap?: null; fullSnapshot?: null; authChallenge?: null }|{ event?: "ready"; ready: evohime.desktop.v1.Ready.$Shape; replayGap?: null; fullSnapshot?: null; authChallenge?: null }|{ event?: "replayGap"; ready?: null; replayGap: evohime.desktop.v1.ReplayGap.$Shape; fullSnapshot?: null; authChallenge?: null }|{ event?: "fullSnapshot"; ready?: null; replayGap?: null; fullSnapshot: evohime.desktop.v1.FullSnapshot.$Shape; authChallenge?: null }|{ event?: "authChallenge"; ready?: null; replayGap?: null; fullSnapshot?: null; authChallenge: evohime.desktop.v1.AuthChallenge.$Shape })
+                 *   ({ event?: undefined; ready?: null; replayGap?: null; fullSnapshot?: null; authChallenge?: null; executionEvent?: null }|{ event?: "ready"; ready: evohime.desktop.v1.Ready.$Shape; replayGap?: null; fullSnapshot?: null; authChallenge?: null; executionEvent?: null }|{ event?: "replayGap"; ready?: null; replayGap: evohime.desktop.v1.ReplayGap.$Shape; fullSnapshot?: null; authChallenge?: null; executionEvent?: null }|{ event?: "fullSnapshot"; ready?: null; replayGap?: null; fullSnapshot: evohime.desktop.v1.FullSnapshot.$Shape; authChallenge?: null; executionEvent?: null }|{ event?: "authChallenge"; ready?: null; replayGap?: null; fullSnapshot?: null; authChallenge: evohime.desktop.v1.AuthChallenge.$Shape; executionEvent?: null }|{ event?: "executionEvent"; ready?: null; replayGap?: null; fullSnapshot?: null; authChallenge?: null; executionEvent: evohime.desktop.v1.ExecutionEvent.$Shape })
                  * )} evohime.desktop.v1.EventEnvelope.$Shape
                  */
 
@@ -27953,17 +27955,25 @@ export const evohime = $root.evohime = (() => {
                  */
                 EventEnvelope.prototype.authChallenge = null;
 
+                /**
+                 * EventEnvelope executionEvent.
+                 * @member {evohime.desktop.v1.ExecutionEvent.$Properties|null|undefined} executionEvent
+                 * @memberof evohime.desktop.v1.EventEnvelope
+                 * @instance
+                 */
+                EventEnvelope.prototype.executionEvent = null;
+
                 // OneOf field names bound to virtual getters and setters
                 let $oneOfFields;
 
                 /**
                  * EventEnvelope event.
-                 * @member {"ready"|"replayGap"|"fullSnapshot"|"authChallenge"|undefined} event
+                 * @member {"ready"|"replayGap"|"fullSnapshot"|"authChallenge"|"executionEvent"|undefined} event
                  * @memberof evohime.desktop.v1.EventEnvelope
                  * @instance
                  */
                 $Object.defineProperty(EventEnvelope.prototype, "event", {
-                    get: $util.oneOfGetter($oneOfFields = ["ready", "replayGap", "fullSnapshot", "authChallenge"]),
+                    get: $util.oneOfGetter($oneOfFields = ["ready", "replayGap", "fullSnapshot", "authChallenge", "executionEvent"]),
                     set: $util.oneOfSetter($oneOfFields)
                 });
 
@@ -28005,6 +28015,8 @@ export const evohime = $root.evohime = (() => {
                         $root.evohime.desktop.v1.FullSnapshot.encode(message.fullSnapshot, writer.uint32(/* id 12, wireType 2 =*/98).fork(), _depth + 1).ldelim();
                     if (message.authChallenge != null && $Object.hasOwnProperty.call(message, "authChallenge"))
                         $root.evohime.desktop.v1.AuthChallenge.encode(message.authChallenge, writer.uint32(/* id 13, wireType 2 =*/106).fork(), _depth + 1).ldelim();
+                    if (message.executionEvent != null && $Object.hasOwnProperty.call(message, "executionEvent"))
+                        $root.evohime.desktop.v1.ExecutionEvent.encode(message.executionEvent, writer.uint32(/* id 14, wireType 2 =*/114).fork(), _depth + 1).ldelim();
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -28127,6 +28139,13 @@ export const evohime = $root.evohime = (() => {
                                 message.event = "authChallenge";
                                 continue;
                             }
+                        case 14: {
+                                if (wireType !== 2)
+                                    break;
+                                message.executionEvent = $root.evohime.desktop.v1.ExecutionEvent.decode(reader, reader.uint32(), $undefined, _depth + 1, message.executionEvent);
+                                message.event = "executionEvent";
+                                continue;
+                            }
                         }
                         reader.skipType(wireType, _depth, tag);
                         if (!reader.discardUnknown) {
@@ -28154,6 +28173,521 @@ export const evohime = $root.evohime = (() => {
                 };
 
                 return EventEnvelope;
+            })();
+
+            v1.ExecutionEvent = (function() {
+
+                /**
+                 * Properties of an ExecutionEvent.
+                 * @typedef {Object} evohime.desktop.v1.ExecutionEvent.$Properties
+                 * @property {number|null} [schemaVersion] ExecutionEvent schemaVersion
+                 * @property {string|null} [eventId] ExecutionEvent eventId
+                 * @property {string|null} [runScope] ExecutionEvent runScope
+                 * @property {string|null} [runId] ExecutionEvent runId
+                 * @property {string|null} [sessionId] ExecutionEvent sessionId
+                 * @property {number|null} [createdAtMs] ExecutionEvent createdAtMs
+                 * @property {string|null} [stateAfter] ExecutionEvent stateAfter
+                 * @property {string|null} [actionId] ExecutionEvent actionId
+                 * @property {string|null} [toolCallId] ExecutionEvent toolCallId
+                 * @property {string|null} [observationId] ExecutionEvent observationId
+                 * @property {string|null} [receiptId] ExecutionEvent receiptId
+                 * @property {string|null} [failureId] ExecutionEvent failureId
+                 * @property {string|null} [workflowRunId] ExecutionEvent workflowRunId
+                 * @property {string|null} [nodeId] ExecutionEvent nodeId
+                 * @property {string|null} [attemptId] ExecutionEvent attemptId
+                 * @property {string|null} [effectId] ExecutionEvent effectId
+                 * @property {string|null} [modelRequestId] ExecutionEvent modelRequestId
+                 * @property {Uint8Array|null} [bodyJson] ExecutionEvent bodyJson
+                 * @property {boolean|null} [secretsPresent] ExecutionEvent secretsPresent
+                 * @property {string|null} [redactionDigest] ExecutionEvent redactionDigest
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of an ExecutionEvent.
+                 * @memberof evohime.desktop.v1
+                 * @interface IExecutionEvent
+                 * @augments evohime.desktop.v1.ExecutionEvent.$Properties
+                 * @deprecated Use evohime.desktop.v1.ExecutionEvent.$Properties instead.
+                 */
+
+                /**
+                 * Shape of an ExecutionEvent.
+                 * @typedef {evohime.desktop.v1.ExecutionEvent.$Properties} evohime.desktop.v1.ExecutionEvent.$Shape
+                 */
+
+                /**
+                 * Constructs a new ExecutionEvent.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents an ExecutionEvent.
+                 * @constructor
+                 * @param {evohime.desktop.v1.ExecutionEvent.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const ExecutionEvent = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * ExecutionEvent schemaVersion.
+                 * @member {number} schemaVersion
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.schemaVersion = 0;
+
+                /**
+                 * ExecutionEvent eventId.
+                 * @member {string} eventId
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.eventId = "";
+
+                /**
+                 * ExecutionEvent runScope.
+                 * @member {string} runScope
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.runScope = "";
+
+                /**
+                 * ExecutionEvent runId.
+                 * @member {string} runId
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.runId = "";
+
+                /**
+                 * ExecutionEvent sessionId.
+                 * @member {string} sessionId
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.sessionId = "";
+
+                /**
+                 * ExecutionEvent createdAtMs.
+                 * @member {number} createdAtMs
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.createdAtMs = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
+
+                /**
+                 * ExecutionEvent stateAfter.
+                 * @member {string} stateAfter
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.stateAfter = "";
+
+                /**
+                 * ExecutionEvent actionId.
+                 * @member {string} actionId
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.actionId = "";
+
+                /**
+                 * ExecutionEvent toolCallId.
+                 * @member {string} toolCallId
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.toolCallId = "";
+
+                /**
+                 * ExecutionEvent observationId.
+                 * @member {string} observationId
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.observationId = "";
+
+                /**
+                 * ExecutionEvent receiptId.
+                 * @member {string} receiptId
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.receiptId = "";
+
+                /**
+                 * ExecutionEvent failureId.
+                 * @member {string} failureId
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.failureId = "";
+
+                /**
+                 * ExecutionEvent workflowRunId.
+                 * @member {string} workflowRunId
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.workflowRunId = "";
+
+                /**
+                 * ExecutionEvent nodeId.
+                 * @member {string} nodeId
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.nodeId = "";
+
+                /**
+                 * ExecutionEvent attemptId.
+                 * @member {string} attemptId
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.attemptId = "";
+
+                /**
+                 * ExecutionEvent effectId.
+                 * @member {string} effectId
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.effectId = "";
+
+                /**
+                 * ExecutionEvent modelRequestId.
+                 * @member {string} modelRequestId
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.modelRequestId = "";
+
+                /**
+                 * ExecutionEvent bodyJson.
+                 * @member {Uint8Array} bodyJson
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.bodyJson = $util.newBuffer([]);
+
+                /**
+                 * ExecutionEvent secretsPresent.
+                 * @member {boolean} secretsPresent
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.secretsPresent = false;
+
+                /**
+                 * ExecutionEvent redactionDigest.
+                 * @member {string} redactionDigest
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @instance
+                 */
+                ExecutionEvent.prototype.redactionDigest = "";
+
+                /**
+                 * Encodes the specified ExecutionEvent message. Does not implicitly {@link evohime.desktop.v1.ExecutionEvent.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @static
+                 * @param {evohime.desktop.v1.ExecutionEvent.$Properties} message ExecutionEvent message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                ExecutionEvent.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.schemaVersion != null && $Object.hasOwnProperty.call(message, "schemaVersion") && message.schemaVersion !== 0)
+                        writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.schemaVersion);
+                    if (message.eventId != null && $Object.hasOwnProperty.call(message, "eventId") && message.eventId !== "")
+                        writer.uint32(/* id 2, wireType 2 =*/18).string(message.eventId);
+                    if (message.runScope != null && $Object.hasOwnProperty.call(message, "runScope") && message.runScope !== "")
+                        writer.uint32(/* id 3, wireType 2 =*/26).string(message.runScope);
+                    if (message.runId != null && $Object.hasOwnProperty.call(message, "runId") && message.runId !== "")
+                        writer.uint32(/* id 4, wireType 2 =*/34).string(message.runId);
+                    if (message.sessionId != null && $Object.hasOwnProperty.call(message, "sessionId") && message.sessionId !== "")
+                        writer.uint32(/* id 5, wireType 2 =*/42).string(message.sessionId);
+                    if (message.createdAtMs != null && $Object.hasOwnProperty.call(message, "createdAtMs") && (typeof message.createdAtMs === "object" ? message.createdAtMs.low || message.createdAtMs.high : message.createdAtMs !== 0))
+                        writer.uint32(/* id 6, wireType 0 =*/48).int64(message.createdAtMs);
+                    if (message.stateAfter != null && $Object.hasOwnProperty.call(message, "stateAfter") && message.stateAfter !== "")
+                        writer.uint32(/* id 7, wireType 2 =*/58).string(message.stateAfter);
+                    if (message.actionId != null && $Object.hasOwnProperty.call(message, "actionId") && message.actionId !== "")
+                        writer.uint32(/* id 8, wireType 2 =*/66).string(message.actionId);
+                    if (message.toolCallId != null && $Object.hasOwnProperty.call(message, "toolCallId") && message.toolCallId !== "")
+                        writer.uint32(/* id 9, wireType 2 =*/74).string(message.toolCallId);
+                    if (message.observationId != null && $Object.hasOwnProperty.call(message, "observationId") && message.observationId !== "")
+                        writer.uint32(/* id 10, wireType 2 =*/82).string(message.observationId);
+                    if (message.receiptId != null && $Object.hasOwnProperty.call(message, "receiptId") && message.receiptId !== "")
+                        writer.uint32(/* id 11, wireType 2 =*/90).string(message.receiptId);
+                    if (message.failureId != null && $Object.hasOwnProperty.call(message, "failureId") && message.failureId !== "")
+                        writer.uint32(/* id 12, wireType 2 =*/98).string(message.failureId);
+                    if (message.workflowRunId != null && $Object.hasOwnProperty.call(message, "workflowRunId") && message.workflowRunId !== "")
+                        writer.uint32(/* id 13, wireType 2 =*/106).string(message.workflowRunId);
+                    if (message.nodeId != null && $Object.hasOwnProperty.call(message, "nodeId") && message.nodeId !== "")
+                        writer.uint32(/* id 14, wireType 2 =*/114).string(message.nodeId);
+                    if (message.attemptId != null && $Object.hasOwnProperty.call(message, "attemptId") && message.attemptId !== "")
+                        writer.uint32(/* id 15, wireType 2 =*/122).string(message.attemptId);
+                    if (message.effectId != null && $Object.hasOwnProperty.call(message, "effectId") && message.effectId !== "")
+                        writer.uint32(/* id 16, wireType 2 =*/130).string(message.effectId);
+                    if (message.modelRequestId != null && $Object.hasOwnProperty.call(message, "modelRequestId") && message.modelRequestId !== "")
+                        writer.uint32(/* id 17, wireType 2 =*/138).string(message.modelRequestId);
+                    if (message.bodyJson != null && $Object.hasOwnProperty.call(message, "bodyJson") && message.bodyJson.length)
+                        writer.uint32(/* id 18, wireType 2 =*/146).bytes(message.bodyJson);
+                    if (message.secretsPresent != null && $Object.hasOwnProperty.call(message, "secretsPresent") && message.secretsPresent !== false)
+                        writer.uint32(/* id 19, wireType 0 =*/152).bool(message.secretsPresent);
+                    if (message.redactionDigest != null && $Object.hasOwnProperty.call(message, "redactionDigest") && message.redactionDigest !== "")
+                        writer.uint32(/* id 20, wireType 2 =*/162).string(message.redactionDigest);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes an ExecutionEvent message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.ExecutionEvent & evohime.desktop.v1.ExecutionEvent.$Shape} ExecutionEvent
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                ExecutionEvent.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.ExecutionEvent(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.uint32())
+                                    message.schemaVersion = value;
+                                else
+                                    delete message.schemaVersion;
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.eventId = value;
+                                else
+                                    delete message.eventId;
+                                continue;
+                            }
+                        case 3: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.runScope = value;
+                                else
+                                    delete message.runScope;
+                                continue;
+                            }
+                        case 4: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.runId = value;
+                                else
+                                    delete message.runId;
+                                continue;
+                            }
+                        case 5: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.sessionId = value;
+                                else
+                                    delete message.sessionId;
+                                continue;
+                            }
+                        case 6: {
+                                if (wireType !== 0)
+                                    break;
+                                if (typeof (value = reader.int64()) === "object" ? value.low || value.high : value !== 0)
+                                    message.createdAtMs = value;
+                                else
+                                    delete message.createdAtMs;
+                                continue;
+                            }
+                        case 7: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.stateAfter = value;
+                                else
+                                    delete message.stateAfter;
+                                continue;
+                            }
+                        case 8: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.actionId = value;
+                                else
+                                    delete message.actionId;
+                                continue;
+                            }
+                        case 9: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.toolCallId = value;
+                                else
+                                    delete message.toolCallId;
+                                continue;
+                            }
+                        case 10: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.observationId = value;
+                                else
+                                    delete message.observationId;
+                                continue;
+                            }
+                        case 11: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.receiptId = value;
+                                else
+                                    delete message.receiptId;
+                                continue;
+                            }
+                        case 12: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.failureId = value;
+                                else
+                                    delete message.failureId;
+                                continue;
+                            }
+                        case 13: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.workflowRunId = value;
+                                else
+                                    delete message.workflowRunId;
+                                continue;
+                            }
+                        case 14: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.nodeId = value;
+                                else
+                                    delete message.nodeId;
+                                continue;
+                            }
+                        case 15: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.attemptId = value;
+                                else
+                                    delete message.attemptId;
+                                continue;
+                            }
+                        case 16: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.effectId = value;
+                                else
+                                    delete message.effectId;
+                                continue;
+                            }
+                        case 17: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.modelRequestId = value;
+                                else
+                                    delete message.modelRequestId;
+                                continue;
+                            }
+                        case 18: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.bytes()).length)
+                                    message.bodyJson = value;
+                                else
+                                    delete message.bodyJson;
+                                continue;
+                            }
+                        case 19: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.bool())
+                                    message.secretsPresent = value;
+                                else
+                                    delete message.secretsPresent;
+                                continue;
+                            }
+                        case 20: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.redactionDigest = value;
+                                else
+                                    delete message.redactionDigest;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for ExecutionEvent
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.ExecutionEvent
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                ExecutionEvent.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.ExecutionEvent";
+                };
+
+                return ExecutionEvent;
             })();
 
             v1.ReplayGap = (function() {

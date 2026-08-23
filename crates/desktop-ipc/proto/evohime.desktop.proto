@@ -1309,7 +1309,36 @@ message EventEnvelope {
     ReplayGap replay_gap = 11;
     FullSnapshot full_snapshot = 12;
     AuthChallenge auth_challenge = 13;
+    ExecutionEvent execution_event = 14;
   }
+}
+
+// Bounded typed execution-ledger projection (план 08-1/08-2/08-3). Общие
+// correlation-поля отражают execution_ledger::ExecutionEventV1 один в один;
+// body остаётся каноническим JSON (evohime_local_storage::execution_ledger
+// — источник истины для вариантов), чтобы не дублировать typed oneof body
+// сразу в трёх схемах (Rust/proto/TS) при уже bounded и versioned payload.
+message ExecutionEvent {
+  uint32 schema_version = 1;
+  string event_id = 2;
+  string run_scope = 3;
+  string run_id = 4;
+  string session_id = 5;
+  int64 created_at_ms = 6;
+  string state_after = 7;
+  string action_id = 8;
+  string tool_call_id = 9;
+  string observation_id = 10;
+  string receipt_id = 11;
+  string failure_id = 12;
+  string workflow_run_id = 13;
+  string node_id = 14;
+  string attempt_id = 15;
+  string effect_id = 16;
+  string model_request_id = 17;
+  bytes body_json = 18;
+  bool secrets_present = 19;
+  string redaction_digest = 20;
 }
 
 // The server emits this when the requested sequence is no longer retained.

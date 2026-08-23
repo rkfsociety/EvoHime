@@ -41,12 +41,44 @@ export interface ShellState {
   readonly reconnectAttempts: number
 }
 
+/**
+ * Bounded typed execution-ledger projection (plan 08-1/08-2/08-3), decoded
+ * from `EventEnvelope.executionEvent` when Core emitted a typed `ledger.*`
+ * row. `body` is already-parsed JSON of the ExecutionEventV1 variant named
+ * by `CoreEvent.eventType` (e.g. `ledger.tool_call`); it carries no raw
+ * prompt/secret content — Core never puts that there either.
+ */
+export interface TypedExecutionEvent {
+  readonly schemaVersion: number
+  readonly eventId: string
+  readonly runScope: string
+  readonly runId: string
+  readonly sessionId: string
+  readonly createdAtMs: number
+  readonly stateAfter: string
+  readonly actionId: string
+  readonly toolCallId: string
+  readonly observationId: string
+  readonly receiptId: string
+  readonly failureId: string
+  readonly workflowRunId: string
+  readonly nodeId: string
+  readonly attemptId: string
+  readonly effectId: string
+  readonly modelRequestId: string
+  readonly body: unknown
+  readonly secretsPresent: boolean
+  readonly redactionDigest: string
+}
+
 export interface CoreEvent {
   readonly sequenceId: number
   readonly taskId: string
   readonly eventType: string
   /** Redacted UTF-8 payload as produced by Core; never a secret value. */
   readonly payload: string
+  /** Present only for typed `ledger.*` rows (plan 08-3); null otherwise. */
+  readonly executionEvent: TypedExecutionEvent | null
 }
 
 export type ShellEvent =
