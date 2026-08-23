@@ -954,6 +954,16 @@ pub fn persist_capability_snapshot(
     Ok(())
 }
 
+type CapabilityBindingRow = (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<i64>,
+    Option<i64>,
+);
+
+type ApprovalBindingRow = (Option<String>, Option<String>, Option<i64>, Option<i64>);
+
 pub fn bind_capability_to_action(
     connection: &Connection,
     action_id: Uuid,
@@ -961,13 +971,7 @@ pub fn bind_capability_to_action(
     hook_chain_version: u32,
 ) -> Result<(), RuntimeError> {
     persist_capability_snapshot(connection, snapshot)?;
-    let current: Option<(
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        Option<i64>,
-        Option<i64>,
-    )> = connection
+    let current: Option<CapabilityBindingRow> = connection
         .query_row(
             "SELECT session_id,snapshot_id,snapshot_hash,policy_version,hook_chain_version FROM receipt_actions WHERE action_id=?1",
             [action_id.to_string()],
@@ -998,7 +1002,7 @@ pub fn bind_capability_to_action(
     if changed != 1 {
         return Err(RuntimeError::Code("action_not_found"));
     }
-    let approval_current: Option<(Option<String>, Option<String>, Option<i64>, Option<i64>)> = connection
+    let approval_current: Option<ApprovalBindingRow> = connection
         .query_row(
             "SELECT session_id,snapshot_hash,policy_version,hook_chain_version FROM receipt_approval_intents WHERE action_id=?1",
             [action_id.to_string()],
