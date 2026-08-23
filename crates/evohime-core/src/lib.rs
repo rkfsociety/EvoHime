@@ -4665,7 +4665,6 @@ impl ToolAgent {
                 return Err(code);
             }
         };
-        drop(runtime);
         evohime_receipts::runtime::bind_capability_to_action(
             database.connection(),
             action_id,
@@ -4739,7 +4738,6 @@ impl ToolAgent {
         if !matches!(prepared, ReceiptPrepareOutcome::Prepared { .. }) {
             return Err("receipt.precondition_failed".into());
         }
-        drop(runtime);
         evohime_receipts::runtime::bind_capability_to_action(
             database.connection(),
             request.action_id,

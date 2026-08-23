@@ -263,7 +263,7 @@ mod tests {
                 PolicyOutcome::Allowed,
             )
             .unwrap();
-        let metadata = PolicyHooks::default().postflight(&binding, "succeeded");
+        let metadata = PolicyHooks.postflight(&binding, "succeeded");
         let serialized = serde_json::to_string(&metadata.input_hash).unwrap();
         assert!(!serialized.contains("must-not-leak"));
         assert_eq!(metadata.hook_chain_version, HOOK_CHAIN_VERSION);

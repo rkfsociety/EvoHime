@@ -5814,7 +5814,6 @@ impl IpcBridge {
                         "receipt.precondition_failed".into(),
                     ));
                 }
-                drop(runtime);
                 evohime_receipts::runtime::bind_capability_to_action(
                     database.connection(),
                     request.action_id,
@@ -6073,7 +6072,6 @@ impl IpcBridge {
                         runtime
                             .prepare_existing_approval(receipt_request)
                             .map_err(|error| FrameError::Io(error.to_string()))?;
-                        drop(runtime);
                         evohime_receipts::runtime::bind_capability_to_action(
                             database.connection(),
                             durable_action_id,
