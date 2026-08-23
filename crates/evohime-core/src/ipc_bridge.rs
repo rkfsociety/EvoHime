@@ -6713,6 +6713,69 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// План 08-4 acceptance: "reconnect во время каждой промежуточной
+    /// фазы" — the typed IPC projection is generic over `state_after`, not
+    /// special-cased to whatever phase happened to be tested elsewhere.
+    /// Replays a run whose last known phase is `waiting_approval` and one
+    /// whose last known phase is `cancelling` (the state this plan's own
+    /// CHECK-rebuild migration exists to allow), proving both reconnect
+    /// correctly rather than only the already-covered `running`/terminal
+    /// cases.
+    #[tokio::test]
+    async fn reconnect_projects_every_intermediate_phase_not_just_running() {
+        let path = std::env::temp_dir().join(format!(
+            "evohime-ipc-reconnect-phases-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        {
+            let database = journal.database().lock().await;
+            let mut waiting_approval = sample_typed_ledger_event("event-phase-1", "action-phase-1");
+            waiting_approval.state_after = Some(execution_ledger::ActionState::WaitingApproval);
+            database
+                .append_ledger_event(&waiting_approval)
+                .expect("waiting_approval event appends");
+            let mut cancelling = sample_typed_ledger_event("event-phase-2", "action-phase-2");
+            cancelling.state_after = Some(execution_ledger::ActionState::Cancelling);
+            database
+                .append_ledger_event(&cancelling)
+                .expect("cancelling event appends");
+        }
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal, coordinator);
+        let (mut client, mut server) = duplex(16 * 1024);
+
+        bridge
+            .push_journal_tail(&mut server, 0)
+            .await
+            .expect("tail pushes");
+
+        let first = generated::EventEnvelope::decode(
+            transport::read_frame(&mut client)
+                .await
+                .expect("first frame reads")
+                .as_slice(),
+        )
+        .expect("first frame decodes");
+        let second = generated::EventEnvelope::decode(
+            transport::read_frame(&mut client)
+                .await
+                .expect("second frame reads")
+                .as_slice(),
+        )
+        .expect("second frame decodes");
+
+        for (envelope, expected_state) in [(first, "waiting_approval"), (second, "cancelling")] {
+            let projected = match envelope.event {
+                Some(generated::event_envelope::Event::ExecutionEvent(projected)) => projected,
+                other => panic!("expected ExecutionEvent oneof, got {other:?}"),
+            };
+            assert_eq!(projected.state_after, expected_state);
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
     /// Generic (non-`ledger.*`) rows keep flowing through the pre-08-3 path:
     /// `execution_event` stays unset and nothing else about the frame changes.
     #[tokio::test]
