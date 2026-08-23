@@ -204,6 +204,20 @@ async fn main() {
     .with_selected_model(selected_model)
     .with_proactivity(proactivity)
     .with_ambient_data_dir(data_dir.clone());
+    // План 08-2: bounded core_start ledger event, затем reconciliation
+    // незавершённых typed actions по dispatch marker в run_effects. Должно
+    // идти после конструирования bridge — именно оно фиксирует
+    // core_instance_id, который этот Core будет ставить на каждый EventEnvelope.
+    if let Err(error) = bridge
+        .journal()
+        .record_ledger_core_start(bridge.core_instance_id())
+        .await
+    {
+        eprintln!("evohime-core ledger core_start failed: {error}");
+    }
+    if let Err(error) = bridge.journal().reconcile_ledger_on_startup().await {
+        eprintln!("evohime-core ledger reconciliation failed: {error}");
+    }
     let logger = match evohime_core::StructuredLogger::open(data_dir.join("logs/core.jsonl")) {
         Ok(logger) => std::sync::Arc::new(logger),
         Err(error) => {

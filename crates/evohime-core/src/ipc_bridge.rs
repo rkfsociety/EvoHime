@@ -216,6 +216,13 @@ impl IpcBridge {
     pub fn journal(&self) -> EventJournal {
         self.journal.clone()
     }
+
+    /// Identity this process picked at construction (план 08-2/08-3
+    /// `core_instance_id`) — used to publish the `core_start` ledger event
+    /// under the exact id this bridge will stamp on every `EventEnvelope`.
+    pub fn core_instance_id(&self) -> &str {
+        &self.core_instance_id
+    }
     fn manager_for(journal: &EventJournal) -> Arc<ReceiptKeyManager> {
         let data_dir = journal
             .database_path()

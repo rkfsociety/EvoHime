@@ -372,6 +372,76 @@ pub struct RecoveryHealthSnapshot {
     pub resumable_runs: i64,
 }
 
+/// Shared write path for typed ledger rows, used by both `append_ledger_event`
+/// and `append_ledger_event_with_node_transition` so the two INSERT column
+/// lists cannot drift apart. Takes `&Connection` so callers can pass either
+/// the bare connection or an in-flight `Transaction` (which derefs to it).
+fn insert_ledger_event_row(
+    connection: &Connection,
+    event: &execution_ledger::ExecutionEventV1,
+) -> Result<i64, StorageError> {
+    let payload = serde_json::to_vec(event)?;
+    connection.execute(
+        "INSERT INTO events(
+            task_id, event_type, payload, event_id, schema_version, run_scope,
+            run_id, session_id, action_id, effect_id, workflow_run_id, state_after
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        rusqlite::params![
+            event.task_id,
+            event.body.kind_str(),
+            payload,
+            event.event_id,
+            event.schema_version,
+            event.run_scope.as_str(),
+            event.run_id,
+            event.session_id,
+            event.action_id,
+            event.effect_id,
+            event.workflow_run_id,
+            event.state_after.map(|state| state.as_str()),
+        ],
+    )?;
+    Ok(connection.last_insert_rowid())
+}
+
+/// Enforces "a terminal action never gets a second terminal outcome" at
+/// write time (план 08-1's `assert_single_terminal`, applied per-action
+/// against durable history rather than an in-memory batch). A no-op when
+/// the event carries no `action_id` or its `state_after` is not terminal —
+/// non-terminal transitions and system/legacy rows are unaffected.
+fn ensure_single_terminal_outcome(
+    connection: &Connection,
+    event: &execution_ledger::ExecutionEventV1,
+) -> Result<(), StorageError> {
+    let (Some(action_id), Some(state)) = (event.action_id.as_deref(), event.state_after) else {
+        return Ok(());
+    };
+    if !state.is_terminal() {
+        return Ok(());
+    }
+    let previous: Option<String> = connection
+        .query_row(
+            "SELECT state_after FROM events
+              WHERE action_id = ?1 AND state_after IS NOT NULL
+              ORDER BY sequence_id DESC LIMIT 1",
+            [action_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let already_terminal = previous
+        .as_deref()
+        .and_then(execution_ledger::ActionState::parse)
+        .is_some_and(execution_ledger::ActionState::is_terminal);
+    if already_terminal {
+        return Err(StorageError::LedgerContract(
+            execution_ledger::LedgerContractError::DuplicateTerminalOutcome {
+                action_id: action_id.to_string(),
+            },
+        ));
+    }
+    Ok(())
+}
+
 impl LocalDatabase {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
         Self::open_internal(path.as_ref(), false)
@@ -2000,28 +2070,8 @@ impl LocalDatabase {
         event: &execution_ledger::ExecutionEventV1,
     ) -> Result<i64, StorageError> {
         event.validate()?;
-        let payload = serde_json::to_vec(event)?;
-        self.connection.execute(
-            "INSERT INTO events(
-                task_id, event_type, payload, event_id, schema_version, run_scope,
-                run_id, session_id, action_id, effect_id, workflow_run_id, state_after
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-            rusqlite::params![
-                event.task_id,
-                event.body.kind_str(),
-                payload,
-                event.event_id,
-                event.schema_version,
-                event.run_scope.as_str(),
-                event.run_id,
-                event.session_id,
-                event.action_id,
-                event.effect_id,
-                event.workflow_run_id,
-                event.state_after.map(|state| state.as_str()),
-            ],
-        )?;
-        Ok(self.connection.last_insert_rowid())
+        ensure_single_terminal_outcome(&self.connection, event)?;
+        insert_ledger_event_row(&self.connection, event)
     }
 
     /// Атомарно публикует typed ledger event и переводит связанный
@@ -2041,6 +2091,7 @@ impl LocalDatabase {
         execution_ledger::validate_transition(from, to)?;
         event.validate()?;
         let transaction = self.connection.unchecked_transaction()?;
+        ensure_single_terminal_outcome(&transaction, event)?;
         let changed = transaction.execute(
             "UPDATE workflow_run_nodes SET state = ?3, updated_at_ms = ?4
               WHERE run_id = ?1 AND node_id = ?2 AND state = ?5",
@@ -2052,28 +2103,7 @@ impl LocalDatabase {
                 node_id: node_id.to_string(),
             });
         }
-        let payload = serde_json::to_vec(event)?;
-        transaction.execute(
-            "INSERT INTO events(
-                task_id, event_type, payload, event_id, schema_version, run_scope,
-                run_id, session_id, action_id, effect_id, workflow_run_id, state_after
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-            rusqlite::params![
-                event.task_id,
-                event.body.kind_str(),
-                payload,
-                event.event_id,
-                event.schema_version,
-                event.run_scope.as_str(),
-                event.run_id,
-                event.session_id,
-                event.action_id,
-                event.effect_id,
-                event.workflow_run_id,
-                event.state_after.map(|state| state.as_str()),
-            ],
-        )?;
-        let sequence_id = transaction.last_insert_rowid();
+        let sequence_id = insert_ledger_event_row(&transaction, event)?;
         transaction.commit()?;
         Ok(sequence_id)
     }
@@ -4994,6 +5024,76 @@ mod tests {
             .append_ledger_event(&second)
             .expect_err("duplicate event_id must be rejected");
         assert!(matches!(error, StorageError::Sqlite(_)));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The single-terminal-outcome guarantee (план 08-1's
+    /// `assert_single_terminal`) must hold at the real write path, not just
+    /// as an in-memory helper: a second terminal event for the same
+    /// `action_id` is rejected even via two independent `append_ledger_event`
+    /// calls (no batch, no shared transaction between them).
+    #[test]
+    fn second_terminal_outcome_for_same_action_is_rejected_at_write_time() {
+        let path = temp_database_path("ledger-single-terminal");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        let first_terminal = sample_ledger_event(
+            "event-terminal-1",
+            "run-1",
+            "action-guarded",
+            crate::execution_ledger::ActionState::Succeeded,
+        );
+        database
+            .append_ledger_event(&first_terminal)
+            .expect("first terminal outcome accepted");
+
+        let second_terminal = sample_ledger_event(
+            "event-terminal-2",
+            "run-1",
+            "action-guarded",
+            crate::execution_ledger::ActionState::Failed,
+        );
+        let error = database
+            .append_ledger_event(&second_terminal)
+            .expect_err("second terminal outcome for the same action must be rejected");
+        assert!(matches!(
+            error,
+            StorageError::LedgerContract(
+                crate::execution_ledger::LedgerContractError::DuplicateTerminalOutcome { .. }
+            )
+        ));
+        // Rejected write must not have landed.
+        assert_eq!(database.latest_event_sequence().expect("sequence reads"), 1);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A non-terminal follow-up (e.g. Running -> WaitingApproval) for the
+    /// same action is unaffected by the guard — only a second *terminal*
+    /// outcome is rejected.
+    #[test]
+    fn non_terminal_follow_up_for_same_action_is_accepted() {
+        let path = temp_database_path("ledger-non-terminal-followup");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        let running = sample_ledger_event(
+            "event-followup-1",
+            "run-1",
+            "action-followup",
+            crate::execution_ledger::ActionState::Running,
+        );
+        database
+            .append_ledger_event(&running)
+            .expect("running accepted");
+        let waiting = sample_ledger_event(
+            "event-followup-2",
+            "run-1",
+            "action-followup",
+            crate::execution_ledger::ActionState::WaitingApproval,
+        );
+        database
+            .append_ledger_event(&waiting)
+            .expect("non-terminal follow-up accepted");
+        assert_eq!(database.latest_event_sequence().expect("sequence reads"), 2);
         let _ = std::fs::remove_file(&path);
     }
 
