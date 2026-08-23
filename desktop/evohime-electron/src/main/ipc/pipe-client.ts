@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 
 import type {
   ConnectionState,
+  CoreAvailabilityCode,
   CoreEvent,
   ProtocolVersion,
   ShellState,
@@ -18,7 +19,13 @@ import { FrameReader } from './frame-reader'
 import { evohime } from './generated/protocol.js'
 import { handshakeProof, type LaunchContext } from './launch-context'
 import { LedgerEventDedup } from './ledger-event-dedup'
-import { LOCAL_PROTOCOL, negotiateProtocol, NegotiationError } from './protocol-version'
+import {
+  LOCAL_PROTOCOL,
+  negotiateLimits,
+  negotiateProtocol,
+  NegotiationError,
+  type EffectiveLimits
+} from './protocol-version'
 
 const { CommandEnvelope, EventEnvelope } = evohime.desktop.v1
 
@@ -78,6 +85,8 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
   private coreVersion: string | null = null
   private lastSequence = 0
   private reason: string | null = null
+  private availability: CoreAvailabilityCode | null = null
+  private limits: EffectiveLimits | null = null
   private reconnectAttempts = 0
   private coreInstanceId = ''
   private sessionEpoch = 0
@@ -125,6 +134,7 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       coreVersion: this.coreVersion,
       lastSequence: this.lastSequence,
       reason: this.reason,
+      availability: this.availability,
       reconnectAttempts: this.reconnectAttempts
     }
   }
@@ -162,6 +172,13 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       frame = encodeFrame(CommandEnvelope.encode(envelope).finish())
     } catch (error) {
       this.log('warn', 'ipc.command_encode_failed', { error })
+      return 'queue-full'
+    }
+    if (this.limits && frame.byteLength - 4 > this.limits.maxFrameBytes) {
+      this.log('warn', 'ipc.command_exceeds_peer_limit', {
+        frameBytes: frame.byteLength - 4,
+        maxFrameBytes: this.limits.maxFrameBytes
+      })
       return 'queue-full'
     }
     const result = this.queue.enqueue({ requestId: envelope.requestId ?? '', frame })
@@ -424,11 +441,23 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
     }
     const peer = event.ready?.protocol ?? event.protocol
     try {
+      const coreInfo = event.ready?.coreInfo
+      this.limits = coreInfo
+        ? negotiateLimits({
+            maxFrameBytes: Number(coreInfo.maxFrameBytes ?? 0),
+            maxReplayEvents: Number(coreInfo.maxReplayEvents ?? 0),
+            maxSnapshotBytes: Number(coreInfo.maxSnapshotBytes ?? 0)
+          })
+        : {
+            maxFrameBytes: 4 * 1024 * 1024,
+            maxReplayEvents: 512,
+            maxSnapshotBytes: 4 * 1024 * 1024 - 1024
+          }
       const negotiated = negotiateProtocol(
         LOCAL_PROTOCOL,
         { major: Number(peer?.major ?? 0), minor: Number(peer?.minor ?? 0) },
         CLIENT_CAPABILITIES,
-        [...CLIENT_CAPABILITIES]
+        coreInfo?.capabilities?.length ? [...coreInfo.capabilities] : [...CLIENT_CAPABILITIES]
       )
       this.protocol = negotiated.version
       this.capabilities = negotiated.capabilities
@@ -437,6 +466,7 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       // never falls back to an unknown scheme.
       this.log('error', 'ipc.version_mismatch', { error })
       this.protocol = null
+      this.limits = null
       this.setState(
         'version-mismatch',
         error instanceof NegotiationError ? error.kind : 'negotiation-failed'
@@ -561,8 +591,22 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
     }
     this.connection = connection
     this.reason = reason
+    this.availability = availabilityFor(connection, reason)
     this.emit('state', this.state)
   }
+}
+
+function availabilityFor(
+  connection: ConnectionState,
+  reason: string | null
+): CoreAvailabilityCode | null {
+  if (reason === 'session-epoch-changed' || reason === 'stale-session') return 'stale_session'
+  if (connection === 'version-mismatch') return 'unsupported'
+  if (connection === 'connecting' || connection === 'reconnecting' || connection === 'degraded') {
+    return 'unavailable'
+  }
+  if (connection === 'fatal' || reason === 'protocol-error') return 'unknown'
+  return null
 }
 
 function decodePayload(payload: Uint8Array | null | undefined): string {

@@ -281,3 +281,24 @@ evohime-model-provenance` (505 + 182 + 33 + 56 + 5 тестов), `cargo fmt
 `cargo test -p evohime-tool-runtime --lib` — 119 passed и 1 ignored,
 Electron targeted tests — 25 passed, `npm run typecheck` и `git diff --check`
 проходят.
+
+## План 10 — IPC/provider boundary — реализован в текущем checkout
+
+- `Ready.core_info` добавлен аддитивно; Rust/Electron negotiation сохраняет
+  legacy Ready, bounded capabilities и effective limits.
+- Внутренний Rust `adapter/v1` contract подключён к `CoreNodeAdapter` для
+  descriptor/session/request/result validation, bounded tool payloads и opaque
+  `SecretRef`; provider settings остаются shell-local и возвращают
+  `{ summary, restarted }` после Core restart.
+- `TargetManager` использует canonical workspace scope, bounded target ID,
+  serial stale-generation switch и late-result rejection; fallback/retry не
+  пересекают active target или Core generation.
+- Acceptance matrix N-01…S-01 закрыта deterministic fixtures. Real-Core E2E
+  прошёл, source-update E2E остаётся штатно skipped только без специального
+  флага.
+
+Проверки 2026-08-23: `cargo test --locked -p evohime-desktop-ipc
+-p evohime-core -p evohime-model-gateway` — 512 Core, 35 desktop-ipc и 55
+model-gateway unit tests плюс integration suites прошли; Electron — 429
+passed, 2 штатно skipped; `npm run typecheck`, `npm run check:protocol`,
+`cargo fmt --all` и `git diff --check` проходят.

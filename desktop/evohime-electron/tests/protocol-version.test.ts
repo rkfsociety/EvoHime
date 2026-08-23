@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   MAX_CAPABILITIES,
+  MAX_FRAME_BYTES,
   NegotiationError,
+  negotiateLimits,
   negotiateProtocol
 } from '../src/main/ipc/protocol-version'
 
@@ -39,5 +41,14 @@ describe('protocol negotiation', () => {
     expect(() =>
       negotiateProtocol({ major: 1, minor: 0 }, { major: 1, minor: 0 }, [''], [])
     ).toThrow(NegotiationError)
+  })
+
+  it('negotiates bounded effective limits and rejects invalid peer limits', () => {
+    expect(
+      negotiateLimits({ maxFrameBytes: MAX_FRAME_BYTES / 2, maxReplayEvents: 128, maxSnapshotBytes: 1024 })
+    ).toEqual({ maxFrameBytes: MAX_FRAME_BYTES / 2, maxReplayEvents: 128, maxSnapshotBytes: 1024 })
+    expect(() => negotiateLimits({ maxFrameBytes: 0, maxReplayEvents: 1, maxSnapshotBytes: 1 })).toThrow(
+      NegotiationError
+    )
   })
 })

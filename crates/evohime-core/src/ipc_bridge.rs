@@ -879,6 +879,7 @@ impl IpcBridge {
                     event: Some(generated::event_envelope::Event::Ready(generated::Ready {
                         protocol: Some(protocol()),
                         core_version: env!("CARGO_PKG_VERSION").into(),
+                        core_info: Some(core_info()),
                     })),
                 };
                 transport::write_frame(writer, &event.encode_to_vec()).await?;
@@ -6352,6 +6353,7 @@ impl IpcBridge {
             Some(generated::event_envelope::Event::Ready(generated::Ready {
                 protocol: Some(protocol()),
                 core_version: env!("CARGO_PKG_VERSION").into(),
+                core_info: Some(core_info()),
             })),
             Vec::new(),
         )
@@ -6793,6 +6795,22 @@ fn protocol() -> generated::ProtocolVersion {
     generated::ProtocolVersion {
         major: PROTOCOL_MAJOR,
         minor: PROTOCOL_MINOR,
+    }
+}
+
+fn core_info() -> generated::CoreInfo {
+    generated::CoreInfo {
+        protocol: Some(protocol()),
+        core_version: env!("CARGO_PKG_VERSION").into(),
+        build_revision: option_env!("EVOHIME_BUILD_REVISION")
+            .unwrap_or("unknown")
+            .into(),
+        runtime_revision: "rust-core".into(),
+        capabilities: vec!["replay".into(), "resync".into()],
+        feature_flags: vec!["authenticated-ipc".into()],
+        max_frame_bytes: evohime_desktop_ipc::MAX_FRAME_BYTES as u32,
+        max_replay_events: evohime_desktop_ipc::MAX_REPLAY_EVENTS as u32,
+        max_snapshot_bytes: evohime_desktop_ipc::MAX_RESYNC_SNAPSHOT_BYTES as u32,
     }
 }
 

@@ -40,7 +40,9 @@ model-request provenance реализованы и перенесены в ка�
 реализована: контракт `workflow/v1`, Core-owned реестр и шаблоны, durable
 runtime и раздел «Составные задачи» в Electron. CAMEL и AutoGPT остались
 архитектурными reference и не являются runtime-зависимостями продукта.
-Ближайшие исполняемые планы — 10: IPC, version negotiation и provider boundary.
+План 10: IPC, version negotiation и provider boundary реализован. Его контракт
+перенесён в `architecture.md`, подтверждённое состояние — в `current-state.md`;
+следующий исполняемый блок — план 11.
 
 ## Текущий статус
 
@@ -50,7 +52,7 @@ Core + SQLite + authenticated named-pipe IPC сохраняются. Польз�
 
 Этапы 02–06 и 09 завершены. Их контракты находятся в [`architecture.md`](architecture.md),
 подтверждённое состояние — в [`current-state.md`](current-state.md). Следующее
-независимое направление — план 10. План 07 остаётся отдельным предложенным
+независимое направление — план 11. План 07 остаётся отдельным предложенным
 направлением без исполняемого файла в текущем каталоге.
 
 После завершения foundation добавлен функциональный slice «Ревью планов» в

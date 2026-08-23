@@ -82,6 +82,8 @@ impl ChildExecutor for UnavailableChildExecutor {
 /// инструментов не должно валить весь запуск, но и не должно выдавать
 /// отсутствие результата за успех.
 pub struct CoreNodeAdapter {
+    adapter_descriptor: crate::adapter_contract::AdapterDescriptor,
+    adapter_session: crate::adapter_contract::AdapterSession,
     journal: EventJournal,
     tools: Option<Arc<ToolRegistry>>,
     workspace_root: std::path::PathBuf,
@@ -92,10 +94,21 @@ pub struct CoreNodeAdapter {
 
 impl CoreNodeAdapter {
     pub fn new(journal: EventJournal, workspace_root: impl Into<std::path::PathBuf>) -> Self {
+        let workspace_root = workspace_root.into();
         Self {
+            adapter_descriptor: crate::adapter_contract::AdapterDescriptor::builtin_tool(),
+            adapter_session: crate::adapter_contract::AdapterSession {
+                negotiated_capabilities: vec!["tool_calling".into()],
+                policy_hash: "workflow-policy-v1".into(),
+                target_generation: 0,
+                workspace_scope: workspace_root.to_string_lossy().into_owned(),
+                deadline_ms: 30_000,
+                cancellation_requested: false,
+                secret_ref: None,
+            },
             journal,
             tools: None,
-            workspace_root: workspace_root.into(),
+            workspace_root,
             task_id: uuid::Uuid::new_v4(),
             session_id: None,
             child_executor: Arc::new(UnavailableChildExecutor),
@@ -128,6 +141,12 @@ impl CoreNodeAdapter {
     }
 
     async fn run_tool(&self, tool_name: &str, input: Value) -> Result<Value, NodeError> {
+        self.adapter_descriptor
+            .validate()
+            .map_err(|error| NodeError::permanent("adapter_unavailable", error.to_string()))?;
+        self.adapter_session
+            .validate(&self.adapter_descriptor)
+            .map_err(|error| NodeError::permanent("adapter_session_rejected", error.to_string()))?;
         let Some(tools) = &self.tools else {
             return Err(NodeError::permanent(
                 "tool_registry_unavailable",
@@ -135,6 +154,14 @@ impl CoreNodeAdapter {
             ));
         };
         let context = self.tool_context();
+        let input_bytes = serde_json::to_vec(&input).map_err(|_| {
+            NodeError::permanent("adapter_invalid_input", "вход адаптера не сериализуется")
+        })?;
+        crate::adapter_contract::validate_request(&crate::adapter_contract::AdapterRequest {
+            correlation_id: format!("{}:{tool_name}", context.task_id),
+            input: input_bytes,
+        })
+        .map_err(|error| NodeError::permanent("adapter_input_rejected", error.to_string()))?;
         let scope = input
             .get("path")
             .or_else(|| input.get("cwd"))
@@ -170,10 +197,28 @@ impl CoreNodeAdapter {
         )
         .map_err(|decision| NodeError::permanent("policy_error", decision.reason_code))?;
         match tools.execute(&context, tool_name, input).await {
-            Ok(result) => Ok(json!({
-                "output": bounded(&result.output),
-                "structured": result.structured,
-            })),
+            Ok(result) => {
+                let output = json!({
+                    "output": bounded(&result.output),
+                    "structured": result.structured,
+                });
+                let output_bytes = serde_json::to_vec(&output).map_err(|_| {
+                    NodeError::permanent(
+                        "adapter_invalid_output",
+                        "выход адаптера не сериализуется",
+                    )
+                })?;
+                crate::adapter_contract::validate_result(&crate::adapter_contract::AdapterResult {
+                    correlation_id: format!("{}:{tool_name}", context.task_id),
+                    status: crate::adapter_contract::AdapterStatus::Success,
+                    output: output_bytes,
+                    diagnostic: String::new(),
+                })
+                .map_err(|error| {
+                    NodeError::permanent("adapter_output_rejected", error.to_string())
+                })?;
+                Ok(output)
+            }
             Err(error) => Err(map_tool_error(error)),
         }
     }

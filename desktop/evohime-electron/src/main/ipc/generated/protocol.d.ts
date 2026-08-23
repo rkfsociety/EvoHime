@@ -11868,6 +11868,118 @@ export namespace evohime {
             }
 
             /**
+             * Properties of a CoreInfo.
+             * @deprecated Use evohime.desktop.v1.CoreInfo.$Properties instead.
+             */
+            interface ICoreInfo extends evohime.desktop.v1.CoreInfo.$Properties {
+            }
+
+            /** Represents a CoreInfo. */
+            class CoreInfo {
+
+                /**
+                 * Constructs a new CoreInfo.
+                 * @param [properties] Properties to set
+                 */
+                constructor(properties?: evohime.desktop.v1.CoreInfo.$Properties);
+
+                /** Unknown fields preserved while decoding when enabled */
+                $unknowns?: Uint8Array[];
+
+                /** CoreInfo protocol. */
+                protocol?: (evohime.desktop.v1.ProtocolVersion.$Properties|null);
+
+                /** CoreInfo coreVersion. */
+                coreVersion: string;
+
+                /** CoreInfo buildRevision. */
+                buildRevision: string;
+
+                /** CoreInfo runtimeRevision. */
+                runtimeRevision: string;
+
+                /** CoreInfo capabilities. */
+                capabilities: string[];
+
+                /** CoreInfo featureFlags. */
+                featureFlags: string[];
+
+                /** CoreInfo maxFrameBytes. */
+                maxFrameBytes: number;
+
+                /** CoreInfo maxReplayEvents. */
+                maxReplayEvents: number;
+
+                /** CoreInfo maxSnapshotBytes. */
+                maxSnapshotBytes: number;
+
+                /**
+                 * Encodes the specified CoreInfo message. Does not implicitly {@link evohime.desktop.v1.CoreInfo.verify|verify} messages.
+                 * @param message CoreInfo message or plain object to encode
+                 * @param [writer] Writer to encode to
+                 * @returns Writer
+                 */
+                static encode(message: evohime.desktop.v1.CoreInfo.$Properties, writer?: $protobuf.Writer): $protobuf.Writer;
+
+                /**
+                 * Decodes a CoreInfo message from the specified reader or buffer.
+                 * @param reader Reader or buffer to decode from
+                 * @param [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.CoreInfo & evohime.desktop.v1.CoreInfo.$Shape} CoreInfo
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): evohime.desktop.v1.CoreInfo & evohime.desktop.v1.CoreInfo.$Shape;
+
+                /**
+                 * Gets the type url for CoreInfo
+                 * @param [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns The type url
+                 */
+                static getTypeUrl(prefix?: string): string;
+            }
+
+            namespace CoreInfo {
+
+                /** Properties of a CoreInfo. */
+                interface $Properties {
+
+                    /** CoreInfo protocol */
+                    protocol?: (evohime.desktop.v1.ProtocolVersion.$Properties|null);
+
+                    /** CoreInfo coreVersion */
+                    coreVersion?: (string|null);
+
+                    /** CoreInfo buildRevision */
+                    buildRevision?: (string|null);
+
+                    /** CoreInfo runtimeRevision */
+                    runtimeRevision?: (string|null);
+
+                    /** CoreInfo capabilities */
+                    capabilities?: (string[]|null);
+
+                    /** CoreInfo featureFlags */
+                    featureFlags?: (string[]|null);
+
+                    /** CoreInfo maxFrameBytes */
+                    maxFrameBytes?: (number|null);
+
+                    /** CoreInfo maxReplayEvents */
+                    maxReplayEvents?: (number|null);
+
+                    /** CoreInfo maxSnapshotBytes */
+                    maxSnapshotBytes?: (number|null);
+
+                    /** Unknown fields preserved while decoding when enabled */
+                    $unknowns?: Uint8Array[];
+                }
+
+                /** Shape of a CoreInfo. */
+                type $Shape = evohime.desktop.v1.CoreInfo.$Properties;
+            }
+
+            /**
              * Properties of a Ready.
              * @deprecated Use evohime.desktop.v1.Ready.$Properties instead.
              */
@@ -11891,6 +12003,9 @@ export namespace evohime {
 
                 /** Ready coreVersion. */
                 coreVersion: string;
+
+                /** Ready coreInfo. */
+                coreInfo?: (evohime.desktop.v1.CoreInfo.$Properties|null);
 
                 /**
                  * Encodes the specified Ready message. Does not implicitly {@link evohime.desktop.v1.Ready.verify|verify} messages.
@@ -11928,6 +12043,9 @@ export namespace evohime {
 
                     /** Ready coreVersion */
                     coreVersion?: (string|null);
+
+                    /** Ready coreInfo */
+                    coreInfo?: (evohime.desktop.v1.CoreInfo.$Properties|null);
 
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];

@@ -24,6 +24,8 @@ export type ConnectionState =
   | 'degraded'
   | 'fatal'
 
+export type CoreAvailabilityCode = 'unavailable' | 'unsupported' | 'unknown' | 'stale_session'
+
 export interface ProtocolVersion {
   readonly major: number
   readonly minor: number
@@ -38,6 +40,7 @@ export interface ShellState {
   readonly lastSequence: number
   /** Bounded, already redacted reason for the current state. */
   readonly reason: string | null
+  readonly availability: CoreAvailabilityCode | null
   readonly reconnectAttempts: number
 }
 

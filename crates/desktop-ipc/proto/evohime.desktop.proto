@@ -1291,9 +1291,22 @@ message CommandEnvelope {
   }
 }
 
+message CoreInfo {
+  ProtocolVersion protocol = 1;
+  string core_version = 2;
+  string build_revision = 3;
+  string runtime_revision = 4;
+  repeated string capabilities = 5;
+  repeated string feature_flags = 6;
+  uint32 max_frame_bytes = 7;
+  uint32 max_replay_events = 8;
+  uint32 max_snapshot_bytes = 9;
+}
+
 message Ready {
   ProtocolVersion protocol = 1;
   string core_version = 2;
+  CoreInfo core_info = 3;
 }
 
 message EventEnvelope {

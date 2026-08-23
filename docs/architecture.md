@@ -190,6 +190,31 @@ approval registry, что и у инструментов: отдельного w
 - команды workflow `ListWorkflowTemplates`, `GetWorkflowDefinition`, `StartWorkflow`, `GetWorkflowRun`, `CancelWorkflow` и `ListWorkflowEvents` аддитивны: клиент, который их не знает, согласовывает ту же major-версию и просто их не шлёт. `StartWorkflow` требует ключ идемпотентности — повтор возвращает первый запуск, а не создаёт второй. Ответы несут только bounded projection: идентификаторы, состояния, роли, коды ошибок и номера событий; prompt, цель child-узла, сырой вывод инструмента и содержимое контекста через IPC не проходят. Approval узла решается общей командой `ResolveApproval`;
 - команды памяти `GetMemory`, `ListMemoryPending`, `GetMemoryConflicts`, `ConfirmMemory`, `RejectMemory`, `SupersedeMemory`, `ReviseMemoryCandidate` аддитивны. `ListMemory`, `SearchMemory` и `ListMemoryPending` возвращают только metadata; тело записи доступно исключительно через явный `GetMemory` и маскируется для `sensitive` и забытых записей. Confirm/reject/supersede требуют approval-токен и idempotency key: повтор безопасен и возвращает фактическое состояние записи.
 
+### IPC CoreInfo, adapter boundary и target lifecycle
+
+`Ready.core_info` — аддитивное поле `CoreInfo`; старый Core без него остаётся
+валидным legacy peer, а старый consumer игнорирует неизвестное поле. При
+наличии CoreInfo Rust и Electron валидируют bounded identity/capabilities и
+вычисляют effective limits как `min(local, peer)`; до Ready действуют только
+локальные hard limits. `core_instance_id + session_epoch` — Core generation,
+`sequence_id` — journal revision, `target_generation` — target revision.
+
+Core-owned provider/worker вызовы проходят через внутренний Rust-only
+`adapter/v1` contract (`crates/evohime-core/src/adapter_contract.rs`):
+descriptor, immutable session, bounded request/result, typed status и opaque
+`SecretRef`. Это не второй wire transport и не provider catalog. Реальный
+`CoreNodeAdapter` валидирует descriptor/session и bounded tool input/output до
+и после dispatch; raw secret, path и prompt не входят в adapter projection.
+
+Target identity использует существующий canonical `workspace_scope_id`, route,
+backend и Core generation; raw path/secret в target ID не попадают. Atomic
+`TargetManager` сериализует switch, отклоняет stale expected generation и не
+принимает late result старого target. Retry/fallback разрешены только в
+immutable same-target snapshot; после switch/restart результат получает
+`stale_session` либо `unknown_outcome` без blind retry. Обновление provider
+credentials остаётся shell-local `provider.save/clearKey` → encrypted persist →
+supervisor/Core restart → `{ summary, restarted }`.
+
 ## Model gateway и routing
 
 Core является владельцем model gateway и принимает routing-решения после

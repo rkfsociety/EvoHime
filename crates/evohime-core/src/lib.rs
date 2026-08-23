@@ -13430,3 +13430,5 @@ mod tests {
         }
     }
 }
+pub mod adapter_contract;
+pub mod target_contract;

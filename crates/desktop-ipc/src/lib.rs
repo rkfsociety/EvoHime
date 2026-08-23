@@ -11,9 +11,72 @@ pub const DEFAULT_RESYNC_MAX_EVENTS: u32 = 512;
 pub const MAX_RESYNC_SNAPSHOT_BYTES: usize = MAX_FRAME_BYTES - 1024;
 pub const MAX_CAPABILITIES: usize = 64;
 pub const MAX_CAPABILITY_NAME_BYTES: usize = 64;
+pub const MAX_CORE_INFO_STRING_BYTES: usize = MAX_CAPABILITY_NAME_BYTES;
 pub const MAX_REPLAY_EVENTS: usize = 512;
 pub const MAX_REPLAY_EVENT_BYTES: usize = MAX_FRAME_BYTES - 1024;
 pub const MAX_REPLAY_LOG_BYTES: usize = 16 * 1024 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EffectiveLimits {
+    pub max_frame_bytes: usize,
+    pub max_replay_events: usize,
+    pub max_snapshot_bytes: usize,
+}
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum CoreInfoError {
+    #[error("CoreInfo string is empty, oversized, or contains control characters")]
+    InvalidString,
+    #[error("CoreInfo capability or feature list is invalid")]
+    InvalidCapabilities,
+    #[error("CoreInfo limits are zero or exceed local hard limits")]
+    InvalidLimits,
+}
+
+fn valid_bounded_string(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_CORE_INFO_STRING_BYTES
+        && !value.bytes().any(|byte| byte.is_ascii_control())
+}
+
+pub fn validate_core_info(info: &generated::CoreInfo) -> Result<EffectiveLimits, CoreInfoError> {
+    for value in [
+        &info.core_version,
+        &info.build_revision,
+        &info.runtime_revision,
+    ] {
+        if !valid_bounded_string(value) {
+            return Err(CoreInfoError::InvalidString);
+        }
+    }
+    if info.capabilities.len() > MAX_CAPABILITIES
+        || info.feature_flags.len() > MAX_CAPABILITIES
+        || info
+            .capabilities
+            .iter()
+            .chain(info.feature_flags.iter())
+            .any(|value| !valid_bounded_string(value))
+    {
+        return Err(CoreInfoError::InvalidCapabilities);
+    }
+    let max_frame_bytes = info.max_frame_bytes as usize;
+    let max_replay_events = info.max_replay_events as usize;
+    let max_snapshot_bytes = info.max_snapshot_bytes as usize;
+    if max_frame_bytes == 0
+        || max_replay_events == 0
+        || max_snapshot_bytes == 0
+        || max_frame_bytes > MAX_FRAME_BYTES
+        || max_replay_events > MAX_REPLAY_EVENTS
+        || max_snapshot_bytes > MAX_RESYNC_SNAPSHOT_BYTES
+    {
+        return Err(CoreInfoError::InvalidLimits);
+    }
+    Ok(EffectiveLimits {
+        max_frame_bytes,
+        max_replay_events,
+        max_snapshot_bytes,
+    })
+}
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ResyncError {
@@ -284,10 +347,10 @@ pub fn decode_frame(frame: &[u8]) -> Result<&[u8], FrameError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_frame, encode_frame, negotiate_protocol, transport, validate_full_snapshot,
-        validate_resync_request, BoundedReplayLog, FrameError, NegotiationError, ProtocolVersion,
-        ReplayError, ReplayEvent, ReplayResult, ResyncError, DEFAULT_RESYNC_MAX_EVENTS,
-        MAX_FRAME_BYTES,
+        decode_frame, encode_frame, negotiate_protocol, transport, validate_core_info,
+        validate_full_snapshot, validate_resync_request, BoundedReplayLog, FrameError,
+        NegotiationError, ProtocolVersion, ReplayError, ReplayEvent, ReplayResult, ResyncError,
+        DEFAULT_RESYNC_MAX_EVENTS, MAX_FRAME_BYTES, MAX_RESYNC_SNAPSHOT_BYTES,
     };
     use crate::generated;
     use crate::normalize_task_status;
@@ -350,6 +413,37 @@ mod tests {
         let decoded = generated::ProtocolOffer::decode(offer.encode_to_vec().as_slice())
             .expect("protocol offer decodes");
         assert_eq!(decoded.capabilities, vec!["replay", "resync"]);
+    }
+
+    #[test]
+    fn core_info_validates_and_clamps_to_declared_limits() {
+        let info = generated::CoreInfo {
+            protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
+            core_version: "1.0.0".into(),
+            build_revision: "unknown".into(),
+            runtime_revision: "rust-core".into(),
+            capabilities: vec!["replay".into(), "resync".into()],
+            feature_flags: vec!["authenticated-ipc".into()],
+            max_frame_bytes: (MAX_FRAME_BYTES / 2) as u32,
+            max_replay_events: 128,
+            max_snapshot_bytes: (MAX_RESYNC_SNAPSHOT_BYTES / 2) as u32,
+        };
+        let limits = validate_core_info(&info).expect("bounded CoreInfo");
+        assert_eq!(limits.max_frame_bytes, MAX_FRAME_BYTES / 2);
+        assert_eq!(limits.max_replay_events, 128);
+    }
+
+    #[test]
+    fn legacy_ready_without_core_info_remains_valid() {
+        use prost::Message;
+        let ready = generated::Ready {
+            protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
+            core_version: "legacy".into(),
+            core_info: None,
+        };
+        let decoded = generated::Ready::decode(ready.encode_to_vec().as_slice())
+            .expect("legacy Ready decodes");
+        assert!(decoded.core_info.is_none());
     }
 
     #[test]

@@ -12,7 +12,6 @@
 незавершённых направлений: сначала план 07, затем планы 10, 11,
 12, 13, 14, 15, 16 и 17.
 Их обзоры:
-[`10-0-ipc-adapters-and-providers.md`](10-0-ipc-adapters-and-providers.md),
 [`11-0-memory-and-rag.md`](11-0-memory-and-rag.md),
 [`12-0-telemetry-and-evaluation.md`](12-0-telemetry-and-evaluation.md) и
 [`13-0-browser-backend.md`](13-0-browser-backend.md) и
@@ -52,7 +51,7 @@
 | 07 SuperAGI-inspired tool manifests, Action Console и telemetry | предложен; исполняемый обзор пока не добавлен | отдельное направление |
 | 08 Core-owned execution ledger и typed receipts | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
 | 09 Policy, capabilities и approval | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
-| 10 IPC, version negotiation и provider boundary | проектируется; обзор в [`10-0-ipc-adapters-and-providers.md`](10-0-ipc-adapters-and-providers.md) | 10-1 от планов 08–09 и текущего IPC; 10-2 от 10-1; 10-3 от 10-2; 10-4 от 10-3 |
+| 10 IPC, version negotiation и provider boundary | реализован; контракт перенесён в [`../architecture.md`](../architecture.md), состояние — в [`../current-state.md`](../current-state.md) | — |
 | 11 Typed memory и Core-first RAG | проектируется; обзор в [`11-0-memory-and-rag.md`](11-0-memory-and-rag.md) | 11-1 от планов 08–10 и текущего RAG; 11-2 от 11-1; 11-3 от 11-2; 11-4 от 11-3 |
 | 12 Local telemetry и deterministic evaluation | проектируется; обзор в [`12-0-telemetry-and-evaluation.md`](12-0-telemetry-and-evaluation.md) | 12-1 от планов 08–11 и текущего event/evaluation harness; 12-2 от 12-1; 12-3 от 12-2; 12-4 от 12-3 |
 | 13 Изолированный browser backend | проектируется; обзор в [`13-0-browser-backend.md`](13-0-browser-backend.md) | 13-1 от планов 08–12 и tool-runtime; 13-2 от 13-1; 13-3 от 13-2; 13-4 от 13-3 |
@@ -62,10 +61,10 @@
 | 17 Общие release gates и нерешённые решения | сопровождающий план; обзор в [`17-0-release-criteria-and-open-decisions.md`](17-0-release-criteria-and-open-decisions.md) | 17-1 от планов 07–16; 17-2 от 17-1; 17-3 от 17-2; 17-4 от 17-3 |
 
 Порядок незавершённых этапов задаётся так: сначала последовательно выполняется
-10-1 → 10-2 → 10-3 → 10-4, затем 11-1 → 11-2 → 11-3 → 11-4, затем
+11-1 → 11-2 → 11-3 → 11-4, затем
 12-1 → 12-2 → 12-3 → 12-4, затем 13-1 → 13-2 → 13-3 → 13-4, затем
 14-1 → 14-2 → 14-3 → 14-4, затем 15-1 → 15-2 → 15-3 → 15-4, затем
-16-1 → 16-2 → 16-3 → 16-4 и 17-1 → 17-2 → 17-3 → 17-4. Обзоры 10-0, 11-0, 12-0, 13-0, 14-0, 15-0, 16-0 и 17-0 не являются исполняемыми этапами;
+16-1 → 16-2 → 16-3 → 16-4 и 17-1 → 17-2 → 17-3 → 17-4. Обзоры 11-0, 12-0, 13-0, 14-0, 15-0, 16-0 и 17-0 не являются исполняемыми этапами;
 они фиксируют границы и граф зависимостей соответствующего плана.
 
 ## Что уже реализовано

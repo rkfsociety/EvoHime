@@ -81,8 +81,9 @@ const fakeState: ShellState = {
   capabilities: ['replay'],
   coreVersion: '0.1.0',
   lastSequence: 4,
-  reason: null,
-  reconnectAttempts: 0
+      reason: null,
+      availability: null,
+      reconnectAttempts: 0
 }
 
 const client = {

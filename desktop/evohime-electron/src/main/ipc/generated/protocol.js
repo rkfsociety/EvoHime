@@ -27650,6 +27650,300 @@ export const evohime = $root.evohime = (() => {
                 return CommandEnvelope;
             })();
 
+            v1.CoreInfo = (function() {
+
+                /**
+                 * Properties of a CoreInfo.
+                 * @typedef {Object} evohime.desktop.v1.CoreInfo.$Properties
+                 * @property {evohime.desktop.v1.ProtocolVersion.$Properties|null} [protocol] CoreInfo protocol
+                 * @property {string|null} [coreVersion] CoreInfo coreVersion
+                 * @property {string|null} [buildRevision] CoreInfo buildRevision
+                 * @property {string|null} [runtimeRevision] CoreInfo runtimeRevision
+                 * @property {Array.<string>|null} [capabilities] CoreInfo capabilities
+                 * @property {Array.<string>|null} [featureFlags] CoreInfo featureFlags
+                 * @property {number|null} [maxFrameBytes] CoreInfo maxFrameBytes
+                 * @property {number|null} [maxReplayEvents] CoreInfo maxReplayEvents
+                 * @property {number|null} [maxSnapshotBytes] CoreInfo maxSnapshotBytes
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of a CoreInfo.
+                 * @memberof evohime.desktop.v1
+                 * @interface ICoreInfo
+                 * @augments evohime.desktop.v1.CoreInfo.$Properties
+                 * @deprecated Use evohime.desktop.v1.CoreInfo.$Properties instead.
+                 */
+
+                /**
+                 * Shape of a CoreInfo.
+                 * @typedef {evohime.desktop.v1.CoreInfo.$Properties} evohime.desktop.v1.CoreInfo.$Shape
+                 */
+
+                /**
+                 * Constructs a new CoreInfo.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents a CoreInfo.
+                 * @constructor
+                 * @param {evohime.desktop.v1.CoreInfo.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const CoreInfo = function (properties) {
+                    this.capabilities = [];
+                    this.featureFlags = [];
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * CoreInfo protocol.
+                 * @member {evohime.desktop.v1.ProtocolVersion.$Properties|null|undefined} protocol
+                 * @memberof evohime.desktop.v1.CoreInfo
+                 * @instance
+                 */
+                CoreInfo.prototype.protocol = null;
+
+                /**
+                 * CoreInfo coreVersion.
+                 * @member {string} coreVersion
+                 * @memberof evohime.desktop.v1.CoreInfo
+                 * @instance
+                 */
+                CoreInfo.prototype.coreVersion = "";
+
+                /**
+                 * CoreInfo buildRevision.
+                 * @member {string} buildRevision
+                 * @memberof evohime.desktop.v1.CoreInfo
+                 * @instance
+                 */
+                CoreInfo.prototype.buildRevision = "";
+
+                /**
+                 * CoreInfo runtimeRevision.
+                 * @member {string} runtimeRevision
+                 * @memberof evohime.desktop.v1.CoreInfo
+                 * @instance
+                 */
+                CoreInfo.prototype.runtimeRevision = "";
+
+                /**
+                 * CoreInfo capabilities.
+                 * @member {Array.<string>} capabilities
+                 * @memberof evohime.desktop.v1.CoreInfo
+                 * @instance
+                 */
+                CoreInfo.prototype.capabilities = $util.emptyArray;
+
+                /**
+                 * CoreInfo featureFlags.
+                 * @member {Array.<string>} featureFlags
+                 * @memberof evohime.desktop.v1.CoreInfo
+                 * @instance
+                 */
+                CoreInfo.prototype.featureFlags = $util.emptyArray;
+
+                /**
+                 * CoreInfo maxFrameBytes.
+                 * @member {number} maxFrameBytes
+                 * @memberof evohime.desktop.v1.CoreInfo
+                 * @instance
+                 */
+                CoreInfo.prototype.maxFrameBytes = 0;
+
+                /**
+                 * CoreInfo maxReplayEvents.
+                 * @member {number} maxReplayEvents
+                 * @memberof evohime.desktop.v1.CoreInfo
+                 * @instance
+                 */
+                CoreInfo.prototype.maxReplayEvents = 0;
+
+                /**
+                 * CoreInfo maxSnapshotBytes.
+                 * @member {number} maxSnapshotBytes
+                 * @memberof evohime.desktop.v1.CoreInfo
+                 * @instance
+                 */
+                CoreInfo.prototype.maxSnapshotBytes = 0;
+
+                /**
+                 * Encodes the specified CoreInfo message. Does not implicitly {@link evohime.desktop.v1.CoreInfo.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.CoreInfo
+                 * @static
+                 * @param {evohime.desktop.v1.CoreInfo.$Properties} message CoreInfo message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                CoreInfo.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.protocol != null && $Object.hasOwnProperty.call(message, "protocol"))
+                        $root.evohime.desktop.v1.ProtocolVersion.encode(message.protocol, writer.uint32(/* id 1, wireType 2 =*/10).fork(), _depth + 1).ldelim();
+                    if (message.coreVersion != null && $Object.hasOwnProperty.call(message, "coreVersion") && message.coreVersion !== "")
+                        writer.uint32(/* id 2, wireType 2 =*/18).string(message.coreVersion);
+                    if (message.buildRevision != null && $Object.hasOwnProperty.call(message, "buildRevision") && message.buildRevision !== "")
+                        writer.uint32(/* id 3, wireType 2 =*/26).string(message.buildRevision);
+                    if (message.runtimeRevision != null && $Object.hasOwnProperty.call(message, "runtimeRevision") && message.runtimeRevision !== "")
+                        writer.uint32(/* id 4, wireType 2 =*/34).string(message.runtimeRevision);
+                    if (message.capabilities != null && message.capabilities.length)
+                        for (let i = 0; i < message.capabilities.length; ++i)
+                            writer.uint32(/* id 5, wireType 2 =*/42).string(message.capabilities[i]);
+                    if (message.featureFlags != null && message.featureFlags.length)
+                        for (let i = 0; i < message.featureFlags.length; ++i)
+                            writer.uint32(/* id 6, wireType 2 =*/50).string(message.featureFlags[i]);
+                    if (message.maxFrameBytes != null && $Object.hasOwnProperty.call(message, "maxFrameBytes") && message.maxFrameBytes !== 0)
+                        writer.uint32(/* id 7, wireType 0 =*/56).uint32(message.maxFrameBytes);
+                    if (message.maxReplayEvents != null && $Object.hasOwnProperty.call(message, "maxReplayEvents") && message.maxReplayEvents !== 0)
+                        writer.uint32(/* id 8, wireType 0 =*/64).uint32(message.maxReplayEvents);
+                    if (message.maxSnapshotBytes != null && $Object.hasOwnProperty.call(message, "maxSnapshotBytes") && message.maxSnapshotBytes !== 0)
+                        writer.uint32(/* id 9, wireType 0 =*/72).uint32(message.maxSnapshotBytes);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes a CoreInfo message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.CoreInfo
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.CoreInfo & evohime.desktop.v1.CoreInfo.$Shape} CoreInfo
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                CoreInfo.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.CoreInfo(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 2)
+                                    break;
+                                message.protocol = $root.evohime.desktop.v1.ProtocolVersion.decode(reader, reader.uint32(), $undefined, _depth + 1, message.protocol);
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.coreVersion = value;
+                                else
+                                    delete message.coreVersion;
+                                continue;
+                            }
+                        case 3: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.buildRevision = value;
+                                else
+                                    delete message.buildRevision;
+                                continue;
+                            }
+                        case 4: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.runtimeRevision = value;
+                                else
+                                    delete message.runtimeRevision;
+                                continue;
+                            }
+                        case 5: {
+                                if (wireType !== 2)
+                                    break;
+                                if (!(message.capabilities && message.capabilities.length))
+                                    message.capabilities = [];
+                                message.capabilities.push(reader.stringVerify());
+                                continue;
+                            }
+                        case 6: {
+                                if (wireType !== 2)
+                                    break;
+                                if (!(message.featureFlags && message.featureFlags.length))
+                                    message.featureFlags = [];
+                                message.featureFlags.push(reader.stringVerify());
+                                continue;
+                            }
+                        case 7: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.uint32())
+                                    message.maxFrameBytes = value;
+                                else
+                                    delete message.maxFrameBytes;
+                                continue;
+                            }
+                        case 8: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.uint32())
+                                    message.maxReplayEvents = value;
+                                else
+                                    delete message.maxReplayEvents;
+                                continue;
+                            }
+                        case 9: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.uint32())
+                                    message.maxSnapshotBytes = value;
+                                else
+                                    delete message.maxSnapshotBytes;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for CoreInfo
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.CoreInfo
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                CoreInfo.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.CoreInfo";
+                };
+
+                return CoreInfo;
+            })();
+
             v1.Ready = (function() {
 
                 /**
@@ -27657,6 +27951,7 @@ export const evohime = $root.evohime = (() => {
                  * @typedef {Object} evohime.desktop.v1.Ready.$Properties
                  * @property {evohime.desktop.v1.ProtocolVersion.$Properties|null} [protocol] Ready protocol
                  * @property {string|null} [coreVersion] Ready coreVersion
+                 * @property {evohime.desktop.v1.CoreInfo.$Properties|null} [coreInfo] Ready coreInfo
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -27705,6 +28000,14 @@ export const evohime = $root.evohime = (() => {
                 Ready.prototype.coreVersion = "";
 
                 /**
+                 * Ready coreInfo.
+                 * @member {evohime.desktop.v1.CoreInfo.$Properties|null|undefined} coreInfo
+                 * @memberof evohime.desktop.v1.Ready
+                 * @instance
+                 */
+                Ready.prototype.coreInfo = null;
+
+                /**
                  * Encodes the specified Ready message. Does not implicitly {@link evohime.desktop.v1.Ready.verify|verify} messages.
                  * @function encode
                  * @memberof evohime.desktop.v1.Ready
@@ -27724,6 +28027,8 @@ export const evohime = $root.evohime = (() => {
                         $root.evohime.desktop.v1.ProtocolVersion.encode(message.protocol, writer.uint32(/* id 1, wireType 2 =*/10).fork(), _depth + 1).ldelim();
                     if (message.coreVersion != null && $Object.hasOwnProperty.call(message, "coreVersion") && message.coreVersion !== "")
                         writer.uint32(/* id 2, wireType 2 =*/18).string(message.coreVersion);
+                    if (message.coreInfo != null && $Object.hasOwnProperty.call(message, "coreInfo"))
+                        $root.evohime.desktop.v1.CoreInfo.encode(message.coreInfo, writer.uint32(/* id 3, wireType 2 =*/26).fork(), _depth + 1).ldelim();
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -27771,6 +28076,12 @@ export const evohime = $root.evohime = (() => {
                                     message.coreVersion = value;
                                 else
                                     delete message.coreVersion;
+                                continue;
+                            }
+                        case 3: {
+                                if (wireType !== 2)
+                                    break;
+                                message.coreInfo = $root.evohime.desktop.v1.CoreInfo.decode(reader, reader.uint32(), $undefined, _depth + 1, message.coreInfo);
                                 continue;
                             }
                         }
