@@ -84,6 +84,10 @@ pub enum StorageError {
     /// Нарушение контракта execution ledger (план 08-1/08-2).
     #[error("execution ledger contract violation: {0}")]
     LedgerContract(#[from] execution_ledger::LedgerContractError),
+    /// Ошибка workflow-store слоя, всплывшая при atomic ledger<->workflow
+    /// linkage (план 08-2/08-4).
+    #[error("workflow store operation failed: {0}")]
+    WorkflowStore(#[from] crate::workflow_store::WorkflowStoreError),
     /// Атомарный переход action+projection не применился: узел уже не в
     /// ожидаемом исходном состоянии (гонка или устаревший вызов).
     #[error("ledger node transition conflict for run {run_id} node {node_id}")]
@@ -2104,6 +2108,21 @@ impl LocalDatabase {
             });
         }
         let sequence_id = insert_ledger_event_row(&transaction, event)?;
+        // План 08-2/08-4: связывает per-run bounded projection
+        // (`workflow_run_events.run_sequence`) с только что записанной
+        // глобальной строкой ledger — в той же транзакции, тем же commit.
+        let payload_json = serde_json::to_string(event)?;
+        workflow_store::append_event_linked(
+            &transaction,
+            run_id,
+            node_id,
+            event.attempt_id.as_deref().unwrap_or(""),
+            event.body.kind_str(),
+            &payload_json,
+            now_ms,
+            sequence_id,
+            &event.event_id,
+        )?;
         transaction.commit()?;
         Ok(sequence_id)
     }
@@ -5167,6 +5186,88 @@ mod tests {
             .expect("node row reads");
         assert_eq!(node_state, "succeeded");
         assert_eq!(database.latest_event_sequence().expect("sequence reads"), 1);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// План 08-2/08-4: `workflow_run_events.run_sequence` must be linked back
+    /// to the global ledger row it corresponds to, in the same transaction
+    /// that wrote both.
+    #[test]
+    fn node_transition_links_workflow_run_sequence_to_global_ledger_event() {
+        let path = temp_database_path("ledger-transition-linkage");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        insert_workflow_fixture(&database, "run-1", "node-1");
+        let event = sample_ledger_event(
+            "event-linkage-1",
+            "run-1",
+            "action-1",
+            crate::execution_ledger::ActionState::Succeeded,
+        );
+        let sequence_id = database
+            .append_ledger_event_with_node_transition(
+                &event,
+                "run-1",
+                "node-1",
+                crate::execution_ledger::ActionState::Running,
+                crate::execution_ledger::ActionState::Succeeded,
+                1_700_000_001_000,
+            )
+            .expect("legal transition commits both parts");
+
+        let (run_sequence, ledger_sequence_id, ledger_event_id): (
+            i64,
+            Option<i64>,
+            Option<String>,
+        ) = database
+            .connection()
+            .query_row(
+                "SELECT run_sequence, ledger_sequence_id, ledger_event_id
+                       FROM workflow_run_events WHERE run_id = 'run-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("workflow_run_events row reads");
+        assert_eq!(run_sequence, 0, "first event in a fresh run starts at 0");
+        assert_eq!(ledger_sequence_id, Some(sequence_id));
+        assert_eq!(ledger_event_id.as_deref(), Some("event-linkage-1"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A rejected transition must not leave a dangling `workflow_run_events`
+    /// row either — both inserts share the one transaction that rolls back.
+    #[test]
+    fn illegal_transition_rolls_back_workflow_run_events_too() {
+        let path = temp_database_path("ledger-transition-illegal-linkage");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        insert_workflow_fixture(&database, "run-1", "node-1");
+        let event = sample_ledger_event(
+            "event-illegal-linkage-1",
+            "run-1",
+            "action-1",
+            crate::execution_ledger::ActionState::Running,
+        );
+        let _ = database.append_ledger_event_with_node_transition(
+            &event,
+            "run-1",
+            "node-1",
+            crate::execution_ledger::ActionState::Succeeded,
+            crate::execution_ledger::ActionState::Running,
+            1_700_000_001_000,
+        );
+        let count: i64 = database
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM workflow_run_events WHERE run_id = 'run-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count reads");
+        assert_eq!(
+            count, 0,
+            "rolled-back transition must not leave a linkage row"
+        );
         let _ = std::fs::remove_file(&path);
     }
 

@@ -344,6 +344,22 @@ pub fn install_schema(connection: &Connection) -> Result<(), WorkflowStoreError>
         CREATE INDEX IF NOT EXISTS idx_workflow_events_run
             ON workflow_run_events(run_id, run_sequence);",
     )?;
+    // План 08-2/08-4: nullable linkage back to the global execution ledger
+    // row a workflow event corresponds to. Idempotent ALTER (same trick as
+    // `model_provenance::install_schema`) because `workflow_run_events` may
+    // already exist without these columns on a base-schema-29 database;
+    // owned here, not by `execution_ledger`, so this table's full shape
+    // stays defined in one place regardless of installer call order.
+    for column in ["ledger_sequence_id INTEGER", "ledger_event_id TEXT"] {
+        let _ = connection.execute(
+            &format!("ALTER TABLE workflow_run_events ADD COLUMN {column}"),
+            [],
+        );
+    }
+    connection.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_workflow_run_events_ledger
+             ON workflow_run_events(ledger_event_id) WHERE ledger_event_id IS NOT NULL;",
+    )?;
     Ok(())
 }
 
@@ -726,6 +742,60 @@ pub fn list_attempts(
     Ok(records)
 }
 
+/// Shared row-insert: assigns the next `run_sequence` and appends one
+/// `workflow_run_events` row, optionally linked back to a global execution
+/// ledger row (план 08-2/08-4 `run_sequence` <-> `sequence_id`/`event_id`
+/// linkage). Takes `&Connection` so a caller already inside its own
+/// transaction (e.g. `LocalDatabase::append_ledger_event_with_node_transition`)
+/// can compose this atomically instead of nesting a second `BEGIN`.
+#[allow(clippy::too_many_arguments)]
+fn append_event_row(
+    connection: &Connection,
+    run_id: &str,
+    node_id: &str,
+    attempt_id: &str,
+    event_type: &str,
+    payload_json: &str,
+    now_ms: i64,
+    ledger_sequence_id: Option<i64>,
+    ledger_event_id: Option<&str>,
+) -> Result<i64, WorkflowStoreError> {
+    bounded("event_type", event_type, MAX_ID_BYTES, true)?;
+    bounded("payload_json", payload_json, MAX_EVENT_PAYLOAD_BYTES, false)?;
+    let next: Option<i64> = connection
+        .query_row(
+            "SELECT next_sequence FROM workflow_runs WHERE run_id = ?1",
+            params![run_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(next) = next else {
+        return Err(WorkflowStoreError::UnknownRun(run_id.to_string()));
+    };
+    connection.execute(
+        "INSERT INTO workflow_run_events (
+            run_id, run_sequence, node_id, attempt_id, event_type, payload_json, created_at_ms,
+            ledger_sequence_id, ledger_event_id
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            run_id,
+            next,
+            node_id,
+            attempt_id,
+            event_type,
+            payload_json,
+            now_ms,
+            ledger_sequence_id,
+            ledger_event_id
+        ],
+    )?;
+    connection.execute(
+        "UPDATE workflow_runs SET next_sequence = ?2 WHERE run_id = ?1",
+        params![run_id, next + 1],
+    )?;
+    Ok(next)
+}
+
 /// Добавляет событие и выдаёт монотонный номер внутри запуска.
 pub fn append_event(
     connection: &Connection,
@@ -736,39 +806,49 @@ pub fn append_event(
     payload_json: &str,
     now_ms: i64,
 ) -> Result<i64, WorkflowStoreError> {
-    bounded("event_type", event_type, MAX_ID_BYTES, true)?;
-    bounded("payload_json", payload_json, MAX_EVENT_PAYLOAD_BYTES, false)?;
     let transaction = connection.unchecked_transaction()?;
-    let next: Option<i64> = transaction
-        .query_row(
-            "SELECT next_sequence FROM workflow_runs WHERE run_id = ?1",
-            params![run_id],
-            |row| row.get(0),
-        )
-        .optional()?;
-    let Some(next) = next else {
-        return Err(WorkflowStoreError::UnknownRun(run_id.to_string()));
-    };
-    transaction.execute(
-        "INSERT INTO workflow_run_events (
-            run_id, run_sequence, node_id, attempt_id, event_type, payload_json, created_at_ms
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![
-            run_id,
-            next,
-            node_id,
-            attempt_id,
-            event_type,
-            payload_json,
-            now_ms
-        ],
-    )?;
-    transaction.execute(
-        "UPDATE workflow_runs SET next_sequence = ?2 WHERE run_id = ?1",
-        params![run_id, next + 1],
+    let next = append_event_row(
+        &transaction,
+        run_id,
+        node_id,
+        attempt_id,
+        event_type,
+        payload_json,
+        now_ms,
+        None,
+        None,
     )?;
     transaction.commit()?;
     Ok(next)
+}
+
+/// Same as [`append_event`], but stamps the `workflow_run_events` row with
+/// the global execution-ledger `sequence_id`/`event_id` it corresponds to.
+/// `connection` must already be inside the caller's transaction — this
+/// function never opens or commits one of its own, so the ledger event
+/// insert and this linkage row land atomically together.
+pub(crate) fn append_event_linked(
+    connection: &Connection,
+    run_id: &str,
+    node_id: &str,
+    attempt_id: &str,
+    event_type: &str,
+    payload_json: &str,
+    now_ms: i64,
+    ledger_sequence_id: i64,
+    ledger_event_id: &str,
+) -> Result<i64, WorkflowStoreError> {
+    append_event_row(
+        connection,
+        run_id,
+        node_id,
+        attempt_id,
+        event_type,
+        payload_json,
+        now_ms,
+        Some(ledger_sequence_id),
+        Some(ledger_event_id),
+    )
 }
 
 pub fn list_events(
