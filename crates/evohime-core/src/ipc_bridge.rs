@@ -12,7 +12,7 @@ use crate::{
     ApprovalCoordinator, CoreCommand, CoreEvent, EventJournal, SelectedModel, TaskCoordinator,
 };
 use evohime_listener_contract::{ListeningReason, ListeningState};
-use evohime_local_storage::{execution_ledger, EventRecord, WorkItemRecord};
+use evohime_local_storage::{execution_ledger, EventRecord, LocalDatabase, WorkItemRecord};
 use evohime_model_gateway::ModelGatewayConfig;
 use evohime_permissions::{Permission, PermissionMode};
 use evohime_receipts::{
@@ -84,6 +84,116 @@ fn decode_typed_execution_event(payload: &[u8]) -> Option<generated::ExecutionEv
 /// `core_instance_id`/`session_epoch` that no longer matches this process.
 const REPLAY_GAP_REASON_SEQUENCE_RETENTION_EXCEEDED: &str = "sequence_retention_exceeded";
 const REPLAY_GAP_REASON_STALE_GENERATION: &str = "stale_generation";
+
+/// Publishes the `ToolCall` typed ledger event for a receipt-tracked action
+/// right after its dispatch marker (`mark_started`) is durable — план 08-4's
+/// "action → tool call → observation → receipt" chain, anchored to the same
+/// `action_id` the signed receipt uses. Never fails the caller: a publish
+/// error is logged and swallowed, because the ledger is an additive
+/// observability layer, not authoritative for whether the tool call itself
+/// may proceed (that authority stays with `evohime-receipts`).
+///
+/// `session_id` falls back to `task_id` when the tool context carries no
+/// explicit chat/session identity — most terminal invocations don't have
+/// one separate from the task itself, and `ExecutionEventV1::validate`
+/// requires a non-empty `session_id` outside `system`/`legacy` scope.
+fn record_ledger_tool_call(
+    database: &LocalDatabase,
+    request: &evohime_receipts::runtime::ActionRequest,
+    session_id: Option<String>,
+) {
+    let event = execution_ledger::ExecutionEventV1 {
+        schema_version: 1,
+        event_id: uuid::Uuid::now_v7().to_string(),
+        sequence_id: None,
+        run_scope: execution_ledger::RunScope::Standalone,
+        run_id: request.run_id.clone(),
+        session_id: Some(session_id.unwrap_or_else(|| request.task_id.clone())),
+        task_id: request.task_id.clone(),
+        created_at_ms: now_ms(),
+        state_after: Some(execution_ledger::ActionState::Running),
+        action_id: Some(request.action_id.to_string()),
+        tool_call_id: None,
+        observation_id: None,
+        receipt_id: None,
+        failure_id: None,
+        workflow_run_id: None,
+        node_id: None,
+        attempt_id: None,
+        effect_id: None,
+        model_request_id: None,
+        body: execution_ledger::ExecutionEventBody::ToolCall {
+            tool_name: request.tool_name.clone(),
+            tool_call_hash: evohime_receipts::runtime::canonical_call_hash(
+                &request.tool_name,
+                &request.normalized_scope,
+                &request.input,
+            )
+            .unwrap_or_default(),
+            manifest_hash: None,
+        },
+        redaction: execution_ledger::RedactionMeta::default(),
+    };
+    if let Err(error) = database.append_ledger_event(&event) {
+        tracing::warn!(
+            event = "ledger.tool_call_publish_failed",
+            action_id = %request.action_id,
+            error = %error,
+            "typed ledger event failed to publish"
+        );
+    }
+}
+
+/// Publishes the terminal (`ToolReceipt` on success, `TypedFailure`/
+/// `UnknownOutcome` on failure) typed ledger event for a receipt-tracked
+/// action, under the same `action_id` [`record_ledger_tool_call`] used.
+/// Same failure posture: never propagated to the caller.
+fn record_ledger_tool_outcome(
+    database: &LocalDatabase,
+    request: &evohime_receipts::runtime::ActionRequest,
+    session_id: Option<String>,
+    state_after: execution_ledger::ActionState,
+    body: execution_ledger::ExecutionEventBody,
+) {
+    let event = execution_ledger::ExecutionEventV1 {
+        schema_version: 1,
+        event_id: uuid::Uuid::now_v7().to_string(),
+        sequence_id: None,
+        run_scope: execution_ledger::RunScope::Standalone,
+        run_id: request.run_id.clone(),
+        session_id: Some(session_id.unwrap_or_else(|| request.task_id.clone())),
+        task_id: request.task_id.clone(),
+        created_at_ms: now_ms(),
+        state_after: Some(state_after),
+        action_id: Some(request.action_id.to_string()),
+        tool_call_id: None,
+        observation_id: None,
+        receipt_id: None,
+        failure_id: None,
+        workflow_run_id: None,
+        node_id: None,
+        attempt_id: None,
+        effect_id: None,
+        model_request_id: None,
+        body,
+        redaction: execution_ledger::RedactionMeta::default(),
+    };
+    if let Err(error) = database.append_ledger_event(&event) {
+        tracing::warn!(
+            event = "ledger.tool_outcome_publish_failed",
+            action_id = %request.action_id,
+            error = %error,
+            "typed ledger event failed to publish"
+        );
+    }
+}
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_millis() as i64)
+        .unwrap_or_default()
+}
 
 /// Bounded typed action projection for `FullSnapshot.snapshot_json` (план
 /// 08-3 п.5): the latest known state per `action_id` among the replayed
@@ -5534,6 +5644,11 @@ impl IpcBridge {
                 runtime
                     .mark_started(request.action_id)
                     .map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
+                record_ledger_tool_call(
+                    &database,
+                    &request,
+                    context.session_id.map(|id| id.to_string()),
+                );
                 drop(database);
                 let result = self
                     .tools
@@ -5554,11 +5669,21 @@ impl IpcBridge {
                             evohime_tool_runtime::ToolError::Execution(e.to_string())
                         })?;
                         let digest = evohime_receipts::sha256_hex(value.output.as_bytes());
-                        runtime
+                        let receipt_hash = runtime
                             .complete(&request, "succeeded", &digest, None)
                             .map_err(|e| {
-                                evohime_tool_runtime::ToolError::Execution(e.to_string())
-                            })?;
+                            evohime_tool_runtime::ToolError::Execution(e.to_string())
+                        })?;
+                        record_ledger_tool_outcome(
+                            &database,
+                            &request,
+                            context.session_id.map(|id| id.to_string()),
+                            execution_ledger::ActionState::Succeeded,
+                            execution_ledger::ExecutionEventBody::ToolReceipt {
+                                receipt_action_id: request.action_id.to_string(),
+                                receipt_hash,
+                            },
+                        );
                     }
                     Err(_error) => {
                         runtime.mark_returned(request.action_id).map_err(|e| {
@@ -5569,6 +5694,16 @@ impl IpcBridge {
                             .complete(&request, "failed", &failed_digest, Some("tool_error"))
                             .is_ok()
                         {
+                            record_ledger_tool_outcome(
+                                &database,
+                                &request,
+                                context.session_id.map(|id| id.to_string()),
+                                execution_ledger::ActionState::Failed,
+                                execution_ledger::ExecutionEventBody::TypedFailure {
+                                    error_class: "tool_error".into(),
+                                    provider_error_id: None,
+                                },
+                            );
                             return result;
                         }
                         let mut recovery_code = "signature_failed";
@@ -5777,6 +5912,7 @@ impl IpcBridge {
                 runtime
                     .mark_started(action_id)
                     .map_err(|error| FrameError::Io(error.to_string()))?;
+                record_ledger_tool_call(&database, &receipt_request, None);
             }
             match tools
                 .execute_after_approval(&context, "shell.execute", input, approval_id, cancellation)
@@ -5794,9 +5930,19 @@ impl IpcBridge {
                     runtime
                         .mark_returned(action_id)
                         .map_err(|error| FrameError::Io(error.to_string()))?;
-                    runtime
+                    let receipt_hash = runtime
                         .complete(&receipt_request, "succeeded", &output_digest, None)
                         .map_err(|error| FrameError::Io(error.to_string()))?;
+                    record_ledger_tool_outcome(
+                        &database,
+                        &receipt_request,
+                        None,
+                        execution_ledger::ActionState::Succeeded,
+                        execution_ledger::ExecutionEventBody::ToolReceipt {
+                            receipt_action_id: action_id.to_string(),
+                            receipt_hash,
+                        },
+                    );
                     result
                 }
                 Err(error) => {
@@ -5808,6 +5954,21 @@ impl IpcBridge {
                     ) {
                         let _ = runtime.mark_pending_recovery(action_id, "external_error");
                     }
+                    // `mark_pending_recovery` (not a clean failure) leaves the
+                    // dispatch marker open with an ambiguous outcome, so the
+                    // ledger records this as `unknown_outcome`, not `failed` —
+                    // the same distinction plan 08-2's startup reconciliation
+                    // makes between "known failure" and "needs review".
+                    record_ledger_tool_outcome(
+                        &database,
+                        &receipt_request,
+                        None,
+                        execution_ledger::ActionState::UnknownOutcome,
+                        execution_ledger::ExecutionEventBody::TypedFailure {
+                            error_class: "external_error".into(),
+                            provider_error_id: None,
+                        },
+                    );
                     return self
                         .write_response(
                             writer,
@@ -7212,6 +7373,189 @@ mod tests {
         assert_eq!(result_json["ok"], false);
         assert_eq!(result_json["error_code"], "approval_denied");
         assert!(result_json.get("error").is_none());
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(data_root);
+    }
+
+    /// План 08-4 acceptance: "action → tool call → observation → successful
+    /// typed receipt linked to signed receipts_v1". A real terminal
+    /// execution, approved and run through `dispatch_terminal_execute`, must
+    /// leave a typed `ledger.tool_call` (Running) followed by a typed
+    /// `ledger.tool_receipt` (Succeeded) under the same `action_id` — and
+    /// that receipt event's `receipt_hash` must resolve to an actual signed
+    /// row in `receipt_records`, not just a plausible-looking string.
+    #[tokio::test]
+    async fn approved_terminal_execute_links_ledger_receipt_to_signed_receipts_v1() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-ipc-terminal-linkage-root-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("terminal root");
+        std::process::Command::new("git")
+            .arg("init")
+            .arg(&root)
+            .output()
+            .expect("git init runs");
+        let data_root = std::env::temp_dir().join(format!(
+            "evohime-ipc-terminal-linkage-data-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&data_root);
+        std::fs::create_dir_all(&data_root).expect("terminal data root");
+        let journal_path = data_root.join("events.db");
+        let _ = std::fs::remove_file(&journal_path);
+        let receipt_keys = ReceiptKeyManager::new(&data_root);
+        receipt_keys.initialize().expect("receipt keys initialize");
+        let journal = EventJournal::open(&journal_path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let tools = Arc::new(ToolRegistry::bootstrap());
+        let bridge = IpcBridge::with_coordinator_and_approvals(
+            journal.clone(),
+            coordinator,
+            ApprovalCoordinator::default(),
+            tools,
+            None,
+            None,
+        );
+        let task_id = uuid::Uuid::new_v4().to_string();
+        let make_terminal = |approval_id: String| generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "terminal-request".into(),
+            client_id: "test-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::TerminalExecute(
+                generated::TerminalExecute {
+                    task_id: task_id.clone(),
+                    workspace_path: root.display().to_string(),
+                    program: "git".into(),
+                    args: vec!["status".into()],
+                    cwd: String::new(),
+                    timeout_ms: 5_000,
+                    approval_id,
+                },
+            )),
+        };
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        transport::write_frame(&mut client, &make_terminal(String::new()).encode_to_vec())
+            .await
+            .expect("terminal writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("approval serves");
+        let approval = generated::EventEnvelope::decode(
+            transport::read_frame(&mut client)
+                .await
+                .expect("approval reads")
+                .as_slice(),
+        )
+        .expect("approval decodes");
+        let approval_json =
+            serde_json::from_slice::<serde_json::Value>(&approval.payload).expect("approval json");
+        let approval_id = approval_json["approval_id"]
+            .as_str()
+            .expect("approval id")
+            .to_string();
+
+        let resolve = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "resolve-terminal".into(),
+            client_id: "test-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::ResolveApproval(
+                generated::ResolveApproval {
+                    approval_id: approval_id.clone(),
+                    granted: true,
+                    idempotency_key: String::new(),
+                    rejection_reason: String::new(),
+                    cancel: false,
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &resolve.encode_to_vec())
+            .await
+            .expect("resolve writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("resolve serves");
+
+        transport::write_frame(&mut client, &make_terminal(approval_id).encode_to_vec())
+            .await
+            .expect("retry writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("retry serves");
+        let result = generated::EventEnvelope::decode(
+            transport::read_frame(&mut client)
+                .await
+                .expect("result reads")
+                .as_slice(),
+        )
+        .expect("result decodes");
+        assert_eq!(result.event_type, "terminal.result");
+        let result_json: serde_json::Value =
+            serde_json::from_slice(&result.payload).expect("result json");
+        assert_eq!(
+            result_json["ok"], true,
+            "git status in a real repo must succeed: {result_json}"
+        );
+
+        let database = journal.database().lock().await;
+        let (tool_call_action_id, tool_call_state): (String, String) = database
+            .connection()
+            .query_row(
+                "SELECT action_id, state_after FROM events WHERE event_type = 'ledger.tool_call'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("ledger.tool_call row exists");
+        assert_eq!(tool_call_state, "running");
+
+        let (receipt_action_id, receipt_state, receipt_payload): (String, String, Vec<u8>) =
+            database
+                .connection()
+                .query_row(
+                    "SELECT action_id, state_after, payload FROM events
+                       WHERE event_type = 'ledger.tool_receipt'",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .expect("ledger.tool_receipt row exists");
+        assert_eq!(receipt_state, "succeeded");
+        assert_eq!(
+            receipt_action_id, tool_call_action_id,
+            "tool_call and tool_receipt must share the same action_id"
+        );
+        let receipt_event: execution_ledger::ExecutionEventV1 =
+            serde_json::from_slice(&receipt_payload).expect("receipt event decodes");
+        let execution_ledger::ExecutionEventBody::ToolReceipt {
+            receipt_action_id: body_action_id,
+            receipt_hash,
+        } = receipt_event.body
+        else {
+            panic!("expected ToolReceipt body, got {:?}", receipt_event.body);
+        };
+        assert_eq!(body_action_id, receipt_action_id);
+
+        // The linkage is only real if that hash resolves to an actual signed
+        // row — not merely a string that looks like one.
+        let signed_action_id: String = database
+            .connection()
+            .query_row(
+                "SELECT action_id FROM receipt_records WHERE receipt_hash = ?1",
+                [&receipt_hash],
+                |row| row.get(0),
+            )
+            .expect("receipt_hash resolves to a real receipt_records row");
+        assert_eq!(signed_action_id, receipt_action_id);
+        drop(database);
+
         let _ = std::fs::remove_dir_all(root);
         let _ = std::fs::remove_dir_all(data_root);
     }
