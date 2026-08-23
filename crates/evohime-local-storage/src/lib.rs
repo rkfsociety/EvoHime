@@ -5470,6 +5470,79 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// План 08-4 acceptance: "SQLite failure с полным rollback" — a genuine
+    /// SQLite-level constraint violation (not an application-level guard)
+    /// hitting mid-transaction, after the `workflow_run_nodes` UPDATE has
+    /// already run, must still roll back that UPDATE along with the failed
+    /// INSERT. `event_id`'s partial UNIQUE index is the real constraint
+    /// used here — the transition itself is legal, only `event_id` collides
+    /// with an already-committed row from a prior, unrelated write.
+    #[test]
+    fn sqlite_constraint_failure_mid_transaction_rolls_back_the_node_update_too() {
+        let path = temp_database_path("ledger-sqlite-failure-rollback");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        insert_workflow_fixture(&database, "run-1", "node-1");
+
+        let already_committed = sample_ledger_event(
+            "event-id-collision",
+            "run-1",
+            "action-unrelated",
+            crate::execution_ledger::ActionState::Running,
+        );
+        database
+            .append_ledger_event(&already_committed)
+            .expect("first write with this event_id commits");
+
+        // Same event_id, otherwise a perfectly legal Running -> Succeeded
+        // transition on a node that really is in 'running'.
+        let colliding_event = sample_ledger_event(
+            "event-id-collision",
+            "run-1",
+            "action-1",
+            crate::execution_ledger::ActionState::Succeeded,
+        );
+        let error = database
+            .append_ledger_event_with_node_transition(
+                &colliding_event,
+                "run-1",
+                "node-1",
+                crate::execution_ledger::ActionState::Running,
+                crate::execution_ledger::ActionState::Succeeded,
+                1_700_000_001_000,
+            )
+            .expect_err("duplicate event_id must fail at the SQLite constraint");
+        assert!(matches!(error, StorageError::Sqlite(_)));
+
+        // The UPDATE that ran before the failing INSERT must not have
+        // survived: the node is still 'running', not 'succeeded'.
+        let node_state: String = database
+            .connection()
+            .query_row(
+                "SELECT state FROM workflow_run_nodes WHERE run_id = 'run-1' AND node_id = 'node-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("node row reads");
+        assert_eq!(
+            node_state, "running",
+            "the node update must roll back together with the failed insert"
+        );
+        // Only the one earlier, unrelated commit is visible — the failed
+        // attempt left no trace of its own events/workflow_run_events rows.
+        assert_eq!(database.latest_event_sequence().expect("sequence reads"), 1);
+        let workflow_event_count: i64 = database
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM workflow_run_events WHERE run_id = 'run-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count reads");
+        assert_eq!(workflow_event_count, 0);
+        let _ = std::fs::remove_file(&path);
+    }
+
     #[test]
     fn record_core_start_publishes_one_system_scope_event() {
         let path = temp_database_path("ledger-core-start");
