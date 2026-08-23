@@ -7015,8 +7015,10 @@ mod tests {
     /// itself instead of racing a random live-event gap to notice.
     #[tokio::test]
     async fn resync_end_reports_more_available_across_a_bounded_page() {
-        let path =
-            std::env::temp_dir().join(format!("evohime-ipc-more-available-{}.db", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "evohime-ipc-more-available-{}.db",
+            std::process::id()
+        ));
         let _ = std::fs::remove_file(&path);
         let journal = EventJournal::open(&path).expect("journal opens");
         for index in 0..3 {
