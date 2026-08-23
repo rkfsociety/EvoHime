@@ -752,8 +752,8 @@ fn read_app_paths() -> Vec<(String, PathBuf)> {
             }
             let units = (size as usize / 2).min(buffer.len() / 2);
             let mut wide_value = Vec::with_capacity(units);
-            for chunk in buffer[..units * 2].chunks_exact(2) {
-                wide_value.push(u16::from_le_bytes([chunk[0], chunk[1]]));
+            for chunk in buffer[..units * 2].as_chunks::<2>().0 {
+                wide_value.push(u16::from_le_bytes(*chunk));
             }
             while matches!(wide_value.last(), Some(0)) {
                 wide_value.pop();
