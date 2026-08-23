@@ -12,7 +12,7 @@ use crate::{
     ApprovalCoordinator, CoreCommand, CoreEvent, EventJournal, SelectedModel, TaskCoordinator,
 };
 use evohime_listener_contract::{ListeningReason, ListeningState};
-use evohime_local_storage::{execution_ledger, WorkItemRecord};
+use evohime_local_storage::{execution_ledger, EventRecord, WorkItemRecord};
 use evohime_model_gateway::ModelGatewayConfig;
 use evohime_permissions::{Permission, PermissionMode};
 use evohime_receipts::{
@@ -76,6 +76,48 @@ fn decode_typed_execution_event(payload: &[u8]) -> Option<generated::ExecutionEv
         secrets_present: event.redaction.secrets_present,
         redaction_digest: event.redaction.digest.unwrap_or_default(),
     })
+}
+
+/// Bounded set of `ReplayGap.reason` values (план 08-3). The retention case
+/// is the pre-existing condition (`journal.replay_bounded` reports a gap);
+/// `stale_generation` is new — the client's `CommandEnvelope` names a
+/// `core_instance_id`/`session_epoch` that no longer matches this process.
+const REPLAY_GAP_REASON_SEQUENCE_RETENTION_EXCEEDED: &str = "sequence_retention_exceeded";
+const REPLAY_GAP_REASON_STALE_GENERATION: &str = "stale_generation";
+
+/// Bounded typed action projection for `FullSnapshot.snapshot_json` (план
+/// 08-3 п.5): the latest known state per `action_id` among the replayed
+/// typed ledger rows, so a reconnecting client can rebuild action cards
+/// without replaying the full event list first. Non-ledger rows are
+/// ignored; malformed typed payload never panics, it is just skipped.
+fn typed_snapshot_actions(events: &[EventRecord]) -> Vec<serde_json::Value> {
+    let mut latest: std::collections::BTreeMap<String, serde_json::Value> =
+        std::collections::BTreeMap::new();
+    for record in events {
+        if !record.event_type.starts_with("ledger.") {
+            continue;
+        }
+        let Ok(event) =
+            serde_json::from_slice::<execution_ledger::ExecutionEventV1>(&record.payload)
+        else {
+            continue;
+        };
+        let Some(action_id) = event.action_id else {
+            continue;
+        };
+        latest.insert(
+            action_id.clone(),
+            serde_json::json!({
+                "action_id": action_id,
+                "event_id": event.event_id,
+                "run_scope": event.run_scope.as_str(),
+                "run_id": event.run_id,
+                "state_after": event.state_after.map(|state| state.as_str()),
+                "sequence_id": record.sequence_id,
+            }),
+        );
+    }
+    latest.into_values().collect()
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -223,6 +265,44 @@ impl IpcBridge {
     pub fn core_instance_id(&self) -> &str {
         &self.core_instance_id
     }
+
+    /// True when the client's own `CommandEnvelope` names a generation
+    /// (`core_instance_id`/`session_epoch`) other than this process's
+    /// current one. An empty/zero client field never counts as stale — it
+    /// means the client has no known generation yet (first connect).
+    fn stale_generation(&self, command: &generated::CommandEnvelope) -> bool {
+        (!command.core_instance_id.is_empty() && command.core_instance_id != self.core_instance_id)
+            || (command.session_epoch > 0 && command.session_epoch != self.session_epoch)
+    }
+
+    /// Builds a typed `ReplayGap` envelope (план 08-3): honestly filled
+    /// bounds instead of the generic JSON `"reason"` field this used to be.
+    fn replay_gap_envelope(
+        &self,
+        requested_after_sequence: u64,
+        earliest_available_sequence: Option<u64>,
+        latest_available_sequence: u64,
+        reason: &str,
+    ) -> generated::EventEnvelope {
+        generated::EventEnvelope {
+            protocol: Some(protocol()),
+            sequence_id: latest_available_sequence,
+            task_id: String::new(),
+            event_type: "replay.gap".into(),
+            payload: Vec::new(),
+            core_instance_id: self.core_instance_id.clone(),
+            session_epoch: self.session_epoch,
+            event: Some(generated::event_envelope::Event::ReplayGap(
+                generated::ReplayGap {
+                    requested_after_sequence,
+                    earliest_available_sequence: earliest_available_sequence.unwrap_or(0),
+                    latest_available_sequence,
+                    reason: reason.to_string(),
+                },
+            )),
+        }
+    }
+
     fn manager_for(journal: &EventJournal) -> Arc<ReceiptKeyManager> {
         let data_dir = journal
             .database_path()
@@ -1310,6 +1390,16 @@ impl IpcBridge {
             Some(generated::command_envelope::Command::ResyncRequest(request)) => {
                 evohime_desktop_ipc::validate_resync_request(&request)
                     .map_err(|error| FrameError::Io(error.to_string()))?;
+                if self.stale_generation(&command) {
+                    let latest = self.latest_sequence().await;
+                    let gap = self.replay_gap_envelope(
+                        request.after_sequence,
+                        None,
+                        latest,
+                        REPLAY_GAP_REASON_STALE_GENERATION,
+                    );
+                    transport::write_frame(writer, &gap.encode_to_vec()).await?;
+                }
                 let limit = if request.max_events == 0 {
                     evohime_desktop_ipc::DEFAULT_RESYNC_MAX_EVENTS
                 } else {
@@ -1326,13 +1416,14 @@ impl IpcBridge {
                     .map(|record| record.sequence_id as u64)
                     .unwrap_or(request.after_sequence);
                 if batch.gap_detected {
-                    let payload = serde_json::to_vec(&serde_json::json!({
-                        "after_sequence": request.after_sequence,
-                        "first_available_sequence": batch.first_available_sequence,
-                        "reason": "replay_gap",
-                    }))
-                    .map_err(|error| FrameError::Io(error.to_string()))?;
-                    self.write_response(writer, "replay.gap", payload).await?;
+                    let latest = self.latest_sequence().await;
+                    let gap = self.replay_gap_envelope(
+                        request.after_sequence,
+                        batch.first_available_sequence.map(|value| value as u64),
+                        latest,
+                        REPLAY_GAP_REASON_SEQUENCE_RETENTION_EXCEEDED,
+                    );
+                    transport::write_frame(writer, &gap.encode_to_vec()).await?;
                 }
                 // Снапшот, не влезающий в кадр IPC, раньше обрывал соединение с
                 // оболочкой: она навсегда оставалась без состояния и рисовала
@@ -1340,8 +1431,12 @@ impl IpcBridge {
                 // поштучной отправки тех же событий.
                 let snapshot = if request.include_full_snapshot {
                     let snapshot_json = serde_json::to_vec(&serde_json::json!({
+                        "schema_version": 1,
+                        "core_instance_id": self.core_instance_id,
+                        "session_epoch": self.session_epoch,
+                        "snapshot_sequence_id": last_sequence,
                         "after_sequence": request.after_sequence,
-                        "last_sequence": last_sequence,
+                        "actions": typed_snapshot_actions(&batch.events),
                         "events": batch.events.iter().map(|record| serde_json::json!({
                             "sequence_id": record.sequence_id,
                             "task_id": record.task_id,
@@ -1421,6 +1516,16 @@ impl IpcBridge {
                 transport::write_frame(writer, &end.encode_to_vec()).await?;
             }
             Some(generated::command_envelope::Command::ReplayEvents(replay)) => {
+                if self.stale_generation(&command) {
+                    let latest = self.latest_sequence().await;
+                    let gap = self.replay_gap_envelope(
+                        replay.after_sequence,
+                        None,
+                        latest,
+                        REPLAY_GAP_REASON_STALE_GENERATION,
+                    );
+                    transport::write_frame(writer, &gap.encode_to_vec()).await?;
+                }
                 let batch = self
                     .journal
                     .replay_bounded(replay.after_sequence as i64, 1_000)
@@ -1428,13 +1533,14 @@ impl IpcBridge {
                     .map_err(|error| FrameError::Io(error.to_string()))?;
                 let mut last_sequence = batch.last_sequence as u64;
                 if batch.gap_detected {
-                    let payload = serde_json::to_vec(&serde_json::json!({
-                        "after_sequence": replay.after_sequence,
-                        "first_available_sequence": batch.first_available_sequence,
-                        "reason": "replay_gap",
-                    }))
-                    .map_err(|error| FrameError::Io(error.to_string()))?;
-                    self.write_response(writer, "replay.gap", payload).await?;
+                    let latest = self.latest_sequence().await;
+                    let gap = self.replay_gap_envelope(
+                        replay.after_sequence,
+                        batch.first_available_sequence.map(|value| value as u64),
+                        latest,
+                        REPLAY_GAP_REASON_SEQUENCE_RETENTION_EXCEEDED,
+                    );
+                    transport::write_frame(writer, &gap.encode_to_vec()).await?;
                 }
                 for record in batch.events {
                     last_sequence = record.sequence_id as u64;
@@ -6473,7 +6579,7 @@ mod tests {
             request_id: "resync-1".into(),
             client_id: "test-client".into(),
             core_instance_id: String::new(),
-            session_epoch: 1,
+            session_epoch: 0,
             command: Some(generated::command_envelope::Command::ResyncRequest(
                 generated::ResyncRequest {
                     after_sequence: 0,
@@ -6735,7 +6841,7 @@ mod tests {
             request_id: "request-1".into(),
             client_id: "test-client".into(),
             core_instance_id: String::new(),
-            session_epoch: 1,
+            session_epoch: 0,
             command: Some(generated::command_envelope::Command::ReplayEvents(
                 generated::ReplayEvents { after_sequence: 0 },
             )),
@@ -6757,6 +6863,156 @@ mod tests {
         assert!(String::from_utf8(event.payload)
             .expect("payload utf8")
             .contains("replayed"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// План 08-3: a client whose `CommandEnvelope` names a different
+    /// generation than this process must get an honest typed `ReplayGap`
+    /// with `reason = "stale_generation"` before the (still-served) replay,
+    /// not just silently receive events stamped with a new identity.
+    #[tokio::test]
+    async fn stale_generation_produces_a_typed_replay_gap_before_replay() {
+        let path = std::env::temp_dir().join(format!(
+            "evohime-ipc-stale-generation-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        journal
+            .record(&CoreEvent::TaskCompleted {
+                task_id: "task-stale".into(),
+                final_message: "stale".into(),
+            })
+            .await
+            .expect("event records");
+        let bridge = IpcBridge::new(journal);
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        let command = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "request-stale".into(),
+            client_id: "test-client".into(),
+            core_instance_id: "a-generation-this-process-never-had".into(),
+            session_epoch: 0,
+            command: Some(generated::command_envelope::Command::ReplayEvents(
+                generated::ReplayEvents { after_sequence: 0 },
+            )),
+        };
+        transport::write_frame(&mut client, &command.encode_to_vec())
+            .await
+            .expect("command writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("bridge serves replay");
+
+        let gap_frame = transport::read_frame(&mut client)
+            .await
+            .expect("gap frame reads");
+        let gap_envelope =
+            generated::EventEnvelope::decode(gap_frame.as_slice()).expect("gap decodes");
+        let gap = match gap_envelope.event {
+            Some(generated::event_envelope::Event::ReplayGap(gap)) => gap,
+            other => panic!("expected typed ReplayGap, got {other:?}"),
+        };
+        assert_eq!(gap.reason, "stale_generation");
+        assert_eq!(gap.requested_after_sequence, 0);
+
+        let event_frame = transport::read_frame(&mut client)
+            .await
+            .expect("event frame reads");
+        let event =
+            generated::EventEnvelope::decode(event_frame.as_slice()).expect("event decodes");
+        assert_eq!(event.event_type, "task.completed");
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// План 08-3 п.5: `FullSnapshot.snapshot_json` carries a bounded typed
+    /// action projection (latest state per `action_id`), not just a raw
+    /// event dump — a reconnecting client can rebuild action cards from the
+    /// snapshot alone.
+    #[tokio::test]
+    async fn resync_snapshot_includes_typed_action_projection() {
+        let path = std::env::temp_dir().join(format!(
+            "evohime-ipc-snapshot-actions-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let ledger_event = execution_ledger::ExecutionEventV1 {
+            schema_version: 1,
+            event_id: "event-snapshot-action-1".into(),
+            sequence_id: None,
+            run_scope: execution_ledger::RunScope::Standalone,
+            run_id: "run-snapshot-1".into(),
+            session_id: Some("session-snapshot-1".into()),
+            task_id: "task-snapshot".into(),
+            created_at_ms: 1_700_000_000_000,
+            state_after: Some(execution_ledger::ActionState::Running),
+            action_id: Some("action-snapshot-1".into()),
+            tool_call_id: None,
+            observation_id: None,
+            receipt_id: None,
+            failure_id: None,
+            workflow_run_id: None,
+            node_id: None,
+            attempt_id: None,
+            effect_id: None,
+            model_request_id: None,
+            body: execution_ledger::ExecutionEventBody::ToolCall {
+                tool_name: "shell".into(),
+                tool_call_hash: "hash-1".into(),
+                manifest_hash: None,
+            },
+            redaction: execution_ledger::RedactionMeta::default(),
+        };
+        {
+            let database = journal.database().lock().await;
+            database
+                .append_ledger_event(&ledger_event)
+                .expect("typed event appends");
+        }
+        let bridge = IpcBridge::new(journal);
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        let command = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "resync-actions".into(),
+            client_id: "test-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 0,
+            command: Some(generated::command_envelope::Command::ResyncRequest(
+                generated::ResyncRequest {
+                    after_sequence: 0,
+                    max_events: 0,
+                    include_full_snapshot: true,
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &command.encode_to_vec())
+            .await
+            .expect("resync writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("resync serves");
+
+        let frame = transport::read_frame(&mut client)
+            .await
+            .expect("snapshot frame reads");
+        let envelope = generated::EventEnvelope::decode(frame.as_slice()).expect("frame decodes");
+        let snapshot = match envelope.event {
+            Some(generated::event_envelope::Event::FullSnapshot(snapshot)) => snapshot,
+            other => panic!("expected FullSnapshot, got {other:?}"),
+        };
+        let payload: serde_json::Value =
+            serde_json::from_slice(&snapshot.snapshot_json).expect("snapshot json decodes");
+        assert_eq!(payload["schema_version"], 1);
+        assert_eq!(payload["snapshot_sequence_id"], snapshot.sequence_id);
+        let actions = payload["actions"].as_array().expect("actions array");
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0]["action_id"], "action-snapshot-1");
+        assert_eq!(actions[0]["state_after"], "running");
         let _ = std::fs::remove_file(path);
     }
 
@@ -7213,7 +7469,7 @@ mod tests {
             request_id: "reconnect".into(),
             client_id: "client".into(),
             core_instance_id: String::new(),
-            session_epoch: 2,
+            session_epoch: 0,
             command: Some(generated::command_envelope::Command::ReplayEvents(
                 generated::ReplayEvents {
                     after_sequence: first as u64,

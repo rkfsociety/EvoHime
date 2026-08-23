@@ -326,9 +326,11 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
     if (event.replayGap) {
       this.log('warn', 'ipc.replay_gap', {
         requested: event.replayGap.requestedAfterSequence,
-        earliest: event.replayGap.earliestAvailableSequence
+        earliest: event.replayGap.earliestAvailableSequence,
+        latest: event.replayGap.latestAvailableSequence,
+        reason: event.replayGap.reason || 'unspecified'
       })
-      this.setState('state-gap', 'replay-gap')
+      this.setState('state-gap', event.replayGap.reason || 'replay-gap')
       this.requestResync(true)
       return
     }
