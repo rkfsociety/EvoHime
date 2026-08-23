@@ -10,7 +10,7 @@ deletion, forget с tombstone, rollback и безопасный degraded behavio
 ### Блокирующие
 
 - 11-1, 11-2 и 11-3 с их Rust fixtures;
-- миграция schema v29 → v30, применённая к базам v26, v28 и v29, с
+- миграция schema v30 → v31, применённая к базам v26, v28 и v30, с
   pre-migration backup;
 - generated protocol синхронизирован между Rust и Electron.
 
@@ -49,9 +49,12 @@ deletion, forget с tombstone, rollback и безопасный degraded behavio
 
 ### Forget и recovery
 
-- expiry, deletion и forget удаляют запись, projection и связанные вектора;
-- после forget не остаётся derived summaries и строк
-  `workspace_chunk_vectors`, ссылающихся на удалённый chunk или index
+- expiry, deletion и forget делают memory record логически forgotten (текущий
+  store сохраняет обезличенную metadata/state-строку для tombstone-а), удаляют
+  все derived projection и связанные вектора;
+- после forget не остаётся derived summaries, aliases, RAG/context ledger
+  projections и строк `workspace_chunk_vectors`, ссылающихся на удалённый
+  chunk или index
   (каскад `ON DELETE CASCADE` не обойдён), остаётся tombstone;
 - stale snapshot, provider fallback (`CompressionRecord.fallback = true`) и
   cancelled reflection;

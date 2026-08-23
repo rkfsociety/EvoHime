@@ -52,8 +52,10 @@ idempotency и source linkage summaries.
    идемпотентный ключ и deterministic fallback при provider failure. Повтор с
    тем же ключом не создаёт вторую summary. Cancellation в текущем
    summarizer/planner отсутствует и вводится этапом целиком; идемпотентность
-   строится на существующем `ContextLedgerStore::find_by_hash`, а не на новом
-   каталоге ключей.
+   строится на детерминированном ключе операции, включённом в snapshot/hash
+   и атомарно проверяемом перед записью summary; `find_by_hash` можно
+   переиспользовать для lookup существующего ledger entry, но одного
+   `context_ledger_hash` недостаточно как idempotency key для разных задач.
 3. Отдельный `degraded`-статус не вводится: `LedgerOutcome` остаётся парой
    `sent`/`budget_unavailable`, а деградация summarizer выражается
    `CompressionRecord.fallback`/`fallback_reason`. UI-проекция читает эти
@@ -61,10 +63,14 @@ idempotency и source linkage summaries.
 4. Derived summary сохраняется как versioned projection со ссылками на
    исходные event ID. Сегодня `CompressionRecord.source_ids` — идентификаторы
    `ContextItem`, поэтому этап добавляет отображение item → `sequence_id`
-   события ledger и хранит его вместе с summary. Исходные execution/evidence
+   события ledger и хранит его вместе с summary. Если item не имеет такого
+   provenance, summary не может заявить ссылку на execution event и это явно
+   фиксируется как неполная provenance, а не заполняется выдуманным ID.
+   Исходные execution/evidence
    events compaction не удаляет; удаление receipts prefix остаётся отдельной
    операцией `compact_chain` с checkpoint. `ContextLedgerStore::prune` не
-   должен затрагивать строки, на которые ссылается живая summary.
+   должен затрагивать строки, на которые ссылается живая summary. Storage
+   также хранит operation-key deduplication, а не только ledger hash.
 5. Redaction применяется до memory write и до context projection. Raw prompt
    и полный tool output не становятся durable memory автоматически.
 6. UI получает только metadata, score breakdown, citations и bounded
@@ -73,7 +79,8 @@ idempotency и source linkage summaries.
 ## Изменения по слоям
 
 - Rust core: cancellation/idempotency в compaction, linkage summary → events;
-- storage: versioned projection rows и prune, не затрагивающий источники;
+- storage: versioned projection rows, operation-key deduplication и prune, не
+  затрагивающий источники;
 - IPC/Electron: bounded preview и projection replay после reconnect.
 
 ## Проверки

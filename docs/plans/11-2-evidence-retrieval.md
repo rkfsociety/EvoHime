@@ -65,6 +65,12 @@
    `workspace_chunk_vectors` ссылается только на `document_chunks`. Memory
    retrieval поверх общего ranker начинается с lexical-ветки; вектора для
    memory — отдельное аддитивное решение, а не предпосылка этапа.
+   Для этого этап добавляет явный adapter `MemoryRecord → RetrievalCandidate`:
+   memory-строки не притворяются `document_chunks` и не подмешиваются в SQL
+   без scope-предиката. Adapter обязан передать `record_id`, kind, scope,
+   privacy, provenance и текстовый source для общего score/ranking pipeline;
+   citation для memory указывает на record/evidence ID, а document citation
+   сохраняет текущие chunk/hash-поля.
 
 ## Изменения по слоям
 
@@ -79,6 +85,8 @@
 ## Проверки
 
 - deterministic tie-break при одинаковых scores, включая равные freshness;
+- memory adapter не выдаёт `document_chunks`-цитату для memory record и не
+  допускает cross-workspace смешения кандидатов;
 - stale/updated citation и generation mismatch;
 - cross-workspace и scope isolation, фильтрация до ranking (позиции
   остальных не меняются при добавлении записи вне scope);

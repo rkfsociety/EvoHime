@@ -50,7 +50,7 @@
   `crates/evohime-local-storage/src/context_ledger_store.rs`
   (`append`, `record_usage`, `register_receipt`, `find_by_hash`,
   `projection`, `prune`);
-- SQLite schema v29 с transactional migration и backup/restore
+- SQLite schema v30 с transactional migration и backup/restore
   (`backup.rs`, safety backup плюс `rollback_from_safety`).
 
 План 11 закрывает разрывы между этими частями, а не переписывает их.
@@ -101,12 +101,14 @@ context budget и compaction, expiry/deletion/forget и bounded projection в UI
 - текущие `memory_domain.rs`, `memory_api.rs`, `memory_extraction.rs`,
   `memory_store.rs`, `scratchpad_store.rs`, `workspace_rag.rs`,
   крейт `evohime-context-budget`, `context_budget.rs`,
-  `context_ledger_store.rs` и SQLite schema v29;
+  `context_ledger_store.rs` и SQLite schema v30;
 - механика миграции в `crates/evohime-local-storage/src/lib.rs`:
   `Self::migrate` вызывается только при `version < LEGACY_SCHEMA_VERSION`
-  (26), а v27–v29 ставятся идемпотентными `install_schema`. Любая новая
-  ветка `if current < 30` для существующей базы v26–v29 не выполнится — это
-  учитывает 11-1.
+  (26), а v27–v30 ставятся идемпотентными `install_schema`. Любая новая
+  ветка `if current < 31` для существующей базы v26–v30 не выполнится — это
+  учитывает 11-1. Новые memory-поля относятся к следующему приложенческому
+  переходу v30 → v31 и должны устанавливаться идемпотентным `install_schema`
+  на каждом открытии базы, а не добавляться только в старую migration ladder.
 
 ### Опциональные
 

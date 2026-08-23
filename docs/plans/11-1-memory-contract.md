@@ -36,7 +36,7 @@
 ### Блокирующие
 
 - 11-0 и текущие `memory_domain.rs`, `memory_extraction.rs`,
-  `memory_store.rs`, `scratchpad_store.rs`, SQLite schema v29;
+  `memory_store.rs`, `scratchpad_store.rs`, SQLite schema v30;
 - контракты 08-1/08-2 после их принятия: идентичность события — глобальный
   durable `sequence_id` из `events`;
 - контракты 09-2/09-3 после их принятия для policy и approval gate.
@@ -72,8 +72,9 @@
    переносятся.
 
    Старый reader, не знающий новых полей, продолжает читать запись; миграция
-   заполняет их deterministic значениями (`record_version` = версия схемы
-   записи на момент миграции, пустые списки ссылок) без потери данных.
+   заполняет их deterministic значениями (`record_version = 1` как версия
+   формата typed memory record, независимо от SQLite `user_version`, пустые
+   списки ссылок) без потери данных.
 
 2. Зафиксировать уровни хранения и запретить их смешение:
 
@@ -111,13 +112,14 @@
 
 ## Изменения по слоям
 
-- SQLite: аддитивная миграция v29 → v30 набором
-  `ALTER TABLE memory_entries ADD COLUMN ... DEFAULT ...` по образцу ветки
-  `current < 15`. Ветка `if current < 30` в `Self::migrate` недостаточна:
-  `migrate` вызывается только при `version < LEGACY_SCHEMA_VERSION` (26), а
-  базы v26–v29 её не увидят. Этап поднимает `SCHEMA_VERSION` до 30 и
-  одновременно чинит условие вызова миграции (или переносит новые колонки в
-  идемпотентный `install_schema`-путь), иначе backfill молча не применится;
+- SQLite: аддитивный переход v30 → v31 набором
+  `ALTER TABLE memory_entries ADD COLUMN ... DEFAULT ...`. В текущем checkout
+  `Self::migrate` вызывается только при `version < LEGACY_SCHEMA_VERSION` (26),
+  поэтому новая ветка `if current < 31` там не покрывает базы v26–v30.
+  Этап поднимает `SCHEMA_VERSION` до 31 и добавляет отдельный идемпотентный
+  `memory_store::install_schema` (или эквивалентный owner-модуль), который
+  выполняется на каждом открытии после legacy migration; backfill должен быть
+  атомарным и проверяться по колонкам/значениям, а не только по `user_version`;
 - rollback здесь — не down-migration: `read_schema_version` отвергает
   `version > SCHEMA_VERSION` как `UnsupportedSchema`. Откат выполняется
   восстановлением pre-migration копии (`.db.bak` или `backup.rs` с
@@ -130,8 +132,8 @@
 
 ## Проверки
 
-- schema/serialization round-trip, migration fixtures v29 → v30 для базы,
-  созданной как v26, v28 и v29 (каждая должна получить новые колонки);
+- schema/serialization round-trip, migration fixtures v30 → v31 для базы,
+  созданной как v26, v28 и v30 (каждая должна получить новые колонки);
 - восстановление из pre-migration backup после неудачной миграции;
 - scope/privacy gate и cross-workspace isolation;
 - TTL/lifecycle transitions, session-note expiry, `MemoryScope::Session` не
