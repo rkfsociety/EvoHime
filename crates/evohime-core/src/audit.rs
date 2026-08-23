@@ -212,7 +212,10 @@ fn is_sensitive_name(name: &str) -> bool {
     .any(|marker| lower.contains(marker))
 }
 
-fn contains_secret(value: &str) -> bool {
+/// Bounded secret-shape scan shared with the execution ledger's redaction
+/// metadata (план 08-4) — same markers as the audit log's own redaction, so
+/// the two layers agree on what counts as secret-shaped.
+pub(crate) fn contains_secret(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
     lower.contains("bearer ")
         || lower.contains("sk-")

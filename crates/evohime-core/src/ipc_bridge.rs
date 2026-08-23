@@ -133,7 +133,7 @@ fn record_ledger_tool_call(
             .unwrap_or_default(),
             manifest_hash: None,
         },
-        redaction: execution_ledger::RedactionMeta::default(),
+        redaction: tool_request_redaction(request),
     };
     if let Err(error) = database.append_ledger_event(&event) {
         tracing::warn!(
@@ -177,7 +177,7 @@ fn record_ledger_tool_outcome(
         effect_id: None,
         model_request_id: None,
         body,
-        redaction: execution_ledger::RedactionMeta::default(),
+        redaction: tool_request_redaction(request),
     };
     if let Err(error) = database.append_ledger_event(&event) {
         tracing::warn!(
@@ -186,6 +186,25 @@ fn record_ledger_tool_outcome(
             error = %error,
             "typed ledger event failed to publish"
         );
+    }
+}
+
+/// Bounded redaction metadata for a receipt-tracked action's ledger events
+/// (план 08-4): scans the request's serialized input and preview for the
+/// same secret-shaped markers the audit log already redacts on
+/// (`crate::audit::contains_secret`), so the two layers agree. Only
+/// presence is recorded — never a hash of the secret itself, avoiding a new
+/// cryptographic primitive this codebase doesn't otherwise use for this
+/// purpose.
+fn tool_request_redaction(
+    request: &evohime_receipts::runtime::ActionRequest,
+) -> execution_ledger::RedactionMeta {
+    let input_text = request.input.to_string();
+    let secrets_present = crate::audit::contains_secret(&input_text)
+        || crate::audit::contains_secret(&request.preview);
+    execution_ledger::RedactionMeta {
+        secrets_present,
+        digest: None,
     }
 }
 
@@ -5758,7 +5777,7 @@ impl IpcBridge {
                             },
                         );
                     }
-                    Err(_error) => {
+                    Err(error) => {
                         runtime.mark_returned(request.action_id).map_err(|e| {
                             evohime_tool_runtime::ToolError::Execution(e.to_string())
                         })?;
@@ -5767,13 +5786,19 @@ impl IpcBridge {
                             .complete(&request, "failed", &failed_digest, Some("tool_error"))
                             .is_ok()
                         {
+                            // Ledger observability gets the specific bounded
+                            // error code (e.g. "timed_out") even though the
+                            // receipt's own error_category stays the coarser
+                            // "tool_error" it already used — changing that
+                            // category is a receipts-crate decision, out of
+                            // scope here.
                             record_ledger_tool_outcome(
                                 &database,
                                 &request,
                                 context.session_id.map(|id| id.to_string()),
                                 execution_ledger::ActionState::Failed,
                                 execution_ledger::ExecutionEventBody::TypedFailure {
-                                    error_class: "tool_error".into(),
+                                    error_class: bounded_tool_error_code(error).to_string(),
                                     provider_error_id: None,
                                 },
                             );
@@ -7098,6 +7123,33 @@ mod tests {
             .expect("payload utf8")
             .contains("replayed"));
         let _ = std::fs::remove_file(path);
+    }
+
+    /// План 08-4: `redaction.secrets_present` must reflect a real scan of
+    /// the request, not just always be `false` — the same secret-shape
+    /// markers `crate::audit::contains_secret` already redacts on.
+    #[test]
+    fn tool_request_redaction_flags_secret_shaped_input_and_clears_ordinary_input() {
+        let secret_request = evohime_receipts::runtime::ActionRequest {
+            action_id: uuid::Uuid::now_v7(),
+            task_id: "task-1".into(),
+            run_id: "task-1".into(),
+            tool_name: "shell.execute".into(),
+            policy_id: "permission:ShellExecute".into(),
+            normalized_scope: "workspace".into(),
+            input: serde_json::json!({"program": "curl", "args": ["-H", "Authorization: Bearer sk-abc123"]}),
+            policy_decision: evohime_receipts::runtime::PolicyDecision::Allow,
+            approval_id: None,
+            parent_approval_ref: None,
+            preview: "curl call".into(),
+        };
+        assert!(tool_request_redaction(&secret_request).secrets_present);
+
+        let ordinary_request = evohime_receipts::runtime::ActionRequest {
+            input: serde_json::json!({"program": "git", "args": ["status"]}),
+            ..secret_request
+        };
+        assert!(!tool_request_redaction(&ordinary_request).secrets_present);
     }
 
     /// План 08-3: a client whose `CommandEnvelope` names a different
