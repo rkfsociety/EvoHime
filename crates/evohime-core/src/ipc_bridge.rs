@@ -6001,9 +6001,31 @@ impl IpcBridge {
                     &signer,
                 )
                 .map_err(|error| FrameError::Io(error.to_string()))?;
-                runtime
-                    .grant_approval(approval_id)
-                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                if let Err(error) = runtime.grant_approval(approval_id) {
+                    // План 08-4 acceptance: the third arm of "approval
+                    // approve/reject/expiry" — the approval window closed
+                    // before the client claimed it. `grant_approval` is the
+                    // one place `evohime-receipts` actually detects this
+                    // (deadline check against the intent's own boot/wall
+                    // clock), so it is the only honest place to observe it.
+                    if matches!(
+                        error,
+                        evohime_receipts::runtime::RuntimeError::Code("approval_expired")
+                    ) {
+                        record_ledger_tool_outcome(
+                            &database,
+                            &receipt_request,
+                            None,
+                            execution_ledger::ActionState::TimedOut,
+                            execution_ledger::ExecutionEventBody::ApprovalDecision {
+                                approval_intent_id: approval_id.to_string(),
+                                decision: execution_ledger::ApprovalOutcome::Expired,
+                                snapshot_hash: None,
+                            },
+                        );
+                    }
+                    return Err(FrameError::Io(error.to_string()).into());
+                }
                 runtime
                     .claim_approval(&receipt_request, approval_id)
                     .map_err(|error| FrameError::Io(error.to_string()))?;
@@ -7532,6 +7554,145 @@ mod tests {
         assert_eq!(result_json["ok"], false);
         assert_eq!(result_json["error_code"], "approval_denied");
         assert!(result_json.get("error").is_none());
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(data_root);
+    }
+
+    /// План 08-4 acceptance: the third arm of "approval approve/reject/
+    /// expiry". A retry that arrives after the approval window closed must
+    /// be refused by `grant_approval`'s own deadline check (not by a new
+    /// check invented here) and publish a typed `ApprovalDecision/Expired`
+    /// ledger event before the error propagates. The deadline is forced
+    /// into the past directly in `receipt_approval_intents` — waiting out
+    /// the real 10-minute TTL is not a workable test.
+    #[tokio::test]
+    async fn expired_approval_publishes_ledger_decision_and_refuses_the_retry() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-ipc-terminal-expiry-root-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("terminal root");
+        let data_root = std::env::temp_dir().join(format!(
+            "evohime-ipc-terminal-expiry-data-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&data_root);
+        std::fs::create_dir_all(&data_root).expect("terminal data root");
+        let journal_path = data_root.join("events.db");
+        let _ = std::fs::remove_file(&journal_path);
+        let receipt_keys = ReceiptKeyManager::new(&data_root);
+        receipt_keys.initialize().expect("receipt keys initialize");
+        let journal = EventJournal::open(&journal_path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let tools = Arc::new(ToolRegistry::bootstrap());
+        let bridge = IpcBridge::with_coordinator_and_approvals(
+            journal.clone(),
+            coordinator,
+            ApprovalCoordinator::default(),
+            tools,
+            None,
+            None,
+        );
+        let task_id = uuid::Uuid::new_v4().to_string();
+        let make_terminal = |approval_id: String| generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "terminal-request".into(),
+            client_id: "test-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::TerminalExecute(
+                generated::TerminalExecute {
+                    task_id: task_id.clone(),
+                    workspace_path: root.display().to_string(),
+                    program: "git".into(),
+                    args: vec!["status".into()],
+                    cwd: String::new(),
+                    timeout_ms: 5_000,
+                    approval_id,
+                },
+            )),
+        };
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        transport::write_frame(&mut client, &make_terminal(String::new()).encode_to_vec())
+            .await
+            .expect("terminal writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("approval serves");
+        let approval = generated::EventEnvelope::decode(
+            transport::read_frame(&mut client)
+                .await
+                .expect("approval reads")
+                .as_slice(),
+        )
+        .expect("approval decodes");
+        let approval_json =
+            serde_json::from_slice::<serde_json::Value>(&approval.payload).expect("approval json");
+        let approval_id = approval_json["approval_id"]
+            .as_str()
+            .expect("approval id")
+            .to_string();
+
+        // Force the approval window into the past — same-process retries
+        // hit the monotonic-clock branch of `grant_approval`'s deadline
+        // check, so backdating `deadline_monotonic_ms` is what actually
+        // exercises it (backdating `expires_at_ms` alone would not, since
+        // the boot id matches).
+        {
+            let database = journal.database().lock().await;
+            let changed = database
+                .connection()
+                .execute(
+                    "UPDATE receipt_approval_intents SET deadline_monotonic_ms = 0 WHERE approval_id = ?1",
+                    [&approval_id],
+                )
+                .expect("deadline backdates");
+            assert_eq!(changed, 1, "the approval intent row must exist");
+        }
+
+        transport::write_frame(
+            &mut client,
+            &make_terminal(approval_id.clone()).encode_to_vec(),
+        )
+        .await
+        .expect("retry writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect_err("an expired approval must refuse the retry");
+
+        let journal_handle = bridge.journal();
+        let database = journal_handle.database().lock().await;
+        let (decision_state, body_payload): (String, Vec<u8>) = database
+            .connection()
+            .query_row(
+                "SELECT state_after, payload FROM events
+                   WHERE event_type = 'ledger.approval_decision'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("ledger.approval_decision row exists");
+        assert_eq!(decision_state, "timed_out");
+        let decision_event: execution_ledger::ExecutionEventV1 =
+            serde_json::from_slice(&body_payload).expect("decision event decodes");
+        let execution_ledger::ExecutionEventBody::ApprovalDecision {
+            approval_intent_id,
+            decision,
+            ..
+        } = decision_event.body
+        else {
+            panic!(
+                "expected ApprovalDecision body, got {:?}",
+                decision_event.body
+            );
+        };
+        assert_eq!(approval_intent_id, approval_id);
+        assert_eq!(decision, execution_ledger::ApprovalOutcome::Expired);
+        drop(database);
+
         let _ = std::fs::remove_dir_all(root);
         let _ = std::fs::remove_dir_all(data_root);
     }
