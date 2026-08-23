@@ -108,8 +108,13 @@ interface Props {
   readonly events: readonly CoreEvent[]
 }
 
+// `events` holds the newest event first (App.tsx prepends on receipt), so
+// the latest match is the FIRST one found here — not the last. Over a long
+// session `events` is bounded (`MAX_VISIBLE_EVENTS`), and once an older
+// occurrence of `eventType` gets evicted, `.filter().at(-1)` would silently
+// start returning the oldest *surviving* match instead of the newest one.
 function latestPayload<T>(events: readonly CoreEvent[], eventType: string): T | null {
-  const event = events.filter((item) => item.eventType === eventType).at(-1)
+  const event = events.find((item) => item.eventType === eventType)
   if (!event) return null
   try {
     return JSON.parse(event.payload) as T

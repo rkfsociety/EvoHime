@@ -88,6 +88,25 @@ describe('панель «Слух»', () => {
     expect(screen.getByText(/выбранное устройство пропало/i)).toBeTruthy()
   })
 
+  it('берёт состояние из самого нового события, а не из самого старого в буфере', () => {
+    // App.tsx кладёт новое событие в начало массива ([event, ...current]),
+    // так что первое совпадение в `events` — самое свежее. Раньше здесь
+    // брали последнее совпадение (.at(-1)), что на длинной сессии с полным
+    // буфером находило самое старое ещё не вытесненное событие вместо
+    // текущего состояния.
+    render(
+      <ListeningPanel
+        connection="connected"
+        events={[
+          event('ambient.state', { state: 'listening', reason: 'user_request' }),
+          event('ambient.state', { state: 'device_disconnected', reason: 'device_disconnected' })
+        ]}
+      />
+    )
+    expect(screen.getByText('Ева слушает')).toBeTruthy()
+    expect(screen.queryByText('Микрофон отключён')).toBeNull()
+  })
+
   it('сообщает, что глобальный хоткей занят, вместо молчаливого отказа', async () => {
     hotkeyRegistered = false
     render(<ListeningPanel connection="connected" events={[]} />)
