@@ -1704,12 +1704,23 @@ impl IpcBridge {
                         transport::write_frame(writer, &event.encode_to_vec()).await?;
                     }
                 }
+                // Каждый resync отдаёт не больше `limit` событий за раз. Без
+                // этого флага оболочка узнавала об оставшемся хвосте истории
+                // только по случайному разрыву sequence в живом потоке — и
+                // гонялась за ним кругами, так и не догоняя (план про «нет
+                // связи», возникавшую после больших сессий).
+                let latest_after_batch = self.latest_sequence().await;
+                let end_payload = serde_json::to_vec(&serde_json::json!({
+                    "more_available": last_sequence < latest_after_batch,
+                    "latest_sequence": latest_after_batch,
+                }))
+                .map_err(|error| FrameError::Io(error.to_string()))?;
                 let end = generated::EventEnvelope {
                     protocol: Some(protocol()),
                     sequence_id: last_sequence,
                     task_id: String::new(),
                     event_type: "resync.end".into(),
-                    payload: Vec::new(),
+                    payload: end_payload,
                     core_instance_id: self.core_instance_id.clone(),
                     session_epoch: self.session_epoch,
                     event: None,
@@ -6995,6 +7006,74 @@ mod tests {
             10,
             "вместо снапшота оболочка обязана получить те же события поштучно: {seen:?}"
         );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A large backlog is paged `max_events` at a time (план про «нет связи»
+    /// после большой сессии): `resync.end` must say when more history sits
+    /// beyond the page it just sent, so the shell chains the next resync
+    /// itself instead of racing a random live-event gap to notice.
+    #[tokio::test]
+    async fn resync_end_reports_more_available_across_a_bounded_page() {
+        let path =
+            std::env::temp_dir().join(format!("evohime-ipc-more-available-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        for index in 0..3 {
+            journal
+                .record(&CoreEvent::TaskCompleted {
+                    task_id: format!("task-{index}"),
+                    final_message: "done".into(),
+                })
+                .await
+                .expect("event records");
+        }
+        let bridge = IpcBridge::new(journal);
+        let (client, server) = duplex(64 * 1024);
+        let (mut client_reader, mut client_writer) = tokio::io::split(client);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+
+        let request = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "resync-page-1".into(),
+            client_id: "test-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 0,
+            command: Some(generated::command_envelope::Command::ResyncRequest(
+                generated::ResyncRequest {
+                    after_sequence: 0,
+                    max_events: 2,
+                    include_full_snapshot: false,
+                },
+            )),
+        };
+        transport::write_frame(&mut client_writer, &request.encode_to_vec())
+            .await
+            .expect("resync writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("resync succeeds");
+
+        let end = loop {
+            let frame = transport::read_frame(&mut client_reader)
+                .await
+                .expect("resync response");
+            let event = generated::EventEnvelope::decode(frame.as_slice()).expect("event decodes");
+            if event.event_type == "resync.end" {
+                break event;
+            }
+        };
+        assert_eq!(end.sequence_id, 2, "page stops at the requested max_events");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&end.payload).expect("resync.end payload decodes as json");
+        assert_eq!(
+            payload["more_available"],
+            serde_json::json!(true),
+            "a third event sits beyond this page: {payload:?}"
+        );
+        assert_eq!(payload["latest_sequence"], serde_json::json!(3));
+
         let _ = std::fs::remove_file(&path);
     }
 

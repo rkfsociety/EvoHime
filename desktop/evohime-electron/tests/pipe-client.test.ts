@@ -123,6 +123,21 @@ function eventFrame(sequenceId: number, eventType: string, payload = ''): Uint8A
   )
 }
 
+function resyncEndFrame(sequenceId: number, moreAvailable: boolean): Uint8Array {
+  return encodeFrame(
+    EventEnvelope.encode({
+      protocol: { major: 1, minor: 0 },
+      sequenceId,
+      eventType: 'resync.end',
+      payload: new TextEncoder().encode(
+        JSON.stringify({ more_available: moreAvailable, latest_sequence: sequenceId })
+      ),
+      coreInstanceId: CORE_INSTANCE,
+      sessionEpoch: SESSION_EPOCH
+    }).finish()
+  )
+}
+
 function ledgerEventFrame(
   sequenceId: number,
   eventId: string,
@@ -405,6 +420,73 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
     expect(state.reason).toBe('sequence-skipped')
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(resyncRequests).toContain(1)
+  })
+
+  it('does not queue a second auto-resync for the same afterSequence while one is in flight', async () => {
+    const pipeName = uniquePipeName()
+    const resyncRequests: number[] = []
+    server = await startStubCore(pipeName, {
+      onCommand: (command) => {
+        if (command.handshake) {
+          // event(1) establishes a lastSequence baseline first — a fresh
+          // client (lastSequence 0) never treats its very first event as a
+          // gap. events(10,11,12) then land in the same data chunk, all far
+          // ahead of that baseline: each independently detects a gap, but
+          // only the first should turn into a fresh resync request — the
+          // other two share its still-unanswered afterSequence.
+          return [
+            readyFrame(),
+            eventFrame(1, 'task.a'),
+            eventFrame(10, 'task.b'),
+            eventFrame(11, 'task.c'),
+            eventFrame(12, 'task.d')
+          ]
+        }
+        if (command.resyncRequest) {
+          resyncRequests.push(Number(command.resyncRequest.afterSequence ?? 0))
+        }
+        return []
+      }
+    })
+
+    const target = createClient(pipeName)
+    const gap = waitForState(target, (state) => state.connection === 'state-gap')
+    target.start()
+    await gap
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    // [0] is the unrelated resync issued right after connect (plan 0);
+    // [1] is the one gap-triggered request all three skipped events share.
+    expect(resyncRequests).toEqual([0, 1])
+  })
+
+  it('chains resync pages while Core reports more history, then settles once caught up', async () => {
+    const pipeName = uniquePipeName()
+    const resyncRequests: number[] = []
+    server = await startStubCore(pipeName, {
+      onCommand: (command) => {
+        if (command.handshake) {
+          return [readyFrame()]
+        }
+        if (command.resyncRequest) {
+          const after = Number(command.resyncRequest.afterSequence ?? 0)
+          resyncRequests.push(after)
+          if (after === 0) {
+            return [eventFrame(1, 'task.a'), eventFrame(2, 'task.b'), resyncEndFrame(2, true)]
+          }
+          return [eventFrame(3, 'task.c'), resyncEndFrame(3, false)]
+        }
+        return []
+      }
+    })
+
+    const target = createClient(pipeName)
+    const connected = waitForState(target, (state) => state.connection === 'connected' && state.lastSequence === 3)
+    target.start()
+    const state = await connected
+
+    expect(resyncRequests).toEqual([0, 2])
+    expect(state.lastSequence).toBe(3)
   })
 
   it('reconnects with bounded backoff after Core disconnects', async () => {

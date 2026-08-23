@@ -87,6 +87,17 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
   private handshakeTimer: NodeJS.Timeout | null = null
   private authRejections = 0
   /**
+   * `afterSequence` of the auto-resync currently awaiting a response, or
+   * `null` when none is in flight. A large backlog is paged 512 events at a
+   * time (`DEFAULT_RESYNC_MAX_EVENTS` in Core); without this guard, a burst
+   * of live events arriving mid-page each independently detected the same
+   * gap and queued their own redundant resync request for the exact same
+   * `afterSequence`, never converging on a busy session. Tracking the value
+   * (not just a boolean) still lets a resync fire once `lastSequence` has
+   * genuinely moved on since the in-flight request was sent.
+   */
+  private resyncPendingAfter: number | null = null
+  /**
    * Durable across a session-epoch change on purpose: `event_id` is stable
    * between Core generations, unlike `sequence_id` (plan 08-3).
    */
@@ -171,6 +182,18 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
         includeFullSnapshot
       }
     })
+  }
+
+  /**
+   * Same as `requestResync`, but skips the call while one is already
+   * in flight instead of queuing a redundant duplicate. Used by the
+   * automatic gap-recovery paths (as opposed to the user-triggered
+   * `shell.requestResync` command, which always sends immediately).
+   */
+  private autoResync(includeFullSnapshot: boolean): void {
+    if (this.resyncPendingAfter === this.lastSequence) return
+    this.resyncPendingAfter = this.lastSequence
+    this.requestResync(includeFullSnapshot)
   }
 
   private openConnection(): void {
@@ -331,19 +354,28 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
         reason: event.replayGap.reason || 'unspecified'
       })
       this.setState('state-gap', event.replayGap.reason || 'replay-gap')
-      this.requestResync(true)
+      this.autoResync(true)
       return
     }
     if (event.fullSnapshot) {
+      this.resyncPendingAfter = null
       this.lastSequence = Number(event.fullSnapshot.sequenceId ?? this.lastSequence)
       this.setState('connected', null)
       this.emitCoreEvent(event)
       return
     }
 
-    if (event.eventType === 'resync.end' || event.eventType === 'replay.end') {
-      this.setState('connected', null)
-    }
+    // Core pages a large backlog `DEFAULT_RESYNC_MAX_EVENTS` at a time and
+    // says so on `resync.end`'s payload (`more_available`). Declaring
+    // `connected` after just one page — while more history still sits
+    // beyond it — is what let a busy session's live traffic race ahead of
+    // catch-up forever; chaining the next page immediately here instead of
+    // waiting for that race to surface as a sequence gap is what actually
+    // converges.
+    const resyncEnd =
+      event.eventType === 'resync.end' || event.eventType === 'replay.end'
+        ? parseResyncEnd(event)
+        : null
 
     const sequence = Number(event.sequenceId ?? 0)
     if (sequence > 0) {
@@ -351,10 +383,19 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
         // A skipped sequence is never treated as a successful recovery.
         this.log('warn', 'ipc.sequence_skipped', { expected: this.lastSequence + 1, sequence })
         this.setState('state-gap', 'sequence-skipped')
-        this.requestResync(true)
+        this.autoResync(true)
         return
       }
       this.lastSequence = Math.max(this.lastSequence, sequence)
+    }
+    if (resyncEnd) {
+      this.resyncPendingAfter = null
+      if (resyncEnd.moreAvailable) {
+        this.setState('resyncing', 'catching-up')
+        this.autoResync(true)
+      } else {
+        this.setState('connected', null)
+      }
     }
     if (!this.shouldEmit(event)) {
       return
@@ -415,7 +456,7 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
     // bounded Core journal as well, otherwise the renderer starts with an
     // empty trace after every restart and can only observe future events.
     this.setState('replaying', null)
-    this.requestResync(false)
+    this.autoResync(false)
     this.flushQueue()
   }
 
@@ -494,6 +535,9 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
   private destroySocket(): void {
     const socket = this.socket
     this.socket = null
+    // A pending flag from the dead connection must never block catch-up on
+    // the next one — there is nothing left to answer it.
+    this.resyncPendingAfter = null
     if (this.handshakeTimer) {
       clearTimeout(this.handshakeTimer)
       this.handshakeTimer = null
@@ -526,6 +570,29 @@ function decodePayload(payload: Uint8Array | null | undefined): string {
     return ''
   }
   return Buffer.from(payload).toString('utf8')
+}
+
+/**
+ * Reads `resync.end`'s bounded JSON payload (`{more_available, latest_sequence}`,
+ * emitted by Core alongside every `resync.end`/`replay.end` marker). A missing
+ * or malformed payload is treated as "nothing more to fetch" rather than
+ * risking a resync loop against an older Core that predates this field.
+ */
+function parseResyncEnd(event: evohime.desktop.v1.EventEnvelope): { moreAvailable: boolean } {
+  const raw = decodePayload(event.payload)
+  if (!raw) {
+    return { moreAvailable: false }
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    const moreAvailable =
+      typeof parsed === 'object' && parsed !== null && 'more_available' in parsed
+        ? Boolean((parsed as { more_available: unknown }).more_available)
+        : false
+    return { moreAvailable }
+  } catch {
+    return { moreAvailable: false }
+  }
 }
 
 /**
