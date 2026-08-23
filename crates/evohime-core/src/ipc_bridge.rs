@@ -1,5 +1,6 @@
 use evohime_desktop_ipc::{generated, transport, FrameError};
 use prost::Message;
+use rusqlite::OptionalExtension;
 use serde::Serialize;
 use std::{
     collections::HashMap,
@@ -410,6 +411,76 @@ impl IpcBridge {
                     reason: reason.to_string(),
                 },
             )),
+        }
+    }
+
+    /// Publishes a typed `ApprovalDecision` ledger event for a resolved
+    /// approval, when it is linked to a receipts-tracked action (план 08-4
+    /// acceptance: "approval approve/reject/expiry"). Cancellation already
+    /// collapses into `granted = false` at the call site — a cancelled
+    /// approval and a denied one both land as `Rejected` here, matching the
+    /// existing `approval.decision` audit record's own `granted` field.
+    /// A no-op when `approval_id` isn't a receipts approval intent (e.g. a
+    /// pure workflow-node or routing approval) — those aren't
+    /// receipts-tracked actions and get no `ExecutionEventV1` here.
+    async fn record_ledger_approval_decision(&self, approval_id: &str, granted: bool) {
+        let database = self.journal.database().lock().await;
+        let linked: Option<(String, String, String)> = database
+            .connection()
+            .query_row(
+                "SELECT action_id, task_id, run_id FROM receipt_approval_intents
+                   WHERE approval_id = ?1",
+                [approval_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()
+            .unwrap_or(None);
+        let Some((action_id, task_id, run_id)) = linked else {
+            return;
+        };
+        let state_after = if granted {
+            execution_ledger::ActionState::Running
+        } else {
+            execution_ledger::ActionState::Denied
+        };
+        let event = execution_ledger::ExecutionEventV1 {
+            schema_version: 1,
+            event_id: uuid::Uuid::now_v7().to_string(),
+            sequence_id: None,
+            run_scope: execution_ledger::RunScope::Standalone,
+            run_id,
+            session_id: Some(task_id.clone()),
+            task_id,
+            created_at_ms: now_ms(),
+            state_after: Some(state_after),
+            action_id: Some(action_id),
+            tool_call_id: None,
+            observation_id: None,
+            receipt_id: None,
+            failure_id: None,
+            workflow_run_id: None,
+            node_id: None,
+            attempt_id: None,
+            effect_id: None,
+            model_request_id: None,
+            body: execution_ledger::ExecutionEventBody::ApprovalDecision {
+                approval_intent_id: approval_id.to_string(),
+                decision: if granted {
+                    execution_ledger::ApprovalOutcome::Approved
+                } else {
+                    execution_ledger::ApprovalOutcome::Rejected
+                },
+                snapshot_hash: None,
+            },
+            redaction: execution_ledger::RedactionMeta::default(),
+        };
+        if let Err(error) = database.append_ledger_event(&event) {
+            tracing::warn!(
+                event = "ledger.approval_decision_publish_failed",
+                approval_id,
+                error = %error,
+                "typed ledger event failed to publish"
+            );
         }
     }
 
@@ -2617,6 +2688,8 @@ impl IpcBridge {
                         .unwrap_or_default()
                         .as_slice(),
                     )
+                    .await;
+                self.record_ledger_approval_decision(&resolve.approval_id, granted)
                     .await;
                 // Узел workflow подтверждается той же командой, что и
                 // инструмент: отдельного пути approval у workflow нет. Если
@@ -7353,6 +7426,40 @@ mod tests {
             .await
             .expect("resolve serves");
 
+        // План 08-4 acceptance: a denied approval publishes a typed
+        // ApprovalDecision/Denied ledger event linked to the receipts
+        // approval intent's own action_id — this is the "reject" arm of
+        // "approval approve/reject/expiry".
+        {
+            let journal_handle = bridge.journal();
+            let database = journal_handle.database().lock().await;
+            let (decision_state, body_payload): (String, Vec<u8>) = database
+                .connection()
+                .query_row(
+                    "SELECT state_after, payload FROM events
+                       WHERE event_type = 'ledger.approval_decision'",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .expect("ledger.approval_decision row exists");
+            assert_eq!(decision_state, "denied");
+            let decision_event: execution_ledger::ExecutionEventV1 =
+                serde_json::from_slice(&body_payload).expect("decision event decodes");
+            let execution_ledger::ExecutionEventBody::ApprovalDecision {
+                approval_intent_id,
+                decision,
+                ..
+            } = decision_event.body
+            else {
+                panic!(
+                    "expected ApprovalDecision body, got {:?}",
+                    decision_event.body
+                );
+            };
+            assert_eq!(approval_intent_id, approval_id);
+            assert_eq!(decision, execution_ledger::ApprovalOutcome::Rejected);
+        }
+
         transport::write_frame(&mut client, &make_terminal(approval_id).encode_to_vec())
             .await
             .expect("retry writes");
@@ -7483,6 +7590,39 @@ mod tests {
             .process_once(&mut server_reader, &mut server_writer)
             .await
             .expect("resolve serves");
+
+        // План 08-4 acceptance: a granted approval publishes a typed
+        // ApprovalDecision/Approved ledger event — the "approve" arm of
+        // "approval approve/reject/expiry" — before the retried execution
+        // publishes its own ToolCall/ToolReceipt pair below.
+        {
+            let database = journal.database().lock().await;
+            let (decision_state, body_payload): (String, Vec<u8>) = database
+                .connection()
+                .query_row(
+                    "SELECT state_after, payload FROM events
+                       WHERE event_type = 'ledger.approval_decision'",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .expect("ledger.approval_decision row exists");
+            assert_eq!(decision_state, "running");
+            let decision_event: execution_ledger::ExecutionEventV1 =
+                serde_json::from_slice(&body_payload).expect("decision event decodes");
+            let execution_ledger::ExecutionEventBody::ApprovalDecision {
+                approval_intent_id,
+                decision,
+                ..
+            } = decision_event.body
+            else {
+                panic!(
+                    "expected ApprovalDecision body, got {:?}",
+                    decision_event.body
+                );
+            };
+            assert_eq!(approval_intent_id, approval_id);
+            assert_eq!(decision, execution_ledger::ApprovalOutcome::Approved);
+        }
 
         transport::write_frame(&mut client, &make_terminal(approval_id).encode_to_vec())
             .await
