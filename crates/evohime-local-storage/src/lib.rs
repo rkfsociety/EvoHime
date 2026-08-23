@@ -4993,6 +4993,63 @@ mod tests {
         }
     }
 
+    /// План 08-4 acceptance: legacy `events` rows (written before 08-1, or
+    /// still written by callers that never adopt the typed ledger) get a
+    /// deterministic `event_id` via `execution_ledger::legacy_event_id`,
+    /// without the original row — or its `sequence_id` — ever being
+    /// touched. Recomputing the mapping from the durably stored row must
+    /// reproduce the exact same id every time.
+    #[test]
+    fn legacy_event_mapping_is_reproducible_and_preserves_the_original_row() {
+        let path = temp_database_path("ledger-legacy-mapping");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        let sequence_id = database
+            .append_event("legacy-task", "task.completed", b"{\"ok\":true}")
+            .expect("legacy event appends through the pre-08-1 path");
+
+        let stored = database
+            .read_events_after(sequence_id - 1, 1)
+            .expect("read back")
+            .remove(0);
+        // Legacy rows never get the typed columns populated.
+        assert_eq!(stored.sequence_id, sequence_id);
+        assert_eq!(stored.task_id, "legacy-task");
+        assert_eq!(stored.event_type, "task.completed");
+
+        let mapped_once = crate::execution_ledger::legacy_event_id(
+            stored.sequence_id,
+            &stored.task_id,
+            &stored.event_type,
+            &stored.payload,
+            &stored.created_at,
+        );
+        let mapped_again = crate::execution_ledger::legacy_event_id(
+            stored.sequence_id,
+            &stored.task_id,
+            &stored.event_type,
+            &stored.payload,
+            &stored.created_at,
+        );
+        assert_eq!(
+            mapped_once, mapped_again,
+            "mapping the same durable row twice must reproduce the same event_id"
+        );
+        assert_eq!(
+            mapped_once.len(),
+            crate::execution_ledger::LEGACY_EVENT_ID_HEX_LEN
+        );
+
+        // Re-reading the row after the mapping was computed proves the row
+        // itself — sequence_id included — was never rewritten.
+        let reread = database
+            .read_events_after(sequence_id - 1, 1)
+            .expect("re-read")
+            .remove(0);
+        assert_eq!(reread, stored);
+        let _ = std::fs::remove_file(&path);
+    }
+
     #[test]
     fn append_ledger_event_round_trips_through_events_table() {
         let path = temp_database_path("ledger-append");
