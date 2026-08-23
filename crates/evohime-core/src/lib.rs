@@ -1758,6 +1758,28 @@ impl EventJournal {
         Ok((recovered, pruned))
     }
 
+    /// Публикует один bounded `core_start` execution-ledger event для этого
+    /// Core instance (план 08-2 п.5). Вызывается ровно один раз при старте,
+    /// до `reconcile_ledger_on_startup`.
+    pub async fn record_ledger_core_start(
+        &self,
+        core_instance_id: &str,
+    ) -> Result<i64, StorageError> {
+        let database = self.database.lock().await;
+        database.record_core_start(core_instance_id)
+    }
+
+    /// Reconciliation незавершённых typed actions при старте Core (план
+    /// 08-2 п.5): классифицирует по dispatch marker в `run_effects` и
+    /// публикует read-only reconciliation-события, не переписывая исходные.
+    pub async fn reconcile_ledger_on_startup(
+        &self,
+    ) -> Result<Vec<(String, evohime_local_storage::execution_ledger::ActionState)>, StorageError>
+    {
+        let database = self.database.lock().await;
+        database.reconcile_ledger_on_startup()
+    }
+
     /// Общий доступ к базе для контрактов плана 01: ledger, scratchpad и
     /// artifact store работают против той же мигрированной базы.
     pub fn database(&self) -> &Arc<Mutex<LocalDatabase>> {

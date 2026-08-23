@@ -11,6 +11,7 @@
 //! он появится миграцией в 08-2). Это намеренно: план 08-1 запрещает вводить
 //! синонимы словаря состояний, которым уже пользуется workflow runtime.
 
+use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 /// Потолки полей. Общие для storage (08-2) и IPC/Electron (08-3) — так что
@@ -26,7 +27,7 @@ pub const LEGACY_EVENT_ID_HEX_LEN: usize = 64;
 
 const LEGACY_EVENT_ID_DOMAIN: &[u8] = b"evohime.legacy.event.v1";
 
-#[derive(Debug, thiserror::Error, PartialEq)]
+#[derive(Debug, thiserror::Error)]
 pub enum LedgerContractError {
     #[error("{field} must not be empty")]
     Empty { field: &'static str },
@@ -45,6 +46,54 @@ pub enum LedgerContractError {
     DuplicateTerminalOutcome { action_id: String },
     #[error("too many artifact refs: {0} exceeds {MAX_ARTIFACT_REFS}")]
     TooManyArtifactRefs(usize),
+    #[error("SQLite operation failed: {0}")]
+    Sqlite(#[from] rusqlite::Error),
+}
+
+impl PartialEq for LedgerContractError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Empty { field: left }, Self::Empty { field: right }) => left == right,
+            (
+                Self::Limit {
+                    field: left,
+                    max: left_max,
+                },
+                Self::Limit {
+                    field: right,
+                    max: right_max,
+                },
+            ) => left == right && left_max == right_max,
+            (
+                Self::ScopeMismatch {
+                    field: left,
+                    run_scope: left_scope,
+                },
+                Self::ScopeMismatch {
+                    field: right,
+                    run_scope: right_scope,
+                },
+            ) => left == right && left_scope == right_scope,
+            (Self::MissingSessionId, Self::MissingSessionId) => true,
+            (
+                Self::IllegalTransition {
+                    from: left_from,
+                    to: left_to,
+                },
+                Self::IllegalTransition {
+                    from: right_from,
+                    to: right_to,
+                },
+            ) => left_from == right_from && left_to == right_to,
+            (
+                Self::DuplicateTerminalOutcome { action_id: left },
+                Self::DuplicateTerminalOutcome { action_id: right },
+            ) => left == right,
+            (Self::TooManyArtifactRefs(left), Self::TooManyArtifactRefs(right)) => left == right,
+            (Self::Sqlite(_), Self::Sqlite(_)) => true,
+            _ => false,
+        }
+    }
 }
 
 /// Владелец `run_id`. Пара `(run_scope, run_id)` однозначно указывает на
@@ -381,6 +430,22 @@ pub enum ExecutionEventBody {
 }
 
 impl ExecutionEventBody {
+    /// Стабильная строка варианта для колонки `events.event_type` — так
+    /// storage-слой (08-2) остаётся читаемым тем же generic-путём, что и
+    /// legacy-события, без повторной десериализации `payload`.
+    pub fn kind_str(&self) -> &'static str {
+        match self {
+            ExecutionEventBody::ActionRequest { .. } => "ledger.action_request",
+            ExecutionEventBody::ToolCall { .. } => "ledger.tool_call",
+            ExecutionEventBody::Observation { .. } => "ledger.observation",
+            ExecutionEventBody::ToolReceipt { .. } => "ledger.tool_receipt",
+            ExecutionEventBody::TypedFailure { .. } => "ledger.typed_failure",
+            ExecutionEventBody::ApprovalDecision { .. } => "ledger.approval_decision",
+            ExecutionEventBody::Cancellation { .. } => "ledger.cancellation",
+            ExecutionEventBody::RecoveryDecision { .. } => "ledger.recovery_decision",
+        }
+    }
+
     fn validate(&self) -> Result<(), LedgerContractError> {
         match self {
             ExecutionEventBody::ActionRequest {
@@ -602,6 +667,149 @@ pub fn legacy_event_id(
     write_field(&mut hasher, created_at.as_bytes());
     let digest = hasher.finalize();
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Ставит расширение схемы 08-2 идемпотентно: аддитивные колонки `events` и
+/// rebuild CHECK `workflow_run_nodes` под `cancelling`. Вызывается при каждом
+/// открытии базы, тем же способом, что `workflow_store::install_schema` и
+/// соседи (`lib.rs::open_internal`) — без отдельной ветки `migrate()`,
+/// потому что `migrate()` не выполняется для баз, уже стоящих на v26+.
+pub fn install_schema(connection: &Connection) -> Result<(), LedgerContractError> {
+    // В реальном потоке `events` существует всегда — она создаётся первым
+    // же шагом `migrate()` (v0->v1) до того, как `open_internal` доходит до
+    // идемпотентных installer'ов. Проверка присутствия таблицы здесь — не
+    // подстраховка под гипотетический случай, а совместимость с тестовыми
+    // fixture-базами (`lib.rs::tests::migrates_schema_*`), которые сеют
+    // только `PRAGMA user_version` без промежуточных таблиц: для них
+    // расширение `events` просто не нужно.
+    let events_table_exists: bool = connection.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='events'",
+        [],
+        |row| row.get::<_, i64>(0),
+    )? > 0;
+    if events_table_exists {
+        // `events` уже непустая таблица в любой существующей базе — SQLite
+        // не позволяет добавить NOT NULL колонку без DEFAULT к непустой
+        // таблице, поэтому все новые колонки nullable, а обязательность для
+        // новых typed rows проверяется в `ExecutionEventV1::validate`, не
+        // CHECK-ограничением.
+        for column in [
+            "event_id TEXT",
+            "schema_version INTEGER",
+            "run_scope TEXT",
+            "run_id TEXT",
+            "session_id TEXT",
+            "action_id TEXT",
+            "effect_id TEXT",
+            "workflow_run_id TEXT",
+            "state_after TEXT",
+        ] {
+            // Ошибка «duplicate column name» — ожидаемый путь идемпотентности,
+            // тот же приём, что `model_provenance::install_schema`.
+            let _ = connection.execute(&format!("ALTER TABLE events ADD COLUMN {column}"), []);
+        }
+        connection.execute_batch(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_events_event_id
+                 ON events(event_id) WHERE event_id IS NOT NULL;
+             CREATE INDEX IF NOT EXISTS idx_events_run
+                 ON events(run_scope, run_id, sequence_id) WHERE run_id IS NOT NULL;
+             CREATE INDEX IF NOT EXISTS idx_events_action
+                 ON events(action_id) WHERE action_id IS NOT NULL;
+             CREATE INDEX IF NOT EXISTS idx_events_effect
+                 ON events(effect_id) WHERE effect_id IS NOT NULL;",
+        )?;
+    }
+
+    rebuild_workflow_run_nodes_check(connection)?;
+    Ok(())
+}
+
+/// `workflow_run_nodes.state` CHECK не допускает `cancelling` до этой
+/// миграции. SQLite не умеет менять CHECK на месте, поэтому таблица
+/// пересоздаётся: rename -> create -> copy -> drop, одной транзакцией.
+/// Проверено (план 08-2): ни одна таблица не ссылается на
+/// `workflow_run_nodes` через FOREIGN KEY, и у неё нет вторичных индексов
+/// кроме PRIMARY KEY — пересоздание безопасно без восстановления индексов.
+fn rebuild_workflow_run_nodes_check(connection: &Connection) -> Result<(), LedgerContractError> {
+    let current_sql: Option<String> = connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='workflow_run_nodes'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(current_sql) = current_sql else {
+        // workflow_store::install_schema ещё не создал таблицу — нечего
+        // пересобирать; следующий вызов install_schema (после того как
+        // workflow_store поставит таблицу) сделает это.
+        return Ok(());
+    };
+    if current_sql.contains("'cancelling'") {
+        return Ok(());
+    }
+    let transaction = connection.unchecked_transaction()?;
+    transaction.execute_batch(
+        "ALTER TABLE workflow_run_nodes RENAME TO workflow_run_nodes_legacy;
+         CREATE TABLE workflow_run_nodes (
+             run_id TEXT NOT NULL REFERENCES workflow_runs(run_id) ON DELETE CASCADE,
+             node_id TEXT NOT NULL,
+             action_kind TEXT NOT NULL,
+             state TEXT NOT NULL CHECK(state IN
+                 ('pending','ready','running','waiting_approval','cancelling','succeeded',
+                  'failed','timed_out','cancelled','blocked','denied','skipped','degraded',
+                  'unknown_outcome','dead_letter')),
+             attempts INTEGER NOT NULL DEFAULT 0,
+             output_json TEXT NOT NULL DEFAULT '',
+             error_code TEXT NOT NULL DEFAULT '',
+             error_message TEXT NOT NULL DEFAULT '',
+             approval_id TEXT NOT NULL DEFAULT '',
+             updated_at_ms INTEGER NOT NULL,
+             PRIMARY KEY(run_id, node_id)
+         );
+         INSERT INTO workflow_run_nodes(
+             run_id, node_id, action_kind, state, attempts, output_json,
+             error_code, error_message, approval_id, updated_at_ms)
+           SELECT run_id, node_id, action_kind, state, attempts, output_json,
+                  error_code, error_message, approval_id, updated_at_ms
+           FROM workflow_run_nodes_legacy;
+         DROP TABLE workflow_run_nodes_legacy;",
+    )?;
+    transaction.commit()?;
+    Ok(())
+}
+
+/// Присутствие и закрытость dispatch marker (`run_effects`) для одного
+/// action при старте Core. Storage-слой читает это из SQL; классификация
+/// ниже — чистая функция, тестируемая без базы.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DispatchMarkerStatus {
+    /// Эффект не диспатчился — pre-dispatch restart.
+    Absent,
+    /// `started_at` есть, `completed_at` — нет: исход неизвестен.
+    StartedNotCompleted,
+    /// Эффект уже закрыт.
+    Completed,
+}
+
+/// Классификация одного нетерминального action при старте Core, по правилу
+/// плана 08-2 §5: pre-dispatch (`Absent`) не переписывается — `pending`/
+/// `ready` уже resumable по контракту, только run-level помечается
+/// `interrupted` отдельно (не здесь — это ответственность workflow runtime);
+/// marker открыт (`StartedNotCompleted`) -> `unknown_outcome`, блокирует
+/// слепой повтор; `waiting_approval` не трогается (обычный TTL); уже
+/// terminal action не трогается никогда. Возвращает `None`, когда
+/// reconciliation-событие публиковать не нужно.
+pub fn reconcile_action_state(
+    previous: ActionState,
+    marker: DispatchMarkerStatus,
+) -> Option<ActionState> {
+    if previous.is_terminal() || previous == ActionState::WaitingApproval {
+        return None;
+    }
+    match marker {
+        DispatchMarkerStatus::StartedNotCompleted => Some(ActionState::UnknownOutcome),
+        DispatchMarkerStatus::Absent | DispatchMarkerStatus::Completed => None,
+    }
 }
 
 #[cfg(test)]
@@ -917,5 +1125,134 @@ mod tests {
         let a = legacy_event_id(1, "ab", "c", b"", "");
         let b = legacy_event_id(1, "a", "bc", b"", "");
         assert_ne!(a, b);
+    }
+
+    fn open_test_connection() -> Connection {
+        let connection = Connection::open_in_memory().expect("in-memory connection");
+        connection
+            .pragma_update(None, "foreign_keys", true)
+            .expect("enable foreign keys");
+        connection
+    }
+
+    #[test]
+    fn install_schema_adds_event_columns_idempotently() {
+        let connection = open_test_connection();
+        connection
+            .execute_batch(
+                "CREATE TABLE events (
+                    sequence_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    payload BLOB NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                );
+                INSERT INTO events(task_id, event_type, payload) VALUES ('legacy-task', 'legacy.type', x'00');",
+            )
+            .expect("legacy events table with a row");
+
+        install_schema(&connection).expect("first install");
+        install_schema(&connection).expect("second install is a no-op");
+
+        let (task_id, event_id): (String, Option<String>) = connection
+            .query_row(
+                "SELECT task_id, event_id FROM events WHERE task_id = 'legacy-task'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("legacy row survives");
+        assert_eq!(task_id, "legacy-task");
+        assert_eq!(event_id, None);
+    }
+
+    #[test]
+    fn install_schema_rebuilds_workflow_run_nodes_check_and_keeps_rows() {
+        let connection = open_test_connection();
+        connection
+            .execute_batch(
+                "CREATE TABLE events (
+                    sequence_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    payload BLOB NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                );
+                CREATE TABLE workflow_runs (
+                    run_id TEXT PRIMARY KEY NOT NULL,
+                    state TEXT NOT NULL
+                );
+                CREATE TABLE workflow_run_nodes (
+                    run_id TEXT NOT NULL REFERENCES workflow_runs(run_id) ON DELETE CASCADE,
+                    node_id TEXT NOT NULL,
+                    action_kind TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK(state IN
+                        ('pending','ready','running','waiting_approval','succeeded','failed',
+                         'timed_out','cancelled','blocked','denied','skipped','degraded',
+                         'unknown_outcome','dead_letter')),
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    output_json TEXT NOT NULL DEFAULT '',
+                    error_code TEXT NOT NULL DEFAULT '',
+                    error_message TEXT NOT NULL DEFAULT '',
+                    approval_id TEXT NOT NULL DEFAULT '',
+                    updated_at_ms INTEGER NOT NULL,
+                    PRIMARY KEY(run_id, node_id)
+                );
+                INSERT INTO workflow_runs(run_id, state) VALUES ('run-1', 'running');
+                INSERT INTO workflow_run_nodes(run_id, node_id, action_kind, state, updated_at_ms)
+                    VALUES ('run-1', 'node-1', 'shell', 'running', 1);",
+            )
+            .expect("legacy workflow tables with a row");
+
+        install_schema(&connection).expect("first install rebuilds CHECK");
+        install_schema(&connection).expect("second install is a no-op");
+
+        let state: String = connection
+            .query_row(
+                "SELECT state FROM workflow_run_nodes WHERE run_id = 'run-1' AND node_id = 'node-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("existing row survives rebuild");
+        assert_eq!(state, "running");
+
+        connection
+            .execute(
+                "UPDATE workflow_run_nodes SET state = 'cancelling' WHERE run_id = 'run-1' AND node_id = 'node-1'",
+                [],
+            )
+            .expect("CHECK now accepts cancelling");
+    }
+
+    #[test]
+    fn reconcile_action_state_only_flags_open_dispatch_marker() {
+        assert_eq!(
+            reconcile_action_state(
+                ActionState::Running,
+                DispatchMarkerStatus::StartedNotCompleted
+            ),
+            Some(ActionState::UnknownOutcome)
+        );
+        assert_eq!(
+            reconcile_action_state(ActionState::Running, DispatchMarkerStatus::Absent),
+            None
+        );
+        assert_eq!(
+            reconcile_action_state(ActionState::Pending, DispatchMarkerStatus::Absent),
+            None
+        );
+        assert_eq!(
+            reconcile_action_state(
+                ActionState::WaitingApproval,
+                DispatchMarkerStatus::StartedNotCompleted
+            ),
+            None
+        );
+        assert_eq!(
+            reconcile_action_state(
+                ActionState::Succeeded,
+                DispatchMarkerStatus::StartedNotCompleted
+            ),
+            None
+        );
     }
 }

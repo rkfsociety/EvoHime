@@ -31,7 +31,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 29;
+pub const SCHEMA_VERSION: u32 = 30;
 const LEGACY_SCHEMA_VERSION: u32 = 26;
 
 #[derive(Debug, thiserror::Error)]
@@ -81,6 +81,13 @@ pub enum StorageError {
     /// Нарушение контракта плана 01: scratchpad или artifact store.
     #[error("context operation failed: {0}")]
     Context(String),
+    /// Нарушение контракта execution ledger (план 08-1/08-2).
+    #[error("execution ledger contract violation: {0}")]
+    LedgerContract(#[from] execution_ledger::LedgerContractError),
+    /// Атомарный переход action+projection не применился: узел уже не в
+    /// ожидаемом исходном состоянии (гонка или устаревший вызов).
+    #[error("ledger node transition conflict for run {run_id} node {node_id}")]
+    LedgerNodeTransitionConflict { run_id: String, node_id: String },
 }
 
 pub struct LocalDatabase {
@@ -406,6 +413,12 @@ impl LocalDatabase {
         workflow_store::install_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         toolkit_store::install_schema(&connection)
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        // Схема 30 (план 08-2): typed execution ledger поверх events —
+        // аддитивные колонки и rebuild CHECK workflow_run_nodes под
+        // cancelling. Тем же идемпотентным путём, вызывается после
+        // workflow_store, чья таблица здесь пересобирается.
+        execution_ledger::install_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
@@ -1975,6 +1988,260 @@ impl LocalDatabase {
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Публикует один typed execution ledger event (план 08-1/08-2). Валидный
+    /// self-consistency контракт (`event.validate()`) проверяется до записи;
+    /// `payload` хранит канонический JSON события — старые читатели видят
+    /// его как непрозрачный BLOB, `event_type` несёт стабильный
+    /// `body.kind_str()` для обратной совместимости с generic-путём чтения.
+    pub fn append_ledger_event(
+        &self,
+        event: &execution_ledger::ExecutionEventV1,
+    ) -> Result<i64, StorageError> {
+        event.validate()?;
+        let payload = serde_json::to_vec(event)?;
+        self.connection.execute(
+            "INSERT INTO events(
+                task_id, event_type, payload, event_id, schema_version, run_scope,
+                run_id, session_id, action_id, effect_id, workflow_run_id, state_after
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            rusqlite::params![
+                event.task_id,
+                event.body.kind_str(),
+                payload,
+                event.event_id,
+                event.schema_version,
+                event.run_scope.as_str(),
+                event.run_id,
+                event.session_id,
+                event.action_id,
+                event.effect_id,
+                event.workflow_run_id,
+                event.state_after.map(|state| state.as_str()),
+            ],
+        )?;
+        Ok(self.connection.last_insert_rowid())
+    }
+
+    /// Атомарно публикует typed ledger event и переводит связанный
+    /// `workflow_run_nodes` узел из `from` в `to` — одна SQLite-транзакция,
+    /// один `commit()`. Незаконный переход или узел, уже покинувший `from`
+    /// (гонка/устаревший вызов), откатывает обе части: строка `events` не
+    /// появляется. Тот же SQL-guard, что `workflow_store::update_node_state`.
+    pub fn append_ledger_event_with_node_transition(
+        &self,
+        event: &execution_ledger::ExecutionEventV1,
+        run_id: &str,
+        node_id: &str,
+        from: execution_ledger::ActionState,
+        to: execution_ledger::ActionState,
+        now_ms: i64,
+    ) -> Result<i64, StorageError> {
+        execution_ledger::validate_transition(from, to)?;
+        event.validate()?;
+        let transaction = self.connection.unchecked_transaction()?;
+        let changed = transaction.execute(
+            "UPDATE workflow_run_nodes SET state = ?3, updated_at_ms = ?4
+              WHERE run_id = ?1 AND node_id = ?2 AND state = ?5",
+            rusqlite::params![run_id, node_id, to.as_str(), now_ms, from.as_str()],
+        )?;
+        if changed == 0 {
+            return Err(StorageError::LedgerNodeTransitionConflict {
+                run_id: run_id.to_string(),
+                node_id: node_id.to_string(),
+            });
+        }
+        let payload = serde_json::to_vec(event)?;
+        transaction.execute(
+            "INSERT INTO events(
+                task_id, event_type, payload, event_id, schema_version, run_scope,
+                run_id, session_id, action_id, effect_id, workflow_run_id, state_after
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            rusqlite::params![
+                event.task_id,
+                event.body.kind_str(),
+                payload,
+                event.event_id,
+                event.schema_version,
+                event.run_scope.as_str(),
+                event.run_id,
+                event.session_id,
+                event.action_id,
+                event.effect_id,
+                event.workflow_run_id,
+                event.state_after.map(|state| state.as_str()),
+            ],
+        )?;
+        let sequence_id = transaction.last_insert_rowid();
+        transaction.commit()?;
+        Ok(sequence_id)
+    }
+
+    /// Публикует один bounded `core_start` event для нового Core instance
+    /// (план 08-2 п.5). Вызывается ровно один раз при старте, до любой
+    /// reconciliation-классификации.
+    pub fn record_core_start(&self, core_instance_id: &str) -> Result<i64, StorageError> {
+        let event = execution_ledger::ExecutionEventV1 {
+            schema_version: 1,
+            event_id: uuid::Uuid::now_v7().to_string(),
+            sequence_id: None,
+            run_scope: execution_ledger::RunScope::System,
+            run_id: String::new(),
+            session_id: None,
+            task_id: "core".to_string(),
+            created_at_ms: 0,
+            state_after: None,
+            action_id: None,
+            tool_call_id: None,
+            observation_id: None,
+            receipt_id: None,
+            failure_id: None,
+            workflow_run_id: None,
+            node_id: None,
+            attempt_id: None,
+            effect_id: None,
+            model_request_id: None,
+            body: execution_ledger::ExecutionEventBody::RecoveryDecision {
+                decision: "core_start".to_string(),
+                evidence_digest: execution_ledger::legacy_event_id(
+                    0,
+                    core_instance_id,
+                    "core_start",
+                    core_instance_id.as_bytes(),
+                    "",
+                ),
+            },
+            redaction: execution_ledger::RedactionMeta::default(),
+        };
+        self.append_ledger_event(&event)
+    }
+
+    /// Reconciliation при старте Core (план 08-2 п.5): по каждому
+    /// нетерминальному action с известным `effect_id` смотрит на dispatch
+    /// marker в `run_effects` и, если он открыт (started без completed),
+    /// публикует НОВОЕ `unknown_outcome`-событие — исходная строка не
+    /// переписывается (единственный terminal outcome гарантируется
+    /// `execution_ledger::assert_single_terminal` на стороне читателя).
+    /// Pre-dispatch (marker отсутствует) и `waiting_approval` не трогаются —
+    /// они уже безопасны по контракту.
+    pub fn reconcile_ledger_on_startup(
+        &self,
+    ) -> Result<Vec<(String, execution_ledger::ActionState)>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT e.action_id, e.effect_id, e.state_after, e.task_id, e.run_scope,
+                    e.run_id, e.session_id, e.workflow_run_id
+               FROM events e
+               JOIN (
+                   SELECT action_id, MAX(sequence_id) AS latest_sequence
+                     FROM events
+                    WHERE action_id IS NOT NULL AND state_after IS NOT NULL
+                    GROUP BY action_id
+               ) latest ON latest.action_id = e.action_id
+                       AND latest.latest_sequence = e.sequence_id",
+        )?;
+        #[allow(clippy::type_complexity)]
+        let rows: Vec<(
+            String,
+            Option<String>,
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        )> = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                    row.get(7)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut reconciled = Vec::new();
+        for (
+            action_id,
+            effect_id,
+            state_after,
+            task_id,
+            run_scope,
+            run_id,
+            session_id,
+            workflow_run_id,
+        ) in rows
+        {
+            let Some(previous) = execution_ledger::ActionState::parse(&state_after) else {
+                continue;
+            };
+            let Some(effect_id) = effect_id else {
+                continue;
+            };
+            // Строки типизированного ledger всегда несут run_scope/run_id —
+            // их проставляет append_ledger_event; отсутствие означает, что
+            // это не typed row (не должно случиться при action_id IS NOT
+            // NULL, но пропускаем, а не паникуем).
+            let (Some(run_scope), Some(run_id)) = (run_scope, run_id) else {
+                continue;
+            };
+            let Some(run_scope) = execution_ledger::RunScope::parse(&run_scope) else {
+                continue;
+            };
+            let marker: Option<(Option<String>, Option<String>)> = self
+                .connection
+                .query_row(
+                    "SELECT started_at, completed_at FROM run_effects WHERE effect_id = ?1",
+                    [&effect_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            let status = match marker {
+                None => execution_ledger::DispatchMarkerStatus::Absent,
+                Some((_, Some(_))) => execution_ledger::DispatchMarkerStatus::Completed,
+                Some((Some(_), None)) => {
+                    execution_ledger::DispatchMarkerStatus::StartedNotCompleted
+                }
+                Some((None, None)) => execution_ledger::DispatchMarkerStatus::Absent,
+            };
+            let Some(new_state) = execution_ledger::reconcile_action_state(previous, status) else {
+                continue;
+            };
+            let event = execution_ledger::ExecutionEventV1 {
+                schema_version: 1,
+                event_id: uuid::Uuid::now_v7().to_string(),
+                sequence_id: None,
+                run_scope,
+                run_id,
+                session_id,
+                task_id,
+                created_at_ms: 0,
+                state_after: Some(new_state),
+                action_id: Some(action_id.clone()),
+                tool_call_id: None,
+                observation_id: None,
+                receipt_id: None,
+                failure_id: None,
+                workflow_run_id,
+                node_id: None,
+                attempt_id: None,
+                effect_id: Some(effect_id),
+                model_request_id: None,
+                body: execution_ledger::ExecutionEventBody::RecoveryDecision {
+                    decision: "startup_reconciliation".to_string(),
+                    evidence_digest: action_id.clone(),
+                },
+                redaction: execution_ledger::RedactionMeta::default(),
+            };
+            self.append_ledger_event(&event)?;
+            reconciled.push((action_id, new_state));
+        }
+        Ok(reconciled)
     }
 
     pub fn read_task_events(
@@ -4639,6 +4906,376 @@ mod tests {
         assert!(MemoryStoreSql::forget(database.connection(), "memory-1").expect("forget"));
 
         drop(database);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    fn sample_ledger_event(
+        event_id: &str,
+        run_id: &str,
+        action_id: &str,
+        state_after: crate::execution_ledger::ActionState,
+    ) -> crate::execution_ledger::ExecutionEventV1 {
+        crate::execution_ledger::ExecutionEventV1 {
+            schema_version: 1,
+            event_id: event_id.to_string(),
+            sequence_id: None,
+            run_scope: crate::execution_ledger::RunScope::Workflow,
+            run_id: run_id.to_string(),
+            session_id: Some("session-1".into()),
+            task_id: "task-ledger".into(),
+            created_at_ms: 1_700_000_000_000,
+            state_after: Some(state_after),
+            action_id: Some(action_id.to_string()),
+            tool_call_id: None,
+            observation_id: None,
+            receipt_id: None,
+            failure_id: None,
+            workflow_run_id: Some(run_id.to_string()),
+            node_id: Some("node-1".into()),
+            attempt_id: None,
+            effect_id: None,
+            model_request_id: None,
+            body: crate::execution_ledger::ExecutionEventBody::ToolCall {
+                tool_name: "shell".into(),
+                tool_call_hash: "hash".into(),
+                manifest_hash: None,
+            },
+            redaction: crate::execution_ledger::RedactionMeta::default(),
+        }
+    }
+
+    #[test]
+    fn append_ledger_event_round_trips_through_events_table() {
+        let path = temp_database_path("ledger-append");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        let event = sample_ledger_event(
+            "event-1",
+            "run-1",
+            "action-1",
+            crate::execution_ledger::ActionState::Running,
+        );
+        let sequence_id = database
+            .append_ledger_event(&event)
+            .expect("typed event appends");
+
+        let stored = database
+            .read_events_after(sequence_id - 1, 1)
+            .expect("read back")
+            .remove(0);
+        let round_tripped: crate::execution_ledger::ExecutionEventV1 =
+            serde_json::from_slice(&stored.payload).expect("payload decodes");
+        assert_eq!(round_tripped, event);
+        assert_eq!(stored.event_type, "ledger.tool_call");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn duplicate_event_id_violates_partial_unique_index() {
+        let path = temp_database_path("ledger-dup-id");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        let first = sample_ledger_event(
+            "same-event-id",
+            "run-1",
+            "action-1",
+            crate::execution_ledger::ActionState::Running,
+        );
+        let second = sample_ledger_event(
+            "same-event-id",
+            "run-1",
+            "action-2",
+            crate::execution_ledger::ActionState::Running,
+        );
+        database
+            .append_ledger_event(&first)
+            .expect("first insert succeeds");
+        let error = database
+            .append_ledger_event(&second)
+            .expect_err("duplicate event_id must be rejected");
+        assert!(matches!(error, StorageError::Sqlite(_)));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    fn insert_workflow_fixture(database: &LocalDatabase, run_id: &str, node_id: &str) {
+        use crate::workflow_store::{NodeState, RunState, WorkflowNodeRecord, WorkflowRunRecord};
+        let run = WorkflowRunRecord {
+            run_id: run_id.to_string(),
+            task_id: "task-ledger".into(),
+            template_id: "template-1".into(),
+            template_version: 1,
+            graph_id: "graph-1".into(),
+            graph_version: 1,
+            graph_hash: "graph-hash".into(),
+            graph_json: "{}".into(),
+            inputs_json: "{}".into(),
+            policy_json: "{}".into(),
+            state: RunState::Running,
+            created_at_ms: 1_700_000_000_000,
+            updated_at_ms: 1_700_000_000_000,
+            terminal_reason: String::new(),
+            cancel_requested: false,
+            lease_owner: String::new(),
+            lease_expires_at_ms: 0,
+        };
+        let node = WorkflowNodeRecord {
+            run_id: run_id.to_string(),
+            node_id: node_id.to_string(),
+            action_kind: "shell".into(),
+            state: NodeState::Running,
+            attempts: 0,
+            output_json: String::new(),
+            error_code: String::new(),
+            error_message: String::new(),
+            approval_id: String::new(),
+            updated_at_ms: 1_700_000_000_000,
+        };
+        crate::workflow_store::insert_run(database.connection(), &run, &[node])
+            .expect("workflow fixture inserts");
+    }
+
+    #[test]
+    fn node_transition_and_event_commit_together() {
+        let path = temp_database_path("ledger-transition-ok");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        insert_workflow_fixture(&database, "run-1", "node-1");
+        let event = sample_ledger_event(
+            "event-transition-ok",
+            "run-1",
+            "action-1",
+            crate::execution_ledger::ActionState::Succeeded,
+        );
+        database
+            .append_ledger_event_with_node_transition(
+                &event,
+                "run-1",
+                "node-1",
+                crate::execution_ledger::ActionState::Running,
+                crate::execution_ledger::ActionState::Succeeded,
+                1_700_000_001_000,
+            )
+            .expect("legal transition commits both parts");
+
+        let node_state: String = database
+            .connection()
+            .query_row(
+                "SELECT state FROM workflow_run_nodes WHERE run_id = 'run-1' AND node_id = 'node-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("node row reads");
+        assert_eq!(node_state, "succeeded");
+        assert_eq!(database.latest_event_sequence().expect("sequence reads"), 1);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn illegal_transition_rolls_back_without_writing_event() {
+        let path = temp_database_path("ledger-transition-illegal");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        insert_workflow_fixture(&database, "run-1", "node-1");
+        let event = sample_ledger_event(
+            "event-transition-illegal",
+            "run-1",
+            "action-1",
+            crate::execution_ledger::ActionState::Running,
+        );
+        let error = database
+            .append_ledger_event_with_node_transition(
+                &event,
+                "run-1",
+                "node-1",
+                crate::execution_ledger::ActionState::Succeeded,
+                crate::execution_ledger::ActionState::Running,
+                1_700_000_001_000,
+            )
+            .expect_err("Succeeded -> Running is not an allowed transition");
+        assert!(matches!(
+            error,
+            StorageError::LedgerContract(
+                crate::execution_ledger::LedgerContractError::IllegalTransition { .. }
+            )
+        ));
+        assert_eq!(database.latest_event_sequence().expect("sequence reads"), 0);
+        let node_state: String = database
+            .connection()
+            .query_row(
+                "SELECT state FROM workflow_run_nodes WHERE run_id = 'run-1' AND node_id = 'node-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("node row reads");
+        assert_eq!(
+            node_state, "running",
+            "node state must not change on rollback"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn node_state_mismatch_rolls_back_without_writing_event() {
+        let path = temp_database_path("ledger-transition-conflict");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        insert_workflow_fixture(&database, "run-1", "node-1");
+        // Узел на самом деле в 'running', но вызывающий думает, что в 'ready'.
+        let event = sample_ledger_event(
+            "event-transition-conflict",
+            "run-1",
+            "action-1",
+            crate::execution_ledger::ActionState::Running,
+        );
+        let error = database
+            .append_ledger_event_with_node_transition(
+                &event,
+                "run-1",
+                "node-1",
+                crate::execution_ledger::ActionState::Ready,
+                crate::execution_ledger::ActionState::Running,
+                1_700_000_001_000,
+            )
+            .expect_err("stale from-state must be rejected");
+        assert!(matches!(
+            error,
+            StorageError::LedgerNodeTransitionConflict { .. }
+        ));
+        assert_eq!(database.latest_event_sequence().expect("sequence reads"), 0);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn record_core_start_publishes_one_system_scope_event() {
+        let path = temp_database_path("ledger-core-start");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        let sequence_id = database
+            .record_core_start("core-instance-1")
+            .expect("core_start publishes");
+        assert!(sequence_id > 0);
+        let stored = database
+            .read_events_after(sequence_id - 1, 1)
+            .expect("read back")
+            .remove(0);
+        assert_eq!(stored.event_type, "ledger.recovery_decision");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn reconcile_startup_flags_open_dispatch_marker_as_unknown_outcome() {
+        let path = temp_database_path("ledger-reconcile");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        insert_workflow_fixture(&database, "run-1", "node-1");
+
+        database
+            .create_project("project-reconcile", "Reconcile", ".", None)
+            .expect("project creates");
+        let task = WorkItemRecord {
+            id: "task-reconcile".into(),
+            project_id: "project-reconcile".into(),
+            parent_id: None,
+            title: "reconcile me".into(),
+            description: String::new(),
+            source_ref: None,
+            acceptance_criteria: String::new(),
+            non_goals: String::new(),
+            status: "in_progress".into(),
+            priority: 0,
+            estimate: None,
+            complexity: None,
+            attempt_count: 0,
+            version: 1,
+        };
+        database.create_work_item(&task).expect("task creates");
+        let run = RunRecord {
+            id: "effect-run-1".into(),
+            work_item_id: task.id.clone(),
+            status: "running".into(),
+            policy_snapshot: vec![],
+            role_snapshot: vec![],
+            skill_snapshot: vec![],
+            model_route_snapshot: vec![],
+        };
+        let checkpoint = RunCheckpointRecord {
+            run_id: run.id.clone(),
+            checkpoint_id: "checkpoint-1".into(),
+            stage: "build".into(),
+            node_id: "node-1".into(),
+            attempt: 1,
+            input_hash: "input-hash".into(),
+            state_json: b"{}".to_vec(),
+            pending_effects_json: b"[]".to_vec(),
+            committed_at: "2026-01-01T00:00:00Z".into(),
+        };
+        let effect = RunEffectRecord {
+            effect_id: "effect-open-1".into(),
+            run_id: run.id.clone(),
+            node_id: "node-1".into(),
+            kind: "bounded_build".into(),
+            idempotency_key: "run-1:node-1".into(),
+            immutable_intent_hash: "intent-hash".into(),
+            state: "prepared".into(),
+            started_at: None,
+            completed_at: None,
+            result_hash: None,
+        };
+        database
+            .prepare_run_effect(&run, &checkpoint, &effect)
+            .expect("effect prepares");
+        database
+            .mark_effect_executing("effect-open-1")
+            .expect("effect marker opens (started, not completed)");
+
+        let mut running_event = sample_ledger_event(
+            "event-running-1",
+            "run-1",
+            "action-open-1",
+            crate::execution_ledger::ActionState::Running,
+        );
+        running_event.effect_id = Some("effect-open-1".into());
+        database
+            .append_ledger_event(&running_event)
+            .expect("running action recorded");
+
+        let reconciled = database
+            .reconcile_ledger_on_startup()
+            .expect("reconciliation runs");
+        assert_eq!(reconciled.len(), 1);
+        assert_eq!(reconciled[0].0, "action-open-1");
+        assert_eq!(
+            reconciled[0].1,
+            crate::execution_ledger::ActionState::UnknownOutcome
+        );
+
+        // Исходная строка не переписана — reconciliation добавила новую.
+        let all_action_events: Vec<crate::execution_ledger::ActionState> = database
+            .read_events_after(0, 100)
+            .expect("events read")
+            .into_iter()
+            .filter_map(|record| {
+                serde_json::from_slice::<crate::execution_ledger::ExecutionEventV1>(&record.payload)
+                    .ok()
+            })
+            .filter(|event| event.action_id.as_deref() == Some("action-open-1"))
+            .filter_map(|event| event.state_after)
+            .collect();
+        assert_eq!(
+            all_action_events,
+            vec![
+                crate::execution_ledger::ActionState::Running,
+                crate::execution_ledger::ActionState::UnknownOutcome,
+            ]
+        );
+
+        assert!(
+            database
+                .reconcile_ledger_on_startup()
+                .expect("second reconciliation runs")
+                .is_empty(),
+            "unknown_outcome is terminal; reconciliation must not repeat"
+        );
         let _ = std::fs::remove_file(&path);
     }
 }
