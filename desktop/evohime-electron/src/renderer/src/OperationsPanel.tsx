@@ -112,8 +112,10 @@ function parsePayload<T>(event: CoreEvent | undefined, key: string): T | null {
   }
 }
 
+// `events` holds the newest event first (App.tsx prepends on receipt), so
+// the latest match is the FIRST one found here — not the last.
 function latest(events: readonly CoreEvent[], eventType: string): CoreEvent | undefined {
-  return events.filter((event) => event.eventType === eventType).at(-1)
+  return events.find((event) => event.eventType === eventType)
 }
 
 /** Read-only projection of Core-owned memory/child/schedule state. */

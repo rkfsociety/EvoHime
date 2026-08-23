@@ -284,10 +284,16 @@ export function App(): React.JSX.Element {
  * предупреждением, а не «выключено». Утверждать, что микрофон выключен, можно
  * только зная это.
  */
-function ListeningIndicator({ events }: { readonly events: readonly CoreEvent[] }): React.JSX.Element {
-  const payload = events
-    .filter((event) => event.eventType === 'ambient.state' || event.eventType === 'ambient.status')
-    .at(-1)
+export function ListeningIndicator({
+  events
+}: {
+  readonly events: readonly CoreEvent[]
+}): React.JSX.Element {
+  // `events` holds the newest event first (prepended on receipt below), so
+  // the latest match is the FIRST one found — not the last.
+  const payload = events.find(
+    (event) => event.eventType === 'ambient.state' || event.eventType === 'ambient.status'
+  )
   let state: ListeningState | null = null
   let reason: ListeningReason | null = null
   if (payload) {

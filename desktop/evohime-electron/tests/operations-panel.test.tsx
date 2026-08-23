@@ -117,6 +117,31 @@ describe('operations panel', () => {
     expect(payload.idempotencyKey.length).toBeGreaterThan(0)
   })
 
+  it('берёт счётчики из самого нового memory.pending, а не из самого старого в буфере', async () => {
+    // App.tsx кладёт новое событие в начало events, так что первое
+    // совпадение — самое свежее. Раньше latest() брал .filter().at(-1) —
+    // самое старое ещё не вытесненное совпадение — и на длинной сессии с
+    // несколькими memory.pending показывал протухшие счётчики.
+    render(
+      <OperationsPanel
+        connection="connected"
+        events={[
+          event('memory.pending', {
+            records: [metadata('cand-fresh')],
+            counts: { pending_confirmation: 3, confirmed: 9, expired: 1 }
+          }),
+          event('memory.pending', {
+            records: [metadata('cand-stale')],
+            counts: { pending_confirmation: 1, confirmed: 4, expired: 2 }
+          })
+        ]}
+      />
+    )
+    expect(await screen.findByText('ждут решения')).toBeTruthy()
+    expect(screen.getByText('3')).toBeTruthy()
+    expect(screen.getByText(/9 активных · 1 истекло/)).toBeTruthy()
+  })
+
   it('never renders a body and marks sensitive candidates as hidden', async () => {
     render(
       <OperationsPanel
