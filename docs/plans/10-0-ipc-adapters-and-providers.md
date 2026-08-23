@@ -33,7 +33,7 @@ provider contract.
 ## Решения, зафиксированные ревью
 
 1. `CoreInfo` добавляется аддитивно в `Ready`; существующие поля envelope
-   остаются совместимыми для WinUI compatibility runtime.
+   сохраняют совместимость с уже выпущенными Electron shell/Core peers.
 2. `core_instance_id + session_epoch` — идентичность Core generation,
    `sequence_id` — ревизия event journal, а `target_generation` — отдельная
    ревизия выбранного workspace/route/backend. Их нельзя заменять одним
@@ -88,7 +88,7 @@ provider в deterministic tests.
 - [10-1 — CoreInfo и version negotiation](10-1-core-info-negotiation.md)
 - [10-2 — adapter boundary и provider settings](10-2-adapter-provider-boundary.md)
 - [10-3 — target scope и stale projection](10-3-target-projection-lifecycle.md)
-- [10-4 — acceptance и compatibility closure](10-4-ipc-provider-acceptance.md)
+- [10-4 — acceptance и Electron/Core contract closure](10-4-ipc-provider-acceptance.md)
 
 Порядок: 10-1 → 10-2 → 10-3 → 10-4.
 

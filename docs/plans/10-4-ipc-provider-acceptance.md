@@ -1,4 +1,4 @@
-# 10-4 — Acceptance и compatibility closure
+# 10-4 — Acceptance и Electron/Core contract closure
 
 ## Цель
 
@@ -11,9 +11,8 @@ provider network.
 ### Блокирующие
 
 - 10-1, 10-2 и 10-3 с их Rust/Electron fixtures;
-- принятые compatibility suites текущего desktop IPC и WinUI transitional
-  shell;
-- generated proto types синхронизированы между Rust, Electron и C#.
+- принятые Rust и Electron contract suites текущего desktop IPC;
+- generated proto types синхронизированы между Rust и Electron.
 
 ### Опциональные
 
@@ -62,7 +61,8 @@ provider network.
 - static/security test запрещает renderer imports для pipe, HTTP, protobuf,
   SQLite и filesystem;
 - `provider.*` сохраняет только shell summary и не раскрывает ключ;
-- legacy `Ready` без `core_info` остаётся совместимым для C# consumer;
+- legacy `Ready` без `core_info` остаётся совместимым для старого Electron
+  consumer;
 - `ProviderSummary` в renderer не содержит ключ, а `restarted` соответствует
   фактической смене `core_instance_id/session_epoch`.
 
@@ -72,9 +72,7 @@ provider network.
   и targeted adapter/target tests;
 - Electron из `desktop/evohime-electron`: `npm run check:protocol`, `npm run typecheck`,
   `npm test`;
-- compatibility suite:
-  `dotnet test desktop/EvoHime.Tests/EvoHime.Tests.csproj -p:Platform=x64`
-  и `dotnet test desktop/EvoHime.IpcTests/EvoHime.IpcTests.csproj`;
+- Electron contract suite и targeted Rust desktop-ipc tests;
 - static-проверки на запрещённые renderer imports, прямые transport calls и
   redaction;
 - `git diff --check`, а когда в объёме release packaging — ещё и
@@ -89,7 +87,7 @@ dispatch count и projection result. Простого `ok` или HTTP status б
 После прохождения матрицы контракт переносится в `docs/architecture.md`,
 подтверждённое состояние и конкретные тесты — в `docs/current-state.md`,
 обновляются `docs/development-plan.md` и `docs/plans/README.md`, generated
-protocol и compatibility references сверяются, затем удаляются все файлы
-плана 10. Удаление допустимо только task-only коммитом после свежих проверок;
+protocol references сверяются, затем удаляются все файлы плана 10. Удаление
+допустимо только task-only коммитом после свежих проверок;
 неполная реализация остаётся в этих планах с явным разделом о реализованном
 и недостающем поведении и не помечается выполненной.

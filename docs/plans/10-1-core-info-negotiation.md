@@ -2,8 +2,8 @@
 
 ## Цель
 
-Сделать совместимость Core и shell явной до начала рабочей сессии, сохранив
-совместимость с текущими `Ready`/`Handshake` consumers.
+Сделать совместимость Core и Electron shell явной до начала рабочей сессии,
+сохранив совместимость с уже выпущенными `Ready`/`Handshake` consumers.
 
 ## Что уже есть в checkout
 
@@ -32,7 +32,7 @@ auth/reconnect flow.
 - контракты 08-3/08-4 после их принятия для replay, gap и Core generation
   semantics;
 - контракты 09-1/09-4 после их принятия для capability/policy names;
-- текущие generated Rust, Electron и C# compatibility fixtures.
+- текущие generated Rust и Electron protocol fixtures.
 
 ### Опциональные
 
@@ -59,8 +59,8 @@ auth/reconnect flow.
 
    `core_instance_id` и `session_epoch` не дублируются в `CoreInfo`: для
    каждого envelope источником истины остаются существующие поля envelope.
-   Старый consumer, который игнорирует `core_info`, продолжает работать по
-   старому `Ready` contract.
+   Старый Electron consumer, который игнорирует `core_info`, продолжает
+   работать по старому `Ready` contract.
 
 2. Использовать ровно один алгоритм на Rust и Electron — уже существующий
    `negotiate_protocol`/`protocol-version.ts`, а не новый: major должен
@@ -101,7 +101,7 @@ auth/reconnect flow.
   (`starting`…`fatal`) и bounded `reason` string сохраняются, чтобы renderer
   и его тесты не ломались, а typed code становится вторым полем, а не
   заменой;
-- compatibility shell: отсутствие `core_info` трактуется как legacy peer,
+- старый Electron shell: отсутствие `core_info` трактуется как legacy peer,
   а не как повреждённый frame.
 
 ## Проверки
@@ -111,8 +111,9 @@ auth/reconnect flow.
 - unavailable Core, auth rejection, stale session и reconnect;
 - epoch/instance change сбрасывает cache, queue и sequence до resync;
 - oversized frame/request отклоняется без изменения projection;
-- `Ready` без `core_info` принимается как legacy peer, а не как ошибка;
-- один known-answer fixture для Rust, Electron и C# protocol/auth path;
+- `Ready` без `core_info` принимается от старого Electron peer как legacy,
+  а не как ошибка;
+- один known-answer fixture для Rust и Electron protocol/auth path;
 - `npm run check:protocol`, targeted Rust desktop-ipc tests и Electron
   protocol/pipe-client tests.
 
@@ -120,5 +121,5 @@ auth/reconnect flow.
 
 Shell не отправляет рабочую команду до успешного auth + negotiation, каждый
 отказ имеет typed availability code, effective limits одинаковы на Rust и
-Electron, а старый compatibility consumer продолжает принимать `Ready`
-без `core_info`.
+Electron, а старый Electron peer продолжает принимать `Ready` без
+`core_info`.
