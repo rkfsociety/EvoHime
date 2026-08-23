@@ -42,8 +42,9 @@ runtime и раздел «Составные задачи» в Electron. CAMEL �
 архитектурными reference и не являются runtime-зависимостями продукта.
 План 10: IPC, version negotiation и provider boundary реализован. Его контракт
 перенесён в `architecture.md`, подтверждённое состояние — в `current-state.md`;
-планы 11 (typed memory и Core-first RAG) и 12 (local telemetry и deterministic
-evaluation) также реализованы; следующим исполняемым блоком остаётся план 13.
+планы 11 (typed memory и Core-first RAG), 12 (local telemetry и deterministic
+evaluation) и 13 (изолированный browser backend) также реализованы; следующим
+исполняемым блоком остаётся план 14.
 
 ## Текущий статус
 

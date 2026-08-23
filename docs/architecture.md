@@ -648,3 +648,10 @@ model-request provenance; эти источники остаются source of t
 Offline evals используют literal fixtures, frozen inputs и не имеют доступа к
 production filesystem, network, tools или SQLite; malformed traces получают
 typed diagnostics, а неизвестный результат не считается pass.
+## Изолированный browser backend
+
+Browser tools остаются Core-owned и permission-gated. CDP session привязана к
+task/run, URL проходит SSRF-проверку, mutation tools требуют approval, а
+selector/type inputs bounded; отсутствие CDP configuration даёт typed failure,
+не unrestricted fallback. Browser output и screenshot остаются внутри
+workspace sandbox и не раскрывают typed text в structured output.

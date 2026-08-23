@@ -333,3 +333,15 @@ passed, 2 штатно skipped; `npm run typecheck`, `npm run check:protocol`,
 Проверки 2026-08-23: `cargo test --locked -p evohime-core
 telemetry::tests` — 2 теста прошли; `cargo fmt --all` и `git diff --check`
 прошли.
+## План 13 — изолированный browser backend — реализован
+
+- Browser session tools используют Core tool registry, BrowserAccess policy,
+  SSRF URL validation, bounded selector/text/screenshot inputs и cancellation/
+  approval path; CDP configuration отсутствует — capability недоступна.
+- Typed browser lifecycle, evidence, egress and packaging boundaries закреплены
+  в architecture; текущий runtime не включает внешний Node и не имеет
+  unrestricted fallback.
+
+Проверки 2026-08-23: `cargo test --locked -p evohime-tool-runtime` — 135
+тестов прошли, 1 ignored и 6 network integration tests прошли; `cargo fmt
+--all` и `git diff --check` прошли.

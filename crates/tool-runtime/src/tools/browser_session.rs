@@ -55,6 +55,7 @@ const MAX_SETTLE_MS: u64 = 5_000;
 const OPEN_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_SCREENSHOT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_TYPE_TEXT_CHARS: usize = 16 * 1024;
+const MAX_SELECTOR_CHARS: usize = 512;
 
 #[derive(Debug, Deserialize)]
 struct NavigateInput {
@@ -198,6 +199,12 @@ pub async fn click(ctx: &ToolContext, value: Value) -> Result<ToolResult, ToolEr
             message: "selector must not be empty".into(),
         });
     }
+    if input.selector.chars().count() > MAX_SELECTOR_CHARS {
+        return Err(ToolError::InvalidInput {
+            tool: CLICK_NAME.to_string(),
+            message: format!("selector exceeds {MAX_SELECTOR_CHARS} character limit"),
+        });
+    }
 
     let session = cdp::session_for_task(ctx.task_id, &base, OPEN_TIMEOUT)
         .await
@@ -322,6 +329,12 @@ pub async fn type_text(ctx: &ToolContext, value: Value) -> Result<ToolResult, To
         return Err(ToolError::InvalidInput {
             tool: TYPE_NAME.to_string(),
             message: "selector must not be empty".into(),
+        });
+    }
+    if input.selector.chars().count() > MAX_SELECTOR_CHARS {
+        return Err(ToolError::InvalidInput {
+            tool: TYPE_NAME.to_string(),
+            message: format!("selector exceeds {MAX_SELECTOR_CHARS} character limit"),
         });
     }
     if input.text.chars().count() > MAX_TYPE_TEXT_CHARS {
