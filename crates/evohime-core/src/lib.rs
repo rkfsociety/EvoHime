@@ -960,6 +960,7 @@ pub mod memory_extraction;
 pub mod observability;
 pub mod permission_rules;
 pub mod plan;
+pub mod policy_gate;
 pub mod prd;
 pub mod provider_resilience;
 pub use provider_resilience::{
@@ -4576,6 +4577,46 @@ impl ToolAgent {
     }
 
     // Аргументы повторяют поля ActionRequest чека.
+    fn capability_snapshot_for_action(
+        action_id: Uuid,
+        task_id: &str,
+        tool: &str,
+        scope: &str,
+    ) -> Result<evohime_receipts::capability::CapabilitySnapshotV1, String> {
+        use evohime_receipts::capability::{CapabilityLimits, CapabilitySnapshotV1};
+        CapabilitySnapshotV1 {
+            snapshot_id: format!("snapshot:{action_id}"),
+            run_id: format!("run:{task_id}"),
+            session_id: "session:anonymous".into(),
+            task_id: format!("task:{task_id}"),
+            parent_snapshot_hash: None,
+            policy_id: "policy:tool-v1".into(),
+            policy_version: 1,
+            policy_hash: evohime_receipts::sha256_hex(b"policy:tool-v1"),
+            manifest_hash: evohime_receipts::sha256_hex(tool.as_bytes()),
+            workspace_anchors: vec![format!("scope:{scope}")],
+            operation_scopes: vec![scope.into()],
+            permissions: vec!["permission-v1".into()],
+            tool_identities: vec![tool.into()],
+            network_routes: vec![],
+            adapter_scopes: vec![],
+            secret_refs: vec![],
+            limits: CapabilityLimits {
+                timeout_ms: 30_000,
+                input_bytes: 256 * 1024,
+                output_bytes: 512 * 1024,
+                concurrency: 1,
+                tool_calls: 1,
+                token_budget: 0,
+                cost_micros: 0,
+            },
+            snapshot_hash: String::new(),
+        }
+        .finalize()
+        .map_err(|error| error.to_string())
+    }
+
+    // Аргументы повторяют поля ActionRequest чека.
     #[allow(clippy::too_many_arguments)]
     async fn receipt_prepare_approval(
         &self,
@@ -4604,6 +4645,7 @@ impl ToolAgent {
             parent_approval_ref: None,
             preview: serde_json::to_string(preview).unwrap_or_else(|_| "approval".to_owned()),
         };
+        let capability = Self::capability_snapshot_for_action(action_id, task_id, tool, scope)?;
         let mut database = journal.database().lock().await;
         let signer = CoreReceiptSigner(Arc::clone(keys));
         let mut runtime = ReceiptRuntime::new(database.connection_mut(), &signer)
@@ -4623,6 +4665,26 @@ impl ToolAgent {
                 return Err(code);
             }
         };
+        drop(runtime);
+        evohime_receipts::runtime::bind_capability_to_action(
+            database.connection(),
+            action_id,
+            &capability,
+            1,
+        )
+        .map_err(|e| e.to_string())?;
+        let decision = evohime_receipts::capability::PolicyDecision::new(
+            evohime_receipts::capability::PolicyOutcome::ApprovalRequired,
+            "approval_required",
+        )
+        .map_err(|e| e.to_string())?;
+        evohime_receipts::runtime::persist_policy_decision(
+            database.connection(),
+            action_id,
+            Some(&capability.snapshot_hash),
+            &decision,
+        )
+        .map_err(|e| e.to_string())?;
         match prepared {
             ReceiptPrepareOutcome::ApprovalRequired { .. } => Ok(()),
             _ => Err("receipt.approval_required".to_owned()),
@@ -4653,6 +4715,8 @@ impl ToolAgent {
             parent_approval_ref: None,
             preview: serde_json::to_string(preview).unwrap_or_else(|_| "read".into()),
         };
+        let capability =
+            Self::capability_snapshot_for_action(request.action_id, task_id, tool, scope)?;
         let mut database = journal.database().lock().await;
         let signer = CoreReceiptSigner(Arc::clone(keys));
         let mut runtime =
@@ -4675,6 +4739,28 @@ impl ToolAgent {
         if !matches!(prepared, ReceiptPrepareOutcome::Prepared { .. }) {
             return Err("receipt.precondition_failed".into());
         }
+        drop(runtime);
+        evohime_receipts::runtime::bind_capability_to_action(
+            database.connection(),
+            request.action_id,
+            &capability,
+            1,
+        )
+        .map_err(|e| e.to_string())?;
+        let decision = evohime_receipts::capability::PolicyDecision::new(
+            evohime_receipts::capability::PolicyOutcome::Allowed,
+            "preflight_allowed",
+        )
+        .map_err(|e| e.to_string())?;
+        evohime_receipts::runtime::persist_policy_decision(
+            database.connection(),
+            request.action_id,
+            Some(&capability.snapshot_hash),
+            &decision,
+        )
+        .map_err(|e| e.to_string())?;
+        let runtime =
+            ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| e.to_string())?;
         runtime
             .mark_started(request.action_id)
             .map_err(|e| e.to_string())?;
@@ -4738,6 +4824,7 @@ impl ToolAgent {
             parent_approval_ref: None,
             preview: serde_json::to_string(preview).unwrap_or_else(|_| "approval".to_owned()),
         };
+        let capability = Self::capability_snapshot_for_action(action_id, task_id, tool, scope)?;
         // Execution-gate policy recheck: a stale approval never bypasses a
         // policy that changed after Prepare. This is a global-mode recheck
         // (scope-specific rechecks are covered separately by the exact
@@ -4755,7 +4842,14 @@ impl ToolAgent {
             .grant_approval(approval_id)
             .map_err(|e| e.to_string())?;
         runtime
-            .claim_approval_checked(&request, approval_id, |_| policy_ok)
+            .claim_approval_checked_with_binding(
+                &request,
+                approval_id,
+                &capability.session_id,
+                &capability.snapshot_hash,
+                capability.policy_version,
+                |_| policy_ok,
+            )
             .map_err(|e| e.to_string())?;
         Ok((action_id, request))
     }
@@ -4849,6 +4943,9 @@ impl ToolAgent {
                 ))
             }
             evohime_tool_runtime::ToolPreflightDecision::ApprovalRequired { .. } => {
+                // A preflight approval request must never fall through to the
+                // effect implementation. Re-entering the ordinary execute
+                // path creates the approval intent and returns NeedsApproval.
                 self.tools
                     .execute_with_cancellation(context, name, input, cancellation)
                     .await
@@ -7583,11 +7680,10 @@ impl ToolAgent {
                                             }
                                             let outcome = match self
                                                 .tools
-                                                .execute_after_approval(
+                                                .execute_after_durable_approval(
                                                     &context,
                                                     &tool,
                                                     input,
-                                                    approval_id,
                                                     cancellation.clone(),
                                                 )
                                                 .await

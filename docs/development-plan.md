@@ -40,7 +40,7 @@ model-request provenance реализованы и перенесены в ка�
 реализована: контракт `workflow/v1`, Core-owned реестр и шаблоны, durable
 runtime и раздел «Составные задачи» в Electron. CAMEL и AutoGPT остались
 архитектурными reference и не являются runtime-зависимостями продукта.
-Ближайший исполняемый план — 07: tool manifests, Action Console и telemetry.
+Ближайшие исполняемые планы — 10: IPC, version negotiation и provider boundary.
 
 ## Текущий статус
 
@@ -48,10 +48,10 @@ Legacy web UI, browser launcher, HTTP server и PostgreSQL persistence удал�
 Core + SQLite + authenticated named-pipe IPC сохраняются. Пользовательская оболочка
 — Electron; WinUI — compatibility runtime.
 
-Этапы 02–06 завершены. Их контракты находятся в [`architecture.md`](architecture.md),
+Этапы 02–06 и 09 завершены. Их контракты находятся в [`architecture.md`](architecture.md),
 подтверждённое состояние — в [`current-state.md`](current-state.md). Следующее
-независимое направление — план 07 из
-[`plans/07-0-superagi-inspired-tooling.md`](plans/07-0-superagi-inspired-tooling.md).
+независимое направление — план 10. План 07 остаётся отдельным предложенным
+направлением без исполняемого файла в текущем каталоге.
 
 После завершения foundation добавлен функциональный slice «Ревью планов» в
 Electron: additive desktop IPC, `plan_review` в Core и event journal для

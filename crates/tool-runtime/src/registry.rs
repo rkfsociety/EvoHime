@@ -777,12 +777,11 @@ impl ToolRegistry {
         }
     }
 
-    pub async fn execute_after_approval(
+    pub async fn execute_after_durable_approval(
         &self,
         ctx: &ToolContext,
         name: &str,
         input: Value,
-        approval_id: Uuid,
         cancellation: CancellationToken,
     ) -> Result<ToolResult, ToolError> {
         let definition = self
@@ -814,31 +813,6 @@ impl ToolRegistry {
             };
             if matches!(decision, evohime_permissions::PermissionDecision::Denied) {
                 return Err(ToolError::PermissionDenied(*permission));
-            }
-        }
-        for permission in definition.permissions {
-            match self
-                .permissions
-                .claim_approval_for_call(
-                    approval_id,
-                    evohime_permissions::CallIdentity {
-                        task_id: ctx.task_id,
-                        session_id: ctx.session_id,
-                        tool_name: name,
-                        permission: *permission,
-                        scope: &scope,
-                        input: &input,
-                    },
-                )
-                .await
-            {
-                Some(evohime_permissions::ApprovalState::Granted) => {}
-                Some(evohime_permissions::ApprovalState::Denied) => {
-                    return Err(ToolError::ApprovalDenied);
-                }
-                Some(evohime_permissions::ApprovalState::Pending) | None => {
-                    return Err(ToolError::ApprovalMismatch);
-                }
             }
         }
         let execution = async {
@@ -940,6 +914,52 @@ impl ToolRegistry {
                 Err(_) => Err(ToolError::TimedOut(definition.timeout)),
             },
         }
+    }
+
+    /// Compatibility-only wrapper for old in-process callers. Production
+    /// Core paths must claim the durable receipt approval first and then call
+    /// [`Self::execute_after_durable_approval`].
+    #[cfg(test)]
+    pub async fn execute_after_approval(
+        &self,
+        ctx: &ToolContext,
+        name: &str,
+        input: Value,
+        approval_id: Uuid,
+        cancellation: CancellationToken,
+    ) -> Result<ToolResult, ToolError> {
+        let definition = self
+            .tools
+            .get(name)
+            .ok_or_else(|| ToolError::UnknownTool(name.to_string()))?;
+        let scope = scope_from_input(name, &input);
+        for permission in definition.permissions {
+            match self
+                .permissions
+                .claim_approval_for_call(
+                    approval_id,
+                    evohime_permissions::CallIdentity {
+                        task_id: ctx.task_id,
+                        session_id: ctx.session_id,
+                        tool_name: name,
+                        permission: *permission,
+                        scope: &scope,
+                        input: &input,
+                    },
+                )
+                .await
+            {
+                Some(evohime_permissions::ApprovalState::Granted) => {}
+                Some(evohime_permissions::ApprovalState::Denied) => {
+                    return Err(ToolError::ApprovalDenied)
+                }
+                Some(evohime_permissions::ApprovalState::Pending) | None => {
+                    return Err(ToolError::ApprovalMismatch)
+                }
+            }
+        }
+        self.execute_after_durable_approval(ctx, name, input, cancellation)
+            .await
     }
 
     pub async fn execute_cancellable(

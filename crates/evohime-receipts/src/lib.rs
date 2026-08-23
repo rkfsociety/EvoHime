@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use thiserror::Error;
 
+pub mod capability;
 pub mod chain;
 pub mod export;
 pub mod key_lifecycle;

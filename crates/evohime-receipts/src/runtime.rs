@@ -673,6 +673,26 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
            deadline_monotonic_ms INTEGER NOT NULL,
            legacy_approval_ref TEXT
          );
+         CREATE TABLE IF NOT EXISTS receipt_capability_snapshots (
+           snapshot_hash TEXT PRIMARY KEY NOT NULL,
+           snapshot_id TEXT NOT NULL,
+           run_id TEXT NOT NULL,
+           session_id TEXT NOT NULL,
+           task_id TEXT NOT NULL,
+           policy_id TEXT NOT NULL,
+           policy_version INTEGER NOT NULL,
+           canonical_snapshot BLOB NOT NULL,
+           redacted_summary BLOB NOT NULL,
+           created_at_ms INTEGER NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS receipt_policy_decisions (
+           action_id TEXT PRIMARY KEY NOT NULL REFERENCES receipt_actions(action_id),
+           snapshot_hash TEXT,
+           outcome TEXT NOT NULL CHECK(outcome IN ('allowed','approval_required','denied','unavailable','expired','cancelled','policy_error','unknown_outcome')),
+           reason_code TEXT NOT NULL,
+           retryable INTEGER NOT NULL CHECK(retryable IN (0,1)),
+           created_at_ms INTEGER NOT NULL
+         );
          CREATE TABLE IF NOT EXISTS receipt_chain_heads (
            key_id TEXT PRIMARY KEY NOT NULL,
            receipt_hash TEXT NOT NULL,
@@ -815,6 +835,15 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
         ),
         ("receipt_actions", "parent_approval_ref", "TEXT"),
         ("receipt_actions", "legacy_approval_ref", "TEXT"),
+        ("receipt_actions", "session_id", "TEXT"),
+        ("receipt_actions", "snapshot_id", "TEXT"),
+        ("receipt_actions", "snapshot_hash", "TEXT"),
+        ("receipt_actions", "policy_version", "INTEGER"),
+        ("receipt_actions", "hook_chain_version", "INTEGER"),
+        ("receipt_approval_intents", "session_id", "TEXT"),
+        ("receipt_approval_intents", "snapshot_hash", "TEXT"),
+        ("receipt_approval_intents", "policy_version", "INTEGER"),
+        ("receipt_approval_intents", "hook_chain_version", "INTEGER"),
         (
             "receipt_records",
             "source",
@@ -879,6 +908,161 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
              CREATE INDEX IF NOT EXISTS idx_receipt_records_action ON receipt_records(action_id);",
         )?;
         tx.commit()?;
+    }
+    Ok(())
+}
+
+/// Stores one immutable snapshot.  Re-inserting the same hash is idempotent,
+/// while a hash collision with different canonical bytes fails closed.
+pub fn persist_capability_snapshot(
+    connection: &Connection,
+    snapshot: &crate::capability::CapabilitySnapshotV1,
+) -> Result<(), RuntimeError> {
+    snapshot
+        .validate()
+        .map_err(|_| RuntimeError::Code("policy_error"))?;
+    let expected = snapshot
+        .compute_hash()
+        .map_err(|_| RuntimeError::Code("policy_error"))?;
+    if expected != snapshot.snapshot_hash {
+        return Err(RuntimeError::Code("policy_error"));
+    }
+    let canonical = snapshot
+        .canonical_bytes()
+        .map_err(|_| RuntimeError::Code("policy_error"))?;
+    let summary = crate::canonicalize_json(
+        &serde_json::to_vec(&snapshot.redacted_summary())
+            .map_err(|_| RuntimeError::Code("policy_error"))?,
+    )
+    .map_err(|_| RuntimeError::Code("policy_error"))?;
+    let changed = connection.execute(
+        "INSERT INTO receipt_capability_snapshots(snapshot_hash,snapshot_id,run_id,session_id,task_id,policy_id,policy_version,canonical_snapshot,redacted_summary,created_at_ms)
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)
+         ON CONFLICT(snapshot_hash) DO NOTHING",
+        params![snapshot.snapshot_hash, snapshot.snapshot_id, snapshot.run_id, snapshot.session_id, snapshot.task_id, snapshot.policy_id, snapshot.policy_version as i64, canonical, summary, now_ms()],
+    )?;
+    if changed == 0 {
+        let stored: Vec<u8> = connection.query_row(
+            "SELECT canonical_snapshot FROM receipt_capability_snapshots WHERE snapshot_hash=?1",
+            [&snapshot.snapshot_hash],
+            |row| row.get(0),
+        )?;
+        if stored != canonical {
+            return Err(RuntimeError::Code("policy_error"));
+        }
+    }
+    Ok(())
+}
+
+pub fn bind_capability_to_action(
+    connection: &Connection,
+    action_id: Uuid,
+    snapshot: &crate::capability::CapabilitySnapshotV1,
+    hook_chain_version: u32,
+) -> Result<(), RuntimeError> {
+    persist_capability_snapshot(connection, snapshot)?;
+    let current: Option<(
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<i64>,
+        Option<i64>,
+    )> = connection
+        .query_row(
+            "SELECT session_id,snapshot_id,snapshot_hash,policy_version,hook_chain_version FROM receipt_actions WHERE action_id=?1",
+            [action_id.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+        )
+        .optional()?;
+    let Some((session, snapshot_id, snapshot_hash, policy_version, existing_hook)) = current else {
+        return Err(RuntimeError::Code("action_not_found"));
+    };
+    if session
+        .as_deref()
+        .is_some_and(|value| value != snapshot.session_id)
+        || snapshot_id
+            .as_deref()
+            .is_some_and(|value| value != snapshot.snapshot_id)
+        || snapshot_hash
+            .as_deref()
+            .is_some_and(|value| value != snapshot.snapshot_hash)
+        || policy_version.is_some_and(|value| value != snapshot.policy_version as i64)
+        || existing_hook.is_some_and(|value| value != hook_chain_version as i64)
+    {
+        return Err(RuntimeError::Code("policy_error"));
+    }
+    let changed = connection.execute(
+        "UPDATE receipt_actions SET session_id=?2,snapshot_id=?3,snapshot_hash=?4,policy_version=?5,hook_chain_version=?6 WHERE action_id=?1",
+        params![action_id.to_string(), snapshot.session_id, snapshot.snapshot_id, snapshot.snapshot_hash, snapshot.policy_version as i64, hook_chain_version as i64],
+    )?;
+    if changed != 1 {
+        return Err(RuntimeError::Code("action_not_found"));
+    }
+    let approval_current: Option<(Option<String>, Option<String>, Option<i64>, Option<i64>)> = connection
+        .query_row(
+            "SELECT session_id,snapshot_hash,policy_version,hook_chain_version FROM receipt_approval_intents WHERE action_id=?1",
+            [action_id.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()?;
+    if let Some((session, hash, version, hook)) = approval_current {
+        if session
+            .as_deref()
+            .is_some_and(|value| value != snapshot.session_id)
+            || hash
+                .as_deref()
+                .is_some_and(|value| value != snapshot.snapshot_hash)
+            || version.is_some_and(|value| value != snapshot.policy_version as i64)
+            || hook.is_some_and(|value| value != hook_chain_version as i64)
+        {
+            return Err(RuntimeError::Code("policy_error"));
+        }
+    }
+    connection.execute(
+        "UPDATE receipt_approval_intents SET session_id=?2,snapshot_hash=?3,policy_version=?4,hook_chain_version=?5 WHERE action_id=?1",
+        params![action_id.to_string(), snapshot.session_id, snapshot.snapshot_hash, snapshot.policy_version as i64, hook_chain_version as i64],
+    )?;
+    Ok(())
+}
+
+pub fn persist_policy_decision(
+    connection: &Connection,
+    action_id: Uuid,
+    snapshot_hash: Option<&str>,
+    decision: &crate::capability::PolicyDecision,
+) -> Result<(), RuntimeError> {
+    if decision.reason_code.is_empty() || decision.reason_code.len() > 512 {
+        return Err(RuntimeError::Code("policy_error"));
+    }
+    let outcome = match decision.outcome {
+        crate::capability::PolicyOutcome::Allowed => "allowed",
+        crate::capability::PolicyOutcome::ApprovalRequired => "approval_required",
+        crate::capability::PolicyOutcome::Denied => "denied",
+        crate::capability::PolicyOutcome::Unavailable => "unavailable",
+        crate::capability::PolicyOutcome::Expired => "expired",
+        crate::capability::PolicyOutcome::Cancelled => "cancelled",
+        crate::capability::PolicyOutcome::PolicyError => "policy_error",
+        crate::capability::PolicyOutcome::UnknownOutcome => "unknown_outcome",
+    };
+    let changed = connection.execute(
+        "INSERT INTO receipt_policy_decisions(action_id,snapshot_hash,outcome,reason_code,retryable,created_at_ms)
+         VALUES(?1,?2,?3,?4,?5,?6)
+         ON CONFLICT(action_id) DO NOTHING",
+        params![action_id.to_string(), snapshot_hash, outcome, decision.reason_code, i64::from(decision.retryable), now_ms()],
+    )?;
+    if changed == 0 {
+        let existing: (Option<String>, String, String, i64) = connection.query_row(
+            "SELECT snapshot_hash,outcome,reason_code,retryable FROM receipt_policy_decisions WHERE action_id=?1",
+            [action_id.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )?;
+        if existing.0.as_deref() != snapshot_hash
+            || existing.1 != outcome
+            || existing.2 != decision.reason_code
+            || existing.3 != i64::from(decision.retryable)
+        {
+            return Err(RuntimeError::Code("policy_error"));
+        }
     }
     Ok(())
 }
@@ -1655,6 +1839,17 @@ impl<'a> ReceiptRuntime<'a> {
     /// Records the UI decision without holding the IPC request open.  A
     /// decision is one-way and does not itself authorize dispatch.
     pub fn grant_approval(&self, approval_id: Uuid) -> Result<(), RuntimeError> {
+        let state: Option<String> = self
+            .connection
+            .query_row(
+                "SELECT state FROM receipt_approval_intents WHERE approval_id=?1",
+                [approval_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if state.as_deref() == Some("denied") {
+            return Err(RuntimeError::Code("approval_denied"));
+        }
         let deadline: Option<(String, i64, i64)> = self.connection.query_row(
             "SELECT clock_boot_id,expires_at_ms,deadline_monotonic_ms FROM receipt_approval_intents WHERE approval_id=?1 AND state='pending'",
             [approval_id.to_string()], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
@@ -1679,9 +1874,30 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(())
     }
 
+    /// Records an explicit user rejection durably. A rejected intent can
+    /// never be promoted to `granted` by a replayed execute request.
+    pub fn deny_approval(&self, approval_id: Uuid) -> Result<(), RuntimeError> {
+        require_ready(self.connection)?;
+        let tx = self.connection.unchecked_transaction()?;
+        let changed = tx.execute(
+            "UPDATE receipt_approval_intents SET state='denied' WHERE approval_id=?1 AND state='pending'",
+            [approval_id.to_string()],
+        )?;
+        if changed != 1 {
+            return Err(RuntimeError::Code("approval_stale"));
+        }
+        tx.execute(
+            "UPDATE receipt_actions SET state='refused',completion_source='execution' WHERE action_id=(SELECT action_id FROM receipt_approval_intents WHERE approval_id=?1) AND state='awaiting_approval'",
+            [approval_id.to_string()],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Claims a granted intent and appends the pre receipt atomically.  The
     /// caller must provide the same call fields that produced the intent.
-    pub fn claim_approval(
+    #[cfg(test)]
+    fn claim_approval(
         &mut self,
         request: &ActionRequest,
         approval_id: Uuid,
@@ -1800,6 +2016,37 @@ impl<'a> ReceiptRuntime<'a> {
             action_id: request.action_id,
             receipt_hash: hash,
         })
+    }
+
+    /// Durable claim variant used by Core effect paths. The binding is
+    /// checked in SQLite before the atomic claim so an approval cannot move
+    /// between sessions or snapshots.
+    pub fn claim_approval_checked_with_binding(
+        &mut self,
+        request: &ActionRequest,
+        approval_id: Uuid,
+        session_id: &str,
+        snapshot_hash: &str,
+        policy_version: u32,
+        recheck_policy: impl FnOnce(&ActionRequest) -> bool,
+    ) -> Result<PrepareOutcome, RuntimeError> {
+        let binding: Option<(Option<String>, Option<String>, Option<i64>)> = self.connection
+            .query_row(
+                "SELECT session_id,snapshot_hash,policy_version FROM receipt_approval_intents WHERE approval_id=?1",
+                [approval_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+        let Some((stored_session, stored_snapshot, stored_version)) = binding else {
+            return Err(RuntimeError::Code("approval_stale"));
+        };
+        if stored_session.as_deref() != Some(session_id)
+            || stored_snapshot.as_deref() != Some(snapshot_hash)
+            || stored_version != Some(policy_version as i64)
+        {
+            return Err(RuntimeError::Code("approval_binding_changed"));
+        }
+        self.claim_approval_checked(request, approval_id, recheck_policy)
     }
 
     pub fn complete(

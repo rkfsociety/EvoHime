@@ -135,6 +135,40 @@ impl CoreNodeAdapter {
             ));
         };
         let context = self.tool_context();
+        let scope = input
+            .get("path")
+            .or_else(|| input.get("cwd"))
+            .or_else(|| input.get("url"))
+            .and_then(Value::as_str)
+            .unwrap_or("workspace");
+        let action_id = uuid::Uuid::now_v7();
+        let snapshot = crate::policy_gate::default_snapshot(
+            action_id,
+            context.task_id,
+            context.session_id,
+            tool_name,
+            scope,
+        )
+        .map_err(|error| NodeError::permanent("policy_error", error))?;
+        let gate = crate::policy_gate::PolicyGate::new(snapshot)
+            .map_err(|decision| NodeError::permanent("policy_error", decision.reason_code))?;
+        let binding = gate
+            .preflight(
+                &action_id.to_string(),
+                tool_name,
+                scope,
+                &input,
+                evohime_receipts::capability::PolicyOutcome::Allowed,
+            )
+            .map_err(|decision| NodeError::permanent("policy_error", decision.reason_code))?;
+        gate.recheck_before_effect(
+            &binding,
+            tool_name,
+            scope,
+            &input,
+            evohime_receipts::capability::PolicyOutcome::Allowed,
+        )
+        .map_err(|decision| NodeError::permanent("policy_error", decision.reason_code))?;
         match tools.execute(&context, tool_name, input).await {
             Ok(result) => Ok(json!({
                 "output": bounded(&result.output),

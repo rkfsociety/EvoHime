@@ -2704,6 +2704,16 @@ impl IpcBridge {
                 if let Some(approvals) = &self.approvals {
                     let _ = approvals.resolve(approval_id, granted).await;
                 }
+                if !granted {
+                    let mut database = self.journal.database().lock().await;
+                    let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
+                    if let Ok(runtime) = evohime_receipts::runtime::ReceiptRuntime::new(
+                        database.connection_mut(),
+                        &signer,
+                    ) {
+                        let _ = runtime.deny_approval(approval_id);
+                    }
+                }
                 let _ = self
                     .journal
                     .record_audit(
@@ -5678,6 +5688,48 @@ impl IpcBridge {
         .map_err(|error| FrameError::Io(error.to_string()).into())
     }
 
+    fn terminal_capability_snapshot(
+        action_id: uuid::Uuid,
+        context: &ToolContext,
+        scope: &str,
+    ) -> Result<evohime_receipts::capability::CapabilitySnapshotV1, String> {
+        use evohime_receipts::capability::{CapabilityLimits, CapabilitySnapshotV1};
+        let task_id = context.task_id.to_string();
+        let session_id = context
+            .session_id
+            .map_or_else(|| "session:anonymous".to_owned(), |id| id.to_string());
+        CapabilitySnapshotV1 {
+            snapshot_id: format!("snapshot:{action_id}"),
+            run_id: format!("run:{task_id}"),
+            session_id,
+            task_id: format!("task:{task_id}"),
+            parent_snapshot_hash: None,
+            policy_id: "policy:terminal-v1".into(),
+            policy_version: 1,
+            policy_hash: evohime_receipts::sha256_hex(b"policy:terminal-v1"),
+            manifest_hash: evohime_receipts::sha256_hex(b"builtin:shell.execute:v1"),
+            workspace_anchors: vec![context.workspace_root.to_string_lossy().into_owned()],
+            operation_scopes: vec![scope.to_owned()],
+            permissions: vec!["shell_execute".into()],
+            tool_identities: vec!["shell.execute".into()],
+            network_routes: vec![],
+            adapter_scopes: vec![],
+            secret_refs: vec![],
+            limits: CapabilityLimits {
+                timeout_ms: 30_000,
+                input_bytes: 64 * 1024,
+                output_bytes: 512 * 1024,
+                concurrency: 1,
+                tool_calls: 1,
+                token_budget: 0,
+                cost_micros: 0,
+            },
+            snapshot_hash: String::new(),
+        }
+        .finalize()
+        .map_err(|error| error.to_string())
+    }
+
     async fn execute_terminal_with_receipt(
         &self,
         context: &ToolContext,
@@ -5709,13 +5761,30 @@ impl IpcBridge {
                     run_id: context.task_id.to_string(),
                     tool_name: "shell.execute".into(),
                     policy_id: "permission:ShellExecute".into(),
-                    normalized_scope: scope,
+                    normalized_scope: scope.clone(),
                     input: input.clone(),
                     policy_decision: evohime_receipts::runtime::PolicyDecision::Allow,
                     approval_id: None,
                     parent_approval_ref: None,
                     preview: serde_json::to_string(&preview).unwrap_or_else(|_| "terminal".into()),
                 };
+                let capability =
+                    Self::terminal_capability_snapshot(request.action_id, context, &scope)
+                        .map_err(evohime_tool_runtime::ToolError::Execution)?;
+                let gate = super::policy_gate::PolicyGate::new(capability.clone()).map_err(
+                    |decision| evohime_tool_runtime::ToolError::Execution(decision.reason_code),
+                )?;
+                let binding = gate
+                    .preflight(
+                        &request.action_id.to_string(),
+                        &request.tool_name,
+                        &request.normalized_scope,
+                        &request.input,
+                        evohime_receipts::capability::PolicyOutcome::Allowed,
+                    )
+                    .map_err(|decision| {
+                        evohime_tool_runtime::ToolError::Execution(decision.reason_code)
+                    })?;
                 let mut database = self.journal.database().lock().await;
                 let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
                 let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(
@@ -5745,6 +5814,32 @@ impl IpcBridge {
                         "receipt.precondition_failed".into(),
                     ));
                 }
+                drop(runtime);
+                evohime_receipts::runtime::bind_capability_to_action(
+                    database.connection(),
+                    request.action_id,
+                    &capability,
+                    1,
+                )
+                .map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
+                let decision = evohime_receipts::capability::PolicyDecision::new(
+                    evohime_receipts::capability::PolicyOutcome::Allowed,
+                    "preflight_allowed",
+                )
+                .map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
+                evohime_receipts::runtime::persist_policy_decision(
+                    database.connection(),
+                    request.action_id,
+                    Some(&capability.snapshot_hash),
+                    &decision,
+                )
+                .map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
+                let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
+                let runtime = evohime_receipts::runtime::ReceiptRuntime::new(
+                    database.connection_mut(),
+                    &signer,
+                )
+                .map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
                 runtime
                     .mark_started(request.action_id)
                     .map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
@@ -5754,6 +5849,16 @@ impl IpcBridge {
                     context.session_id.map(|id| id.to_string()),
                 );
                 drop(database);
+                gate.recheck_before_effect(
+                    &binding,
+                    &request.tool_name,
+                    &request.normalized_scope,
+                    &request.input,
+                    evohime_receipts::capability::PolicyOutcome::Allowed,
+                )
+                .map_err(|decision| {
+                    evohime_tool_runtime::ToolError::Execution(decision.reason_code)
+                })?;
                 let result = self
                     .tools
                     .as_ref()
@@ -5884,6 +5989,9 @@ impl IpcBridge {
                 evohime_tool_runtime::ToolError::PermissionDenied(permission),
             ),
             evohime_tool_runtime::ToolPreflightDecision::ApprovalRequired { .. } => {
+                // Preflight is a hard boundary. The ordinary execute path
+                // creates the approval request and returns NeedsApproval;
+                // dispatching the implementation here would bypass policy.
                 self.tools
                     .as_ref()
                     .unwrap()
@@ -5951,6 +6059,9 @@ impl IpcBridge {
                         preview: serde_json::to_string(&preview)
                             .unwrap_or_else(|_| "approval".into()),
                     };
+                    let capability =
+                        Self::terminal_capability_snapshot(durable_action_id, &context, &scope)
+                            .map_err(|e| FrameError::Io(e.to_string()))?;
                     {
                         let mut database = self.journal.database().lock().await;
                         let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
@@ -5962,6 +6073,26 @@ impl IpcBridge {
                         runtime
                             .prepare_existing_approval(receipt_request)
                             .map_err(|error| FrameError::Io(error.to_string()))?;
+                        drop(runtime);
+                        evohime_receipts::runtime::bind_capability_to_action(
+                            database.connection(),
+                            durable_action_id,
+                            &capability,
+                            1,
+                        )
+                        .map_err(|error| FrameError::Io(error.to_string()))?;
+                        let decision = evohime_receipts::capability::PolicyDecision::new(
+                            evohime_receipts::capability::PolicyOutcome::ApprovalRequired,
+                            "approval_required",
+                        )
+                        .map_err(|error| FrameError::Io(error.to_string()))?;
+                        evohime_receipts::runtime::persist_policy_decision(
+                            database.connection(),
+                            durable_action_id,
+                            Some(&capability.snapshot_hash),
+                            &decision,
+                        )
+                        .map_err(|error| FrameError::Io(error.to_string()))?;
                     }
                     self.write_response(
                         writer,
@@ -6022,6 +6153,12 @@ impl IpcBridge {
                     },
                 )
             };
+            let capability = Self::terminal_capability_snapshot(
+                action_id,
+                &context,
+                &receipt_request.normalized_scope,
+            )
+            .map_err(|error| FrameError::Io(error.to_string()))?;
             {
                 let mut database = self.journal.database().lock().await;
                 let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
@@ -6053,10 +6190,33 @@ impl IpcBridge {
                             },
                         );
                     }
+                    if matches!(
+                        error,
+                        evohime_receipts::runtime::RuntimeError::Code("approval_denied")
+                    ) {
+                        self.write_response(
+                            writer,
+                            "terminal.result",
+                            serde_json::to_vec(&serde_json::json!({
+                                "task_id": task_id.to_string(),
+                                "ok": false,
+                                "error_code": "approval_denied",
+                            }))?,
+                        )
+                        .await?;
+                        return Ok(());
+                    }
                     return Err(FrameError::Io(error.to_string()).into());
                 }
                 runtime
-                    .claim_approval(&receipt_request, approval_id)
+                    .claim_approval_checked_with_binding(
+                        &receipt_request,
+                        approval_id,
+                        &capability.session_id,
+                        &capability.snapshot_hash,
+                        capability.policy_version,
+                        |_| true,
+                    )
                     .map_err(|error| FrameError::Io(error.to_string()))?;
                 runtime
                     .mark_started(action_id)
@@ -6064,7 +6224,7 @@ impl IpcBridge {
                 record_ledger_tool_call(&database, &receipt_request, None);
             }
             match tools
-                .execute_after_approval(&context, "shell.execute", input, approval_id, cancellation)
+                .execute_after_durable_approval(&context, "shell.execute", input, cancellation)
                 .await
             {
                 Ok(result) => {

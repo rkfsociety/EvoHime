@@ -249,6 +249,40 @@ durable cursor. Read-only sampling, recovery state и bounded runtime counters
 Retention/compaction receipt chain по-прежнему относится к отдельному этапу
 01.4.
 
+## Policy, capability snapshots и approval gate
+
+План 09 реализован поверх `ReceiptRuntime`, без второго execution runtime или
+отдельного approval store. `evohime_receipts::capability::CapabilitySnapshotV1`
+создаётся для действия как bounded immutable contract: он содержит session/run/
+task identity, policy и manifest hashes, operation/tool scopes, network и adapter
+references, opaque secret purposes и budgets. Snapshot получает
+domain-separated canonical `snapshot_hash`; child snapshot допускается только как
+subset родителя. Raw secret values, prompt и необрезанный tool input в snapshot
+не попадают.
+
+`crates/evohime-core/src/policy_gate.rs` предоставляет единственный Core-owned
+`preflight`/`recheck_before_effect` gate. Перед effect он повторно сверяет
+canonical call hash, normalized scope, tool identity, snapshot hash и policy
+version. Terminal IPC, обычный ToolAgent и workflow adapter проходят этот gate;
+прямой production-вызов Tool Runtime после approval использует только
+`execute_after_durable_approval` после atomic durable claim. Старый in-memory
+approval wrapper существует только в unit-test compatibility code.
+
+SQLite receipts дополнены additive таблицами
+`receipt_capability_snapshots` и `receipt_policy_decisions`, а также nullable
+session/snapshot/policy/hook linkage columns в action и approval intent. Это
+сохраняет чтение старых баз и позволяет durable различать `allowed`,
+`approval_required`, `denied`, `unavailable`, `expired`, `cancelled`,
+`policy_error` и `unknown_outcome`.
+
+Approval rejection записывается как terminal durable state и не может быть
+повторно повышен до grant. Claim проверяет session, snapshot и policy version;
+изменение canonical call, scope или policy делает approval stale. Bounded
+preflight/postflight hooks получают только action/tool/input/snapshot hashes и
+typed outcome metadata. Acceptance покрывает отказ до side effect, повторную
+доставку, drift, redaction и recovery; старые compatibility clients продолжают
+читать прежние receipt decision values.
+
 ## Core-owned execution ledger
 
 Единая typed-история выполнения поверх существующего append-only `events`
