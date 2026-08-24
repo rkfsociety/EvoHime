@@ -6132,6 +6132,7 @@ impl ToolAgent {
     /// Artifact store и summarizer подключаются, только если у Core есть
     /// журнал: их отсутствие не блокирует сборку — соответствующие уровни
     /// лестницы немедленно считаются исчерпанными с diagnostic.
+    #[allow(clippy::too_many_arguments)]
     async fn assemble_model_context(
         &self,
         runtime: &mut context_budget::ContextRuntime,
