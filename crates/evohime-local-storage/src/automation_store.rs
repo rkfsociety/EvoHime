@@ -103,6 +103,31 @@ pub fn get_schedule(
         .optional()
 }
 
+pub fn list_schedules(
+    connection: &Connection,
+    owner_scope: &str,
+    limit: u32,
+) -> rusqlite::Result<Vec<AutomationScheduleRecord>> {
+    let mut statement = connection.prepare(
+        "SELECT schedule_id, definition_id, revision, owner_scope, hour, minute, timezone_minutes, missed_grace_ms, enabled, last_slot FROM automation_schedules WHERE owner_scope=?1 ORDER BY schedule_id LIMIT ?2",
+    )?;
+    let rows = statement.query_map(params![owner_scope, limit.clamp(1, 256)], |row| {
+        Ok(AutomationScheduleRecord {
+            schedule_id: row.get(0)?,
+            definition_id: row.get(1)?,
+            revision: row.get::<_, i64>(2)? as u64,
+            owner_scope: row.get(3)?,
+            hour: row.get::<_, i64>(4)? as u8,
+            minute: row.get::<_, i64>(5)? as u8,
+            timezone_minutes: row.get(6)?,
+            missed_grace_ms: row.get(7)?,
+            enabled: row.get::<_, i64>(8)? != 0,
+            last_slot: row.get(9)?,
+        })
+    })?;
+    rows.collect()
+}
+
 /// Advances a schedule cursor only if it still points at `expected_last_slot`.
 /// The compare-and-swap makes scheduler polling safe across Core generations.
 pub fn advance_schedule_slot(

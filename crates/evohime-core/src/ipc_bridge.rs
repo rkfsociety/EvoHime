@@ -2873,6 +2873,20 @@ impl IpcBridge {
                 self.write_response(writer, "workflow.events", serde_json::to_vec(&result)?)
                     .await?;
             }
+            Some(generated::command_envelope::Command::ListAutomationSchedules(request)) => {
+                let result = self.dispatch_list_automation_schedules(request).await;
+                self.write_response(writer, "automation.schedules", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::SaveAutomationSchedule(request)) => {
+                let result = self.dispatch_save_automation_schedule(request).await;
+                self.write_response(
+                    writer,
+                    "automation.schedule_saved",
+                    serde_json::to_vec(&result)?,
+                )
+                .await?;
+            }
             None => {}
         }
         Ok(())
@@ -3343,6 +3357,137 @@ impl IpcBridge {
         tokio::spawn(async move {
             let _ = runtime.drive(&run_id).await;
         });
+    }
+
+    async fn dispatch_list_automation_schedules(
+        &self,
+        request: generated::ListAutomationSchedules,
+    ) -> serde_json::Value {
+        let owner_scope = request.owner_scope;
+        if owner_scope.is_empty() || owner_scope.len() > crate::automation::MAX_ID_BYTES {
+            return serde_json::json!({
+                "schedules": [],
+                "error_code": "invalid_owner_scope",
+            });
+        }
+        let limit = request.limit.clamp(1, 256);
+        let database = self.journal.database().lock().await;
+        match evohime_local_storage::automation_store::list_schedules(
+            database.connection(),
+            &owner_scope,
+            limit,
+        ) {
+            Ok(schedules) => serde_json::json!({
+                "schedules": schedules.into_iter().map(|schedule| serde_json::json!({
+                    "schedule_id": schedule.schedule_id,
+                    "definition_id": schedule.definition_id,
+                    "revision": schedule.revision,
+                    "owner_scope": schedule.owner_scope,
+                    "hour": schedule.hour,
+                    "minute": schedule.minute,
+                    "timezone_minutes": schedule.timezone_minutes,
+                    "missed_grace_ms": schedule.missed_grace_ms,
+                    "enabled": schedule.enabled,
+                    "last_slot": schedule.last_slot,
+                })).collect::<Vec<_>>(),
+                "error_code": "",
+            }),
+            Err(error) => serde_json::json!({
+                "schedules": [],
+                "error_code": error.to_string(),
+            }),
+        }
+    }
+
+    async fn dispatch_save_automation_schedule(
+        &self,
+        request: generated::SaveAutomationSchedule,
+    ) -> serde_json::Value {
+        if request.schedule_id.is_empty()
+            || request.schedule_id.len() > crate::automation::MAX_ID_BYTES
+            || request.definition_id.is_empty()
+            || request.owner_scope.is_empty()
+            || request.owner_scope.len() > crate::automation::MAX_ID_BYTES
+            || request.revision == 0
+        {
+            return serde_json::json!({
+                "saved": false,
+                "error_code": "invalid_schedule_identity",
+            });
+        }
+        if crate::automation_scheduler::DailySchedule::new(
+            request.hour as u8,
+            request.minute as u8,
+            request.timezone_minutes,
+            request.missed_grace_ms,
+        )
+        .is_err()
+            || request.hour > 23
+            || request.minute > 59
+        {
+            return serde_json::json!({
+                "saved": false,
+                "error_code": "invalid_schedule_policy",
+            });
+        }
+        let database = self.journal.database().lock().await;
+        let definition = evohime_local_storage::automation_store::get_definition(
+            database.connection(),
+            &request.definition_id,
+            request.revision,
+            &request.owner_scope,
+        );
+        match definition {
+            Ok(None) => serde_json::json!({
+                "saved": false,
+                "error_code": "unknown_definition",
+            }),
+            Err(error) => serde_json::json!({
+                "saved": false,
+                "error_code": error.to_string(),
+            }),
+            Ok(Some(_)) => {
+                let previous = evohime_local_storage::automation_store::get_schedule(
+                    database.connection(),
+                    &request.schedule_id,
+                )
+                .ok()
+                .flatten();
+                let record = evohime_local_storage::automation_store::AutomationScheduleRecord {
+                    schedule_id: request.schedule_id.clone(),
+                    definition_id: request.definition_id.clone(),
+                    revision: request.revision,
+                    owner_scope: request.owner_scope.clone(),
+                    hour: request.hour as u8,
+                    minute: request.minute as u8,
+                    timezone_minutes: request.timezone_minutes,
+                    missed_grace_ms: request.missed_grace_ms,
+                    enabled: request.enabled,
+                    last_slot: previous.and_then(|previous| {
+                        (previous.definition_id == request.definition_id
+                            && previous.revision == request.revision
+                            && previous.owner_scope == request.owner_scope)
+                            .then_some(previous.last_slot)
+                            .flatten()
+                    }),
+                };
+                match evohime_local_storage::automation_store::upsert_schedule(
+                    database.connection(),
+                    &record,
+                    now_ms(),
+                ) {
+                    Ok(()) => serde_json::json!({
+                        "saved": true,
+                        "schedule_id": record.schedule_id,
+                        "error_code": "",
+                    }),
+                    Err(error) => serde_json::json!({
+                        "saved": false,
+                        "error_code": error.to_string(),
+                    }),
+                }
+            }
+        }
     }
 
     fn dispatch_list_workflow_templates(&self) -> serde_json::Value {

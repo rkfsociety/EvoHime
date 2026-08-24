@@ -653,7 +653,9 @@ export const RENDERER_COMMANDS = [
   'workflow.start',
   'workflow.getRun',
   'workflow.cancel',
-  'workflow.listEvents'
+  'workflow.listEvents',
+  'automation.listSchedules',
+  'automation.saveSchedule'
 ] as const
 
 export type RendererCommand = (typeof RENDERER_COMMANDS)[number]
@@ -875,6 +877,18 @@ export interface CommandPayloads {
   'workflow.getRun': { runId: string }
   'workflow.cancel': { runId: string }
   'workflow.listEvents': { runId: string; afterSequence?: number; limit?: number }
+  'automation.listSchedules': { ownerScope: string; limit?: number }
+  'automation.saveSchedule': {
+    scheduleId: string
+    definitionId: string
+    revision: number
+    ownerScope: string
+    hour: number
+    minute: number
+    timezoneMinutes: number
+    missedGraceMs: number
+    enabled: boolean
+  }
 }
 
 export interface CommandResults {
@@ -1000,6 +1014,8 @@ export interface CommandResults {
   'workflow.getRun': { accepted: boolean }
   'workflow.cancel': { accepted: boolean }
   'workflow.listEvents': { accepted: boolean }
+  'automation.listSchedules': { accepted: boolean }
+  'automation.saveSchedule': { accepted: boolean }
 }
 
 export type CommandFailureCode =

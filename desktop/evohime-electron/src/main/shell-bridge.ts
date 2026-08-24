@@ -1151,6 +1151,68 @@ function dispatch(
       }
       return accepted(client.send({ listWorkflowEvents: { runId, afterSequence, limit } }))
     }
+
+    case 'automation.listSchedules': {
+      const value = asRecord(payload)
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const limit = value['limit'] === undefined ? 0 : asBoundedNumber(value['limit'], 256)
+      if (ownerScope === null || limit === null) {
+        return failure('invalid-payload', 'Некорректный запрос списка расписаний.')
+      }
+      return accepted(client.send({ listAutomationSchedules: { ownerScope, limit } }))
+    }
+
+    case 'automation.saveSchedule': {
+      const value = asRecord(payload)
+      const scheduleId = asBoundedString(value['scheduleId'])
+      const definitionId = asBoundedString(value['definitionId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const revision = value['revision']
+      const hour = value['hour']
+      const minute = value['minute']
+      const timezoneMinutes = value['timezoneMinutes']
+      const missedGraceMs = value['missedGraceMs']
+      const enabled = value['enabled']
+      const validInteger = (input: unknown): input is number =>
+        typeof input === 'number' && Number.isSafeInteger(input)
+      if (
+        scheduleId === null ||
+        definitionId === null ||
+        ownerScope === null ||
+        !validInteger(revision) ||
+        revision <= 0 ||
+        !validInteger(hour) ||
+        hour < 0 ||
+        hour > 23 ||
+        !validInteger(minute) ||
+        minute < 0 ||
+        minute > 59 ||
+        !validInteger(timezoneMinutes) ||
+        timezoneMinutes < -1439 ||
+        timezoneMinutes > 1439 ||
+        !validInteger(missedGraceMs) ||
+        missedGraceMs < 0 ||
+        missedGraceMs > 86_400_000 ||
+        typeof enabled !== 'boolean'
+      ) {
+        return failure('invalid-payload', 'Некорректная политика расписания.')
+      }
+      return accepted(
+        client.send({
+          saveAutomationSchedule: {
+            scheduleId,
+            definitionId,
+            revision,
+            ownerScope,
+            hour,
+            minute,
+            timezoneMinutes,
+            missedGraceMs,
+            enabled
+          }
+        })
+      )
+    }
   }
 }
 

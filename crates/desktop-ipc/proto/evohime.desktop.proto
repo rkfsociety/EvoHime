@@ -1162,6 +1162,27 @@ message ListWorkflowEvents {
   int32 limit = 3;
 }
 
+// --- Automation scheduler (plan 18.1) -------------------------------------
+// Additive commands. Core owns schedule validation, persistence and trigger
+// idempotency; the renderer receives only bounded projections.
+
+message ListAutomationSchedules {
+  string owner_scope = 1;
+  uint32 limit = 2;
+}
+
+message SaveAutomationSchedule {
+  string schedule_id = 1;
+  string definition_id = 2;
+  uint64 revision = 3;
+  string owner_scope = 4;
+  uint32 hour = 5;
+  uint32 minute = 6;
+  sint32 timezone_minutes = 7;
+  int64 missed_grace_ms = 8;
+  bool enabled = 9;
+}
+
 message CommandEnvelope {
   ProtocolVersion protocol = 1;
   string request_id = 2;
@@ -1288,6 +1309,8 @@ message CommandEnvelope {
     RollbackToolkit rollback_toolkit = 126;
     ListVoiceCommands list_voice_commands = 127;
     ResolveVoiceCommand resolve_voice_command = 128;
+    ListAutomationSchedules list_automation_schedules = 129;
+    SaveAutomationSchedule save_automation_schedule = 130;
   }
 }
 
