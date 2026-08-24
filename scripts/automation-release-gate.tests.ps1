@@ -6,12 +6,25 @@ $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $automationFiles = @(
     (Join-Path $repo 'crates\evohime-core\src\automation.rs'),
     (Join-Path $repo 'crates\evohime-core\src\automation_runtime.rs'),
+    (Join-Path $repo 'crates\evohime-core\src\automation_scheduler.rs'),
     (Join-Path $repo 'crates\evohime-core\src\automation_simulation.rs'),
     (Join-Path $repo 'crates\evohime-core\src\automation_acceptance.rs'),
     (Join-Path $repo 'crates\evohime-local-storage\src\automation_store.rs')
 )
 foreach ($path in $automationFiles) {
     if (-not (Test-Path -LiteralPath $path)) { throw "Automation gate input missing: $path" }
+}
+
+$wiringChecks = @{
+    'crates\evohime-core\src\main.rs' = 'poll_automation_schedules'
+    'crates\evohime-core\src\ipc_bridge.rs' = 'dispatch_trigger_automation'
+    'crates\desktop-ipc\proto\evohime.desktop.proto' = 'trigger_automation = 131'
+    'desktop\evohime-electron\src\main\shell-bridge.ts' = 'automation.trigger'
+}
+foreach ($entry in $wiringChecks.GetEnumerator()) {
+    $path = Join-Path $repo $entry.Key
+    $raw = Get-Content -LiteralPath $path -Raw
+    if (-not $raw.Contains($entry.Value)) { throw "Automation wiring missing: $($entry.Value) in $path" }
 }
 
 # Automation contracts must stay filesystem/network/process free. Provider
