@@ -38,28 +38,18 @@ impl std::fmt::Display for SnapshotError {
 impl std::error::Error for SnapshotError {}
 
 impl AutomationSnapshotV1 {
-    pub fn new(
-        run_id: &str,
-        definition_id: &str,
-        definition_revision: u64,
-        generation: u64,
-        sequence: u64,
-        state_json: &str,
-        policy_snapshot: &str,
-        approval_snapshot: &str,
-        provenance: &str,
-    ) -> Self {
+    pub fn new(input: SnapshotInput<'_>) -> Self {
         let mut snapshot = Self {
             schema_version: SNAPSHOT_SCHEMA_VERSION,
-            run_id: run_id.into(),
-            definition_id: definition_id.into(),
-            definition_revision,
-            fencing_generation: generation,
-            last_event_sequence: sequence,
-            state_json: state_json.into(),
-            policy_snapshot: policy_snapshot.into(),
-            approval_snapshot: approval_snapshot.into(),
-            provenance: provenance.into(),
+            run_id: input.run_id.into(),
+            definition_id: input.definition_id.into(),
+            definition_revision: input.definition_revision,
+            fencing_generation: input.generation,
+            last_event_sequence: input.sequence,
+            state_json: input.state_json.into(),
+            policy_snapshot: input.policy_snapshot.into(),
+            approval_snapshot: input.approval_snapshot.into(),
+            provenance: input.provenance.into(),
             checksum_sha256: String::new(),
         };
         snapshot.checksum_sha256 = snapshot.checksum();
@@ -103,6 +93,18 @@ impl AutomationSnapshotV1 {
         }
         Ok(())
     }
+}
+
+pub struct SnapshotInput<'a> {
+    pub run_id: &'a str,
+    pub definition_id: &'a str,
+    pub definition_revision: u64,
+    pub generation: u64,
+    pub sequence: u64,
+    pub state_json: &'a str,
+    pub policy_snapshot: &'a str,
+    pub approval_snapshot: &'a str,
+    pub provenance: &'a str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -151,7 +153,17 @@ mod tests {
     use super::*;
     #[test]
     fn snapshot_checksum_and_revision_are_required() {
-        let snapshot = AutomationSnapshotV1::new("r", "d", 1, 1, 2, "{}", "p", "a", "prov");
+        let snapshot = AutomationSnapshotV1::new(SnapshotInput {
+            run_id: "r",
+            definition_id: "d",
+            definition_revision: 1,
+            generation: 1,
+            sequence: 2,
+            state_json: "{}",
+            policy_snapshot: "p",
+            approval_snapshot: "a",
+            provenance: "prov",
+        });
         assert!(snapshot.validate(1, Some(1)).is_ok());
         assert_eq!(
             snapshot.validate(2, None),

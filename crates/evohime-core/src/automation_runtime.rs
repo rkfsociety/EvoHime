@@ -88,6 +88,12 @@ impl RunStateMachine {
     }
 }
 
+impl Default for RunStateMachine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn allowed(from: AutomationRunState, to: AutomationRunState) -> bool {
     use AutomationRunState::*;
     if matches!(from, Completed | Failed | Cancelled | DeadLetter) {
@@ -163,6 +169,12 @@ impl<T: Clone> AutomationQueue<T> {
     }
 }
 
+impl<T: Clone> Default for AutomationQueue<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lease {
     pub owner: String,
@@ -231,20 +243,22 @@ impl OperationLock {
     }
 }
 
-pub fn revalidate_effect(
-    owner_scope: &str,
-    expected_scope: &str,
-    capability_hash: &str,
-    expected_capability_hash: &str,
-    policy_snapshot: &str,
-    expected_policy_snapshot: &str,
-    approval_snapshot: &str,
-    expected_approval_snapshot: &str,
-) -> Result<(), RuntimeError> {
-    (owner_scope == expected_scope
-        && capability_hash == expected_capability_hash
-        && policy_snapshot == expected_policy_snapshot
-        && approval_snapshot == expected_approval_snapshot)
+pub struct EffectRevalidation<'a> {
+    pub owner_scope: &'a str,
+    pub expected_scope: &'a str,
+    pub capability_hash: &'a str,
+    pub expected_capability_hash: &'a str,
+    pub policy_snapshot: &'a str,
+    pub expected_policy_snapshot: &'a str,
+    pub approval_snapshot: &'a str,
+    pub expected_approval_snapshot: &'a str,
+}
+
+pub fn revalidate_effect(effect: EffectRevalidation<'_>) -> Result<(), RuntimeError> {
+    (effect.owner_scope == effect.expected_scope
+        && effect.capability_hash == effect.expected_capability_hash
+        && effect.policy_snapshot == effect.expected_policy_snapshot
+        && effect.approval_snapshot == effect.expected_approval_snapshot)
         .then_some(())
         .ok_or(RuntimeError::PolicyRevalidationFailed)
 }
@@ -286,9 +300,28 @@ mod tests {
     }
     #[test]
     fn effect_revalidation_is_fail_closed() {
-        assert!(revalidate_effect("o", "o", "c", "c", "p", "p", "a", "a").is_ok());
+        assert!(revalidate_effect(EffectRevalidation {
+            owner_scope: "o",
+            expected_scope: "o",
+            capability_hash: "c",
+            expected_capability_hash: "c",
+            policy_snapshot: "p",
+            expected_policy_snapshot: "p",
+            approval_snapshot: "a",
+            expected_approval_snapshot: "a",
+        })
+        .is_ok());
         assert_eq!(
-            revalidate_effect("o", "x", "c", "c", "p", "p", "a", "a"),
+            revalidate_effect(EffectRevalidation {
+                owner_scope: "o",
+                expected_scope: "x",
+                capability_hash: "c",
+                expected_capability_hash: "c",
+                policy_snapshot: "p",
+                expected_policy_snapshot: "p",
+                approval_snapshot: "a",
+                expected_approval_snapshot: "a",
+            }),
             Err(RuntimeError::PolicyRevalidationFailed)
         );
     }

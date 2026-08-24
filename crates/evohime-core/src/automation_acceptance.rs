@@ -25,12 +25,12 @@ mod tests {
     use super::*;
     use crate::automation::AutomationRunState;
     use crate::automation_runtime::{
-        revalidate_effect, AutomationQueue, Lease, ProviderOperation, RunStateMachine,
-        RuntimeError, MAX_PENDING_COMMANDS,
+        revalidate_effect, AutomationQueue, EffectRevalidation, Lease, ProviderOperation,
+        RunStateMachine, RuntimeError, MAX_PENDING_COMMANDS,
     };
     use crate::automation_simulation::{
         allow_simulation_effect, redact_export, replay_hash, AutomationSnapshotV1, ReplayInputV1,
-        SimulationEffect,
+        SimulationEffect, SnapshotInput,
     };
     #[test]
     fn a01_fixture_is_bounded_and_repeatable() {
@@ -79,9 +79,17 @@ mod tests {
     }
     #[test]
     fn a05_replay_and_snapshot_are_equal_for_same_fixture() {
-        let snapshot = AutomationSnapshotV1::new(
-            "run", "fixture", 1, 1, 0, "{}", "policy", "approval", "fixture",
-        );
+        let snapshot = AutomationSnapshotV1::new(SnapshotInput {
+            run_id: "run",
+            definition_id: "fixture",
+            definition_revision: 1,
+            generation: 1,
+            sequence: 0,
+            state_json: "{}",
+            policy_snapshot: "policy",
+            approval_snapshot: "approval",
+            provenance: "fixture",
+        });
         assert!(snapshot.validate(1, None).is_ok());
         let input = ReplayInputV1 {
             schema_version: 1,
@@ -105,21 +113,41 @@ mod tests {
     }
     #[test]
     fn a07_history_limits_are_explicit() {
-        assert!(MAX_DURABLE_EVENTS_PER_RUN <= 256);
-        assert!(MAX_SNAPSHOTS_PER_RUN <= 64);
-        assert!(MAX_ARCHIVE_RUNS <= 10_000);
+        const {
+            assert!(MAX_DURABLE_EVENTS_PER_RUN <= 256);
+        }
+        const {
+            assert!(MAX_SNAPSHOTS_PER_RUN <= 64);
+        }
+        const {
+            assert!(MAX_ARCHIVE_RUNS <= 10_000);
+        }
         assert_eq!(ARCHIVE_RETENTION_MS, 30 * 24 * 60 * 60 * 1_000);
     }
     #[test]
     fn a08_effect_boundary_revalidates_snapshots() {
-        assert!(revalidate_effect(
-            "owner", "owner", "cap", "cap", "policy", "policy", "approval", "approval"
-        )
+        assert!(revalidate_effect(EffectRevalidation {
+            owner_scope: "owner",
+            expected_scope: "owner",
+            capability_hash: "cap",
+            expected_capability_hash: "cap",
+            policy_snapshot: "policy",
+            expected_policy_snapshot: "policy",
+            approval_snapshot: "approval",
+            expected_approval_snapshot: "approval",
+        })
         .is_ok());
         assert_eq!(
-            revalidate_effect(
-                "owner", "other", "cap", "cap", "policy", "policy", "approval", "approval"
-            ),
+            revalidate_effect(EffectRevalidation {
+                owner_scope: "owner",
+                expected_scope: "other",
+                capability_hash: "cap",
+                expected_capability_hash: "cap",
+                policy_snapshot: "policy",
+                expected_policy_snapshot: "policy",
+                approval_snapshot: "approval",
+                expected_approval_snapshot: "approval",
+            }),
             Err(RuntimeError::PolicyRevalidationFailed)
         );
     }

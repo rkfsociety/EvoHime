@@ -3583,13 +3583,15 @@ impl IpcBridge {
                 });
                 let queued = evohime_local_storage::automation_store::transition_run(
                     database.connection_mut(),
-                    &run.run_id,
-                    "admitted",
-                    "queued",
-                    1,
-                    "manual_trigger",
-                    &payload.to_string(),
-                    now,
+                    evohime_local_storage::automation_store::RunTransition {
+                        run_id: &run.run_id,
+                        from_state: "admitted",
+                        to_state: "queued",
+                        generation: 1,
+                        event_type: "manual_trigger",
+                        payload_json: &payload.to_string(),
+                        now_ms: now,
+                    },
                 )
                 .unwrap_or(false);
                 serde_json::json!({ "accepted": queued, "run_id": run.run_id, "state": if queued { "queued" } else { "admitted" }, "deduplicated": false, "error_code": if queued { "" } else { "transition_failed" } })
@@ -3804,13 +3806,15 @@ impl IpcBridge {
                 });
                 let _ = evohime_local_storage::automation_store::transition_run(
                     database.connection_mut(),
-                    &run.run_id,
-                    "admitted",
-                    "queued",
-                    1,
-                    "scheduled",
-                    &payload.to_string(),
-                    now,
+                    evohime_local_storage::automation_store::RunTransition {
+                        run_id: &run.run_id,
+                        from_state: "admitted",
+                        to_state: "queued",
+                        generation: 1,
+                        event_type: "scheduled",
+                        payload_json: &payload.to_string(),
+                        now_ms: now,
+                    },
                 );
             }
         }

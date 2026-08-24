@@ -86,6 +86,27 @@ pub enum AdmitRunResult {
     IdempotencyConflict { existing_payload_hash: String },
 }
 
+pub struct RunTransition<'a> {
+    pub run_id: &'a str,
+    pub from_state: &'a str,
+    pub to_state: &'a str,
+    pub generation: u64,
+    pub event_type: &'a str,
+    pub payload_json: &'a str,
+    pub now_ms: i64,
+}
+
+pub struct SnapshotInsert<'a> {
+    pub snapshot_id: &'a str,
+    pub run_id: &'a str,
+    pub definition_revision: u64,
+    pub generation: u64,
+    pub event_sequence: u64,
+    pub snapshot_json: &'a str,
+    pub checksum_sha256: &'a str,
+    pub now_ms: i64,
+}
+
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch("CREATE TABLE IF NOT EXISTS automation_definitions (definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, definition_json TEXT NOT NULL, definition_hash TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(definition_id, revision, owner_scope)); CREATE TABLE IF NOT EXISTS automation_runs (run_id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, idempotency_key TEXT NOT NULL, payload_hash TEXT NOT NULL, state TEXT NOT NULL, generation INTEGER NOT NULL, permission_snapshot TEXT NOT NULL, approval_snapshot TEXT NOT NULL, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, UNIQUE(owner_scope, definition_id, revision, idempotency_key)); CREATE INDEX IF NOT EXISTS idx_automation_runs_state ON automation_runs(state, updated_at_ms); CREATE TABLE IF NOT EXISTS automation_run_events (run_id TEXT NOT NULL REFERENCES automation_runs(run_id) ON DELETE CASCADE, run_sequence INTEGER NOT NULL, event_type TEXT NOT NULL, generation INTEGER NOT NULL, payload_json TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(run_id, run_sequence)); CREATE TABLE IF NOT EXISTS automation_leases (run_id TEXT PRIMARY KEY REFERENCES automation_runs(run_id) ON DELETE CASCADE, owner_id TEXT NOT NULL, generation INTEGER NOT NULL, expires_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS automation_snapshots (snapshot_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES automation_runs(run_id) ON DELETE CASCADE, definition_revision INTEGER NOT NULL, generation INTEGER NOT NULL, event_sequence INTEGER NOT NULL, snapshot_json TEXT NOT NULL, checksum_sha256 TEXT NOT NULL, created_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS automation_schedules (schedule_id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, hour INTEGER NOT NULL, minute INTEGER NOT NULL, timezone_minutes INTEGER NOT NULL, missed_grace_ms INTEGER NOT NULL, enabled INTEGER NOT NULL, last_slot TEXT, updated_at_ms INTEGER NOT NULL, FOREIGN KEY(definition_id, revision, owner_scope) REFERENCES automation_definitions(definition_id, revision, owner_scope)); CREATE TABLE IF NOT EXISTS automation_archives (archive_id TEXT PRIMARY KEY, run_id TEXT NOT NULL UNIQUE, archive_json TEXT NOT NULL, checksum_sha256 TEXT NOT NULL, created_at_ms INTEGER NOT NULL, expires_at_ms INTEGER NOT NULL);")
 }
@@ -523,26 +544,20 @@ pub fn admit_run(
 /// SQLite transaction, so stale runners cannot publish a transition.
 pub fn transition_run(
     connection: &mut Connection,
-    run_id: &str,
-    from_state: &str,
-    to_state: &str,
-    generation: u64,
-    event_type: &str,
-    payload_json: &str,
-    now_ms: i64,
+    transition: RunTransition<'_>,
 ) -> rusqlite::Result<bool> {
     let tx = connection.transaction()?;
-    let changed = tx.execute("UPDATE automation_runs SET state=?1, updated_at_ms=?2 WHERE run_id=?3 AND state=?4 AND generation=?5", params![to_state, now_ms, run_id, from_state, generation as i64])?;
+    let changed = tx.execute("UPDATE automation_runs SET state=?1, updated_at_ms=?2 WHERE run_id=?3 AND state=?4 AND generation=?5", params![transition.to_state, transition.now_ms, transition.run_id, transition.from_state, transition.generation as i64])?;
     if changed == 0 {
         tx.rollback()?;
         return Ok(false);
     }
     let sequence: i64 = tx.query_row(
         "SELECT COALESCE(MAX(run_sequence), -1) + 1 FROM automation_run_events WHERE run_id=?1",
-        [run_id],
+        [transition.run_id],
         |row| row.get(0),
     )?;
-    tx.execute("INSERT INTO automation_run_events (run_id, run_sequence, event_type, generation, payload_json, created_at_ms) VALUES (?1,?2,?3,?4,?5,?6)", params![run_id, sequence, event_type, generation as i64, payload_json, now_ms])?;
+    tx.execute("INSERT INTO automation_run_events (run_id, run_sequence, event_type, generation, payload_json, created_at_ms) VALUES (?1,?2,?3,?4,?5,?6)", params![transition.run_id, sequence, transition.event_type, transition.generation as i64, transition.payload_json, transition.now_ms])?;
     tx.commit()?;
     Ok(true)
 }
@@ -561,16 +576,9 @@ pub fn acquire_lease(
 
 pub fn save_snapshot(
     connection: &Connection,
-    snapshot_id: &str,
-    run_id: &str,
-    definition_revision: u64,
-    generation: u64,
-    event_sequence: u64,
-    snapshot_json: &str,
-    checksum_sha256: &str,
-    now_ms: i64,
+    snapshot: SnapshotInsert<'_>,
 ) -> rusqlite::Result<()> {
-    connection.execute("INSERT INTO automation_snapshots (snapshot_id, run_id, definition_revision, generation, event_sequence, snapshot_json, checksum_sha256, created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)", params![snapshot_id, run_id, definition_revision as i64, generation as i64, event_sequence as i64, snapshot_json, checksum_sha256, now_ms])?;
+    connection.execute("INSERT INTO automation_snapshots (snapshot_id, run_id, definition_revision, generation, event_sequence, snapshot_json, checksum_sha256, created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)", params![snapshot.snapshot_id, snapshot.run_id, snapshot.definition_revision as i64, snapshot.generation as i64, snapshot.event_sequence as i64, snapshot.snapshot_json, snapshot.checksum_sha256, snapshot.now_ms])?;
     Ok(())
 }
 
@@ -637,10 +645,32 @@ mod tests {
             AdmitRunResult::IdempotencyConflict { .. }
         ));
         let mut c = c;
-        assert!(transition_run(&mut c, "run", "admitted", "queued", 1, "queued", "{}", 2).unwrap());
-        assert!(
-            !transition_run(&mut c, "run", "queued", "running", 0, "running", "{}", 3).unwrap()
-        );
+        assert!(transition_run(
+            &mut c,
+            RunTransition {
+                run_id: "run",
+                from_state: "admitted",
+                to_state: "queued",
+                generation: 1,
+                event_type: "queued",
+                payload_json: "{}",
+                now_ms: 2,
+            },
+        )
+        .unwrap());
+        assert!(!transition_run(
+            &mut c,
+            RunTransition {
+                run_id: "run",
+                from_state: "queued",
+                to_state: "running",
+                generation: 0,
+                event_type: "running",
+                payload_json: "{}",
+                now_ms: 3,
+            },
+        )
+        .unwrap());
         assert!(acquire_lease(&c, "run", "core-a", 1, 10, 30).unwrap());
         assert!(!acquire_lease(&c, "run", "core-b", 2, 20, 30).unwrap());
         assert!(acquire_lease(&c, "run", "core-b", 2, 40, 30).unwrap());
@@ -700,14 +730,16 @@ mod tests {
         insert_run(&c, &record, 10).unwrap();
         save_snapshot(
             &c,
-            "snapshot-1",
-            "run-archive",
-            1,
-            1,
-            0,
-            "{}",
-            "checksum",
-            11,
+            SnapshotInsert {
+                snapshot_id: "snapshot-1",
+                run_id: "run-archive",
+                definition_revision: 1,
+                generation: 1,
+                event_sequence: 0,
+                snapshot_json: "{}",
+                checksum_sha256: "checksum",
+                now_ms: 11,
+            },
         )
         .unwrap();
         assert!(archive_run(&mut c, "archive-1", "run-archive", 20, 100).unwrap());
