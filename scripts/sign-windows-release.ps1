@@ -8,7 +8,14 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $signTool = Get-Command signtool.exe -ErrorAction SilentlyContinue
+if ($null -eq $signTool) {
+    $sdkTools = Get-ChildItem -Path 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter signtool.exe -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+        Sort-Object FullName -Descending
+    if ($sdkTools.Count -gt 0) { $signTool = $sdkTools[0].FullName }
+}
 if ($null -eq $signTool) { throw 'signtool.exe is required for the Windows signing pipeline.' }
+$signToolPath = if ($signTool -is [string]) { $signTool } else { $signTool.Source }
 $certificatePath = $env:EVOHIME_SIGNING_CERTIFICATE_PATH
 $certificatePassword = $env:EVOHIME_SIGNING_CERTIFICATE_PASSWORD
 if ([string]::IsNullOrWhiteSpace($certificatePath) -or [string]::IsNullOrWhiteSpace($certificatePassword)) {
@@ -21,17 +28,20 @@ $files = Get-ChildItem -LiteralPath $InputRoot -Recurse -File | Where-Object { $
 if ($files.Count -eq 0) { throw 'No Windows binaries found to sign.' }
 $records = @()
 foreach ($file in $files) {
-    & $signTool.Source sign /fd SHA256 /td SHA256 /tr 'http://timestamp.digicert.com' /f $certificatePath /p $certificatePassword /d 'EvoHime' $file.FullName
+    & $signToolPath sign /fd SHA256 /td SHA256 /tr 'http://timestamp.digicert.com' /f $certificatePath /p $certificatePassword /d 'EvoHime' $file.FullName
     if ($LASTEXITCODE -ne 0) { throw "Signing failed for $($file.Name)." }
-    & $signTool.Source verify /pa /all $file.FullName
+    & $signToolPath verify /pa /all $file.FullName
     if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $($file.Name)." }
     $signature = Get-AuthenticodeSignature -LiteralPath $file.FullName
     if ($signature.Status -ne 'Valid') { throw "Authenticode status is not Valid for $($file.Name): $($signature.Status)" }
+    if ($null -eq $signature.TimeStamperCertificate) { throw "RFC3161 timestamp is missing for $($file.Name)." }
     $records += [pscustomobject]@{
         path = [IO.Path]::GetRelativePath((Resolve-Path -LiteralPath $InputRoot), $file.FullName)
         sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
         signature_status = [string]$signature.Status
         signer_subject = if ($null -eq $signature.SignerCertificate) { '' } else { [string]$signature.SignerCertificate.Subject }
+        signer_thumbprint = if ($null -eq $signature.SignerCertificate) { '' } else { [string]$signature.SignerCertificate.Thumbprint }
+        timestamp_present = $true
     }
 }
 $evidence = [pscustomobject]@{
