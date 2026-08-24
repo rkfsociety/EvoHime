@@ -5,7 +5,7 @@
 //! детерминированные хеши, поэтому те же bytes могут проверить Core и offline
 //! verifier.
 
-use evohime_receipts::{canonicalize_json, sha256_hex};
+use evohime_receipts::{canonicalize_json_with_limits, sha256_hex};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use thiserror::Error;
@@ -373,8 +373,10 @@ fn canonical_json<T: Serialize>(value: &T) -> Result<Vec<u8>> {
 }
 
 fn canonical_json_value(value: &Value) -> Result<Vec<u8>> {
-    canonicalize_json(
+    canonicalize_json_with_limits(
         &serde_json::to_vec(value).map_err(|error| ProvenanceError::Invalid(error.to_string()))?,
+        MAX_REQUEST_ENVELOPE_BYTES,
+        MAX_PROVENANCE_DEPTH,
     )
     .map_err(|error| ProvenanceError::Invalid(error.to_string()))
 }
@@ -620,6 +622,17 @@ mod tests {
         let mut value = envelope();
         value.tools[1].name = value.tools[0].name.clone();
         assert!(value.validate().is_err());
+    }
+
+    #[test]
+    fn canonical_bytes_use_model_request_budget_not_receipt_budget() {
+        let mut value = envelope();
+        value.system_prompt = "x".repeat(9 * 1024);
+        let bytes = value
+            .canonical_bytes()
+            .expect("model request envelopes may exceed receipt size");
+        assert!(bytes.len() > 8192);
+        assert!(bytes.len() <= MAX_REQUEST_ENVELOPE_BYTES);
     }
 
     #[test]

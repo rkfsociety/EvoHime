@@ -60,7 +60,19 @@ pub struct Envelope {
 }
 
 pub fn canonicalize_json(input: &[u8]) -> Result<Vec<u8>, ReceiptError> {
-    if input.len() > MAX_ENVELOPE_BYTES {
+    canonicalize_json_with_limits(input, MAX_ENVELOPE_BYTES, MAX_DEPTH)
+}
+
+/// Canonicalize JSON with a caller-owned byte/depth budget.  The receipt
+/// contract uses [`canonicalize_json`] with its strict receipt limits, while
+/// other signed contracts (for example model-request provenance) have larger
+/// independently specified envelopes.
+pub fn canonicalize_json_with_limits(
+    input: &[u8],
+    max_bytes: usize,
+    max_depth: usize,
+) -> Result<Vec<u8>, ReceiptError> {
+    if input.len() > max_bytes {
         return Err(ReceiptError::TooLarge);
     }
     if std::str::from_utf8(input).is_err() {
@@ -75,12 +87,20 @@ pub fn canonicalize_json(input: &[u8]) -> Result<Vec<u8>, ReceiptError> {
     }
     let value: Value = serde_json::from_str(text).map_err(|_| ReceiptError::InvalidJson)?;
     let mut out = String::new();
-    write_jcs(&value, &mut out, 0)?;
+    write_jcs(&value, &mut out, 0, max_depth)?;
+    if out.len() > max_bytes {
+        return Err(ReceiptError::TooLarge);
+    }
     Ok(out.into_bytes())
 }
 
-fn write_jcs(value: &Value, out: &mut String, depth: usize) -> Result<(), ReceiptError> {
-    if depth > MAX_DEPTH {
+fn write_jcs(
+    value: &Value,
+    out: &mut String,
+    depth: usize,
+    max_depth: usize,
+) -> Result<(), ReceiptError> {
+    if depth > max_depth {
         return Err(ReceiptError::SchemaViolation);
     }
     match value {
@@ -96,7 +116,7 @@ fn write_jcs(value: &Value, out: &mut String, depth: usize) -> Result<(), Receip
                 if i > 0 {
                     out.push(',');
                 }
-                write_jcs(item, out, depth + 1)?;
+                write_jcs(item, out, depth + 1, max_depth)?;
             }
             out.push(']');
         }
@@ -110,7 +130,7 @@ fn write_jcs(value: &Value, out: &mut String, depth: usize) -> Result<(), Receip
                 }
                 out.push_str(&serde_json::to_string(key).map_err(|_| ReceiptError::InvalidJson)?);
                 out.push(':');
-                write_jcs(item, out, depth + 1)?;
+                write_jcs(item, out, depth + 1, max_depth)?;
             }
             out.push('}');
         }
