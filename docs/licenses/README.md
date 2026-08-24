@@ -1,14 +1,18 @@
 # License и attribution inventory
 
-В inventory добавляется одна строка на каждый third-party artifact, который
-попадает в release package или listener-runtime release. Секреты и private
-URLs здесь запрещены.
+Канонический inventory — [`manifest.json`](manifest.json) плюс locked package
+metadata. `scripts/license-inventory.tests.ps1` проверяет, что все registry
+crates и npm-пакеты имеют license metadata, что lockfiles не изменились без
+обновления manifest hash, а listener-runtime остаётся отдельной областью
+поставки. Секреты и private URLs здесь запрещены.
 
 | Artifact | Version/commit | License | Source | Distributed? | Hash/evidence |
 | --- | --- | --- | --- | --- | --- |
-| EvoHime bundled dependencies | см. `Cargo.lock` и `package-lock.json` | per-package | lockfiles / upstream metadata | yes, as bundled code | release manifest |
+| EvoHime bundled Rust dependencies | `Cargo.lock` | per-package metadata | crates.io package metadata | yes, as bundled code | `manifest.json` + release manifest |
+| EvoHime Electron production dependencies | `package-lock.json` | per-package metadata | npm package metadata | yes, as bundled code | `manifest.json` + release manifest |
 | listener runtime models/DLLs | release manifest | upstream license | `listener-runtime` release | optional | `listener-runtime.json` |
 
-Перед installer release эту таблицу нужно дополнить точными upstream license
-текстами и SHA-256 manifest evidence. Этот файл — metadata-only и не является
-runtime input.
+Перед installer release release manifest должен добавить точные artifact
+SHA-256 и ссылки на upstream license texts для listener-runtime и любого нового
+распространяемого файла. Этот каталог — metadata-only и не является runtime
+input.

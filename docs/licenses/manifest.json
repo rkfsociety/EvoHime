@@ -1,0 +1,13 @@
+{
+  "inventory_version": 1,
+  "generated_from": {
+    "cargo_lock_sha256": "9D27DED441B48F436378268D4C0A5607E66BEFB9CEA8D19BB2D68895FF1F8B31",
+    "npm_lock_sha256": "B31F5BC61986BE91A95AD9574BC171B01D38F672C18A16040B3726869C8E6B20"
+  },
+  "distributed_scopes": [
+    "rust_registry_dependencies",
+    "electron_production_dependencies",
+    "listener-runtime_artifacts"
+  ],
+  "metadata_policy": "license identifiers and upstream source URLs are read from locked package metadata; release manifests add artifact hashes"
+}
