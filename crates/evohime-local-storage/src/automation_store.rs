@@ -6,6 +6,20 @@ use serde::{Deserialize, Serialize};
 pub const AUTOMATION_STORE_SCHEMA: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AutomationScheduleRecord {
+    pub schedule_id: String,
+    pub definition_id: String,
+    pub revision: u64,
+    pub owner_scope: String,
+    pub hour: u8,
+    pub minute: u8,
+    pub timezone_minutes: i32,
+    pub missed_grace_ms: i64,
+    pub enabled: bool,
+    pub last_slot: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AutomationDefinitionRecord {
     pub definition_id: String,
     pub revision: u64,
@@ -36,7 +50,79 @@ pub enum AdmitRunResult {
 }
 
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
-    connection.execute_batch("CREATE TABLE IF NOT EXISTS automation_definitions (definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, definition_json TEXT NOT NULL, definition_hash TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(definition_id, revision, owner_scope)); CREATE TABLE IF NOT EXISTS automation_runs (run_id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, idempotency_key TEXT NOT NULL, payload_hash TEXT NOT NULL, state TEXT NOT NULL, generation INTEGER NOT NULL, permission_snapshot TEXT NOT NULL, approval_snapshot TEXT NOT NULL, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, UNIQUE(owner_scope, definition_id, revision, idempotency_key)); CREATE INDEX IF NOT EXISTS idx_automation_runs_state ON automation_runs(state, updated_at_ms); CREATE TABLE IF NOT EXISTS automation_run_events (run_id TEXT NOT NULL REFERENCES automation_runs(run_id) ON DELETE CASCADE, run_sequence INTEGER NOT NULL, event_type TEXT NOT NULL, generation INTEGER NOT NULL, payload_json TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(run_id, run_sequence)); CREATE TABLE IF NOT EXISTS automation_leases (run_id TEXT PRIMARY KEY REFERENCES automation_runs(run_id) ON DELETE CASCADE, owner_id TEXT NOT NULL, generation INTEGER NOT NULL, expires_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS automation_snapshots (snapshot_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES automation_runs(run_id) ON DELETE CASCADE, definition_revision INTEGER NOT NULL, generation INTEGER NOT NULL, event_sequence INTEGER NOT NULL, snapshot_json TEXT NOT NULL, checksum_sha256 TEXT NOT NULL, created_at_ms INTEGER NOT NULL);")
+    connection.execute_batch("CREATE TABLE IF NOT EXISTS automation_definitions (definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, definition_json TEXT NOT NULL, definition_hash TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(definition_id, revision, owner_scope)); CREATE TABLE IF NOT EXISTS automation_runs (run_id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, idempotency_key TEXT NOT NULL, payload_hash TEXT NOT NULL, state TEXT NOT NULL, generation INTEGER NOT NULL, permission_snapshot TEXT NOT NULL, approval_snapshot TEXT NOT NULL, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, UNIQUE(owner_scope, definition_id, revision, idempotency_key)); CREATE INDEX IF NOT EXISTS idx_automation_runs_state ON automation_runs(state, updated_at_ms); CREATE TABLE IF NOT EXISTS automation_run_events (run_id TEXT NOT NULL REFERENCES automation_runs(run_id) ON DELETE CASCADE, run_sequence INTEGER NOT NULL, event_type TEXT NOT NULL, generation INTEGER NOT NULL, payload_json TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(run_id, run_sequence)); CREATE TABLE IF NOT EXISTS automation_leases (run_id TEXT PRIMARY KEY REFERENCES automation_runs(run_id) ON DELETE CASCADE, owner_id TEXT NOT NULL, generation INTEGER NOT NULL, expires_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS automation_snapshots (snapshot_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES automation_runs(run_id) ON DELETE CASCADE, definition_revision INTEGER NOT NULL, generation INTEGER NOT NULL, event_sequence INTEGER NOT NULL, snapshot_json TEXT NOT NULL, checksum_sha256 TEXT NOT NULL, created_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS automation_schedules (schedule_id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, hour INTEGER NOT NULL, minute INTEGER NOT NULL, timezone_minutes INTEGER NOT NULL, missed_grace_ms INTEGER NOT NULL, enabled INTEGER NOT NULL, last_slot TEXT, updated_at_ms INTEGER NOT NULL, FOREIGN KEY(definition_id, revision, owner_scope) REFERENCES automation_definitions(definition_id, revision, owner_scope));")
+}
+
+pub fn upsert_schedule(
+    connection: &Connection,
+    record: &AutomationScheduleRecord,
+    now_ms: i64,
+) -> rusqlite::Result<()> {
+    connection.execute(
+        "INSERT INTO automation_schedules (schedule_id, definition_id, revision, owner_scope, hour, minute, timezone_minutes, missed_grace_ms, enabled, last_slot, updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11) ON CONFLICT(schedule_id) DO UPDATE SET definition_id=excluded.definition_id, revision=excluded.revision, owner_scope=excluded.owner_scope, hour=excluded.hour, minute=excluded.minute, timezone_minutes=excluded.timezone_minutes, missed_grace_ms=excluded.missed_grace_ms, enabled=excluded.enabled, updated_at_ms=excluded.updated_at_ms",
+        params![
+            record.schedule_id,
+            record.definition_id,
+            record.revision as i64,
+            record.owner_scope,
+            record.hour as i64,
+            record.minute as i64,
+            record.timezone_minutes,
+            record.missed_grace_ms,
+            record.enabled as i64,
+            record.last_slot,
+            now_ms,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn get_schedule(
+    connection: &Connection,
+    schedule_id: &str,
+) -> rusqlite::Result<Option<AutomationScheduleRecord>> {
+    connection
+        .query_row(
+            "SELECT schedule_id, definition_id, revision, owner_scope, hour, minute, timezone_minutes, missed_grace_ms, enabled, last_slot FROM automation_schedules WHERE schedule_id=?1",
+            [schedule_id],
+            |row| {
+                Ok(AutomationScheduleRecord {
+                    schedule_id: row.get(0)?,
+                    definition_id: row.get(1)?,
+                    revision: row.get::<_, i64>(2)? as u64,
+                    owner_scope: row.get(3)?,
+                    hour: row.get::<_, i64>(4)? as u8,
+                    minute: row.get::<_, i64>(5)? as u8,
+                    timezone_minutes: row.get(6)?,
+                    missed_grace_ms: row.get(7)?,
+                    enabled: row.get::<_, i64>(8)? != 0,
+                    last_slot: row.get(9)?,
+                })
+            },
+        )
+        .optional()
+}
+
+/// Advances a schedule cursor only if it still points at `expected_last_slot`.
+/// The compare-and-swap makes scheduler polling safe across Core generations.
+pub fn advance_schedule_slot(
+    connection: &Connection,
+    schedule_id: &str,
+    expected_last_slot: Option<&str>,
+    next_slot: &str,
+    now_ms: i64,
+) -> rusqlite::Result<bool> {
+    let changed = match expected_last_slot {
+        Some(expected) => connection.execute(
+            "UPDATE automation_schedules SET last_slot=?1, updated_at_ms=?2 WHERE schedule_id=?3 AND last_slot=?4",
+            params![next_slot, now_ms, schedule_id, expected],
+        )?,
+        None => connection.execute(
+            "UPDATE automation_schedules SET last_slot=?1, updated_at_ms=?2 WHERE schedule_id=?3 AND last_slot IS NULL",
+            params![next_slot, now_ms, schedule_id],
+        )?,
+    };
+    Ok(changed == 1)
 }
 
 pub fn insert_definition(
@@ -227,5 +313,40 @@ mod tests {
         assert!(acquire_lease(&c, "run", "core-a", 1, 10, 30).unwrap());
         assert!(!acquire_lease(&c, "run", "core-b", 2, 20, 30).unwrap());
         assert!(acquire_lease(&c, "run", "core-b", 2, 40, 30).unwrap());
+    }
+
+    #[test]
+    fn schedule_cursor_is_durable_and_compare_and_swap_fenced() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        let definition = AutomationDefinitionRecord {
+            definition_id: "d".into(),
+            revision: 1,
+            owner_scope: "o".into(),
+            definition_json: "{}".into(),
+            definition_hash: "h".into(),
+        };
+        insert_definition(&c, &definition, 1).unwrap();
+        let schedule = AutomationScheduleRecord {
+            schedule_id: "s".into(),
+            definition_id: "d".into(),
+            revision: 1,
+            owner_scope: "o".into(),
+            hour: 12,
+            minute: 0,
+            timezone_minutes: 0,
+            missed_grace_ms: 60_000,
+            enabled: true,
+            last_slot: None,
+        };
+        upsert_schedule(&c, &schedule, 1).unwrap();
+        assert!(advance_schedule_slot(&c, "s", None, "slot-1", 2).unwrap());
+        assert!(!advance_schedule_slot(&c, "s", None, "slot-2", 3).unwrap());
+        assert!(!advance_schedule_slot(&c, "s", Some("old"), "slot-2", 3).unwrap());
+        assert!(advance_schedule_slot(&c, "s", Some("slot-1"), "slot-2", 4).unwrap());
+        assert_eq!(
+            get_schedule(&c, "s").unwrap().unwrap().last_slot.as_deref(),
+            Some("slot-2")
+        );
     }
 }
