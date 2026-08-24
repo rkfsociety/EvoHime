@@ -214,6 +214,14 @@ denied, and export redaction removes bearer markers and absolute Windows paths.
 Snapshot records are stored separately in `automation_snapshots`; active state
 and event history remain authoritative.
 
+Acceptance fixtures A01–A08 live in `automation_acceptance.rs` and run with a
+frozen trigger slot, provider fixture, replay input and policy snapshots. They
+cover bounded trigger/queue behavior, stale fencing, cancellation and retry
+classification, snapshot/replay equality, simulation redaction, history
+limits and effect-boundary revalidation. The fixtures do not claim scheduler
+or Electron IPC behavior that is not wired to automation yet; those remain
+explicit integration follow-up before a release gate can be called green.
+
 ## IPC
 
 Контракт находится в `crates/desktop-ipc/proto/evohime.desktop.proto`.

@@ -13445,6 +13445,7 @@ mod tests {
 }
 pub mod adapter_contract;
 pub mod automation;
+pub mod automation_acceptance;
 pub mod automation_runtime;
 pub mod automation_simulation;
 pub mod target_contract;

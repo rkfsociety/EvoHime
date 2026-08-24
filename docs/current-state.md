@@ -220,6 +220,18 @@ Read-only Git loadout расширен операциями git.log, git.show, g
   production IPC effects; export redaction strips bearer markers and absolute
   Windows paths.
 
+### Automation acceptance 16.4
+
+- Deterministic A01–A08 fixtures in `automation_acceptance.rs` verify bounded
+  trigger/queue behavior, stale lease fencing, cancellation and retry typing,
+  snapshot/replay equality, simulation redaction, history limits and
+  effect-boundary revalidation.
+- The acceptance fixtures intentionally report only Core/storage contract
+  evidence. Scheduler timezone/missed-tick behavior and an additive automation
+  Electron IPC projection are not wired in this cycle and are not claimed as
+  release-green; optional adapters 13–15 continue to fail closed as unsupported
+  until a later integration stage.
+
 ### Разработка
 
 - `.env.example` описывает переменные провайдера для локального запуска; `start-dev.ps1` читает `.env` по allow-list и передаёт значения только дочерним native-процессам.
