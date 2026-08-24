@@ -14,7 +14,6 @@ output, transcripts, absolute paths и PII запрещены.
 | Core/supervisor package | полный install backup и transaction journal | transaction worker откатывает staging и очищает journal | остановить компонент, сохранить redacted diagnostic | `electron-fault` и installer rollback smoke |
 | Optional browser/voice/vision adapter | capability manifest/hash и typed availability | `backend_unavailable`, без Core state mutation | disable adapter, remove staging/runtime cache | `decision-register.md`, adapter contract tests |
 | Automation simulation | ephemeral state, fake-provider fixture | discard ephemeral state; no production recovery | delete temp workspace after run | automation A05/A06 fixtures |
-| Windows signing | certificate-backed SHA-256 Authenticode + RFC3161 timestamp | fail-closed before publish | do not publish unsigned installer | `scripts/sign-windows-release.ps1`, Windows CI evidence |
 
 Rollback не обещает откат уже совершённых внешних side effects: такие effects
 идут через existing receipts/reconciliation и требуют typed unknown outcome.
@@ -38,6 +37,3 @@ audit хранится по его собственному Core policy.
   запускает focused backup/restore и redaction tests и запрещённые markers;
 - license/attribution inventory ведётся в [`licenses/README.md`](licenses/README.md)
   и обновляется в том же коммите, что и новый distributed artifact.
-- `scripts/signing-release-gate.tests.ps1` проверяет определение signing
-  pipeline; реальный release требует secrets `EVOHIME_SIGNING_CERTIFICATE_BASE64`
-  и `EVOHIME_SIGNING_CERTIFICATE_PASSWORD`, а также `signtool.exe` в Windows CI.

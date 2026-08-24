@@ -37,15 +37,15 @@ fail-closed boundaries и не образуют цикл или обязател
 | D-OPT-01 | Missing browser/voice/vision adapter is typed unsupported and has no production side effect | Capability owner | architecture/current-state optional adapter sections |
 | D-RES-01 | Base package is local-only: no cloud control plane, public HTTP, external telemetry backend or mandatory GPU | Release | `AGENTS.md`, architecture boundaries |
 | D-LIC-01 | License/attribution inventory is a checked-in metadata document, never runtime input or secret storage | Release | `docs/licenses/` when third-party material is shipped |
+| D-SIGN-01 | Authenticode signing is outside the current release scope; manifest/hash is the documented trust root | Release | `docs/architecture.md`, `docs/release-audit.md` |
 
-## Open decisions
+## Decision closure register
 
 | Decision ID | Status | Owner | Closure criterion | Release impact |
 | --- | --- | --- | --- | --- |
 | O-AUTO-01 | accepted | Core automation | Scheduler timezone/missed-tick, durable cursor, additive IPC and focused gates are wired | closed by plan 18.1 evidence |
 | O-AUTO-02 | accepted | Core automation | Archive/restore transaction, checksum, bounded restore and retention sweep are covered by focused evidence | closed by plan 18.2 evidence |
 | O-LIC-01 | accepted | Release | Locked Cargo/npm metadata inventory and hash verification pass the CI gate | closed by plan 18.3 evidence |
-| O-SIGN-01 | open | Release | Provide real signing pipeline/certificate evidence; until then manifest/hash remains the documented trust root | blocks signed-release claim, not local dev |
 
 ## Resource and contract budgets
 

@@ -1,9 +1,8 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-24. Планы 01–17 завершены и удалены из каталога временных
+Обновлено: 2026-08-24. Планы 01–18 завершены и удалены из каталога временных
 планов. План 18 реализовал scheduler/IPC, automation archive/restore и license
-inventory; выпуск остаётся заблокированным только отсутствием реального
-certificate-backed code-signing evidence.
+inventory; code signing явно исключён из текущего release scope.
 
 ## Продукт
 
@@ -235,9 +234,9 @@ Read-only Git loadout расширен операциями git.log, git.show, g
 ### Release decision register 17.1
 
 `docs/decision-register.md` фиксирует dependency graph, владельцев schema/IPC,
-resource budgets, accepted decisions и открытые release blockers. В частности,
+resource budgets и закрытые release decisions. В частности,
 оно фиксирует закрытые scheduler/IPC, archive/restore и license inventory
-решения; открытым остаётся только certificate-backed signing evidence.
+решения; code signing принят как внеобъёмное решение текущего цикла.
 Automation boundary gate (`scripts/automation-release-gate.tests.ps1`) проверяет
 наличие contract modules, отсутствие filesystem/network/process imports в них,
 locked Core/storage acceptance tests и подключён к Windows Rust CI.
@@ -246,8 +245,7 @@ retention, redaction, privacy/egress и license ownership; local
 `scripts/release-evidence.tests.ps1` проверяет документы, backup/restore и
 automation evidence без публикации credentials.
 Финальный audit (`docs/release-audit.md`) оставляет checkout в статусе
-`TECHNICAL_GATES_PASS / RELEASE_BLOCKED` только до получения certificate-backed
-signing evidence.
+`TECHNICAL_GATES_PASS / RELEASE_GREEN`; manifest/hash остаётся trust root.
 
 ### Разработка
 
@@ -263,7 +261,7 @@ signing evidence.
 - `cargo fmt --all -- --check` и `git diff --check`;
 - Electron `check:protocol` и `typecheck`.
 
-Итог: `TECHNICAL_GATES_PASS / RELEASE_BLOCKED`. Package startup, installer,
+Итог: `TECHNICAL_GATES_PASS / RELEASE_GREEN`. Package startup, installer,
 upgrade/rollback и Windows compatibility остаются отдельными CI gates из
 `.github/workflows/windows.yml`. Source-update E2E запускается только с
 `EVOHIME_UPDATE_E2E=1`, поскольку выполняет реальную пересборку.

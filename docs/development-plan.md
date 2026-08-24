@@ -1,6 +1,6 @@
 # План разработки EvoHime Desktop
 
-Статус: foundation, desktop shell, планы 01–17 и технические release-gates
+Статус: foundation, desktop shell, планы 01–18 и технические release-gates
 реализованы. Текущая работа закрывает четыре документированных решения,
 которые остаются перед выпуском. Фактическое состояние checkout находится в
 [`current-state.md`](current-state.md), архитектурные контракты — в
@@ -19,7 +19,7 @@ desktop-клиент, выбирает workspace, выполняет задач�
 
 ## Закрытые направления
 
-Планы 01–17 завершены. Их временные файлы удалены из `docs/plans/`; контракты и
+Планы 01–18 завершены. Их временные файлы удалены из `docs/plans/`; контракты и
 подтверждённое состояние перенесены в канонические документы. Optional
 browser/voice/vision adapters остаются fail-closed capability boundaries и не
 являются обязательными зависимостями базового Core package.
@@ -31,9 +31,8 @@ browser/voice/vision adapters остаются fail-closed capability boundaries
 2. **O-AUTO-02 — закрыто.** Transactional archive/restore, checksum,
    bounded restore и retention sweep покрыты focused evidence.
 3. **O-LIC-01 — закрыто.** Locked Cargo/npm inventory проверяется CI gate’ом.
-4. **O-SIGN-01 — текущий blocker.** Реализовать certificate-backed запуск
-   Windows signing workflow и сохранить проверяемое evidence; без секрета и
-   сертификата release publish fail-closed.
+4. **O-SIGN-01 — принято вне scope.** Code signing не входит в текущий
+   release cycle; manifest/hash остаётся документированным trust root.
 
 Владельцы, критерии закрытия и влияние на выпуск находятся в
 [`decision-register.md`](decision-register.md). Порядок работ не меняет

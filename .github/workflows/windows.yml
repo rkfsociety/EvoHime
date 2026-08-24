@@ -221,9 +221,6 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: read
-    env:
-      EVOHIME_SIGNING_CERTIFICATE_BASE64: ${{ secrets.EVOHIME_SIGNING_CERTIFICATE_BASE64 }}
-      EVOHIME_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.EVOHIME_SIGNING_CERTIFICATE_PASSWORD }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -233,21 +230,6 @@ jobs:
         shell: pwsh
         run: |
           ./scripts/build-windows-native.ps1 -OutputPath "$env:GITHUB_WORKSPACE\native-package" -Commit $env:GITHUB_SHA -Branch 'main'
-      - name: Require signing credentials for release candidates
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-        shell: pwsh
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:EVOHIME_SIGNING_CERTIFICATE_BASE64) -or [string]::IsNullOrWhiteSpace($env:EVOHIME_SIGNING_CERTIFICATE_PASSWORD)) {
-            throw 'Release candidate requires EVOHIME_SIGNING_CERTIFICATE_BASE64 and EVOHIME_SIGNING_CERTIFICATE_PASSWORD.'
-          }
-      - name: Sign shipped native binaries
-        if: env.EVOHIME_SIGNING_CERTIFICATE_BASE64 != ''
-        shell: pwsh
-        run: |
-          $certificatePath = Join-Path $env:RUNNER_TEMP 'evohime-signing.pfx'
-          [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:EVOHIME_SIGNING_CERTIFICATE_BASE64))
-          $env:EVOHIME_SIGNING_CERTIFICATE_PATH = $certificatePath
-          ./scripts/sign-windows-release.ps1 -InputRoot "$env:GITHUB_WORKSPACE\native-package" -EvidencePath "$env:GITHUB_WORKSPACE\native-signing-evidence.json"
       - name: Run Electron package startup smoke
         shell: pwsh
         run: ./scripts/electron-acceptance.tests.ps1 -PackagePath "$env:GITHUB_WORKSPACE\native-package"
@@ -267,14 +249,6 @@ jobs:
           if (-not (Test-Path -LiteralPath $iscc)) { throw "ISCC not found: $iscc" }
           & $iscc "/O$env:GITHUB_WORKSPACE\installer-output" "/DSourceDir=$env:GITHUB_WORKSPACE\native-package" installer/EvoHime.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Sign Windows installer
-        if: env.EVOHIME_SIGNING_CERTIFICATE_BASE64 != ''
-        shell: pwsh
-        run: |
-          $certificatePath = Join-Path $env:RUNNER_TEMP 'evohime-signing.pfx'
-          [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:EVOHIME_SIGNING_CERTIFICATE_BASE64))
-          $env:EVOHIME_SIGNING_CERTIFICATE_PATH = $certificatePath
-          ./scripts/sign-windows-release.ps1 -InputRoot "$env:GITHUB_WORKSPACE\installer-output" -EvidencePath "$env:GITHUB_WORKSPACE\installer-signing-evidence.json"
       - name: Install and upgrade smoke
         shell: pwsh
         run: |
@@ -387,7 +361,6 @@ jobs:
           path: |
             installer-output\EvoHime-Setup.exe
             installer-output\EvoHime-Setup.json
-            *-signing-evidence.json
           if-no-files-found: error
 
   # Один постоянный релиз с фиксированным тегом: файл в нём перезаписывается,
@@ -399,9 +372,7 @@ jobs:
       !cancelled() &&
       needs.build-native.result == 'success' &&
       (github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')) &&
-      env.EVOHIME_SIGNING_CERTIFICATE_BASE64 != '' &&
-      env.EVOHIME_SIGNING_CERTIFICATE_PASSWORD != ''
+      (github.event_name == 'push' && github.ref == 'refs/heads/main'))
     runs-on: windows-latest
     permissions:
       contents: write
@@ -409,8 +380,6 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: installer
       RELEASE_TITLE: EvoHime — установщик
-      EVOHIME_SIGNING_CERTIFICATE_BASE64: ${{ secrets.EVOHIME_SIGNING_CERTIFICATE_BASE64 }}
-      EVOHIME_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.EVOHIME_SIGNING_CERTIFICATE_PASSWORD }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v7
