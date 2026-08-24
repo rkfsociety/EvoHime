@@ -1,8 +1,8 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-24 (планы 04 и 05 завершены; план 06 реализован в текущем
-checkout: контракт workflow/v1, Core-owned реестр и шаблоны, durable runtime
-со схемой 29, additive IPC и раздел «Составные задачи» в Electron).
+Обновлено: 2026-08-24. Планы 01–17 завершены и удалены из каталога временных
+планов. Технические release-gates проходят; выпуск остаётся заблокированным
+решениями O-AUTO-01, O-AUTO-02, O-LIC-01 и O-SIGN-01.
 
 ## Продукт
 
@@ -90,8 +90,7 @@ Core и supervisor — внутренние компоненты установ�
   trace и отдельные `unknown_state`/`core_unavailable` состояния.
 - Evaluation catalog проверяется по подписи до загрузки, поставляется как
   runtime resource и обновляется через validated temporary file + atomic
-  replacement. Все планы 02 реализованы; их временные файлы удалены, а этот
-  раздел является подтверждённым состоянием.
+  replacement. Этот раздел является подтверждённым состоянием checkout.
 
 ### Desktop shell (Electron)
 
@@ -257,28 +256,17 @@ archive/restore, license и signing decisions не скрываются.
 
 ## Последняя проверка checkout
 
-22 августа 2026 года пройдены `cargo fmt --all -- --check`,
-`cargo check --workspace --all-targets`, `cargo test -p evohime-core -p
-evohime-local-storage -p evohime-desktop-ipc` (477 + 146 + 33 тестов),
-`cargo check -p evohime-supervisor`, полный Electron-прогон (`check:protocol`,
-`typecheck`, 405 тестов при 2 пропущенных, `build`, `check:bundle`), real-Core
-E2E с запуском одного workflow-шаблона против собранного `evohime-core.exe`,
-`scripts/eval-gate.tests.ps1`, `scripts/security-eval-gate.tests.ps1`,
-`scripts/native-package.tests.ps1`, а также C#/WinUI compatibility suites
-(24 + 34 теста).
+24 августа 2026 года `scripts/final-release-audit.tests.ps1` подтвердил:
 
-21 августа 2026 года пройдены `cargo test -p evohime-core` (421 unit-тест,
-integration/recovery/doc-tests), `cargo test -p evohime-model-provenance -p
-evohime-local-storage -p evohime-receipts` (5 + 138 + 56 тестов, один
-receipt export test ignored по контракту), а также свежие `cargo check` и
-format/diff проверки. 19 августа 2026 года пройдены `cargo check --workspace --all-targets` и полный
-Electron-прогон (typecheck и 321 тест). 16 августа 2026 года были пройдены Rust,
-Electron, protocol, bundle, deterministic RAG/evaluation и security smoke checks;
-C#/WinUI compatibility и native package проверяются полным acceptance-прогоном. Source-update E2E
-остаётся штатно пропущенным без `EVOHIME_UPDATE_E2E=1`, поскольку он выполняет
-реальную пересборку и занимает значительно больше времени. Публикация
-установщика разрешена только после полного Windows CI и release smoke из
-[`../SECURITY.md`](../SECURITY.md).
+- 536 тестов Core, 184 теста local storage и 35 тестов desktop IPC;
+- automation boundary gate и release evidence gate;
+- `cargo fmt --all -- --check` и `git diff --check`;
+- Electron `check:protocol` и `typecheck`.
+
+Итог: `TECHNICAL_GATES_PASS / RELEASE_BLOCKED`. Package startup, installer,
+upgrade/rollback и Windows compatibility остаются отдельными CI gates из
+`.github/workflows/windows.yml`. Source-update E2E запускается только с
+`EVOHIME_UPDATE_E2E=1`, поскольку выполняет реальную пересборку.
 
 ## Следующие направления
 

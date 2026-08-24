@@ -1,79 +1,65 @@
 # План разработки EvoHime Desktop
 
-Статус: исполняемый план текущего desktop-цикла. Для фактического состояния используйте [`current-state.md`](current-state.md), для долгосрочных направлений — [`roadmap.md`](roadmap.md).
+Статус: foundation, desktop shell, планы 01–17 и технические release-gates
+реализованы. Текущая работа закрывает четыре документированных решения,
+которые остаются перед выпуском. Фактическое состояние checkout находится в
+[`current-state.md`](current-state.md), архитектурные контракты — в
+[`architecture.md`](architecture.md), а долгосрочные направления — в
+[`roadmap.md`](roadmap.md).
 
-## Цель
+## Цель текущего цикла
 
-Создать стабильный локальный Windows AI-agent. Пользователь запускает desktop app, выбирает workspace, запускает задачу и получает поток событий через named pipe.
+Сохранить стабильный локальный Windows AI-agent: пользователь запускает один
+desktop-клиент, выбирает workspace, выполняет задачу и получает поток событий
+через authenticated versioned named pipe. Core остаётся владельцем состояния,
+прав доступа, эффектов и SQLite; Electron отображает только IPC-проекцию.
 
-Пользовательские версионные релизы для текущего цикла не создаются. Установщик
-публикуется в единственном постоянном релизе `installer`, а сборка определяется
-коммитом и веткой в `evohime.build.json`.
+Пользовательские версионные релизы для текущего цикла не создаются. Постоянный
+релиз `installer` определяется коммитом и веткой в `evohime.build.json`.
 
-## Стек
+## Закрытые направления
 
-| Слой | Технология |
-| --- | --- |
-| UI | Electron + TypeScript (bundled desktop renderer) |
-| Core | Rust |
-| IPC | versioned protobuf over Windows named pipes |
-| Storage | SQLite + transactional migrations |
-| Lifecycle | Rust supervisor + mutex + Job Object |
-| Diagnostics | JSONL logs + replayable event journal |
-| Packaging | x64 Windows package + Inno Setup installer |
+Планы 01–17 завершены. Их временные файлы удалены из `docs/plans/`; контракты и
+подтверждённое состояние перенесены в канонические документы. Optional
+browser/voice/vision adapters остаются fail-closed capability boundaries и не
+являются обязательными зависимостями базового Core package.
 
-## Активный цикл
+## Текущий порядок работ
 
-Закрытые foundation, Electron shell, developer tools, installer, update, recovery и
-Windows acceptance не являются задачами текущего плана. Их фактическое состояние
-зафиксировано в [`current-state.md`](current-state.md).
+1. **O-AUTO-01 — scheduler и automation IPC.** Добавить timezone/missed-tick
+   поведение и additive Electron IPC-проекцию; повторить acceptance A01–A08 на
+   чистом пакете.
+2. **O-AUTO-02 — archive/restore.** Добавить транзакционное архивирование,
+   восстановление и retention sweep с production integration evidence.
+3. **O-LIC-01 — лицензии.** Заполнить inventory и upstream license texts для
+   каждого распространяемого third-party artifact, включая проверку хешей.
+4. **O-SIGN-01 — подпись.** Подключить реальный code-signing pipeline и
+   сохранить проверяемое certificate evidence.
 
-Проверка 2026-08-16: Rust, Electron, protocol, bundle, deterministic Local
-Agentic RAG/evaluation и security smoke checks прошли без ошибок; C#/WinUI
-compatibility и native acceptance перепроверяются полным финальным прогоном.
-Source-update E2E остаётся штатно пропущенным без включённого флага.
+Владельцы, критерии закрытия и влияние на выпуск находятся в
+[`decision-register.md`](decision-register.md). Порядок работ не меняет
+границы продукта: внешний cloud control plane, public HTTP, обязательный GPU,
+внешний Node/Python runtime и unrestricted adapter fallback не добавляются.
 
-Foundation текущего цикла завершён: обходы permission policy и approval закрыты
-и проверены; Local Agentic RAG, routing, child workflows, ambient-контур и
-model-request provenance реализованы и перенесены в канонические
-`architecture.md`/`current-state.md`. Workflow orchestration (план 06) также
-реализована: контракт `workflow/v1`, Core-owned реестр и шаблоны, durable
-runtime и раздел «Составные задачи» в Electron. CAMEL и AutoGPT остались
-архитектурными reference и не являются runtime-зависимостями продукта.
-План 10: IPC, version negotiation и provider boundary реализован. Его контракт
-перенесён в `architecture.md`, подтверждённое состояние — в `current-state.md`;
-планы 11 (typed memory и Core-first RAG), 12 (local telemetry и deterministic
-evaluation), 13 (изолированный browser backend), 14 (voice/ambient audio) и
-15 (vision/document worker) также реализованы; следующим исполняемым блоком
-остаётся план 16.
+## Критерии готовности
 
-## Текущий статус
+- Rust Core, storage, desktop IPC и supervisor проходят свои тесты и проверки
+  формата;
+- Electron `check:protocol`, `typecheck`, unit/contract tests и bundle checks
+  проходят;
+- automation boundary и release evidence gates проходят без credentials и
+  необезличенных данных;
+- Windows package, installer, upgrade, rollback и compatibility smoke проходят
+  в CI;
+- каждый закрытый open decision имеет код, focused test, redacted evidence и
+  обновлённые `current-state.md`, `decision-register.md` и `release-audit.md`;
+- `git diff --check` проходит, а task-only изменения зафиксированы коммитом.
 
-Legacy web UI, browser launcher, HTTP server и PostgreSQL persistence удалены. Rust
-Core + SQLite + authenticated named-pipe IPC сохраняются. Пользовательская оболочка
-— Electron; WinUI — compatibility runtime.
+## Правило обновления документов
 
-Этапы 02–06 и 09 завершены. Их контракты находятся в [`architecture.md`](architecture.md),
-подтверждённое состояние — в [`current-state.md`](current-state.md). Следующее
-независимое направление — план 13. План 07 остаётся отдельным предложенным
-направлением без исполняемого файла в текущем каталоге.
-
-После завершения foundation добавлен функциональный slice «Ревью планов» в
-Electron: additive desktop IPC, `plan_review` в Core и event journal для
-истории. Slice доведён до рабочего состояния: последовательные reviewer calls с
-прогрессом и явным статусом ошибок, стабильный состав и порядок рецензентов,
-копирование и экспорт итогового Markdown, очистка истории через
-`ClearPlanReviewHistory`. DOCX/PDF import, пользовательские критерии и
-ZIP-экспорт остаются последующими улучшениями.
-
-## Acceptance criteria
-
-- запуск с ярлыка не открывает браузер и консоль;
-- UI и core эволюционируют независимо через IPC versioning;
-- перезапуск core не теряет завершённые события;
-- отмена задачи завершает дочерние процессы;
-- опасные операции требуют approval и показывают preview;
-- обновление восстанавливает компоненты из pre-upgrade backup при ошибке и после аварийного завершения;
-- core tests работают без UI-сессии, Electron smoke и packaging acceptance — на Windows CI.
-
-При расхождении этого плана с реализацией сначала обновляется статус на основании кода и тестов. В `docs/plans/` хранятся только временные планы реализации; этот документ описывает исполняемый цикл, а долгосрочные направления — [`roadmap.md`](roadmap.md).
+При расхождении сначала проверяются код и тесты, затем обновляется
+[`current-state.md`](current-state.md). Архитектурные изменения фиксируются в
+[`architecture.md`](architecture.md), решения — в
+[`decision-register.md`](decision-register.md), а статус выпуска — в
+[`release-audit.md`](release-audit.md). Исторические результаты не смешиваются
+с текущей проверкой: для них указываются дата, команда и область проверки.

@@ -9,7 +9,7 @@
 
 | План | Блокирующие зависимости | Опциональные зависимости и fallback | Evidence / владелец |
 | --- | --- | --- | --- |
-| 07 | отдельное направление, не блокирует 16–17 | — | Product/Core architecture |
+| 07 | 01–06 | optional tool adapters; fail-closed unsupported fallback | Product/Core architecture |
 | 08 | 01–06 | — | Core + SQLite ledger tests |
 | 09 | 08 | — | Core policy/approval tests |
 | 10 | 08–09 | — | desktop IPC contract tests |
@@ -21,8 +21,10 @@
 | 16 | 08–12, existing workflow contracts | 13–15; automation remains Core-only without adapters | Core automation fixtures A01–A08 |
 | 17 | 07–16 current-state/architecture contracts | external backend never becomes blocking | Release owner |
 
-Граф линейный для исполняемых этапов: `08 → 09 → 10 → 11 → 12 → 16 → 17`;
-планы 13–15 подключаются только как optional adapters и не образуют цикл.
+Граф линейный для основного runtime: `01–06 → 07 → 08 → 09 → 10 → 11 → 12 →
+16 → 17`. Планы 13–15 реализуют optional adapters, подключаются через
+fail-closed boundaries и не образуют цикл или обязательную зависимость базового
+пакета.
 
 ## Accepted decisions
 

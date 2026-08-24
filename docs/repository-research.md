@@ -1,88 +1,25 @@
-# Карта будущих планов EvoHime
+# Карта переноса направлений EvoHime
 
-Бывший сводный исследовательский документ разделён на самостоятельные
-тематические заготовки. Каждый файл можно превращать в отдельный план после
-сверки с текущим кодом и документацией.
+Это архивная карта происхождения завершённых планов, а не список текущих
+задач. Все перечисленные направления сверены с кодом и перенесены в
+канонические документы; новые работы ведутся через
+[`development-plan.md`](development-plan.md) и отдельные файлы в
+[`plans/`](plans/).
 
-## Правила работы с разделами
+| Исторический раздел | Текущее направление | Канонический контракт |
+| --- | --- | --- |
+| Execution ledger и typed receipts | 08 | [`architecture.md`](architecture.md), [`current-state.md`](current-state.md) |
+| Policy, capabilities и approval | 09 | [`architecture.md`](architecture.md), [`current-state.md`](current-state.md) |
+| IPC adapters и provider boundary | 10 | [`architecture.md`](architecture.md), [`current-state.md`](current-state.md) |
+| Typed memory и Core-first RAG | 11 | [`architecture.md`](architecture.md), [`current-state.md`](current-state.md) |
+| Telemetry и deterministic evaluation | 12 | [`evaluations.md`](evaluations.md), [`current-state.md`](current-state.md) |
+| Изолированный browser backend | 13 | [`architecture.md`](architecture.md), [`current-state.md`](current-state.md) |
+| Voice и ambient audio | 14 | [`architecture.md`](architecture.md), [`current-state.md`](current-state.md) |
+| Vision и document worker | 15 | [`architecture.md`](architecture.md), [`current-state.md`](current-state.md) |
+| Workflow automation и simulation | 16 | [`architecture.md`](architecture.md), [`current-state.md`](current-state.md) |
+| Release gates и open decisions | 17 | [`decision-register.md`](decision-register.md), [`release-audit.md`](release-audit.md) |
 
-- Файл раздела содержит только требования, границы, зависимости и критерии
-  готовности. Подробности внешних источников сюда не возвращаются.
-- Перед планированием сверять код, `docs/current-state.md`,
-  `docs/architecture.md`, `docs/development-plan.md` и действующие IPC/SQLite
-  схемы.
-- Один полноценный план должен иметь собственный scope, миграции, тесты,
-  security review, критерии отката и проверяемый результат.
-- UI остаётся projection/control layer. Durable state, policy, execution,
-  memory и evaluation принадлежат Rust Core/SQLite.
-- Блокирующая зависимость от более позднего этапа недопустима.
-
-## Файлы и зависимости
-
-| Файл | Раздел | Зависимости | Приоритет |
-|---|---|---|---|
-| 01 execution ledger | Журнал выполнения и typed receipts | перенесён в план 08 | блокирующий фундамент |
-| 02 policy and capabilities | Policy, permissions, scope и approval | перенесён в план 09 | блокирующий фундамент |
-| 03 IPC adapters and providers | IPC, version negotiation и provider boundary | перенесён в план 10 | блокирующий фундамент |
-| 04 memory and RAG | Память, retrieval и forget | перенесён в план 11 | следующий слой |
-| 05 telemetry and evaluation | Наблюдаемость, fixtures и evaluation | перенесён в план 12 | следующий слой |
-| 06 browser backend | Изолированный browser backend | перенесён в план 13 | отдельный optional-план |
-| 07 voice and ambient audio | Voice pipeline и ambient audio | перенесён в план 14 | отдельный optional-план |
-| 08 vision and documents | Vision и document worker | планы 08–10, 12 | перенесён в план 15 |
-| 09 workflow automation and simulation | Длительные jobs, automation и simulation | планы 08–12 | перенесён в план 16 |
-| 10 release criteria and open decisions | Общие release gates и нерешённые вопросы | планы 06–16 | перенесён в план 17; сопровождающий release plan |
-
-## Рекомендуемый порядок
-
-```text
-01 execution ledger
-       ↓
-02 policy/capabilities
-       ↓
-03 IPC/adapters/providers
-       ├──→ 04 memory/RAG
-       ├──→ 05 telemetry/evaluation ──→ 08 vision/documents
-       ├──→ 06 browser
-       └──→ 07 voice/ambient
-                    04 + 05 + foundation
-                              ↓
-                    09 workflow/automation
-```
-
-Файл 10 используется на каждом этапе и не является самостоятельной
-реализационной задачей.
-
-Раздел 01 перенесён в подпункты плана 08; исходный исследовательский файл
-удалён после переноса требований и критериев готовности.
-
-Раздел 02 перенесён в подпункты плана 09; исходный исследовательский файл
-удалён после переноса требований и критериев готовности.
-
-Раздел 03 перенесён в подпункты плана 10; исходный исследовательский файл
-удалён после переноса требований и критериев готовности.
-
-Раздел 04 перенесён в подпункты плана 11; исходный исследовательский файл
-удалён после переноса требований и критериев готовности.
-
-Раздел 05 перенесён в подпункты плана 12; исходный исследовательский файл
-удалён после переноса требований и критериев готовности.
-
-Раздел 06 перенесён в подпункты плана 13; исходный исследовательский файл
-удалён после переноса требований и критериев готовности.
-
-Раздел 07 перенесён в подпункты плана 14; исходный исследовательский файл
-удалён после переноса требований и критериев готовности.
-
-Раздел 08 перенесён в подпункты плана 15; исходный исследовательский файл
-удалён после переноса требований и критериев готовности.
-
-Раздел 09 перенесён в подпункты плана 16; исходный исследовательский файл
-удалён после переноса требований и критериев готовности.
-
-Раздел 10 перенесён в подпункты плана 17; исходный исследовательский файл
-удалён после переноса требований и критериев готовности.
-
-## Общая архитектурная граница
+## Архитектурная граница
 
 ```text
 Electron renderer → Electron/main IPC → authenticated desktop IPC
@@ -90,6 +27,7 @@ Electron renderer → Electron/main IPC → authenticated desktop IPC
                   → Windows supervisor
 ```
 
-Внешний runtime, вторая база данных, публичный HTTP control plane, обход
-authenticated IPC и model-generated authority над filesystem/network/secrets
-не входят в базовую архитектуру.
+Durable state, policy, execution, memory и evaluation принадлежат Rust Core и
+SQLite. Renderer остаётся projection/control layer. Внешний runtime, вторая
+база данных, public HTTP control plane и model-generated authority над
+filesystem/network/secrets не входят в базовую архитектуру.

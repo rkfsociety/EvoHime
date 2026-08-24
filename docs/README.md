@@ -10,6 +10,8 @@
 | Узнать, что уже сделано | [`current-state.md`](current-state.md) | Подтверждённое состояние checkout |
 | Понять ближайший порядок работ | [`development-plan.md`](development-plan.md) | Исполняемый план и критерии готовности |
 | Посмотреть долгосрочные направления | [`roadmap.md`](roadmap.md) | Крупные продуктовые этапы без деталей реализации |
+| Проверить решения и зависимости | [`decision-register.md`](decision-register.md) | Accepted/open decisions, владельцы и release impact |
+| Проверить статус выпуска | [`release-audit.md`](release-audit.md), [`release-evidence.md`](release-evidence.md) | Технические gates, blockers и rollback evidence |
 | Проверить границы безопасности | [`../SECURITY.md`](../SECURITY.md) | Угрозы, доверие, диагностика и релизные проверки |
 
 ## Справочные разделы
@@ -24,10 +26,6 @@
 ## Планы
 
 Планы отдельных направлений живут в каталоге [`plans/`](plans/); их порядок, граф зависимостей и правило нумерации описаны в [`plans/README.md`](plans/README.md). Один файл — один этап (`NN-M-slug.md`, где `M = 0` — обзор плана), и список файлов в алфавитном порядке и есть порядок реализации. Реализованный план из каталога удаляется: его контракт переезжает в [`architecture.md`](architecture.md), а подтверждённое состояние — в [`current-state.md`](current-state.md).
-
-Этап 02 Local SLM fallback и routing завершён. Его контракт и границы описаны
-в [`architecture.md`](architecture.md), подтверждённое состояние — в
-[`current-state.md`](current-state.md); отдельные временные файлы этапа удалены.
 
 Рядом с ними два документа общего цикла:
 
