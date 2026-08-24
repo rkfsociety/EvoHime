@@ -2887,6 +2887,40 @@ impl IpcBridge {
                 )
                 .await?;
             }
+            Some(generated::command_envelope::Command::TriggerAutomation(request)) => {
+                let result = self.dispatch_trigger_automation(request).await;
+                self.write_response(writer, "automation.triggered", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::ListAutomationRuns(request)) => {
+                let result = self.dispatch_list_automation_runs(request).await;
+                self.write_response(writer, "automation.runs", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::GetAutomationRun(request)) => {
+                let result = self.dispatch_get_automation_run(request).await;
+                self.write_response(writer, "automation.run", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::ListAutomationEvents(request)) => {
+                let result = self.dispatch_list_automation_events(request).await;
+                self.write_response(writer, "automation.events", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::CancelAutomationRun(request)) => {
+                let result = self.dispatch_cancel_automation_run(request).await;
+                self.write_response(writer, "automation.cancelled", serde_json::to_vec(&result)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::SetAutomationScheduleEnabled(request)) => {
+                let result = self.dispatch_set_automation_schedule_enabled(request).await;
+                self.write_response(
+                    writer,
+                    "automation.schedule_enabled",
+                    serde_json::to_vec(&result)?,
+                )
+                .await?;
+            }
             None => {}
         }
         Ok(())
@@ -3488,6 +3522,180 @@ impl IpcBridge {
                 }
             }
         }
+    }
+
+    async fn dispatch_trigger_automation(
+        &self,
+        request: generated::TriggerAutomation,
+    ) -> serde_json::Value {
+        if request.definition_id.is_empty()
+            || request.owner_scope.is_empty()
+            || request.trigger_key.is_empty()
+            || request.correlation_id.is_empty()
+            || request.idempotency_key.is_empty()
+            || request.revision == 0
+            || request.input_json.len() > crate::automation::MAX_INPUT_BYTES
+            || serde_json::from_str::<serde_json::Value>(&request.input_json).is_err()
+        {
+            return serde_json::json!({ "accepted": false, "run_id": "", "error_code": "invalid_trigger" });
+        }
+        let mut database = self.journal.database().lock().await;
+        let Some(definition) = evohime_local_storage::automation_store::get_definition(
+            database.connection(),
+            &request.definition_id,
+            request.revision,
+            &request.owner_scope,
+        )
+        .ok()
+        .flatten() else {
+            return serde_json::json!({ "accepted": false, "run_id": "", "error_code": "unknown_definition" });
+        };
+        let payload_hash = hex::encode(<sha2::Sha256 as sha2::Digest>::digest(
+            request.input_json.as_bytes(),
+        ));
+        let run = evohime_local_storage::automation_store::AutomationRunRecord {
+            run_id: uuid::Uuid::new_v4().to_string(),
+            definition_id: request.definition_id,
+            revision: request.revision,
+            owner_scope: request.owner_scope,
+            idempotency_key: request.idempotency_key,
+            payload_hash,
+            state: "admitted".into(),
+            generation: 1,
+            permission_snapshot: "manual".into(),
+            approval_snapshot: "manual".into(),
+        };
+        let now = now_ms();
+        match evohime_local_storage::automation_store::admit_run(database.connection(), &run, now) {
+            Ok(evohime_local_storage::automation_store::AdmitRunResult::Existing(existing)) => {
+                serde_json::json!({ "accepted": true, "run_id": existing.run_id, "state": existing.state, "deduplicated": true, "error_code": "" })
+            }
+            Ok(evohime_local_storage::automation_store::AdmitRunResult::IdempotencyConflict {
+                ..
+            }) => {
+                serde_json::json!({ "accepted": false, "run_id": "", "deduplicated": false, "error_code": "idempotency_conflict" })
+            }
+            Ok(evohime_local_storage::automation_store::AdmitRunResult::Inserted) => {
+                let payload = serde_json::json!({
+                    "definition_hash": definition.definition_hash,
+                    "trigger": request.trigger_key,
+                    "correlation_id": request.correlation_id,
+                });
+                let queued = evohime_local_storage::automation_store::transition_run(
+                    database.connection_mut(),
+                    &run.run_id,
+                    "admitted",
+                    "queued",
+                    1,
+                    "manual_trigger",
+                    &payload.to_string(),
+                    now,
+                )
+                .unwrap_or(false);
+                serde_json::json!({ "accepted": queued, "run_id": run.run_id, "state": if queued { "queued" } else { "admitted" }, "deduplicated": false, "error_code": if queued { "" } else { "transition_failed" } })
+            }
+            Err(error) => {
+                serde_json::json!({ "accepted": false, "run_id": "", "error_code": error.to_string() })
+            }
+        }
+    }
+
+    async fn dispatch_list_automation_runs(
+        &self,
+        request: generated::ListAutomationRuns,
+    ) -> serde_json::Value {
+        if request.owner_scope.is_empty() {
+            return serde_json::json!({ "runs": [], "error_code": "invalid_owner_scope" });
+        }
+        let database = self.journal.database().lock().await;
+        match evohime_local_storage::automation_store::list_runs(
+            database.connection(),
+            &request.owner_scope,
+            &request.definition_id,
+            request.limit.clamp(1, 256),
+        ) {
+            Ok(runs) => serde_json::json!({ "runs": runs.into_iter().map(|run| serde_json::json!({
+                "run_id": run.run_id, "definition_id": run.definition_id, "revision": run.revision,
+                "owner_scope": run.owner_scope, "idempotency_key": run.idempotency_key,
+                "state": run.state, "generation": run.generation,
+            })).collect::<Vec<_>>(), "error_code": "" }),
+            Err(error) => serde_json::json!({ "runs": [], "error_code": error.to_string() }),
+        }
+    }
+
+    async fn dispatch_get_automation_run(
+        &self,
+        request: generated::GetAutomationRun,
+    ) -> serde_json::Value {
+        let database = self.journal.database().lock().await;
+        match evohime_local_storage::automation_store::get_run(
+            database.connection(),
+            &request.run_id,
+        ) {
+            Ok(Some(run)) => serde_json::json!({
+                "run_id": run.run_id, "definition_id": run.definition_id, "revision": run.revision,
+                "owner_scope": run.owner_scope, "state": run.state, "generation": run.generation,
+                "error_code": "",
+            }),
+            Ok(None) => {
+                serde_json::json!({ "run_id": request.run_id, "state": "unknown_state", "error_code": "unknown_run" })
+            }
+            Err(error) => {
+                serde_json::json!({ "run_id": request.run_id, "state": "unknown_state", "error_code": error.to_string() })
+            }
+        }
+    }
+
+    async fn dispatch_list_automation_events(
+        &self,
+        request: generated::ListAutomationEvents,
+    ) -> serde_json::Value {
+        let database = self.journal.database().lock().await;
+        match evohime_local_storage::automation_store::list_run_events(
+            database.connection(),
+            &request.run_id,
+            request.after_sequence,
+            request.limit.clamp(1, 256) as u32,
+        ) {
+            Ok(events) => {
+                serde_json::json!({ "run_id": request.run_id, "events": events.into_iter().map(|event| serde_json::json!({
+                "sequence": event.run_sequence, "event_type": event.event_type, "generation": event.generation,
+                "payload": event.payload_json, "created_at_ms": event.created_at_ms,
+            })).collect::<Vec<_>>(), "error_code": "" })
+            }
+            Err(error) => {
+                serde_json::json!({ "run_id": request.run_id, "events": [], "error_code": error.to_string() })
+            }
+        }
+    }
+
+    async fn dispatch_cancel_automation_run(
+        &self,
+        request: generated::CancelAutomationRun,
+    ) -> serde_json::Value {
+        let mut database = self.journal.database().lock().await;
+        let cancelled = evohime_local_storage::automation_store::cancel_run(
+            database.connection_mut(),
+            &request.run_id,
+            now_ms(),
+        )
+        .unwrap_or(false);
+        serde_json::json!({ "run_id": request.run_id, "cancelled": cancelled, "error_code": if cancelled { "" } else { "not_cancellable" } })
+    }
+
+    async fn dispatch_set_automation_schedule_enabled(
+        &self,
+        request: generated::SetAutomationScheduleEnabled,
+    ) -> serde_json::Value {
+        let database = self.journal.database().lock().await;
+        let enabled = evohime_local_storage::automation_store::set_schedule_enabled(
+            database.connection(),
+            &request.schedule_id,
+            request.enabled,
+            now_ms(),
+        )
+        .unwrap_or(false);
+        serde_json::json!({ "schedule_id": request.schedule_id, "enabled": request.enabled, "updated": enabled, "error_code": if enabled { "" } else { "unknown_schedule" } })
     }
 
     /// Polls every enabled schedule once. The compare-and-swap cursor is

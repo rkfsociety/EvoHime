@@ -1213,6 +1213,78 @@ function dispatch(
         })
       )
     }
+
+    case 'automation.trigger': {
+      const value = asRecord(payload)
+      const definitionId = asBoundedString(value['definitionId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const triggerKey = asBoundedString(value['triggerKey'])
+      const correlationId = asBoundedString(value['correlationId'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const inputJson = value['inputJson']
+      const revision = value['revision']
+      if (
+        definitionId === null || ownerScope === null || triggerKey === null ||
+        correlationId === null || idempotencyKey === null ||
+        typeof inputJson !== 'string' || inputJson.length > 64 * 1024 ||
+        typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0
+      ) {
+        return failure('invalid-payload', 'Некорректный запуск automation.')
+      }
+      return accepted(client.send({ triggerAutomation: {
+        definitionId, revision, ownerScope, triggerKey, inputJson, correlationId, idempotencyKey
+      } }))
+    }
+
+    case 'automation.listRuns': {
+      const value = asRecord(payload)
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const definitionId = value['definitionId'] === undefined ? '' : asBoundedString(value['definitionId'])
+      const limit = value['limit'] === undefined ? 0 : asBoundedNumber(value['limit'], 256)
+      if (ownerScope === null || definitionId === null || limit === null) {
+        return failure('invalid-payload', 'Некорректный запрос списка запусков.')
+      }
+      return accepted(client.send({ listAutomationRuns: { ownerScope, definitionId, limit } }))
+    }
+
+    case 'automation.getRun': {
+      const value = asRecord(payload)
+      const runId = asBoundedString(value['runId'])
+      if (runId === null) return failure('invalid-payload', 'Некорректный идентификатор запуска.')
+      return accepted(client.send({ getAutomationRun: { runId } }))
+    }
+
+    case 'automation.listEvents': {
+      const value = asRecord(payload)
+      const runId = asBoundedString(value['runId'])
+      const limit = value['limit'] === undefined ? 0 : asBoundedNumber(value['limit'], 256)
+      const rawAfter = value['afterSequence']
+      const afterSequence = rawAfter === undefined
+        ? -1
+        : typeof rawAfter === 'number' && Number.isSafeInteger(rawAfter) && rawAfter >= -1
+          ? rawAfter
+          : null
+      if (runId === null || limit === null || afterSequence === null) {
+        return failure('invalid-payload', 'Некорректный запрос событий automation.')
+      }
+      return accepted(client.send({ listAutomationEvents: { runId, afterSequence, limit } }))
+    }
+
+    case 'automation.cancel': {
+      const value = asRecord(payload)
+      const runId = asBoundedString(value['runId'])
+      if (runId === null) return failure('invalid-payload', 'Некорректный идентификатор запуска.')
+      return accepted(client.send({ cancelAutomationRun: { runId } }))
+    }
+
+    case 'automation.setScheduleEnabled': {
+      const value = asRecord(payload)
+      const scheduleId = asBoundedString(value['scheduleId'])
+      if (scheduleId === null || typeof value['enabled'] !== 'boolean') {
+        return failure('invalid-payload', 'Некорректное состояние расписания.')
+      }
+      return accepted(client.send({ setAutomationScheduleEnabled: { scheduleId, enabled: value['enabled'] } }))
+    }
   }
 }
 

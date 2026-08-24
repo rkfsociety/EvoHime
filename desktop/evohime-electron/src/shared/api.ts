@@ -655,7 +655,13 @@ export const RENDERER_COMMANDS = [
   'workflow.cancel',
   'workflow.listEvents',
   'automation.listSchedules',
-  'automation.saveSchedule'
+  'automation.saveSchedule',
+  'automation.trigger',
+  'automation.listRuns',
+  'automation.getRun',
+  'automation.listEvents',
+  'automation.cancel',
+  'automation.setScheduleEnabled'
 ] as const
 
 export type RendererCommand = (typeof RENDERER_COMMANDS)[number]
@@ -889,6 +895,20 @@ export interface CommandPayloads {
     missedGraceMs: number
     enabled: boolean
   }
+  'automation.trigger': {
+    definitionId: string
+    revision: number
+    ownerScope: string
+    triggerKey: string
+    inputJson: string
+    correlationId: string
+    idempotencyKey: string
+  }
+  'automation.listRuns': { ownerScope: string; definitionId?: string; limit?: number }
+  'automation.getRun': { runId: string }
+  'automation.listEvents': { runId: string; afterSequence?: number; limit?: number }
+  'automation.cancel': { runId: string }
+  'automation.setScheduleEnabled': { scheduleId: string; enabled: boolean }
 }
 
 export interface CommandResults {
@@ -1016,6 +1036,12 @@ export interface CommandResults {
   'workflow.listEvents': { accepted: boolean }
   'automation.listSchedules': { accepted: boolean }
   'automation.saveSchedule': { accepted: boolean }
+  'automation.trigger': { accepted: boolean }
+  'automation.listRuns': { accepted: boolean }
+  'automation.getRun': { accepted: boolean }
+  'automation.listEvents': { accepted: boolean }
+  'automation.cancel': { accepted: boolean }
+  'automation.setScheduleEnabled': { accepted: boolean }
 }
 
 export type CommandFailureCode =

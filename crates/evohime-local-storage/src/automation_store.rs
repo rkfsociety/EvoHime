@@ -42,6 +42,15 @@ pub struct AutomationRunRecord {
     pub approval_snapshot: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AutomationRunEventRecord {
+    pub run_sequence: u64,
+    pub event_type: String,
+    pub generation: u64,
+    pub payload_json: String,
+    pub created_at_ms: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdmitRunResult {
     Inserted,
@@ -199,6 +208,98 @@ pub fn find_run_by_idempotency(
     idempotency_key: &str,
 ) -> rusqlite::Result<Option<AutomationRunRecord>> {
     connection.query_row("SELECT run_id, definition_id, revision, owner_scope, idempotency_key, payload_hash, state, generation, permission_snapshot, approval_snapshot FROM automation_runs WHERE owner_scope=?1 AND definition_id=?2 AND revision=?3 AND idempotency_key=?4", params![owner_scope, definition_id, revision as i64, idempotency_key], map_run).optional()
+}
+
+pub fn get_run(
+    connection: &Connection,
+    run_id: &str,
+) -> rusqlite::Result<Option<AutomationRunRecord>> {
+    connection
+        .query_row(
+            "SELECT run_id, definition_id, revision, owner_scope, idempotency_key, payload_hash, state, generation, permission_snapshot, approval_snapshot FROM automation_runs WHERE run_id=?1",
+            [run_id],
+            map_run,
+        )
+        .optional()
+}
+
+pub fn list_runs(
+    connection: &Connection,
+    owner_scope: &str,
+    definition_id: &str,
+    limit: u32,
+) -> rusqlite::Result<Vec<AutomationRunRecord>> {
+    let mut statement = connection.prepare(
+        "SELECT run_id, definition_id, revision, owner_scope, idempotency_key, payload_hash, state, generation, permission_snapshot, approval_snapshot FROM automation_runs WHERE owner_scope=?1 AND (?2='' OR definition_id=?2) ORDER BY updated_at_ms DESC, run_id DESC LIMIT ?3",
+    )?;
+    let rows = statement.query_map(
+        params![owner_scope, definition_id, limit.clamp(1, 256)],
+        map_run,
+    )?;
+    rows.collect()
+}
+
+pub fn list_run_events(
+    connection: &Connection,
+    run_id: &str,
+    after_sequence: i64,
+    limit: u32,
+) -> rusqlite::Result<Vec<AutomationRunEventRecord>> {
+    let mut statement = connection.prepare(
+        "SELECT run_sequence, event_type, generation, payload_json, created_at_ms FROM automation_run_events WHERE run_id=?1 AND run_sequence>?2 ORDER BY run_sequence LIMIT ?3",
+    )?;
+    let rows = statement.query_map(
+        params![run_id, after_sequence.max(-1), limit.clamp(1, 256)],
+        |row| {
+            Ok(AutomationRunEventRecord {
+                run_sequence: row.get::<_, i64>(0)? as u64,
+                event_type: row.get(1)?,
+                generation: row.get::<_, i64>(2)? as u64,
+                payload_json: row.get(3)?,
+                created_at_ms: row.get(4)?,
+            })
+        },
+    )?;
+    rows.collect()
+}
+
+pub fn cancel_run(
+    connection: &mut Connection,
+    run_id: &str,
+    now_ms: i64,
+) -> rusqlite::Result<bool> {
+    let tx = connection.transaction()?;
+    let changed = tx.execute(
+        "UPDATE automation_runs SET state='cancelled', updated_at_ms=?1 WHERE run_id=?2 AND state IN ('admitted','queued','starting','running','waiting_approval','retrying','paused','cancelling')",
+        params![now_ms, run_id],
+    )?;
+    if changed == 0 {
+        tx.rollback()?;
+        return Ok(false);
+    }
+    let sequence: i64 = tx.query_row(
+        "SELECT COALESCE(MAX(run_sequence), -1) + 1 FROM automation_run_events WHERE run_id=?1",
+        [run_id],
+        |row| row.get(0),
+    )?;
+    tx.execute(
+        "INSERT INTO automation_run_events (run_id, run_sequence, event_type, generation, payload_json, created_at_ms) SELECT run_id, ?1, 'cancelled', generation, '{}', ?2 FROM automation_runs WHERE run_id=?3",
+        params![sequence, now_ms, run_id],
+    )?;
+    tx.commit()?;
+    Ok(true)
+}
+
+pub fn set_schedule_enabled(
+    connection: &Connection,
+    schedule_id: &str,
+    enabled: bool,
+    now_ms: i64,
+) -> rusqlite::Result<bool> {
+    Ok(connection.execute(
+        "UPDATE automation_schedules SET enabled=?1, updated_at_ms=?2 WHERE schedule_id=?3",
+        params![enabled as i64, now_ms, schedule_id],
+    )? == 1)
 }
 
 pub fn insert_run(
