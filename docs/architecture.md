@@ -194,6 +194,15 @@ returns the original run, while a different payload is a typed idempotency
 conflict. Queue, scheduler, lease and simulation behavior is deliberately
 sequenced into plans 16.2 and 16.3.
 
+Plan 16.2 adds `automation_runtime.rs` as the single Core owner of automation
+FSM transitions, bounded command queue and coalesced progress, fencing leases,
+operation locks and effect-boundary revalidation. Durable transitions and
+events are written by `automation_store` in one SQLite transaction guarded by
+`(run_id, generation, state)`. A stale runner gets `stale_generation` and
+cannot publish an event; expired leases can be taken over only with a higher
+generation. Provider operations have a 120-second deadline, cooperative
+cancellation and an allow-list of transient retry codes.
+
 ## IPC
 
 Контракт находится в `crates/desktop-ipc/proto/evohime.desktop.proto`.

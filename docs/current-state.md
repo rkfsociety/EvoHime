@@ -194,6 +194,18 @@ Read-only Git loadout расширен операциями git.log, git.show, g
   lease/fencing and simulation guards remain the explicitly sequenced work of
   plans 16.2 and 16.3. Renderer has no scheduler or execution authority.
 
+### Automation runtime 16.2
+
+- `automation_runtime.rs` owns the automation FSM, bounded command queue
+  (256), coalesced progress map (1024), fencing generation, 30-second lease,
+  operation lock and fail-closed effect revalidation. Terminal states cannot be
+  transitioned, and stale generations cannot publish transitions.
+- `automation_store` persists `automation_run_events` and `automation_leases`.
+  A guarded state update and event append share one SQLite transaction;
+  takeover is possible only after expiry and uses a higher generation. Provider
+  operations have a 120-second deadline, cooperative cancellation and bounded
+  retry classification.
+
 ### Разработка
 
 - `.env.example` описывает переменные провайдера для локального запуска; `start-dev.ps1` читает `.env` по allow-list и передаёт значения только дочерним native-процессам.

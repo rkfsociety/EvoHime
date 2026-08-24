@@ -36,7 +36,7 @@ pub enum AdmitRunResult {
 }
 
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
-    connection.execute_batch("CREATE TABLE IF NOT EXISTS automation_definitions (definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, definition_json TEXT NOT NULL, definition_hash TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(definition_id, revision, owner_scope)); CREATE TABLE IF NOT EXISTS automation_runs (run_id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, idempotency_key TEXT NOT NULL, payload_hash TEXT NOT NULL, state TEXT NOT NULL, generation INTEGER NOT NULL, permission_snapshot TEXT NOT NULL, approval_snapshot TEXT NOT NULL, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, UNIQUE(owner_scope, definition_id, revision, idempotency_key)); CREATE INDEX IF NOT EXISTS idx_automation_runs_state ON automation_runs(state, updated_at_ms);")
+    connection.execute_batch("CREATE TABLE IF NOT EXISTS automation_definitions (definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, definition_json TEXT NOT NULL, definition_hash TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(definition_id, revision, owner_scope)); CREATE TABLE IF NOT EXISTS automation_runs (run_id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, idempotency_key TEXT NOT NULL, payload_hash TEXT NOT NULL, state TEXT NOT NULL, generation INTEGER NOT NULL, permission_snapshot TEXT NOT NULL, approval_snapshot TEXT NOT NULL, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, UNIQUE(owner_scope, definition_id, revision, idempotency_key)); CREATE INDEX IF NOT EXISTS idx_automation_runs_state ON automation_runs(state, updated_at_ms); CREATE TABLE IF NOT EXISTS automation_run_events (run_id TEXT NOT NULL REFERENCES automation_runs(run_id) ON DELETE CASCADE, run_sequence INTEGER NOT NULL, event_type TEXT NOT NULL, generation INTEGER NOT NULL, payload_json TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(run_id, run_sequence)); CREATE TABLE IF NOT EXISTS automation_leases (run_id TEXT PRIMARY KEY REFERENCES automation_runs(run_id) ON DELETE CASCADE, owner_id TEXT NOT NULL, generation INTEGER NOT NULL, expires_at_ms INTEGER NOT NULL);")
 }
 
 pub fn insert_definition(
@@ -102,6 +102,46 @@ pub fn admit_run(
     Ok(AdmitRunResult::Inserted)
 }
 
+/// Fenced durable transition. The guarded UPDATE and event insert share one
+/// SQLite transaction, so stale runners cannot publish a transition.
+pub fn transition_run(
+    connection: &mut Connection,
+    run_id: &str,
+    from_state: &str,
+    to_state: &str,
+    generation: u64,
+    event_type: &str,
+    payload_json: &str,
+    now_ms: i64,
+) -> rusqlite::Result<bool> {
+    let tx = connection.transaction()?;
+    let changed = tx.execute("UPDATE automation_runs SET state=?1, updated_at_ms=?2 WHERE run_id=?3 AND state=?4 AND generation=?5", params![to_state, now_ms, run_id, from_state, generation as i64])?;
+    if changed == 0 {
+        tx.rollback()?;
+        return Ok(false);
+    }
+    let sequence: i64 = tx.query_row(
+        "SELECT COALESCE(MAX(run_sequence), -1) + 1 FROM automation_run_events WHERE run_id=?1",
+        [run_id],
+        |row| row.get(0),
+    )?;
+    tx.execute("INSERT INTO automation_run_events (run_id, run_sequence, event_type, generation, payload_json, created_at_ms) VALUES (?1,?2,?3,?4,?5,?6)", params![run_id, sequence, event_type, generation as i64, payload_json, now_ms])?;
+    tx.commit()?;
+    Ok(true)
+}
+
+pub fn acquire_lease(
+    connection: &Connection,
+    run_id: &str,
+    owner_id: &str,
+    generation: u64,
+    now_ms: i64,
+    ttl_ms: i64,
+) -> rusqlite::Result<bool> {
+    let changed = connection.execute("INSERT INTO automation_leases (run_id, owner_id, generation, expires_at_ms) VALUES (?1,?2,?3,?4) ON CONFLICT(run_id) DO UPDATE SET owner_id=excluded.owner_id, generation=excluded.generation, expires_at_ms=excluded.expires_at_ms WHERE automation_leases.expires_at_ms <= ?5", params![run_id, owner_id, generation as i64, now_ms + ttl_ms, now_ms])?;
+    Ok(changed == 1)
+}
+
 fn map_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<AutomationRunRecord> {
     Ok(AutomationRunRecord {
         run_id: row.get(0)?,
@@ -164,5 +204,13 @@ mod tests {
             admit_run(&c, &conflict, 2).unwrap(),
             AdmitRunResult::IdempotencyConflict { .. }
         ));
+        let mut c = c;
+        assert!(transition_run(&mut c, "run", "admitted", "queued", 1, "queued", "{}", 2).unwrap());
+        assert!(
+            !transition_run(&mut c, "run", "queued", "running", 0, "running", "{}", 3).unwrap()
+        );
+        assert!(acquire_lease(&c, "run", "core-a", 1, 10, 30).unwrap());
+        assert!(!acquire_lease(&c, "run", "core-b", 2, 20, 30).unwrap());
+        assert!(acquire_lease(&c, "run", "core-b", 2, 40, 30).unwrap());
     }
 }
