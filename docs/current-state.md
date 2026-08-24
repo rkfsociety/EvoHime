@@ -246,6 +246,9 @@ Release evidence (`docs/release-evidence.md`) фиксирует rollback/disabl
 retention, redaction, privacy/egress и license ownership; local
 `scripts/release-evidence.tests.ps1` проверяет документы, backup/restore и
 automation evidence без публикации credentials.
+Финальный audit (`docs/release-audit.md`) оставляет checkout в статусе
+`TECHNICAL_GATES_PASS / RELEASE_BLOCKED`: открытые automation scheduler/IPC,
+archive/restore, license и signing decisions не скрываются.
 
 ### Разработка
 

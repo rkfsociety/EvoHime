@@ -49,7 +49,7 @@
 | 11 Typed memory и Core-first RAG | реализован; контракт перенесён в [`../architecture.md`](../architecture.md), состояние — в [`../current-state.md`](../current-state.md) | — |
 | 12 Local telemetry и deterministic evaluation | реализован; контракт перенесён в [`../architecture.md`](../architecture.md), состояние — в [`../current-state.md`](../current-state.md) | — |
 | 16 Workflow, automation и simulation | 16.4 реализован; acceptance fixtures и границы перенесены в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
-| 17 Общие release gates и нерешённые решения | 17.3 реализован; rollback/evidence/license contract перенесён в [`../release-evidence.md`](../release-evidence.md) | 17-4 от 17-3 |
+| 17 Общие release gates и нерешённые решения | 17.4 audit завершён; технические gates PASS, release BLOCKED по open decisions в [`../release-audit.md`](../release-audit.md) | — |
 
 Порядок незавершённых этапов задаётся так: сначала последовательно выполняется
 16-1 → 16-2 → 16-3 → 16-4 и 17-1 → 17-2 → 17-3 → 17-4. Обзоры 16-0 и 17-0 не являются исполняемыми этапами;

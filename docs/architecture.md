@@ -181,6 +181,8 @@ approval registry, что и у инструментов: отдельного w
 Rollback, redacted evidence, privacy/egress и license inventory собраны в
 [`release-evidence.md`](release-evidence.md); отдельный gate проверяет их вместе
 с backup/restore fixtures.
+Финальный audit запускается `scripts/final-release-audit.tests.ps1` и намеренно
+разделяет технический PASS от release BLOCKED по открытым решениям register.
 
 Repeatable and scheduled work uses the separate Core-owned `automation/v1`
 contract in `crates/evohime-core/src/automation.rs`; it does not replace the
