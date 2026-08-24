@@ -26,15 +26,14 @@ browser/voice/vision adapters остаются fail-closed capability boundaries
 
 ## Текущий порядок работ
 
-1. **O-AUTO-01 — scheduler и automation IPC.** Добавить timezone/missed-tick
-   поведение и additive Electron IPC-проекцию; повторить acceptance A01–A08 на
-   чистом пакете.
-2. **O-AUTO-02 — archive/restore.** Добавить транзакционное архивирование,
-   восстановление и retention sweep с production integration evidence.
-3. **O-LIC-01 — лицензии.** Заполнить inventory и upstream license texts для
-   каждого распространяемого third-party artifact, включая проверку хешей.
-4. **O-SIGN-01 — подпись.** Подключить реальный code-signing pipeline и
-   сохранить проверяемое certificate evidence.
+1. **O-AUTO-01 — закрыто.** Scheduler timezone/missed-tick, durable cursor,
+   additive automation IPC и acceptance gates подключены.
+2. **O-AUTO-02 — закрыто.** Transactional archive/restore, checksum,
+   bounded restore и retention sweep покрыты focused evidence.
+3. **O-LIC-01 — закрыто.** Locked Cargo/npm inventory проверяется CI gate’ом.
+4. **O-SIGN-01 — текущий blocker.** Реализовать certificate-backed запуск
+   Windows signing workflow и сохранить проверяемое evidence; без секрета и
+   сертификата release publish fail-closed.
 
 Владельцы, критерии закрытия и влияние на выпуск находятся в
 [`decision-register.md`](decision-register.md). Порядок работ не меняет

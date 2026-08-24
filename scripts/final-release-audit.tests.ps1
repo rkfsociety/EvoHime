@@ -27,4 +27,4 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Electron typecheck failed' }
     } finally { Pop-Location }
 } finally { Pop-Location }
-Write-Output 'final release audit: TECHNICAL GATES PASS; release status remains BLOCKED by documented open decisions'
+Write-Output 'final release audit: TECHNICAL GATES PASS; release status remains BLOCKED by certificate-backed signing evidence'

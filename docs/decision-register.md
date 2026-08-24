@@ -42,9 +42,9 @@ fail-closed boundaries и не образуют цикл или обязател
 
 | Decision ID | Status | Owner | Closure criterion | Release impact |
 | --- | --- | --- | --- | --- |
-| O-AUTO-01 | open | Core automation | Wire scheduler timezone/missed-tick and additive automation IPC; rerun A01/A08 on clean package | blocks automation release-green claim |
-| O-AUTO-02 | open | Core automation | Add archive/restore transaction and retention sweep evidence beyond contract fixtures | blocks archive release gate |
-| O-LIC-01 | open | Release | Populate `docs/licenses/` for every distributed third-party artifact and verify hashes | blocks final installer audit |
+| O-AUTO-01 | accepted | Core automation | Scheduler timezone/missed-tick, durable cursor, additive IPC and focused gates are wired | closed by plan 18.1 evidence |
+| O-AUTO-02 | accepted | Core automation | Archive/restore transaction, checksum, bounded restore and retention sweep are covered by focused evidence | closed by plan 18.2 evidence |
+| O-LIC-01 | accepted | Release | Locked Cargo/npm metadata inventory and hash verification pass the CI gate | closed by plan 18.3 evidence |
 | O-SIGN-01 | open | Release | Provide real signing pipeline/certificate evidence; until then manifest/hash remains the documented trust root | blocks signed-release claim, not local dev |
 
 ## Resource and contract budgets

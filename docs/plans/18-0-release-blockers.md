@@ -8,10 +8,12 @@ inventory → code signing.
 ## Источник истины и текущая граница
 
 Планы 01–17 завершены. В текущем checkout automation contract/runtime,
-simulation и acceptance fixtures уже существуют, но scheduler и additive
-automation IPC не подключены. Backup/restore для общей SQLite уже реализованы,
-но отдельная automation archive/restore transaction и retention sweep
-отсутствуют. License inventory и signing pipeline пока не дают release evidence.
+scheduler, durable cursor и additive automation IPC подключены и проходят
+focused gates. Отдельная automation archive/restore transaction с checksum,
+bounded restore и retention sweep также реализована. License inventory
+проверяется против locked Cargo/npm metadata. Code-signing pipeline подключён
+к Windows workflow, но certificate evidence ещё требует секретов и
+`signtool.exe` в CI.
 
 ## Зависимости
 

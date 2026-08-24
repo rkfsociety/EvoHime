@@ -1,8 +1,9 @@
 # EvoHime — текущее состояние
 
 Обновлено: 2026-08-24. Планы 01–17 завершены и удалены из каталога временных
-планов. Технические release-gates проходят; выпуск остаётся заблокированным
-решениями O-AUTO-01, O-AUTO-02, O-LIC-01 и O-SIGN-01.
+планов. План 18 реализовал scheduler/IPC, automation archive/restore и license
+inventory; выпуск остаётся заблокированным только отсутствием реального
+certificate-backed code-signing evidence.
 
 ## Продукт
 
@@ -225,19 +226,18 @@ Read-only Git loadout расширен операциями git.log, git.show, g
   trigger/queue behavior, stale lease fencing, cancellation and retry typing,
   snapshot/replay equality, simulation redaction, history limits and
   effect-boundary revalidation.
-- The acceptance fixtures intentionally report only Core/storage contract
-  evidence. Scheduler timezone/missed-tick behavior and an additive automation
-  Electron IPC projection are not wired in this cycle and are not claimed as
-  release-green; optional adapters 13–15 continue to fail closed as unsupported
-  until a later integration stage.
+- The acceptance fixtures report Core/storage contract evidence. Scheduler
+  timezone/missed-tick behavior is wired through the durable cursor poller,
+  additive automation IPC is projected by Electron, and both are covered by
+  the automation boundary/release evidence gates; optional adapters 13–15
+  continue to fail closed as unsupported.
 
 ### Release decision register 17.1
 
 `docs/decision-register.md` фиксирует dependency graph, владельцев schema/IPC,
 resource budgets, accepted decisions и открытые release blockers. В частности,
-оно честно оставляет scheduler timezone/missed-tick, automation IPC, archive
-restore, license inventory и signing pipeline открытыми; optional adapters
-13–15 имеют typed unsupported fallback и не блокируют базовый Core package.
+оно фиксирует закрытые scheduler/IPC, archive/restore и license inventory
+решения; открытым остаётся только certificate-backed signing evidence.
 Automation boundary gate (`scripts/automation-release-gate.tests.ps1`) проверяет
 наличие contract modules, отсутствие filesystem/network/process imports в них,
 locked Core/storage acceptance tests и подключён к Windows Rust CI.
@@ -246,8 +246,8 @@ retention, redaction, privacy/egress и license ownership; local
 `scripts/release-evidence.tests.ps1` проверяет документы, backup/restore и
 automation evidence без публикации credentials.
 Финальный audit (`docs/release-audit.md`) оставляет checkout в статусе
-`TECHNICAL_GATES_PASS / RELEASE_BLOCKED`: открытые automation scheduler/IPC,
-archive/restore, license и signing decisions не скрываются.
+`TECHNICAL_GATES_PASS / RELEASE_BLOCKED` только до получения certificate-backed
+signing evidence.
 
 ### Разработка
 
@@ -258,7 +258,7 @@ archive/restore, license и signing decisions не скрываются.
 
 24 августа 2026 года `scripts/final-release-audit.tests.ps1` подтвердил:
 
-- 536 тестов Core, 184 теста local storage и 35 тестов desktop IPC;
+- 541 тест Core, 186 тестов local storage и 35 тестов desktop IPC;
 - automation boundary gate и release evidence gate;
 - `cargo fmt --all -- --check` и `git diff --check`;
 - Electron `check:protocol` и `typecheck`.

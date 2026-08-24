@@ -1,6 +1,7 @@
 # EvoHime — финальный release audit
 
-Статус audit: `TECHNICAL_GATES_PASS / RELEASE_BLOCKED`.
+Статус audit: `TECHNICAL_GATES_PASS / RELEASE_BLOCKED` — блокирует только
+внешнее certificate-backed code-signing evidence.
 
 Свежий прогон выполняется `scripts/final-release-audit.tests.ps1`. Он проверяет
 Rust Core/SQLite/IPC tests, rustfmt, automation boundary, backup/restore and
@@ -10,14 +11,14 @@ startup/fault/installer smoke остаются отдельными Windows CI g
 
 ## Остаточные release blockers
 
-- `O-AUTO-01`: scheduler timezone/missed-tick и additive automation IPC не
-  wired; Core contract не объявляется automation release-green.
-- `O-AUTO-02`: archive/restore transaction и retention sweep для automation
-  ещё не имеют production integration evidence.
-- `O-LIC-01`: `docs/licenses/` — только inventory template; точные upstream
-  license texts и hashes distributed artifacts ещё нужно заполнить.
-- `O-SIGN-01`: реальный code-signing pipeline/certificate evidence отсутствует;
-  manifest/hash остаётся documented trust root.
+- `O-SIGN-01`: workflow и локальный signing gate реализованы, но в текущем
+  checkout нет `signtool.exe` и сертификата, поэтому certificate identity,
+  timestamp и Authenticode evidence ещё не получены.
+
+Закрытые решения текущего плана: `O-AUTO-01` (scheduler/IPC gates),
+`O-AUTO-02` (transactional archive/restore и retention evidence) и `O-LIC-01`
+(locked Cargo/npm inventory gate). Они больше не являются основанием для
+`RELEASE_BLOCKED`.
 
 ## Подтверждённые границы
 
