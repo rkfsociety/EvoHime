@@ -119,6 +119,9 @@ jobs:
       - name: Automation runtime boundary gate
         shell: pwsh
         run: ./scripts/automation-release-gate.tests.ps1
+      - name: Release evidence and rollback gate
+        shell: pwsh
+        run: ./scripts/release-evidence.tests.ps1
       - name: Upload redacted evaluation artifact
         if: always()
         uses: actions/upload-artifact@v7

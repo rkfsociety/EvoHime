@@ -242,6 +242,10 @@ restore, license inventory и signing pipeline открытыми; optional adap
 Automation boundary gate (`scripts/automation-release-gate.tests.ps1`) проверяет
 наличие contract modules, отсутствие filesystem/network/process imports в них,
 locked Core/storage acceptance tests и подключён к Windows Rust CI.
+Release evidence (`docs/release-evidence.md`) фиксирует rollback/disable,
+retention, redaction, privacy/egress и license ownership; local
+`scripts/release-evidence.tests.ps1` проверяет документы, backup/restore и
+automation evidence без публикации credentials.
 
 ### Разработка
 
