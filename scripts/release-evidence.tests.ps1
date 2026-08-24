@@ -25,5 +25,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Automation evidence tests failed with exit code $LASTEXITCODE" }
     & (Join-Path $repo 'scripts\license-inventory.tests.ps1')
     if ($LASTEXITCODE -ne 0) { throw "License inventory gate failed with exit code $LASTEXITCODE" }
+    & (Join-Path $repo 'scripts\signing-release-gate.tests.ps1')
+    if ($LASTEXITCODE -ne 0) { throw "Signing pipeline gate failed with exit code $LASTEXITCODE" }
 } finally { Pop-Location }
 Write-Output 'release evidence gate: PASS'

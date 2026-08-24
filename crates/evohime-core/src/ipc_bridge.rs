@@ -3738,6 +3738,18 @@ impl IpcBridge {
                 } => (slot, idempotency_key, true),
             };
             let mut database = self.journal.database().lock().await;
+            let Some(definition) = evohime_local_storage::automation_store::get_definition(
+                database.connection(),
+                &schedule.definition_id,
+                schedule.revision,
+                &schedule.owner_scope,
+            )
+            .ok()
+            .flatten() else {
+                // Не сдвигаем cursor: после восстановления definition следующий
+                // poll должен повторить попытку, а не потерять слот.
+                continue;
+            };
             let advanced = evohime_local_storage::automation_store::advance_schedule_slot(
                 database.connection(),
                 &schedule.schedule_id,
@@ -3765,16 +3777,6 @@ impl IpcBridge {
                 );
                 continue;
             }
-            let Some(definition) = evohime_local_storage::automation_store::get_definition(
-                database.connection(),
-                &schedule.definition_id,
-                schedule.revision,
-                &schedule.owner_scope,
-            )
-            .ok()
-            .flatten() else {
-                continue;
-            };
             let input_json = "{}".to_string();
             let payload_hash = hex::encode(<sha2::Sha256 as sha2::Digest>::digest(
                 input_json.as_bytes(),

@@ -5,6 +5,11 @@ use serde::{Deserialize, Serialize};
 use sha2::Digest;
 
 pub const AUTOMATION_STORE_SCHEMA: u32 = 1;
+pub const MAX_ARCHIVE_RUNS: u32 = 10_000;
+pub const MAX_ARCHIVE_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
+pub const MAX_ARCHIVE_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_ARCHIVE_EVENTS: usize = 256;
+pub const MAX_ARCHIVE_SNAPSHOTS: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AutomationScheduleRecord {
@@ -100,6 +105,14 @@ pub fn archive_run(
     expires_at_ms: i64,
 ) -> rusqlite::Result<bool> {
     let tx = connection.transaction()?;
+    let archive_count: i64 =
+        tx.query_row("SELECT COUNT(*) FROM automation_archives", [], |row| {
+            row.get(0)
+        })?;
+    if archive_count >= i64::from(MAX_ARCHIVE_RUNS) {
+        tx.rollback()?;
+        return Ok(false);
+    }
     let run = tx
         .query_row(
             "SELECT run_id, definition_id, revision, owner_scope, idempotency_key, payload_hash, state, generation, permission_snapshot, approval_snapshot FROM automation_runs WHERE run_id=?1",
@@ -144,6 +157,14 @@ pub fn archive_run(
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     drop(snapshot_statement);
+    if expires_at_ms < now_ms
+        || expires_at_ms > now_ms.saturating_add(MAX_ARCHIVE_RETENTION_MS)
+        || events.len() > MAX_ARCHIVE_EVENTS
+        || snapshots.len() > MAX_ARCHIVE_SNAPSHOTS
+    {
+        tx.rollback()?;
+        return Ok(false);
+    }
     let payload = serde_json::to_string(&ArchivePayload {
         run,
         events,
@@ -151,6 +172,10 @@ pub fn archive_run(
     })
     .map_err(|_| rusqlite::Error::InvalidQuery)?;
     let checksum = hex::encode(sha2::Sha256::digest(payload.as_bytes()));
+    if payload.len() > MAX_ARCHIVE_BYTES {
+        tx.rollback()?;
+        return Ok(false);
+    }
     tx.execute(
         "INSERT INTO automation_archives (archive_id, run_id, archive_json, checksum_sha256, created_at_ms, expires_at_ms) VALUES (?1,?2,?3,?4,?5,?6)",
         params![archive_id, run_id, payload, checksum, now_ms, expires_at_ms],
@@ -166,13 +191,15 @@ pub fn restore_archive(
     now_ms: i64,
 ) -> rusqlite::Result<bool> {
     let tx = connection.transaction()?;
-    let (run_id, archive_json, checksum): (String, String, String) = tx.query_row(
-        "SELECT run_id, archive_json, checksum_sha256 FROM automation_archives WHERE archive_id=?1",
+    let (run_id, archive_json, checksum, expires_at_ms): (String, String, String, i64) = tx.query_row(
+        "SELECT run_id, archive_json, checksum_sha256, expires_at_ms FROM automation_archives WHERE archive_id=?1",
         [archive_id],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
     )?;
     let observed = hex::encode(sha2::Sha256::digest(archive_json.as_bytes()));
     if observed != checksum
+        || now_ms >= expires_at_ms
+        || archive_json.len() > MAX_ARCHIVE_BYTES
         || tx.query_row::<i64, _, _>(
             "SELECT COUNT(*) FROM automation_runs WHERE run_id=?1",
             [&run_id],
@@ -184,6 +211,11 @@ pub fn restore_archive(
     }
     let payload: ArchivePayload =
         serde_json::from_str(&archive_json).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    if payload.events.len() > MAX_ARCHIVE_EVENTS || payload.snapshots.len() > MAX_ARCHIVE_SNAPSHOTS
+    {
+        tx.rollback()?;
+        return Ok(false);
+    }
     let run = payload.run;
     tx.execute(
         "INSERT INTO automation_runs (run_id, definition_id, revision, owner_scope, idempotency_key, payload_hash, state, generation, permission_snapshot, approval_snapshot, created_at_ms, updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?11)",
