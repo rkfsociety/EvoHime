@@ -1476,12 +1476,15 @@ impl<'a> ReceiptRuntime<'a> {
         route_snapshot_hash: &str,
         policy_snapshot_hash: &str,
     ) -> Result<SignedModelRequestReceipt, RuntimeError> {
+        // Some providers (notably LiteRouter) choose the concrete model at
+        // dispatch time. The model-request contract therefore permits an
+        // empty model identifier; the provider identity and all commitments
+        // remain mandatory.
         if request_id.is_empty()
             || logical_request_id.is_empty()
             || ledger_id.is_empty()
             || attempt == 0
             || provider.is_empty()
-            || model.is_empty()
             || [
                 envelope_hash,
                 context_projection_hash,
@@ -4126,5 +4129,37 @@ mod tests {
             .unwrap(),
             first.receipt_hash
         );
+    }
+
+    #[test]
+    fn request_commit_receipt_allows_provider_selected_model() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+
+        let receipt = runtime
+            .append_model_request_receipt(
+                "request-provider-selected-model",
+                "logical-provider-selected-model",
+                "ledger-provider-selected-model",
+                1,
+                "literouter",
+                "",
+                &"a".repeat(64),
+                &"b".repeat(64),
+                &"c".repeat(64),
+                &"d".repeat(64),
+            )
+            .expect("provider-selected model is a valid request receipt");
+
+        assert!(!receipt.receipt_hash.is_empty());
+        let model: String = db
+            .query_row(
+                "SELECT json_extract(canonical_payload, '$.model') FROM receipt_records WHERE request_id=?1",
+                ["request-provider-selected-model"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(model.is_empty());
     }
 }
