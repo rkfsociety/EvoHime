@@ -3,13 +3,12 @@ param()
 
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$remainingPlans = @(
+$removedPlans = @(
     'docs\plans\16-0-workflow-automation-and-simulation.md',
-    'docs\plans\17-0-release-criteria-and-open-decisions.md'
+    'docs\plans\17-0-release-criteria-and-open-decisions.md',
+    'docs\plans\17-4-release-audit-and-acceptance.md'
 )
-foreach ($path in $remainingPlans) { if (-not (Test-Path -LiteralPath (Join-Path $repo $path))) { throw "Expected overview/audit plan missing: $path" } }
-$completedAudit = Join-Path $repo 'docs\plans\17-4-release-audit-and-acceptance.md'
-if (Test-Path -LiteralPath $completedAudit) { throw "Completed audit plan must be removed: $completedAudit" }
+foreach ($path in $removedPlans) { if (Test-Path -LiteralPath (Join-Path $repo $path)) { throw "Completed plan must be removed: $path" } }
 Push-Location $repo
 try {
     & cargo fmt --all -- --check

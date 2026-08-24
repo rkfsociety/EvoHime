@@ -21,8 +21,7 @@ startup/fault/installer smoke остаются отдельными Windows CI g
 
 ## Подтверждённые границы
 
-Планы 16.1–16.4 и 17.1–17.3 перенесены в canonical docs и удалены из каталога
-только после focused checks и task-only commits. Overview plans 16.0/17.0 и
-этот audit plan остаются как non-executable boundary documents. Optional
+Планы 16.0–16.4 и 17.0–17.4 перенесены в canonical docs и удалены из каталога
+только после focused checks и task-only commits. Optional
 browser/voice/vision adapters деградируют typed unsupported и не расширяют
 base runtime.
