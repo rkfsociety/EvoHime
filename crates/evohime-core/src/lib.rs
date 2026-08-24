@@ -13444,4 +13444,5 @@ mod tests {
     }
 }
 pub mod adapter_contract;
+pub mod automation;
 pub mod target_contract;

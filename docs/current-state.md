@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-22 (планы 04 и 05 завершены; план 06 реализован в текущем
+Обновлено: 2026-08-24 (планы 04 и 05 завершены; план 06 реализован в текущем
 checkout: контракт workflow/v1, Core-owned реестр и шаблоны, durable runtime
 со схемой 29, additive IPC и раздел «Составные задачи» в Electron).
 
@@ -171,6 +171,28 @@ Read-only Git loadout расширен операциями git.log, git.show, g
   `crates/evohime-core/src/evals.rs` (12 новых случаев в существующих
   категориях), unit-тестами runtime/хранилища и real-Core E2E, запускающим один
   шаблон против собранного `evohime-core.exe`.
+
+### Automation contract 16.1
+
+- Core владеет versioned `automation/v1` definition (`automation.rs`):
+  immutable definition/revision/owner scope, bounded activity references,
+  capability and approval policy, schedule/manual trigger policy, concurrency,
+  retry and retention limits. Unknown contract versions and unsafe limits fail
+  closed before persistence; the definition hash is stable for the same
+  serialized contract.
+- `TriggerRequestV1` requires bounded correlation and idempotency identity,
+  scheduled slot and input payload. `AutomationRunV1` binds the immutable
+  definition hash, permission snapshot, approval snapshot and generation to a
+  typed lifecycle; `ActivityEventV1` and `AutomationHealthV1` are bounded
+  projection contracts and contain diagnostics rather than provider output.
+- `automation_store` is installed on the shared SQLite connection. Definitions
+  are keyed by `(definition_id, revision, owner_scope)`, while runs enforce
+  `(owner_scope, definition_id, revision, idempotency_key)` uniqueness. Repeated
+  delivery with the same payload returns the first run; a different payload
+  returns typed `IdempotencyConflict` without creating a second run.
+- This stage defines the durable contract only; scheduler, queue ownership,
+  lease/fencing and simulation guards remain the explicitly sequenced work of
+  plans 16.2 and 16.3. Renderer has no scheduler or execution authority.
 
 ### Разработка
 

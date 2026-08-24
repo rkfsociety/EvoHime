@@ -733,6 +733,7 @@ dependencies = [
  "evohime-receipts",
  "evohime-tool-runtime",
  "futures-util",
+ "hex",
  "jsonschema",
  "prost",
  "rand 0.8.7",

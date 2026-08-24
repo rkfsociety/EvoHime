@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod ambient_store;
 pub mod artifact_store;
+pub mod automation_store;
 pub mod backup;
 pub mod capability_selection_store;
 pub mod capability_store;
@@ -488,6 +489,7 @@ impl LocalDatabase {
         // получает таблицы без отдельной ветки миграции.
         workflow_store::install_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        automation_store::install_schema(&connection)?;
         toolkit_store::install_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         // Схема 30 (план 08-2): typed execution ledger поверх events —

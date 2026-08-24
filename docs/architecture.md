@@ -173,6 +173,27 @@ approval registry, что и у инструментов: отдельного w
 [`features/task-dependency-graphs.md`](features/task-dependency-graphs.md):
 там описан граф зависимостей work items проекта.
 
+## Automation contract 16.1
+
+Repeatable and scheduled work uses the separate Core-owned `automation/v1`
+contract in `crates/evohime-core/src/automation.rs`; it does not replace the
+`workflow/v1` graph or create a second lease owner. An immutable definition is
+bound to `(definition_id, revision, owner_scope)` and contains bounded activity
+references, trigger policy, concurrency/retry limits, capabilities, approval
+mode, input schema and retention. Unknown contract versions and unsafe limits
+fail closed, and its serialized definition hash is retained by every run.
+
+`TriggerRequestV1` carries bounded correlation, scheduled-slot and input data.
+`AutomationRunV1` captures permission and approval snapshots plus a fencing
+generation before execution. `ActivityEventV1` and `AutomationHealthV1` are
+bounded redacted projections; they never transport raw provider output. SQLite
+`automation_definitions` and `automation_runs` are installed on the shared
+database. The run uniqueness key is
+`(owner_scope, definition_id, revision, idempotency_key)`: same key and payload
+returns the original run, while a different payload is a typed idempotency
+conflict. Queue, scheduler, lease and simulation behavior is deliberately
+sequenced into plans 16.2 and 16.3.
+
 ## IPC
 
 Контракт находится в `crates/desktop-ipc/proto/evohime.desktop.proto`.

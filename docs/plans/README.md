@@ -48,7 +48,7 @@
 | 10 IPC, version negotiation и provider boundary | реализован; контракт перенесён в [`../architecture.md`](../architecture.md), состояние — в [`../current-state.md`](../current-state.md) | — |
 | 11 Typed memory и Core-first RAG | реализован; контракт перенесён в [`../architecture.md`](../architecture.md), состояние — в [`../current-state.md`](../current-state.md) | — |
 | 12 Local telemetry и deterministic evaluation | реализован; контракт перенесён в [`../architecture.md`](../architecture.md), состояние — в [`../current-state.md`](../current-state.md) | — |
-| 16 Workflow, automation и simulation | проектируется; обзор в [`16-0-workflow-automation-and-simulation.md`](16-0-workflow-automation-and-simulation.md) | 16-1 от планов 08–12 и существующих workflow contracts; 16-2 от 16-1; 16-3 от 16-2; 16-4 от 16-3 |
+| 16 Workflow, automation и simulation | 16.1 реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | 16-2 от 16-1; 16-3 от 16-2; 16-4 от 16-3 |
 | 17 Общие release gates и нерешённые решения | сопровождающий план; обзор в [`17-0-release-criteria-and-open-decisions.md`](17-0-release-criteria-and-open-decisions.md) | 17-1 от планов 07–16; 17-2 от 17-1; 17-3 от 17-2; 17-4 от 17-3 |
 
 Порядок незавершённых этапов задаётся так: сначала последовательно выполняется
