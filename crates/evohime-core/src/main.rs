@@ -250,6 +250,13 @@ async fn main() {
         enforce_authentication: authenticated,
     };
     let bridge = std::sync::Arc::new(bridge);
+    let scheduler_bridge = std::sync::Arc::clone(&bridge);
+    let automation_scheduler_task = tokio::spawn(async move {
+        loop {
+            scheduler_bridge.poll_automation_schedules().await;
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    });
     let listener_bridge = std::sync::Arc::clone(&bridge);
     let listener_context = config.context.clone();
     let listener_logger = std::sync::Arc::clone(&logger);
@@ -274,6 +281,7 @@ async fn main() {
         std::process::exit(1);
     }
     heartbeat_task.abort();
+    automation_scheduler_task.abort();
     approval_gc_task.abort();
     receipt_retention_task.abort();
     ambient_retention_task.abort();

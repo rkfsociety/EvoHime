@@ -3490,6 +3490,122 @@ impl IpcBridge {
         }
     }
 
+    /// Polls every enabled schedule once. The compare-and-swap cursor is
+    /// advanced before a trigger is admitted, so a second Core generation
+    /// cannot publish the same wall-clock slot. The normal automation runtime
+    /// consumes the durable admitted run; this method never executes effects.
+    pub async fn poll_automation_schedules(&self) {
+        let now = now_ms();
+        let schedules = {
+            let database = self.journal.database().lock().await;
+            evohime_local_storage::automation_store::list_enabled_schedules(database.connection())
+                .unwrap_or_default()
+        };
+        for schedule in schedules {
+            let Ok(policy) = crate::automation_scheduler::DailySchedule::new(
+                schedule.hour,
+                schedule.minute,
+                schedule.timezone_minutes,
+                schedule.missed_grace_ms,
+            ) else {
+                continue;
+            };
+            let cursor = crate::automation_scheduler::SchedulerCursor {
+                last_slot: schedule.last_slot.clone(),
+            };
+            let decision =
+                match policy.decide(&schedule.definition_id, schedule.revision, &cursor, now) {
+                    Ok(decision) => decision,
+                    Err(_) => continue,
+                };
+            let (slot, idempotency_key, missed) = match decision {
+                crate::automation_scheduler::SchedulerDecision::NotDue => continue,
+                crate::automation_scheduler::SchedulerDecision::Trigger {
+                    slot,
+                    idempotency_key,
+                } => (slot, idempotency_key, false),
+                crate::automation_scheduler::SchedulerDecision::Missed {
+                    slot,
+                    idempotency_key,
+                } => (slot, idempotency_key, true),
+            };
+            let mut database = self.journal.database().lock().await;
+            let advanced = evohime_local_storage::automation_store::advance_schedule_slot(
+                database.connection(),
+                &schedule.schedule_id,
+                schedule.last_slot.as_deref(),
+                &slot,
+                now,
+            )
+            .unwrap_or(false);
+            if !advanced {
+                continue;
+            }
+            if missed {
+                let payload = serde_json::json!({
+                    "schedule_id": schedule.schedule_id,
+                    "definition_id": schedule.definition_id,
+                    "revision": schedule.revision,
+                    "slot": slot,
+                    "idempotency_key": idempotency_key,
+                    "reason": "missed_tick",
+                });
+                let _ = database.append_event(
+                    &schedule.schedule_id,
+                    "automation.schedule_missed",
+                    &serde_json::to_vec(&payload).unwrap_or_default(),
+                );
+                continue;
+            }
+            let Some(definition) = evohime_local_storage::automation_store::get_definition(
+                database.connection(),
+                &schedule.definition_id,
+                schedule.revision,
+                &schedule.owner_scope,
+            )
+            .ok()
+            .flatten() else {
+                continue;
+            };
+            let input_json = "{}".to_string();
+            let payload_hash = hex::encode(<sha2::Sha256 as sha2::Digest>::digest(
+                input_json.as_bytes(),
+            ));
+            let run = evohime_local_storage::automation_store::AutomationRunRecord {
+                run_id: uuid::Uuid::new_v4().to_string(),
+                definition_id: schedule.definition_id.clone(),
+                revision: schedule.revision,
+                owner_scope: schedule.owner_scope.clone(),
+                idempotency_key,
+                payload_hash,
+                state: "admitted".into(),
+                generation: 1,
+                permission_snapshot: "scheduler".into(),
+                approval_snapshot: "scheduler".into(),
+            };
+            if let Ok(evohime_local_storage::automation_store::AdmitRunResult::Inserted) =
+                evohime_local_storage::automation_store::admit_run(database.connection(), &run, now)
+            {
+                let payload = serde_json::json!({
+                    "schedule_id": schedule.schedule_id,
+                    "slot": slot,
+                    "definition_hash": definition.definition_hash,
+                    "trigger": "timer",
+                });
+                let _ = evohime_local_storage::automation_store::transition_run(
+                    database.connection_mut(),
+                    &run.run_id,
+                    "admitted",
+                    "queued",
+                    1,
+                    "scheduled",
+                    &payload.to_string(),
+                    now,
+                );
+            }
+        }
+    }
+
     fn dispatch_list_workflow_templates(&self) -> serde_json::Value {
         let templates: Vec<serde_json::Value> = crate::workflow_templates::catalog()
             .into_iter()
