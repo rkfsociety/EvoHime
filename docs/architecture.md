@@ -203,6 +203,17 @@ cannot publish an event; expired leases can be taken over only with a higher
 generation. Provider operations have a 120-second deadline, cooperative
 cancellation and an allow-list of transient retry codes.
 
+Plan 16.3 adds `automation_simulation.rs`: bounded schema-1 snapshots carry
+definition revision, fencing generation, event sequence, policy/approval
+snapshots, provenance and a SHA-256 checksum. Validation rejects oversized,
+corrupt, stale or incompatible snapshots before recovery. `ReplayInputV1`
+produces a deterministic hash from frozen clock, seed, ordered events, inputs,
+fixtures and capability/policy snapshots. The simulation effect allow-list
+admits only the fake provider; host filesystem/network/process/IPC effects are
+denied, and export redaction removes bearer markers and absolute Windows paths.
+Snapshot records are stored separately in `automation_snapshots`; active state
+and event history remain authoritative.
+
 ## IPC
 
 Контракт находится в `crates/desktop-ipc/proto/evohime.desktop.proto`.

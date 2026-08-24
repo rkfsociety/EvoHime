@@ -206,6 +206,20 @@ Read-only Git loadout расширен операциями git.log, git.show, g
   operations have a 120-second deadline, cooperative cancellation and bounded
   retry classification.
 
+### Automation snapshots and simulation 16.3
+
+- `AutomationSnapshotV1` is a bounded schema-1 record with checksum,
+  definition revision, fencing generation, event sequence, policy/approval
+  snapshots and provenance. Validation rejects corrupt, oversized, stale and
+  incompatible snapshots; `automation_snapshots` keeps them separate from
+  authoritative active state and event history.
+- `ReplayInputV1` produces a deterministic replay hash from frozen clock, RNG
+  seed, normalized inputs, ordered events, provider fixtures and capability /
+  policy snapshots. Simulation admits only the fake-provider effect and
+  rejects filesystem, network, process, shell, registry, clipboard and
+  production IPC effects; export redaction strips bearer markers and absolute
+  Windows paths.
+
 ### Разработка
 
 - `.env.example` описывает переменные провайдера для локального запуска; `start-dev.ps1` читает `.env` по allow-list и передаёт значения только дочерним native-процессам.
