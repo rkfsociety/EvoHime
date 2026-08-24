@@ -13,8 +13,15 @@ foreach ($path in @($manifestPath, $cargoLock, $npmLock)) {
 }
 
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-$cargoHash = (Get-FileHash -LiteralPath $cargoLock -Algorithm SHA256).Hash
-$npmHash = (Get-FileHash -LiteralPath $npmLock -Algorithm SHA256).Hash
+function Get-NormalizedFileHash([string] $path) {
+    $content = [IO.File]::ReadAllText($path) -replace "`r`n", "`n"
+    $bytes = [Text.Encoding]::UTF8.GetBytes($content)
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($sha256.ComputeHash($bytes))).Replace('-', '') }
+    finally { $sha256.Dispose() }
+}
+$cargoHash = Get-NormalizedFileHash $cargoLock
+$npmHash = Get-NormalizedFileHash $npmLock
 if ($manifest.generated_from.cargo_lock_sha256 -ne $cargoHash) { throw 'Cargo.lock changed without license manifest refresh.' }
 if ($manifest.generated_from.npm_lock_sha256 -ne $npmHash) { throw 'package-lock.json changed without license manifest refresh.' }
 
