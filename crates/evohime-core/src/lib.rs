@@ -4330,6 +4330,14 @@ impl SelectedModel {
     }
 }
 
+fn effective_model_name(gateway_model: &str, selected_model: Option<&str>) -> String {
+    selected_model
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+        .unwrap_or(gateway_model)
+        .to_owned()
+}
+
 struct CoreReceiptSigner(Arc<ReceiptKeyManager>);
 
 impl ReceiptSigner for CoreReceiptSigner {
@@ -6132,11 +6140,12 @@ impl ToolAgent {
         iteration: usize,
         messages: &[ChatMessage],
         specs: &[ToolSpec],
+        selected_model: Option<&str>,
     ) -> context_budget::AssembledContext {
         let model_call_id = format!("{task_id}-{iteration}");
         let now = task_memory::now_millis() as i64;
         let provider = self.gateway.provider_kind().as_str().to_string();
-        let model = self.gateway.model_name().to_string();
+        let model = effective_model_name(self.gateway.model_name(), selected_model);
         let contents: Vec<(String, String)> = messages
             .iter()
             .enumerate()
@@ -7035,11 +7044,14 @@ impl ToolAgent {
             })
             .unwrap_or_default();
         for iteration in 0..self.max_iterations {
+            let selected_model = self.selected_model.get();
+            let effective_model =
+                effective_model_name(self.gateway.model_name(), selected_model.as_deref());
             write_model_trace(
                 "model.request",
                 serde_json::json!({
                     "task_id": task_id,
-                    "model": self.gateway.model_name(),
+                    "model": effective_model,
                     "workspace_path": context.workspace_root,
                     "messages": messages,
                     "tools": specs,
@@ -7056,12 +7068,13 @@ impl ToolAgent {
                     iteration,
                     &messages,
                     &specs,
+                    selected_model.as_deref(),
                 )
                 .await;
             let _ = events.send(CoreEvent::ModelContext {
                 task_id: task_id.clone(),
                 workspace_path: context.workspace_root.display().to_string(),
-                model: self.gateway.model_name().to_string(),
+                model: effective_model.clone(),
                 system_prompt: system_prompt.clone(),
                 user_prompt: user_prompt.clone(),
                 tools: assembled
@@ -12318,6 +12331,22 @@ mod tests {
     use futures_util::future::BoxFuture;
     use std::sync::Arc;
     use tokio_util::sync::CancellationToken;
+
+    #[test]
+    fn selected_model_overrides_empty_gateway_model_for_provenance() {
+        assert_eq!(
+            super::effective_model_name("", Some("  openai/gpt-4.1-mini  ")),
+            "openai/gpt-4.1-mini"
+        );
+        assert_eq!(
+            super::effective_model_name("gateway-default", None),
+            "gateway-default"
+        );
+        assert_eq!(
+            super::effective_model_name("gateway-default", Some("  ")),
+            "gateway-default"
+        );
+    }
 
     /// Связь «кандидат ↔ эпизод» существует в данных, а не на бумаге:
     /// `provenance_source_id` берёт эпизод первым, и именно по этому
