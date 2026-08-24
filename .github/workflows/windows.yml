@@ -116,6 +116,9 @@ jobs:
       - name: Mandatory independent security evaluation gate
         shell: pwsh
         run: ./scripts/security-eval-gate.tests.ps1
+      - name: Automation runtime boundary gate
+        shell: pwsh
+        run: ./scripts/automation-release-gate.tests.ps1
       - name: Upload redacted evaluation artifact
         if: always()
         uses: actions/upload-artifact@v7

@@ -239,6 +239,9 @@ resource budgets, accepted decisions и открытые release blockers. В ч
 оно честно оставляет scheduler timezone/missed-tick, automation IPC, archive
 restore, license inventory и signing pipeline открытыми; optional adapters
 13–15 имеют typed unsupported fallback и не блокируют базовый Core package.
+Automation boundary gate (`scripts/automation-release-gate.tests.ps1`) проверяет
+наличие contract modules, отсутствие filesystem/network/process imports в них,
+locked Core/storage acceptance tests и подключён к Windows Rust CI.
 
 ### Разработка
 

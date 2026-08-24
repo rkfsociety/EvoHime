@@ -176,6 +176,8 @@ approval registry, что и у инструментов: отдельного w
 ## Automation contract 16.1
 
 Порядок зависимостей и открытые решения собраны в [`decision-register.md`](decision-register.md).
+Общий release gate для automation и его host-boundary checks запускается из
+`scripts/automation-release-gate.tests.ps1` и входит в Rust CI.
 
 Repeatable and scheduled work uses the separate Core-owned `automation/v1`
 contract in `crates/evohime-core/src/automation.rs`; it does not replace the
