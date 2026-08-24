@@ -232,6 +232,14 @@ Read-only Git loadout расширен операциями git.log, git.show, g
   release-green; optional adapters 13–15 continue to fail closed as unsupported
   until a later integration stage.
 
+### Release decision register 17.1
+
+`docs/decision-register.md` фиксирует dependency graph, владельцев schema/IPC,
+resource budgets, accepted decisions и открытые release blockers. В частности,
+оно честно оставляет scheduler timezone/missed-tick, automation IPC, archive
+restore, license inventory и signing pipeline открытыми; optional adapters
+13–15 имеют typed unsupported fallback и не блокируют базовый Core package.
+
 ### Разработка
 
 - `.env.example` описывает переменные провайдера для локального запуска; `start-dev.ps1` читает `.env` по allow-list и передаёт значения только дочерним native-процессам.

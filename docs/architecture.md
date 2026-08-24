@@ -175,6 +175,8 @@ approval registry, что и у инструментов: отдельного w
 
 ## Automation contract 16.1
 
+Порядок зависимостей и открытые решения собраны в [`decision-register.md`](decision-register.md).
+
 Repeatable and scheduled work uses the separate Core-owned `automation/v1`
 contract in `crates/evohime-core/src/automation.rs`; it does not replace the
 `workflow/v1` graph or create a second lease owner. An immutable definition is
