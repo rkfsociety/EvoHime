@@ -461,7 +461,7 @@ impl ModelGateway {
         if request.task_class.is_some() || request.offline || request.estimated_input_tokens > 0 {
             let now_ms = current_time_ms();
             let snapshot = self
-                .route_policy_snapshot(request, now_ms)
+                .route_policy_snapshot_with_model(request, model, now_ms)
                 .map_err(|error| ProviderError::Config(error.to_string()))?;
             let overlay = RunHealthOverlay::new(&snapshot.run_id);
             let decision = select_route_snapshot(
@@ -611,10 +611,28 @@ impl ModelGateway {
         request: &RoutingRequest,
         now_ms: u64,
     ) -> Result<RoutePolicySnapshot, SnapshotError> {
+        self.route_policy_snapshot_with_model(request, None, now_ms)
+    }
+
+    fn route_policy_snapshot_with_model(
+        &self,
+        request: &RoutingRequest,
+        model_override: Option<&str>,
+        now_ms: u64,
+    ) -> Result<RoutePolicySnapshot, SnapshotError> {
         let candidates = self
             .route_candidates()
             .into_iter()
             .map(|candidate| {
+                let model = if candidate.route_id == self.default_route {
+                    model_override
+                        .map(str::trim)
+                        .filter(|model| !model.is_empty())
+                        .unwrap_or(&candidate.model)
+                        .to_owned()
+                } else {
+                    candidate.model
+                };
                 let execution_class = if self
                     .routes
                     .get(&candidate.route_id)
@@ -626,7 +644,7 @@ impl ModelGateway {
                 };
                 CandidateEntry {
                     route_id: candidate.route_id,
-                    model: candidate.model,
+                    model,
                     capabilities: CapabilityMetadata {
                         schema_version: "capability-metadata-v1".into(),
                         provider_version: "gateway".into(),
@@ -676,11 +694,19 @@ impl ModelGateway {
         &self,
         request: &RoutingRequest,
     ) -> Result<String, ProviderError> {
+        self.provenance_route_snapshot_hash_with_model(request, None)
+    }
+
+    pub fn provenance_route_snapshot_hash_with_model(
+        &self,
+        request: &RoutingRequest,
+        model: Option<&str>,
+    ) -> Result<String, ProviderError> {
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64;
-        self.route_policy_snapshot(request, now_ms)
+        self.route_policy_snapshot_with_model(request, model, now_ms)
             .map_err(|error| ProviderError::Config(error.to_string()))?
             .round_trip_hash()
             .map_err(|error| ProviderError::Config(error.to_string()))
@@ -847,6 +873,31 @@ mod tests {
             })
             .collect();
         ModelGateway::from_routes("local", routes)
+    }
+
+    #[test]
+    fn policy_snapshot_uses_selected_model_for_default_route() {
+        let gateway = gateway_with_routes(vec![("local", "")]);
+
+        let snapshot = gateway
+            .route_policy_snapshot_with_model(&policy_request(), Some("provider-model"), 1)
+            .expect("selected model should make the snapshot valid");
+
+        assert_eq!(snapshot.candidates[0].model, "provider-model");
+    }
+
+    #[test]
+    fn policy_snapshot_reports_empty_model_as_model_error() {
+        let gateway = gateway_with_routes(vec![("local", "")]);
+
+        let error = gateway
+            .route_policy_snapshot(&policy_request(), 1)
+            .expect_err("empty configured model must be rejected");
+
+        assert_eq!(
+            error.to_string(),
+            "invalid model name: model is empty or too long"
+        );
     }
 
     #[test]

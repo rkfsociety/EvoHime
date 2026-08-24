@@ -6502,7 +6502,10 @@ impl ToolAgent {
             };
             let route_snapshot_hash = self
                 .gateway
-                .provenance_route_snapshot_hash(&routing_request)
+                .provenance_route_snapshot_hash_with_model(
+                    &routing_request,
+                    self.selected_model.get().as_deref(),
+                )
                 .map_err(|error| {
                     AgentRunError::Provider(ProviderError::Config(error.to_string()))
                 })?;

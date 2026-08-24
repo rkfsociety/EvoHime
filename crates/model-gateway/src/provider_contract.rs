@@ -1100,8 +1100,8 @@ fn validate_candidates(candidates: &[CandidateEntry]) -> Result<(), SnapshotErro
 
     let mut seen_ids = std::collections::HashSet::new();
     for c in candidates {
-        validate_identifier(&c.route_id, "route_id")?;
-        validate_identifier(&c.model, "model")?;
+        validate_identifier(&c.route_id, "route_id", SnapshotError::InvalidRouteId)?;
+        validate_identifier(&c.model, "model", SnapshotError::InvalidModelName)?;
 
         if !seen_ids.insert(&c.route_id) {
             return Err(SnapshotError::DuplicateRouteId(c.route_id.clone()));
@@ -1118,18 +1118,16 @@ fn validate_candidates(candidates: &[CandidateEntry]) -> Result<(), SnapshotErro
 }
 
 /// Validates an identifier (route ID, model name, etc.).
-fn validate_identifier(value: &str, field: &str) -> Result<(), SnapshotError> {
+fn validate_identifier(
+    value: &str,
+    field: &str,
+    error: fn(String) -> SnapshotError,
+) -> Result<(), SnapshotError> {
     if value.is_empty() || value.len() > MAX_ID_BYTES {
-        return Err(SnapshotError::InvalidRouteId(format!(
-            "{} is empty or too long",
-            field
-        )));
+        return Err(error(format!("{} is empty or too long", field)));
     }
     if value.chars().any(char::is_control) {
-        return Err(SnapshotError::InvalidRouteId(format!(
-            "{} contains control characters",
-            field
-        )));
+        return Err(error(format!("{} contains control characters", field)));
     }
     let lower = value.to_ascii_lowercase();
     if [
@@ -1143,10 +1141,7 @@ fn validate_identifier(value: &str, field: &str) -> Result<(), SnapshotError> {
     .iter()
     .any(|m| lower.contains(m))
     {
-        return Err(SnapshotError::InvalidRouteId(format!(
-            "{} contains secret-like marker",
-            field
-        )));
+        return Err(error(format!("{} contains secret-like marker", field)));
     }
     Ok(())
 }
