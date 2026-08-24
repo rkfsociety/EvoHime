@@ -19,6 +19,8 @@ Push-Location $repo
 try {
     & cargo test --locked -p evohime-local-storage backup::tests --lib
     if ($LASTEXITCODE -ne 0) { throw "Backup/restore evidence tests failed with exit code $LASTEXITCODE" }
+    & cargo test --locked -p evohime-local-storage automation_store::tests::archive_restore_is_atomic_checksum_verified_and_retention_bounded --lib
+    if ($LASTEXITCODE -ne 0) { throw "Automation archive/restore evidence tests failed with exit code $LASTEXITCODE" }
     & cargo test --locked -p evohime-core automation_acceptance --lib
     if ($LASTEXITCODE -ne 0) { throw "Automation evidence tests failed with exit code $LASTEXITCODE" }
 } finally { Pop-Location }

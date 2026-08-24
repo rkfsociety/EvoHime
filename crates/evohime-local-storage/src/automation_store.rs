@@ -2,6 +2,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 
 pub const AUTOMATION_STORE_SCHEMA: u32 = 1;
 
@@ -51,6 +52,28 @@ pub struct AutomationRunEventRecord {
     pub created_at_ms: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AutomationArchiveRecord {
+    pub archive_id: String,
+    pub run_id: String,
+    pub archive_json: String,
+    pub checksum_sha256: String,
+    pub created_at_ms: i64,
+    pub expires_at_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct AutomationSnapshotRecord {
+    snapshot_id: String,
+    run_id: String,
+    definition_revision: u64,
+    generation: u64,
+    event_sequence: u64,
+    snapshot_json: String,
+    checksum_sha256: String,
+    created_at_ms: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdmitRunResult {
     Inserted,
@@ -59,7 +82,134 @@ pub enum AdmitRunResult {
 }
 
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
-    connection.execute_batch("CREATE TABLE IF NOT EXISTS automation_definitions (definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, definition_json TEXT NOT NULL, definition_hash TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(definition_id, revision, owner_scope)); CREATE TABLE IF NOT EXISTS automation_runs (run_id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, idempotency_key TEXT NOT NULL, payload_hash TEXT NOT NULL, state TEXT NOT NULL, generation INTEGER NOT NULL, permission_snapshot TEXT NOT NULL, approval_snapshot TEXT NOT NULL, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, UNIQUE(owner_scope, definition_id, revision, idempotency_key)); CREATE INDEX IF NOT EXISTS idx_automation_runs_state ON automation_runs(state, updated_at_ms); CREATE TABLE IF NOT EXISTS automation_run_events (run_id TEXT NOT NULL REFERENCES automation_runs(run_id) ON DELETE CASCADE, run_sequence INTEGER NOT NULL, event_type TEXT NOT NULL, generation INTEGER NOT NULL, payload_json TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(run_id, run_sequence)); CREATE TABLE IF NOT EXISTS automation_leases (run_id TEXT PRIMARY KEY REFERENCES automation_runs(run_id) ON DELETE CASCADE, owner_id TEXT NOT NULL, generation INTEGER NOT NULL, expires_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS automation_snapshots (snapshot_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES automation_runs(run_id) ON DELETE CASCADE, definition_revision INTEGER NOT NULL, generation INTEGER NOT NULL, event_sequence INTEGER NOT NULL, snapshot_json TEXT NOT NULL, checksum_sha256 TEXT NOT NULL, created_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS automation_schedules (schedule_id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, hour INTEGER NOT NULL, minute INTEGER NOT NULL, timezone_minutes INTEGER NOT NULL, missed_grace_ms INTEGER NOT NULL, enabled INTEGER NOT NULL, last_slot TEXT, updated_at_ms INTEGER NOT NULL, FOREIGN KEY(definition_id, revision, owner_scope) REFERENCES automation_definitions(definition_id, revision, owner_scope));")
+    connection.execute_batch("CREATE TABLE IF NOT EXISTS automation_definitions (definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, definition_json TEXT NOT NULL, definition_hash TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(definition_id, revision, owner_scope)); CREATE TABLE IF NOT EXISTS automation_runs (run_id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, idempotency_key TEXT NOT NULL, payload_hash TEXT NOT NULL, state TEXT NOT NULL, generation INTEGER NOT NULL, permission_snapshot TEXT NOT NULL, approval_snapshot TEXT NOT NULL, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, UNIQUE(owner_scope, definition_id, revision, idempotency_key)); CREATE INDEX IF NOT EXISTS idx_automation_runs_state ON automation_runs(state, updated_at_ms); CREATE TABLE IF NOT EXISTS automation_run_events (run_id TEXT NOT NULL REFERENCES automation_runs(run_id) ON DELETE CASCADE, run_sequence INTEGER NOT NULL, event_type TEXT NOT NULL, generation INTEGER NOT NULL, payload_json TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(run_id, run_sequence)); CREATE TABLE IF NOT EXISTS automation_leases (run_id TEXT PRIMARY KEY REFERENCES automation_runs(run_id) ON DELETE CASCADE, owner_id TEXT NOT NULL, generation INTEGER NOT NULL, expires_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS automation_snapshots (snapshot_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES automation_runs(run_id) ON DELETE CASCADE, definition_revision INTEGER NOT NULL, generation INTEGER NOT NULL, event_sequence INTEGER NOT NULL, snapshot_json TEXT NOT NULL, checksum_sha256 TEXT NOT NULL, created_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS automation_schedules (schedule_id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, hour INTEGER NOT NULL, minute INTEGER NOT NULL, timezone_minutes INTEGER NOT NULL, missed_grace_ms INTEGER NOT NULL, enabled INTEGER NOT NULL, last_slot TEXT, updated_at_ms INTEGER NOT NULL, FOREIGN KEY(definition_id, revision, owner_scope) REFERENCES automation_definitions(definition_id, revision, owner_scope)); CREATE TABLE IF NOT EXISTS automation_archives (archive_id TEXT PRIMARY KEY, run_id TEXT NOT NULL UNIQUE, archive_json TEXT NOT NULL, checksum_sha256 TEXT NOT NULL, created_at_ms INTEGER NOT NULL, expires_at_ms INTEGER NOT NULL);")
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ArchivePayload {
+    run: AutomationRunRecord,
+    events: Vec<AutomationRunEventRecord>,
+    snapshots: Vec<AutomationSnapshotRecord>,
+}
+
+pub fn archive_run(
+    connection: &mut Connection,
+    archive_id: &str,
+    run_id: &str,
+    now_ms: i64,
+    expires_at_ms: i64,
+) -> rusqlite::Result<bool> {
+    let tx = connection.transaction()?;
+    let run = tx
+        .query_row(
+            "SELECT run_id, definition_id, revision, owner_scope, idempotency_key, payload_hash, state, generation, permission_snapshot, approval_snapshot FROM automation_runs WHERE run_id=?1",
+            [run_id],
+            map_run,
+        )
+        .optional()?;
+    let Some(run) = run else {
+        tx.rollback()?;
+        return Ok(false);
+    };
+    let mut event_statement = tx.prepare(
+        "SELECT run_sequence, event_type, generation, payload_json, created_at_ms FROM automation_run_events WHERE run_id=?1 ORDER BY run_sequence",
+    )?;
+    let events = event_statement
+        .query_map([run_id], |row| {
+            Ok(AutomationRunEventRecord {
+                run_sequence: row.get::<_, i64>(0)? as u64,
+                event_type: row.get(1)?,
+                generation: row.get::<_, i64>(2)? as u64,
+                payload_json: row.get(3)?,
+                created_at_ms: row.get(4)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(event_statement);
+    let mut snapshot_statement = tx.prepare(
+        "SELECT snapshot_id, run_id, definition_revision, generation, event_sequence, snapshot_json, checksum_sha256, created_at_ms FROM automation_snapshots WHERE run_id=?1 ORDER BY snapshot_id",
+    )?;
+    let snapshots = snapshot_statement
+        .query_map([run_id], |row| {
+            Ok(AutomationSnapshotRecord {
+                snapshot_id: row.get(0)?,
+                run_id: row.get(1)?,
+                definition_revision: row.get::<_, i64>(2)? as u64,
+                generation: row.get::<_, i64>(3)? as u64,
+                event_sequence: row.get::<_, i64>(4)? as u64,
+                snapshot_json: row.get(5)?,
+                checksum_sha256: row.get(6)?,
+                created_at_ms: row.get(7)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(snapshot_statement);
+    let payload = serde_json::to_string(&ArchivePayload {
+        run,
+        events,
+        snapshots,
+    })
+    .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let checksum = hex::encode(sha2::Sha256::digest(payload.as_bytes()));
+    tx.execute(
+        "INSERT INTO automation_archives (archive_id, run_id, archive_json, checksum_sha256, created_at_ms, expires_at_ms) VALUES (?1,?2,?3,?4,?5,?6)",
+        params![archive_id, run_id, payload, checksum, now_ms, expires_at_ms],
+    )?;
+    tx.execute("DELETE FROM automation_runs WHERE run_id=?1", [run_id])?;
+    tx.commit()?;
+    Ok(true)
+}
+
+pub fn restore_archive(
+    connection: &mut Connection,
+    archive_id: &str,
+    now_ms: i64,
+) -> rusqlite::Result<bool> {
+    let tx = connection.transaction()?;
+    let (run_id, archive_json, checksum): (String, String, String) = tx.query_row(
+        "SELECT run_id, archive_json, checksum_sha256 FROM automation_archives WHERE archive_id=?1",
+        [archive_id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+    let observed = hex::encode(sha2::Sha256::digest(archive_json.as_bytes()));
+    if observed != checksum
+        || tx.query_row::<i64, _, _>(
+            "SELECT COUNT(*) FROM automation_runs WHERE run_id=?1",
+            [&run_id],
+            |row| row.get(0),
+        )? != 0
+    {
+        tx.rollback()?;
+        return Ok(false);
+    }
+    let payload: ArchivePayload =
+        serde_json::from_str(&archive_json).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let run = payload.run;
+    tx.execute(
+        "INSERT INTO automation_runs (run_id, definition_id, revision, owner_scope, idempotency_key, payload_hash, state, generation, permission_snapshot, approval_snapshot, created_at_ms, updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?11)",
+        params![run.run_id, run.definition_id, run.revision as i64, run.owner_scope, run.idempotency_key, run.payload_hash, run.state, run.generation as i64, run.permission_snapshot, run.approval_snapshot, now_ms],
+    )?;
+    for event in payload.events {
+        tx.execute(
+            "INSERT INTO automation_run_events (run_id, run_sequence, event_type, generation, payload_json, created_at_ms) VALUES (?1,?2,?3,?4,?5,?6)",
+            params![run_id, event.run_sequence as i64, event.event_type, event.generation as i64, event.payload_json, event.created_at_ms],
+        )?;
+    }
+    for snapshot in payload.snapshots {
+        tx.execute(
+            "INSERT INTO automation_snapshots (snapshot_id, run_id, definition_revision, generation, event_sequence, snapshot_json, checksum_sha256, created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![snapshot.snapshot_id, snapshot.run_id, snapshot.definition_revision as i64, snapshot.generation as i64, snapshot.event_sequence as i64, snapshot.snapshot_json, snapshot.checksum_sha256, snapshot.created_at_ms],
+        )?;
+    }
+    tx.commit()?;
+    Ok(true)
+}
+
+pub fn sweep_expired_archives(connection: &Connection, now_ms: i64) -> rusqlite::Result<u32> {
+    Ok(connection.execute(
+        "DELETE FROM automation_archives WHERE expires_at_ms <= ?1",
+        [now_ms],
+    )? as u32)
 }
 
 pub fn upsert_schedule(
@@ -497,5 +647,51 @@ mod tests {
             get_schedule(&c, "s").unwrap().unwrap().last_slot.as_deref(),
             Some("slot-2")
         );
+    }
+
+    #[test]
+    fn archive_restore_is_atomic_checksum_verified_and_retention_bounded() {
+        let mut c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        let record = AutomationRunRecord {
+            run_id: "run-archive".into(),
+            definition_id: "d".into(),
+            revision: 1,
+            owner_scope: "o".into(),
+            idempotency_key: "k".into(),
+            payload_hash: "p".into(),
+            state: "completed".into(),
+            generation: 1,
+            permission_snapshot: "ps".into(),
+            approval_snapshot: "as".into(),
+        };
+        insert_run(&c, &record, 10).unwrap();
+        save_snapshot(
+            &c,
+            "snapshot-1",
+            "run-archive",
+            1,
+            1,
+            0,
+            "{}",
+            "checksum",
+            11,
+        )
+        .unwrap();
+        assert!(archive_run(&mut c, "archive-1", "run-archive", 20, 100).unwrap());
+        assert!(get_run(&c, "run-archive").unwrap().is_none());
+        assert!(restore_archive(&mut c, "archive-1", 30).unwrap());
+        assert_eq!(get_run(&c, "run-archive").unwrap().unwrap(), record);
+        assert_eq!(
+            c.query_row::<i64, _, _>(
+                "SELECT COUNT(*) FROM automation_snapshots WHERE run_id='run-archive'",
+                [],
+                |row| row.get(0)
+            )
+            .unwrap(),
+            1
+        );
+        assert!(!restore_archive(&mut c, "archive-1", 31).unwrap());
+        assert_eq!(sweep_expired_archives(&c, 100).unwrap(), 1);
     }
 }
