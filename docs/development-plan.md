@@ -20,7 +20,7 @@ desktop-клиент, выбирает workspace, выполняет задач�
 
 ## Закрытые направления
 
-Планы 01–19 завершены. Их временные файлы удалены из `docs/plans/`; контракты и
+Планы 01–21 завершены. Их временные файлы удалены из `docs/plans/`; контракты и
 подтверждённое состояние перенесены в канонические документы. Optional
 browser/voice/vision adapters остаются fail-closed capability boundaries и не
 являются обязательными зависимостями базового Core package.
@@ -37,6 +37,9 @@ browser/voice/vision adapters остаются fail-closed capability boundaries
 5. **O-REPAIR-01 — закрыто.** Пользовательский repair-run, отдельные
    diagnose/patch, commit, push, CI и health-gated rollback реализованы;
    запуск только кнопками, исходный workspace не изменяется.
+6. **План 21 — закрыт.** Reliability/recovery UX, bounded repair/update
+   evidence, diagnostic bundle и backup/restore UX реализованы; Windows CI
+   остаётся release-gate.
 
 Владельцы, критерии закрытия и влияние на выпуск находятся в
 [`decision-register.md`](decision-register.md). Порядок работ не меняет

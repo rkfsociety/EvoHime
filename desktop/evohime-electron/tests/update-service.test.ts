@@ -157,6 +157,7 @@ describe('update check', () => {
 
     expect(status.phase).toBe('failed')
     expect(status.error).toContain('Не удалось проверить обновления')
+    expect(status.evidence?.at(-1)).toMatchObject({ phase: 'failed', result: 'failed' })
   })
 })
 

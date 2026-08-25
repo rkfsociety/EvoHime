@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, net, Notification, safeStorage } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, net, Notification, safeStorage } from 'electron'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
@@ -8,6 +8,7 @@ import type { AmbientHotkeyStatus, ListeningState, ShellState } from '@shared/ap
 import { ChatStore } from './chat-store'
 import { CodexService } from './codex-service'
 import { JsonlLogger } from './diagnostics/logger'
+import { buildDiagnosticBundle, serializeDiagnosticBundle } from './diagnostics/bundle'
 import { hasLiveSupervisor, readLaunchContext } from './ipc/launch-context'
 import { CorePipeClient } from './ipc/pipe-client'
 import { dataDirectory, logDirectory } from './paths'
@@ -53,6 +54,10 @@ let updates: UpdateService | null = null
 let listenerRuntime: ListenerRuntimeService | null = null
 let codex: CodexService | null = null
 let repair: RepairService | null = null
+const recentCoreEvents: import('@shared/api').CoreEvent[] = []
+let lastShellState: ShellState | null = null
+let lastRepairStatus: import('@shared/api').RepairStatus | null = null
+let lastUpdateStatus: import('@shared/update').UpdateStatus | null = null
 
 // safeStorage is only usable after the app is ready, so the store is created
 // lazily inside whenReady rather than at module scope.
@@ -120,16 +125,23 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
         startTask: { taskId, prompt, workspacePath, preferredRouteHint: '' }
       }) === 'queued',
       stopTask: (taskId) => client?.send({ stopTask: { taskId } }) === 'queued',
-      emit: (status) => broadcast({ kind: 'repair', status }),
+      emit: (status) => {
+        lastRepairStatus = status
+        broadcast({ kind: 'repair', status })
+      },
       log,
       fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init)
     })
+    lastRepairStatus = repair.status
 
     client.on('state', (state: ShellState) => {
+      lastShellState = state
       broadcast({ kind: 'state', state })
       if (state.connection === 'connected') writeUpdateHealth(updateHealthFile)
     })
     client.on('core-event', (event) => {
+      recentCoreEvents.unshift(event)
+      if (recentCoreEvents.length > 2_000) recentCoreEvents.length = 2_000
       repair?.observe(event)
       broadcast({ kind: 'core-event', event })
       observeAmbientEvent(event.eventType, event.payload)
@@ -165,6 +177,26 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
       updates,
       listenerRuntime: listenerRuntime!,
       ambientHotkey: ambientHotkeyStatus,
+      exportDiagnostics: async () => {
+        const window = BrowserWindow.getFocusedWindow()
+        const save = window
+          ? await dialog.showSaveDialog(window, { defaultPath: 'evohime-diagnostic-bundle.json', filters: [{ name: 'JSON', extensions: ['json'] }] })
+          : await dialog.showSaveDialog({ defaultPath: 'evohime-diagnostic-bundle.json', filters: [{ name: 'JSON', extensions: ['json'] }] })
+        if (save.canceled || !save.filePath) return { cancelled: true, path: '' }
+        const bundle = buildDiagnosticBundle({
+          generatedAtMs: Date.now(),
+          appVersion: app.getVersion(),
+          platform: process.platform,
+          architecture: process.arch,
+          state: lastShellState,
+          update: lastUpdateStatus,
+          repair: lastRepairStatus,
+          events: recentCoreEvents,
+          logPaths: [logger.path]
+        })
+        writeFileSync(save.filePath, serializeDiagnosticBundle(bundle), { encoding: 'utf8', mode: 0o600 })
+        return { cancelled: false, path: save.filePath }
+      },
       log
     })
 
@@ -385,15 +417,20 @@ function createUpdateService(): UpdateService {
     executablePath: app.getPath('exe')
   })
   const enabled = config.enabled && app.isPackaged
-  return new UpdateService({
+  const service = new UpdateService({
     config: { ...config, enabled, launchPolicy: enabled ? config.launchPolicy : 'off' },
-    emit: (status) => broadcast({ kind: 'update', status }),
+    emit: (status) => {
+      lastUpdateStatus = status
+      broadcast({ kind: 'update', status })
+    },
     log,
     // The UI shows one build line; the whole output stays on disk, because a
     // failed rebuild cannot be explained from its last line alone.
     buildLog: new BuildLog(join(logDirectory(), 'update-build.log')),
     quit: quitForUpdate
   })
+  lastUpdateStatus = service.status
+  return service
 }
 
 /** Grace period before the shell stops asking to exit and simply exits. */

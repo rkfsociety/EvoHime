@@ -265,6 +265,7 @@ beforeEach(() => {
     updates: updates as never,
     listenerRuntime: listenerRuntime as never,
     ambientHotkey: () => ({ combination: 'Control+Alt+M', registered: true }),
+    exportDiagnostics: async () => ({ cancelled: false, path: 'C:\\diagnostics.json' }),
     log: () => {}
   })
   listenerCalls.length = 0
@@ -280,6 +281,14 @@ describe('renderer command surface', () => {
 
   it('returns the shell state without touching Core', () => {
     expect(invoke('shell.getState', {})).toEqual({ ok: true, value: fakeState })
+    expect(sent).toHaveLength(0)
+  })
+
+  it('exports bounded diagnostics through main without forwarding a Core mutation', async () => {
+    await expect(invoke('shell.exportDiagnostics', {})).resolves.toEqual({
+      ok: true,
+      value: { cancelled: false, path: 'C:\\diagnostics.json' }
+    })
     expect(sent).toHaveLength(0)
   })
 

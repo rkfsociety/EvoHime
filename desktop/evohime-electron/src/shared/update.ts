@@ -29,6 +29,14 @@ export interface UpdateStep {
   readonly state: UpdateStepState
 }
 
+export interface UpdateEvidenceEntry {
+  readonly phase: UpdatePhase
+  readonly atMs: number
+  readonly result: 'pending' | 'passed' | 'failed'
+  readonly commit: string | null
+  readonly detail: string
+}
+
 /**
  * Where the update run currently is.
  *
@@ -71,6 +79,8 @@ export interface UpdateStatus {
   readonly downloadProgress: number | null
   /** True once a staged package is waiting for the restart. */
   readonly restartRequired: boolean
+  /** Bounded stage evidence retained for rollback/update diagnostics. */
+  readonly evidence?: readonly UpdateEvidenceEntry[]
 }
 
 export const UPDATE_STEP_LABELS: Record<UpdateStepId, string> = {
@@ -114,7 +124,8 @@ export function disabledUpdateStatus(branch = 'main'): UpdateStatus {
     error: null,
     checkedAtMs: null,
     downloadProgress: null,
-    restartRequired: false
+    restartRequired: false,
+    evidence: []
   }
 }
 

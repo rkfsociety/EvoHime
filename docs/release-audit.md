@@ -22,6 +22,9 @@ diagnose/patch, commit, push и restart; CI failure не продвигаетс�
 
 ## Подтверждённые границы
 
-Планы 01–19 перенесены в canonical docs и удалены из каталога только после
+Планы 01–21 перенесены в canonical docs и удалены из каталога только после
 focused checks и task-only commits. Optional browser/voice/vision adapters
 деградируют в typed unsupported и не расширяют base runtime.
+## План 21
+
+План 21.1–21.4 реализован в Electron shell: unified recovery projection, bounded repair/update evidence, redacted diagnostic bundle и native backup/restore file selection. `check:protocol`, `typecheck`, production bundle checks и targeted tests пройдены. Полный Electron test run в Linux checkout нельзя считать Windows acceptance: окружение использует Node 20.19.2 вместо требуемого Node 22.12+, а Windows-specific tests требуют Windows path/runtime. Rust и installer/upgrade gates должны быть подтверждены Windows CI.

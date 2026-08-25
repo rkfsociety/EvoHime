@@ -11,6 +11,7 @@ import {
   type UpdateStepId,
   type UpdateStepState
 } from '@shared/update'
+import type { UpdateEvidenceEntry } from '@shared/update'
 
 import { redactError } from '../diagnostics/redact'
 import type { BuildLogWriter } from './build-log'
@@ -686,7 +687,18 @@ export class UpdateService {
   }
 
   private patch(changes: Partial<UpdateStatus>): UpdateStatus {
-    this.current = { ...this.current, ...changes }
+    const next = { ...this.current, ...changes }
+    if (changes.phase !== undefined && changes.phase !== this.current.phase || changes.error !== undefined || changes.restartRequired !== undefined) {
+      const entry: UpdateEvidenceEntry = {
+        phase: next.phase,
+        atMs: this.time(),
+        result: next.error ? 'failed' : ['up-to-date', 'ready'].includes(next.phase) ? 'passed' : 'pending',
+        commit: next.remoteCommit ?? next.installedCommit,
+        detail: next.error ?? next.message.replace(/[\r\n]/g, ' ').slice(0, 240)
+      }
+      next.evidence = [...(this.current.evidence ?? []), entry].slice(-64)
+    }
+    this.current = next
     this.deps.emit(this.current)
     return this.current
   }

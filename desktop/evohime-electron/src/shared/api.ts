@@ -113,6 +113,15 @@ export interface RepairTestResult {
   readonly detail: string
 }
 
+export interface RepairEvidenceEntry {
+  readonly phase: RepairPhase
+  readonly atMs: number
+  readonly result: 'pending' | 'passed' | 'failed' | 'cancelled'
+  readonly commit: string | null
+  readonly ciState: RepairCheckState
+  readonly detail: string
+}
+
 export interface RepairStatus {
   readonly phase: RepairPhase
   readonly repairId: string | null
@@ -129,6 +138,8 @@ export interface RepairStatus {
   readonly ciState: RepairCheckState
   readonly error: string | null
   readonly updatedAtMs: number
+  /** Bounded, redacted stage evidence for repair/update review. */
+  readonly evidence?: readonly RepairEvidenceEntry[]
 }
 
 /** Model providers the shell can configure. */
@@ -640,6 +651,7 @@ export type PermissionMode = 'ask' | 'read_only' | 'full'
 export const RENDERER_COMMANDS = [
   'shell.getState',
   'shell.requestResync',
+  'shell.exportDiagnostics',
   'trace.export',
   'workspace.list',
   'workspace.pick',
@@ -787,6 +799,7 @@ export interface WorkspaceSelection {
 export interface CommandPayloads {
   'shell.getState': Record<string, never>
   'shell.requestResync': Record<string, never>
+  'shell.exportDiagnostics': Record<string, never>
   'trace.export': { content: string }
   'workspace.list': Record<string, never>
   'workspace.pick': Record<string, never>
@@ -1026,6 +1039,7 @@ export interface CommandPayloads {
 export interface CommandResults {
   'shell.getState': ShellState
   'shell.requestResync': { accepted: boolean }
+  'shell.exportDiagnostics': { cancelled: boolean; path: string }
   'trace.export': { cancelled: boolean; path: string }
   'workspace.list': WorkspaceSelection
   /** `cancelled` when the user closed the native folder dialog. */

@@ -764,3 +764,12 @@ unsupported/resource/unknown/degraded statuses; visual output не имеет ho
 action authority. Worker backend отсутствует в базовом package, поэтому
 `backend_unavailable` — штатный fail-closed результат. Evidence, OCR claims и
 memory/RAG citations требуют redacted page/frame provenance.
+## Reliability, recovery и diagnostics 21
+
+Electron main maintains only a bounded diagnostic projection. The additive shell command `shell.exportDiagnostics` opens a native save dialog and writes `evohime-diagnostic-bundle-v1` with runtime metadata, current shell/update/repair state, bounded Core-event tail and redacted shell-log excerpts. It never reads workspace files, prompts, tool output or credential payloads.
+
+Recovery UI consumes Core events as the source of truth and preserves typed `reason_code`, correlation, sequence and `UNKNOWN_OUTCOME`. Cancellation is offered only when Core explicitly marks `can_cancel`; database operations use `core.cancelDatabaseOperation`, task operations use `core.stopTask`.
+
+Repair and update statuses retain bounded stage evidence. Commit, push, CI refresh, update preparation and restart remain separate user actions; CI or an unknown outcome never triggers a blind effect.
+
+The Security settings panel selects backup/restore paths in main and forwards only the selected path to Core. Core remains responsible for checksum, preview, approval, progress, cancellation, safety backup and rollback. DPAPI via Electron `safeStorage` remains the canonical provider credential contract.

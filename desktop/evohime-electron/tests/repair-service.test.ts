@@ -66,6 +66,7 @@ describe('RepairService', () => {
       service.observe(event('same failure'))
       service.observe(event('same failure'))
       expect(service.status.phase).toBe('available')
+      expect(service.status.evidence?.at(-1)).toMatchObject({ phase: 'available', result: 'pending' })
       const reopened = makeService(directory)
       expect(reopened.status.errorCount).toBe(3)
       expect(reopened.status.phase).toBe('available')

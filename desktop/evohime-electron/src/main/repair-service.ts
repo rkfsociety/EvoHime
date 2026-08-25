@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 import type { CoreEvent } from '@shared/api'
-import type { RepairPhase, RepairStatus, RepairTestResult } from '@shared/api'
+import type { RepairEvidenceEntry, RepairPhase, RepairStatus, RepairTestResult } from '@shared/api'
 
 import type { ShellLog } from './diagnostics/logger'
 import { githubApiBase, readCommitState } from './update/commit-status'
@@ -222,7 +222,29 @@ export class RepairService {
   }
 
   private set(patch: Partial<RepairStatus>): RepairStatus {
-    this.current = { ...this.current, ...patch, updatedAtMs: Date.now() }
+    const updatedAtMs = Date.now()
+    const next = { ...this.current, ...patch, updatedAtMs }
+    const phaseChanged = patch.phase !== undefined && patch.phase !== this.current.phase
+    const outcomeChanged = patch.error !== undefined || patch.ciState !== undefined
+    if (phaseChanged || outcomeChanged) {
+      const result: RepairEvidenceEntry['result'] = next.error
+        ? 'failed'
+        : next.phase === 'cancelled'
+          ? 'cancelled'
+          : ['ready_to_commit', 'ready_to_push', 'ready_to_update'].includes(next.phase)
+            ? 'passed'
+            : 'pending'
+      const entry: RepairEvidenceEntry = {
+        phase: next.phase,
+        atMs: updatedAtMs,
+        result,
+        commit: next.commit,
+        ciState: next.ciState,
+        detail: next.summary.replace(/[\r\n]/g, ' ').slice(0, MAX_SUMMARY_CHARS)
+      }
+      next.evidence = [...(this.current.evidence ?? []), entry].slice(-64)
+    }
+    this.current = next
     writeStatus(this.options.filePath, this.current)
     this.options.emit(this.current)
     return this.current
@@ -235,7 +257,7 @@ export class RepairService {
 }
 
 function emptyStatus(): RepairStatus {
-  return { phase: 'idle', repairId: null, workspacePath: null, baseCommit: null, branch: null, taskId: null, errorCount: 0, repeatedPatterns: 0, summary: 'Ошибок для repair-run пока нет.', diffStat: '', tests: [], commit: null, ciState: 'unknown', error: null, updatedAtMs: 0 }
+  return { phase: 'idle', repairId: null, workspacePath: null, baseCommit: null, branch: null, taskId: null, errorCount: 0, repeatedPatterns: 0, summary: 'Ошибок для repair-run пока нет.', diffStat: '', tests: [], commit: null, ciState: 'unknown', error: null, updatedAtMs: 0, evidence: [] }
 }
 
 function readStatus(filePath: string): RepairStatus {

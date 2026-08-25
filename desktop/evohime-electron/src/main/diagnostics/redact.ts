@@ -43,7 +43,8 @@ export function isSensitiveName(name: string): boolean {
 
 export function redactText(input: string): string {
   const bounded = input.length > MAX_TEXT_CHARS ? `${input.slice(0, MAX_TEXT_CHARS)}…` : input
-  return bounded
+  const credentialSafe = bounded.replace(/(?<![A-Za-z0-9])(?:bearer\s+|sk-|ghp_|gho_|github_pat_|aiza|xoxb-)[A-Za-z0-9._+\-/=]+/gi, REDACTED)
+  return credentialSafe
     .split(/(\s+)/)
     .map((token) => (isSecretToken(token) ? REDACTED : redactPaths(token)))
     .join('')
@@ -122,7 +123,7 @@ export function redactArgv(argv: readonly string[]): string[] {
 }
 
 function isSecretToken(token: string): boolean {
-  const trimmed = token.trim()
+  const trimmed = token.trim().replace(/^["'([{]+|["')\]},.]+$/g, '')
   if (trimmed.length === 0) {
     return false
   }

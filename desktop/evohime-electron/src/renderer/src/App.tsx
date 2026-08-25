@@ -24,6 +24,7 @@ import { WorkflowPanel } from './WorkflowPanel'
 import { OverviewPanel } from './OverviewPanel'
 import { ListeningPanel, REASON_TEXTS, STATE_TITLES } from './ListeningPanel'
 import { TracePanel } from './TracePanel'
+import { RecoveryBanner } from './RecoveryBanner'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -261,6 +262,12 @@ export function App(): React.JSX.Element {
           <ListeningIndicator events={events} />
           <span className={`status-pill status-pill--${connection}`}>{STATE_LABELS[connection]}</span>
         </header>
+
+        <RecoveryBanner
+          connection={connection}
+          events={events}
+          onOpenTask={() => setView('chat')}
+        />
 
         <div className="main__body">
           {view === 'chat' ? (

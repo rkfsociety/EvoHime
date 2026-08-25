@@ -67,3 +67,5 @@ fail-closed boundaries и не образуют цикл или обязател
 
 Каждое изменение schema или IPC обязано обновить owner, version, migration,
 rollback note и focused compatibility test в том же task-only коммите.
+
+| D-REL-21 | Electron diagnostics are a bounded redacted projection; Core remains source of truth for recovery, approval, backup/restore and effects | Reliability | `diagnostic-bundle.ts`, recovery projection tests, shell bridge and release audit |

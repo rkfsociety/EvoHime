@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-26. Планы 01–20 завершены и
+Обновлено: 2026-08-26. Планы 01–21 завершены и
 удалены из каталога временных планов. План 19.0 добавил только пользовательский
 self-repair/self-update цикл; автоматического ремонта, push или перезапуска нет.
 Code signing явно исключён из текущего release scope.
@@ -447,3 +447,12 @@ storage — 18 тестов, все прошли; engine E2E без постав
 Проверки 2026-08-24: `cargo test --locked -p evohime-core
 vision_contract::tests` — 2 теста прошли; `cargo fmt --all` и `git diff
 --check` прошли.
+## План 21 — reliability, recovery и diagnostics — реализован
+
+- RecoveryBanner подключён к общей Core-event projection: отображаются typed `reason_code`, `UNKNOWN_OUTCOME`, correlation/sequence и только явно разрешённая Core отмена.
+- Shell export `shell.exportDiagnostics` создаёт bounded `evohime-diagnostic-bundle-v1` через main process; bundle содержит версии, shell/update/repair projection, event tail и redacted log excerpts без workspace files, prompts, tool output, DPAPI payloads и provider secrets.
+- Repair и update projection сохраняют bounded stage evidence с фазой, timestamp, commit, результатом и redacted detail; опасные действия остаются отдельными кликами.
+- Settings → Security получил native save/open flow для Core-owned database backup/restore; checksum, preview, approval, progress, cancellation и rollback выполняются Core.
+- Windows-style workspace paths нормализуются cross-platform для plan picker; DPAPI/safeStorage остаётся каноническим credential contract.
+
+Проверки 2026-08-26: Electron `check:protocol`, `typecheck` и targeted diagnostic/recovery/repair/update/shell/redaction tests прошли. Полный UI набор с jsdom требует Node.js 22.12+; текущее окружение использует Node.js 20.19.2. Rust/Windows gates требуют Windows CI и локально не запускались.

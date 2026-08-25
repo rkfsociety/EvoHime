@@ -59,12 +59,35 @@ export function RecoveryBanner({ connection, events, onOpenTask, showOpenTask = 
     onOpenTask()
   }
 
+  const exportDiagnostics = async (): Promise<void> => {
+    if (!api) {
+      setStatus('Мост оболочки недоступен: перезапусти приложение.')
+      return
+    }
+    const outcome = await api.invoke('shell.exportDiagnostics', {})
+    setStatus(!outcome.ok ? outcome.message : outcome.value.cancelled ? 'Экспорт отменён.' : `Диагностика сохранена: ${outcome.value.path}`)
+  }
+
+  const cancel = async (): Promise<void> => {
+    if (!api || !notice.canCancel) return
+    setBusy(true)
+    const operationId = typeof notice.details.operation_id === 'string' ? notice.details.operation_id : null
+    const outcome = operationId
+      ? await api.invoke('core.cancelDatabaseOperation', { operationId })
+      : notice.taskId
+        ? await api.invoke('core.stopTask', { taskId: notice.taskId })
+        : null
+    setBusy(false)
+    setStatus(outcome === null ? 'Core не сообщил, что операцию можно отменить.' : outcome.ok ? 'Запрос отмены отправлен в Core.' : outcome.message)
+  }
+
   return (
     <section className={`recovery-banner recovery-banner--${notice.state.toLowerCase()}`} role="status" aria-label={`Состояние восстановления: ${notice.state}`}>
       <div className="recovery-banner__body">
         <strong>{notice.state}</strong>
         <p>{notice.reason}</p>
         <small>Операция: {notice.correlationId}{notice.phase ? ` · Фаза: ${notice.phase}` : ''}</small>
+        <small>Причина: {notice.reasonCode}</small>
         {status ? <p className="recovery-banner__status" role="status">{status}</p> : null}
         {detailsOpen ? (
           <dl className="recovery-banner__details">
@@ -87,6 +110,10 @@ export function RecoveryBanner({ connection, events, onOpenTask, showOpenTask = 
         ) : null}
         {notice.state === 'BLOCKED' || notice.state === 'FAILED' ? (
           <button type="button" onClick={() => void retry()} disabled={busy}>Перезапросить состояние</button>
+        ) : null}
+        {notice.canCancel ? <button type="button" onClick={() => void cancel()} disabled={busy}>Отменить</button> : null}
+        {notice.state === 'BLOCKED' || notice.state === 'FAILED' ? (
+          <button type="button" onClick={() => void exportDiagnostics()}>Сохранить диагностику</button>
         ) : null}
         {notice.state === 'FAILED' ? (
           <button type="button" aria-expanded={detailsOpen} onClick={openDetails}>

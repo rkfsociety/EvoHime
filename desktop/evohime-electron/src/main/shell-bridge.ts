@@ -1,7 +1,7 @@
 import { BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import { basename, dirname, extname, isAbsolute, join } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, win32 } from 'node:path'
 
 import {
   PROVIDER_KINDS,
@@ -77,6 +77,7 @@ export interface ShellBridgeOptions {
    * недоступной, а не изображается работающей.
    */
   readonly ambientHotkey: () => AmbientHotkeyStatus
+  readonly exportDiagnostics: () => Promise<{ cancelled: boolean; path: string }>
   readonly log: ShellLog
 }
 
@@ -122,7 +123,7 @@ function dispatch(
   command: RendererCommand,
   payload: unknown
 ): unknown {
-  const { client, workspaces, providers, codex, repair, chats, restartCore, updates, listenerRuntime, ambientHotkey, log } =
+  const { client, workspaces, providers, codex, repair, chats, restartCore, updates, listenerRuntime, ambientHotkey, exportDiagnostics, log } =
     options
   switch (command) {
     case 'shell.getState':
@@ -130,6 +131,11 @@ function dispatch(
 
     case 'shell.requestResync':
       return accepted(client.requestResync(true))
+
+    case 'shell.exportDiagnostics':
+      return exportDiagnostics()
+        .then((value) => ({ ok: true, value }))
+        .catch(() => failure('protocol-error', 'Не удалось сохранить диагностический bundle.'))
 
     case 'trace.export': {
       const content = asTraceContent(asRecord(payload)['content'])
@@ -420,6 +426,17 @@ function dispatch(
       if (destinationPath === null) {
         return failure('invalid-payload', 'Некорректные параметры backup.')
       }
+      if (destinationPath.length === 0) {
+        const window = BrowserWindow.getFocusedWindow()
+        const options: Electron.SaveDialogOptions = {
+          defaultPath: 'evohime-backup.evohime',
+          filters: [{ name: 'EvoHime backup', extensions: ['evohime'] }]
+        }
+        const save = window ? dialog.showSaveDialog(window, options) : dialog.showSaveDialog(options)
+        return save.then((selected) => selected.canceled || !selected.filePath
+          ? { ok: true, value: { accepted: false } }
+          : accepted(client.send({ createDatabaseBackup: { destinationPath: selected.filePath } })))
+      }
       return accepted(client.send({ createDatabaseBackup: { destinationPath } }))
     }
 
@@ -428,6 +445,17 @@ function dispatch(
       const backupPath = asBoundedString(value['backupPath'])
       if (backupPath === null) {
         return failure('invalid-payload', 'Некорректные параметры проверки backup.')
+      }
+      if (backupPath.length === 0) {
+        const window = BrowserWindow.getFocusedWindow()
+        const options: Electron.OpenDialogOptions = {
+          properties: ['openFile'],
+          filters: [{ name: 'EvoHime backup', extensions: ['evohime'] }]
+        }
+        const open = window ? dialog.showOpenDialog(window, options) : dialog.showOpenDialog(options)
+        return open.then((selected) => selected.canceled || selected.filePaths.length === 0
+          ? { ok: true, value: { accepted: false } }
+          : accepted(client.send({ prepareDatabaseRestore: { backupPath: selected.filePaths[0] as string } })))
       }
       return accepted(client.send({ prepareDatabaseRestore: { backupPath } }))
     }
@@ -1568,7 +1596,7 @@ async function pickReviewPlan(directory: unknown, workspace: string | null): Pro
   }
   const startIn = await firstUsableDirectory([
     directory,
-    workspace === null ? null : join(workspace, 'docs', 'plans'),
+    workspace === null ? null : joinWorkspacePath(workspace, 'docs', 'plans'),
     workspace
   ])
   if (startIn !== null) options.defaultPath = startIn
@@ -1593,6 +1621,12 @@ async function pickReviewPlan(directory: unknown, workspace: string | null): Pro
   return { ok: true, value: { cancelled: false, files, directory: dirname(last) } }
 }
 
+function joinWorkspacePath(workspace: string, ...parts: string[]): string {
+  return /^[A-Za-z]:[\\/]/.test(workspace) || /^\\\\/.test(workspace)
+    ? win32.join(workspace, ...parts)
+    : join(workspace, ...parts)
+}
+
 async function firstUsableDirectory(candidates: readonly unknown[]): Promise<string | null> {
   for (const candidate of candidates) {
     const directory = await usableDirectory(candidate)
@@ -1603,7 +1637,7 @@ async function firstUsableDirectory(candidates: readonly unknown[]): Promise<str
 
 async function usableDirectory(value: unknown): Promise<string | null> {
   const path = asBoundedString(value)
-  if (path === null || path.length === 0 || !isAbsolute(path)) return null
+  if (path === null || path.length === 0 || !isAbsolute(path) && !/^[A-Za-z]:[\\/]/.test(path) && !/^\\\\/.test(path)) return null
   try {
     return (await stat(path)).isDirectory() ? path : null
   } catch {

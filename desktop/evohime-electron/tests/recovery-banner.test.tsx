@@ -32,12 +32,15 @@ describe('recovery contract', () => {
     expect(latestRecoveryNotice([event('storage.progress', { phase: 'restore', message: 'reopen' })])).toMatchObject({
       state: 'RECOVERING',
       phase: 'restore',
+      reasonCode: 'storage.progress',
       canCancel: false
     })
     expect(latestRecoveryNotice([event('approval.required', { approval_id: 'approval-1' })])?.state).toBe('WAITING_APPROVAL')
     expect(latestRecoveryNotice([event('run.recovery.blocked', { reason: 'reconcile' })])?.state).toBe('BLOCKED')
     expect(latestRecoveryNotice([event('run.reconciliation.completed', { run_id: 'run-1' })])?.state).toBe('RESUMABLE')
     expect(latestRecoveryNotice([event('task.failed', { error: 'safe error', request_id: 'request-1' })])?.state).toBe('FAILED')
+    expect(latestRecoveryNotice([event('run.unknown_outcome', { reason_code: 'dispatch_marker_present', reason: 'unknown' })])?.state).toBe('UNKNOWN_OUTCOME')
+    expect(latestRecoveryNotice([event('storage.progress', { operation_id: 'op-1', can_cancel: true })])?.canCancel).toBe(true)
   })
 
   it('takes the newest event, so a stale failure does not outlive recovery', () => {

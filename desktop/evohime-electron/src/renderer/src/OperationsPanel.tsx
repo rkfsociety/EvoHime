@@ -38,6 +38,9 @@ function RepairCard({ status, workspacePath }: { readonly status: RepairStatus; 
       <span>ошибок для анализа</span>
       <small>{status.summary}</small>
       {status.commit ? <small>commit {status.commit.slice(0, 12)} · CI: {status.ciState}</small> : null}
+      {status.evidence?.slice(-4).map((entry) => (
+        <small key={`${entry.phase}-${entry.atMs}`}>{entry.phase}: {entry.result} · {entry.detail}</small>
+      ))}
       {action ? <button type="button" disabled={action.disabled || active} onClick={() => void command(action.name, action.payload)}>{action.label}</button> : null}
       {status.phase === 'ready_to_update' ? <button type="button" onClick={() => void api?.invoke('update.prepare', {})}>Подготовить обновление</button> : null}
       {active ? <button type="button" onClick={() => void command('repair.cancel', {})}>Остановить</button> : null}

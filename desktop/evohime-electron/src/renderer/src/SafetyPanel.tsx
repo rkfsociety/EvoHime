@@ -108,6 +108,12 @@ export function SafetyPanel({ connection, events }: Props): React.JSX.Element {
     [api]
   )
 
+  const databaseAction = useCallback(async (command: 'core.createDatabaseBackup' | 'core.prepareDatabaseRestore'): Promise<void> => {
+    if (!api || !connected) return
+    const outcome = await api.invoke(command, command === 'core.createDatabaseBackup' ? { destinationPath: '' } : { backupPath: '' })
+    setNotice(!outcome.ok ? outcome.message : outcome.value.accepted ? 'Операция передана Core. Дождись preview и подтверждения.' : 'Выбор файла отменён.')
+  }, [api, connected])
+
   const microphoneOn = state !== null && LIVE_STATES.includes(state)
 
   return (
@@ -162,6 +168,12 @@ export function SafetyPanel({ connection, events }: Props): React.JSX.Element {
         источника нет, и показывать здесь ноль значило бы утверждать, что он работает и ничего не
         нашёл.
       </p>
+      <h4>Резервная копия данных</h4>
+      <p>Backup и restore выполняются Core: preview, checksum, approval, progress и rollback остаются обязательными.</p>
+      <div className="safety__actions">
+        <button type="button" disabled={!api || !connected} onClick={() => void databaseAction('core.createDatabaseBackup')}>Создать backup</button>
+        <button type="button" disabled={!api || !connected} onClick={() => void databaseAction('core.prepareDatabaseRestore')}>Проверить backup для restore</button>
+      </div>
     </section>
   )
 }

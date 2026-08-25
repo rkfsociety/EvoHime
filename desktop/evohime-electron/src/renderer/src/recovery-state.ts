@@ -1,11 +1,12 @@
 import type { CoreEvent } from '@shared/api'
 
-export type RecoveryUiState = 'RECOVERING' | 'RESUMABLE' | 'BLOCKED' | 'WAITING_APPROVAL' | 'FAILED'
+export type RecoveryUiState = 'RECOVERING' | 'RESUMABLE' | 'BLOCKED' | 'WAITING_APPROVAL' | 'FAILED' | 'UNKNOWN_OUTCOME'
 
 export interface RecoveryNotice {
   readonly state: RecoveryUiState
   readonly taskId: string
   readonly reason: string
+  readonly reasonCode: string
   readonly correlationId: string
   readonly phase?: string | undefined
   readonly canCancel: boolean
@@ -28,7 +29,8 @@ export function latestRecoveryNotice(events: readonly CoreEvent[]): RecoveryNoti
     const payload = parsePayload(event.payload)
     const common = {
       taskId: event.taskId,
-      canCancel: false,
+      canCancel: payloadBoolean(payload, 'can_cancel'),
+      reasonCode: stringField(payload, 'reason_code') ?? event.eventType,
       eventType: event.eventType,
       sequenceId: event.sequenceId,
       details: payload
@@ -56,6 +58,14 @@ export function latestRecoveryNotice(events: readonly CoreEvent[]): RecoveryNoti
         state: 'BLOCKED',
         reason: stringField(payload, 'reason') ?? 'Восстановление заблокировано после проверки.',
         correlationId: stringField(payload, 'operation_id') ?? event.taskId
+      }
+    }
+    if (event.eventType === 'run.unknown_outcome' || event.eventType === 'run.recovery.unknown_outcome') {
+      return {
+        ...common,
+        state: 'UNKNOWN_OUTCOME',
+        reason: stringField(payload, 'reason') ?? 'Результат операции неизвестен после сбоя; повторный запуск заблокирован.',
+        correlationId: stringField(payload, 'operation_id') ?? stringField(payload, 'run_id') ?? event.taskId
       }
     }
     if (event.eventType === 'run.reconciliation.completed') {
@@ -90,4 +100,8 @@ function parsePayload(payload: string): Record<string, unknown> {
 function stringField(payload: Record<string, unknown>, key: string): string | null {
   const value = payload[key]
   return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function payloadBoolean(payload: Record<string, unknown>, key: string): boolean {
+  return payload[key] === true
 }
