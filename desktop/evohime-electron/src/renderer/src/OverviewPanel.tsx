@@ -2,6 +2,8 @@ import { useState } from 'react'
 
 import type { ConnectionState, CoreEvent } from '@shared/api'
 
+import { useShellApi } from './shell-api'
+
 interface Props {
   readonly connection: ConnectionState
   readonly events: readonly CoreEvent[]
@@ -24,9 +26,14 @@ const IMPORTANT_EVENTS = new Set(Object.keys(LABELS))
 const GROUP_PREVIEW_LIMIT = 6
 
 export function OverviewPanel({ connection, events, workspace }: Props): React.JSX.Element {
+  const api = useShellApi()
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [details, setDetails] = useState<string | null>(null)
+  const [copied, setCopied] = useState<string | null>(null)
   const attention = events.filter((event) => IMPORTANT_EVENTS.has(event.eventType))
+  const currentAttention = attention.filter((event) => isCurrentSignal(event, events))
   const errors = events.filter((event) => event.eventType.includes('failed') || event.eventType.includes('error'))
+  const currentErrors = errors.filter((event) => isCurrentSignal(event, events))
   const groups = [...IMPORTANT_EVENTS].map((eventType) => ({
     eventType,
     label: LABELS[eventType],
@@ -49,15 +56,15 @@ export function OverviewPanel({ connection, events, workspace }: Props): React.J
           <strong>{connectionLabel(connection)}</strong>
           <small>состояние подключения</small>
         </article>
-        <article className={`overview-card ${errors.length > 0 ? 'overview-card--danger' : 'overview-card--ok'}`}>
+        <article className={`overview-card ${currentErrors.length > 0 ? 'overview-card--danger' : 'overview-card--ok'}`}>
           <span>Ошибки</span>
-          <strong>{errors.length}</strong>
-          <small>среди последних {events.length} событий</small>
+          <strong>{currentErrors.length}</strong>
+          <small>текущих задач · {errors.length} в журнале</small>
         </article>
-        <article className={`overview-card ${attention.length > 0 ? 'overview-card--warning' : 'overview-card--ok'}`}>
+        <article className={`overview-card ${currentAttention.length > 0 ? 'overview-card--warning' : 'overview-card--ok'}`}>
           <span>Внимание</span>
-          <strong>{attention.length}</strong>
-          <small>событий требуют проверки</small>
+          <strong>{currentAttention.length}</strong>
+          <small>текущих сигналов · {attention.length} в журнале</small>
         </article>
         <article className="overview-card">
           <span>Лента</span>
@@ -70,9 +77,9 @@ export function OverviewPanel({ connection, events, workspace }: Props): React.J
         <div className="overview-section__heading">
           <h3>Что требует внимания</h3>
           <span>
-            {attention.length === 0
-              ? 'Всё спокойно'
-              : `${attention.length} сигналов · нажми группу, чтобы увидеть события`}
+            {currentAttention.length === 0
+              ? `${attention.length > 0 ? 'Текущих проблем нет · ' : ''}${attention.length} записей журнала`
+              : `${currentAttention.length} текущих сигналов · ${attention.length} записей журнала`}
           </span>
         </div>
         {groups.length > 0 ? (
@@ -97,10 +104,27 @@ export function OverviewPanel({ connection, events, workspace }: Props): React.J
                   {open ? (
                     <ol className="overview-group__events">
                       {preview.map((event) => (
-                        <li key={`${event.sequenceId}-${event.eventType}`}>
+                        <li key={`${event.sequenceId}-${event.eventType}`} className={isCurrentSignal(event, events) ? 'overview-event--current' : 'overview-event--history'}>
                           <span className="overview-group__sequence">#{event.sequenceId}</span>
                           <span className="overview-group__detail">{summarize(event.payload)}</span>
                           {event.taskId ? <small className="overview-group__task">task: {event.taskId}</small> : null}
+                          <span className="overview-group__state">{isCurrentSignal(event, events) ? 'текущее' : 'история'}</span>
+                          <span className="overview-group__actions">
+                            <button type="button" onClick={() => setDetails(details === eventKey(event) ? null : eventKey(event))}>
+                              {details === eventKey(event) ? 'Скрыть' : 'Подробнее'}
+                            </button>
+                            <button type="button" onClick={() => {
+                              if (!api) return
+                              void api.writeClipboardText(formatEvent(event, isCurrentSignal(event, events))).then((ok) => {
+                                if (!ok) return
+                                setCopied(eventKey(event))
+                                window.setTimeout(() => setCopied(null), 1400)
+                              })
+                            }}>
+                              {copied === eventKey(event) ? 'Скопировано' : 'Копировать'}
+                            </button>
+                          </span>
+                          {details === eventKey(event) ? <pre className="overview-group__payload">{formatPayload(event.payload)}</pre> : null}
                         </li>
                       ))}
                       {hidden > 0 ? (
@@ -120,7 +144,7 @@ export function OverviewPanel({ connection, events, workspace }: Props): React.J
       <section className="overview-section" aria-label="Последние события">
         <div className="overview-section__heading">
           <h3>Последние события</h3>
-          <span>новые сверху</span>
+          <span>новые сверху · журнал, не список активных ошибок</span>
         </div>
         {events.length > 0 ? (
           <ol className="overview-events">
@@ -162,6 +186,52 @@ export function summarize(payload: string, limit = 140): string {
     }
   }
   return truncate(JSON.stringify(parsed) ?? String(parsed), limit)
+}
+
+function eventKey(event: CoreEvent): string {
+  return `${event.sequenceId}-${event.eventType}`
+}
+
+/** A failed task is current only while it is the latest terminal state for that task. */
+function isCurrentSignal(event: CoreEvent, events: readonly CoreEvent[]): boolean {
+  if (event.eventType === 'task.failed') {
+    const latestTerminal = events.find((candidate) =>
+      candidate.taskId === event.taskId &&
+      (candidate.eventType === 'task.completed' || candidate.eventType === 'task.failed' || candidate.eventType === 'task.stopped')
+    )
+    return latestTerminal === event
+  }
+  if (event.eventType === 'approval.required') {
+    return !events.some((candidate) =>
+      candidate.taskId === event.taskId &&
+      candidate.sequenceId > event.sequenceId &&
+      (candidate.eventType === 'task.completed' || candidate.eventType === 'task.failed' || candidate.eventType === 'task.stopped')
+    )
+  }
+  // For operational signals there is no universal acknowledgement event.
+  // Keep the latest record visible as current and older records as history.
+  return events.find((candidate) => candidate.eventType === event.eventType && candidate.taskId === event.taskId) === event
+}
+
+function formatPayload(payload: string): string {
+  try {
+    const parsed: unknown = JSON.parse(payload)
+    return JSON.stringify(parsed, null, 2) ?? payload
+  } catch {
+    return payload || 'без payload'
+  }
+}
+
+function formatEvent(event: CoreEvent, current: boolean): string {
+  return [
+    `EvoHime diagnostic event`,
+    `sequence: ${event.sequenceId}`,
+    `type: ${event.eventType}`,
+    `task: ${event.taskId || '—'}`,
+    `state: ${current ? 'текущее' : 'история'}`,
+    'payload:',
+    formatPayload(event.payload)
+  ].join('\n')
 }
 
 function truncate(text: string, limit: number): string {

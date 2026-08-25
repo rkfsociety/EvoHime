@@ -74,6 +74,35 @@ describe('OverviewPanel', () => {
 
     expect(within(screen.getByLabelText('Последние события')).getByText('listening')).toBeTruthy()
   })
+
+  it('отличает старую ошибку от последнего успешного состояния задачи', async () => {
+    const user = userEvent.setup()
+    render(
+      <OverviewPanel
+        connection="connected"
+        workspace={null}
+        events={[
+          event(12, 'task.completed', { final_message: 'готово' }),
+          event(11, 'task.failed', { error: 'старый сбой' })
+        ]}
+      />
+    )
+
+    expect(screen.getAllByText('0')).toHaveLength(2)
+    const section = within(attentionSection())
+    await user.click(section.getByRole('button', { name: /Ошибки задач/ }))
+    expect(section.getByText('история')).toBeTruthy()
+  })
+
+  it('раскрывает полный payload события', async () => {
+    const user = userEvent.setup()
+    render(<OverviewPanel connection="connected" workspace={null} events={[event(15, 'task.failed', { error: 'подробный сбой', code: 429 })]} />)
+
+    const section = within(attentionSection())
+    await user.click(section.getByRole('button', { name: /Ошибки задач/ }))
+    await user.click(section.getByRole('button', { name: 'Подробнее' }))
+    expect(section.getByText(/"code": 429/)).toBeTruthy()
+  })
 })
 
 describe('summarize', () => {
