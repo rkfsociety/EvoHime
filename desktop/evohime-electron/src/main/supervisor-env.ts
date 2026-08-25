@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { joinPath } from './path-utils'
 
 /**
  * Environment shared by the supervisor and its listener child.
@@ -16,6 +16,6 @@ export function supervisorEnvironment(
     ...base,
     EVOHIME_CORE_EXE: coreExecutable ?? base['EVOHIME_CORE_EXE'],
     EVOHIME_DATA_DIR: dataDirectory,
-    EVOHIME_LISTENER_TOOLS_DIR: join(dataDirectory, 'tools', 'listener')
+    EVOHIME_LISTENER_TOOLS_DIR: joinPath(dataDirectory, 'tools', 'listener')
   }
 }

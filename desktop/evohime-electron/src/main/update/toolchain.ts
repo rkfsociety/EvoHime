@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirnamePath, joinPath } from '../path-utils'
 
 import { describeFailure, runCommand, type CommandRunner } from './run-command'
 
@@ -65,8 +65,8 @@ const SPECS: readonly ToolSpec[] = [
     id: 'git',
     label: 'Git',
     candidates: (env) => [
-      join(env['ProgramFiles'] ?? 'C:\\Program Files', 'Git', 'cmd', 'git.exe'),
-      join(env['LOCALAPPDATA'] ?? '', 'Programs', 'Git', 'cmd', 'git.exe')
+      joinPath(env['ProgramFiles'] ?? 'C:\\Program Files', 'Git', 'cmd', 'git.exe'),
+      joinPath(env['LOCALAPPDATA'] ?? '', 'Programs', 'Git', 'cmd', 'git.exe')
     ],
     command: 'git',
     probeArgs: ['--version'],
@@ -76,8 +76,8 @@ const SPECS: readonly ToolSpec[] = [
     id: 'node',
     label: 'Node.js 22',
     candidates: (env) => [
-      join(env['ProgramFiles'] ?? 'C:\\Program Files', 'nodejs', 'node.exe'),
-      join(env['LOCALAPPDATA'] ?? '', 'Programs', 'nodejs', 'node.exe')
+      joinPath(env['ProgramFiles'] ?? 'C:\\Program Files', 'nodejs', 'node.exe'),
+      joinPath(env['LOCALAPPDATA'] ?? '', 'Programs', 'nodejs', 'node.exe')
     ],
     command: 'node',
     probeArgs: ['--version'],
@@ -86,7 +86,7 @@ const SPECS: readonly ToolSpec[] = [
   {
     id: 'rust',
     label: 'Rust (cargo)',
-    candidates: (env) => [join(env['USERPROFILE'] ?? '', '.cargo', 'bin', 'cargo.exe')],
+    candidates: (env) => [joinPath(env['USERPROFILE'] ?? '', '.cargo', 'bin', 'cargo.exe')],
     command: 'cargo',
     probeArgs: ['--version'],
     wingetId: 'Rustup.Rustup'
@@ -206,8 +206,8 @@ export function npmInvocation(
   const node = report.tools.find((tool) => tool.id === 'node')?.path
   if (!node) return null
   const candidates = [
-    join(dirname(node), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
-    join(dirname(node), '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js')
+    joinPath(dirnamePath(node), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    joinPath(dirnamePath(node), '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js')
   ]
   const cli = candidates.find((candidate) => exists(candidate))
   return cli ? { file: node, args: [cli] } : null
@@ -220,7 +220,7 @@ export function toolPath(report: ToolchainReport, id: ToolId): string | null {
 function pathEntriesFor(tools: readonly ToolStatus[]): readonly string[] {
   return tools
     .filter((tool) => tool.path !== null && tool.id !== 'msvc')
-    .map((tool) => dirname(tool.path as string))
+    .map((tool) => dirnamePath(tool.path as string))
 }
 
 async function locateTool(
@@ -251,7 +251,7 @@ async function locateMsvc(
   exists: (path: string) => boolean,
   run: CommandRunner
 ): Promise<string | null> {
-  const vswhere = join(
+  const vswhere = joinPath(
     env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)',
     'Microsoft Visual Studio',
     'Installer',

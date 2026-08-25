@@ -1,7 +1,9 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import type { PermissionMode } from '@shared/api'
+
+import { isAbsolutePath, normalizePath } from './path-utils'
 
 /**
  * Persisted workspace preference of the shell (plan 0, stage 3, slice 1).
@@ -44,11 +46,11 @@ export function normalizeWorkspacePath(value: unknown): string | null {
     trimmed.length === 0 ||
     trimmed.length > MAX_PATH_CHARS ||
     trimmed.includes('\0') ||
-    !isAbsolute(trimmed)
+    !isAbsolutePath(trimmed)
   ) {
     return null
   }
-  const normalized = resolve(trimmed)
+  const normalized = normalizePath(trimmed)
   return normalized.length <= MAX_PATH_CHARS ? normalized : null
 }
 

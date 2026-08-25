@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, isAbsolute, join } from 'node:path'
-
 import { normalizeGithubToken } from './github-token'
+import { dirnamePath, isAbsolutePath, joinPath } from '../path-utils'
 
 /**
  * Configuration of the source-based updater.
@@ -72,7 +71,7 @@ export interface ConfigInputs {
 export function loadUpdateConfig(inputs: ConfigInputs): UpdateConfig {
   const environment = inputs.environment ?? process.env
   const read = inputs.readFile ?? defaultReadFile
-  const file = asRecord(parseJson(read(join(inputs.dataDirectory, UPDATE_CONFIG_FILE))))
+  const file = asRecord(parseJson(read(joinPath(inputs.dataDirectory, UPDATE_CONFIG_FILE))))
 
   const repositoryUrl =
     normalizeRepositoryUrl(environment['EVOHIME_UPDATE_REPOSITORY']) ??
@@ -107,12 +106,12 @@ export function loadUpdateConfig(inputs: ConfigInputs): UpdateConfig {
     greenCommitDepth: normalizeDepth(file['greenCommitDepth']),
     githubToken: normalizeGithubToken(file['githubToken']),
     sourceDirectory:
-      absoluteOr(environment['EVOHIME_UPDATE_SOURCE_DIR'], join(inputs.dataDirectory, 'source')),
+      absoluteOr(environment['EVOHIME_UPDATE_SOURCE_DIR'], joinPath(inputs.dataDirectory, 'source')),
     stagingDirectory:
-      absoluteOr(environment['EVOHIME_UPDATE_STAGING_DIR'], join(inputs.dataDirectory, 'update-staging')),
-    stateDirectory: join(inputs.dataDirectory, 'update-state'),
+      absoluteOr(environment['EVOHIME_UPDATE_STAGING_DIR'], joinPath(inputs.dataDirectory, 'update-staging')),
+    stateDirectory: joinPath(inputs.dataDirectory, 'update-state'),
     installDirectory:
-      absoluteOr(environment['EVOHIME_UPDATE_INSTALL_DIR'], dirname(inputs.executablePath))
+      absoluteOr(environment['EVOHIME_UPDATE_INSTALL_DIR'], dirnamePath(inputs.executablePath))
   }
 }
 
@@ -129,7 +128,7 @@ export function readBuildMarker(
   directory: string,
   read: (path: string) => string | null = defaultReadFile
 ): BuildMarker | null {
-  const value = asRecord(parseJson(read(join(directory, BUILD_MARKER_FILE))))
+  const value = asRecord(parseJson(read(joinPath(directory, BUILD_MARKER_FILE))))
   const commit = normalizeCommit(value['commit'])
   if (!commit) return null
   return {
@@ -192,7 +191,7 @@ function normalizeDepth(value: unknown): number {
 }
 
 function absoluteOr(value: unknown, fallback: string): string {
-  return typeof value === 'string' && value.trim().length > 0 && isAbsolute(value.trim())
+  return typeof value === 'string' && value.trim().length > 0 && isAbsolutePath(value.trim())
     ? value.trim()
     : fallback
 }
