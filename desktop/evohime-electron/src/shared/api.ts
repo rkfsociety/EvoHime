@@ -91,7 +91,7 @@ export type ShellEvent =
   | { readonly kind: 'listener-runtime'; readonly status: ListenerRuntimeStatus }
 
 /** Model providers the shell can configure. */
-export const PROVIDER_KINDS = ['literouter', 'openai_compatible'] as const
+export const PROVIDER_KINDS = ['literouter', 'openai_compatible', 'openai_responses'] as const
 
 export type ProviderKind = (typeof PROVIDER_KINDS)[number]
 

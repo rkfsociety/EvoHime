@@ -14,6 +14,16 @@ fn openai_compatible_no_thinking() {
 }
 
 #[test]
+fn openai_responses_supports_thinking() {
+    assert!(ProviderKind::OpenAIResponses.supports_thinking());
+    assert_eq!(
+        ProviderKind::parse("responses"),
+        Some(ProviderKind::OpenAIResponses)
+    );
+    assert_eq!(ProviderKind::OpenAIResponses.as_str(), "openai_responses");
+}
+
+#[test]
 fn mock_supports_thinking() {
     assert!(ProviderKind::Mock.supports_thinking());
 }

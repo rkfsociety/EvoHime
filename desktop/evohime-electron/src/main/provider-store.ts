@@ -185,7 +185,7 @@ export class ProviderStore {
     const document = this.readDocument()
     const key = this.decryptSecret(document.secret)
     const environment: Record<string, string> = { MODEL_PROVIDER: document.provider }
-    if (document.provider === 'openai_compatible') {
+    if (document.provider === 'openai_compatible' || document.provider === 'openai_responses') {
       if (key) environment['OPENAI_API_KEY'] = key
       if (document.baseUrl) environment['OPENAI_BASE_URL'] = document.baseUrl
       if (document.model) environment['OPENAI_MODEL'] = document.model

@@ -11,6 +11,7 @@ pub const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 
 /// Default OpenAI-compatible model.
 pub const OPENAI_DEFAULT_MODEL: &str = "gpt-4o-mini";
+pub const OPENAI_CODEX_DEFAULT_MODEL: &str = "gpt-5-codex";
 pub const LOCAL_DEFAULT_BASE_URL: &str = "http://127.0.0.1:49152/v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,6 +51,20 @@ impl LiteRouterConfig {
             model,
         }
     }
+
+    pub fn openai_responses_from_env() -> Self {
+        let api_key = env::var("OPENAI_API_KEY").unwrap_or_default();
+        let base_url =
+            env::var("OPENAI_BASE_URL").unwrap_or_else(|_| OPENAI_DEFAULT_BASE_URL.to_string());
+        let model =
+            env::var("OPENAI_MODEL").unwrap_or_else(|_| OPENAI_CODEX_DEFAULT_MODEL.to_string());
+
+        Self {
+            api_key,
+            base_url: normalize_base_url(&base_url),
+            model,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,7 +88,10 @@ impl ModelRouteConfig {
         model: impl Into<String>,
     ) -> Self {
         // LiteRouter via Claude API supports thinking; other providers may not
-        let supports_thinking = matches!(provider, ProviderKind::LiteRouter);
+        let supports_thinking = matches!(
+            provider,
+            ProviderKind::LiteRouter | ProviderKind::OpenAIResponses
+        );
         Self {
             provider,
             literouter: LiteRouterConfig {
@@ -101,6 +119,14 @@ impl ModelRouteConfig {
         Self::with_provider(ProviderKind::OpenAICompatible, api_key, base_url, model)
     }
 
+    pub fn openai_responses(
+        api_key: impl Into<String>,
+        base_url: impl Into<String>,
+        model: impl Into<String>,
+    ) -> Self {
+        Self::with_provider(ProviderKind::OpenAIResponses, api_key, base_url, model)
+    }
+
     /// A local SLM route. `api_key` is a short-lived supervisor-issued
     /// capability, never a cloud credential and never exposed to the shell.
     pub fn local(
@@ -125,9 +151,9 @@ impl ModelRouteConfig {
 
     pub fn configured(&self) -> bool {
         match self.provider {
-            ProviderKind::LiteRouter | ProviderKind::OpenAICompatible => {
-                !self.literouter.api_key.is_empty()
-            }
+            ProviderKind::LiteRouter
+            | ProviderKind::OpenAICompatible
+            | ProviderKind::OpenAIResponses => !self.literouter.api_key.is_empty(),
             ProviderKind::Local => !self.literouter.model.trim().is_empty(),
             ProviderKind::Mock => true,
         }
@@ -162,6 +188,10 @@ impl ModelGatewayConfig {
             ProviderKind::OpenAICompatible => {
                 let openai = LiteRouterConfig::openai_compatible_from_env();
                 ModelRouteConfig::openai_compatible(openai.api_key, openai.base_url, openai.model)
+            }
+            ProviderKind::OpenAIResponses => {
+                let openai = LiteRouterConfig::openai_responses_from_env();
+                ModelRouteConfig::openai_responses(openai.api_key, openai.base_url, openai.model)
             }
             ProviderKind::Mock => {
                 return Err(ProviderError::Config(
@@ -213,10 +243,13 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
             .unwrap_or(ProviderKind::LiteRouter);
         let model = route.model.unwrap_or_else(|| match provider {
             ProviderKind::OpenAICompatible => OPENAI_DEFAULT_MODEL.to_string(),
+            ProviderKind::OpenAIResponses => OPENAI_CODEX_DEFAULT_MODEL.to_string(),
             _ => String::new(),
         });
         let default_base_url = match provider {
-            ProviderKind::OpenAICompatible => OPENAI_DEFAULT_BASE_URL,
+            ProviderKind::OpenAICompatible | ProviderKind::OpenAIResponses => {
+                OPENAI_DEFAULT_BASE_URL
+            }
             ProviderKind::Local => LOCAL_DEFAULT_BASE_URL,
             _ => LITEROUTER_DEFAULT_BASE_URL,
         };
@@ -229,6 +262,13 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
                 model,
             ),
             ProviderKind::OpenAICompatible => ModelRouteConfig::openai_compatible(
+                route.api_key.unwrap_or_default(),
+                route
+                    .base_url
+                    .unwrap_or_else(|| default_base_url.to_string()),
+                model,
+            ),
+            ProviderKind::OpenAIResponses => ModelRouteConfig::openai_responses(
                 route.api_key.unwrap_or_default(),
                 route
                     .base_url

@@ -7,6 +7,7 @@ pub mod literouter;
 pub mod local;
 pub mod mock;
 pub mod openai_compatible;
+pub mod openai_responses;
 
 pub use crate::tools::LlmUsage;
 use serde::{Deserialize, Serialize};
@@ -16,6 +17,7 @@ use serde::{Deserialize, Serialize};
 pub enum ProviderKind {
     LiteRouter,
     OpenAICompatible,
+    OpenAIResponses,
     Local,
     #[serde(skip)]
     Mock,
@@ -26,6 +28,7 @@ impl ProviderKind {
         match value.to_lowercase().as_str() {
             "literouter" | "lite_router" | "lite-router" => Some(Self::LiteRouter),
             "openai_compatible" | "openai-compatible" | "openai" => Some(Self::OpenAICompatible),
+            "openai_responses" | "openai-responses" | "responses" => Some(Self::OpenAIResponses),
             "local" | "local_slm" | "local-slm" => Some(Self::Local),
             "mock" => Some(Self::Mock),
             _ => None,
@@ -36,6 +39,7 @@ impl ProviderKind {
         match self {
             Self::LiteRouter => "literouter",
             Self::OpenAICompatible => "openai_compatible",
+            Self::OpenAIResponses => "openai_responses",
             Self::Local => "local",
             Self::Mock => "mock",
         }
@@ -43,7 +47,10 @@ impl ProviderKind {
 
     /// Wave 3B: Check if provider supports extended thinking
     pub fn supports_thinking(self) -> bool {
-        matches!(self, Self::LiteRouter | Self::Local | Self::Mock)
+        matches!(
+            self,
+            Self::LiteRouter | Self::OpenAIResponses | Self::Local | Self::Mock
+        )
     }
 }
 

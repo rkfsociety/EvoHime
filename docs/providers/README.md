@@ -4,6 +4,7 @@
 | --- | --- | --- |
 | **LiteRouter** | ✅ Active (current default) | [literouter.md](literouter.md) |
 | OpenAI-compatible (`openai_compatible`) | ✅ Active | — |
+| OpenAI Responses (`openai_responses`) | ✅ Active | [openai-and-codex.md](openai-and-codex.md) |
 | Mock (`mock`) | ✅ Только для тестов | — |
 | Anthropic | Planned | — |
 | Ollama | Planned | — |
@@ -11,6 +12,8 @@
 **Правило:** первый и текущий провайдер в EvoHime — **LiteRouter** (OpenAI-compatible API).
 
 **Примечание:** Core уже поддерживает несколько маршрутов модели и выбор на уровне задачи. Любой маршрут может указывать на OpenAI-compatible endpoint с отдельным ключом, базовым URL и моделью.
+
+Для GPT-5-Codex и других Responses-моделей используйте `openai_responses`.
 
 ## Настройка
 

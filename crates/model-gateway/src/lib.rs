@@ -17,8 +17,8 @@ pub use crate::provider_contract::{
 };
 use crate::providers::{
     literouter::LiteRouterProvider, local::LocalProvider, mock::MockProvider,
-    openai_compatible::OpenAICompatibleProvider, ChatMessage, ModelProvider, ProviderError,
-    ProviderKind, TokenStream,
+    openai_compatible::OpenAICompatibleProvider, openai_responses::OpenAIResponsesProvider,
+    ChatMessage, ModelProvider, ProviderError, ProviderKind, TokenStream,
 };
 pub use crate::retry::RetryPolicy;
 pub use crate::routing_catalog::{CatalogError, CatalogStore, EvaluationCatalog, EvaluationRecord};
@@ -806,6 +806,9 @@ fn build_provider(route: &ModelRouteConfig) -> Result<Arc<dyn ModelProvider>, Pr
             Ok(Arc::new(LiteRouterProvider::new(route.literouter.clone())?))
         }
         ProviderKind::OpenAICompatible => Ok(Arc::new(OpenAICompatibleProvider::new(
+            route.literouter.clone(),
+        )?)),
+        ProviderKind::OpenAIResponses => Ok(Arc::new(OpenAIResponsesProvider::new(
             route.literouter.clone(),
         )?)),
         ProviderKind::Local => {

@@ -20,7 +20,8 @@ import { useShellApi } from './shell-api'
 
 const PROVIDER_LABELS: Record<ProviderKind, string> = {
   literouter: 'LiteRouter',
-  openai_compatible: 'OpenAI-совместимый'
+  openai_compatible: 'OpenAI API (Chat Completions)',
+  openai_responses: 'OpenAI Responses / Codex'
 }
 
 const TIERS: readonly { readonly id: ModelTier; readonly label: string; readonly hint: string }[] = [

@@ -93,6 +93,17 @@ describe('provider store', () => {
     expect(store.environment()['LITEROUTER_MODEL']).toBe('b')
   })
 
+  it('exports Responses credentials through the same protected OpenAI environment', () => {
+    const store = new ProviderStore(storePath(), reversibleCipher())
+    store.save({ provider: 'openai_responses', apiKey: 'sk-responses', model: 'gpt-5-codex', baseUrl: '', tier: 'paid' })
+
+    expect(store.environment()).toEqual({
+      MODEL_PROVIDER: 'openai_responses',
+      OPENAI_API_KEY: 'sk-responses',
+      OPENAI_MODEL: 'gpt-5-codex'
+    })
+  })
+
   it('refuses to store a key when the OS cannot encrypt it', () => {
     const path = storePath()
     const store = new ProviderStore(path, reversibleCipher(false))
