@@ -29,18 +29,16 @@ fn main() -> ExitCode {
             .map_err(|error| error.to_string())
         })
     } else {
-        parse_worker_args(arguments).and_then(
-            |(installer, install_dir, state_dir, relaunch, health_file)| {
-                evohime_tx::run_update(
-                    &installer,
-                    &install_dir,
-                    &state_dir,
-                    relaunch.as_deref(),
-                    health_file.as_deref(),
-                )
-                .map_err(|error| error.to_string())
-            },
-        )
+        parse_worker_args(arguments).and_then(|worker| {
+            evohime_tx::run_update(
+                &worker.installer,
+                &worker.install_dir,
+                &worker.state_dir,
+                worker.relaunch.as_deref(),
+                worker.health_file.as_deref(),
+            )
+            .map_err(|error| error.to_string())
+        })
     };
 
     match result {
@@ -105,21 +103,27 @@ fn parse_staged_args(args: &[String]) -> Result<StagedArgs, String> {
     })
 }
 
-fn parse_worker_args(
-    args: &[String],
-) -> Result<(PathBuf, PathBuf, PathBuf, Option<PathBuf>, Option<PathBuf>), String> {
+fn parse_worker_args(args: &[String]) -> Result<WorkerArgs, String> {
     let installer = required(args, "--installer")?;
     let install_dir = required(args, "--install-dir")?;
     let state_dir = optional(args, "--state-dir")
         .map(PathBuf::from)
         .unwrap_or_else(default_state_dir);
-    Ok((
+    Ok(WorkerArgs {
         installer,
         install_dir,
         state_dir,
-        optional(args, "--relaunch").map(PathBuf::from),
-        optional(args, "--health-file").map(PathBuf::from),
-    ))
+        relaunch: optional(args, "--relaunch").map(PathBuf::from),
+        health_file: optional(args, "--health-file").map(PathBuf::from),
+    })
+}
+
+struct WorkerArgs {
+    installer: PathBuf,
+    install_dir: PathBuf,
+    state_dir: PathBuf,
+    relaunch: Option<PathBuf>,
+    health_file: Option<PathBuf>,
 }
 
 fn required(args: &[String], name: &str) -> Result<PathBuf, String> {
