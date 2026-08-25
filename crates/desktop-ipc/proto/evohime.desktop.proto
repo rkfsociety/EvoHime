@@ -250,6 +250,8 @@ message StartTask {
   string workspace_path = 3;
   // Non-privileged route hint; Core policy remains authoritative.
   string preferred_route_hint = 4;
+  // Explicit task intent. Empty/unknown values remain dialogue for compatibility.
+  string execution_kind = 5;
 }
 
 // Bounded read-only workspace browsing for the native Files surface.

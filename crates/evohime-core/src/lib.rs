@@ -4330,6 +4330,146 @@ impl SelectedModel {
     }
 }
 
+/// Executes an explicitly selected coding task through the user's authenticated
+/// Codex CLI. The Core owns the workspace boundary and task lifecycle; the CLI
+/// is only a bounded child process and never becomes an API provider.
+async fn run_codex_cli(
+    task_id: String,
+    prompt: String,
+    workspace_root: PathBuf,
+    cancellation: CancellationToken,
+    events: broadcast::Sender<CoreEvent>,
+) -> Result<String, AgentRunError> {
+    const MAX_PROMPT_BYTES: usize = 128 * 1024;
+    const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
+    const MAX_CHUNK_BYTES: usize = 16 * 1024;
+
+    if prompt.len() > MAX_PROMPT_BYTES {
+        return Err(AgentRunError::Internal(
+            "codex_cli: prompt exceeds 128 KiB".into(),
+        ));
+    }
+    let model = std::env::var("CODEX_MODEL").unwrap_or_default();
+    if model.trim().is_empty() {
+        return Err(AgentRunError::Internal(
+            "codex_cli: no selected model".into(),
+        ));
+    }
+
+    let _ = events.send(CoreEvent::ToolStarted {
+        task_id: task_id.clone(),
+        tool_name: "codex.execute".into(),
+    });
+    let executable = resolve_codex_executable();
+    let mut command = tokio::process::Command::new(executable);
+    command
+        .args([
+            "exec",
+            "--json",
+            "--sandbox",
+            "workspace-write",
+            "--ask-for-approval",
+            "never",
+            "--model",
+            model.trim(),
+        ])
+        .arg(&prompt)
+        .current_dir(&workspace_root)
+        .env_clear();
+    for name in [
+        "PATH",
+        "USERPROFILE",
+        "HOME",
+        "LOCALAPPDATA",
+        "TEMP",
+        "TMP",
+        "CODEX_HOME",
+    ] {
+        if let Ok(value) = std::env::var(name) {
+            command.env(name, value);
+        }
+    }
+    command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = command
+        .spawn()
+        .map_err(|error| AgentRunError::Internal(format!("codex_cli unavailable: {error}")))?;
+
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| AgentRunError::Internal("codex_cli stdout unavailable".into()))?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| AgentRunError::Internal("codex_cli stderr unavailable".into()))?;
+    let stdout_task = tokio::spawn(async move {
+        let mut bytes = Vec::new();
+        let _ = tokio::io::AsyncReadExt::read_to_end(&mut stdout, &mut bytes).await;
+        bytes
+    });
+    let stderr_task = tokio::spawn(async move {
+        let mut bytes = Vec::new();
+        let _ = tokio::io::AsyncReadExt::read_to_end(&mut stderr, &mut bytes).await;
+        bytes
+    });
+    let status = tokio::select! {
+        _ = cancellation.cancelled() => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            return Err(AgentRunError::Cancelled);
+        }
+        output = child.wait() => output
+            .map_err(|error| AgentRunError::Internal(format!("codex_cli process failed: {error}")))?,
+    };
+    let mut combined = stdout_task.await.unwrap_or_default();
+    combined.extend_from_slice(&stderr_task.await.unwrap_or_default());
+    if combined.len() > MAX_OUTPUT_BYTES {
+        return Err(AgentRunError::Internal(
+            "codex_cli: output limit exceeded".into(),
+        ));
+    }
+    let text = String::from_utf8_lossy(&combined).into_owned();
+    for chunk in text.as_bytes().chunks(MAX_CHUNK_BYTES) {
+        let _ = events.send(CoreEvent::ToolOutput {
+            task_id: task_id.clone(),
+            tool_name: "codex.execute".into(),
+            output: String::from_utf8_lossy(chunk).into_owned(),
+        });
+    }
+    if !status.success() {
+        return Err(AgentRunError::Internal(format!(
+            "codex_cli exited with {}: {}",
+            status,
+            text.trim()
+        )));
+    }
+    Ok(text)
+}
+
+fn resolve_codex_executable() -> PathBuf {
+    if let Ok(value) = std::env::var("CODEX_EXECUTABLE") {
+        let path = PathBuf::from(value);
+        if path.is_absolute() && path.is_file() {
+            return path;
+        }
+    }
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        let path = PathBuf::from(local_app_data).join("Programs/OpenAI/Codex/bin/codex.exe");
+        if path.is_file() {
+            return path;
+        }
+    }
+    if let Ok(app_data) = std::env::var("APPDATA") {
+        let path = PathBuf::from(app_data).join("npm/codex.cmd");
+        if path.is_file() {
+            return path;
+        }
+    }
+    PathBuf::from("codex")
+}
+
 fn effective_model_name(gateway_model: &str, selected_model: Option<&str>) -> String {
     selected_model
         .map(str::trim)
@@ -8089,6 +8229,15 @@ impl TaskExecutor for ToolAgent {
         cancellation: CancellationToken,
         events: broadcast::Sender<CoreEvent>,
     ) -> BoxFuture<'static, Result<String, AgentRunError>> {
+        if preferred_route_hint.as_deref() == Some("codex_cli") {
+            return Box::pin(run_codex_cli(
+                task_id,
+                prompt,
+                workspace_root,
+                cancellation,
+                events,
+            ));
+        }
         let agent = Self {
             gateway: Arc::clone(&self.gateway),
             tools: Arc::clone(&self.tools),

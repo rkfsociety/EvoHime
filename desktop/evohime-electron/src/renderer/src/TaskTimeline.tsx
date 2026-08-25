@@ -55,6 +55,7 @@ export function TaskTimeline({
   const [sentPromptAtMs, setSentPromptAtMs] = useState<number | null>(null)
   const [commandError, setCommandError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [coding, setCoding] = useState(() => window.localStorage.getItem('evohime.coding-engine') === 'codex_cli')
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
@@ -158,9 +159,11 @@ export function TaskTimeline({
       prompt: text,
       workspacePath: workspace,
       preferredRouteHint: (() => {
+        if (coding) return 'codex_cli'
         const value = window.localStorage.getItem('evohime.preferred-route')
         return value === 'local' || value === 'cloud' ? value : null
-      })()
+      })(),
+      executionKind: coding ? 'coding' : 'dialogue'
     })
     setBusy(false)
     if (!outcome.ok) {
@@ -178,7 +181,7 @@ export function TaskTimeline({
     })
     if (stored.ok && stored.value) setChat(stored.value)
     onChatTouched()
-  }, [api, chatId, onChatOpened, onChatTouched, prompt, workspace])
+  }, [api, chatId, coding, onChatOpened, onChatTouched, prompt, workspace])
 
   const stop = useCallback(async () => {
     if (!api || !taskId) return
@@ -334,6 +337,15 @@ export function TaskTimeline({
             <ContextUsage events={taskEvents} />
             <PermissionModePicker connection={connection} workspace={workspace} />
             <ModelPicker connection={connection} events={events} />
+            <label>
+              <input
+                type="checkbox"
+                checked={coding}
+                onChange={(event) => setCoding(event.target.checked)}
+                disabled={busy}
+              />
+              Coding-задача (Codex CLI)
+            </label>
           </div>
 
 

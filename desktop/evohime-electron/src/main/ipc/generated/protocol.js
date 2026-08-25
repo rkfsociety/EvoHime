@@ -6025,6 +6025,7 @@ export const evohime = $root.evohime = (() => {
                  * @property {string|null} [prompt] StartTask prompt
                  * @property {string|null} [workspacePath] StartTask workspacePath
                  * @property {string|null} [preferredRouteHint] StartTask preferredRouteHint
+                 * @property {string|null} [executionKind] StartTask executionKind
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -6089,6 +6090,14 @@ export const evohime = $root.evohime = (() => {
                 StartTask.prototype.preferredRouteHint = "";
 
                 /**
+                 * StartTask executionKind.
+                 * @member {string} executionKind
+                 * @memberof evohime.desktop.v1.StartTask
+                 * @instance
+                 */
+                StartTask.prototype.executionKind = "";
+
+                /**
                  * Encodes the specified StartTask message. Does not implicitly {@link evohime.desktop.v1.StartTask.verify|verify} messages.
                  * @function encode
                  * @memberof evohime.desktop.v1.StartTask
@@ -6112,6 +6121,8 @@ export const evohime = $root.evohime = (() => {
                         writer.uint32(/* id 3, wireType 2 =*/26).string(message.workspacePath);
                     if (message.preferredRouteHint != null && $Object.hasOwnProperty.call(message, "preferredRouteHint") && message.preferredRouteHint !== "")
                         writer.uint32(/* id 4, wireType 2 =*/34).string(message.preferredRouteHint);
+                    if (message.executionKind != null && $Object.hasOwnProperty.call(message, "executionKind") && message.executionKind !== "")
+                        writer.uint32(/* id 5, wireType 2 =*/42).string(message.executionKind);
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -6180,6 +6191,15 @@ export const evohime = $root.evohime = (() => {
                                     message.preferredRouteHint = value;
                                 else
                                     delete message.preferredRouteHint;
+                                continue;
+                            }
+                        case 5: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.executionKind = value;
+                                else
+                                    delete message.executionKind;
                                 continue;
                             }
                         }

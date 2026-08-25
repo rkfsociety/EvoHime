@@ -2338,6 +2338,9 @@ impl IpcBridge {
                                 .then(|| std::path::PathBuf::from(start.workspace_path)),
                             preferred_route_hint: match start.preferred_route_hint.as_str() {
                                 "local" | "cloud" => Some(start.preferred_route_hint),
+                                "codex_cli" if start.execution_kind == "coding" => {
+                                    Some("codex_cli".into())
+                                }
                                 _ => None,
                             },
                         })

@@ -594,6 +594,14 @@ SQLite находится в `%LOCALAPPDATA%\EvoHime` либо в `EVOHIME_DATA_
 
 Ключ вводится в `ProviderForm` и остаётся в main-процессе. Значение шифруется ОС через Electron `safeStorage` (DPAPI на Windows) и сохраняется в профиле выбранного провайдера в `provider.json`; renderer получает только summary с признаком `configured` и без секретов. Core собирает model gateway из окружения при старте, поэтому сохранение ключа перезапускает supervisor вместе с Core, а pipe client переподключается к новой сессии. В окружение попадают только переменные выбранного профиля, чтобы ключ другого провайдера не дошёл до gateway. Codex CLI не является записью в этом списке: его ChatGPT-аутентификация принадлежит локальному CLI, а панель Евы не показывает для него API-ключ. Если ОС отказывается шифровать, ключ не записывается вовсе.
 
+Для coding-задач `ProviderForm` отдельно хранит выбор `evohime_core` или
+`codex_cli` в renderer settings. Флажок `Coding-задача (Codex CLI)` передаёт
+отдельный IPC intent; Core принимает Codex только при явном coding intent и
+запускает bounded `codex exec` в каноническом workspace. Обычные dialogue-задачи
+не меняют backend. Codex stdout/stderr приходят как bounded `tool.output`, а
+отсутствующий CLI, пустая модель, отмена и ненулевой exit дают terminal failure
+без silent fallback.
+
 Base URL принимается только по `https` либо по `http` на loopback: ключ отправляется на этот адрес, и произвольный http-хост означал бы его утечку.
 
 ## Packaging и запуск

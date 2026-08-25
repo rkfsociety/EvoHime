@@ -792,7 +792,7 @@ export interface CommandPayloads {
   'workspace.pick': Record<string, never>
   'workspace.select': { path: string }
   'workspace.forget': { path: string }
-  'core.startTask': { taskId: string; prompt: string; workspacePath: string; preferredRouteHint?: 'local' | 'cloud' | null }
+  'core.startTask': { taskId: string; prompt: string; workspacePath: string; preferredRouteHint?: 'local' | 'cloud' | 'codex_cli' | null; executionKind?: 'dialogue' | 'coding' }
   'core.stopTask': { taskId: string }
   'core.resolveApproval': { approvalId: string; granted: boolean; idempotencyKey?: string; rejectionReason?: string; cancel?: boolean }
   'core.resolveRoutingDecision': { traceId: string; approve: boolean }

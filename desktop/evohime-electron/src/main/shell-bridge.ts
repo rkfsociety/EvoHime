@@ -193,12 +193,14 @@ function dispatch(
       const workspacePath = asBoundedString(value['workspacePath'])
       const preferredRouteHint = value['preferredRouteHint'] === undefined || value['preferredRouteHint'] === null
         ? null
-        : value['preferredRouteHint'] === 'local' || value['preferredRouteHint'] === 'cloud' ? value['preferredRouteHint'] : undefined
-      if (taskId === null || prompt === null || workspacePath === null || preferredRouteHint === undefined) {
+        : value['preferredRouteHint'] === 'local' || value['preferredRouteHint'] === 'cloud' || value['preferredRouteHint'] === 'codex_cli' ? value['preferredRouteHint'] : undefined
+      const executionKind = value['executionKind'] === undefined ? 'dialogue'
+        : value['executionKind'] === 'dialogue' || value['executionKind'] === 'coding' ? value['executionKind'] : undefined
+      if (taskId === null || prompt === null || workspacePath === null || preferredRouteHint === undefined || executionKind === undefined) {
         return failure('invalid-payload', 'Некорректные параметры задачи.')
       }
       log('info', 'shell.command_forwarded', { command })
-      return accepted(client.send({ startTask: { taskId, prompt, workspacePath, preferredRouteHint: preferredRouteHint ?? '' } }))
+      return accepted(client.send({ startTask: { taskId, prompt, workspacePath, preferredRouteHint: preferredRouteHint ?? '', executionKind } }))
     }
 
     case 'core.stopTask': {

@@ -291,8 +291,28 @@ describe('renderer command surface', () => {
     })
     expect(outcome).toEqual({ ok: true, value: { accepted: true } })
     expect(sent).toEqual([
-      { startTask: { taskId: 'task-1', prompt: 'сделай', workspacePath: 'C:\\work', preferredRouteHint: '' } }
+      { startTask: { taskId: 'task-1', prompt: 'сделай', workspacePath: 'C:\\work', preferredRouteHint: '', executionKind: 'dialogue' } }
     ])
+  })
+
+  it('forwards Codex only for an explicit coding intent', () => {
+    const outcome = invoke('core.startTask', {
+      taskId: 'task-codex',
+      prompt: 'исправь тесты',
+      workspacePath: 'C:\\work',
+      preferredRouteHint: 'codex_cli',
+      executionKind: 'coding'
+    })
+    expect(outcome).toEqual({ ok: true, value: { accepted: true } })
+    expect(sent.at(-1)).toEqual({
+      startTask: {
+        taskId: 'task-codex',
+        prompt: 'исправь тесты',
+        workspacePath: 'C:\\work',
+        preferredRouteHint: 'codex_cli',
+        executionKind: 'coding'
+      }
+    })
   })
 
   it('forwards bounded Files and Git reads without exposing filesystem access', () => {
