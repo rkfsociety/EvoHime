@@ -52,6 +52,10 @@ composer. Логика выполнения задач остаётся в те�
 - Coding toggle, модель, доступ, маршрут и контекст видимы;
 - нет новых Core/IPC решений в renderer.
 
+Проверяются все текущие `ConnectionState`: `starting`, `connecting`,
+`connected`, `reconnecting`, `replaying`, `resyncing`, `state-gap`,
+`version-mismatch`, `degraded` и `fatal`.
+
 ## Проверки
 
 - tests для chat open/create, prompt, stop, approval и recovery;

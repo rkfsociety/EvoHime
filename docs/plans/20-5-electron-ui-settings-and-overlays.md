@@ -28,8 +28,9 @@
 
 1. Переработать Settings modal: header, close, backdrop, focus, tabs и
    responsive layout.
-2. Сохранить вкладки provider/models, Codex CLI, workspace, speech, appearance
-   и security.
+2. Сохранить пять текущих вкладок: provider/models, workspace, speech,
+   appearance и security. Codex CLI остаётся вложенной панелью внутри
+   provider/models, отдельная вкладка для него не создаётся.
 3. Сохранить provider get/save/clear, restart indication и отсутствие ключа в
    renderer; Codex install/login/refresh/model/limits; speech runtime;
    microphone permission.
@@ -41,6 +42,10 @@
    applying, failed.
 7. Показать update message/detail/steps, progress, commit/branch, blocking,
    restartRequired, skip и restart actions.
+   `UpdateIndicator` остаётся видимым только для тех фаз, для которых он
+   отображается текущим компонентом; `disabled`, `idle` и `up-to-date` не
+   превращаются в навязчивый постоянный indicator. `UpdateGate` показывается
+   только при `blocking=true`.
 8. Проверить stacking: blocking update gate не маскирует critical recovery,
    trace не ломает modal и не перекрывает важные действия.
 

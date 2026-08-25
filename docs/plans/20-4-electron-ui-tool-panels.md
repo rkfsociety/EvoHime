@@ -38,7 +38,8 @@
   preflight warnings;
 - сохранить start/stop/retry, progress roster, history и silent-progress
   warning;
-- сохранить result copy/export, revise, save revision и confirmation replace.
+- сохранить result copy/export, revise, stop revision, save revision и
+  confirmation replace.
 
 ### Память и Pulse
 
@@ -61,6 +62,7 @@
 - сохранить unknown/fail-visible state, enable/pause/resume/stop/refresh;
 - сохранить hotkey status, device list/active/default/disconnected/empty;
 - сохранить runtime check/download/progress/ready/missing/update/error;
+- сохранить runtime `unknown` как отдельное состояние «ещё не проверялось»;
 - сохранить episodes, explicit transcript open, proposals accept/reject/mute,
   voice commands accept/reject;
 - сохранить quiet hours, blocklists, retention, voice commands/autorun;
@@ -75,6 +77,14 @@
 - long-running review/index/workflow/runtime операции показывают реальную
   фазу и позволяют безопасную отмену там, где она есть;
 - панели читаемы при 1024 px без горизонтального scroll всей оболочки.
+
+Для «Слуха» визуально различаются все текущие состояния: `stopped`,
+`starting`, `listening`, `paused_by_user`, `paused_by_policy`,
+`device_conflict`, `device_disconnected`, `engine_unavailable` и `denied`.
+
+Для repair сохраняются фазы `idle`, `available`, `preparing`, `diagnosing`,
+`ready_to_commit`, `committing`, `ready_to_push`, `pushing`, `waiting_ci`,
+`ready_to_update`, `failed` и `cancelled`.
 
 ## Проверки
 

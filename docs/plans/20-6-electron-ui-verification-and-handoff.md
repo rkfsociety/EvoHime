@@ -36,8 +36,11 @@ IPC.
 - Overview, Review, Operations, Workflow, Listening;
 - Settings по каждой вкладке;
 - Trace empty/populated/export status;
-- update indicator, update gate, each real phase;
-- repair available/running/ready-to-commit/CI/failed;
+- update indicator/gate и fixtures для каждой реальной фазы, включая
+  отсутствие indicator для `disabled`, `idle` и `up-to-date`;
+- repair `available`, `preparing`, `diagnosing`, `ready_to_commit`,
+  `committing`, `ready_to_push`, `pushing`, `waiting_ci`, `ready_to_update`,
+  `failed` и `cancelled`;
 - ambient confirmation dialogs;
 - account menu opened upward and keyboard focus states.
 
