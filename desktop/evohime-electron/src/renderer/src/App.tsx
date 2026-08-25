@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type {
   ConnectionState,
@@ -85,6 +85,8 @@ export function App(): React.JSX.Element {
   const [repair, setRepair] = useState<RepairStatus | null>(null)
   const [traceOpen, setTraceOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const accountMenuRef = useRef<HTMLDivElement | null>(null)
 
   const api = useShellApi()
 
@@ -138,6 +140,24 @@ export function App(): React.JSX.Element {
     })
   }, [api])
 
+  useEffect(() => {
+    if (!accountMenuOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setAccountMenuOpen(false)
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !accountMenuRef.current?.contains(event.target)) {
+        setAccountMenuOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [accountMenuOpen])
+
   if (apiMissing) {
     return (
       <main className="shell shell--recovery">
@@ -173,30 +193,54 @@ export function App(): React.JSX.Element {
           />
         </div>
 
-        <p className="sidebar__section">Инструменты</p>
-        <div className="sidebar__nav">
-          {VIEWS.map((item) => (
-            <NavItem key={item.id} view={item} active={item.id === view} onSelect={setView} />
-          ))}
-        </div>
-
-        <div className="account">
-          <span className="account__avatar" aria-hidden="true">
-            {(identity?.name ?? '?').slice(0, 1).toUpperCase()}
-          </span>
-          <span className="account__name" title={identityTitle(identity)}>
-            {identity?.name ?? '…'}
-          </span>
-          <UpdateIndicator status={update} />
+        <div className="account" ref={accountMenuRef}>
           <button
             type="button"
-            className="account__settings"
-            aria-label={SETTINGS_LABEL}
-            aria-expanded={settingsOpen}
-            onClick={() => setSettingsOpen(true)}
+            className="account__user"
+            aria-expanded={accountMenuOpen}
+            aria-haspopup="menu"
+            onClick={() => setAccountMenuOpen((value) => !value)}
           >
-            ⚙
+            <span className="account__avatar" aria-hidden="true">
+              {(identity?.name ?? '?').slice(0, 1).toUpperCase()}
+            </span>
+            <span className="account__copy">
+              <span className="account__name" title={identityTitle(identity)}>
+                {identity?.name ?? '…'}
+              </span>
+              <small>Разделы и настройки</small>
+            </span>
+            <span className="account__chevron" aria-hidden="true">⌃</span>
           </button>
+          <UpdateIndicator status={update} />
+          {accountMenuOpen ? (
+            <div className="account__menu" role="menu" aria-label="Разделы и настройки">
+              {VIEWS.map((item) => (
+                <NavItem
+                  key={item.id}
+                  view={item}
+                  active={item.id === view}
+                  onSelect={(id) => {
+                    setView(id)
+                    setAccountMenuOpen(false)
+                  }}
+                />
+              ))}
+              <button
+                type="button"
+                className="account__menu-item"
+                role="menuitem"
+                aria-current={settingsOpen ? 'page' : undefined}
+                onClick={() => {
+                  setSettingsOpen(true)
+                  setAccountMenuOpen(false)
+                }}
+              >
+                <span aria-hidden="true">⚙</span>
+                {SETTINGS_LABEL}
+              </button>
+            </div>
+          ) : null}
         </div>
       </nav>
 
@@ -352,6 +396,7 @@ function NavItem({ view, active, onSelect }: NavItemProps): React.JSX.Element {
     <button
       type="button"
       className="nav-item"
+      role="menuitem"
       aria-current={active ? 'page' : undefined}
       onClick={() => onSelect(view.id)}
     >

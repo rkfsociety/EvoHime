@@ -2613,3 +2613,322 @@ select:focus {
   font-size: 0.85em;
   opacity: 0.85;
 }
+
+/* ───────────────────── visual concept: dark workspace ─────────────────────
+   This layer is presentation-only. Component geometry and IPC-driven states
+   stay owned by the existing renderer components. */
+
+:root {
+  color-scheme: dark;
+  --bg: #101218;
+  --bg-raised: #191c25;
+  --bg-sunken: #181b23;
+  --bg-hover: #252b39;
+  --bg-active: #252b39;
+  --bg-input: #191c25;
+  --fg: #f2f3f8;
+  --fg-muted: #a4adbf;
+  --fg-faint: #747e93;
+  --border: #343b4d;
+  --border-strong: #4a5267;
+  --accent: #9b8cff;
+  --accent-fg: #fff;
+  --success: #58d6a4;
+  --warning: #e7bd68;
+  --danger: #ef7b86;
+  --sidebar-width: 252px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+body {
+  background: var(--bg);
+}
+
+.shell {
+  background: var(--bg);
+}
+
+.sidebar {
+  background: var(--bg-sunken);
+  border-right-color: var(--border);
+}
+
+.sidebar__brand {
+  padding: 18px 18px 14px;
+}
+
+.sidebar__logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--accent), #7595ff);
+}
+
+.sidebar__title {
+  color: var(--fg);
+  font-size: 15px;
+}
+
+.sidebar__nav,
+.sidebar__section {
+  display: none;
+}
+
+.sidebar__projects {
+  padding: 8px 14px 14px;
+}
+
+.projects {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgb(25 28 37 / 72%);
+  padding: 10px;
+}
+
+.projects__heading {
+  color: var(--fg-muted);
+}
+
+.projects__heading button,
+.projects__pick {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #222735;
+  color: var(--fg-muted);
+}
+
+.projects__heading button:hover,
+.projects__pick:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.projects__name[aria-current='true'],
+.chats__item[aria-current='true'] {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.projects__name:hover,
+.chats__item:hover {
+  background: rgb(37 43 57 / 72%);
+}
+
+.account {
+  position: relative;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.account__user {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+  gap: 9px;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.account__user:hover,
+.account__user[aria-expanded='true'] {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.account__copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.account__copy small {
+  overflow: hidden;
+  color: var(--fg-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account__name {
+  overflow: hidden;
+  color: var(--fg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account__chevron {
+  color: var(--fg-faint);
+  font-size: 16px;
+}
+
+.account__menu {
+  position: absolute;
+  right: 12px;
+  bottom: calc(100% + 9px);
+  left: 12px;
+  z-index: 50;
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-raised);
+  box-shadow: 0 18px 40px rgb(0 0 0 / 36%);
+}
+
+.account__menu .nav-item,
+.account__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fg-muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.account__menu .nav-item:hover,
+.account__menu-item:hover,
+.account__menu .nav-item[aria-current='page'],
+.account__menu-item[aria-current='page'] {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.account__menu-item span {
+  width: 16px;
+  color: var(--fg-faint);
+  text-align: center;
+}
+
+.topbar {
+  min-height: 58px;
+  padding: 0 22px;
+  border-bottom-color: var(--border);
+  background: rgb(16 18 24 / 92%);
+}
+
+.topbar__title {
+  color: var(--fg);
+  font-size: 16px;
+}
+
+.topbar__path,
+.topbar__status {
+  color: var(--fg-muted);
+}
+
+.main {
+  background: var(--bg);
+}
+
+.main__scroll {
+  padding: 24px 32px 36px;
+}
+
+.composer {
+  border-color: #4f5780;
+  background: var(--bg-raised);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 16%);
+}
+
+.composer:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(155 140 255 / 14%);
+}
+
+.composer__send {
+  background: var(--accent);
+  color: #171522;
+}
+
+.composer__send:hover {
+  background: #ad9fff;
+}
+
+.statusbar {
+  min-height: 32px;
+  border-top-color: var(--border);
+  background: var(--bg-sunken);
+  color: var(--fg-faint);
+}
+
+.panel,
+.modal,
+.home__card,
+.timeline__item,
+.routing,
+.repository-bar,
+.context-usage {
+  border-color: var(--border);
+  background: var(--bg-raised);
+}
+
+.button,
+button.button,
+.settings__tab,
+.modal__close {
+  border-color: var(--border);
+  background: #202532;
+  color: var(--fg-muted);
+}
+
+.button:hover,
+button.button:hover,
+.settings__tab:hover,
+.modal__close:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+@media (max-width: 900px) {
+  .main__scroll {
+    padding: 20px;
+  }
+
+  .shell--trace-open {
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+    grid-template-areas: 'sidebar main' 'status status';
+  }
+}
+
+@media (max-width: 680px) {
+  :root {
+    --sidebar-width: 220px;
+  }
+
+  .topbar {
+    padding: 0 14px;
+  }
+
+  .main__scroll {
+    padding: 16px 14px 28px;
+  }
+}
