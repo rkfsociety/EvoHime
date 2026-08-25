@@ -1,6 +1,6 @@
 # EvoHime — реестр зависимостей и решений
 
-Канонический register плана 17.1. Здесь нет секретов, provider credentials или
+Канонический register завершённых решений desktop-цикла 17–19. Здесь нет секретов, provider credentials или
 неподтверждённых обещаний поставки. Статус `accepted` означает решение,
 зафиксированное кодом и текущей архитектурой; `open` означает, что до release
 нужна отдельная проверка или интеграция.
@@ -20,6 +20,7 @@
 | 15 | 10, 12 | vision/document backend; typed `backend_unavailable` | Core adapter owner |
 | 16 | 08–12, existing workflow contracts | 13–15; automation remains Core-only without adapters | Core automation fixtures A01–A08 |
 | 17 | 07–16 current-state/architecture contracts | external backend never becomes blocking | Release owner |
+| 19 | 17, existing updater and authenticated Core startup | optional PR API; fallback is explicit push to configured product branch | Repair/update owner |
 
 Граф линейный для основного runtime: `01–06 → 07 → 08 → 09 → 10 → 11 → 12 →
 16 → 17`. Планы 13–15 реализуют optional adapters, подключаются через
@@ -38,6 +39,8 @@ fail-closed boundaries и не образуют цикл или обязател
 | D-RES-01 | Base package is local-only: no cloud control plane, public HTTP, external telemetry backend or mandatory GPU | Release | `AGENTS.md`, architecture boundaries |
 | D-LIC-01 | License/attribution inventory is a checked-in metadata document, never runtime input or secret storage | Release | `docs/licenses/` when third-party material is shipped |
 | D-SIGN-01 | Authenticode signing is outside the current release scope; manifest/hash is the documented trust root | Release | `docs/architecture.md`, `docs/release-audit.md` |
+| D-REPAIR-01 | Self-repair is user-triggered only; diagnosis, commit, push and restart are separate approvals, and repair never edits the selected workspace | Repair/update | `docs/architecture.md`, `docs/current-state.md`, Electron repair tests |
+| D-UPDATE-01 | Installed package keeps its backup until the relaunched shell authenticates Core and writes bounded health-marker; timeout rolls back | Repair/update | `crates/evohime-updater`, health-marker tests, `docs/release-evidence.md` |
 
 ## Decision closure register
 
@@ -46,6 +49,7 @@ fail-closed boundaries и не образуют цикл или обязател
 | O-AUTO-01 | accepted | Core automation | Scheduler timezone/missed-tick, durable cursor, additive IPC and focused gates are wired | closed by plan 18.1 evidence |
 | O-AUTO-02 | accepted | Core automation | Archive/restore transaction, checksum, bounded restore and retention sweep are covered by focused evidence | closed by plan 18.2 evidence |
 | O-LIC-01 | accepted | Release | Locked Cargo/npm metadata inventory and hash verification pass the CI gate | closed by plan 18.3 evidence |
+| O-REPAIR-01 | accepted | Repair/update | Isolated user-triggered repair, protected paths, separate commit/push/CI gates and health-gated rollback pass focused checks | closed by plan 19.0 evidence |
 
 ## Resource and contract budgets
 

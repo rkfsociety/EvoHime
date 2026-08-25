@@ -16,8 +16,12 @@ startup/fault/installer smoke остаются отдельными Windows CI g
 внеобъёмный для текущего цикла; release не заявляет Authenticode signature и
 использует manifest/hash trust root.
 
+`O-REPAIR-01` закрыт: пользовательский self-repair имеет отдельные кнопки для
+diagnose/patch, commit, push и restart; CI failure не продвигается дальше, а
+установка удерживает backup до health-marker после authenticated Core startup.
+
 ## Подтверждённые границы
 
-Планы 01–18 перенесены в canonical docs и удалены из каталога только после
+Планы 01–19 перенесены в canonical docs и удалены из каталога только после
 focused checks и task-only commits. Optional browser/voice/vision adapters
 деградируют в typed unsupported и не расширяют base runtime.

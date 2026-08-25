@@ -12,9 +12,16 @@
 
 ## Ближайшая работа
 
+Завершено в текущем checkout: пользовательский self-repair/self-update
+контур 19.0. Он не является автоматическим агентом: накопление ошибок только
+показывает кнопку, а diagnose, commit, push и restart подтверждаются отдельно.
+После установки новая версия обязана пройти authenticated Core health-check;
+иначе transaction worker возвращает предыдущую установку.
+
 ### 1. Reliability and approval UX
 
 - улучшение отображения approval и recovery-состояний в desktop UI;
+- отображение подробных CI check-runs и bounded rollback evidence для repair-run;
 
 ### 2. Reliability and security hardening
 
