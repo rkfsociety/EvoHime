@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { CommandOutcome, CoreEvent, EvoHimeApiV1, RendererCommand } from '../src/shared/api'
 import { TaskTimeline } from '../src/renderer/src/TaskTimeline'
@@ -203,6 +203,42 @@ describe('task timeline', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Скопировать сообщение' }))
     await waitFor(() => expect(clipboardText).toBe('Покажи время'))
     expect(screen.getByRole('button', { name: 'Сообщение скопировано' })).toBeTruthy()
+  })
+
+  it('clears the delayed copy-state reset when the message unmounts', async () => {
+    const setTimeoutSpy = vi.spyOn(window, 'setTimeout')
+    const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout')
+    const chat = {
+      id: 'chat-1',
+      workspacePath: 'C:\\work\\repo',
+      title: 'Чат',
+      createdMs: 1,
+      updatedMs: 1,
+      taskIds: ['task-1'],
+      messages: [{ taskId: 'task-1', prompt: 'Покажи время', atMs: 1 }]
+    }
+    respond = (command) => command === 'chat.open' ? ok(chat) : ok([])
+    render(
+      <TaskTimeline
+        events={[]}
+        workspace="C:\\work\\repo"
+        connection="connected"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Скопировать сообщение' }))
+    await waitFor(() => expect(setTimeoutSpy.mock.calls.some(([, delay]) => delay === 1400)).toBe(true))
+    const copyTimeouts = setTimeoutSpy.mock.results.filter((_, index) => setTimeoutSpy.mock.calls[index]?.[1] === 1400)
+    const copyTimeout = copyTimeouts.at(-1)?.value
+
+    cleanup()
+
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(copyTimeout)
   })
 
   it('clears the previous conversation when another chat is selected', async () => {

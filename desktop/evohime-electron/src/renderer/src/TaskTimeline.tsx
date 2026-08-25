@@ -406,6 +406,16 @@ interface MessageActionsProps {
 
 function MessageActions({ id, text, atMs, copied, onCopy }: MessageActionsProps): React.JSX.Element {
   const api = useShellApi()
+  const copyResetTimer = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimer.current === null) return
+      window.clearTimeout(copyResetTimer.current)
+      copyResetTimer.current = null
+    }
+  }, [])
+
   return (
     <div className="message__actions">
       <button
@@ -418,7 +428,11 @@ function MessageActions({ id, text, atMs, copied, onCopy }: MessageActionsProps)
           void api.writeClipboardText(text).then((ok) => {
             if (!ok) return
             onCopy(id)
-            window.setTimeout(() => onCopy(''), 1400)
+            if (copyResetTimer.current !== null) window.clearTimeout(copyResetTimer.current)
+            copyResetTimer.current = window.setTimeout(() => {
+              copyResetTimer.current = null
+              onCopy('')
+            }, 1400)
           })
         }}
       >
