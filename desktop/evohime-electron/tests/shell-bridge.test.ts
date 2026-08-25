@@ -243,10 +243,11 @@ beforeEach(() => {
     workspaces: workspaces as never,
     providers: providers as never,
     codex: {
-      getStatus: async () => ({ installed: false, installing: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }),
-      refresh: async () => ({ installed: false, installing: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }),
-      install: async () => ({ installed: true, installing: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }),
-      selectModel: async () => ({ installed: false, installing: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null })
+      getStatus: async () => ({ installed: false, installing: false, loggingIn: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }),
+      refresh: async () => ({ installed: false, installing: false, loggingIn: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }),
+      install: async () => ({ installed: true, installing: false, loggingIn: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }),
+      login: async () => ({ installed: true, installing: false, loggingIn: true, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: 'Открыто окно Codex CLI.' }),
+      selectModel: async () => ({ installed: false, installing: false, loggingIn: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null })
     } as never,
     repair: {
       status: { phase: 'idle', repairId: null, workspacePath: null, baseCommit: null, branch: null, taskId: null, errorCount: 0, repeatedPatterns: 0, summary: '', diffStat: '', tests: [], commit: null, ciState: 'unknown', error: null, updatedAtMs: 0 },

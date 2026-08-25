@@ -839,6 +839,9 @@ function dispatch(
     case 'codex.install':
       return codex.install().then((value) => ({ ok: true, value }))
 
+    case 'codex.login':
+      return codex.login().then((value) => ({ ok: true, value }))
+
     case 'codex.selectModel': {
       const model = asBoundedString(asRecord(payload)['model'])
       if (model === null) return failure('invalid-payload', 'Некорректная модель Codex.')

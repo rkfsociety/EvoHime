@@ -52,6 +52,19 @@ export function CodexPanel(): React.JSX.Element {
     setBusy(false)
   }, [api])
 
+  const login = useCallback(async () => {
+    if (!api) return
+    setBusy(true)
+    const outcome = await api.invoke('codex.login', {})
+    if (outcome.ok) {
+      setStatus(outcome.value)
+      setMessage(outcome.value.error ?? 'Вход через ChatGPT запущен.')
+    } else {
+      setMessage(outcome.message)
+    }
+    setBusy(false)
+  }, [api])
+
   return (
     <section className="shell__panel provider-form" aria-label="Codex">
       <div className="settings-panel__heading">
@@ -87,6 +100,11 @@ export function CodexPanel(): React.JSX.Element {
           {status && !status.installed ? (
             <button type="button" onClick={() => void install()} disabled={busy}>
               {status.installing ? 'Установка Codex CLI…' : 'Установить Codex CLI'}
+            </button>
+          ) : null}
+          {status?.installed ? (
+            <button type="button" onClick={() => void login()} disabled={busy || status.loggingIn}>
+              {status.loggingIn ? 'Заверши вход в окне Codex CLI…' : 'Войти через ChatGPT'}
             </button>
           ) : null}
         </>

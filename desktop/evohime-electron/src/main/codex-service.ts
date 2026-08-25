@@ -20,6 +20,8 @@ const CLIENT_VERSION = '0.1.0'
 const MAX_LINE_CHARS = 512 * 1024
 const MAX_MODELS = 100
 
+export type CodexLoginLauncher = (executable: string) => void
+
 export class CodexService {
   private process: ChildProcessWithoutNullStreams | null = null
   private output = ''
@@ -29,15 +31,18 @@ export class CodexService {
   private status: CodexStatus = emptyStatus()
   private selectedModel: string
   private readonly run: CommandRunner
+  private readonly launchLogin: CodexLoginLauncher
 
   constructor(
     private readonly filePath: string,
     private readonly log: ShellLog,
     private readonly onModelSelected?: (model: string) => Promise<void> | void,
     run?: CommandRunner,
+    launchLogin?: CodexLoginLauncher,
   ) {
     this.selectedModel = readSelectedModel(filePath)
     this.run = run ?? runCommand
+    this.launchLogin = launchLogin ?? launchCodexLogin
   }
 
   static defaultPath(dataDirectory: string): string {
@@ -66,6 +71,7 @@ export class CodexService {
       this.status = {
         installed: true,
         installing: false,
+        loggingIn: false,
         available: true,
         loggedIn: true,
         selectedModel,
@@ -81,6 +87,7 @@ export class CodexService {
         ...this.status,
         installed: isKnownCodexInstallation(),
         installing: false,
+        loggingIn: false,
         available: false,
         loggedIn: false,
         lastUpdatedMs: Date.now(),
@@ -117,6 +124,25 @@ export class CodexService {
     this.dispose()
     this.status = emptyStatus()
     return this.refresh()
+  }
+
+  async login(): Promise<CodexStatus> {
+    if (!isKnownCodexInstallation()) {
+      return this.refresh()
+    }
+    try {
+      this.launchLogin(resolveCodexExecutable())
+      this.status = {
+        ...this.status,
+        loggingIn: true,
+        lastUpdatedMs: Date.now(),
+        error: 'Открыто окно Codex CLI. Заверши вход через ChatGPT и нажми «Обновить».'
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось открыть вход Codex.'
+      this.status = { ...this.status, loggingIn: false, lastUpdatedMs: Date.now(), error: message }
+    }
+    return this.status
   }
 
   async selectModel(model: string): Promise<CodexStatus> {
@@ -244,7 +270,18 @@ function isKnownCodexInstallation(): boolean {
 }
 
 function emptyStatus(): CodexStatus {
-  return { installed: isKnownCodexInstallation(), installing: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }
+  return { installed: isKnownCodexInstallation(), installing: false, loggingIn: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }
+}
+
+function launchCodexLogin(executable: string): void {
+  // `start` creates a visible interactive terminal; no token or user input is
+  // read by EvoHime. The executable path comes only from fixed install paths.
+  const child = spawn('cmd.exe', ['/d', '/c', 'start', '"EvoHime Codex login"', executable, 'login'], {
+    windowsHide: false,
+    stdio: 'ignore',
+    detached: true
+  })
+  child.unref()
 }
 
 function isRecord(value: unknown): value is JsonRecord {

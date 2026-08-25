@@ -191,6 +191,7 @@ export interface CodexRateLimit {
 export interface CodexStatus {
   readonly installed: boolean
   readonly installing: boolean
+  readonly loggingIn: boolean
   readonly available: boolean
   readonly loggedIn: boolean
   readonly selectedModel: string
@@ -710,6 +711,7 @@ export const RENDERER_COMMANDS = [
   'codex.getStatus',
   'codex.refresh',
   'codex.install',
+  'codex.login',
   'codex.selectModel',
   'repair.getStatus',
   'repair.start',
@@ -916,6 +918,7 @@ export interface CommandPayloads {
   'codex.getStatus': Record<string, never>
   'codex.refresh': Record<string, never>
   'codex.install': Record<string, never>
+  'codex.login': Record<string, never>
   'codex.selectModel': { model: string }
   'repair.getStatus': Record<string, never>
   'repair.start': { workspacePath: string }
@@ -1104,6 +1107,7 @@ export interface CommandResults {
   'codex.getStatus': CodexStatus
   'codex.refresh': CodexStatus
   'codex.install': CodexStatus
+  'codex.login': CodexStatus
   'codex.selectModel': CodexStatus
   'repair.getStatus': RepairStatus
   'repair.start': RepairStatus
