@@ -56,6 +56,7 @@ const DEFAULT_ALLOWLIST: &[&str] = &[
     "rustup_home",
     "cargo",
     "rustc",
+    "codex_model",
 ];
 
 const SECRET_EXACT: &[&str] = &[

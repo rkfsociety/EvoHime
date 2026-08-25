@@ -111,6 +111,44 @@ export interface ProviderSummary {
   readonly configured: boolean
 }
 
+/** Модель, опубликованная локальным Codex app-server. */
+export interface CodexModel {
+  readonly id: string
+  readonly model: string
+  readonly displayName: string
+  readonly description: string
+  readonly defaultReasoningEffort: string
+  readonly supportedReasoningEfforts: readonly string[]
+  readonly isDefault: boolean
+}
+
+export interface CodexRateLimitWindow {
+  readonly usedPercent: number
+  readonly remainingPercent: number
+  readonly resetsAt: number | null
+  readonly windowDurationMins: number | null
+}
+
+export interface CodexRateLimit {
+  readonly limitId: string
+  readonly planType: string | null
+  readonly primary: CodexRateLimitWindow | null
+  readonly secondary: CodexRateLimitWindow | null
+  readonly individualRemainingPercent: number | null
+  readonly individualResetsAt: number | null
+  readonly reached: boolean
+}
+
+export interface CodexStatus {
+  readonly available: boolean
+  readonly loggedIn: boolean
+  readonly selectedModel: string
+  readonly models: readonly CodexModel[]
+  readonly rateLimits: readonly CodexRateLimit[]
+  readonly lastUpdatedMs: number | null
+  readonly error: string | null
+}
+
 /** Where the shell learned the user's name. */
 export type IdentitySource = 'github' | 'git' | 'os'
 
@@ -618,6 +656,9 @@ export const RENDERER_COMMANDS = [
   'provider.get',
   'provider.save',
   'provider.clearKey',
+  'codex.getStatus',
+  'codex.refresh',
+  'codex.selectModel',
   'core.createProject',
   'core.prepareBuild',
   'core.applyApprovedBuild',
@@ -814,6 +855,9 @@ export interface CommandPayloads {
   'provider.get': Record<string, never>
   'provider.save': { provider: ProviderKind; apiKey: string; model: string; baseUrl: string; tier: ModelTier }
   'provider.clearKey': Record<string, never>
+  'codex.getStatus': Record<string, never>
+  'codex.refresh': Record<string, never>
+  'codex.selectModel': { model: string }
   'core.createProject': { projectId: string; title: string; workspacePath: string; sourceRef?: string }
   'core.prepareBuild': { projectId: string; proposalJson: string }
   'core.applyApprovedBuild': { projectId: string; runId: string; taskId: string; approvedBuildJson: string }
@@ -992,6 +1036,9 @@ export interface CommandResults {
   /** `restarted` is false when Core could not be relaunched with the new key. */
   'provider.save': { summary: ProviderSummary; restarted: boolean }
   'provider.clearKey': { summary: ProviderSummary; restarted: boolean }
+  'codex.getStatus': CodexStatus
+  'codex.refresh': CodexStatus
+  'codex.selectModel': CodexStatus
   'core.createProject': { accepted: boolean }
   'core.prepareBuild': { accepted: boolean }
   'core.applyApprovedBuild': { accepted: boolean }

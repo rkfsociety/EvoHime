@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { ListenerRuntimeSection } from './ListenerRuntimeSection'
 import { ProviderForm } from './ProviderForm'
+import { CodexPanel } from './CodexPanel'
 import { SafetyPanel } from './SafetyPanel'
 
 import type { ConnectionState, CoreEvent } from '@shared/api'
@@ -66,7 +67,7 @@ export function SettingsModal({ workspace, connection, events, onClose }: Settin
           </nav>
 
           <div className="settings-modal__content">
-            {tab === 'provider' ? <ProviderForm /> : null}
+            {tab === 'provider' ? <><ProviderForm /><CodexPanel /></> : null}
             {tab === 'workspace' ? <WorkspaceSettings workspace={workspace} /> : null}
             {tab === 'speech' ? <ListenerRuntimeSection /> : null}
             {tab === 'appearance' ? <InfoSettings title="Внешний вид" text="Тёмная тема и компактная плотность интерфейса используются как основной режим EvoHime." /> : null}

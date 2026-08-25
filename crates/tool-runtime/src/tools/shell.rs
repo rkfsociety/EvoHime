@@ -205,7 +205,11 @@ pub fn resolve_invocation(value: &Value) -> Option<(String, Vec<String>, Option<
 
 fn resolve_invocation_from_input(input: &Input) -> Option<(String, Vec<String>, Option<String>)> {
     if let Some(program) = input.program.clone() {
-        return Some((program, input.args.clone(), input.cwd.clone()));
+        return Some((
+            program.clone(),
+            inject_codex_model(&program, input.args.clone()),
+            input.cwd.clone(),
+        ));
     }
     let command = input.command.as_deref()?;
     let (cwd, command) = if let Some((prefix, rest)) = command.split_once("&&") {
@@ -220,7 +224,26 @@ fn resolve_invocation_from_input(input: &Input) -> Option<(String, Vec<String>, 
     };
     let mut parts = command.split_whitespace();
     let program = parts.next()?.to_string();
-    Some((program, parts.map(ToString::to_string).collect(), cwd))
+    let args = parts.map(ToString::to_string).collect::<Vec<_>>();
+    Some((program.clone(), inject_codex_model(&program, args), cwd))
+}
+
+fn inject_codex_model(program: &str, mut args: Vec<String>) -> Vec<String> {
+    if !program.eq_ignore_ascii_case("codex") || args.first().map(String::as_str) != Some("exec") {
+        return args;
+    }
+    if args.iter().any(|arg| arg == "--model" || arg == "-m") {
+        return args;
+    }
+    let model = std::env::var("CODEX_MODEL").ok().filter(|value| {
+        !value.is_empty()
+            && value.len() <= 128
+            && !value.chars().any(|ch| ch.is_whitespace() || ch == '\0')
+    });
+    if let Some(model) = model {
+        args.splice(1..1, ["--model".to_string(), model]);
+    }
+    args
 }
 
 async fn pump_stream<R>(

@@ -45,6 +45,7 @@ interface StoredDocument {
   readonly baseUrl: string
   readonly tier: ModelTier
   readonly secret: string
+  readonly codexModel: string
 }
 
 const EMPTY: StoredDocument = {
@@ -52,7 +53,8 @@ const EMPTY: StoredDocument = {
   model: '',
   baseUrl: '',
   tier: 'free',
-  secret: ''
+  secret: '',
+  codexModel: ''
 }
 
 export function isProviderKind(value: unknown): value is ProviderKind {
@@ -151,7 +153,8 @@ export class ProviderStore {
       model: update.model,
       baseUrl: update.baseUrl,
       tier: update.tier,
-      secret
+      secret,
+      codexModel: current.codexModel
     }
     this.write(next)
     return {
@@ -176,6 +179,15 @@ export class ProviderStore {
     }
   }
 
+  codexModel(): string {
+    return this.readDocument().codexModel
+  }
+
+  saveCodexModel(model: string): void {
+    const current = this.readDocument()
+    this.write({ ...current, codexModel: model })
+  }
+
   /**
    * Environment block for the Core process. Only the variables of the selected
    * provider are set, so a stale key of the other one never reaches the model
@@ -185,6 +197,7 @@ export class ProviderStore {
     const document = this.readDocument()
     const key = this.decryptSecret(document.secret)
     const environment: Record<string, string> = { MODEL_PROVIDER: document.provider }
+    if (document.codexModel) environment['CODEX_MODEL'] = document.codexModel
     if (document.provider === 'openai_compatible' || document.provider === 'openai_responses') {
       if (key) environment['OPENAI_API_KEY'] = key
       if (document.baseUrl) environment['OPENAI_BASE_URL'] = document.baseUrl
@@ -232,7 +245,8 @@ export class ProviderStore {
     const baseUrl = normalizeBaseUrl(record['baseUrl']) ?? ''
     const secret = typeof record['secret'] === 'string' ? record['secret'] : ''
     const tier: ModelTier = record['tier'] === 'paid' ? 'paid' : 'free'
-    return { provider, model, baseUrl, tier, secret }
+    const codexModel = normalizeModel(record['codexModel']) ?? ''
+    return { provider, model, baseUrl, tier, secret, codexModel }
   }
 
   private write(document: StoredDocument): void {

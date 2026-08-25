@@ -232,6 +232,11 @@ beforeEach(() => {
     client: client as never,
     workspaces: workspaces as never,
     providers: providers as never,
+    codex: {
+      getStatus: async () => ({ available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }),
+      refresh: async () => ({ available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }),
+      selectModel: async () => ({ available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null })
+    } as never,
     chats: chats as never,
     restartCore: async () => {
       restarts.push(true)

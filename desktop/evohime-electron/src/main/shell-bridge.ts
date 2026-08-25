@@ -21,6 +21,7 @@ import {
 } from '@shared/channels'
 
 import type { ShellLog } from './diagnostics/logger'
+import type { CodexService } from './codex-service'
 import type { CorePipeClient } from './ipc/pipe-client'
 import type { ChatStore } from './chat-store'
 import { resolveIdentity, resolveRepository } from './identity'
@@ -57,6 +58,7 @@ export interface ShellBridgeOptions {
   readonly client: CorePipeClient
   readonly workspaces: WorkspaceService
   readonly providers: ProviderStore
+  readonly codex: CodexService
   readonly chats: ChatStore
   /**
    * Relaunches Core so it picks up the stored credentials: the model gateway
@@ -118,7 +120,7 @@ function dispatch(
   command: RendererCommand,
   payload: unknown
 ): unknown {
-  const { client, workspaces, providers, chats, restartCore, updates, listenerRuntime, ambientHotkey, log } =
+  const { client, workspaces, providers, codex, chats, restartCore, updates, listenerRuntime, ambientHotkey, log } =
     options
   switch (command) {
     case 'shell.getState':
@@ -823,6 +825,20 @@ function dispatch(
       const summary = providers.clearKey()
       log('info', 'shell.provider_key_cleared', {})
       return restartCore().then((restarted) => ({ ok: true, value: { summary, restarted } }))
+    }
+
+    case 'codex.getStatus':
+      return codex.getStatus().then((value) => ({ ok: true, value }))
+
+    case 'codex.refresh':
+      return codex.refresh().then((value) => ({ ok: true, value }))
+
+    case 'codex.selectModel': {
+      const model = asBoundedString(asRecord(payload)['model'])
+      if (model === null) return failure('invalid-payload', 'Некорректная модель Codex.')
+      return codex.selectModel(model)
+        .then((value) => ({ ok: true, value }))
+        .catch(() => failure('invalid-payload', 'Эта модель Codex недоступна.'))
     }
 
     case 'core.createProject': {

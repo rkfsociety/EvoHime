@@ -6,6 +6,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import type { AmbientHotkeyStatus, ListeningState, ShellState } from '@shared/api'
 
 import { ChatStore } from './chat-store'
+import { CodexService } from './codex-service'
 import { JsonlLogger } from './diagnostics/logger'
 import { hasLiveSupervisor, readLaunchContext } from './ipc/launch-context'
 import { CorePipeClient } from './ipc/pipe-client'
@@ -49,6 +50,7 @@ let supervisorLivenessTimer: NodeJS.Timeout | null = null
 let recoveryMode = false
 let updates: UpdateService | null = null
 let listenerRuntime: ListenerRuntimeService | null = null
+let codex: CodexService | null = null
 
 // safeStorage is only usable after the app is ready, so the store is created
 // lazily inside whenReady rather than at module scope.
@@ -89,6 +91,10 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
       encrypt: (value) => safeStorage.encryptString(value),
       decrypt: (value) => safeStorage.decryptString(value)
     })
+    codex = new CodexService(CodexService.defaultPath(dataDirectory()), log, async (model) => {
+      providers?.saveCodexModel(model)
+      await restartCore()
+    })
 
     // The client is created before the supervisor exists: it re-reads the launch
     // context on every connection attempt, so nothing is lost by connecting
@@ -128,6 +134,7 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
         chooseDirectory: windowChooser(mainWindow)
       }),
       providers,
+      codex: codex!,
       chats: new ChatStore(ChatStore.defaultPath(dataDirectory())),
       restartCore,
       updates,
@@ -188,6 +195,7 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
 
   app.on('before-quit', () => {
     client?.stop()
+    codex?.dispose()
     updates?.stop()
     if (ambientStatusTimer) {
       clearTimeout(ambientStatusTimer)
