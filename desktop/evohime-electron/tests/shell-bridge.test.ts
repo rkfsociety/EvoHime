@@ -237,6 +237,14 @@ beforeEach(() => {
       refresh: async () => ({ available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }),
       selectModel: async () => ({ available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null })
     } as never,
+    repair: {
+      status: { phase: 'idle', repairId: null, workspacePath: null, baseCommit: null, branch: null, taskId: null, errorCount: 0, repeatedPatterns: 0, summary: '', diffStat: '', tests: [], commit: null, ciState: 'unknown', error: null, updatedAtMs: 0 },
+      start: async () => ({ phase: 'idle', repairId: null, workspacePath: null, baseCommit: null, branch: null, taskId: null, errorCount: 0, repeatedPatterns: 0, summary: '', diffStat: '', tests: [], commit: null, ciState: 'unknown', error: null, updatedAtMs: 0 }),
+      cancel: () => ({ phase: 'cancelled', repairId: null, workspacePath: null, baseCommit: null, branch: null, taskId: null, errorCount: 0, repeatedPatterns: 0, summary: '', diffStat: '', tests: [], commit: null, ciState: 'unknown', error: null, updatedAtMs: 0 }),
+      commit: () => ({ phase: 'idle', repairId: null, workspacePath: null, baseCommit: null, branch: null, taskId: null, errorCount: 0, repeatedPatterns: 0, summary: '', diffStat: '', tests: [], commit: null, ciState: 'unknown', error: null, updatedAtMs: 0 }),
+      push: () => ({ phase: 'idle', repairId: null, workspacePath: null, baseCommit: null, branch: null, taskId: null, errorCount: 0, repeatedPatterns: 0, summary: '', diffStat: '', tests: [], commit: null, ciState: 'unknown', error: null, updatedAtMs: 0 }),
+      refreshCi: async () => ({ phase: 'idle', repairId: null, workspacePath: null, baseCommit: null, branch: null, taskId: null, errorCount: 0, repeatedPatterns: 0, summary: '', diffStat: '', tests: [], commit: null, ciState: 'unknown', error: null, updatedAtMs: 0 })
+    } as never,
     chats: chats as never,
     restartCore: async () => {
       restarts.push(true)

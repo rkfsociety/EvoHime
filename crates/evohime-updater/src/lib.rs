@@ -67,12 +67,14 @@ pub fn run_update(
     install_dir: &Path,
     state_dir: &Path,
     relaunch: Option<&Path>,
+    health_file: Option<&Path>,
 ) -> io::Result<()> {
     validate_absolute(installer, "installer path")?;
     let _ = UpdateTransaction::recover(state_dir)?;
     // Inno Setup can replace the Electron payload as well as the four native
     // components. Back up the whole tree so a failure after app.asar or a
     // resource write restores a runnable installation, not just its binaries.
+    clear_health_file(health_file)?;
     let transaction = UpdateTransaction::prepare_tree(install_dir, state_dir)?;
     if !installer.is_file() {
         return rollback_after_failure(
@@ -96,10 +98,15 @@ pub fn run_update(
     match status {
         Ok(status) if status.success() => match verify_installation(install_dir) {
             Ok(()) => {
-                transaction.commit()?;
                 if let Some(executable) = relaunch {
-                    Command::new(executable).current_dir(install_dir).spawn()?;
+                    if let Err(error) = Command::new(executable).current_dir(install_dir).spawn() {
+                        return rollback_after_failure(transaction, error);
+                    }
                 }
+                if let Err(error) = wait_for_health(health_file) {
+                    return rollback_after_failure(transaction, error);
+                }
+                transaction.commit()?;
                 Ok(())
             }
             Err(error) => rollback_after_failure(transaction, error),
@@ -121,6 +128,8 @@ pub struct StagedApply<'a> {
     pub wait_pid: Option<u32>,
     /// Executable started once the new package is in place.
     pub relaunch: Option<&'a Path>,
+    /// Marker written by the relaunched shell after it has authenticated with Core.
+    pub health_file: Option<&'a Path>,
 }
 
 /// Replaces the installation with a locally rebuilt package.
@@ -143,18 +152,25 @@ pub fn apply_staged(options: StagedApply<'_>) -> io::Result<()> {
     wait_until_writable(options.install_dir, WAIT_FOR_UNLOCK)?;
 
     let _ = UpdateTransaction::recover(options.state_dir)?;
+    clear_health_file(options.health_file)?;
     let transaction = UpdateTransaction::prepare_tree(options.install_dir, options.state_dir)?;
 
     let outcome = copy_tree(options.staging, options.install_dir)
         .and_then(|()| verify_installation(options.install_dir));
     match outcome {
         Ok(()) => {
-            transaction.commit()?;
             if let Some(executable) = options.relaunch {
-                Command::new(executable)
+                if let Err(error) = Command::new(executable)
                     .current_dir(options.install_dir)
-                    .spawn()?;
+                    .spawn()
+                {
+                    return rollback_after_failure(transaction, error);
+                }
             }
+            if let Err(error) = wait_for_health(options.health_file) {
+                return rollback_after_failure(transaction, error);
+            }
+            transaction.commit()?;
             Ok(())
         }
         Err(error) => rollback_after_failure(transaction, error),
@@ -164,6 +180,40 @@ pub fn apply_staged(options: StagedApply<'_>) -> io::Result<()> {
 const WAIT_FOR_SHELL: Duration = Duration::from_secs(60);
 const WAIT_FOR_UNLOCK: Duration = Duration::from_secs(120);
 const RETRY_INTERVAL: Duration = Duration::from_millis(250);
+const WAIT_FOR_HEALTH: Duration = Duration::from_secs(90);
+
+fn clear_health_file(path: Option<&Path>) -> io::Result<()> {
+    if let Some(path) = path {
+        if path.exists() {
+            fs::remove_file(path)?;
+        }
+    }
+    Ok(())
+}
+
+fn wait_for_health(path: Option<&Path>) -> io::Result<()> {
+    let Some(path) = path else { return Ok(()) };
+    wait_for_health_with_limit(path, WAIT_FOR_HEALTH)
+}
+
+fn wait_for_health_with_limit(path: &Path, limit: Duration) -> io::Result<()> {
+    let deadline = std::time::Instant::now() + limit;
+    loop {
+        if path.is_file() {
+            let content = fs::read_to_string(path).unwrap_or_default();
+            if content.contains("\"healthy\":true") {
+                return Ok(());
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("new installation did not report health: {}", path.display()),
+            ));
+        }
+        std::thread::sleep(RETRY_INTERVAL);
+    }
+}
 
 /// Blocks until every installed component can be opened for writing.
 ///
@@ -491,7 +541,7 @@ fn timestamp_nanos() -> u128 {
 
 #[cfg(test)]
 mod tests {
-    use super::{verify_installation, UpdateTransaction};
+    use super::{verify_installation, wait_for_health_with_limit, UpdateTransaction};
     use std::fs;
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -509,6 +559,19 @@ mod tests {
         for component in UpdateTransaction::COMPONENTS {
             fs::write(dir.join(component), format!("{prefix}:{component}")).unwrap();
         }
+    }
+
+    #[test]
+    fn health_marker_accepts_only_explicit_healthy_value() {
+        let root = temp_dir("health");
+        fs::create_dir_all(&root).unwrap();
+        let marker = root.join("health.json");
+        fs::write(&marker, r#"{"healthy":true,"pid":42}"#).unwrap();
+        wait_for_health_with_limit(&marker, std::time::Duration::from_millis(1)).unwrap();
+        fs::write(&marker, r#"{"healthy":false}"#).unwrap();
+        let error = wait_for_health_with_limit(&marker, std::time::Duration::ZERO).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -589,6 +652,7 @@ mod tests {
             state_dir: &state,
             wait_pid: None,
             relaunch: None,
+            health_file: None,
         })
         .unwrap();
 
@@ -624,6 +688,7 @@ mod tests {
             state_dir: &state,
             wait_pid: None,
             relaunch: None,
+            health_file: None,
         })
         .unwrap_err();
 

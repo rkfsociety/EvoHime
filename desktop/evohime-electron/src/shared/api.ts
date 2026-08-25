@@ -89,6 +89,47 @@ export type ShellEvent =
   | { readonly kind: 'core-event'; readonly event: CoreEvent }
   | { readonly kind: 'update'; readonly status: UpdateStatus }
   | { readonly kind: 'listener-runtime'; readonly status: ListenerRuntimeStatus }
+  | { readonly kind: 'repair'; readonly status: RepairStatus }
+
+export type RepairPhase =
+  | 'idle'
+  | 'available'
+  | 'preparing'
+  | 'diagnosing'
+  | 'ready_to_commit'
+  | 'committing'
+  | 'ready_to_push'
+  | 'pushing'
+  | 'waiting_ci'
+  | 'ready_to_update'
+  | 'failed'
+  | 'cancelled'
+
+export type RepairCheckState = 'unknown' | 'pending' | 'success' | 'failure'
+
+export interface RepairTestResult {
+  readonly name: string
+  readonly state: 'pending' | 'passed' | 'failed' | 'skipped'
+  readonly detail: string
+}
+
+export interface RepairStatus {
+  readonly phase: RepairPhase
+  readonly repairId: string | null
+  readonly workspacePath: string | null
+  readonly baseCommit: string | null
+  readonly branch: string | null
+  readonly taskId: string | null
+  readonly errorCount: number
+  readonly repeatedPatterns: number
+  readonly summary: string
+  readonly diffStat: string
+  readonly tests: readonly RepairTestResult[]
+  readonly commit: string | null
+  readonly ciState: RepairCheckState
+  readonly error: string | null
+  readonly updatedAtMs: number
+}
 
 /** Model providers the shell can configure. */
 export const PROVIDER_KINDS = ['literouter', 'openai_compatible', 'openai_responses'] as const
@@ -659,6 +700,12 @@ export const RENDERER_COMMANDS = [
   'codex.getStatus',
   'codex.refresh',
   'codex.selectModel',
+  'repair.getStatus',
+  'repair.start',
+  'repair.cancel',
+  'repair.commit',
+  'repair.push',
+  'repair.refreshCI',
   'core.createProject',
   'core.prepareBuild',
   'core.applyApprovedBuild',
@@ -858,6 +905,12 @@ export interface CommandPayloads {
   'codex.getStatus': Record<string, never>
   'codex.refresh': Record<string, never>
   'codex.selectModel': { model: string }
+  'repair.getStatus': Record<string, never>
+  'repair.start': { workspacePath: string }
+  'repair.cancel': Record<string, never>
+  'repair.commit': Record<string, never>
+  'repair.push': Record<string, never>
+  'repair.refreshCI': Record<string, never>
   'core.createProject': { projectId: string; title: string; workspacePath: string; sourceRef?: string }
   'core.prepareBuild': { projectId: string; proposalJson: string }
   'core.applyApprovedBuild': { projectId: string; runId: string; taskId: string; approvedBuildJson: string }
@@ -1039,6 +1092,12 @@ export interface CommandResults {
   'codex.getStatus': CodexStatus
   'codex.refresh': CodexStatus
   'codex.selectModel': CodexStatus
+  'repair.getStatus': RepairStatus
+  'repair.start': RepairStatus
+  'repair.cancel': RepairStatus
+  'repair.commit': RepairStatus
+  'repair.push': RepairStatus
+  'repair.refreshCI': RepairStatus
   'core.createProject': { accepted: boolean }
   'core.prepareBuild': { accepted: boolean }
   'core.applyApprovedBuild': { accepted: boolean }

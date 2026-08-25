@@ -2,9 +2,8 @@
 
 ## Статус
 
-Черновой обзорный план. Реализацию запускать только после отдельного ревью
-этого контракта. План не включает автоматический запуск по таймеру, по факту
-ошибки или при старте установленной Евы.
+Реализовано в текущей ветке. План не включает автоматический запуск по таймеру,
+по факту ошибки или при старте установленной Евы.
 
 ## Цель
 
@@ -263,3 +262,15 @@ authenticated Core startup tests.
 - Неуспешный install возвращает предыдущую рабочую версию.
 - Есть focused Rust/Electron tests, real-Core E2E, source-update E2E,
   package/rollback smoke и `git diff --check`.
+
+## Реализация
+
+- 19.1–19.3: `RepairService`, shared IPC, `OperationsPanel`, bounded error
+  digest, isolated checkout, Core diagnosis/patch, protected-path gate,
+  separate commit/push commands and GitHub check-runs polling.
+- 19.4: `evohime-transaction` accepts `--health-file`; the new shell writes
+  the marker only after authenticated Core connection, and the worker rolls
+  back on timeout. Existing paths remain compatible when the optional marker
+  is omitted.
+- Проверки: Electron typecheck, targeted Electron suite (98 tests), updater
+  Rust suite (11 tests), включая health-marker и rollback primitives.

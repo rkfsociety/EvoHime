@@ -5,6 +5,7 @@ import type {
   CoreEvent,
   ListeningReason,
   ListeningState,
+  RepairStatus,
   ShellState,
   UserIdentity
 } from '@shared/api'
@@ -81,6 +82,7 @@ export function App(): React.JSX.Element {
   const [chatRevision, setChatRevision] = useState(0)
   const [identity, setIdentity] = useState<UserIdentity | null>(null)
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
+  const [repair, setRepair] = useState<RepairStatus | null>(null)
   const [traceOpen, setTraceOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
@@ -101,6 +103,10 @@ export function App(): React.JSX.Element {
         setUpdate(event.status)
         return
       }
+      if (event.kind === 'repair') {
+        setRepair(event.status)
+        return
+      }
       // Состояние речевого рантайма слушает только его собственный экран:
       // в общую ленту событий оно не попадает.
       if (event.kind !== 'core-event') {
@@ -117,6 +123,9 @@ export function App(): React.JSX.Element {
 
     void api.invoke('update.getStatus', {}).then((outcome) => {
       if (outcome.ok) setUpdate(outcome.value)
+    })
+    void api.invoke('repair.getStatus', {}).then((outcome) => {
+      if (outcome.ok) setRepair(outcome.value)
     })
 
     return unsubscribe
@@ -228,7 +237,7 @@ export function App(): React.JSX.Element {
             <div className="main__scroll">
               {view === 'overview' ? <OverviewPanel connection={connection} events={events} workspace={workspace} /> : null}
               {view === 'reviews' ? <PlanReviewPanel connection={connection} events={events} /> : null}
-              {view === 'operations' ? <OperationsPanel connection={connection} events={events} /> : null}
+              {view === 'operations' ? <OperationsPanel connection={connection} events={events} repair={repair} /> : null}
               {view === 'workflows' ? (
                 <WorkflowPanel connection={connection} events={events} workspace={workspace} />
               ) : null}

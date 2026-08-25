@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, unlinkSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 
@@ -580,6 +580,7 @@ export class UpdateService {
     const marker = this.stagedMarker()
     const installerMarker = this.stagedInstallerMarker()
     const worker = join(config.installDirectory, TRANSACTION_EXECUTABLE)
+    const healthFile = join(config.stateDirectory, 'health.json')
     if ((!marker && !installerMarker) || !exists(worker)) {
       this.deps.log('warn', 'update.apply_unavailable', { staged: marker !== null, installer: installerMarker !== null })
       return false
@@ -591,17 +592,25 @@ export class UpdateService {
       restartRequired: false
     })
     this.step('apply', 'active')
+    try {
+      if (existsSync(healthFile)) unlinkSync(healthFile)
+    } catch (error) {
+      this.fail('Не удалось подготовить health-check обновления', error)
+      return false
+    }
     const args = installerMarker
       ? [
           '--installer', join(config.stagingDirectory, 'EvoHime-Setup.exe'),
           '--install-dir', config.installDirectory,
           '--state-dir', config.stateDirectory,
-          '--relaunch', join(config.installDirectory, SHELL_EXECUTABLE)
+          '--relaunch', join(config.installDirectory, SHELL_EXECUTABLE),
+          '--health-file', healthFile
         ]
       : [
           '--apply-staging', '--staging', config.stagingDirectory,
           '--install-dir', config.installDirectory, '--state-dir', config.stateDirectory,
-          '--wait-pid', String(process.pid), '--relaunch', join(config.installDirectory, SHELL_EXECUTABLE)
+          '--wait-pid', String(process.pid), '--relaunch', join(config.installDirectory, SHELL_EXECUTABLE),
+          '--health-file', healthFile
         ]
     try {
       ;(this.deps.spawnWorker ?? defaultSpawnWorker)(worker, args)

@@ -1,5 +1,5 @@
 import { app, BrowserWindow, globalShortcut, net, Notification, safeStorage } from 'electron'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
 
@@ -12,6 +12,7 @@ import { hasLiveSupervisor, readLaunchContext } from './ipc/launch-context'
 import { CorePipeClient } from './ipc/pipe-client'
 import { dataDirectory, logDirectory } from './paths'
 import { ProviderStore } from './provider-store'
+import { RepairService } from './repair-service'
 import { ReloadLimiter } from './recovery'
 import { hardenProcess, hardenSession, isProduction, type HardeningOptions } from './security'
 import { broadcast, registerShellBridge } from './shell-bridge'
@@ -51,6 +52,7 @@ let recoveryMode = false
 let updates: UpdateService | null = null
 let listenerRuntime: ListenerRuntimeService | null = null
 let codex: CodexService | null = null
+let repair: RepairService | null = null
 
 // safeStorage is only usable after the app is ready, so the store is created
 // lazily inside whenReady rather than at module scope.
@@ -105,8 +107,30 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
       log
     })
 
-    client.on('state', (state: ShellState) => broadcast({ kind: 'state', state }))
+    const updateConfig = loadUpdateConfig({
+      dataDirectory: dataDirectory(),
+      executablePath: app.getPath('exe')
+    })
+    const updateHealthFile = join(updateConfig.stateDirectory, 'health.json')
+    repair = new RepairService({
+      filePath: join(dataDirectory(), 'shell', 'repair.json'),
+      repairRoot: join(dataDirectory(), 'repair'),
+      config: updateConfig,
+      startTask: (taskId, workspacePath, prompt) => client?.send({
+        startTask: { taskId, prompt, workspacePath, preferredRouteHint: '' }
+      }) === 'queued',
+      stopTask: (taskId) => client?.send({ stopTask: { taskId } }) === 'queued',
+      emit: (status) => broadcast({ kind: 'repair', status }),
+      log,
+      fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init)
+    })
+
+    client.on('state', (state: ShellState) => {
+      broadcast({ kind: 'state', state })
+      if (state.connection === 'connected') writeUpdateHealth(updateHealthFile)
+    })
     client.on('core-event', (event) => {
+      repair?.observe(event)
       broadcast({ kind: 'core-event', event })
       observeAmbientEvent(event.eventType, event.payload)
       notifyWhenHidden(event.eventType)
@@ -135,6 +159,7 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
       }),
       providers,
       codex: codex!,
+      repair: repair!,
       chats: new ChatStore(ChatStore.defaultPath(dataDirectory())),
       restartCore,
       updates,
@@ -493,6 +518,22 @@ function processIsAlive(pid: number): boolean {
     return true
   } catch {
     return false
+  }
+}
+
+/**
+ * The transaction worker keeps the previous installation until this marker
+ * appears. It is written only after the new shell has authenticated with Core.
+ */
+function writeUpdateHealth(path: string): void {
+  if (!app.isPackaged) return
+  try {
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, JSON.stringify({ healthy: true, pid: process.pid, writtenAtMs: Date.now() }), {
+      encoding: 'utf8', mode: 0o600
+    })
+  } catch (error) {
+    log('warn', 'shell.update_health_write_failed', { error })
   }
 }
 

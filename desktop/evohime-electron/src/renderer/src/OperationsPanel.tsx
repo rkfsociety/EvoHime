@@ -1,12 +1,49 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import type { AmbientProposal, AmbientProposalList, ConnectionState, CoreEvent } from '@shared/api'
+import type { AmbientProposal, AmbientProposalList, ConnectionState, CoreEvent, RepairStatus } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 
 interface Props {
   readonly connection: ConnectionState
   readonly events: readonly CoreEvent[]
+  readonly repair?: RepairStatus | null
+}
+
+function RepairCard({ status, workspacePath }: { readonly status: RepairStatus; readonly workspacePath: string | null }): React.JSX.Element {
+  const api = useShellApi()
+  const [message, setMessage] = useState('')
+  const active = ['preparing', 'diagnosing', 'committing', 'pushing', 'waiting_ci'].includes(status.phase)
+
+  const command = async (name: 'repair.start' | 'repair.cancel' | 'repair.commit' | 'repair.push' | 'repair.refreshCI', payload: unknown): Promise<void> => {
+    if (!api) return
+    const outcome = await api.invoke(name, payload as never)
+    setMessage(outcome.ok ? outcome.value.summary : outcome.message)
+  }
+
+  const action = status.phase === 'available'
+    ? { label: 'Починить', name: 'repair.start' as const, payload: { workspacePath: workspacePath ?? '' }, disabled: workspacePath === null }
+    : status.phase === 'ready_to_commit'
+      ? { label: 'Применить и закоммитить', name: 'repair.commit' as const, payload: {}, disabled: false }
+      : status.phase === 'ready_to_push'
+        ? { label: 'Отправить в GitHub', name: 'repair.push' as const, payload: {}, disabled: false }
+        : status.phase === 'waiting_ci'
+          ? { label: 'Проверить GitHub Actions', name: 'repair.refreshCI' as const, payload: {}, disabled: false }
+          : null
+
+  return (
+    <article className={`operations-card${status.error ? ' operations-card--warning' : ''}`}>
+      <h3>Самоисправление</h3>
+      <strong>{status.errorCount}</strong>
+      <span>ошибок для анализа</span>
+      <small>{status.summary}</small>
+      {status.commit ? <small>commit {status.commit.slice(0, 12)} · CI: {status.ciState}</small> : null}
+      {action ? <button type="button" disabled={action.disabled || active} onClick={() => void command(action.name, action.payload)}>{action.label}</button> : null}
+      {status.phase === 'ready_to_update' ? <button type="button" onClick={() => void api?.invoke('update.prepare', {})}>Подготовить обновление</button> : null}
+      {active ? <button type="button" onClick={() => void command('repair.cancel', {})}>Остановить</button> : null}
+      {message ? <small>{message}</small> : null}
+    </article>
+  )
 }
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
@@ -119,7 +156,7 @@ function latest(events: readonly CoreEvent[], eventType: string): CoreEvent | un
 }
 
 /** Read-only projection of Core-owned memory/child/schedule state. */
-export function OperationsPanel({ connection, events }: Props): React.JSX.Element {
+export function OperationsPanel({ connection, events, repair }: Props): React.JSX.Element {
   const api = useShellApi()
   const [workspacePath, setWorkspacePath] = useState<string | null>(null)
   const [selected, setSelected] = useState<readonly string[]>([])
@@ -377,6 +414,7 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
         <span className={`status-pill status-pill--${connection}`}>{connection}</span>
       </div>
       <div className="operations-grid">
+        {repair ? <RepairCard status={repair} workspacePath={workspacePath} /> : null}
         <article className={`operations-card ${pending.length ? 'operations-card--warning' : ''}`}>
           <h3>Память: подтверждение</h3>
           <strong>{counts['pending_confirmation'] ?? 0}</strong>

@@ -22,6 +22,7 @@ import {
 
 import type { ShellLog } from './diagnostics/logger'
 import type { CodexService } from './codex-service'
+import type { RepairService } from './repair-service'
 import type { CorePipeClient } from './ipc/pipe-client'
 import type { ChatStore } from './chat-store'
 import { resolveIdentity, resolveRepository } from './identity'
@@ -59,6 +60,7 @@ export interface ShellBridgeOptions {
   readonly workspaces: WorkspaceService
   readonly providers: ProviderStore
   readonly codex: CodexService
+  readonly repair: RepairService
   readonly chats: ChatStore
   /**
    * Relaunches Core so it picks up the stored credentials: the model gateway
@@ -120,7 +122,7 @@ function dispatch(
   command: RendererCommand,
   payload: unknown
 ): unknown {
-  const { client, workspaces, providers, codex, chats, restartCore, updates, listenerRuntime, ambientHotkey, log } =
+  const { client, workspaces, providers, codex, repair, chats, restartCore, updates, listenerRuntime, ambientHotkey, log } =
     options
   switch (command) {
     case 'shell.getState':
@@ -840,6 +842,27 @@ function dispatch(
         .then((value) => ({ ok: true, value }))
         .catch(() => failure('invalid-payload', 'Эта модель Codex недоступна.'))
     }
+
+    case 'repair.getStatus':
+      return { ok: true, value: repair.status }
+
+    case 'repair.start': {
+      const workspacePath = asBoundedString(asRecord(payload)['workspacePath'])
+      if (workspacePath === null) return failure('invalid-payload', 'Некорректный workspace для repair-run.')
+      return repair.start(workspacePath).then((value) => ({ ok: true, value }))
+    }
+
+    case 'repair.cancel':
+      return { ok: true, value: repair.cancel() }
+
+    case 'repair.commit':
+      return { ok: true, value: repair.commit() }
+
+    case 'repair.push':
+      return { ok: true, value: repair.push() }
+
+    case 'repair.refreshCI':
+      return repair.refreshCi().then((value) => ({ ok: true, value }))
 
     case 'core.createProject': {
       const value = asRecord(payload)
