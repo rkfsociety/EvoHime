@@ -67,7 +67,7 @@ describe('recovery contract', () => {
     fireEvent.click(screen.getByText('Открыть детали'))
 
     expect(onOpenTask).toHaveBeenCalled()
-    expect(screen.getByText(/task\.failed/)).toBeTruthy()
+    expect(screen.getByText(/task\.failed · seq/)).toBeTruthy()
     expect(screen.getByText('request_id')).toBeTruthy()
     fireEvent.click(screen.getByText('Скрыть детали'))
     expect(screen.queryByText('request_id')).toBeNull()
