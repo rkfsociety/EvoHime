@@ -105,7 +105,16 @@ let providerSummary: ProviderSummary = {
   model: '',
   baseUrl: '',
   tier: 'free',
-  configured: false
+  configured: false,
+  profiles: emptyProviderProfiles()
+}
+
+function emptyProviderProfiles(): ProviderSummary['profiles'] {
+  return {
+    literouter: { model: '', baseUrl: '', tier: 'free', configured: false },
+    openai_compatible: { model: '', baseUrl: '', tier: 'free', configured: false },
+    openai_responses: { model: '', baseUrl: '', tier: 'free', configured: false }
+  }
 }
 const providerWrites: ProviderUpdate[] = []
 const restarts: boolean[] = []
@@ -120,7 +129,8 @@ const providers = {
       model: update.model,
       baseUrl: update.baseUrl,
       tier: update.tier,
-      configured: update.apiKey.length > 0 || providerSummary.configured
+      configured: update.apiKey.length > 0 || providerSummary.configured,
+      profiles: { ...providerSummary.profiles, [update.provider]: { model: update.model, baseUrl: update.baseUrl, tier: update.tier, configured: update.apiKey.length > 0 || providerSummary.profiles[update.provider].configured } }
     }
     return providerSummary
   },
@@ -225,7 +235,7 @@ beforeEach(() => {
   clipboardWrites.length = 0
   openedUrls.length = 0
   enqueueResult = 'queued'
-  providerSummary = { provider: 'literouter', model: '', baseUrl: '', tier: 'free', configured: false }
+  providerSummary = { provider: 'literouter', model: '', baseUrl: '', tier: 'free', configured: false, profiles: emptyProviderProfiles() }
   providerWrites.length = 0
   restarts.length = 0
   registerShellBridge({
@@ -233,9 +243,10 @@ beforeEach(() => {
     workspaces: workspaces as never,
     providers: providers as never,
     codex: {
-      getStatus: async () => ({ available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }),
-      refresh: async () => ({ available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }),
-      selectModel: async () => ({ available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null })
+      getStatus: async () => ({ installed: false, installing: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }),
+      refresh: async () => ({ installed: false, installing: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }),
+      install: async () => ({ installed: true, installing: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }),
+      selectModel: async () => ({ installed: false, installing: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null })
     } as never,
     repair: {
       status: { phase: 'idle', repairId: null, workspacePath: null, baseCommit: null, branch: null, taskId: null, errorCount: 0, repeatedPatterns: 0, summary: '', diffStat: '', tests: [], commit: null, ciState: 'unknown', error: null, updatedAtMs: 0 },
@@ -361,15 +372,15 @@ describe('renderer command surface', () => {
     expect(restarts).toHaveLength(1)
     // The key belongs to the main process; no Core command may carry it.
     expect(JSON.stringify(sent)).not.toContain('sk-secret-value')
-    expect(invoke('provider.get', {})).toEqual({
+    expect(invoke('provider.get', {})).toMatchObject({
       ok: true,
-      value: {
+      value: expect.objectContaining({
         provider: 'literouter',
         model: 'deepseek:free',
         baseUrl: 'https://api.literouter.com/v1',
         tier: 'paid',
         configured: true
-      }
+      })
     })
   })
 

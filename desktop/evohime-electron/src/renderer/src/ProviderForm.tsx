@@ -40,6 +40,7 @@ export function ProviderForm(): React.JSX.Element {
   const [summary, setSummary] = useState<ProviderSummary | null>(null)
   const [provider, setProvider] = useState<ProviderKind>('literouter')
   const [apiKey, setApiKey] = useState('')
+  const [model, setModel] = useState('')
   const [tier, setTier] = useState<ModelTier>('free')
   const [baseUrl, setBaseUrl] = useState('')
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
@@ -48,9 +49,20 @@ export function ProviderForm(): React.JSX.Element {
   const apply = useCallback((value: ProviderSummary) => {
     setSummary(value)
     setProvider(PROVIDER_KINDS.includes(value.provider) ? value.provider : 'literouter')
+    setModel(value.model ?? '')
     setTier(value.tier === 'paid' ? 'paid' : 'free')
     setBaseUrl(value.baseUrl ?? '')
   }, [])
+
+  const selectProvider = useCallback((nextProvider: ProviderKind) => {
+    setProvider(nextProvider)
+    setApiKey('')
+    const profile = summary?.profiles?.[nextProvider]
+    setModel(profile?.model ?? '')
+    setTier(profile?.tier ?? 'free')
+    setBaseUrl(profile?.baseUrl ?? '')
+    setStatus({ kind: 'idle' })
+  }, [summary])
 
   useEffect(() => {
     if (!api) return
@@ -66,7 +78,7 @@ export function ProviderForm(): React.JSX.Element {
       provider,
       apiKey,
       // The model is chosen per task in the composer, so it is not edited here.
-      model: summary?.model ?? '',
+      model,
       baseUrl,
       tier
     })
@@ -77,12 +89,12 @@ export function ProviderForm(): React.JSX.Element {
     apply(outcome.value.summary)
     setApiKey('')
     setStatus({ kind: 'saved', restarted: outcome.value.restarted })
-  }, [api, apiKey, apply, baseUrl, provider, summary?.model, tier])
+  }, [api, apiKey, apply, baseUrl, model, provider, tier])
 
   const clearKey = useCallback(async () => {
     if (!api) return
     setStatus({ kind: 'saving' })
-    const outcome = await api.invoke('provider.clearKey', {})
+    const outcome = await api.invoke('provider.clearKey', { provider })
     if (!outcome.ok) {
       setStatus({ kind: 'failed', message: outcome.message })
       return
@@ -90,10 +102,12 @@ export function ProviderForm(): React.JSX.Element {
     apply(outcome.value.summary)
     setApiKey('')
     setStatus({ kind: 'saved', restarted: outcome.value.restarted })
-  }, [api, apply])
+  }, [api, apply, provider])
 
   const busy = status.kind === 'saving'
-  const canSave = !busy && (apiKey.trim().length > 0 || summary?.configured === true)
+  const selectedProfile = summary?.profiles?.[provider]
+  const configured = selectedProfile?.configured === true || (selectedProfile === undefined && summary?.provider === provider && summary.configured)
+  const canSave = !busy && (apiKey.trim().length > 0 || configured)
 
   return (
     <section className="shell__panel provider-form" aria-label="Ключ провайдера">
@@ -105,9 +119,9 @@ export function ProviderForm(): React.JSX.Element {
           </p>
         </div>
         <span
-          className={`settings-panel__state settings-panel__state--${summary?.configured ? 'ready' : 'offline'}`}
+          className={`settings-panel__state settings-panel__state--${configured ? 'ready' : 'offline'}`}
         >
-          {summary?.configured ? 'Ключ сохранён' : 'Ключ не задан'}
+          {configured ? 'Ключ сохранён' : 'Ключ не задан'}
         </span>
       </div>
 
@@ -117,7 +131,7 @@ export function ProviderForm(): React.JSX.Element {
           <select
             id="provider-kind"
             value={provider}
-            onChange={(event) => setProvider(event.target.value as ProviderKind)}
+            onChange={(event) => selectProvider(event.target.value as ProviderKind)}
             disabled={busy}
           >
             {PROVIDER_KINDS.map((kind) => (
@@ -135,7 +149,7 @@ export function ProviderForm(): React.JSX.Element {
             autoComplete="off"
             spellCheck={false}
             onChange={(event) => setApiKey(event.target.value)}
-            placeholder={summary?.configured ? 'сохранён — введи новый, чтобы заменить' : 'sk-…'}
+            placeholder={configured ? 'сохранён — введи новый, чтобы заменить' : 'sk-…'}
             disabled={busy}
           />
         </label>
@@ -176,7 +190,7 @@ export function ProviderForm(): React.JSX.Element {
         <button type="button" onClick={() => void save()} disabled={!canSave}>
           Сохранить и перезапустить
         </button>
-        {summary?.configured ? (
+        {configured ? (
           <button type="button" onClick={() => void clearKey()} disabled={busy}>
             Удалить ключ
           </button>

@@ -139,6 +139,13 @@ export type ProviderKind = (typeof PROVIDER_KINDS)[number]
 /** Which half of the provider catalogue the user works with. */
 export type ModelTier = 'free' | 'paid'
 
+export interface ProviderProfileSummary {
+  readonly model: string
+  readonly baseUrl: string
+  readonly tier: ModelTier
+  readonly configured: boolean
+}
+
 
 /**
  * Secret-free view of the stored provider settings. The key itself never
@@ -150,6 +157,7 @@ export interface ProviderSummary {
   readonly baseUrl: string
   readonly tier: ModelTier
   readonly configured: boolean
+  readonly profiles: Readonly<Record<ProviderKind, ProviderProfileSummary>>
 }
 
 /** Модель, опубликованная локальным Codex app-server. */
@@ -181,6 +189,8 @@ export interface CodexRateLimit {
 }
 
 export interface CodexStatus {
+  readonly installed: boolean
+  readonly installing: boolean
   readonly available: boolean
   readonly loggedIn: boolean
   readonly selectedModel: string
@@ -699,6 +709,7 @@ export const RENDERER_COMMANDS = [
   'provider.clearKey',
   'codex.getStatus',
   'codex.refresh',
+  'codex.install',
   'codex.selectModel',
   'repair.getStatus',
   'repair.start',
@@ -901,9 +912,10 @@ export interface CommandPayloads {
   'review.saveRevision': { revisionId: string; destinationPath: string; fileName?: string }
   'provider.get': Record<string, never>
   'provider.save': { provider: ProviderKind; apiKey: string; model: string; baseUrl: string; tier: ModelTier }
-  'provider.clearKey': Record<string, never>
+  'provider.clearKey': { provider?: ProviderKind }
   'codex.getStatus': Record<string, never>
   'codex.refresh': Record<string, never>
+  'codex.install': Record<string, never>
   'codex.selectModel': { model: string }
   'repair.getStatus': Record<string, never>
   'repair.start': { workspacePath: string }
@@ -1091,6 +1103,7 @@ export interface CommandResults {
   'provider.clearKey': { summary: ProviderSummary; restarted: boolean }
   'codex.getStatus': CodexStatus
   'codex.refresh': CodexStatus
+  'codex.install': CodexStatus
   'codex.selectModel': CodexStatus
   'repair.getStatus': RepairStatus
   'repair.start': RepairStatus

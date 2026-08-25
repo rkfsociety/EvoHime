@@ -38,6 +38,20 @@ export function CodexPanel(): React.JSX.Element {
     setBusy(false)
   }, [api])
 
+  const install = useCallback(async () => {
+    if (!api) return
+    setBusy(true)
+    setMessage('Устанавливаем Codex CLI…')
+    const outcome = await api.invoke('codex.install', {})
+    if (outcome.ok) {
+      setStatus(outcome.value)
+      setMessage(outcome.value.error ?? (outcome.value.available ? 'Codex CLI установлен.' : 'Codex CLI установлен, но требуется вход.'))
+    } else {
+      setMessage(outcome.message)
+    }
+    setBusy(false)
+  }, [api])
+
   return (
     <section className="shell__panel provider-form" aria-label="Codex">
       <div className="settings-panel__heading">
@@ -68,7 +82,14 @@ export function CodexPanel(): React.JSX.Element {
           </div>
         </>
       ) : (
-        <p className="settings-info__badge">{status?.error ?? 'Проверяем вход в Codex…'}</p>
+        <>
+          <p className="settings-info__badge">{status?.error ?? 'Проверяем вход в Codex…'}</p>
+          {status && !status.installed ? (
+            <button type="button" onClick={() => void install()} disabled={busy}>
+              {status.installing ? 'Установка Codex CLI…' : 'Установить Codex CLI'}
+            </button>
+          ) : null}
+        </>
       )}
       {message && message !== status?.error ? <p className="form-status">{message}</p> : null}
     </section>

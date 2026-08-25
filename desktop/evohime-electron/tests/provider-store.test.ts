@@ -59,7 +59,7 @@ describe('provider store', () => {
       tier: 'free'
     })
 
-    expect(summary).toEqual({
+    expect(summary).toMatchObject({
       provider: 'literouter',
       model: 'deepseek:free',
       baseUrl: '',
@@ -91,6 +91,18 @@ describe('provider store', () => {
     expect(summary?.configured).toBe(true)
     expect(store.environment()['LITEROUTER_API_KEY']).toBe('sk-first')
     expect(store.environment()['LITEROUTER_MODEL']).toBe('b')
+  })
+
+  it('keeps API keys and settings isolated per provider', () => {
+    const store = new ProviderStore(storePath(), reversibleCipher())
+    store.save({ provider: 'literouter', apiKey: 'sk-literouter', model: 'router-model', baseUrl: '', tier: 'free' })
+    store.save({ provider: 'openai_compatible', apiKey: 'sk-openai', model: 'gpt-model', baseUrl: '', tier: 'paid' })
+
+    expect(store.environment()).toEqual({ MODEL_PROVIDER: 'openai_compatible', OPENAI_API_KEY: 'sk-openai', OPENAI_MODEL: 'gpt-model' })
+    expect(store.summary().profiles.literouter.configured).toBe(true)
+
+    store.save({ provider: 'literouter', apiKey: '', model: 'router-next', baseUrl: '', tier: 'free' })
+    expect(store.environment()).toEqual({ MODEL_PROVIDER: 'literouter', LITEROUTER_API_KEY: 'sk-literouter', LITEROUTER_MODEL: 'router-next' })
   })
 
   it('exports Responses credentials through the same protected OpenAI environment', () => {
@@ -139,7 +151,7 @@ describe('provider store', () => {
     const store = new ProviderStore(storePath(), reversibleCipher())
     store.save({ provider: 'openai_compatible', apiKey: 'sk-drop', model: 'm', baseUrl: '', tier: 'paid' })
 
-    expect(store.clearKey()).toEqual({
+    expect(store.clearKey()).toMatchObject({
       provider: 'openai_compatible',
       model: 'm',
       baseUrl: '',

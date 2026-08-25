@@ -824,7 +824,8 @@ function dispatch(
     }
 
     case 'provider.clearKey': {
-      const summary = providers.clearKey()
+      const requestedProvider = asProviderKind(asRecord(payload)['provider'])
+      const summary = providers.clearKey(requestedProvider ?? undefined)
       log('info', 'shell.provider_key_cleared', {})
       return restartCore().then((restarted) => ({ ok: true, value: { summary, restarted } }))
     }
@@ -834,6 +835,9 @@ function dispatch(
 
     case 'codex.refresh':
       return codex.refresh().then((value) => ({ ok: true, value }))
+
+    case 'codex.install':
+      return codex.install().then((value) => ({ ok: true, value }))
 
     case 'codex.selectModel': {
       const model = asBoundedString(asRecord(payload)['model'])

@@ -5,6 +5,7 @@ import {
   PROVIDER_KINDS,
   type ModelTier,
   type ProviderKind,
+  type ProviderProfileSummary,
   type ProviderSummary
 } from '@shared/api'
 
@@ -39,21 +40,22 @@ export interface SecretCipher {
   decrypt(value: Buffer): string
 }
 
-interface StoredDocument {
-  readonly provider: ProviderKind
+interface StoredProfile {
   readonly model: string
   readonly baseUrl: string
   readonly tier: ModelTier
   readonly secret: string
+}
+
+interface StoredDocument {
+  readonly provider: ProviderKind
+  readonly profiles: Readonly<Partial<Record<ProviderKind, StoredProfile>>>
   readonly codexModel: string
 }
 
 const EMPTY: StoredDocument = {
   provider: 'literouter',
-  model: '',
-  baseUrl: '',
-  tier: 'free',
-  secret: '',
+  profiles: {},
   codexModel: ''
 }
 
@@ -126,12 +128,26 @@ export class ProviderStore {
   /** Secret-free summary for the settings surface. */
   summary(): ProviderSummary {
     const document = this.readDocument()
+    return this.summaryFor(document)
+  }
+
+  private summaryFor(document: StoredDocument): ProviderSummary {
+    const active = profileFor(document, document.provider)
     return {
       provider: document.provider,
-      model: document.model,
-      baseUrl: document.baseUrl,
-      tier: document.tier,
-      configured: document.secret.length > 0
+      model: active.model,
+      baseUrl: active.baseUrl,
+      tier: active.tier,
+      configured: active.secret.length > 0,
+      profiles: Object.fromEntries(PROVIDER_KINDS.map((kind) => {
+        const profile = profileFor(document, kind)
+        return [kind, {
+          model: profile.model,
+          baseUrl: profile.baseUrl,
+          tier: profile.tier,
+          configured: profile.secret.length > 0
+        } satisfies ProviderProfileSummary]
+      })) as Readonly<Record<ProviderKind, ProviderProfileSummary>>
     }
   }
 
@@ -141,7 +157,8 @@ export class ProviderStore {
    */
   save(update: ProviderUpdate): ProviderSummary | null {
     const current = this.readDocument()
-    let secret = current.secret
+    const previous = profileFor(current, update.provider)
+    let secret = previous.secret
     if (update.apiKey.length > 0) {
       if (!this.cipher.isAvailable()) {
         return null
@@ -150,33 +167,23 @@ export class ProviderStore {
     }
     const next: StoredDocument = {
       provider: update.provider,
-      model: update.model,
-      baseUrl: update.baseUrl,
-      tier: update.tier,
-      secret,
+      profiles: {
+        ...current.profiles,
+        [update.provider]: { model: update.model, baseUrl: update.baseUrl, tier: update.tier, secret }
+      },
       codexModel: current.codexModel
     }
     this.write(next)
-    return {
-      provider: next.provider,
-      model: next.model,
-      baseUrl: next.baseUrl,
-      tier: next.tier,
-      configured: next.secret.length > 0
-    }
+    return this.summaryFor(next)
   }
 
   /** Forgets the stored key while keeping the provider choice. */
-  clearKey(): ProviderSummary {
+  clearKey(provider = this.readDocument().provider): ProviderSummary {
     const current = this.readDocument()
-    this.write({ ...current, secret: '' })
-    return {
-      provider: current.provider,
-      model: current.model,
-      baseUrl: current.baseUrl,
-      tier: current.tier,
-      configured: false
-    }
+    const active = profileFor(current, provider)
+    const next = { ...current, provider, profiles: { ...current.profiles, [provider]: { ...active, secret: '' } } }
+    this.write(next)
+    return this.summaryFor(next)
   }
 
   codexModel(): string {
@@ -195,18 +202,19 @@ export class ProviderStore {
    */
   environment(): Record<string, string> {
     const document = this.readDocument()
-    const key = this.decryptSecret(document.secret)
+    const profile = profileFor(document, document.provider)
+    const key = this.decryptSecret(profile.secret)
     const environment: Record<string, string> = { MODEL_PROVIDER: document.provider }
     if (document.codexModel) environment['CODEX_MODEL'] = document.codexModel
     if (document.provider === 'openai_compatible' || document.provider === 'openai_responses') {
       if (key) environment['OPENAI_API_KEY'] = key
-      if (document.baseUrl) environment['OPENAI_BASE_URL'] = document.baseUrl
-      if (document.model) environment['OPENAI_MODEL'] = document.model
+      if (profile.baseUrl) environment['OPENAI_BASE_URL'] = profile.baseUrl
+      if (profile.model) environment['OPENAI_MODEL'] = profile.model
       return environment
     }
     if (key) environment['LITEROUTER_API_KEY'] = key
-    if (document.baseUrl) environment['LITEROUTER_BASE_URL'] = document.baseUrl
-    if (document.model) environment['LITEROUTER_MODEL'] = document.model
+    if (profile.baseUrl) environment['LITEROUTER_BASE_URL'] = profile.baseUrl
+    if (profile.model) environment['LITEROUTER_MODEL'] = profile.model
     return environment
   }
 
@@ -241,12 +249,29 @@ export class ProviderStore {
     }
     const record = parsed as Record<string, unknown>
     const provider = isProviderKind(record['provider']) ? record['provider'] : EMPTY.provider
-    const model = normalizeModel(record['model']) ?? ''
-    const baseUrl = normalizeBaseUrl(record['baseUrl']) ?? ''
-    const secret = typeof record['secret'] === 'string' ? record['secret'] : ''
-    const tier: ModelTier = record['tier'] === 'paid' ? 'paid' : 'free'
+    const profiles: Partial<Record<ProviderKind, StoredProfile>> = {}
+    if (isRecord(record['profiles'])) {
+      for (const kind of PROVIDER_KINDS) {
+        const value = record['profiles'][kind]
+        if (!isRecord(value)) continue
+        profiles[kind] = {
+          model: normalizeModel(value['model']) ?? '',
+          baseUrl: normalizeBaseUrl(value['baseUrl']) ?? '',
+          tier: value['tier'] === 'paid' ? 'paid' : 'free',
+          secret: typeof value['secret'] === 'string' ? value['secret'] : ''
+        }
+      }
+    } else {
+      // Version 1 stored one active profile. Preserve it under that provider.
+      profiles[provider] = {
+        model: normalizeModel(record['model']) ?? '',
+        baseUrl: normalizeBaseUrl(record['baseUrl']) ?? '',
+        tier: record['tier'] === 'paid' ? 'paid' : 'free',
+        secret: typeof record['secret'] === 'string' ? record['secret'] : ''
+      }
+    }
     const codexModel = normalizeModel(record['codexModel']) ?? ''
-    return { provider, model, baseUrl, tier, secret, codexModel }
+    return { provider, profiles, codexModel }
   }
 
   private write(document: StoredDocument): void {
@@ -258,4 +283,12 @@ export class ProviderStore {
     })
     renameSync(temporary, this.filePath)
   }
+}
+
+function profileFor(document: StoredDocument, provider: ProviderKind): StoredProfile {
+  return document.profiles[provider] ?? { model: '', baseUrl: '', tier: 'free', secret: '' }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

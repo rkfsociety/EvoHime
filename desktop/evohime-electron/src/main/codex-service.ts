@@ -5,6 +5,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import type { CodexModel, CodexRateLimit, CodexRateLimitWindow, CodexStatus } from '@shared/api'
 
 import type { ShellLog } from './diagnostics/logger'
+import { describeFailure, runCommand, type CommandRunner } from './update/run-command'
 
 interface PendingRequest {
   readonly resolve: (value: unknown) => void
@@ -27,13 +28,16 @@ export class CodexService {
   private readonly pending = new Map<number, PendingRequest>()
   private status: CodexStatus = emptyStatus()
   private selectedModel: string
+  private readonly run: CommandRunner
 
   constructor(
     private readonly filePath: string,
     private readonly log: ShellLog,
     private readonly onModelSelected?: (model: string) => Promise<void> | void,
+    run?: CommandRunner,
   ) {
     this.selectedModel = readSelectedModel(filePath)
+    this.run = run ?? runCommand
   }
 
   static defaultPath(dataDirectory: string): string {
@@ -60,6 +64,8 @@ export class CodexService {
         writeSelectedModel(this.filePath, selectedModel)
       }
       this.status = {
+        installed: true,
+        installing: false,
         available: true,
         loggedIn: true,
         selectedModel,
@@ -73,6 +79,8 @@ export class CodexService {
       this.log('warn', 'shell.codex_status_failed', { reason: safeReason(message) })
       this.status = {
         ...this.status,
+        installed: isKnownCodexInstallation(),
+        installing: false,
         available: false,
         loggedIn: false,
         lastUpdatedMs: Date.now(),
@@ -82,6 +90,33 @@ export class CodexService {
       }
     }
     return this.status
+  }
+
+  async install(): Promise<CodexStatus> {
+    if (this.status.installing) return this.status
+    this.status = { ...this.status, installing: true, error: null }
+    const result = await this.run({
+      file: 'winget',
+      args: [
+        'install', '--id', 'OpenAI.Codex', '--exact', '--source', 'winget',
+        '--silent', '--accept-package-agreements', '--accept-source-agreements',
+        '--disable-interactivity'
+      ],
+      timeoutMs: 45 * 60_000,
+      onLine: (line) => this.log('info', 'shell.codex_install_output', { line: line.slice(0, 240) })
+    })
+    if (result.code !== 0) {
+      this.status = {
+        ...this.status,
+        installing: false,
+        lastUpdatedMs: Date.now(),
+        error: describeFailure('Установка Codex CLI не выполнена', result)
+      }
+      return this.status
+    }
+    this.dispose()
+    this.status = emptyStatus()
+    return this.refresh()
   }
 
   async selectModel(model: string): Promise<CodexStatus> {
@@ -198,11 +233,18 @@ export class CodexService {
 function resolveCodexExecutable(): string {
   const localAppData = process.env['LOCALAPPDATA']?.trim()
   const installed = localAppData ? join(localAppData, 'Programs', 'OpenAI', 'Codex', 'bin', 'codex.exe') : ''
-  return installed && existsSync(installed) ? installed : 'codex'
+  const npmCodex = process.env['APPDATA']?.trim() ? join(process.env['APPDATA']!, 'npm', 'codex.cmd') : ''
+  if (installed && existsSync(installed)) return installed
+  if (npmCodex && existsSync(npmCodex)) return npmCodex
+  return 'codex'
+}
+
+function isKnownCodexInstallation(): boolean {
+  return resolveCodexExecutable() !== 'codex'
 }
 
 function emptyStatus(): CodexStatus {
-  return { available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }
+  return { installed: isKnownCodexInstallation(), installing: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }
 }
 
 function isRecord(value: unknown): value is JsonRecord {
