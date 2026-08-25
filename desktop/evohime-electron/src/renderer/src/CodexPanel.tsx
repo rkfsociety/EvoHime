@@ -56,8 +56,8 @@ export function CodexPanel(): React.JSX.Element {
     <section className="shell__panel provider-form" aria-label="Codex">
       <div className="settings-panel__heading">
         <div>
-          <p className="settings-modal__eyebrow">ChatGPT + Codex</p>
-          <h3>Codex для Евы</h3>
+          <p className="settings-modal__eyebrow">ChatGPT + Codex CLI</p>
+          <h3>Codex CLI для Евы</h3>
         </div>
         <button type="button" className="button button--secondary" disabled={busy} onClick={() => void load(true)}>
           {busy ? 'Обновление…' : 'Обновить'}
