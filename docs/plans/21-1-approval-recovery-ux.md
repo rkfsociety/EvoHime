@@ -13,6 +13,7 @@ RecoveryBanner и OperationsPanel показывали одинаковое со
 
 ### Блокирующие
 
+- обзор 21-0;
 - планы 01–20;
 - authenticated desktop IPC и durable approval/receipt contracts;
 - существующие `RecoveryBanner`, `TaskTimeline` и `OperationsPanel`.
@@ -21,6 +22,7 @@ RecoveryBanner и OperationsPanel показывали одинаковое со
 
 - новые IPC-поля: старый клиент игнорирует их и сохраняет текущую проекцию;
 - real-Core E2E: при недоступном бинарнике обязательны Rust и contract tests.
+- новые projection/actions оформляются только как additive IPC-команды и поля: старый клиент не вызывает новые команды и продолжает отображать текущую проекцию, а новый клиент корректно работает с отсутствием расширения;
 
 ## Работы
 

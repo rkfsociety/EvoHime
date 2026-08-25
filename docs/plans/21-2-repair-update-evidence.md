@@ -12,6 +12,7 @@ bounded redacted projection.
 
 ### Блокирующие
 
+- обзор 21-0;
 - план 19.0 и существующие repair FSM/transaction worker;
 - authenticated Core startup и health-marker contract;
 - GitHub green-commit/update policy.
@@ -37,7 +38,7 @@ bounded redacted projection.
 
 - FSM, idempotency и restart-recovery tests;
 - Electron repair UI и real-Core E2E;
-- CI failure не запускает commit/push/restart;
+- CI failure не запускает restart или update; commit и push остаются отдельными кликами и не инициируются CI;
 - health timeout приводит к rollback и видимому evidence;
 - evidence не содержит secrets, raw prompts, tool output или workspace files.
 

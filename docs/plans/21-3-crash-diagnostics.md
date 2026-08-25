@@ -12,6 +12,8 @@
 
 ### Блокирующие
 
+- обзор 21-0;
+- план 21.1;
 - supervisor lifecycle и Job Object;
 - startup reconciliation receipt, updater и durable event replay;
 - локальные redacted JSONL logs.

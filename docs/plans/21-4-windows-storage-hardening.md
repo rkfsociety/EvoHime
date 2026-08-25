@@ -12,6 +12,7 @@
 
 ### Блокирующие
 
+- обзор 21-0;
 - текущие Electron `safeStorage`/DPAPI contracts;
 - Core-owned SQLite backup/restore с checksum, cancel и rollback;
 - installer, transaction worker, health-marker и Windows CI.
@@ -25,6 +26,7 @@
 ## Работы
 
 - провести threat/UX review хранения provider credentials и отказов DPAPI;
+- зафиксировать DPAPI как канонический текущий контракт; Credential Manager рассматривать только отдельным decision gate, без обязательной реализации в этом этапе;
 - довести UI backup/restore до ясных preview, progress, cancel, checksum,
   safety backup, rollback и audit states;
 - сформировать Windows matrix для install, upgrade, locked files, single
