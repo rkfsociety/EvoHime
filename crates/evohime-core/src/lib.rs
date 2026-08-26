@@ -4342,7 +4342,6 @@ async fn run_codex_cli(
 ) -> Result<String, AgentRunError> {
     const MAX_PROMPT_BYTES: usize = 128 * 1024;
     const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
-    const MAX_CHUNK_BYTES: usize = 16 * 1024;
 
     if prompt.len() > MAX_PROMPT_BYTES {
         return Err(AgentRunError::Internal(
@@ -4359,6 +4358,11 @@ async fn run_codex_cli(
     let _ = events.send(CoreEvent::ToolStarted {
         task_id: task_id.clone(),
         tool_name: "codex.execute".into(),
+    });
+    let _ = events.send(CoreEvent::ToolOutput {
+        task_id: task_id.clone(),
+        tool_name: "codex.execute".into(),
+        output: "Codex CLI запущен, выполняю задачу…".into(),
     });
     let executable = resolve_codex_executable();
     let mut command = tokio::process::Command::new(executable);
@@ -4401,28 +4405,22 @@ async fn run_codex_cli(
         .spawn()
         .map_err(|error| AgentRunError::Internal(format!("codex_cli unavailable: {error}")))?;
 
-    let mut stdout = child
+    let stdout = child
         .stdout
         .take()
         .ok_or_else(|| AgentRunError::Internal("codex_cli stdout unavailable".into()))?;
-    let mut stderr = child
+    let stderr = child
         .stderr
         .take()
         .ok_or_else(|| AgentRunError::Internal("codex_cli stderr unavailable".into()))?;
-    let stdout_task = tokio::spawn(async move {
-        let mut bytes = Vec::new();
-        let _ = tokio::io::AsyncReadExt::read_to_end(&mut stdout, &mut bytes).await;
-        bytes
-    });
-    let stderr_task = tokio::spawn(async move {
-        let mut bytes = Vec::new();
-        let _ = tokio::io::AsyncReadExt::read_to_end(&mut stderr, &mut bytes).await;
-        bytes
-    });
+    let stdout_task = tokio::spawn(stream_codex_output(stdout, events.clone(), task_id.clone()));
+    let stderr_task = tokio::spawn(stream_codex_output(stderr, events.clone(), task_id.clone()));
     let status = tokio::select! {
         _ = cancellation.cancelled() => {
             let _ = child.kill().await;
             let _ = child.wait().await;
+            stdout_task.abort();
+            stderr_task.abort();
             return Err(AgentRunError::Cancelled);
         }
         output = child.wait() => output
@@ -4436,13 +4434,6 @@ async fn run_codex_cli(
         ));
     }
     let text = String::from_utf8_lossy(&combined).into_owned();
-    for chunk in text.as_bytes().chunks(MAX_CHUNK_BYTES) {
-        let _ = events.send(CoreEvent::ToolOutput {
-            task_id: task_id.clone(),
-            tool_name: "codex.execute".into(),
-            output: String::from_utf8_lossy(chunk).into_owned(),
-        });
-    }
     if !status.success() {
         return Err(AgentRunError::Internal(format!(
             "codex_cli exited with {}: {}",
@@ -4451,6 +4442,35 @@ async fn run_codex_cli(
         )));
     }
     Ok(text)
+}
+
+async fn stream_codex_output<R>(
+    mut reader: R,
+    events: broadcast::Sender<CoreEvent>,
+    task_id: String,
+) -> Vec<u8>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    const CHUNK_BYTES: usize = 16 * 1024;
+    let mut output = Vec::new();
+    let mut chunk = vec![0_u8; CHUNK_BYTES];
+    loop {
+        let read = match tokio::io::AsyncReadExt::read(&mut reader, &mut chunk).await {
+            Ok(read) => read,
+            Err(_) => break,
+        };
+        if read == 0 {
+            break;
+        }
+        output.extend_from_slice(&chunk[..read]);
+        let _ = events.send(CoreEvent::ToolOutput {
+            task_id: task_id.clone(),
+            tool_name: "codex.execute".into(),
+            output: String::from_utf8_lossy(&chunk[..read]).into_owned(),
+        });
+    }
+    output
 }
 
 fn resolve_codex_executable() -> PathBuf {
