@@ -29,7 +29,7 @@
 | Electron renderer panels/stores | в работе | Убраны копии newest-first event stream в transcript и PlanReview roster/failure projection; `OperationsPanel` переведён на один memoized pass; форматтер времени `TaskTimeline` кэшируется на уровне модуля; продолжить просмотр мемоизации, подписок, лимитов и устаревших ответов. |
 | Rust Core | в работе | Проверить горячие циклы, clone/serialize, async cancellation и event fan-out. `context-budget::normalize_text` переведён на однопроходное построение без промежуточного line vector. |
 | Storage/receipts/permissions/gateway | в работе | В `context_ledger.prune` устранён N+1 SELECT по receipt pin через `NOT EXISTS`; проверить остальные retention/receipt SQL-проходы. |
-| Tools/listener/supervisor/updater | ожидает | Проверить bounded I/O, процессы, retry и очистку ресурсов. |
+| Tools/listener/supervisor/updater | в работе | В `TelemetryBuffer::export_jsonl` убрана промежуточная коллекция строк и второй проход `join`; проверить bounded I/O, процессы, retry и очистку ресурсов. |
 | C#/scripts/package/CI | ожидает | Проверить drift compatibility и воспроизводимость gates. |
 
 ## Правило завершения

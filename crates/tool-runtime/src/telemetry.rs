@@ -55,11 +55,17 @@ impl TelemetryBuffer {
         &self.events
     }
     pub fn export_jsonl(&self) -> String {
-        self.events
-            .iter()
-            .filter_map(|e| serde_json::to_string(e).ok())
-            .collect::<Vec<_>>()
-            .join("\n")
+        let mut output = String::new();
+        for event in &self.events {
+            let Ok(json) = serde_json::to_string(event) else {
+                continue;
+            };
+            if !output.is_empty() {
+                output.push('\n');
+            }
+            output.push_str(&json);
+        }
+        output
     }
     pub fn aggregate(&self, run_id: &str) -> TelemetrySummary {
         self.events.iter().filter(|e| e.run_id == run_id).fold(
