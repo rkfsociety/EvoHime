@@ -39,6 +39,36 @@ beforeEach(() => {
       if (command === 'provider.get') {
         return ok({ provider: 'literouter', model: '', baseUrl: '', tier, configured: true })
       }
+      if (command === 'codex.getStatus') {
+        return ok({
+          installed: true,
+          installing: false,
+          loggingIn: false,
+          available: true,
+          loggedIn: true,
+          selectedModel: 'gpt-5.5',
+          models: [{
+            id: 'gpt-5.5',
+            model: 'gpt-5.5',
+            displayName: 'GPT-5.5',
+            description: '',
+            defaultReasoningEffort: 'medium',
+            supportedReasoningEfforts: ['medium'],
+            isDefault: true
+          }],
+          rateLimits: [{
+            limitId: 'codex',
+            planType: 'plus',
+            primary: { usedPercent: 20, remainingPercent: 80, resetsAt: 1_800_000_000, windowDurationMins: 300 },
+            secondary: { usedPercent: 40, remainingPercent: 60, resetsAt: 1_800_600_000, windowDurationMins: 10080 },
+            individualRemainingPercent: null,
+            individualResetsAt: null,
+            reached: false
+          }],
+          lastUpdatedMs: 1_700_000_000_000,
+          error: null
+        })
+      }
       return ok({ accepted: true })
     }) as EvoHimeApiV1['invoke'],
     subscribe: () => () => {},
@@ -156,5 +186,13 @@ describe('model picker', () => {
   it('stays out of the composer while Core is unreachable', () => {
     const { container } = render(<ModelPicker connection="reconnecting" events={[]} />)
     expect(container.firstChild).toBeNull()
+  })
+
+  it('shows Codex five-hour and weekly limits below its model', async () => {
+    render(<ModelPicker connection="connected" events={[]} provider="codex_cli" />)
+
+    expect(await screen.findByText('5 часов: осталось 80%')).toBeTruthy()
+    expect(screen.getByText('Неделя: осталось 60%')).toBeTruthy()
+    expect(screen.getByTestId('codex-composer-limits')).toBeTruthy()
   })
 })

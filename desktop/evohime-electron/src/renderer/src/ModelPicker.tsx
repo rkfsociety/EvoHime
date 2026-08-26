@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { ChatProviderMode, ConnectionState, CoreEvent, CodexModel, ModelTier } from '@shared/api'
+import type { ChatProviderMode, ConnectionState, CoreEvent, CodexModel, CodexRateLimit, ModelTier } from '@shared/api'
 
 import { useShellApi } from './shell-api'
+import { CodexRateLimits } from './CodexRateLimits'
 
 /**
  * Model selection for the next task, shown in the composer.
@@ -21,13 +22,14 @@ export interface ModelPickerProps {
   readonly provider: ChatProviderMode
 }
 
-export function ModelPicker({ connection, events, provider }: ModelPickerProps): React.JSX.Element | null {
+export function ModelPicker({ connection, events, provider = 'literouter' }: ModelPickerProps & { readonly provider?: ChatProviderMode }): React.JSX.Element | null {
   const api = useShellApi()
   const connected = CONNECTED_STATES.includes(connection)
   const [tier, setTier] = useState<ModelTier | null>(null)
   const [models, setModels] = useState<readonly string[]>([])
   const [current, setCurrent] = useState('')
   const [codexModels, setCodexModels] = useState<readonly CodexModel[]>([])
+  const [codexRateLimits, setCodexRateLimits] = useState<readonly CodexRateLimit[]>([])
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -48,6 +50,7 @@ export function ModelPicker({ connection, events, provider }: ModelPickerProps):
     void api.invoke('codex.getStatus', {}).then((outcome) => {
       if (outcome.ok) {
         setCodexModels(outcome.value.models)
+        setCodexRateLimits(outcome.value.rateLimits)
         setCurrent(outcome.value.selectedModel)
         setError(outcome.value.error)
       }
@@ -117,11 +120,14 @@ export function ModelPicker({ connection, events, provider }: ModelPickerProps):
   const known = visibleModels.includes(current)
 
   return (
-    <ModelDropdown
-      models={visibleModels}
-      current={known ? current : ''}
-      onSelect={(model) => void select(model)}
-    />
+    <>
+      <ModelDropdown
+        models={visibleModels}
+        current={known ? current : ''}
+        onSelect={(model) => void select(model)}
+      />
+      {provider === 'codex_cli' ? <CodexRateLimits rateLimits={codexRateLimits} compact /> : null}
+    </>
   )
 }
 

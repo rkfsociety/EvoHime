@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import type { CodexRateLimit, CodexStatus } from '@shared/api'
+import type { CodexStatus } from '@shared/api'
 
 import { useShellApi } from './shell-api'
+import { CodexRateLimits } from './CodexRateLimits'
 
 export function CodexPanel(): React.JSX.Element {
   const api = useShellApi()
@@ -89,9 +90,7 @@ export function CodexPanel(): React.JSX.Element {
           </label>
           <div className="settings-info__details">
             <strong>Остаток лимита</strong>
-            {status.rateLimits.length > 0
-              ? status.rateLimits.map((limit) => <RateLimitView key={limit.limitId} limit={limit} />)
-              : <p>Codex не передал данные о лимите.</p>}
+            <CodexRateLimits rateLimits={status.rateLimits} />
           </div>
         </>
       ) : (
@@ -112,41 +111,4 @@ export function CodexPanel(): React.JSX.Element {
       {message && message !== status?.error ? <p className="form-status">{message}</p> : null}
     </section>
   )
-}
-
-function RateLimitView({ limit }: { readonly limit: CodexRateLimit }): React.JSX.Element {
-  const windows = [
-    limit.individualRemainingPercent !== null
-      ? { label: 'Индивидуальный', remaining: limit.individualRemainingPercent, resetsAt: limit.individualResetsAt }
-      : null,
-    limit.primary ? { label: windowLabel(limit.primary.windowDurationMins, 'Основной'), remaining: limit.primary.remainingPercent, resetsAt: limit.primary.resetsAt } : null,
-    limit.secondary ? { label: windowLabel(limit.secondary.windowDurationMins, 'Дополнительный'), remaining: limit.secondary.remainingPercent, resetsAt: limit.secondary.resetsAt } : null
-  ].filter((item): item is { label: string; remaining: number; resetsAt: number | null } => item !== null)
-
-  return (
-    <div className="settings-info__detail" data-testid={`codex-limit-${limit.limitId}`}>
-      <span>{limit.limitId}{limit.planType ? ` · ${limit.planType}` : ''}</span>
-      {windows.length === 0 ? <small>данные о лимите не переданы</small> : windows.map((window) => (
-        <span key={window.label} className="codex-limit-window">
-          <strong>{window.label}: осталось {window.remaining}%</strong>
-          <small>{formatReset(window.resetsAt)}</small>
-        </span>
-      ))}
-    </div>
-  )
-}
-
-function windowLabel(durationMins: number | null, fallback: string): string {
-  if (durationMins === 300) return '5 часов'
-  if (durationMins === 10080) return 'Неделя'
-  if (durationMins === null) return fallback
-  if (durationMins % 1440 === 0) return `${durationMins / 1440} дн.`
-  if (durationMins % 60 === 0) return `${durationMins / 60} ч.`
-  return `${durationMins} мин.`
-}
-
-function formatReset(timestamp: number | null): string {
-  if (timestamp === null) return 'время сброса не передано'
-  const value = new Date(timestamp * 1000)
-  return Number.isNaN(value.getTime()) ? 'время сброса не передано' : `сброс ${value.toLocaleString('ru-RU')}`
 }
