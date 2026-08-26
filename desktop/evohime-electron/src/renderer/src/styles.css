@@ -320,7 +320,7 @@ body {
   display: flex;
   flex-direction: column;
   width: min(900px, 100%);
-  max-height: min(760px, 100%);
+  height: min(646px, calc(100% - 64px));
   overflow: hidden;
   background: var(--bg);
   border: 1px solid var(--border-strong);
