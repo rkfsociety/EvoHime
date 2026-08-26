@@ -4413,8 +4413,18 @@ async fn run_codex_cli(
         .stderr
         .take()
         .ok_or_else(|| AgentRunError::Internal("codex_cli stderr unavailable".into()))?;
-    let stdout_task = tokio::spawn(stream_codex_output(stdout, events.clone(), task_id.clone()));
-    let stderr_task = tokio::spawn(stream_codex_output(stderr, events.clone(), task_id.clone()));
+    let stdout_task = tokio::spawn(stream_codex_output(
+        stdout,
+        events.clone(),
+        task_id.clone(),
+        true,
+    ));
+    let stderr_task = tokio::spawn(stream_codex_output(
+        stderr,
+        events.clone(),
+        task_id.clone(),
+        false,
+    ));
     let status = tokio::select! {
         _ = cancellation.cancelled() => {
             let _ = child.kill().await;
@@ -4448,12 +4458,14 @@ async fn stream_codex_output<R>(
     mut reader: R,
     events: broadcast::Sender<CoreEvent>,
     task_id: String,
+    parse_agent_messages: bool,
 ) -> Vec<u8>
 where
     R: tokio::io::AsyncRead + Unpin,
 {
     const CHUNK_BYTES: usize = 16 * 1024;
     let mut output = Vec::new();
+    let mut line_buffer = String::new();
     let mut chunk = vec![0_u8; CHUNK_BYTES];
     loop {
         let read = match tokio::io::AsyncReadExt::read(&mut reader, &mut chunk).await {
@@ -4469,8 +4481,48 @@ where
             tool_name: "codex.execute".into(),
             output: String::from_utf8_lossy(&chunk[..read]).into_owned(),
         });
+        if parse_agent_messages {
+            line_buffer.push_str(&String::from_utf8_lossy(&chunk[..read]));
+            emit_codex_agent_messages(&mut line_buffer, &events, &task_id);
+        }
+    }
+    if parse_agent_messages {
+        emit_codex_agent_messages(&mut line_buffer, &events, &task_id);
     }
     output
+}
+
+/// Converts Codex CLI's JSONL agent messages into the normal Core transcript
+/// stream. Raw CLI output remains a tool output for diagnostics, while the
+/// answer itself must be visible as a regular chat message.
+fn emit_codex_agent_messages(
+    buffer: &mut String,
+    events: &broadcast::Sender<CoreEvent>,
+    task_id: &str,
+) {
+    while let Some(newline) = buffer.find('\n') {
+        let line = buffer[..newline].trim();
+        if let Some(content) = codex_agent_message(line) {
+            let _ = events.send(CoreEvent::AssistantDelta {
+                task_id: task_id.to_string(),
+                content,
+            });
+        }
+        buffer.drain(..=newline);
+    }
+}
+
+fn codex_agent_message(line: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+    if value.get("type")?.as_str()? != "item.completed" {
+        return None;
+    }
+    let item = value.get("item")?.as_object()?;
+    if item.get("type")?.as_str()? != "agent_message" {
+        return None;
+    }
+    let text = item.get("text")?.as_str()?.trim();
+    (!text.is_empty()).then(|| text.to_string())
 }
 
 fn resolve_codex_executable() -> PathBuf {
@@ -12512,6 +12564,16 @@ mod tests {
     use futures_util::future::BoxFuture;
     use std::sync::Arc;
     use tokio_util::sync::CancellationToken;
+
+    #[test]
+    fn codex_agent_message_extracts_completed_jsonl_item() {
+        let line = r#"{"type":"item.completed","item":{"type":"agent_message","text":"Готово"}}"#;
+        assert_eq!(super::codex_agent_message(line).as_deref(), Some("Готово"));
+        assert!(super::codex_agent_message(
+            r#"{"type":"item.started","item":{"type":"agent_message","text":"ещё нет"}}"#
+        )
+        .is_none());
+    }
 
     #[test]
     fn selected_model_overrides_empty_gateway_model_for_provenance() {
