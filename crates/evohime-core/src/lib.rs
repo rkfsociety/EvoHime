@@ -4366,8 +4366,6 @@ async fn run_codex_cli(
         .args([
             "exec",
             "--json",
-            "--sandbox",
-            "workspace-write",
             "--approve-for-me",
             "--model",
             model.trim(),
