@@ -14,6 +14,7 @@ export const DEFAULT_MAX_TRACKED_LEDGER_EVENT_IDS = 4096
 export class LedgerEventDedup {
   private readonly seen = new Set<string>()
   private readonly order: string[] = []
+  private nextEvictionIndex = 0
 
   constructor(private readonly maxTracked = DEFAULT_MAX_TRACKED_LEDGER_EVENT_IDS) {}
 
@@ -22,14 +23,21 @@ export class LedgerEventDedup {
     if (this.seen.has(eventId)) {
       return false
     }
-    this.seen.add(eventId)
-    this.order.push(eventId)
-    if (this.order.length > this.maxTracked) {
-      const oldest = this.order.shift()
-      if (oldest !== undefined) {
-        this.seen.delete(oldest)
-      }
+    if (this.maxTracked === 0) {
+      return true
     }
+    this.seen.add(eventId)
+    if (this.order.length < this.maxTracked) {
+      this.order.push(eventId)
+      return true
+    }
+
+    // The array is a ring: replacing the oldest slot avoids Array.shift(),
+    // which otherwise moves every retained ID on each bounded eviction.
+    const oldest = this.order[this.nextEvictionIndex]
+    if (oldest !== undefined) this.seen.delete(oldest)
+    this.order[this.nextEvictionIndex] = eventId
+    this.nextEvictionIndex = (this.nextEvictionIndex + 1) % this.maxTracked
     return true
   }
 
