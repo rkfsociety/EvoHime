@@ -4387,6 +4387,7 @@ async fn run_codex_cli(
         }
     }
     command
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     let mut child = command
@@ -4453,6 +4454,12 @@ fn resolve_codex_executable() -> PathBuf {
         }
     }
     if let Ok(app_data) = std::env::var("APPDATA") {
+        let bundled = PathBuf::from(&app_data).join(
+            "npm/node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+        );
+        if bundled.is_file() {
+            return bundled;
+        }
         let path = PathBuf::from(app_data).join("npm/codex.cmd");
         if path.is_file() {
             return path;
