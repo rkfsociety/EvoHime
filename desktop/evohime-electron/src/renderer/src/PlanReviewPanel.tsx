@@ -249,7 +249,11 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
       const models = fresh ? [] : [...current.models]
       const statuses: Record<string, string> = fresh ? {} : { ...current.statuses }
       let changed = fresh
-      for (const event of [...events].reverse()) {
+      // `events` is newest-first; walk backwards without cloning the whole
+      // stream while reviewer progress is arriving.
+      for (let eventIndex = events.length - 1; eventIndex >= 0; eventIndex -= 1) {
+        const event = events[eventIndex]
+        if (event === undefined) continue
         if (event.eventType !== 'review.progress') continue
         const payload = readPayload(event)
         if (payload?.review_id !== reviewId || payload.stage !== 'reviewers') continue
@@ -773,7 +777,11 @@ function latestReviewProgress(events: readonly CoreEvent[], reviewId: string): R
 }
 
 function latestTaskFailure(events: readonly CoreEvent[], taskId: string, stoppedMessage: string): ReviewFailure | null {
-  for (const event of [...events].reverse()) {
+  // Preserve the existing oldest-first precedence without allocating a
+  // reversed copy of the event stream.
+  for (let eventIndex = events.length - 1; eventIndex >= 0; eventIndex -= 1) {
+    const event = events[eventIndex]
+    if (event === undefined) continue
     if (event.eventType !== 'task.failed' && event.eventType !== 'task.stopped') continue
     const payload = readPayload(event)
     const eventTaskId = event.taskId || String(payload?.task_id ?? '')
