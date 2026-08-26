@@ -28,12 +28,21 @@ pub struct PulseDigest {
 
 impl PulseDigest {
     pub fn from_events(events: &[&str]) -> Self {
-        let count = |name: &str| events.iter().filter(|event| **event == name).count() as u32;
-        let failed = count("runtime.schedule_failed");
-        let dead_lettered = count("runtime.schedule_dead_letter");
-        let missed = count("runtime.trigger_missed");
-        let completed = count("runtime.schedule_completed");
-        let requeued = count("runtime.schedule_requeued");
+        let mut completed = 0_u32;
+        let mut missed = 0_u32;
+        let mut failed = 0_u32;
+        let mut dead_lettered = 0_u32;
+        let mut requeued = 0_u32;
+        for event in events {
+            match *event {
+                "runtime.schedule_completed" => completed += 1,
+                "runtime.trigger_missed" => missed += 1,
+                "runtime.schedule_failed" => failed += 1,
+                "runtime.schedule_dead_letter" => dead_lettered += 1,
+                "runtime.schedule_requeued" => requeued += 1,
+                _ => {}
+            }
+        }
         let health = if dead_lettered > 0 {
             PulseHealth::Failed
         } else if failed > 0 || missed > 0 {
