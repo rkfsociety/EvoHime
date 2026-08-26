@@ -5,7 +5,7 @@
 //! провайдера пишется в отдельную append-only таблицу, поэтому запись остаётся
 //! hash-стабильной.
 
-use std::{thread::sleep, time::Duration};
+use std::{collections::HashSet, thread::sleep, time::Duration};
 
 use evohime_context_budget::{
     budget::BudgetUnavailable,
@@ -435,7 +435,7 @@ impl<'a> ContextLedgerStore<'a> {
             "SELECT session_id FROM context_ledger
              GROUP BY session_id ORDER BY MAX(created_at) DESC LIMIT ?1",
         )?;
-        let recent_sessions: Vec<String> = statement
+        let recent_sessions: HashSet<String> = statement
             .query_map(
                 [i64::try_from(LEDGER_RETAINED_SESSIONS).unwrap_or(i64::MAX)],
                 |row| row.get::<_, String>(0),
@@ -443,9 +443,18 @@ impl<'a> ContextLedgerStore<'a> {
             .collect::<Result<_, _>>()?;
         drop(statement);
 
-        let mut removable = self
-            .connection
-            .prepare("SELECT id, session_id FROM context_ledger WHERE created_at < ?1")?;
+        // Filter pinned ledgers in SQL instead of issuing one receipt lookup
+        // per candidate below. Retention can see many old rows, so the
+        // previous N+1 query pattern made a routine sweep increasingly costly.
+        let mut removable = self.connection.prepare(
+            "SELECT id, session_id FROM context_ledger
+             WHERE created_at < ?1
+               AND NOT EXISTS (
+                 SELECT 1 FROM context_ledger_receipts
+                 WHERE context_ledger_receipts.ledger_id = context_ledger.id
+                   AND context_ledger_receipts.exported = 0
+               )",
+        )?;
         let candidates: Vec<(String, String)> = removable
             .query_map([age_cutoff], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -456,15 +465,6 @@ impl<'a> ContextLedgerStore<'a> {
         let mut removed = 0_u64;
         for (id, session_id) in candidates {
             if recent_sessions.contains(&session_id) {
-                continue;
-            }
-            let pinned_by_receipt: i64 = self.connection.query_row(
-                "SELECT COUNT(*) FROM context_ledger_receipts
-                 WHERE ledger_id = ?1 AND exported = 0",
-                [&id],
-                |row| row.get(0),
-            )?;
-            if pinned_by_receipt > 0 {
                 continue;
             }
             // Запись удаляется целиком, вместе со строками usage.
