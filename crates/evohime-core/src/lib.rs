@@ -4368,8 +4368,7 @@ async fn run_codex_cli(
             "--json",
             "--sandbox",
             "workspace-write",
-            "--ask-for-approval",
-            "never",
+            "--approve-for-me",
             "--model",
             model.trim(),
         ])
@@ -4455,14 +4454,14 @@ fn resolve_codex_executable() -> PathBuf {
             return path;
         }
     }
-    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
-        let path = PathBuf::from(local_app_data).join("Programs/OpenAI/Codex/bin/codex.exe");
+    if let Ok(app_data) = std::env::var("APPDATA") {
+        let path = PathBuf::from(app_data).join("npm/codex.cmd");
         if path.is_file() {
             return path;
         }
     }
-    if let Ok(app_data) = std::env::var("APPDATA") {
-        let path = PathBuf::from(app_data).join("npm/codex.cmd");
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        let path = PathBuf::from(local_app_data).join("Programs/OpenAI/Codex/bin/codex.exe");
         if path.is_file() {
             return path;
         }
