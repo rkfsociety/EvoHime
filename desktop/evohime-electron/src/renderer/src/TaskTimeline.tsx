@@ -124,9 +124,18 @@ export function TaskTimeline({
     if (sentPrompt !== null && taskId !== null && !messages.some((message) => message.taskId === taskId)) {
       messages.push({ taskId, prompt: sentPrompt, atMs: sentPromptAtMs ?? Date.now() })
     }
+    // The event list is shared by every message in the open chat. Index it
+    // once so rendering a long conversation does not rescan the same events
+    // for each message.
+    const eventsByTask = new Map<string, CoreEvent[]>()
+    for (const event of taskEvents) {
+      const taskEventsForId = eventsByTask.get(event.taskId)
+      if (taskEventsForId) taskEventsForId.push(event)
+      else eventsByTask.set(event.taskId, [event])
+    }
     return messages.map((message) => ({
       message,
-      transcript: buildTranscript(taskEvents.filter((event) => event.taskId === message.taskId))
+      transcript: buildTranscript(eventsByTask.get(message.taskId) ?? [])
     }))
   }, [chat?.messages, sentPrompt, sentPromptAtMs, taskId, taskEvents])
 

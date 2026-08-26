@@ -52,6 +52,21 @@ describe('transcript', () => {
     expect(entries[0]).toMatchObject({ kind: 'agent', text: 'Смотрю структуру проекта.' })
   })
 
+  it('reads newest-first events without changing the source order', () => {
+    const events = stream(
+      event('AssistantDelta', { content: 'Первый ответ.' }),
+      event('AssistantDelta', { content: 'Второй ответ.' })
+    )
+    const newestFirst = events.map((item) => item.sequenceId)
+
+    const { entries } = buildTranscript(events)
+
+    expect(events.map((item) => item.sequenceId)).toEqual(newestFirst)
+    expect(entries).toEqual([
+      expect.objectContaining({ kind: 'agent', text: 'Первый ответ.Второй ответ.' })
+    ])
+  })
+
   it('keeps completed long Codex messages instead of replacing the first one', () => {
     const first = 'Первое сообщение Codex. ' + 'а'.repeat(260)
     const second = 'Второе сообщение Codex. ' + 'б'.repeat(260)

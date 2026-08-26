@@ -64,7 +64,11 @@ export function buildTranscript(events: readonly CoreEvent[]): Transcript {
   let approval: Approval | null = null
   let finished = false
 
-  for (const event of [...events].reverse()) {
+  // `events` is already newest-first. Walk it backwards instead of cloning
+  // and reversing the whole stream on every render while a task is running.
+  for (let eventIndex = events.length - 1; eventIndex >= 0; eventIndex -= 1) {
+    const event = events[eventIndex]
+    if (event === undefined) continue
     if (SILENT_EVENTS.has(event.eventType)) continue
     const payload = unwrap(event.payload)
     const id = String(event.sequenceId)
