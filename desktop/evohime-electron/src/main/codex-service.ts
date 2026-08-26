@@ -20,6 +20,16 @@ const CLIENT_VERSION = '0.1.0'
 const MAX_LINE_CHARS = 512 * 1024
 const MAX_MODELS = 100
 
+// Some Codex desktop releases expose the 5.6 family in their model picker
+// before the local app-server publishes it through model/list. Keep the
+// canonical IDs available until that endpoint catches up; server entries
+// below override these fallbacks when they are present.
+const CODEX_5_6_MODELS: readonly CodexModel[] = [
+  { id: 'gpt-5.6-sol', model: 'gpt-5.6-sol', displayName: '5.6 Sol', description: 'Codex 5.6 Sol.', defaultReasoningEffort: 'medium', supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh'], isDefault: false },
+  { id: 'gpt-5.6-terra', model: 'gpt-5.6-terra', displayName: '5.6 Terra', description: 'Codex 5.6 Terra.', defaultReasoningEffort: 'medium', supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh'], isDefault: false },
+  { id: 'gpt-5.6-luna', model: 'gpt-5.6-luna', displayName: '5.6 Luna', description: 'Codex 5.6 Luna.', defaultReasoningEffort: 'medium', supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh'], isDefault: false }
+]
+
 export type CodexLoginLauncher = (executable: string) => void
 
 export class CodexService {
@@ -288,10 +298,10 @@ function isRecord(value: unknown): value is JsonRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function normalizeModels(value: unknown): CodexModel[] {
+export function normalizeModels(value: unknown): CodexModel[] {
   const record = isRecord(value) ? value : {}
   const data = Array.isArray(record['data']) ? record['data'] : []
-  return data.flatMap((item): CodexModel[] => {
+  const published = data.flatMap((item): CodexModel[] => {
     if (!isRecord(item) || item['hidden'] === true) return []
     const id = stringValue(item['id'])
     const model = stringValue(item['model']) || id
@@ -311,7 +321,10 @@ function normalizeModels(value: unknown): CodexModel[] {
       supportedReasoningEfforts: efforts,
       isDefault: item['isDefault'] === true
     }]
-  }).slice(0, MAX_MODELS)
+  })
+  const byId = new Map(CODEX_5_6_MODELS.map((model) => [model.id, model]))
+  for (const model of published) byId.set(model.id, model)
+  return [...byId.values()].slice(0, MAX_MODELS)
 }
 
 function normalizeRateLimits(value: unknown): CodexRateLimit[] {

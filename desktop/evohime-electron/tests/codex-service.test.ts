@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { CodexService } from '../src/main/codex-service'
+import { CodexService, normalizeModels } from '../src/main/codex-service'
 
 const directories: string[] = []
 
@@ -13,6 +13,16 @@ afterEach(() => {
 })
 
 describe('Codex CLI installation', () => {
+  it('keeps the Codex 5.6 family visible when app-server has not published it yet', () => {
+    const models = normalizeModels({ data: [{ id: 'gpt-5.5', model: 'gpt-5.5', displayName: 'GPT-5.5', hidden: false }] })
+
+    expect(models.slice(0, 3).map((model) => [model.id, model.displayName])).toEqual([
+      ['gpt-5.6-sol', '5.6 Sol'],
+      ['gpt-5.6-terra', '5.6 Terra'],
+      ['gpt-5.6-luna', '5.6 Luna']
+    ])
+  })
+
   it('uses the pinned winget package and reports a bounded failure', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'evohime-codex-'))
     directories.push(directory)

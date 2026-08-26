@@ -116,8 +116,10 @@ export function ModelPicker({ connection, events, provider = 'literouter' }: Mod
     )
   }
 
-  const visibleModels = provider === 'codex_cli' ? codexModels.map((model) => model.id) : models
-  const known = visibleModels.includes(current)
+  const visibleModels = provider === 'codex_cli'
+    ? codexModels.map((model) => ({ value: model.id, label: model.displayName || model.id }))
+    : models.map((model) => ({ value: model, label: model }))
+  const known = visibleModels.some((model) => model.value === current)
 
   return (
     <>
@@ -132,9 +134,14 @@ export function ModelPicker({ connection, events, provider = 'literouter' }: Mod
 }
 
 interface ModelDropdownProps {
-  readonly models: readonly string[]
+  readonly models: readonly ModelOption[]
   readonly current: string
   readonly onSelect: (model: string) => void
+}
+
+interface ModelOption {
+  readonly value: string
+  readonly label: string
 }
 
 /**
@@ -169,7 +176,7 @@ function ModelDropdown({ models, current, onSelect }: ModelDropdownProps): React
     const needle = query.trim().toLowerCase()
     return needle.length === 0
       ? models
-      : models.filter((model) => model.toLowerCase().includes(needle))
+      : models.filter((model) => `${model.label} ${model.value}`.toLowerCase().includes(needle))
   }, [models, query])
 
   return (
@@ -204,17 +211,17 @@ function ModelDropdown({ models, current, onSelect }: ModelDropdownProps): React
               <li className="model-picker__none">Ничего не найдено</li>
             ) : (
               visible.map((model) => (
-                <li key={model}>
+                <li key={model.value}>
                   <button
                     type="button"
                     role="option"
-                    aria-selected={model === current}
+                    aria-selected={model.value === current}
                     onClick={() => {
-                      onSelect(model)
+                      onSelect(model.value)
                       setOpen(false)
                     }}
                   >
-                    {model}
+                    {model.label}
                   </button>
                 </li>
               ))
