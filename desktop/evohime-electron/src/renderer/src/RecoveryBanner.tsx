@@ -11,11 +11,19 @@ interface RecoveryBannerProps {
   readonly events: readonly CoreEvent[]
   readonly onOpenTask: () => void
   readonly showOpenTask?: boolean
+  /** The shell-wide banner must not surface task history on the home screen. */
+  readonly taskScoped?: boolean
 }
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 
-export function RecoveryBanner({ connection, events, onOpenTask, showOpenTask = true }: RecoveryBannerProps): React.JSX.Element | null {
+export function RecoveryBanner({
+  connection,
+  events,
+  onOpenTask,
+  showOpenTask = true,
+  taskScoped = true
+}: RecoveryBannerProps): React.JSX.Element | null {
   const api = useShellApi()
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
@@ -24,7 +32,8 @@ export function RecoveryBanner({ connection, events, onOpenTask, showOpenTask = 
   // помнится по correlationId: иначе кнопки выглядят так, будто ничего не делают.
   const [dismissedId, setDismissedId] = useState<string | null>(null)
 
-  const notice = latestRecoveryNotice(events)
+  const visibleEvents = taskScoped ? events : events.filter((event) => event.taskId.length === 0)
+  const notice = latestRecoveryNotice(visibleEvents)
   if (!notice || notice.correlationId === dismissedId) return null
 
   const connected = CONNECTED_STATES.includes(connection)

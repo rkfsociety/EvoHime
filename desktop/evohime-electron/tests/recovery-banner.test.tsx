@@ -83,6 +83,18 @@ describe('recovery contract', () => {
     expect(screen.queryByText('Открыть подтверждение')).toBeNull()
   })
 
+  it('does not surface task history in the shell-wide banner', () => {
+    const { container } = render(
+      <RecoveryBanner
+        connection="connected"
+        events={[event('task.failed', { error: 'old task failure', request_id: 'request-1' })]}
+        onOpenTask={vi.fn()}
+        taskScoped={false}
+      />
+    )
+    expect(container.querySelector('.recovery-banner')).toBeNull()
+  })
+
   it('opens the redacted details of the failed event', () => {
     const onOpenTask = vi.fn()
     render(<RecoveryBanner connection="connected" events={[event('task.failed', { error: 'safe error', request_id: 'request-1' })]} onOpenTask={onOpenTask} />)

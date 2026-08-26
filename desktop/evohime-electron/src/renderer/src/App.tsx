@@ -267,6 +267,7 @@ export function App(): React.JSX.Element {
           connection={connection}
           events={events}
           onOpenTask={() => setView('chat')}
+          taskScoped={false}
         />
 
         <div className="main__body">
