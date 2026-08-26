@@ -173,14 +173,26 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
   const [knowledgeQuery, setKnowledgeQuery] = useState('')
 
   const connected = CONNECTED_STATES.includes(connection)
-  const count = (name: string) => events.filter((event) => event.eventType === name).length
-  const childEvents = events.filter((event) => event.eventType.startsWith('child.'))
-  const childProjection = useMemo(() => childEvents.map((event) => {
-    try { return { event, item: JSON.parse(event.payload) as ChildTimelineItem } } catch { return { event, item: {} as ChildTimelineItem } }
-  }), [childEvents])
-  const activeChildren = childProjection.filter(({ item }) => item.lease_live === true && !item.dead_letter).length
-  const deadLetters = childProjection.filter(({ item }) => item.dead_letter === true).length
-  const liveLeases = childProjection.filter(({ item }) => item.lease_live === true).length
+  const eventSummary = useMemo(() => {
+    const counts = new Map<string, number>()
+    const childProjection: { readonly event: CoreEvent; readonly item: ChildTimelineItem }[] = []
+    let activeChildren = 0
+    let deadLetters = 0
+    let liveLeases = 0
+    for (const event of events) {
+      counts.set(event.eventType, (counts.get(event.eventType) ?? 0) + 1)
+      if (!event.eventType.startsWith('child.')) continue
+      let item: ChildTimelineItem
+      try { item = JSON.parse(event.payload) as ChildTimelineItem } catch { item = {} }
+      childProjection.push({ event, item })
+      if (item.lease_live === true) liveLeases += 1
+      if (item.dead_letter === true) deadLetters += 1
+      if (item.lease_live === true && item.dead_letter !== true) activeChildren += 1
+    }
+    return { counts, childProjection, activeChildren, deadLetters, liveLeases }
+  }, [events])
+  const count = (name: string): number => eventSummary.counts.get(name) ?? 0
+  const { childProjection, activeChildren, deadLetters, liveLeases } = eventSummary
   const pulseFailed = count('runtime.schedule_failed') + count('runtime.schedule_dead_letter')
   const toolCalls = count('tool.started')
   const toolOutputs = count('tool.output')
@@ -669,7 +681,7 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
         </ol>
       ) : null}
 
-      {childEvents.length > 0 ? (
+      {childProjection.length > 0 ? (
         <ol className="operations-timeline" aria-label="Последние child события">
           {childProjection.slice(0, 8).map(({ event, item }) => (
             <li key={`${event.sequenceId}-${event.eventType}`}>

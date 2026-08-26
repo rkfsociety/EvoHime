@@ -26,7 +26,7 @@
 | --- | --- | --- |
 | Electron transcript/task timeline | завершено | Убран clone+reverse потока и повторное сканирование событий по каждому сообщению; добавлен тест сохранения порядка. Коммит `6264073c`. |
 | Electron main/preload и IPC | завершено | Проверены очереди, replay, frame parsing, backoff и lifecycle; `LedgerEventDedup` переведён с O(n) `shift()` на O(1) ring eviction, добавлены 2 focused tests. |
-| Electron renderer panels/stores | в работе | Убраны копии newest-first event stream в transcript и PlanReview roster/failure projection; продолжить просмотр мемоизации, подписок, лимитов и устаревших ответов. |
+| Electron renderer panels/stores | в работе | Убраны копии newest-first event stream в transcript и PlanReview roster/failure projection; `OperationsPanel` переведён с нескольких filter/map проходов по событиям на один memoized pass; продолжить просмотр мемоизации, подписок, лимитов и устаревших ответов. |
 | Rust Core | ожидает | Проверить горячие циклы, clone/serialize, async cancellation и event fan-out. |
 | Storage/receipts/permissions/gateway | в работе | В `context_ledger.prune` устранён N+1 SELECT по receipt pin через `NOT EXISTS`; проверить остальные retention/receipt SQL-проходы. |
 | Tools/listener/supervisor/updater | ожидает | Проверить bounded I/O, процессы, retry и очистку ресурсов. |
