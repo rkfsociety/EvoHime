@@ -81,12 +81,10 @@ describe('provider form', () => {
     expect(screen.getByText('Ключ сохранён')).toBeTruthy()
   })
 
-  it('persists the separate Codex engine choice without touching API credentials', async () => {
+  it('keeps the provider settings block free of a separate coding-engine switch', async () => {
     render(<ProviderForm />)
-    const engine = (await screen.findAllByRole('combobox'))[0] as HTMLSelectElement
-    await userEvent.selectOptions(engine, 'codex_cli')
-    expect(window.localStorage.getItem('evohime.coding-engine')).toBe('codex_cli')
-    expect(calls.filter((call) => call.command === 'provider.save')).toHaveLength(0)
+    expect(await screen.findByLabelText('Провайдер')).toBeTruthy()
+    expect(screen.queryByLabelText('Движок coding-задач')).toBeNull()
   })
 
   it('surfaces a rejected write instead of reporting success', async () => {

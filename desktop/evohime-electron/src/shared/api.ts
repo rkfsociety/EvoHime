@@ -147,6 +147,9 @@ export const PROVIDER_KINDS = ['literouter', 'openai_compatible', 'openai_respon
 
 export type ProviderKind = (typeof PROVIDER_KINDS)[number]
 
+/** Единственный источник модели для одной задачи в чате. */
+export type ChatProviderMode = ProviderKind | 'codex_cli'
+
 /** Which half of the provider catalogue the user works with. */
 export type ModelTier = 'free' | 'paid'
 
@@ -719,6 +722,7 @@ export const RENDERER_COMMANDS = [
   'review.saveRevision',
   'provider.get',
   'provider.save',
+  'provider.select',
   'provider.clearKey',
   'codex.getStatus',
   'codex.refresh',
@@ -927,6 +931,7 @@ export interface CommandPayloads {
   'review.saveRevision': { revisionId: string; destinationPath: string; fileName?: string }
   'provider.get': Record<string, never>
   'provider.save': { provider: ProviderKind; apiKey: string; model: string; baseUrl: string; tier: ModelTier }
+  'provider.select': { provider: ProviderKind }
   'provider.clearKey': { provider?: ProviderKind }
   'codex.getStatus': Record<string, never>
   'codex.refresh': Record<string, never>
@@ -1117,6 +1122,7 @@ export interface CommandResults {
   'provider.get': ProviderSummary
   /** `restarted` is false when Core could not be relaunched with the new key. */
   'provider.save': { summary: ProviderSummary; restarted: boolean }
+  'provider.select': { summary: ProviderSummary; restarted: boolean }
   'provider.clearKey': { summary: ProviderSummary; restarted: boolean }
   'codex.getStatus': CodexStatus
   'codex.refresh': CodexStatus

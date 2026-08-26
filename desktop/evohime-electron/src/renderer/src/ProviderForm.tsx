@@ -44,9 +44,6 @@ export function ProviderForm(): React.JSX.Element {
   const [tier, setTier] = useState<ModelTier>('free')
   const [baseUrl, setBaseUrl] = useState('')
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
-  const [codingEngine, setCodingEngine] = useState<'evohime_core' | 'codex_cli'>(() =>
-    window.localStorage.getItem('evohime.coding-engine') === 'codex_cli' ? 'codex_cli' : 'evohime_core'
-  )
 
   // Fields stay controlled even if a summary arrives with a missing member.
   const apply = useCallback((value: ProviderSummary) => {
@@ -129,25 +126,6 @@ export function ProviderForm(): React.JSX.Element {
       </div>
 
       <div className="provider-form__grid">
-        <label htmlFor="coding-engine">
-          Движок coding-задач
-          <select
-            id="coding-engine"
-            value={codingEngine}
-            onChange={(event) => {
-              const next = event.target.value === 'codex_cli' ? 'codex_cli' : 'evohime_core'
-              setCodingEngine(next)
-              window.localStorage.setItem('evohime.coding-engine', next)
-            }}
-            disabled={busy}
-          >
-            <option value="evohime_core">Ева (Core)</option>
-            <option value="codex_cli">Codex CLI</option>
-          </select>
-          <span className="provider-form__hint">
-            Codex CLI используется только для задач с флажком Coding в поле ввода.
-          </span>
-        </label>
         <label htmlFor="provider-kind">
           Провайдер
           <select

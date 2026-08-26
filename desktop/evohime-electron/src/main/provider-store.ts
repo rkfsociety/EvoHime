@@ -177,6 +177,15 @@ export class ProviderStore {
     return this.summaryFor(next)
   }
 
+  /** Changes the active API profile without touching any stored credential. */
+  select(provider: ProviderKind): ProviderSummary {
+    const current = this.readDocument()
+    if (current.provider === provider) return this.summaryFor(current)
+    const next = { ...current, provider }
+    this.write(next)
+    return this.summaryFor(next)
+  }
+
   /** Forgets the stored key while keeping the provider choice. */
   clearKey(provider = this.readDocument().provider): ProviderSummary {
     const current = this.readDocument()

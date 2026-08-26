@@ -853,6 +853,16 @@ function dispatch(
       return restartCore().then((restarted) => ({ ok: true, value: { summary, restarted } }))
     }
 
+    case 'provider.select': {
+      const provider = asProviderKind(asRecord(payload)['provider'])
+      if (provider === null) return failure('invalid-payload', 'Некорректный провайдер.')
+      const profile = providers.summary().profiles[provider]
+      if (!profile.configured) return failure('invalid-payload', 'Сначала настрой ключ выбранного провайдера.')
+      const summary = providers.select(provider)
+      log('info', 'shell.provider_selected', { provider })
+      return restartCore().then((restarted) => ({ ok: true, value: { summary, restarted } }))
+    }
+
     case 'provider.clearKey': {
       const requestedProvider = asProviderKind(asRecord(payload)['provider'])
       const summary = providers.clearKey(requestedProvider ?? undefined)

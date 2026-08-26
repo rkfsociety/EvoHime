@@ -26,6 +26,7 @@ const TABS: readonly { readonly id: SettingsTab; readonly label: string }[] = [
 
 export function SettingsModal({ workspace, connection, events, onClose }: SettingsModalProps): React.JSX.Element {
   const [tab, setTab] = useState<SettingsTab>('provider')
+  const [providerSurface, setProviderSurface] = useState<'api' | 'codex'>('api')
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -67,7 +68,19 @@ export function SettingsModal({ workspace, connection, events, onClose }: Settin
           </nav>
 
           <div className="settings-modal__content">
-            {tab === 'provider' ? <><ProviderForm /><CodexPanel /></> : null}
+            {tab === 'provider' ? (
+              <section className="provider-hub" aria-label="Провайдер и модели">
+                <div className="provider-hub__tabs" role="tablist" aria-label="Источник моделей">
+                  <button type="button" role="tab" aria-selected={providerSurface === 'api'} onClick={() => setProviderSurface('api')}>
+                    API-провайдеры
+                  </button>
+                  <button type="button" role="tab" aria-selected={providerSurface === 'codex'} onClick={() => setProviderSurface('codex')}>
+                    Codex CLI
+                  </button>
+                </div>
+                {providerSurface === 'api' ? <ProviderForm /> : <CodexPanel />}
+              </section>
+            ) : null}
             {tab === 'workspace' ? <WorkspaceSettings workspace={workspace} /> : null}
             {tab === 'speech' ? <ListenerRuntimeSection /> : null}
             {tab === 'appearance' ? <InfoSettings title="Внешний вид" text="Тёмная тема и компактная плотность интерфейса используются как основной режим EvoHime." /> : null}

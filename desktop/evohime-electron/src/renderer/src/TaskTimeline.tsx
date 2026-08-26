@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { ChatRecord, ConnectionState, CoreEvent } from '@shared/api'
+import type { ChatProviderMode, ChatRecord, ConnectionState, CoreEvent } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { ModelPicker } from './ModelPicker'
@@ -13,6 +13,7 @@ import { RecoveryBanner } from './RecoveryBanner'
 import { PermissionModePicker } from './PermissionModePicker'
 import { ContextUsage } from './ContextUsage'
 import { RoutingStatus } from './RoutingStatus'
+import { ChatProviderPicker } from './ChatProviderPicker'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 const MAX_RENDERED_ITEMS = 80
@@ -55,7 +56,12 @@ export function TaskTimeline({
   const [sentPromptAtMs, setSentPromptAtMs] = useState<number | null>(null)
   const [commandError, setCommandError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [coding, setCoding] = useState(() => window.localStorage.getItem('evohime.coding-engine') === 'codex_cli')
+  const [providerMode, setProviderMode] = useState<ChatProviderMode>(() => {
+    const stored = window.localStorage.getItem('evohime.chat-provider-mode')
+    return stored === 'codex_cli' || stored === 'openai_compatible' || stored === 'openai_responses' || stored === 'literouter'
+      ? stored
+      : 'literouter'
+  })
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
@@ -158,12 +164,8 @@ export function TaskTimeline({
       taskId: nextTaskId,
       prompt: text,
       workspacePath: workspace,
-      preferredRouteHint: (() => {
-        if (coding) return 'codex_cli'
-        const value = window.localStorage.getItem('evohime.preferred-route')
-        return value === 'local' || value === 'cloud' ? value : null
-      })(),
-      executionKind: coding ? 'coding' : 'dialogue'
+      preferredRouteHint: providerMode === 'codex_cli' ? 'codex_cli' : 'cloud',
+      executionKind: providerMode === 'codex_cli' ? 'coding' : 'dialogue'
     })
     setBusy(false)
     if (!outcome.ok) {
@@ -181,7 +183,7 @@ export function TaskTimeline({
     })
     if (stored.ok && stored.value) setChat(stored.value)
     onChatTouched()
-  }, [api, chatId, coding, onChatOpened, onChatTouched, prompt, workspace])
+  }, [api, chatId, onChatOpened, onChatTouched, prompt, providerMode, workspace])
 
   const stop = useCallback(async () => {
     if (!api || !taskId) return
@@ -336,16 +338,13 @@ export function TaskTimeline({
           <div className="composer__hint">
             <ContextUsage events={taskEvents} />
             <PermissionModePicker connection={connection} workspace={workspace} />
-            <ModelPicker connection={connection} events={events} />
-            <label>
-              <input
-                type="checkbox"
-                checked={coding}
-                onChange={(event) => setCoding(event.target.checked)}
-                disabled={busy}
-              />
-              Coding-задача (Codex CLI)
-            </label>
+            <ChatProviderPicker
+              connection={connection}
+              value={providerMode}
+              onChange={setProviderMode}
+              disabled={busy}
+            />
+            <ModelPicker connection={connection} events={events} provider={providerMode} />
           </div>
 
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { ConnectionState, CoreEvent, ModelTier } from '@shared/api'
+import type { ChatProviderMode, ConnectionState, CoreEvent, CodexModel, ModelTier } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 
@@ -18,33 +18,47 @@ const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 
 export interface ModelPickerProps {
   readonly connection: ConnectionState
   readonly events: readonly CoreEvent[]
+  readonly provider: ChatProviderMode
 }
 
-export function ModelPicker({ connection, events }: ModelPickerProps): React.JSX.Element | null {
+export function ModelPicker({ connection, events, provider }: ModelPickerProps): React.JSX.Element | null {
   const api = useShellApi()
   const connected = CONNECTED_STATES.includes(connection)
   const [tier, setTier] = useState<ModelTier | null>(null)
   const [models, setModels] = useState<readonly string[]>([])
   const [current, setCurrent] = useState('')
+  const [codexModels, setCodexModels] = useState<readonly CodexModel[]>([])
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!api) return
+    if (!api || provider === 'codex_cli') return
     void api.invoke('provider.get', {}).then((outcome) => {
       if (outcome.ok) setTier(outcome.value.tier === 'paid' ? 'paid' : 'free')
     })
-  }, [api])
+  }, [api, provider])
 
   useEffect(() => {
-    if (!api || !connected || tier === null) return
+    if (!api || !connected || provider === 'codex_cli' || tier === null) return
     void api.invoke('core.listModelCatalog', { mode: tier })
     void api.invoke('core.getModelConfig', {})
-  }, [api, connected, tier])
+  }, [api, connected, provider, tier])
+
+  useEffect(() => {
+    if (!api || !connected || provider !== 'codex_cli') return
+    void api.invoke('codex.getStatus', {}).then((outcome) => {
+      if (outcome.ok) {
+        setCodexModels(outcome.value.models)
+        setCurrent(outcome.value.selectedModel)
+        setError(outcome.value.error)
+      }
+    })
+  }, [api, connected, provider])
 
   const catalog = useMemo(() => latest(events, 'model.catalog'), [events])
   const config = useMemo(() => latest(events, 'model.config'), [events])
 
   useEffect(() => {
+    if (provider === 'codex_cli') return
     if (!catalog) return
     const parsed = parseJson(catalog.payload)
     setModels(
@@ -53,33 +67,37 @@ export function ModelPicker({ connection, events }: ModelPickerProps): React.JSX
         : []
     )
     setError(typeof parsed['error'] === 'string' ? parsed['error'] : null)
-  }, [catalog])
+  }, [catalog, provider])
 
   useEffect(() => {
+    if (provider === 'codex_cli') return
     if (!config) return
     const parsed = parseJson(config.payload)
     if (typeof parsed['model'] === 'string') setCurrent(parsed['model'])
-  }, [config])
+  }, [config, provider])
 
   const select = useCallback(
     async (model: string) => {
       if (!api) return
       setCurrent(model)
-      const outcome = await api.invoke('core.selectModel', { model })
+      const outcome = provider === 'codex_cli'
+        ? await api.invoke('codex.selectModel', { model })
+        : await api.invoke('core.selectModel', { model })
       if (!outcome.ok) setError(outcome.message)
     },
-    [api]
+    [api, provider]
   )
 
   // A dropdown whose value is not in its own list still renders the first
   // option, which would show one model while Core used another — the route
   // default, which need not even exist in this tier. Commit to what is shown.
   useEffect(() => {
-    if (models.length === 0) return
-    if (current !== '' && models.includes(current)) return
-    const first = models[0]
+    const available = provider === 'codex_cli' ? codexModels.map((model) => model.id) : models
+    if (available.length === 0) return
+    if (current !== '' && available.includes(current)) return
+    const first = available[0]
     if (first !== undefined) void select(first)
-  }, [current, models, select])
+  }, [codexModels, current, models, provider, select])
 
   if (!connected) {
     return null
@@ -95,11 +113,12 @@ export function ModelPicker({ connection, events }: ModelPickerProps): React.JSX
     )
   }
 
-  const known = models.includes(current)
+  const visibleModels = provider === 'codex_cli' ? codexModels.map((model) => model.id) : models
+  const known = visibleModels.includes(current)
 
   return (
     <ModelDropdown
-      models={models}
+      models={visibleModels}
       current={known ? current : ''}
       onSelect={(model) => void select(model)}
     />

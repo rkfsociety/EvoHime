@@ -105,6 +105,16 @@ describe('provider store', () => {
     expect(store.environment()).toEqual({ MODEL_PROVIDER: 'literouter', LITEROUTER_API_KEY: 'sk-literouter', LITEROUTER_MODEL: 'router-next' })
   })
 
+  it('switches the active provider without changing its credentials', () => {
+    const store = new ProviderStore(storePath(), reversibleCipher())
+    store.save({ provider: 'literouter', apiKey: 'sk-literouter', model: 'router-model', baseUrl: '', tier: 'free' })
+    store.save({ provider: 'openai_compatible', apiKey: 'sk-openai', model: 'gpt-model', baseUrl: '', tier: 'paid' })
+
+    expect(store.select('literouter')).toMatchObject({ provider: 'literouter', configured: true })
+    expect(store.environment()).toEqual({ MODEL_PROVIDER: 'literouter', LITEROUTER_API_KEY: 'sk-literouter', LITEROUTER_MODEL: 'router-model' })
+    expect(store.summary().profiles.openai_compatible.configured).toBe(true)
+  })
+
   it('exports Responses credentials through the same protected OpenAI environment', () => {
     const store = new ProviderStore(storePath(), reversibleCipher())
     store.save({ provider: 'openai_responses', apiKey: 'sk-responses', model: 'gpt-5-codex', baseUrl: '', tier: 'paid' })
