@@ -115,17 +115,34 @@ export function CodexPanel(): React.JSX.Element {
 }
 
 function RateLimitView({ limit }: { readonly limit: CodexRateLimit }): React.JSX.Element {
-  const primary = limit.primary
-  const secondary = limit.secondary
-  const individual = limit.individualRemainingPercent
-  const remaining = individual ?? primary?.remainingPercent ?? secondary?.remainingPercent
+  const windows = [
+    limit.individualRemainingPercent !== null
+      ? { label: 'Индивидуальный', remaining: limit.individualRemainingPercent, resetsAt: limit.individualResetsAt }
+      : null,
+    limit.primary ? { label: windowLabel(limit.primary.windowDurationMins, 'Основной'), remaining: limit.primary.remainingPercent, resetsAt: limit.primary.resetsAt } : null,
+    limit.secondary ? { label: windowLabel(limit.secondary.windowDurationMins, 'Дополнительный'), remaining: limit.secondary.remainingPercent, resetsAt: limit.secondary.resetsAt } : null
+  ].filter((item): item is { label: string; remaining: number; resetsAt: number | null } => item !== null)
+
   return (
     <div className="settings-info__detail" data-testid={`codex-limit-${limit.limitId}`}>
       <span>{limit.limitId}{limit.planType ? ` · ${limit.planType}` : ''}</span>
-      <strong>{remaining === undefined ? 'нет данных' : `осталось ${remaining}%`}</strong>
-      <small>{formatReset(individual !== null ? limit.individualResetsAt : primary?.resetsAt ?? secondary?.resetsAt ?? null)}</small>
+      {windows.length === 0 ? <small>данные о лимите не переданы</small> : windows.map((window) => (
+        <span key={window.label} className="codex-limit-window">
+          <strong>{window.label}: осталось {window.remaining}%</strong>
+          <small>{formatReset(window.resetsAt)}</small>
+        </span>
+      ))}
     </div>
   )
+}
+
+function windowLabel(durationMins: number | null, fallback: string): string {
+  if (durationMins === 300) return '5 часов'
+  if (durationMins === 10080) return 'Неделя'
+  if (durationMins === null) return fallback
+  if (durationMins % 1440 === 0) return `${durationMins / 1440} дн.`
+  if (durationMins % 60 === 0) return `${durationMins / 60} ч.`
+  return `${durationMins} мин.`
 }
 
 function formatReset(timestamp: number | null): string {
