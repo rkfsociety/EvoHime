@@ -4467,11 +4467,7 @@ where
     let mut output = Vec::new();
     let mut line_buffer = String::new();
     let mut chunk = vec![0_u8; CHUNK_BYTES];
-    loop {
-        let read = match tokio::io::AsyncReadExt::read(&mut reader, &mut chunk).await {
-            Ok(read) => read,
-            Err(_) => break,
-        };
+    while let Ok(read) = tokio::io::AsyncReadExt::read(&mut reader, &mut chunk).await {
         if read == 0 {
             break;
         }
