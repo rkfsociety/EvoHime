@@ -28,16 +28,32 @@ pub enum ContentForm<'a> {
 /// UTF-8 → NFC → `\r\n`/`\r` → `\n` → удаление завершающих пробелов в строке →
 /// удаление завершающих пустых строк. Ведущие пробелы сохраняются.
 pub fn normalize_text(input: &str) -> String {
-    let nfc: String = input.nfc().collect();
-    let unified = nfc.replace("\r\n", "\n").replace('\r', "\n");
-    let mut lines: Vec<&str> = unified
-        .split('\n')
-        .map(|line| line.trim_end_matches([' ', '\t', '\u{000b}', '\u{000c}']))
-        .collect();
-    while matches!(lines.last(), Some(last) if last.is_empty()) {
-        lines.pop();
+    // Normalize line endings and trim each line while constructing the result.
+    // The previous split/map/join pipeline allocated an NFC string, a second
+    // unified string, a line vector, and a final joined string for every hash.
+    let mut normalized = String::with_capacity(input.len());
+    let mut line_end = 0;
+    let mut chars = input.nfc().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\r' || ch == '\n' {
+            if ch == '\r' && chars.peek() == Some(&'\n') {
+                chars.next();
+            }
+            normalized.truncate(line_end);
+            normalized.push('\n');
+            line_end = normalized.len();
+            continue;
+        }
+        normalized.push(ch);
+        if !matches!(ch, ' ' | '\t' | '\u{000b}' | '\u{000c}') {
+            line_end = normalized.len();
+        }
     }
-    lines.join("\n")
+    normalized.truncate(line_end);
+    while normalized.ends_with('\n') {
+        normalized.pop();
+    }
+    normalized
 }
 
 /// Каноническое представление JSON. Возвращает `None`, если вход не является
