@@ -18,6 +18,10 @@ import { ChatProviderPicker } from './ChatProviderPicker'
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 const MAX_RENDERED_ITEMS = 80
 const MAX_COMPOSER_HEIGHT_PX = 200
+const MESSAGE_TIME_FORMATTER = new Intl.DateTimeFormat('ru-RU', {
+  hour: '2-digit',
+  minute: '2-digit'
+})
 
 export interface TaskTimelineProps {
   readonly connection: ConnectionState
@@ -464,7 +468,7 @@ function MessageActions({ id, text, atMs, copied, onCopy }: MessageActionsProps)
 }
 
 function formatMessageTime(atMs: number): string {
-  return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(atMs)
+  return MESSAGE_TIME_FORMATTER.format(atMs)
 }
 
 function makeTaskId(): string {
