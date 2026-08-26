@@ -1,6 +1,6 @@
 # Документация EvoHime
 
-Этот каталог описывает поддерживаемый Windows desktop-продукт. Корневой [`README.md`](../README.md) — пользовательское описание продукта и установка; главный источник команд запуска, требований и критериев проверки — [`AGENTS.md`](../AGENTS.md). Информация о доступном установщике и правилах постоянного релиза находится в [`../installer/release-notes.md`](../installer/release-notes.md).
+Этот каталог описывает поддерживаемый Windows desktop-продукт. Корневой [`README.md`](../README.md) — пользовательское описание продукта и установка; главный источник команд запуска, требований и критериев проверки — [`AGENTS.md`](../AGENTS.md). Информация о доступном установщике и правилах постоянного релиза находится в [`../installer/release-notes.md`](../installer/release-notes.md), а технические release evidence — в [`release-evidence.md`](release-evidence.md).
 
 ## Какой документ читать
 
@@ -11,7 +11,7 @@
 | Понять ближайший порядок работ | [`development-plan.md`](development-plan.md) | Исполняемый план и критерии готовности |
 | Посмотреть долгосрочные направления | [`roadmap.md`](roadmap.md) | Крупные продуктовые этапы без деталей реализации |
 | Проверить решения и зависимости | [`decision-register.md`](decision-register.md) | Accepted/open decisions, владельцы и release impact |
-| Проверить статус выпуска | [`release-audit.md`](release-audit.md), [`release-evidence.md`](release-evidence.md) | Технические gates, blockers и rollback evidence |
+| Проверить статус выпуска | [`release-evidence.md`](release-evidence.md) | Технические gates, blockers и rollback evidence |
 | Проверить пользовательское self-repair/self-update | [`current-state.md`](current-state.md), [`architecture.md`](architecture.md), [`release-evidence.md`](release-evidence.md) | Ручной repair-run, CI gates, health-check и rollback |
 | Проверить границы безопасности | [`../SECURITY.md`](../SECURITY.md) | Угрозы, доверие, диагностика и релизные проверки |
 
@@ -41,7 +41,7 @@
 
 ## Правило источника истины
 
-Если документы расходятся, приоритет такой: код и тесты → `current-state.md` → `architecture.md` → `development-plan.md` → `roadmap.md`. Историю решений и незавершённые варианты не переносите в статус продукта без подтверждения реализацией.
+Если документы расходятся, приоритет такой: код и тесты → `current-state.md` → `architecture.md` → `development-plan.md` → `roadmap.md`. Историю решений и незавершённые варианты не переносите в статус продукта без подтверждения реализацией. Release evidence хранится отдельно от статуса реализации.
 
 ## Владельцы информации
 

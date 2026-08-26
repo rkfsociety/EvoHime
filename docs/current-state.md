@@ -127,7 +127,7 @@ Core и supervisor — внутренние компоненты установ�
 
 Read-only Git loadout расширен операциями git.log, git.show, git.blame и git.changed_files. Они зарегистрированы в Core ToolRegistry, входят в модельные схемы и read-only resilience/policy-контуры; история ограничена 100 записями, blame — 500 строками, а revision и пути проходят валидацию до запуска Git.
 
-### Model request provenance 05
+### Model request provenance
 
 - canonical request envelope v1, JCS/domain-separated hashes, retry lineage и
   известный test vector находятся в `contracts/model-request/v1/` и
@@ -144,7 +144,7 @@ Read-only Git loadout расширен операциями git.log, git.show, g
   внешний trust key. Намеренно неполные `redacted`, `retention_pruned`,
   `legacy_hash_only` и `metadata_hash_only` не считаются полной реконструкцией.
 
-### Workflow orchestration 06
+### Workflow orchestration
 
 - контракт `workflow/v1` (`crates/evohime-core/src/workflow.rs`): immutable
   граф, action profiles `child`/`mcp_tool`/`context_provider` рядом с прежними
@@ -184,7 +184,7 @@ Read-only Git loadout расширен операциями git.log, git.show, g
   категориях), unit-тестами runtime/хранилища и real-Core E2E, запускающим один
   шаблон против собранного `evohime-core.exe`.
 
-### Automation contract 16.1
+### Automation contract
 
 - Core владеет versioned `automation/v1` definition (`automation.rs`):
   immutable definition/revision/owner scope, bounded activity references,
@@ -202,11 +202,11 @@ Read-only Git loadout расширен операциями git.log, git.show, g
   `(owner_scope, definition_id, revision, idempotency_key)` uniqueness. Repeated
   delivery with the same payload returns the first run; a different payload
   returns typed `IdempotencyConflict` without creating a second run.
-- This stage defines the durable contract only; scheduler, queue ownership,
-  lease/fencing and simulation guards remain the explicitly sequenced work of
-  plans 16.2 and 16.3. Renderer has no scheduler or execution authority.
+- The durable contract, scheduler, queue ownership, lease/fencing and simulation
+  guards are implemented in the Core-owned runtime. Renderer has no scheduler
+  or execution authority.
 
-### Automation runtime 16.2
+### Automation runtime
 
 - `automation_runtime.rs` owns the automation FSM, bounded command queue
   (256), coalesced progress map (1024), fencing generation, 30-second lease,
@@ -218,7 +218,7 @@ Read-only Git loadout расширен операциями git.log, git.show, g
   operations have a 120-second deadline, cooperative cancellation and bounded
   retry classification.
 
-### Automation snapshots and simulation 16.3
+### Automation snapshots and simulation
 
 - `AutomationSnapshotV1` is a bounded schema-1 record with checksum,
   definition revision, fencing generation, event sequence, policy/approval
@@ -232,7 +232,7 @@ Read-only Git loadout расширен операциями git.log, git.show, g
   production IPC effects; export redaction strips bearer markers and absolute
   Windows paths.
 
-### Automation acceptance 16.4
+### Automation acceptance
 
 - Deterministic A01–A08 fixtures in `automation_acceptance.rs` verify bounded
   trigger/queue behavior, stale lease fencing, cancellation and retry typing,
@@ -244,7 +244,7 @@ Read-only Git loadout расширен операциями git.log, git.show, g
   the automation boundary/release evidence gates; optional adapters 13–15
   continue to fail closed as unsupported.
 
-### Release decision register 17.1
+### Release decisions
 
 `docs/decision-register.md` фиксирует dependency graph, владельцев schema/IPC,
 resource budgets и закрытые release decisions. В частности,
@@ -257,7 +257,7 @@ Release evidence (`docs/release-evidence.md`) фиксирует rollback/disabl
 retention, redaction, privacy/egress и license ownership; local
 `scripts/release-evidence.tests.ps1` проверяет документы, backup/restore и
 automation evidence без публикации credentials.
-Финальный audit (`docs/release-audit.md`) оставляет checkout в статусе
+Финальный audit (`docs/release-evidence.md`) оставляет checkout в статусе
 `TECHNICAL_GATES_PASS / RELEASE_GREEN`; manifest/hash остаётся trust root.
 
 ### Разработка
@@ -267,17 +267,21 @@ automation evidence без публикации credentials.
 
 ## Последняя проверка checkout
 
-24 августа 2026 года `scripts/final-release-audit.tests.ps1` подтвердил:
+26 августа 2026 года `scripts/final-release-audit.tests.ps1` и полный локальный
+прогон подтвердили `TECHNICAL_GATES_PASS / RELEASE_GREEN`:
 
-- 541 тест Core, 186 тестов local storage и 35 тестов desktop IPC;
-- automation boundary gate и release evidence gate;
-- `cargo fmt --all -- --check` и `git diff --check`;
-- Electron `check:protocol` и `typecheck`.
+- workspace Rust tests и строгий `cargo clippy --workspace --all-targets
+  --all-features -- -D warnings` прошли;
+- Electron `npm test`: 452 passed, 2 штатно skipped; protocol, typecheck,
+  production build и bundle checks прошли;
+- C# compatibility tests, native-package smoke, automation/release evidence и
+  Windows release gates прошли в доступной проверке;
+- `cargo fmt --all -- --check` и `git diff --check` прошли.
 
-Итог: `TECHNICAL_GATES_PASS / RELEASE_GREEN`. Package startup, installer,
-upgrade/rollback и Windows compatibility остаются отдельными CI gates из
-`.github/workflows/windows.yml`. Source-update E2E запускается только с
-`EVOHIME_UPDATE_E2E=1`, поскольку выполняет реальную пересборку.
+Package startup, installer, upgrade/rollback и Windows compatibility остаются
+отдельными CI gates из `.github/workflows/windows.yml`. Source-update E2E
+запускается только с `EVOHIME_UPDATE_E2E=1`, поскольку выполняет реальную
+пересборку.
 
 ## Следующие направления
 
@@ -290,169 +294,3 @@ upgrade/rollback и Windows compatibility остаются отдельными 
 Пользовательский продукт ограничен `EvoHime-Setup.exe`, `EvoHime.exe`, локальным Core, supervisor и данными в профиле Windows. Исследовательские и экспериментальные каталоги не входят в установочный runtime.
 
 Legacy web UI, HTTP server, browser launcher и PostgreSQL migrations удалены из репозитория. Electron UI и authenticated versioned named-pipe IPC — текущая пользовательская оболочка и transport boundary; WinUI остаётся временным compatibility runtime для совместимости и тестов.
-## Provenance model requests
-
-После этапов 05.1–05.9 checkout содержит канонический model-request contract,
-SQLite provenance repository в общей schema v29 (internal provenance schema 2),
-durable request/response/tool/source/shadow/tombstone tables, Core checkpoint
-API, startup recovery/retention hooks и offline bundle boundary. Existing
-receipt contract remains backward-compatible; request linkage is additive.
-
-## Execution ledger 08 — реализовано в текущем checkout
-
-- SQLite schema поднята до v30 (idempotent installer'ы, без ветки
-  `migrate()`): typed nullable колонки `events`, CHECK `workflow_run_nodes`
-  расширен под `cancelling`, `workflow_run_events` получила linkage на
-  глобальный `event_id`/`sequence_id`.
-- `LocalDatabase::append_ledger_event`/`append_ledger_event_with_node_transition`
-  публикуют typed event атомарно с переходом `workflow_run_nodes` и
-  `workflow_run_events`; single-terminal-outcome enforced на записи
-  (`ensure_single_terminal_outcome`), не только как in-memory helper.
-- Startup: `record_ledger_core_start` и `reconcile_ledger_on_startup`
-  вызываются из `main.rs` после конструирования `IpcBridge` — bounded
-  `core_start` событие и dispatch-marker-based классификация
-  (`run_effects`) незавершённых actions в `unknown_outcome` без слепого
-  повтора.
-- IPC: additive `ExecutionEvent` (oneof 14 в `EventEnvelope`) в основном
-  replay-пути; typed `ReplayGap` (`sequence_retention_exceeded`,
-  `stale_generation`); versioned `FullSnapshot.snapshot_json` с bounded
-  action-проекцией; Electron дедуплицирует доставку по durable `event_id`.
-- Реальные production writers: `execute_terminal_with_receipt` и
-  `dispatch_terminal_execute` публикуют полную цепочку `ToolCall` →
-  `Observation` → `ToolReceipt`/`TypedFailure` под тем же `action_id`, что и
-  подписанный `receipts_v1`; `ResolveApproval` и `grant_approval`
-  публикуют `ApprovalDecision` (approve/reject/expiry) под `action_id`
-  соответствующего `receipt_approval_intents`.
-- Известная граница: `dispatch_terminal_execute` не имеет живого
-  cancellation-триггера (пробел, существовавший до плана 08) — ledger-
-  контракт для `Cancelling`/`Cancelled` реализован и протестирован на
-  storage/IPC уровне, но не наблюдался вживую ни разу, так как отменять
-  сейчас нечем.
-
-Проверки после реализации: `cargo test -p evohime-core -p
-evohime-local-storage -p evohime-desktop-ipc -p evohime-receipts -p
-evohime-model-provenance` (505 + 182 + 33 + 56 + 5 тестов), `cargo fmt
---check`, `git diff --check`, Electron `check:protocol`/`typecheck`/`test`
-(420 тестов, включая real-Core E2E) — все проходят.
-
-## Tooling 07 — реализовано в текущем checkout
-
-- `tool/manifest/v1` и единый schema catalog находятся в `tool-runtime`; Core
-  больше не содержит отдельную таблицу `tool_parameters`. Model loadout
-  получает canonical manifest hash, а recovery использует ту же схему.
-- Toolkit catalog durable в SQLite поддерживает discover, enable, disable и
-  атомарный rollback с audit history; quarantined/unavailable версии не
-  включаются.
-- Action Console передаёт durable approval decision с idempotency key,
-  rejection reason и cancel; Electron показывает grant/reject/cancel и
-  восстанавливает состояние из Core event replay.
-- MCP model calls принимают только Core identity (`server_id`, `tool_name`),
-  endpoint разрешается через `WorkflowRegistry`, а legacy runtime adapter
-  получает endpoint только после проверки allowlist/transport/host.
-- Tool telemetry сохраняется в EventJournal и экспортируется bounded,
-  redacted JSONL; Operations Panel показывает calls, results и approval
-  requests. Manifest/hash/policy evals зарегистрированы в deterministic eval
-  catalog.
-
-Проверки после реализации: `cargo test -p evohime-core --lib` — 477 passed,
-`cargo test -p evohime-tool-runtime --lib` — 119 passed и 1 ignored,
-Electron targeted tests — 25 passed, `npm run typecheck` и `git diff --check`
-проходят.
-
-## План 10 — IPC/provider boundary — реализован в текущем checkout
-
-- `Ready.core_info` добавлен аддитивно; Rust/Electron negotiation сохраняет
-  legacy Ready, bounded capabilities и effective limits.
-- Внутренний Rust `adapter/v1` contract подключён к `CoreNodeAdapter` для
-  descriptor/session/request/result validation, bounded tool payloads и opaque
-  `SecretRef`; provider settings остаются shell-local и возвращают
-  `{ summary, restarted }` после Core restart.
-- `TargetManager` использует canonical workspace scope, bounded target ID,
-  serial stale-generation switch и late-result rejection; fallback/retry не
-  пересекают active target или Core generation.
-- Acceptance matrix N-01…S-01 закрыта deterministic fixtures. Real-Core E2E
-  прошёл, source-update E2E остаётся штатно skipped только без специального
-  флага.
-
-Проверки 2026-08-23: `cargo test --locked -p evohime-desktop-ipc
--p evohime-core -p evohime-model-gateway` — 512 Core, 35 desktop-ipc и 55
-model-gateway unit tests плюс integration suites прошли; Electron — 429
-passed, 2 штатно skipped; `npm run typecheck`, `npm run check:protocol`,
-`cargo fmt --all` и `git diff --check` проходят.
-## План 11 — typed memory и Core-first RAG — реализован
-
-- Memory schema v31 идемпотентно устанавливает `record_version`, bounded
-  `evidence_refs` и `execution_event_refs`; extraction records сохраняют
-  provenance, а `secret` отвергается до SQLite.
-- Core использует typed memory-to-retrieval adapter с scope/privacy filtering,
-  deterministic ranking, bounded citations и stale-generation rejection.
-- Forget очищает содержание и provenance refs, оставляет обезличенную запись и
-  digest tombstone; повторная операция идемпотентна.
-- Context ledger получил durable compaction operation state (`planned`,
-  `running`, `cancelled`, `committed`, `failed`), unique operation key,
-  versioned projection и item-to-sequence provenance tables.
-
-Проверки 2026-08-23: `cargo test --locked -p evohime-core
--p evohime-local-storage` — 514 и 183 теста прошли; `cargo check --locked
--p evohime-local-storage -p evohime-core`, `cargo fmt --all` и `git diff
---check` прошли.
-
-## План 12 — local telemetry и deterministic evaluation — реализован
-
-- Добавлена bounded `telemetry/v1` projection с typed verdict, correlation
-  events, attempt/reason metadata и обязательной redaction.
-- Существующий `evals.rs` используется как offline deterministic harness;
-  telemetry report не становится source of truth и не выполняет production
-  side effects.
-- Зафиксированы typed diagnostics, fixture/replay границы, advisory judge
-  separation, repeated-trial reliability и release-gate thresholds.
-
-Проверки 2026-08-23: `cargo test --locked -p evohime-core
-telemetry::tests` — 2 теста прошли; `cargo fmt --all` и `git diff --check`
-прошли.
-## План 13 — изолированный browser backend — реализован
-
-- Browser session tools используют Core tool registry, BrowserAccess policy,
-  SSRF URL validation, bounded selector/text/screenshot inputs и cancellation/
-  approval path; CDP configuration отсутствует — capability недоступна.
-- Typed browser lifecycle, evidence, egress and packaging boundaries закреплены
-  в architecture; текущий runtime не включает внешний Node и не имеет
-  unrestricted fallback.
-
-Проверки 2026-08-23: `cargo test --locked -p evohime-tool-runtime` — 135
-тестов прошли, 1 ignored и 6 network integration tests прошли; `cargo fmt
---all` и `git diff --check` прошли.
-
-## План 14 — voice pipeline и ambient audio — реализован
-
-- Listener использует whisper.cpp runtime с manifest/ABI/hash проверками,
-  authenticated listener pipe, 16 kHz resampling/VAD/segmentation и bounded
-  ambient policy.
-- Ambient storage не хранит PCM/blob; retention, tombstone, forget, quiet
-  hours, pause и memory/proactivity gates проверены существующими тестами.
-
-Проверки 2026-08-23: listener-related crates собраны; targeted ambient
-storage — 18 тестов, все прошли; engine E2E без поставленного runtime штатно
-не запускался.
-
-## План 15 — vision и document worker — реализован
-
-- Добавлен Core-owned bounded `vision/v1` input/output contract с canonical
-  artifact/correlation IDs, capability snapshot, limits, typed statuses и
-  fail-closed `backend_unavailable` без внешнего runtime.
-- Visual output не является host action authority; provenance/evidence и
-  redaction boundaries закреплены в архитектуре. Полноценный optional worker
-  не включается без отдельного packaging/security gate.
-
-Проверки 2026-08-24: `cargo test --locked -p evohime-core
-vision_contract::tests` — 2 теста прошли; `cargo fmt --all` и `git diff
---check` прошли.
-## План 21 — reliability, recovery и diagnostics — реализован
-
-- RecoveryBanner подключён к общей Core-event projection: отображаются typed `reason_code`, `UNKNOWN_OUTCOME`, correlation/sequence и только явно разрешённая Core отмена.
-- Shell export `shell.exportDiagnostics` создаёт bounded `evohime-diagnostic-bundle-v1` через main process; bundle содержит версии, shell/update/repair projection, event tail и redacted log excerpts без workspace files, prompts, tool output, DPAPI payloads и provider secrets.
-- Repair и update projection сохраняют bounded stage evidence с фазой, timestamp, commit, результатом и redacted detail; опасные действия остаются отдельными кликами.
-- Settings → Security получил native save/open flow для Core-owned database backup/restore; checksum, preview, approval, progress, cancellation и rollback выполняются Core.
-- Windows-style workspace paths нормализуются cross-platform для plan picker; DPAPI/safeStorage остаётся каноническим credential contract.
-
-Проверки 2026-08-26: Node.js 22.22.2, Electron `npm test` — 420 тестов прошли, 24 optional real-Core/update/pipe теста пропущены без собранного Core; `check:protocol`, `typecheck`, production build и bundle checks прошли. Локальный Rust прогон собрал и выполнил 535/541 тестов; 5 receipt-тестов требуют Windows key backend (`UnsupportedPlatform`), голосовой IPC-тест зависит от Windows app catalog. `cargo check -p evohime-supervisor` прошёл. Windows CI run `32909330835` для реализации плана завершился успешно: rust-native, electron-shell, windows-check и build-native, включая installer/upgrade/rollback, зелёные.

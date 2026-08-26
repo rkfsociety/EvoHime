@@ -197,7 +197,8 @@ approval registry, что и у инструментов: отдельного w
 Rollback, redacted evidence, privacy/egress и license inventory собраны в
 [`release-evidence.md`](release-evidence.md); отдельный gate проверяет их вместе
 с backup/restore fixtures.
-Финальный audit запускается `scripts/final-release-audit.tests.ps1` и
+Финальный audit и rollback evidence описаны в `docs/release-evidence.md`;
+проверка запускается `scripts/final-release-audit.tests.ps1` и
 подтверждает технический PASS и release GREEN по закрытым решениям register.
 
 Repeatable and scheduled work uses the separate Core-owned `automation/v1`

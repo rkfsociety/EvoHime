@@ -12,30 +12,21 @@
 
 ## Ближайшая работа
 
-Завершено в текущем checkout: пользовательский self-repair/self-update
-контур 19.0. Он не является автоматическим агентом: накопление ошибок только
-показывает кнопку, а diagnose, commit, push и restart подтверждаются отдельно.
-После установки новая версия обязана пройти authenticated Core health-check;
-иначе transaction worker возвращает предыдущую установку.
+Основные runtime-направления уже реализованы. Roadmap теперь ограничен
+поддержкой и hardening, а не повторным описанием закрытых планов:
 
-### 1. Reliability and approval UX
+### 1. Reliability и security hardening
 
-- улучшение отображения approval и recovery-состояний в desktop UI;
-- отображение подробных CI check-runs и bounded rollback evidence для repair-run;
+- улучшать отображение approval, recovery и bounded rollback evidence;
+- развивать credential, backup/restore и diagnostic UX в существующих границах;
+- проверять upgrade path на поддерживаемых Windows 10 и Windows 11.
 
-### 2. Reliability and security hardening
+### 2. Desktop quality и совместимость
 
-- расширение Windows Credential Manager/DPAPI и backup/restore UX;
-- crash recovery и диагностика из UI;
-- проверка upgrade path на поддерживаемых Windows 10 и Windows 11.
-
-### 3. Desktop quality
-
-- compatibility tests UI/Core для каждого изменения IPC;
-- smoke installer на Windows CI;
-- проверка single-instance и завершения Job Object;
-- bounded logs, event replay и retention completed tasks;
-- release только после зелёных Rust/Electron/package checks и Windows acceptance.
+- сохранять compatibility tests UI/Core для каждого изменения IPC;
+- поддерживать installer/package smoke, single-instance и Job Object checks;
+- поддерживать bounded logs, event replay и retention без возврата web runtime;
+- выполнять informative ARM64/Insider runs без изменения базового x64 release scope.
 
 ## Release workflow
 

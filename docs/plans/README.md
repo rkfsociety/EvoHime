@@ -38,8 +38,8 @@
 - [`../development-plan.md`](../development-plan.md) — исполняемый план
   текущего desktop-цикла;
 - [`../roadmap.md`](../roadmap.md) — долгосрочные направления;
-- [`../release-audit.md`](../release-audit.md) — технические release-gates и
-  оставшиеся решения, блокирующие выпуск.
+- [`../release-evidence.md`](../release-evidence.md) — технические release-gates,
+  rollback evidence и оставшиеся решения, блокирующие выпуск.
 
 Этот файл не является источником статуса реализации и не заменяет указанные
 документы.

@@ -5,6 +5,21 @@ redacted: допускаются commit, contract/schema versions, test IDs, has
 typed outcomes, bounded metrics и recovery state; credentials, raw provider
 output, transcripts, absolute paths и PII запрещены.
 
+## Текущий статус выпуска
+
+Статус: `TECHNICAL_GATES_PASS / RELEASE_GREEN`.
+
+Свежая проверка запускается `scripts/final-release-audit.tests.ps1` и включает
+Rust Core/storage/IPC tests, rustfmt, automation boundary, backup/restore и
+redaction gates, Electron protocol и typecheck. Полный локальный прогон 26
+августа 2026 года также подтвердил строгий `cargo clippy`, Electron `npm test`
+(452 passed, 2 skipped), production build и bundle checks. Compatibility,
+native-package, installer и upgrade/rollback gates проходят в Windows CI.
+
+Code signing не входит в текущий release scope; manifest/hash остаётся
+документированным trust root. Optional browser/voice/vision adapters работают
+через typed `backend_unavailable` и не расширяют базовый runtime.
+
 ## Rollback / disable
 
 | Компонент | До изменения | При crash/ошибке | Disable/cleanup | Evidence |
