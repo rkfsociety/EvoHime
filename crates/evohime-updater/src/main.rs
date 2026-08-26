@@ -34,6 +34,7 @@ fn main() -> ExitCode {
                 &worker.installer,
                 &worker.install_dir,
                 &worker.state_dir,
+                worker.wait_pid,
                 worker.relaunch.as_deref(),
                 worker.health_file.as_deref(),
             )
@@ -109,10 +110,19 @@ fn parse_worker_args(args: &[String]) -> Result<WorkerArgs, String> {
     let state_dir = optional(args, "--state-dir")
         .map(PathBuf::from)
         .unwrap_or_else(default_state_dir);
+    let wait_pid = match optional(args, "--wait-pid") {
+        Some(value) => Some(
+            value
+                .parse::<u32>()
+                .map_err(|_| "--wait-pid must be a process id".to_string())?,
+        ),
+        None => None,
+    };
     Ok(WorkerArgs {
         installer,
         install_dir,
         state_dir,
+        wait_pid,
         relaunch: optional(args, "--relaunch").map(PathBuf::from),
         health_file: optional(args, "--health-file").map(PathBuf::from),
     })
@@ -122,6 +132,7 @@ struct WorkerArgs {
     installer: PathBuf,
     install_dir: PathBuf,
     state_dir: PathBuf,
+    wait_pid: Option<u32>,
     relaunch: Option<PathBuf>,
     health_file: Option<PathBuf>,
 }

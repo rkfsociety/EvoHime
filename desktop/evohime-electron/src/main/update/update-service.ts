@@ -604,6 +604,7 @@ export class UpdateService {
           '--installer', join(config.stagingDirectory, 'EvoHime-Setup.exe'),
           '--install-dir', config.installDirectory,
           '--state-dir', config.stateDirectory,
+          '--wait-pid', String(process.pid),
           '--relaunch', join(config.installDirectory, SHELL_EXECUTABLE),
           '--health-file', healthFile
         ]

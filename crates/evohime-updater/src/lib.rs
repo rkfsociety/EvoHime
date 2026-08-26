@@ -66,10 +66,18 @@ pub fn run_update(
     installer: &Path,
     install_dir: &Path,
     state_dir: &Path,
+    wait_pid: Option<u32>,
     relaunch: Option<&Path>,
     health_file: Option<&Path>,
 ) -> io::Result<()> {
     validate_absolute(installer, "installer path")?;
+    if let Some(pid) = wait_pid {
+        wait_for_process_exit(pid, WAIT_FOR_SHELL);
+    }
+    // Inno Setup replaces the whole Electron tree. Chromium child processes
+    // can outlive the shell process briefly, so wait until the payload is
+    // writable before allowing the installer to start.
+    wait_until_writable(install_dir, WAIT_FOR_UNLOCK)?;
     let _ = UpdateTransaction::recover(state_dir)?;
     // Inno Setup can replace the Electron payload as well as the four native
     // components. Back up the whole tree so a failure after app.asar or a
