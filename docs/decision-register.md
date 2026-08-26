@@ -21,6 +21,7 @@
 | 16 | 08–12, existing workflow contracts | 13–15; automation remains Core-only without adapters | Core automation fixtures A01–A08 |
 | 17 | 07–16 current-state/architecture contracts | external backend never becomes blocking | Release owner |
 | 19 | 17, existing updater and authenticated Core startup | optional PR API; fallback is explicit push to configured product branch | Repair/update owner |
+| 22 | 19, current release evidence and authenticated Core boundaries | ARM64/Insider runners and extra GitHub API evidence remain optional | Reliability/security/release owner |
 
 Граф линейный для основного runtime: `01–06 → 07 → 08 → 09 → 10 → 11 → 12 →
 16 → 17`. Планы 13–15 реализуют optional adapters, подключаются через

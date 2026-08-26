@@ -285,9 +285,11 @@ Package startup, installer, upgrade/rollback и Windows compatibility остаю
 
 ## Следующие направления
 
-1. hardening credentials, recovery и diagnostics;
-2. поддерживать Windows 10/11 CI и compatibility suite, не возвращая web runtime;
-3. informative ARM64/Insider compatibility runs.
+Подробный следующий цикл: [`plans/22-0-reliability-security-hardening.md`](plans/22-0-reliability-security-hardening.md).
+
+1. этап 22.1 — diagnostics и recovery UX;
+2. этап 22.2 — credentials и backup hardening;
+3. этап 22.3 — compatibility/release hardening и optional ARM64/Insider runs.
 
 ## Граница продукта
 
