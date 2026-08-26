@@ -25,6 +25,12 @@ export interface RecoveryNotice {
  * failure must not outlive the recovery events that came after it.
  */
 export function latestRecoveryNotice(events: readonly CoreEvent[]): RecoveryNotice | null {
+  const terminalTasks = new Set<string>()
+  for (const event of events) {
+    if (event.eventType === 'task.completed' || event.eventType === 'task.failed' || event.eventType === 'task.stopped') {
+      terminalTasks.add(event.taskId)
+    }
+  }
   for (const event of events) {
     const payload = parsePayload(event.payload)
     const common = {
@@ -33,7 +39,7 @@ export function latestRecoveryNotice(events: readonly CoreEvent[]): RecoveryNoti
       reasonCode: stringField(payload, 'reason_code') ?? event.eventType,
       eventType: event.eventType,
       sequenceId: event.sequenceId,
-      details: payload
+      details: projectDetails(payload)
     }
     if (event.eventType === 'storage.progress') {
       return {
@@ -48,13 +54,7 @@ export function latestRecoveryNotice(events: readonly CoreEvent[]): RecoveryNoti
       // Approval events are durable and may be replayed after their task was
       // stopped. A terminal task event supersedes every earlier approval for
       // that task; it must not be shown again on the next shell launch.
-      if (events.some((candidate) =>
-        candidate.taskId === event.taskId &&
-        candidate.sequenceId > event.sequenceId &&
-        (candidate.eventType === 'task.completed' ||
-          candidate.eventType === 'task.failed' ||
-          candidate.eventType === 'task.stopped')
-      )) {
+      if (terminalTasks.has(event.taskId)) {
         continue
       }
       return {
@@ -98,6 +98,19 @@ export function latestRecoveryNotice(events: readonly CoreEvent[]): RecoveryNoti
     }
   }
   return null
+}
+
+const SAFE_DETAIL_KEYS = new Set(['operation_id', 'run_id', 'request_id', 'reason_code', 'phase', 'can_cancel', 'status'])
+const MAX_DETAIL_CHARS = 512
+
+function projectDetails(payload: Record<string, unknown>): Record<string, unknown> {
+  const details: Record<string, unknown> = {}
+  for (const key of SAFE_DETAIL_KEYS) {
+    const value = payload[key]
+    if (typeof value === 'string') details[key] = value.slice(0, MAX_DETAIL_CHARS)
+    else if (typeof value === 'boolean' || typeof value === 'number') details[key] = value
+  }
+  return details
 }
 
 function parsePayload(payload: string): Record<string, unknown> {

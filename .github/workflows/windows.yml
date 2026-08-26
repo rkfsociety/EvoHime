@@ -31,6 +31,7 @@ jobs:
       electron: ${{ steps.filter.outputs.electron }}
       windows: ${{ steps.filter.outputs.windows }}
       native: ${{ steps.filter.outputs.native }}
+      docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -75,13 +76,26 @@ jobs:
           native=false
           if [ "$tooling" = true ] || [ "$winui" = true ]; then windows=true; fi
           if [ "$rust" = true ] || [ "$electron" = true ] || [ "$tooling" = true ]; then native=true; fi
+          docs=false
+          if matches '^(docs/|README\.md$|AGENTS\.md$|SECURITY\.md$|\.codex/|installer/.*\.(md|txt)$|crates/.*/README\.md$|tests/.*/README\.md$)'; then docs=true; fi
 
           {
             echo "rust=$rust"
             echo "electron=$electron"
             echo "windows=$windows"
             echo "native=$native"
+            echo "docs=$docs"
           } >> "$GITHUB_OUTPUT"
+
+  documentation:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate documentation links and stale references
+        shell: pwsh
+        run: ./scripts/documentation.tests.ps1
 
   # Условие — `native`, а не `rust`: этот job исполняет гейты из scripts/, поэтому
   # правка самого гейта обязана его запускать. Иначе коммит, меняющий только

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -134,6 +134,40 @@ describe('provider store', () => {
       store.save({ provider: 'literouter', apiKey: 'sk-plain', model: '', baseUrl: '', tier: 'free' })
     ).toBeNull()
     expect(() => readFileSync(path, 'utf8')).toThrow()
+  })
+
+  it('rejects an invalid key even when the store is called outside IPC', () => {
+    const path = storePath()
+    const store = new ProviderStore(path, reversibleCipher())
+
+    expect(store.save({ provider: 'literouter', apiKey: 'bad\nkey', model: '', baseUrl: '', tier: 'free' })).toBeNull()
+    expect(() => readFileSync(path, 'utf8')).toThrow()
+  })
+
+  it('treats malformed or oversized persisted ciphertext as missing', () => {
+    const path = storePath()
+    writeFileSync(path, JSON.stringify({
+      version: 1,
+      provider: 'literouter',
+      profiles: {
+        literouter: { model: '', baseUrl: '', tier: 'free', secret: 'not base64!' },
+        openai_compatible: { model: '', baseUrl: '', tier: 'free', secret: 'x'.repeat(8_193) }
+      },
+      codexModel: ''
+    }), 'utf8')
+
+    const store = new ProviderStore(path, reversibleCipher())
+    expect(store.summary().configured).toBe(false)
+    expect(store.environment()).toEqual({ MODEL_PROVIDER: 'literouter' })
+  })
+
+  it('cleans up the temporary file when the atomic rename fails', () => {
+    const path = storePath()
+    mkdirSync(path)
+    const store = new ProviderStore(path, reversibleCipher())
+
+    expect(() => store.save({ provider: 'literouter', apiKey: 'sk-value', model: '', baseUrl: '', tier: 'free' })).toThrow()
+    expect(() => readFileSync(`${path}.tmp`, 'utf8')).toThrow()
   })
 
   it('reports a key it cannot decrypt as missing instead of failing', () => {

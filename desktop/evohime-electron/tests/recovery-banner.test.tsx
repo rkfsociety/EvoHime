@@ -75,6 +75,21 @@ describe('recovery contract', () => {
     })
   })
 
+  it('keeps only bounded safe fields in recovery details', () => {
+    const notice = latestRecoveryNotice([event('task.failed', {
+      request_id: 'request-1',
+      secret: 'must-not-render',
+      path: 'C:\\Users\\roman\\repo',
+      status: 'failed',
+      phase: 'diagnose',
+      oversized: 'x'.repeat(2_000)
+    })])
+
+    expect(notice?.details).toEqual({ request_id: 'request-1', phase: 'diagnose', status: 'failed' })
+    expect(JSON.stringify(notice?.details)).not.toContain('must-not-render')
+    expect(JSON.stringify(notice?.details)).not.toContain('roman')
+  })
+
   it('shows only actions supported by the state', () => {
     render(<RecoveryBanner connection="connected" events={[event('task.failed', { error: 'safe error', request_id: 'request-1' })]} onOpenTask={vi.fn()} />)
     expect(screen.getByText('FAILED')).toBeTruthy()

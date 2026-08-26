@@ -1,9 +1,11 @@
-import { readFileSync } from 'node:fs'
+import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
 
 import { redactText, redactValue, type RedactedValue } from './redact'
 
 const MAX_EVENTS = 200
 const MAX_LOG_LINES = 120
+const MAX_LOG_FILES = 4
+const MAX_LOG_BYTES = 64 * 1024
 const MAX_BUNDLE_BYTES = 512 * 1024
 
 export interface DiagnosticBundleInput {
@@ -37,13 +39,14 @@ export function buildDiagnosticBundle(input: DiagnosticBundleInput): DiagnosticB
     eventType: event.eventType,
     payload: redactPayload(event.payload)
   }))
-  const logExcerpts = input.logPaths.flatMap((path) => {
-    try {
-      return readFileSync(path, 'utf8').split(/\r?\n/).filter(Boolean).slice(-MAX_LOG_LINES).map((line) => redactText(line))
-    } catch {
-      return []
+  const logExcerpts: RedactedValue[] = []
+  for (const path of input.logPaths.slice(0, MAX_LOG_FILES)) {
+    const remaining = MAX_LOG_LINES - logExcerpts.length
+    if (remaining <= 0) break
+    for (const line of readLogTail(path, remaining)) {
+      logExcerpts.push(redactText(line))
     }
-  })
+  }
   const bundle: DiagnosticBundle = {
     schema: 'evohime-diagnostic-bundle-v1',
     generatedAtMs: input.generatedAtMs,
@@ -56,9 +59,34 @@ export function buildDiagnosticBundle(input: DiagnosticBundleInput): DiagnosticB
     update: redactValue(input.update),
     repair: redactValue(input.repair),
     events,
-    logExcerpts: logExcerpts.slice(-MAX_LOG_LINES)
+    logExcerpts
   }
   return bundle
+}
+
+/** Reads only a bounded tail; an untrusted log cannot force a whole-file read. */
+function readLogTail(path: string, maxLines: number): string[] {
+  let descriptor: number | undefined
+  try {
+    descriptor = openSync(path, 'r')
+    const size = fstatSync(descriptor).size
+    const offset = Math.max(0, size - MAX_LOG_BYTES)
+    const buffer = Buffer.alloc(size - offset)
+    let read = 0
+    while (read < buffer.length) {
+      const count = readSync(descriptor, buffer, read, buffer.length - read, offset + read)
+      if (count === 0) break
+      read += count
+    }
+    const text = buffer.subarray(0, read).toString('utf8')
+    const lines = text.split(/\r?\n/).filter(Boolean)
+    if (offset > 0) lines.shift()
+    return lines.slice(-maxLines)
+  } catch {
+    return []
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor)
+  }
 }
 
 function redactPayload(payload: string): RedactedValue {

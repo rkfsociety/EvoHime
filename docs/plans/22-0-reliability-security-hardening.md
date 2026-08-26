@@ -1,6 +1,6 @@
 # План 22 — reliability и security hardening
 
-Статус: подготовлен к ревью и реализации, 26 августа 2026 года.
+Статус: пересмотрен по коду и готов к реализации, 26 августа 2026 года.
 
 ## Цель
 
@@ -43,3 +43,17 @@ Node/Python runtime или автоматические repair/push/restart де
   `release-evidence.md` обновлены только по фактически реализованному;
 - проходят `cargo fmt`, строгий `clippy`, соответствующие Rust/Electron/C# и
   Windows package checks, `git diff --check`.
+
+## Результат ревью
+
+Подтверждённые проблемы и их исправления зафиксированы в этапах 22.1–22.3:
+
+- shell diagnostics читает логи целиком до применения лимита и отдаёт renderer
+  произвольные payload details;
+- provider store имеет bounded input на IPC-границе, но не защищает persisted
+  ciphertext отдельным лимитом и не удаляет временный файл при ошибке записи;
+- release workflow не имеет отдельного gate для broken relative links и stale
+  документационных ссылок.
+
+Гипотезы о производительности не являются acceptance criteria без измерения;
+обязательными остаются только bounded memory/I/O, корректность и redaction.

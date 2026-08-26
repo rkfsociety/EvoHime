@@ -34,4 +34,32 @@ describe('diagnostic bundle', () => {
       rmSync(directory, { recursive: true, force: true })
     }
   })
+
+  it('reads only the bounded tail and caps the combined log excerpt', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'evohime-diagnostics-tail-'))
+    const logs = Array.from({ length: 5 }, (_, index) => join(directory, `log-${index}.jsonl`))
+    try {
+      for (const [index, log] of logs.entries()) {
+        const lines = Array.from({ length: 29 }, (_, line) => `line-${index}-${line}`)
+        lines.push(`last-${index}`)
+        writeFileSync(log, `${'x'.repeat(80_000)}\n${lines.join('\n')}\n`, 'utf8')
+      }
+      const bundle = buildDiagnosticBundle({
+        generatedAtMs: 1,
+        appVersion: '1.0.0',
+        platform: 'win32',
+        architecture: 'x64',
+        state: {},
+        update: {},
+        repair: {},
+        events: [],
+        logPaths: logs
+      })
+      expect(bundle.logExcerpts).toHaveLength(120)
+      expect(bundle.logExcerpts.at(-1)).toBe('last-3')
+      expect(JSON.stringify(bundle)).not.toContain('x'.repeat(80_000))
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
 })

@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { chmodSync, closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import {
@@ -23,6 +23,7 @@ export const MAX_KEY_CHARS = 512
 export const MAX_MODEL_CHARS = 128
 export const MAX_URL_CHARS = 512
 const STORE_VERSION = 1
+const MAX_STORED_SECRET_CHARS = 8_192
 
 export interface ProviderUpdate {
   readonly provider: ProviderKind
@@ -158,12 +159,14 @@ export class ProviderStore {
   save(update: ProviderUpdate): ProviderSummary | null {
     const current = this.readDocument()
     const previous = profileFor(current, update.provider)
+    const requestedKey = normalizeApiKey(update.apiKey)
+    if (requestedKey === null) return null
     let secret = previous.secret
-    if (update.apiKey.length > 0) {
+    if (requestedKey.length > 0) {
       if (!this.cipher.isAvailable()) {
         return null
       }
-      secret = this.cipher.encrypt(update.apiKey).toString('base64')
+      secret = this.cipher.encrypt(requestedKey).toString('base64')
     }
     const next: StoredDocument = {
       provider: update.provider,
@@ -267,7 +270,7 @@ export class ProviderStore {
           model: normalizeModel(value['model']) ?? '',
           baseUrl: normalizeBaseUrl(value['baseUrl']) ?? '',
           tier: value['tier'] === 'paid' ? 'paid' : 'free',
-          secret: typeof value['secret'] === 'string' ? value['secret'] : ''
+          secret: normalizeStoredSecret(value['secret'])
         }
       }
     } else {
@@ -276,7 +279,7 @@ export class ProviderStore {
         model: normalizeModel(record['model']) ?? '',
         baseUrl: normalizeBaseUrl(record['baseUrl']) ?? '',
         tier: record['tier'] === 'paid' ? 'paid' : 'free',
-        secret: typeof record['secret'] === 'string' ? record['secret'] : ''
+        secret: normalizeStoredSecret(record['secret'])
       }
     }
     const codexModel = normalizeModel(record['codexModel']) ?? ''
@@ -286,16 +289,30 @@ export class ProviderStore {
   private write(document: StoredDocument): void {
     mkdirSync(dirname(this.filePath), { recursive: true })
     const temporary = `${this.filePath}.tmp`
-    writeFileSync(temporary, JSON.stringify({ version: STORE_VERSION, ...document }), {
-      encoding: 'utf8',
-      mode: 0o600
-    })
-    renameSync(temporary, this.filePath)
+    let descriptor: number | undefined
+    try {
+      descriptor = openSync(temporary, 'w', 0o600)
+      writeFileSync(descriptor, JSON.stringify({ version: STORE_VERSION, ...document }), 'utf8')
+      fsyncSync(descriptor)
+      closeSync(descriptor)
+      descriptor = undefined
+      chmodSync(temporary, 0o600)
+      renameSync(temporary, this.filePath)
+    } catch (error) {
+      if (descriptor !== undefined) closeSync(descriptor)
+      try { unlinkSync(temporary) } catch { /* no temporary file to clean */ }
+      throw error
+    }
   }
 }
 
 function profileFor(document: StoredDocument, provider: ProviderKind): StoredProfile {
   return document.profiles[provider] ?? { model: '', baseUrl: '', tier: 'free', secret: '' }
+}
+
+function normalizeStoredSecret(value: unknown): string {
+  if (typeof value !== 'string' || value.length > MAX_STORED_SECRET_CHARS) return ''
+  return /^[A-Za-z0-9+/]*={0,2}$/.test(value) ? value : ''
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
