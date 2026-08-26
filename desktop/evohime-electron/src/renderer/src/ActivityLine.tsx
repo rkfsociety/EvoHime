@@ -31,7 +31,7 @@ export function ActivityLine({ calls, running }: ActivityLineProps): React.JSX.E
         <span className="activity__icon" aria-hidden="true">{running ? '◐' : '✓'}</span>
         <span className="activity__label">
           {running
-            ? `Выполняю: ${toolLabel(current?.tool ?? '') || 'действие'}`
+            ? liveLabel(current)
             : summarize(calls)}
         </span>
         <span className="activity__chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>
@@ -53,6 +53,39 @@ export function ActivityLine({ calls, running }: ActivityLineProps): React.JSX.E
       ) : null}
     </div>
   )
+}
+
+function liveLabel(call: ToolCall | undefined): string {
+  const tool = toolLabel(call?.tool ?? '') || 'действие'
+  const detail = liveDetail(call?.output ?? '')
+  return detail ? `Выполняю: ${tool} — ${detail}` : `Выполняю: ${tool}`
+}
+
+function liveDetail(output: string): string {
+  const lines = output.split(/\r?\n/).reverse()
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    try {
+      const event = JSON.parse(trimmed) as {
+        item?: { type?: string; command?: string; text?: string }
+        type?: string
+      }
+      if (event.item?.type === 'command_execution' && event.item.command) {
+        return shorten(event.item.command)
+      }
+      if (event.item?.type === 'agent_message') return 'формирую ответ'
+      if (event.type === 'turn.started') return 'подготавливаю ответ'
+    } catch {
+      // A chunk can end in the middle of a JSONL record; wait for the next one.
+    }
+  }
+  return ''
+}
+
+function shorten(value: string): string {
+  const compact = value.replace(/\s+/g, ' ').trim()
+  return compact.length > 140 ? `${compact.slice(0, 137)}…` : compact
 }
 
 /** "3 действия · читаю файл, ищу по файлам" */

@@ -52,6 +52,21 @@ describe('transcript', () => {
     expect(entries[0]).toMatchObject({ kind: 'agent', text: 'Смотрю структуру проекта.' })
   })
 
+  it('keeps completed long Codex messages instead of replacing the first one', () => {
+    const first = 'Первое сообщение Codex. ' + 'а'.repeat(260)
+    const second = 'Второе сообщение Codex. ' + 'б'.repeat(260)
+    const { entries } = buildTranscript(
+      stream(
+        event('AssistantDelta', { content: first }),
+        event('AssistantDelta', { content: second })
+      )
+    )
+
+    expect(entries).toHaveLength(2)
+    expect(entries[0]).toMatchObject({ kind: 'agent', text: first })
+    expect(entries[1]).toMatchObject({ kind: 'agent', text: second })
+  })
+
   it('collapses a run of tool calls into one activity line', () => {
     const { entries } = buildTranscript(
       stream(

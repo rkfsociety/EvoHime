@@ -75,7 +75,10 @@ export function buildTranscript(events: readonly CoreEvent[]): Transcript {
         if (text.length === 0) break
         // Deltas are fragments of one message, not separate messages.
         const last = entries.at(-1)
-        if (last?.kind === 'agent') {
+        // Codex CLI reports completed commentary/final messages as whole
+        // paragraphs. Do not merge those with the preceding paragraph: doing
+        // so made the first visible progress message appear to be replaced.
+        if (last?.kind === 'agent' && text.length <= 256) {
           entries[entries.length - 1] = { ...last, text: clamp(last.text + text) }
         } else {
           entries.push({ kind: 'agent', id, text: clamp(text) })
@@ -111,12 +114,19 @@ export function buildTranscript(events: readonly CoreEvent[]): Transcript {
           break
         }
         const callIndex = findLastCall(group.calls, tool)
+        const streaming = tool === 'codex.execute'
         const calls =
           callIndex >= 0
             ? group.calls.map((call, position) =>
-                position === callIndex ? { ...call, output, running: false } : call
+                position === callIndex
+                  ? {
+                      ...call,
+                      output: streaming ? clamp(`${call.output ?? ''}${output}`) : output,
+                      running: streaming ? true : false
+                    }
+                  : call
               )
-            : [...group.calls, { tool, output, running: false }]
+            : [...group.calls, { tool, output, running: streaming }]
         entries[index] = { ...group, calls, running: calls.some((call) => call.running) }
         break
       }
@@ -137,6 +147,7 @@ export function buildTranscript(events: readonly CoreEvent[]): Transcript {
 
       case 'task.completed': {
         finished = true
+        finishActivities(entries)
         const text = clamp(text_(payload, 'final_message'))
         // An empty completion adds nothing over the answer already shown.
         if (text.length > 0) entries.push({ kind: 'result', id, text, failed: false })
@@ -145,6 +156,7 @@ export function buildTranscript(events: readonly CoreEvent[]): Transcript {
 
       case 'task.failed': {
         finished = true
+        finishActivities(entries)
         entries.push({
           kind: 'result',
           id,
@@ -156,6 +168,7 @@ export function buildTranscript(events: readonly CoreEvent[]): Transcript {
 
       case 'task.stopped': {
         finished = true
+        finishActivities(entries)
         entries.push({ kind: 'stopped', id })
         break
       }
@@ -169,6 +182,18 @@ export function buildTranscript(events: readonly CoreEvent[]): Transcript {
   if (finished) approval = null
 
   return { entries, approval, finished }
+}
+
+function finishActivities(entries: TranscriptEntry[]): void {
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index]
+    if (entry?.kind !== 'activity' || !entry.running) continue
+    entries[index] = {
+      ...entry,
+      running: false,
+      calls: entry.calls.map((call) => ({ ...call, running: false }))
+    }
+  }
 }
 
 /**
