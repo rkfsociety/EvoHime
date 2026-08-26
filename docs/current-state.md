@@ -58,9 +58,10 @@ Core и supervisor — внутренние компоненты установ�
 ### Безопасность и данные
 
 - Core-first SQLite backup/restore: Online Backup API, WAL checkpoint, DPAPI payload protection, checksum, preview, approval, progress, safety backup, rollback и redacted audit; долгая операция отменяется командой `CancelDatabaseOperation`;
+- diagnostic bundle `v1` собирается только main-процессом и ограничен четырьмя логами, хвостом 64 КБ каждого, 120 строками и 512 КБ сериализованного результата; recovery projection индексирует terminal tasks за один проход и показывает только bounded allowlisted details;
 - filesystem.search исключает hard-default secret/auth paths, не следует symlink/reparse-обходам и не требует POSIX shell;
 - shell blocklist расширен для Windows launcher/LOLBin семейств; recovery timeline различает `RECOVERING`, `BLOCKED`, `WAITING_APPROVAL` и `FAILED`;
-- ключ провайдера хранится main-процессом Electron: значение шифруется OS (`safeStorage`, DPAPI на Windows) и лежит в `%LOCALAPPDATA%\EvoHime\shell\provider.json` с режимом `600`. Профили LiteRouter, OpenAI Compatible и Responses API раздельны: renderer получает только summary «ключ задан/не задан» для выбранного профиля, а Core — переменные окружения только выбранного провайдера через supervisor. Смена ключа перезапускает supervisor и Core;
+- ключ провайдера хранится main-процессом Electron: значение шифруется OS (`safeStorage`, DPAPI на Windows) и лежит в `%LOCALAPPDATA%\EvoHime\shell\provider.json` с режимом `600`; размер и формат сохранённого ciphertext проверяются, запись идёт через flush/atomic rename с очисткой временного файла при ошибке. Профили LiteRouter, OpenAI Compatible и Responses API раздельны: renderer получает только summary «ключ задан/не задан» для выбранного профиля, а Core — переменные окружения только выбранного провайдера через supervisor. Смена ключа перезапускает supervisor и Core;
 - панель `ChatGPT + Codex CLI` показывает лимит и модель локального Codex app-server без API-ключа. Если CLI отсутствует, пользовательская кнопка устанавливает точный пакет `OpenAI.Codex` через winget; кнопка `Войти через ChatGPT` открывает интерактивный `codex login`, а `Обновить` проверяет результат через app-server;
 - в композере выбран единый режим выполнения задачи: LiteRouter, настроенный OpenAI API или Codex CLI; рядом показывается каталог моделей выбранного режима, а Codex передаётся как явный coding intent через additive IPC-поле. Отдельный coding-чекбокс удалён, обычный диалог не переключается молча на другой backend;
 - каталог моделей отдаёт не только идентификаторы, но и лимиты (`context_length`, `max_completion_tokens`), которые Core сохраняет в таблицу `model_context_limits` (схема 20). Планировщик контекста берёт из неё реальное окно модели: пока провайдер не спрошен, действует встроенный профиль, а расхождение решается в пользу провайдера;
@@ -272,7 +273,7 @@ automation evidence без публикации credentials.
 
 - workspace Rust tests и строгий `cargo clippy --workspace --all-targets
   --all-features -- -D warnings` прошли;
-- Electron `npm test`: 452 passed, 2 штатно skipped; protocol, typecheck,
+- Electron `npm test`: 457 passed, 2 штатно skipped; protocol, typecheck,
   production build и bundle checks прошли;
 - C# compatibility tests, native-package smoke, automation/release evidence и
   Windows release gates прошли в доступной проверке;
@@ -285,11 +286,11 @@ Package startup, installer, upgrade/rollback и Windows compatibility остаю
 
 ## Следующие направления
 
-Подробный следующий цикл: [`plans/22-0-reliability-security-hardening.md`](plans/22-0-reliability-security-hardening.md).
-
-1. этап 22.1 — diagnostics и recovery UX;
-2. этап 22.2 — credentials и backup hardening;
-3. этап 22.3 — compatibility/release hardening и optional ARM64/Insider runs.
+План 22 закрыт: diagnostics/recovery hardening, защита credential persistence и
+documentation/release gate реализованы и перенесены в этот документ и
+`architecture.md`. Дальнейшие изменения оформляются новым временным планом
+только после отдельного evidence review; до этого поддерживаются текущие
+Windows compatibility, package/installer и release gates.
 
 ## Граница продукта
 

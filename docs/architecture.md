@@ -767,12 +767,12 @@ unsupported/resource/unknown/degraded statuses; visual output не имеет ho
 action authority. Worker backend отсутствует в базовом package, поэтому
 `backend_unavailable` — штатный fail-closed результат. Evidence, OCR claims и
 memory/RAG citations требуют redacted page/frame provenance.
-## Reliability, recovery и diagnostics 21
+## Reliability, recovery и diagnostics
 
-Electron main maintains only a bounded diagnostic projection. The additive shell command `shell.exportDiagnostics` opens a native save dialog and writes `evohime-diagnostic-bundle-v1` with runtime metadata, current shell/update/repair state, bounded Core-event tail and redacted shell-log excerpts. It never reads workspace files, prompts, tool output or credential payloads.
+Electron main maintains only a bounded diagnostic projection. The additive shell command `shell.exportDiagnostics` opens a native save dialog and writes `evohime-diagnostic-bundle-v1` with runtime metadata, current shell/update/repair state, bounded Core-event tail and redacted shell-log excerpts. It never reads workspace files, prompts, tool output or credential payloads. Log collection is bounded to at most four files, 64 KiB from each file, 120 total lines and a 512 KiB serialized bundle; the main process reads only the required tail.
 
-Recovery UI consumes Core events as the source of truth and preserves typed `reason_code`, correlation, sequence and `UNKNOWN_OUTCOME`. Cancellation is offered only when Core explicitly marks `can_cancel`; database operations use `core.cancelDatabaseOperation`, task operations use `core.stopTask`.
+Recovery UI consumes Core events as the source of truth and preserves typed `reason_code`, correlation, sequence and `UNKNOWN_OUTCOME`. Terminal task IDs are indexed once per projection, cancellation is offered only when Core explicitly marks `can_cancel`, and user-visible recovery details use a bounded allowlist of non-secret fields. Database operations use `core.cancelDatabaseOperation`, task operations use `core.stopTask`.
 
 Repair and update statuses retain bounded stage evidence. Commit, push, CI refresh, update preparation and restart remain separate user actions; CI or an unknown outcome never triggers a blind effect.
 
-The Security settings panel selects backup/restore paths in main and forwards only the selected path to Core. Core remains responsible for checksum, preview, approval, progress, cancellation, safety backup and rollback. DPAPI via Electron `safeStorage` remains the canonical provider credential contract.
+The Security settings panel selects backup/restore paths in main and forwards only the selected path to Core. Core remains responsible for checksum, preview, approval, progress, cancellation, safety backup and rollback. DPAPI via Electron `safeStorage` remains the canonical provider credential contract. Provider persistence applies a defense-in-depth size/type check to stored ciphertext and writes through a mode-600 temporary file with flush, atomic rename and cleanup on failure.

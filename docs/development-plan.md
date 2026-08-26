@@ -20,17 +20,16 @@ desktop-клиент, выбирает workspace, выполняет задач�
 
 ## Текущий порядок работ
 
-Обзор и этапы текущего цикла оформлены в
-[`plans/22-0-reliability-security-hardening.md`](plans/22-0-reliability-security-hardening.md).
+План 22 (diagnostics/recovery, credential persistence и compatibility/release
+hardening) реализован и закрыт. До появления нового утверждённого плана порядок
+работ следующий:
 
 1. **Поддержка релиза.** Сохранять зелёными Rust/Electron/package gates и
-   Windows compatibility/installer acceptance — этап 22.3.
-2. **Reliability и security hardening.** Улучшать credential, recovery,
-   diagnostics и backup/restore UX без расширения полномочий renderer — этапы
-   22.1 и 22.2.
+   Windows compatibility/installer acceptance.
+2. **Reliability и security.** Развивать credential, recovery, diagnostics и
+   backup/restore UX только в существующих границах Core и main-процесса.
 3. **Совместимость.** Поддерживать Windows 10/11 CI; informative ARM64/Insider
-   runs остаются исследовательскими и не меняют базовый release scope — этап
-   22.3.
+   runs остаются исследовательскими и не меняют базовый release scope.
 4. **Продуктовая граница.** Не возвращать web runtime, public HTTP, внешний
    Node/Python runtime или автоматические repair/push/restart действия.
 

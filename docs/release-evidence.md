@@ -13,8 +13,10 @@ output, transcripts, absolute paths и PII запрещены.
 Rust Core/storage/IPC tests, rustfmt, automation boundary, backup/restore и
 redaction gates, Electron protocol и typecheck. Полный локальный прогон 26
 августа 2026 года также подтвердил строгий `cargo clippy`, Electron `npm test`
-(452 passed, 2 skipped), production build и bundle checks. Compatibility,
+(457 passed, 2 skipped), production build и bundle checks. Compatibility,
 native-package, installer и upgrade/rollback gates проходят в Windows CI.
+Documentation gate проверяет все tracked text-файлы, относительные Markdown-ссылки
+и запрет устаревших удалённых audit-документов.
 
 Code signing не входит в текущий release scope; manifest/hash остаётся
 документированным trust root. Optional browser/voice/vision adapters работают
