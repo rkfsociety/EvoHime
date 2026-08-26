@@ -45,6 +45,18 @@ export function latestRecoveryNotice(events: readonly CoreEvent[]): RecoveryNoti
       }
     }
     if (event.eventType === 'approval.required') {
+      // Approval events are durable and may be replayed after their task was
+      // stopped. A terminal task event supersedes every earlier approval for
+      // that task; it must not be shown again on the next shell launch.
+      if (events.some((candidate) =>
+        candidate.taskId === event.taskId &&
+        candidate.sequenceId > event.sequenceId &&
+        (candidate.eventType === 'task.completed' ||
+          candidate.eventType === 'task.failed' ||
+          candidate.eventType === 'task.stopped')
+      )) {
+        continue
+      }
       return {
         ...common,
         state: 'WAITING_APPROVAL',
@@ -90,8 +102,17 @@ export function latestRecoveryNotice(events: readonly CoreEvent[]): RecoveryNoti
 
 function parsePayload(payload: string): Record<string, unknown> {
   try {
-    const value: unknown = JSON.parse(payload)
-    return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
+  const value: unknown = JSON.parse(payload)
+    if (typeof value !== 'object' || value === null) return {}
+    const record = value as Record<string, unknown>
+    // Core event payloads are externally tagged (for example
+    // {"ApprovalRequired": {...}}); accept the flat form too for older logs.
+    const keys = Object.keys(record)
+    if (keys.length === 1 && keys[0] !== undefined &&
+        typeof record[keys[0]] === 'object' && record[keys[0]] !== null) {
+      return record[keys[0]] as Record<string, unknown>
+    }
+    return record
   } catch {
     return {}
   }

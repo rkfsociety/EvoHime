@@ -52,6 +52,29 @@ describe('recovery contract', () => {
     expect(latestRecoveryNotice(events)?.state).toBe('RECOVERING')
   })
 
+  it('does not resurrect approval after the task was stopped', () => {
+    const events = [
+      event('task.stopped', {}, 3),
+      event('approval.required', { approval_id: 'approval-1' }, 2)
+    ]
+    expect(latestRecoveryNotice(events)).toBeNull()
+  })
+
+  it('reads externally tagged Core approval payloads', () => {
+    const tagged = event('approval.required', {}, 4)
+    tagged.payload = JSON.stringify({
+      ApprovalRequired: {
+        approval_id: 'approval-tagged',
+        can_cancel: true
+      }
+    })
+    expect(latestRecoveryNotice([tagged])).toMatchObject({
+      state: 'WAITING_APPROVAL',
+      correlationId: 'approval-tagged',
+      canCancel: true
+    })
+  })
+
   it('shows only actions supported by the state', () => {
     render(<RecoveryBanner connection="connected" events={[event('task.failed', { error: 'safe error', request_id: 'request-1' })]} onOpenTask={vi.fn()} />)
     expect(screen.getByText('FAILED')).toBeTruthy()
