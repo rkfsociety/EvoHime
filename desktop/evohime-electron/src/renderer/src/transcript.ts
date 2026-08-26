@@ -88,6 +88,7 @@ export function buildTranscript(events: readonly CoreEvent[]): Transcript {
 
       case 'tool.started': {
         const tool = text_(payload, 'tool_name') || 'инструмент'
+        if (tool === 'codex.execute') break
         const call: ToolCall = { tool, output: null, running: true }
         const last = entries.at(-1)
         // Consecutive calls belong to the same stretch of work.
@@ -101,6 +102,9 @@ export function buildTranscript(events: readonly CoreEvent[]): Transcript {
 
       case 'tool.output': {
         const tool = text_(payload, 'tool_name') || 'инструмент'
+        // The raw JSONL stream is retained in Trace. The chat receives the
+        // projected shell.execute events emitted for each Codex command.
+        if (tool === 'codex.execute') break
         const output = clamp(text_(payload, 'output'))
         const index = findLastIndex(entries, (entry) => entry.kind === 'activity')
         const group = index >= 0 ? (entries[index] as Extract<TranscriptEntry, { kind: 'activity' }>) : null

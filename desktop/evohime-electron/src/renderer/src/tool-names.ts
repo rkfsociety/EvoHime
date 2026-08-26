@@ -34,5 +34,8 @@ const TOOL_LABELS: Record<string, string> = {
 }
 
 export function toolLabel(tool: string): string {
+  if (tool.startsWith('shell.execute: ')) {
+    return `Выполняю команду: ${tool.slice('shell.execute: '.length)}`
+  }
   return TOOL_LABELS[tool] ?? tool
 }

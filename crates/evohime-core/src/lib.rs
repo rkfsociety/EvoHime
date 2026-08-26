@@ -4483,46 +4483,92 @@ where
         });
         if parse_agent_messages {
             line_buffer.push_str(&String::from_utf8_lossy(&chunk[..read]));
-            emit_codex_agent_messages(&mut line_buffer, &events, &task_id);
+            emit_codex_events(&mut line_buffer, &events, &task_id);
         }
     }
     if parse_agent_messages {
-        emit_codex_agent_messages(&mut line_buffer, &events, &task_id);
+        emit_codex_events(&mut line_buffer, &events, &task_id);
     }
     output
 }
 
-/// Converts Codex CLI's JSONL agent messages into the normal Core transcript
-/// stream. Raw CLI output remains a tool output for diagnostics, while the
-/// answer itself must be visible as a regular chat message.
-fn emit_codex_agent_messages(
-    buffer: &mut String,
-    events: &broadcast::Sender<CoreEvent>,
-    task_id: &str,
-) {
+/// Projects Codex CLI's JSONL into the normal Core transcript stream. Raw CLI
+/// output remains available in the trace, while the chat receives real command
+/// activities and separate assistant messages in their original order.
+fn emit_codex_events(buffer: &mut String, events: &broadcast::Sender<CoreEvent>, task_id: &str) {
     while let Some(newline) = buffer.find('\n') {
         let line = buffer[..newline].trim();
-        if let Some(content) = codex_agent_message(line) {
-            let _ = events.send(CoreEvent::AssistantDelta {
-                task_id: task_id.to_string(),
-                content,
-            });
-        }
+        emit_codex_event(line, events, task_id);
         buffer.drain(..=newline);
     }
 }
 
-fn codex_agent_message(line: &str) -> Option<String> {
-    let value: serde_json::Value = serde_json::from_str(line).ok()?;
-    if value.get("type")?.as_str()? != "item.completed" {
-        return None;
+fn emit_codex_event(line: &str, events: &broadcast::Sender<CoreEvent>, task_id: &str) {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+        return;
+    };
+    let event_type = value.get("type").and_then(serde_json::Value::as_str);
+    let Some(item) = value.get("item").and_then(serde_json::Value::as_object) else {
+        return;
+    };
+    match (
+        event_type,
+        item.get("type").and_then(serde_json::Value::as_str),
+    ) {
+        (Some("item.started"), Some("command_execution")) => {
+            if let Some(command) = item.get("command").and_then(serde_json::Value::as_str) {
+                let _ = events.send(CoreEvent::ToolStarted {
+                    task_id: task_id.to_string(),
+                    tool_name: codex_command_tool_name(command),
+                });
+            }
+        }
+        (Some("item.completed"), Some("command_execution")) => {
+            let command = item
+                .get("command")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
+            let output = item
+                .get("aggregated_output")
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.is_empty())
+                .unwrap_or(command);
+            let output = if command.is_empty() || output == command {
+                output.to_string()
+            } else {
+                format!("{command}\n{output}")
+            };
+            let _ = events.send(CoreEvent::ToolOutput {
+                task_id: task_id.to_string(),
+                tool_name: codex_command_tool_name(command),
+                output,
+            });
+        }
+        (Some("item.completed"), Some("agent_message")) => {
+            if let Some(text) = item
+                .get("text")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                let _ = events.send(CoreEvent::AssistantDelta {
+                    task_id: task_id.to_string(),
+                    content: text.to_string(),
+                });
+            }
+        }
+        _ => {}
     }
-    let item = value.get("item")?.as_object()?;
-    if item.get("type")?.as_str()? != "agent_message" {
-        return None;
-    }
-    let text = item.get("text")?.as_str()?.trim();
-    (!text.is_empty()).then(|| text.to_string())
+}
+
+fn codex_command_tool_name(command: &str) -> String {
+    let compact = command.split_whitespace().collect::<Vec<_>>().join(" ");
+    let compact = if compact.len() > 240 {
+        format!("{}…", &compact[..237])
+    } else {
+        compact
+    };
+    format!("shell.execute: {compact}")
 }
 
 fn resolve_codex_executable() -> PathBuf {
@@ -12566,13 +12612,15 @@ mod tests {
     use tokio_util::sync::CancellationToken;
 
     #[test]
-    fn codex_agent_message_extracts_completed_jsonl_item() {
+    fn codex_jsonl_agent_message_becomes_chat_event() {
         let line = r#"{"type":"item.completed","item":{"type":"agent_message","text":"Готово"}}"#;
-        assert_eq!(super::codex_agent_message(line).as_deref(), Some("Готово"));
-        assert!(super::codex_agent_message(
-            r#"{"type":"item.started","item":{"type":"agent_message","text":"ещё нет"}}"#
-        )
-        .is_none());
+        let (events, mut received) = tokio::sync::broadcast::channel(2);
+        super::emit_codex_event(line, &events, "task-1");
+        assert!(matches!(
+            received.try_recv().unwrap(),
+            CoreEvent::AssistantDelta { task_id, content }
+                if task_id == "task-1" && content == "Готово"
+        ));
     }
 
     #[test]
