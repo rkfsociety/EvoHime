@@ -37,6 +37,19 @@
 5. Security/eval tests на traversal, capability escalation, secret leakage, imported/untrusted content и unsafe fallback; набор выбирается по критериям направления.
 6. Проверить cargo fmt --all -- --check, релевантный cargo clippy с -D warnings, npm run check:protocol, npm run typecheck, релевантный npm test и git diff --check.
 
+## Evidence matrix
+
+- Contract/storage: `cargo test -p evohime-core -p evohime-local-storage
+  -p evohime-desktop-ipc` с именованными fixture IDs и migration evidence.
+- Runtime: deterministic continuation/fault fixtures с отдельными outcome
+  `Continue`, `Complete`, `PauseForApproval`, `Blocked`, `BudgetLimited`,
+  `StopFailed` и `StopUser`; crash/restart evidence содержит только metadata.
+- Desktop: `npm run check:protocol`, `npm run typecheck` и релевантные
+  `npm test` cases для replay, stale action, redaction и projection.
+- Release: evidence фиксирует exact commit, schema/proto versions, policy hash,
+  fixture IDs и redaction status; абсолютные пути, secrets, PII и raw provider
+  output исключены.
+
 ## Release-evidence и закрытие
 
 - Evidence содержит commit, contract/schema versions, test IDs, hashes, typed outcomes и redaction status; credentials, raw provider output, transcripts, absolute paths и PII исключены.

@@ -41,10 +41,23 @@ budgets, `require_workspace_change_before_retry`, `stop_on_user_interaction`,
 `stop_on_approval_required`, `stop_on_unknown_outcome`, `gates[]`,
 `completion_mode`, timestamps и hash.
 
+`scope` обязан включать стабильный workspace/owner scope и actor, а policy не
+может читать или изменять состояние другого scope. Для каждого run отдельно
+фиксируются `run_id`, `policy_snapshot_hash`, `goal_version`, capability и
+approval snapshot. `enabled` разрешает только явно созданный пользователем
+bounded run; он не является глобальным переключателем daemon.
+
 `GateV1` содержит `id`, `kind` (`tool|workflow|evidence|approval`), typed
 `capability_ref`, bounded args, required status, timeout и retry policy. В policy
 нельзя хранить произвольную shell string. Gate разрешается только через
 существующий registry и теми же approvals/grants.
+
+`args` — discriminated typed payload, а не произвольный JSON: canonical args
+hash и sensitivity label входят в identity gate. Результат gate обязан иметь
+revision/freshness, observed status и evidence/provenance ref. Policy не
+выбирает произвольный следующий effect: typed continuation request приходит
+из Core workflow/runner, а model intent только предлагает его и проходит ту же
+валидацию.
 
 При каждом решении Core собирает goal status, remaining criteria, gate results,
 workspace/evidence change marker, failure class, retryability, approvals,
@@ -64,6 +77,11 @@ evidence hash и canonical args. Один и тот же failed fingerprint не
 Goal version, capability bindings и budgets. Изменение global policy не меняет
 уже запущенный run. Пользовательский stop имеет приоритет и переживает restart.
 
+Нужно различать `user_stop`, `user_pause`, `approval_resolution` и обычное
+изменение UI. `stop_on_user_interaction` не должен блокировать саму команду
+resume/approval; после stop новый run получает новый identity, а старый не
+возобновляется.
+
 ## Persistence и recovery
 
 Хранить continuation index, start time, budget counters, progress marker, gate
@@ -71,6 +89,12 @@ history, fingerprints, last checkpoint и stop reason в additive durable store.
 После restart сначала восстанавливается workflow/lease state и unknown outcome,
 затем policy решает, есть ли безопасный следующий шаг. Approval для новых args,
 hash или capability не наследуется от старого решения.
+
+Budget accounting должен быть атомарным: перед dispatch Core резервирует
+bounded единицы (turns/tokens/cost/time), после результата коммитит фактическое
+потребление или освобождает резерв. Concurrent/duplicate delivery не может
+увеличить счётчик дважды; переполнение и отрицательные значения дают typed
+`BudgetLimited`/`InvalidBudget`.
 
 ## UI и IPC
 
@@ -88,6 +112,42 @@ pause/stop/resume и pending approval. Команды pause/stop являютс�
 4. Реализовать anti-loop, backoff, stale event protection и recovery.
 5. Добавить bounded IPC/UI и evaluation fixtures для успешных/остановленных
    циклов.
+
+## Предметная декомпозиция
+
+- Core contract: `crates/evohime-core/src/continuation.rs` (или согласованный
+  live-path), с регистрацией в `lib.rs`; typed policy, gate, decision,
+  continuation request, snapshot и stable errors.
+- Storage: `crates/evohime-local-storage/src/continuation_store.rs` и shared
+  migration ladder; текущий checkout имеет schema v33, поэтому первый вариант
+  обязан явно выбрать additive v34 либо доказать отсутствие новой durable
+  таблицы. Run, snapshot, budget reservation, gate history и dedup пишутся
+  транзакционно, с backup-before-migrate.
+- Runtime: существующие `workflow_runtime.rs`, `workflow_runner.rs`,
+  `child_workflow.rs`, `goal.rs` и model-dispatch/provenance path; continuation
+  не создаёт второй lease, approval или effect ledger.
+- IPC/UI: additive messages в
+  `crates/desktop-ipc/proto/evohime.desktop.proto`, адаптеры
+  `desktop/evohime-electron/src/main/ipc/pipe-client.ts` и
+  `shell-bridge.ts`, projection в `GoalPanel`, `WorkflowPanel` и
+  `OperationsPanel`. Renderer только отображает Core projection.
+
+## Acceptance-to-contract matrix
+
+- `C01` — Core выбирает decision по typed evidence → decision table и
+  deterministic fixture для каждого terminal/continue outcome.
+- `C02` — Complete требует Goal criteria и required gates → Core verifier refs,
+  freshness и negative fixture с failed/unknown gate.
+- `C03` — Нет capability escalation или shell execution → typed gate union,
+  registry revalidation и fixture с shell-like аргументом.
+- `C04` — Нет бессмысленных retries → canonical attempt identity,
+  no-progress threshold, backoff и unknown-outcome fixture.
+- `C05` — Restart безопасен → transaction boundaries, dispatch marker,
+  reservation/dedup rules и crash injection до/после effect.
+- `C06` — User stop имеет приоритет → durable stop action, stale resume denial
+  и fixture, показывающий, что stop не создаёт новый effect.
+- `C07` — Client показывает фактическое состояние → additive projection,
+  replay/resync и redaction fixture.
 
 ## Критерии готовности
 

@@ -11,7 +11,8 @@
 ### Блокирующие
 
 - План 26.1 — contract, validators, error codes и storage policy.
-- Существующие workflow/child/provider/tool/memory boundaries, cancellation, budgets, audit и unknown-outcome semantics.
+- Существующие workflow/child/provider/tool boundaries, cancellation, budgets,
+  audit, model provenance и unknown-outcome semantics.
 
 ### Опциональные
 
@@ -25,6 +26,20 @@
 3. Определить cancellation, timeout, lease, retry, backpressure, partial failure и unknown outcome. После restart разрешены replay/reconciliation, но не blind retry side effect.
 4. Добавить fault-injection для crash до/после dispatch marker, stale lease/version, duplicate delivery, policy change и corrupted state.
 5. Подготовить metadata-only projection contract для этапа 3 и redacted diagnostic evidence для этапа 4.
+
+## Предметная декомпозиция
+
+- `crates/evohime-core/src/continuation.rs` владеет decision point и FSM;
+  `workflow_runtime.rs`/`workflow_runner.rs` поставляют typed completion и
+  следующий validated request, а `goal.rs` — completion proof.
+- Dispatch marker и unknown-outcome reconciliation должны быть связаны с уже
+  существующим model provenance/receipt и workflow lease, без второго ledger.
+- Каждая continuation attempt получает monotonic index и dedup identity;
+  budget reservation, state transition и event append выполняются одной
+  SQLite-транзакцией там, где effect ещё не начался. После dispatch marker
+  recovery только reconcile/stop, но не blind retry.
+- Fault fixtures обязаны отдельно моделировать crash до reservation, после
+  reservation до dispatch, после dispatch marker и после terminal result.
 
 ## Артефакты выхода
 

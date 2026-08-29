@@ -71,6 +71,15 @@ Stage-файлы не удаляются по отдельности: после
 - Явно заполнены 17 ранее пустых разделов optional dependencies в планах
   `25`, `26`, `30`, `33`, `36`, `37` и `41`; в каждом зафиксировано отсутствие
   дополнительных межплановых зависимостей.
+- Повторно проверен комплект `26-0` … `26-4` против issue #6 и live checkout:
+  добавлены предметные Core/storage/runtime/IPC/UI surfaces, acceptance-to-
+  contract matrix и reproducible evidence matrix. Уточнены owner scope/actor,
+  typed continuation request и gate payload, различие stop/pause/resume,
+  атомарный budget reservation, связь с существующим provenance/lease/Goal и
+  crash recovery. Для текущей schema v33 зафиксировано обязательное решение о
+  следующей additive revision (ожидаемо v34, но номер подтверждается перед
+  реализацией). Необоснованная ссылка на headless client убрана из обязательной
+  границы этапа 26.3.
 
 ## Источники истины
 
