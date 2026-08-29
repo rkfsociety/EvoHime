@@ -666,6 +666,24 @@ describe('context budget commands', () => {
   })
 })
 
+describe('Agent Skills commands', () => {
+  it('forwards bounded metadata and explicit content requests', () => {
+    expect(invoke('core.listSkills', { workspacePath: 'C:\\work', limit: 20 })).toEqual({ ok: true, value: { accepted: true } })
+    expect(invoke('core.loadSkill', { workspacePath: 'C:\\work', skillId: 'reviewer', maxBytes: 4096 })).toEqual({ ok: true, value: { accepted: true } })
+    expect(invoke('core.loadSkillReference', { workspacePath: 'C:\\work', skillId: 'reviewer', reference: 'references/guide.md', maxBytes: 2048 })).toEqual({ ok: true, value: { accepted: true } })
+    expect(sent).toEqual([
+      { listSkills: { workspacePath: 'C:\\work', limit: 20 } },
+      { loadSkill: { workspacePath: 'C:\\work', skillId: 'reviewer', maxBytes: 4096 } },
+      { loadSkillReference: { workspacePath: 'C:\\work', skillId: 'reviewer', reference: 'references/guide.md', maxBytes: 2048 } }
+    ])
+  })
+
+  it('rejects unsafe skill paths before they reach Core', () => {
+    expect((invoke('core.loadSkillReference', { workspacePath: 'C:\\work', skillId: '../secret', reference: 'references/guide.md' }) as CommandFailure).ok).toBe(false)
+    expect(sent).toHaveLength(0)
+  })
+})
+
 describe('workspace knowledge commands', () => {
   it('forwards indexing, status and bounded retrieval without filesystem access in renderer', () => {
     invoke('core.indexWorkspace', { workspacePath: 'C:\\work', enableEmbeddings: false })

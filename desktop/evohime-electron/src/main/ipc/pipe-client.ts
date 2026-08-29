@@ -6,6 +6,11 @@ import type {
   ConnectionState,
   CoreAvailabilityCode,
   CoreEvent,
+  SkillCatalog,
+  SkillContentResult,
+  SkillDiagnostic,
+  SkillMetadata,
+  SkillReferenceResult,
   ProtocolVersion,
   ShellState,
   TaskCheckpointActionResult,
@@ -43,7 +48,7 @@ type ICommandEnvelope = evohime.desktop.v1.ICommandEnvelope
  * (plan 0, stage 1).
  */
 
-export const CLIENT_CAPABILITIES = ['replay', 'resync', 'task_checkpoint'] as const
+export const CLIENT_CAPABILITIES = ['replay', 'resync', 'task_checkpoint', 'skills'] as const
 
 export const DEFAULT_CONNECT_TIMEOUT_MS = 5_000
 export const DEFAULT_HANDSHAKE_TIMEOUT_MS = 5_000
@@ -527,7 +532,10 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       payload: decodePayload(event.payload),
       executionEvent: decodeExecutionEvent(event.executionEvent),
       taskCheckpoint: decodeTaskCheckpoint(event.taskCheckpoint),
-      taskCheckpointAction: decodeTaskCheckpointAction(event.taskCheckpointActionResult)
+      taskCheckpointAction: decodeTaskCheckpointAction(event.taskCheckpointActionResult),
+      skillCatalog: decodeSkillCatalog(event.skillCatalog),
+      skillContent: decodeSkillContent(event.skillContent),
+      skillReference: decodeSkillReference(event.skillReference)
     })
   }
 
@@ -737,6 +745,81 @@ function decodeTaskCheckpointAction(
     action: projected.action ?? '',
     applied: Boolean(projected.applied),
     deduplicated: Boolean(projected.deduplicated),
+    errorCode: projected.errorCode ?? '',
+    errorMessage: projected.errorMessage ?? ''
+  }
+}
+
+function decodeSkillCatalog(
+  projected: evohime.desktop.v1.ISkillCatalogProjection | null | undefined
+): SkillCatalog | null {
+  if (!projected) return null
+  return {
+    schemaVersion: Number(projected.schemaVersion ?? 0),
+    skills: (projected.skills ?? []).map(decodeSkillMetadata),
+    diagnostics: (projected.diagnostics ?? []).map(decodeSkillDiagnostic)
+  }
+}
+
+function decodeSkillMetadata(projected: evohime.desktop.v1.ISkillMetadataProjection): SkillMetadata {
+  return {
+    schemaVersion: Number(projected.schemaVersion ?? 0),
+    skillId: projected.skillId ?? '',
+    name: projected.name ?? '',
+    description: projected.description ?? '',
+    version: projected.version ?? '',
+    scope: projected.scope ?? '',
+    sourceKind: projected.sourceKind ?? '',
+    sourceRef: projected.sourceRef ?? '',
+    contentHash: projected.contentHash ?? '',
+    allowedTools: [...(projected.allowedTools ?? [])],
+    requiredCapabilities: [...(projected.requiredCapabilities ?? [])],
+    disableModelInvocation: Boolean(projected.disableModelInvocation),
+    referenceCount: Number(projected.referenceCount ?? 0),
+    validationStatus: projected.validationStatus ?? '',
+    validationErrorCode: projected.validationErrorCode ?? '',
+    warnings: [...(projected.warnings ?? [])]
+  }
+}
+
+function decodeSkillDiagnostic(projected: evohime.desktop.v1.ISkillDiagnosticProjection): SkillDiagnostic {
+  return {
+    code: projected.code ?? '',
+    skillId: projected.skillId ?? '',
+    sourceKind: projected.sourceKind ?? '',
+    sourceRef: projected.sourceRef ?? '',
+    message: projected.message ?? ''
+  }
+}
+
+function decodeSkillContent(
+  projected: evohime.desktop.v1.ISkillContentResult | null | undefined
+): SkillContentResult | null {
+  if (!projected || !projected.skillId) return null
+  return {
+    schemaVersion: Number(projected.schemaVersion ?? 0),
+    skillId: projected.skillId,
+    version: projected.version ?? '',
+    content: projected.content ?? '',
+    contentHash: projected.contentHash ?? '',
+    sourceRef: projected.sourceRef ?? '',
+    errorCode: projected.errorCode ?? '',
+    errorMessage: projected.errorMessage ?? '',
+    cacheHit: Boolean(projected.cacheHit)
+  }
+}
+
+function decodeSkillReference(
+  projected: evohime.desktop.v1.ISkillReferenceResult | null | undefined
+): SkillReferenceResult | null {
+  if (!projected || !projected.skillId) return null
+  return {
+    schemaVersion: Number(projected.schemaVersion ?? 0),
+    skillId: projected.skillId,
+    reference: projected.reference ?? '',
+    content: projected.content ?? '',
+    contentHash: projected.contentHash ?? '',
+    sourceRef: projected.sourceRef ?? '',
     errorCode: projected.errorCode ?? '',
     errorMessage: projected.errorMessage ?? ''
   }

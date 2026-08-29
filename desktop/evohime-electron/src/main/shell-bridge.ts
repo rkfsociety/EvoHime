@@ -240,6 +240,42 @@ function dispatch(
       return accepted(client.send({ resolveTaskCheckpoint: { taskId, workspacePath, checkpointId, expectedSourceEventSeq, action, idempotencyKey } }))
     }
 
+    case 'core.listSkills': {
+      const value = asRecord(payload)
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const limit = value['limit'] === undefined ? 0 : asBoundedNumber(value['limit'], 128)
+      if (workspacePath === null || limit === null) {
+        return failure('invalid-payload', 'Некорректные параметры каталога skills.')
+      }
+      log('info', 'shell.command_forwarded', { command })
+      return accepted(client.send({ listSkills: { workspacePath, limit } }))
+    }
+
+    case 'core.loadSkill': {
+      const value = asRecord(payload)
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const skillId = asBoundedString(value['skillId'])
+      const maxBytes = value['maxBytes'] === undefined ? 0 : asBoundedNumber(value['maxBytes'], 256 * 1024)
+      if (workspacePath === null || skillId === null || !isSafeSkillId(skillId) || maxBytes === null) {
+        return failure('invalid-payload', 'Некорректные параметры загрузки skill.')
+      }
+      log('info', 'shell.command_forwarded', { command })
+      return accepted(client.send({ loadSkill: { workspacePath, skillId, maxBytes } }))
+    }
+
+    case 'core.loadSkillReference': {
+      const value = asRecord(payload)
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const skillId = asBoundedString(value['skillId'])
+      const reference = asBoundedString(value['reference'])
+      const maxBytes = value['maxBytes'] === undefined ? 0 : asBoundedNumber(value['maxBytes'], 64 * 1024)
+      if (workspacePath === null || skillId === null || !isSafeSkillId(skillId) || reference === null || !isSafeSkillReference(reference) || maxBytes === null) {
+        return failure('invalid-payload', 'Некорректные параметры reference skill.')
+      }
+      log('info', 'shell.command_forwarded', { command })
+      return accepted(client.send({ loadSkillReference: { workspacePath, skillId, reference, maxBytes } }))
+    }
+
     case 'core.stopTask': {
       const taskId = asBoundedString(asRecord(payload)['taskId'])
       if (taskId === null) {
@@ -1502,6 +1538,14 @@ function asBoundedString(value: unknown): string | null {
     return null
   }
   return value
+}
+
+function isSafeSkillId(value: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value) && !value.includes('..')
+}
+
+function isSafeSkillReference(value: string): boolean {
+  return value.length <= 256 && !value.startsWith('/') && !value.startsWith('\\\\') && !value.split(/[\\/]+/u).includes('..')
 }
 
 function asTraceContent(value: unknown): string | null {

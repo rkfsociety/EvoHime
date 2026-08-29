@@ -2374,6 +2374,15 @@ impl IpcBridge {
                 self.write_task_checkpoint_action_result(writer, result)
                     .await?;
             }
+            Some(generated::command_envelope::Command::ListSkills(request)) => {
+                self.dispatch_list_skills(request, writer).await?;
+            }
+            Some(generated::command_envelope::Command::LoadSkill(request)) => {
+                self.dispatch_load_skill(request, writer).await?;
+            }
+            Some(generated::command_envelope::Command::LoadSkillReference(request)) => {
+                self.dispatch_load_skill_reference(request, writer).await?;
+            }
             Some(generated::command_envelope::Command::StopTask(stop)) => {
                 if let Some(coordinator) = &self.coordinator {
                     coordinator
@@ -7334,6 +7343,230 @@ impl IpcBridge {
         Ok(task_checkpoint_action_result_from_record(record))
     }
 
+    async fn dispatch_list_skills<W: AsyncWrite + Unpin>(
+        &self,
+        request: generated::ListSkills,
+        writer: &mut W,
+    ) -> Result<(), IpcBridgeError> {
+        let workspace = match validate_skill_workspace(&request.workspace_path) {
+            Ok(workspace) => workspace,
+            Err(error) => {
+                return self
+                    .write_skill_catalog(
+                        writer,
+                        generated::SkillCatalogProjection {
+                            schema_version: crate::skill_registry::SKILL_SCHEMA_VERSION,
+                            diagnostics: vec![generated::SkillDiagnosticProjection {
+                                code: error.code().into(),
+                                message: "Каталог skills недоступен.".into(),
+                                ..Default::default()
+                            }],
+                            ..Default::default()
+                        },
+                    )
+                    .await;
+            }
+        };
+        let mut registry = crate::skill_registry::SkillRegistry::for_workspace(&workspace);
+        let catalog = registry.catalog();
+        let limit = if request.limit == 0 {
+            crate::skill_registry::MAX_SKILLS
+        } else {
+            (request.limit as usize).min(crate::skill_registry::MAX_SKILLS)
+        };
+        let projection = generated::SkillCatalogProjection {
+            schema_version: catalog.schema_version,
+            skills: catalog
+                .skills
+                .into_iter()
+                .take(limit)
+                .map(skill_metadata_projection)
+                .collect(),
+            diagnostics: catalog
+                .diagnostics
+                .into_iter()
+                .take(32)
+                .map(skill_diagnostic_projection)
+                .collect(),
+        };
+        self.write_skill_catalog(writer, projection).await
+    }
+
+    async fn dispatch_load_skill<W: AsyncWrite + Unpin>(
+        &self,
+        request: generated::LoadSkill,
+        writer: &mut W,
+    ) -> Result<(), IpcBridgeError> {
+        let max_bytes = if request.max_bytes == 0 {
+            crate::skill_registry::MAX_SKILL_BYTES
+        } else {
+            (request.max_bytes as usize).min(crate::skill_registry::MAX_SKILL_BYTES)
+        };
+        let result = match validate_skill_workspace(&request.workspace_path) {
+            Ok(workspace) => {
+                let mut registry = crate::skill_registry::SkillRegistry::for_workspace(&workspace);
+                match registry.load(&request.skill_id) {
+                    Ok(skill) if skill.content.len() <= max_bytes => {
+                        generated::SkillContentResult {
+                            schema_version: skill.metadata.schema_version,
+                            skill_id: skill.metadata.skill_id,
+                            version: skill.metadata.version,
+                            content: skill.content,
+                            content_hash: skill.metadata.content_hash,
+                            source_ref: skill.metadata.source_ref,
+                            cache_hit: skill.cache_hit,
+                            ..Default::default()
+                        }
+                    }
+                    Ok(_) => skill_content_error(&request.skill_id, "too_large"),
+                    Err(error) => skill_content_error(&request.skill_id, error.code()),
+                }
+            }
+            Err(error) => skill_content_error(&request.skill_id, error.code()),
+        };
+        if result.error_code.is_empty() {
+            self.append_skill_trace(
+                &result.skill_id,
+                "skill.loaded",
+                serde_json::json!({
+                    "skill_id": result.skill_id,
+                    "version": result.version,
+                    "content_hash": result.content_hash,
+                    "source_ref": result.source_ref,
+                }),
+            )
+            .await;
+        }
+        self.write_skill_content(writer, result).await
+    }
+
+    async fn dispatch_load_skill_reference<W: AsyncWrite + Unpin>(
+        &self,
+        request: generated::LoadSkillReference,
+        writer: &mut W,
+    ) -> Result<(), IpcBridgeError> {
+        let max_bytes = if request.max_bytes == 0 {
+            crate::skill_registry::MAX_REFERENCE_BYTES
+        } else {
+            (request.max_bytes as usize).min(crate::skill_registry::MAX_REFERENCE_BYTES)
+        };
+        let result = match validate_skill_workspace(&request.workspace_path) {
+            Ok(workspace) => {
+                let mut registry = crate::skill_registry::SkillRegistry::for_workspace(&workspace);
+                match registry.load_reference(&request.skill_id, &request.reference) {
+                    Ok(reference) if reference.content.len() <= max_bytes => {
+                        generated::SkillReferenceResult {
+                            schema_version: crate::skill_registry::SKILL_SCHEMA_VERSION,
+                            skill_id: request.skill_id.clone(),
+                            reference: reference.name,
+                            content: reference.content,
+                            content_hash: reference.content_hash,
+                            source_ref: reference.provenance.source_ref,
+                            ..Default::default()
+                        }
+                    }
+                    Ok(_) => {
+                        skill_reference_error(&request.skill_id, &request.reference, "too_large")
+                    }
+                    Err(error) => {
+                        skill_reference_error(&request.skill_id, &request.reference, error.code())
+                    }
+                }
+            }
+            Err(error) => {
+                skill_reference_error(&request.skill_id, &request.reference, error.code())
+            }
+        };
+        if result.error_code.is_empty() {
+            self.append_skill_trace(
+                &result.skill_id,
+                "skill.reference.loaded",
+                serde_json::json!({
+                    "skill_id": result.skill_id,
+                    "reference": result.reference,
+                    "content_hash": result.content_hash,
+                    "source_ref": result.source_ref,
+                }),
+            )
+            .await;
+        }
+        self.write_skill_reference(writer, result).await
+    }
+
+    async fn append_skill_trace(
+        &self,
+        skill_id: &str,
+        event_type: &str,
+        payload: serde_json::Value,
+    ) {
+        let database = self.journal.database();
+        let database = database.lock().await;
+        if let Err(error) = database.append_event(
+            &format!("skill:{skill_id}"),
+            event_type,
+            &serde_json::to_vec(&payload).unwrap_or_default(),
+        ) {
+            tracing::warn!(target = "skill.registry", %error, "skill trace could not be persisted");
+        }
+    }
+
+    async fn write_skill_catalog<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        projection: generated::SkillCatalogProjection,
+    ) -> Result<(), IpcBridgeError> {
+        let event = generated::EventEnvelope {
+            protocol: Some(protocol()),
+            sequence_id: 0,
+            task_id: String::new(),
+            event_type: "skill.catalog".into(),
+            payload: Vec::new(),
+            core_instance_id: self.core_instance_id.clone(),
+            session_epoch: self.session_epoch,
+            event: Some(generated::event_envelope::Event::SkillCatalog(projection)),
+        };
+        transport::write_frame(writer, &event.encode_to_vec()).await?;
+        Ok(())
+    }
+
+    async fn write_skill_content<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        result: generated::SkillContentResult,
+    ) -> Result<(), IpcBridgeError> {
+        let event = generated::EventEnvelope {
+            protocol: Some(protocol()),
+            sequence_id: 0,
+            task_id: result.skill_id.clone(),
+            event_type: "skill.loaded".into(),
+            payload: Vec::new(),
+            core_instance_id: self.core_instance_id.clone(),
+            session_epoch: self.session_epoch,
+            event: Some(generated::event_envelope::Event::SkillContent(result)),
+        };
+        transport::write_frame(writer, &event.encode_to_vec()).await?;
+        Ok(())
+    }
+
+    async fn write_skill_reference<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        result: generated::SkillReferenceResult,
+    ) -> Result<(), IpcBridgeError> {
+        let event = generated::EventEnvelope {
+            protocol: Some(protocol()),
+            sequence_id: 0,
+            task_id: result.skill_id.clone(),
+            event_type: "skill.reference.loaded".into(),
+            payload: Vec::new(),
+            core_instance_id: self.core_instance_id.clone(),
+            session_epoch: self.session_epoch,
+            event: Some(generated::event_envelope::Event::SkillReference(result)),
+        };
+        transport::write_frame(writer, &event.encode_to_vec()).await?;
+        Ok(())
+    }
+
     async fn write_task_checkpoint_projection<W: AsyncWrite + Unpin>(
         &self,
         writer: &mut W,
@@ -7394,6 +7627,101 @@ impl IpcBridge {
         )
         .await?;
         Ok(())
+    }
+}
+
+fn validate_skill_workspace(
+    value: &str,
+) -> Result<std::path::PathBuf, crate::skill_registry::SkillRegistryError> {
+    if value.is_empty() || value.len() > 4096 || value.chars().any(char::is_control) {
+        return Err(crate::skill_registry::SkillRegistryError::UnsafePath(
+            "workspace".into(),
+        ));
+    }
+    let path = std::path::Path::new(value);
+    if !path.is_absolute() || !path.is_dir() {
+        return Err(crate::skill_registry::SkillRegistryError::UnsafePath(
+            "workspace".into(),
+        ));
+    }
+    path.canonicalize()
+        .map_err(|error| crate::skill_registry::SkillRegistryError::Io(error.to_string()))
+}
+
+fn skill_metadata_projection(
+    metadata: crate::skill_registry::SkillMetadataV1,
+) -> generated::SkillMetadataProjection {
+    generated::SkillMetadataProjection {
+        schema_version: metadata.schema_version,
+        skill_id: bounded_skill_field(&metadata.skill_id),
+        name: bounded_skill_field(&metadata.name),
+        description: bounded_skill_field(&metadata.description),
+        version: bounded_skill_field(&metadata.version),
+        scope: bounded_skill_field(&metadata.scope),
+        source_kind: metadata.source_kind.as_str().into(),
+        source_ref: bounded_skill_field(&metadata.source_ref),
+        content_hash: bounded_skill_field(&metadata.content_hash),
+        allowed_tools: bounded_skill_list(metadata.allowed_tools),
+        required_capabilities: bounded_skill_list(metadata.required_capabilities),
+        disable_model_invocation: metadata.disable_model_invocation,
+        reference_count: metadata.reference_count.min(u32::MAX as usize) as u32,
+        validation_status: serde_json::to_string(&metadata.validation_status)
+            .unwrap_or_else(|_| "invalid".into())
+            .trim_matches('"')
+            .into(),
+        validation_error_code: metadata.validation_error_code.unwrap_or_default(),
+        warnings: metadata
+            .warnings
+            .into_iter()
+            .take(16)
+            .map(|warning| bounded_skill_field(&warning))
+            .collect(),
+    }
+}
+
+fn skill_diagnostic_projection(
+    diagnostic: crate::skill_registry::SkillDiagnostic,
+) -> generated::SkillDiagnosticProjection {
+    generated::SkillDiagnosticProjection {
+        code: bounded_skill_field(&diagnostic.code),
+        skill_id: bounded_skill_field(&diagnostic.skill_id),
+        source_kind: diagnostic.source_kind.as_str().into(),
+        source_ref: bounded_skill_field(&diagnostic.source_ref),
+        message: bounded_skill_field(&diagnostic.message),
+    }
+}
+
+fn bounded_skill_field(value: &str) -> String {
+    value.chars().take(512).collect()
+}
+fn bounded_skill_list(values: Vec<String>) -> Vec<String> {
+    values
+        .into_iter()
+        .take(crate::skill_registry::MAX_LIST_ITEMS)
+        .map(|value| bounded_skill_field(&value))
+        .collect()
+}
+fn skill_content_error(skill_id: &str, code: &str) -> generated::SkillContentResult {
+    generated::SkillContentResult {
+        schema_version: crate::skill_registry::SKILL_SCHEMA_VERSION,
+        skill_id: bounded_skill_field(skill_id),
+        error_code: code.into(),
+        error_message: "Skill не удалось загрузить; содержимое не выдано.".into(),
+        ..Default::default()
+    }
+}
+fn skill_reference_error(
+    skill_id: &str,
+    reference: &str,
+    code: &str,
+) -> generated::SkillReferenceResult {
+    generated::SkillReferenceResult {
+        schema_version: crate::skill_registry::SKILL_SCHEMA_VERSION,
+        skill_id: bounded_skill_field(skill_id),
+        reference: bounded_skill_field(reference),
+        error_code: code.into(),
+        error_message: "Reference не удалось загрузить; содержимое не выдано.".into(),
+        ..Default::default()
     }
 }
 
@@ -7724,7 +8052,12 @@ fn core_info() -> generated::CoreInfo {
             .unwrap_or("unknown")
             .into(),
         runtime_revision: "rust-core".into(),
-        capabilities: vec!["replay".into(), "resync".into(), "task_checkpoint".into()],
+        capabilities: vec![
+            "replay".into(),
+            "resync".into(),
+            "task_checkpoint".into(),
+            "skills".into(),
+        ],
         feature_flags: vec!["authenticated-ipc".into()],
         max_frame_bytes: evohime_desktop_ipc::MAX_FRAME_BYTES as u32,
         max_replay_events: evohime_desktop_ipc::MAX_REPLAY_EVENTS as u32,
@@ -11816,6 +12149,65 @@ mod tests {
             .filter(|event| event.event_type == "task.checkpoint.action")
             .count();
         assert_eq!(action_events, 1);
+    }
+
+    #[tokio::test]
+    async fn agent_skills_ipc_is_typed_metadata_first_and_non_durable() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let skill_dir = directory.path().join(".agents/skills/reviewer");
+        std::fs::create_dir_all(skill_dir.join("references")).expect("skill dir creates");
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: reviewer\ndescription: bounded review\nversion: 1.0.0\n---\nsecretly never persisted\n",
+        )
+        .expect("skill writes");
+        std::fs::write(skill_dir.join("references/guide.md"), "bounded guide")
+            .expect("reference writes");
+        let journal =
+            EventJournal::open(directory.path().join("skills-ipc.db")).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal.clone(), coordinator);
+        let workspace = directory.path().to_string_lossy().into_owned();
+
+        let catalog_event = typed_checkpoint_call(
+            &bridge,
+            generated::command_envelope::Command::ListSkills(generated::ListSkills {
+                workspace_path: workspace.clone(),
+                limit: 10,
+            }),
+        )
+        .await;
+        assert!(catalog_event.payload.is_empty());
+        let Some(generated::event_envelope::Event::SkillCatalog(catalog)) = catalog_event.event
+        else {
+            panic!("expected typed skill catalog");
+        };
+        assert_eq!(catalog.skills.len(), 1);
+        assert_eq!(catalog.skills[0].skill_id, "reviewer");
+        assert!(catalog.skills[0].content_hash.len() <= 128);
+
+        let content_event = typed_checkpoint_call(
+            &bridge,
+            generated::command_envelope::Command::LoadSkill(generated::LoadSkill {
+                workspace_path: workspace,
+                skill_id: "reviewer".into(),
+                max_bytes: 4096,
+            }),
+        )
+        .await;
+        let Some(generated::event_envelope::Event::SkillContent(content)) = content_event.event
+        else {
+            panic!("expected typed skill content");
+        };
+        assert_eq!(content.error_code, "");
+        assert!(content.content.contains("secretly never persisted"));
+        assert!(content_event.payload.is_empty());
+        let history = journal
+            .task_history("skill:reviewer", 16)
+            .await
+            .expect("skill trace reads");
+        assert_eq!(history.len(), 1);
+        assert!(!String::from_utf8_lossy(&history[0].payload).contains("secretly never persisted"));
     }
 
     #[tokio::test]

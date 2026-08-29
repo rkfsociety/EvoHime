@@ -4,10 +4,11 @@ import { ListenerRuntimeSection } from './ListenerRuntimeSection'
 import { ProviderForm } from './ProviderForm'
 import { CodexPanel } from './CodexPanel'
 import { SafetyPanel } from './SafetyPanel'
+import { SkillCatalogPanel } from './SkillCatalogPanel'
 
 import type { ConnectionState, CoreEvent } from '@shared/api'
 
-type SettingsTab = 'provider' | 'workspace' | 'speech' | 'appearance' | 'security'
+type SettingsTab = 'provider' | 'workspace' | 'speech' | 'skills' | 'appearance' | 'security'
 
 interface SettingsModalProps {
   readonly workspace: string | null
@@ -20,6 +21,7 @@ const TABS: readonly { readonly id: SettingsTab; readonly label: string }[] = [
   { id: 'provider', label: 'Провайдер и модели' },
   { id: 'workspace', label: 'Рабочая область' },
   { id: 'speech', label: 'Распознавание речи' },
+  { id: 'skills', label: 'Agent Skills' },
   { id: 'appearance', label: 'Внешний вид' },
   { id: 'security', label: 'Безопасность' }
 ]
@@ -83,6 +85,7 @@ export function SettingsModal({ workspace, connection, events, onClose }: Settin
             ) : null}
             {tab === 'workspace' ? <WorkspaceSettings workspace={workspace} /> : null}
             {tab === 'speech' ? <ListenerRuntimeSection /> : null}
+            {tab === 'skills' ? <SkillCatalogPanel workspace={workspace} connection={connection} events={events} /> : null}
             {tab === 'appearance' ? <InfoSettings title="Внешний вид" text="Тёмная тема и компактная плотность интерфейса используются как основной режим EvoHime." /> : null}
             {tab === 'security' ? <SafetyPanel connection={connection} events={events} /> : null}
           </div>

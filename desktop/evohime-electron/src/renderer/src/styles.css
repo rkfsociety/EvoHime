@@ -2195,6 +2195,20 @@ select:focus {
 .task-checkpoint__refs code { color: var(--fg-muted); }
 .task-checkpoint__actions button { min-height: 32px; }
 
+.skill-catalog { display: grid; gap: 12px; }
+.skill-catalog > p { margin: 0; color: var(--fg-muted); }
+.skill-catalog__diagnostic { color: var(--warning) !important; font-family: var(--mono); font-size: 12px; }
+.skill-catalog__list { display: grid; gap: 10px; }
+.skill-catalog__item { display: grid; gap: 7px; border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--bg-sunken); }
+.skill-catalog__item--invalid { border-color: color-mix(in srgb, var(--danger) 60%, var(--border)); }
+.skill-catalog__heading { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.skill-catalog__heading code,
+.skill-catalog__item small { color: var(--fg-faint); overflow-wrap: anywhere; }
+.skill-catalog__item p { margin: 0; }
+.skill-catalog__item button { justify-self: start; min-height: 32px; }
+.skill-catalog__loaded { border-top: 1px solid var(--border); padding-top: 12px; }
+.skill-catalog__loaded pre { max-height: 420px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg-muted); font: 12px/1.5 var(--mono); }
+
 .operations-panel {
   display: grid;
   gap: 18px;

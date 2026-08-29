@@ -82,6 +82,62 @@ export interface TaskCheckpointRef {
   readonly sensitivity: string
 }
 
+export interface SkillMetadata {
+  readonly schemaVersion: number
+  readonly skillId: string
+  readonly name: string
+  readonly description: string
+  readonly version: string
+  readonly scope: string
+  readonly sourceKind: string
+  readonly sourceRef: string
+  readonly contentHash: string
+  readonly allowedTools: readonly string[]
+  readonly requiredCapabilities: readonly string[]
+  readonly disableModelInvocation: boolean
+  readonly referenceCount: number
+  readonly validationStatus: string
+  readonly validationErrorCode: string
+  readonly warnings: readonly string[]
+}
+
+export interface SkillDiagnostic {
+  readonly code: string
+  readonly skillId: string
+  readonly sourceKind: string
+  readonly sourceRef: string
+  readonly message: string
+}
+
+export interface SkillCatalog {
+  readonly schemaVersion: number
+  readonly skills: readonly SkillMetadata[]
+  readonly diagnostics: readonly SkillDiagnostic[]
+}
+
+export interface SkillContentResult {
+  readonly schemaVersion: number
+  readonly skillId: string
+  readonly version: string
+  readonly content: string
+  readonly contentHash: string
+  readonly sourceRef: string
+  readonly errorCode: string
+  readonly errorMessage: string
+  readonly cacheHit: boolean
+}
+
+export interface SkillReferenceResult {
+  readonly schemaVersion: number
+  readonly skillId: string
+  readonly reference: string
+  readonly content: string
+  readonly contentHash: string
+  readonly sourceRef: string
+  readonly errorCode: string
+  readonly errorMessage: string
+}
+
 export type TaskCheckpointRecoveryDisposition =
   | 'no_checkpoint'
   | 'replayable'
@@ -133,6 +189,11 @@ export interface CoreEvent {
   readonly taskCheckpoint?: TaskCheckpointProjection | null
   /** Present only for the typed TaskCheckpoint action response. */
   readonly taskCheckpointAction?: TaskCheckpointActionResult | null
+  /** Present only for the typed Core skill catalog response. */
+  readonly skillCatalog?: SkillCatalog | null
+  /** Present only for explicit skill progressive-disclosure responses. */
+  readonly skillContent?: SkillContentResult | null
+  readonly skillReference?: SkillReferenceResult | null
 }
 
 export type ShellEvent =
@@ -714,6 +775,9 @@ export const RENDERER_COMMANDS = [
   'core.startTask',
   'core.getTaskCheckpoint',
   'core.resolveTaskCheckpoint',
+  'core.listSkills',
+  'core.loadSkill',
+  'core.loadSkillReference',
   'core.stopTask',
   'core.resolveApproval',
   'core.resolveRoutingDecision',
@@ -872,6 +936,9 @@ export interface CommandPayloads {
     action: 'acknowledge_recovery' | 'request_resume'
     idempotencyKey: string
   }
+  'core.listSkills': { workspacePath: string; limit?: number }
+  'core.loadSkill': { workspacePath: string; skillId: string; maxBytes?: number }
+  'core.loadSkillReference': { workspacePath: string; skillId: string; reference: string; maxBytes?: number }
   'core.stopTask': { taskId: string }
   'core.resolveApproval': { approvalId: string; granted: boolean; idempotencyKey?: string; rejectionReason?: string; cancel?: boolean }
   'core.resolveRoutingDecision': { traceId: string; approve: boolean }
@@ -1116,6 +1183,9 @@ export interface CommandResults {
   'core.startTask': { accepted: boolean }
   'core.getTaskCheckpoint': { accepted: boolean }
   'core.resolveTaskCheckpoint': { accepted: boolean }
+  'core.listSkills': { accepted: boolean }
+  'core.loadSkill': { accepted: boolean }
+  'core.loadSkillReference': { accepted: boolean }
   'core.stopTask': { accepted: boolean }
   'core.resolveApproval': { accepted: boolean }
   'core.resolveRoutingDecision': { accepted: boolean }

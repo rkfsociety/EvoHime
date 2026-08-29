@@ -252,6 +252,85 @@ message ResolveTaskCheckpoint {
   string idempotency_key = 6;
 }
 
+// Bounded metadata catalog for local SKILL.md packages. The catalog never
+// contains the full skill body or executable helper content.
+message ListSkills {
+  string workspace_path = 1;
+  uint32 limit = 2;
+}
+
+// Explicit progressive-disclosure request. Loading a skill is a read-only
+// operation; Core rechecks the current file hash before returning its body.
+message LoadSkill {
+  string workspace_path = 1;
+  string skill_id = 2;
+  uint32 max_bytes = 3;
+}
+
+// Explicit read of one bounded file below a skill's references/ directory.
+message LoadSkillReference {
+  string workspace_path = 1;
+  string skill_id = 2;
+  string reference = 3;
+  uint32 max_bytes = 4;
+}
+
+message SkillMetadataProjection {
+  uint32 schema_version = 1;
+  string skill_id = 2;
+  string name = 3;
+  string description = 4;
+  string version = 5;
+  string scope = 6;
+  string source_kind = 7;
+  string source_ref = 8;
+  string content_hash = 9;
+  repeated string allowed_tools = 10;
+  repeated string required_capabilities = 11;
+  bool disable_model_invocation = 12;
+  uint32 reference_count = 13;
+  string validation_status = 14;
+  string validation_error_code = 15;
+  repeated string warnings = 16;
+}
+
+message SkillDiagnosticProjection {
+  string code = 1;
+  string skill_id = 2;
+  string source_kind = 3;
+  string source_ref = 4;
+  string message = 5;
+}
+
+message SkillCatalogProjection {
+  uint32 schema_version = 1;
+  repeated SkillMetadataProjection skills = 2;
+  repeated SkillDiagnosticProjection diagnostics = 3;
+}
+
+message SkillContentResult {
+  uint32 schema_version = 1;
+  string skill_id = 2;
+  string version = 3;
+  string content = 4;
+  string content_hash = 5;
+  string source_ref = 6;
+  string error_code = 7;
+  string error_message = 8;
+  bool cache_hit = 9;
+}
+
+message SkillReferenceResult {
+  uint32 schema_version = 1;
+  string skill_id = 2;
+  string reference = 3;
+  string content = 4;
+  string content_hash = 5;
+  string source_ref = 6;
+  string error_code = 7;
+  string error_message = 8;
+}
+
 message TaskCheckpointRef {
   string kind = 1;
   string id = 2;
@@ -1415,6 +1494,9 @@ message CommandEnvelope {
     SetAutomationScheduleEnabled set_automation_schedule_enabled = 136;
     GetTaskCheckpoint get_task_checkpoint = 137;
     ResolveTaskCheckpoint resolve_task_checkpoint = 138;
+    ListSkills list_skills = 139;
+    LoadSkill load_skill = 140;
+    LoadSkillReference load_skill_reference = 141;
   }
 }
 
@@ -1452,6 +1534,9 @@ message EventEnvelope {
     ExecutionEvent execution_event = 14;
     TaskCheckpointProjection task_checkpoint = 15;
     TaskCheckpointActionResult task_checkpoint_action_result = 16;
+    SkillCatalogProjection skill_catalog = 17;
+    SkillContentResult skill_content = 18;
+    SkillReferenceResult skill_reference = 19;
   }
 }
 
