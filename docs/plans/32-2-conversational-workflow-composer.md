@@ -13,11 +13,11 @@
 - План 32.1 — contract, validators, storage policy и errors.
 - План 31.0 — Builder authoring contract для передачи validated draft и сохранения immutable version.
 - Existing workflow/child/provider/tool/memory boundaries, budgets, cancellation, audit и unknown-outcome semantics.
+- Existing Core model gateway/provider route, model provenance/receipt и bounded catalog surfaces — для безопасной генерации proposal; Composer не вызывает provider напрямую.
 
 ### Опциональные
 
 - План 30.0 — зависимость из обзора.
-- Existing Core model gateway/provider route, model provenance/receipt и bounded catalog surfaces — для безопасной генерации proposal; Composer не вызывает provider напрямую.
 
 ## Реализация
 
