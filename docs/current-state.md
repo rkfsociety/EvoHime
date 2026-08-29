@@ -1,9 +1,14 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-26. Планы 01–22 завершены и
+Обновлено: 2026-08-29. Планы 01–22 завершены и
 удалены из каталога временных планов. План 19.0 добавил только пользовательский
 self-repair/self-update цикл; автоматического ремонта, push или перезапуска нет.
 Code signing явно исключён из текущего release scope.
+
+План 23 выполняется последовательно: этап 23.1 (versioned TaskCheckpoint
+contract, provenance validation, immutable storage и schema v32) реализован и
+проверен; runtime, recovery, IPC/UI и полное acceptance закрытие остаются
+этапами 23.2–23.4.
 
 ## Продукт
 
@@ -36,6 +41,13 @@ Core и supervisor — внутренние компоненты установ�
   compromise/recovery boundaries, signed checkpoint contract и offline
   `evohime-verify.exe`; Electron получает только status и public metadata;
 - Core, SQLite, IPC, supervisor, event replay и diagnostics;
+- TaskCheckpoint v1: bounded canonical contract с разделением Core-derived и
+  model-proposed данных, SHA-256 content hash, immutable parent chain,
+  idempotent insert, workspace/event-sequence/state-transition checks, typed
+  errors, SQL/JSON metadata consistency и fallback на предыдущую валидную
+  запись; storage schema — v32. Проверки 23.1: 10 focused tests,
+  полный `evohime-local-storage` suite (196 tests), `cargo check -p
+  evohime-core`, `cargo fmt --all -- --check` и `git diff --check`;
 - streamed task timeline, cancellation и approval round-trip;
 - Windows package smoke tests и Windows CI;
 - единый Inno Setup installer с одним desktop shortcut; установленный клиент сам поднимает supervisor, а supervisor — Core;
@@ -113,7 +125,7 @@ Core и supervisor — внутренние компоненты установ�
 - выбор модели в чате (`ModelPicker`) с разделением каталога на free/paid; выбор применяется без перезапуска Core через IPC `SelectModelRequest`;
 - настройки API-провайдера и Codex собраны в один блок с внутренними вкладками; отдельный `WorkspacePicker` убран — папка выбирается из панели проектов;
 - `RecoveryBanner` показывает подтверждённое Core состояние восстановления;
-- после перезапуска Core durable build-effect и обычные agent-run проходят lease heartbeat; подтверждённый terminal event приходит в UI как `RESUMABLE`, а неподтверждённый результат остаётся `BLOCKED`; текущая общая storage schema — v29;
+- после перезапуска Core durable build-effect и обычные agent-run проходят lease heartbeat; подтверждённый terminal event приходит в UI как `RESUMABLE`, а неподтверждённый результат остаётся `BLOCKED`; текущая общая storage schema — v32;
 - `OperationsPanel` («Память и Pulse») — очередь подтверждения памяти и конфликты (только metadata, с действиями «сохранить»/«отклонить»/«заменить»), typed read-only projection child workflow (timeline, role/state/revision/budget, lease и dead-letter) и schedule-событий, а также управление локальным индексом workspace: status, update/rebuild/cancel, optional embeddings и bounded search;
 - пользовательский self-repair: после трёх ошибок задач `OperationsPanel` показывает bounded digest и кнопку «Починить». Main сохраняет FSM в `shell\\repair.json`, создаёт изолированную копию канонического GitHub-репозитория, запускает через Core отдельные diagnose/patch, commit и push операции, показывает diff/tests/CI и не запускает эти шаги без клика пользователя;
 - repair защищает `.codex`, `AGENTS.md`, workflows, updater, supervisor, receipt, security и `.env*`; transaction worker держит backup до authenticated Core startup новой версии и откатывает установку при health timeout;

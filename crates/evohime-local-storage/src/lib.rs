@@ -24,6 +24,7 @@ pub mod model_provenance;
 pub mod reconciliation_verifier;
 pub mod research_store;
 pub mod scratchpad_store;
+pub mod task_checkpoint;
 pub mod toolkit_store;
 pub mod workflow_store;
 
@@ -32,8 +33,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 31;
-const LEGACY_SCHEMA_VERSION: u32 = 26;
+pub const SCHEMA_VERSION: u32 = 32;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -84,6 +84,8 @@ pub enum StorageError {
     /// Нарушение контракта плана 01: scratchpad или artifact store.
     #[error("context operation failed: {0}")]
     Context(String),
+    #[error("task checkpoint contract violation: {0}")]
+    TaskCheckpoint(#[from] task_checkpoint::TaskCheckpointError),
     /// Нарушение контракта execution ledger (план 08-1/08-2).
     #[error("execution ledger contract violation: {0}")]
     LedgerContract(#[from] execution_ledger::LedgerContractError),
@@ -469,7 +471,7 @@ impl LocalDatabase {
         if version > SCHEMA_VERSION {
             return Err(StorageError::UnsupportedSchema(version));
         }
-        if version < LEGACY_SCHEMA_VERSION {
+        if version < SCHEMA_VERSION {
             if existed {
                 fs::copy(&path, path.with_extension("db.bak"))?;
             }
@@ -502,6 +504,7 @@ impl LocalDatabase {
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         context_ledger_store::install_compaction_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        task_checkpoint::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
@@ -3405,6 +3408,10 @@ impl LocalDatabase {
                     ON ambient_proposals(mute_key);
                 PRAGMA user_version = 26;",
             )?;
+        }
+        if current < 32 {
+            task_checkpoint::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 32;")?;
         }
         transaction.commit()?;
         Ok(())

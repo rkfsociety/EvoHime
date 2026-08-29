@@ -21,16 +21,22 @@ desktop-клиент, выбирает workspace, выполняет задач�
 ## Текущий порядок работ
 
 План 22 (diagnostics/recovery, credential persistence и compatibility/release
-hardening) реализован и закрыт. До появления нового утверждённого плана порядок
-работ следующий:
+hardening) реализован и закрыт. Сейчас выполняется план 23 — TaskCheckpoint для
+compaction и recovery: этап 23.1 закрыт по contract/storage evidence, следующим
+идёт 23.2 (runtime и recovery), затем 23.3 (IPC/UI) и 23.4 (acceptance и
+удаление полного комплекта плана). После плана 23 порядок продолжится согласно
+`docs/plans/README.md`.
 
-1. **Поддержка релиза.** Сохранять зелёными Rust/Electron/package gates и
+1. **Планы 23–115.** Выполнять численно по `(NN, M)`, не перескакивая через
+   blocking dependency; закрытый комплект переносить в каноническую
+   документацию и удалять из `docs/plans/`.
+2. **Поддержка релиза.** Сохранять зелёными Rust/Electron/package gates и
    Windows compatibility/installer acceptance.
-2. **Reliability и security.** Развивать credential, recovery, diagnostics и
+3. **Reliability и security.** Развивать credential, recovery, diagnostics и
    backup/restore UX только в существующих границах Core и main-процесса.
-3. **Совместимость.** Поддерживать Windows 10/11 CI; informative ARM64/Insider
+4. **Совместимость.** Поддерживать Windows 10/11 CI; informative ARM64/Insider
    runs остаются исследовательскими и не меняют базовый release scope.
-4. **Продуктовая граница.** Не возвращать web runtime, public HTTP, внешний
+5. **Продуктовая граница.** Не возвращать web runtime, public HTTP, внешний
    Node/Python runtime или автоматические repair/push/restart действия.
 
 Владельцы, критерии закрытия и влияние на выпуск находятся в

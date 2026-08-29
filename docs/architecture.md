@@ -733,6 +733,27 @@ revision, summarizer version и связь item с `sequence_id`. UI получ�
 bounded metadata/projection; исходная execution/evidence история не удаляется
 compaction-операциями.
 
+TaskCheckpoint v1 добавляет bounded immutable continuity record поверх этих
+источников. Контракт живёт в `evohime-core::task_checkpoint` и
+`evohime-local-storage::task_checkpoint`, сериализуется детерминированным JSON
+и получает SHA-256 `content_hash` без самого hash-поля. Core-derived evidence
+(завершённые пункты, blockers, файлы, тесты, gates, approvals и typed refs)
+отделено от model-proposed remaining/open/next/narrative/semantic decisions;
+модель не может подтвердить effect, approval, test или completion.
+
+SQLite storage schema v32 хранит только canonical JSON и bounded metadata в
+append-only `task_checkpoints`. Повторная запись того же id и payload
+идемпотентна, другая запись с тем же id отклоняется. Parent checkpoint обязан
+принадлежать тому же workspace и иметь более ранний event sequence. Чтение
+`latest_valid` пропускает повреждённую последнюю запись и возвращает предыдущую
+валидную для последующего replay; paths, secret-shaped text, secret refs,
+traversal и превышение лимитов отклоняются до persistence.
+Публичный `TaskCheckpointV1` сериализуется, но не принимает произвольный JSON:
+storage декодирует запись через приватный wire-тип и сверяет все SQL metadata с
+canonical JSON. Parent projection также проходит документированную таблицу
+допустимых state transitions; нарушения возвращаются стабильными typed error
+codes, а не строковым контекстом.
+
 ## Local telemetry и deterministic evaluation
 
 `telemetry/v1` — bounded derived projection над Core event journal, receipts и
