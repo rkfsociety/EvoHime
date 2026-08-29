@@ -34,6 +34,8 @@
 
 - Entrypoint: `crates/evohime-core/src/event_trigger_runtime.rs` + handler в `crates/evohime-core/src/lib.rs`; сервис `EventTriggerRuntimeService` должен выполнять `validate → policy → bounded operation → typed result/event`.
 - На старте run загрузить exact contract/policy snapshot и проверить correlation, idempotency, budget, cancellation и capability grant непосредственно перед effect.
+- Реализовать отдельные ingress paths для provider webhook и local workspace event: authenticity/schema до enqueue, bounded normalization, workspace scope, debounce/coalescing и ignore patterns; subscription reconciliation не создаёт пропущенные события.
+- Для accepted-but-not-dispatched событий использовать durable accepted marker и idempotent dispatch; для storm/self-trigger loop применять chain depth, fingerprint suppression, queue overflow и circuit transitions до запуска workflow.
 - Для каждого внешнего/необратимого вызова записать before/after-dispatch evidence; unknown outcome переводить в reconciliation, без blind retry.
 - Тесты: `crates/evohime-core/tests/event_trigger_runtime_recovery.rs` — timeout/cancel, duplicate, stale version/lease, crash до/после dispatch, restart и optional-unavailable.
 

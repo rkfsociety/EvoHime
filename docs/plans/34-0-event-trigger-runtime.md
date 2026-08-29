@@ -48,6 +48,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 - План 33.0 — Integration Provider SDK: единый контракт auth, actions, webhooks и test fixtures.
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
+- Для provider-backed webhook MVP — provider trigger capability, validation strategy, credential reference и subscription adapter из плана 33; локальные источники не могут подменять этот контракт.
 
 ### Опциональные
 
@@ -69,6 +70,15 @@ External/local event
 ```
 
 Все side effects дальше выполняются обычным workflow runtime с теми же grants, approvals, budgets и recovery semantics.
+
+### Обязательные варианты источников и lifecycle
+
+- Contract должен различать `integration_webhook`, `local_workspace_event` и `system_event`; `custom_local_ingress` допускается только как явно optional и строго bounded вариант.
+- Provider-backed trigger хранит subscription state отдельно от portable definition и поддерживает typed lifecycle `Draft → Connecting → Active → Paused/Broken → Revoked/Deleted`; credential revoke/remove переводит trigger в `Broken` или `Paused`.
+- Local workspace source ограничивается конкретным workspace root, разрешёнными event kinds, debounce/coalescing, ignore patterns и max event rate.
+- Accepted-but-not-dispatched events, bounded dedup journal, rate counters/circuit state и reconnect/error state переживают restart; missed external events не синтезируются.
+- Loop prevention обязана использовать origin/correlation marker, max chain depth и fingerprint suppression window; storm protection имеет bounded queue/overflow policy и typed outcomes `Throttled`, `DroppedWithAudit`, `Coalesced`, `PausedByCircuitBreaker`.
+- Declarative filters, если входят в MVP, должны быть deterministic, bounded и без I/O; arbitrary expression language и scripts остаются non-goal.
 
 ### Безопасность
 
