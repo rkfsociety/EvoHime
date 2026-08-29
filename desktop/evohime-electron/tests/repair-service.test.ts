@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { RepairService } from '../src/main/repair-service'
+import { RepairService, type RepairServiceOptions } from '../src/main/repair-service'
 
 function event(error: string) {
   return {
@@ -16,7 +16,10 @@ function event(error: string) {
   }
 }
 
-function makeService(directory: string): RepairService {
+function makeService(
+  directory: string,
+  overrides: Partial<Pick<RepairServiceOptions, 'startTask' | 'readRemoteHead' | 'syncCheckout' | 'runCommand'>> = {}
+): RepairService {
   return new RepairService({
     filePath: join(directory, 'repair.json'),
     repairRoot: join(directory, 'repair'),
@@ -34,10 +37,13 @@ function makeService(directory: string): RepairService {
       stateDirectory: join(directory, 'state'),
       installDirectory: join(directory, 'install')
     },
-    startTask: () => true,
+    startTask: overrides.startTask ?? (() => true),
     stopTask: () => true,
     emit: () => undefined,
-    log: () => undefined
+    log: () => undefined,
+    ...(overrides.readRemoteHead ? { readRemoteHead: overrides.readRemoteHead } : {}),
+    ...(overrides.syncCheckout ? { syncCheckout: overrides.syncCheckout } : {}),
+    ...(overrides.runCommand ? { runCommand: overrides.runCommand } : {})
   })
 }
 
@@ -91,6 +97,33 @@ describe('RepairService', () => {
       expect(reopened.status.phase).toBe('failed')
       expect(reopened.status.taskId).toBeNull()
       expect(reopened.status.error).toContain('прерван')
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('не требует, чтобы выбранный workspace был репозиторием EvoHime', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'evohime-repair-'))
+    try {
+      let startedWorkspace = ''
+      const service = makeService(directory, {
+        startTask: (_taskId, workspacePath) => {
+          startedWorkspace = workspacePath
+          return true
+        },
+        readRemoteHead: async () => '0123456789abcdef0123456789abcdef01234567',
+        syncCheckout: async () => '0123456789abcdef0123456789abcdef01234567',
+        runCommand: async () => ({ code: 0, tail: [], raw: [], timedOut: false })
+      })
+      service.observe(event('same failure'))
+      service.observe(event('same failure'))
+      service.observe(event('same failure'))
+
+      await service.start('C:\\Users\\roman\\Documents\\ordinary-project')
+
+      expect(service.status.phase).toBe('diagnosing')
+      expect(startedWorkspace).toContain('repair')
+      expect(service.status.error).toBeNull()
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }

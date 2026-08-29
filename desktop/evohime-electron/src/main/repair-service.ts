@@ -24,6 +24,9 @@ export interface RepairServiceOptions {
   readonly emit: (status: RepairStatus) => void
   readonly log: ShellLog
   readonly fetch?: typeof globalThis.fetch
+  readonly readRemoteHead?: typeof readRemoteHead
+  readonly syncCheckout?: typeof syncCheckout
+  readonly runCommand?: typeof runCommand
 }
 
 type RepairOperation = 'diagnose' | 'commit' | 'push'
@@ -80,13 +83,10 @@ export class RepairService {
     }
   }
 
-  async start(workspacePath: string): Promise<RepairStatus> {
+  async start(_workspacePath: string): Promise<RepairStatus> {
     if (this.isActive()) return this.current
     if (this.current.errorCount < ERROR_THRESHOLD) {
       return this.fail('Пока недостаточно повторяющихся ошибок для repair-run.')
-    }
-    if (workspacePath.trim().length === 0) {
-      return this.fail('Сначала выбери workspace проекта.')
     }
     const repairId = randomUUID()
     // The checkout is isolated, so the only branch that can be published by a
@@ -105,24 +105,19 @@ export class RepairService {
       if (!remote || this.options.config.repositoryUrl !== 'https://github.com/rkfsociety/EvoHime.git') {
         throw new Error('Repair разрешён только для канонического репозитория EvoHime.')
       }
-      const selectedRemote = await runCommand({
-        file: 'git', args: ['-C', workspacePath, 'remote', 'get-url', 'origin'],
-        cwd: workspacePath, capture: true, timeoutMs: 20_000
-      })
-      const selectedUrl = selectedRemote.code === 0 ? selectedRemote.raw.at(-1)?.trim() ?? '' : ''
-      if (normalizeRemote(selectedUrl) !== normalizeRemote(this.options.config.repositoryUrl)) {
-        throw new Error('Выбранный workspace не является исходным репозиторием EvoHime.')
-      }
-      const baseCommit = await readRemoteHead(
+      const readHead = this.options.readRemoteHead ?? readRemoteHead
+      const sync = this.options.syncCheckout ?? syncCheckout
+      const run = this.options.runCommand ?? runCommand
+      const baseCommit = await readHead(
         { directory, repositoryUrl: this.options.config.repositoryUrl, branch: this.options.config.branch },
         { git: 'git' }
       )
-      await syncCheckout(
+      await sync(
         { directory, repositoryUrl: this.options.config.repositoryUrl, branch: this.options.config.branch },
         baseCommit,
         { git: 'git' }
       )
-      const branchResult = await runCommand({
+      const branchResult = await run({
         file: 'git', args: ['checkout', '-B', branch, baseCommit], cwd: directory,
         timeoutMs: 60_000, capture: true
       })
@@ -286,10 +281,6 @@ function extractError(payload: string): string {
 
 function safeError(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).replace(/[\r\n]/g, ' ').slice(0, MAX_SUMMARY_CHARS)
-}
-
-function normalizeRemote(value: string): string {
-  return value.trim().replace(/\.git$/i, '').replace(/^git@github\.com:/i, 'https://github.com/').replace(/\/$/, '').toLowerCase()
 }
 
 function isProtectedRepairPath(path: string): boolean {

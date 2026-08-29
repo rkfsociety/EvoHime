@@ -10,7 +10,7 @@ interface Props {
   readonly repair?: RepairStatus | null
 }
 
-function RepairCard({ status, workspacePath }: { readonly status: RepairStatus; readonly workspacePath: string | null }): React.JSX.Element {
+function RepairCard({ status }: { readonly status: RepairStatus }): React.JSX.Element {
   const api = useShellApi()
   const [message, setMessage] = useState('')
   const active = ['preparing', 'diagnosing', 'committing', 'pushing', 'waiting_ci'].includes(status.phase)
@@ -22,7 +22,7 @@ function RepairCard({ status, workspacePath }: { readonly status: RepairStatus; 
   }
 
   const action = status.phase === 'available'
-    ? { label: 'Починить', name: 'repair.start' as const, payload: { workspacePath: workspacePath ?? '' }, disabled: workspacePath === null }
+    ? { label: 'Починить', name: 'repair.start' as const, payload: { workspacePath: '' }, disabled: false }
     : status.phase === 'ready_to_commit'
       ? { label: 'Применить и закоммитить', name: 'repair.commit' as const, payload: {}, disabled: false }
       : status.phase === 'ready_to_push'
@@ -466,7 +466,7 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
         <span className={`status-pill status-pill--${connection}`}>{connection}</span>
       </div>
       <div className="operations-grid">
-        {repair ? <RepairCard status={repair} workspacePath={workspacePath} /> : null}
+        {repair ? <RepairCard status={repair} /> : null}
         <article className={`operations-card ${pending.length ? 'operations-card--warning' : ''}`}>
           <h3>Память: подтверждение</h3>
           <strong>{counts['pending_confirmation'] ?? 0}</strong>
