@@ -37,6 +37,25 @@
 - storage schema/store или доказательство отсутствия persistence;
 - focused contract/security/migration tests.
 
+## Предметная декомпозиция
+
+### Поверхности и контракт
+
+- `crates/evohime-core/src/conversation_workbench.rs`: ввести `ConversationWorkbenchDefinition`, `ConversationWorkbenchPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Storage: `crates/evohime-local-storage/src/conversation_workbench_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
+- Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/conversation_workbench_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+
+### Acceptance-to-contract matrix
+
+- `C03` — Все authoritative операции проходят Core services. → зафиксировать typed invariant, error code и deterministic fixture.
+- `C08` — Sensitive data и unavailable capabilities корректно ограничены. → задать Core-owned authority/sensitivity policy и fail-closed validation.
+
+### Definition freeze
+
+- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Conversation Workbench: единая поверхность Files, Diff, Tasks, Terminal, Browser и Usage».
+- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+
 ## Критерии выхода
 
 - [ ] Есть единый Conversation Workbench рядом с chat.

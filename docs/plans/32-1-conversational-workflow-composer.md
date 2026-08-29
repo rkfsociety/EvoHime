@@ -38,6 +38,26 @@
 - storage schema/store или доказательство отсутствия persistence;
 - focused contract/security/migration tests.
 
+## Предметная декомпозиция
+
+### Поверхности и контракт
+
+- `crates/evohime-core/src/conversational_workflow_composer.rs`: ввести `ConversationalWorkflowComposerDefinition`, `ConversationalWorkflowComposerPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Storage: состояние этапа остаётся ephemeral; новую durable таблицу и migration не добавлять. Добавить negative persistence test, а диагностический результат передавать через существующий event/release evidence.
+- Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/conversational_workflow_composer_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+
+### Acceptance-to-contract matrix
+
+- `C03` — Core выполняет capability binding и validation. → задать Core-owned authority/sensitivity policy и fail-closed validation.
+- `C05` — Missing integrations/credentials показываются отдельно. → задать Core-owned authority/sensitivity policy и fail-closed validation.
+- `C08` — Composer не может расширить permissions или выполнить draft самовольно. → задать Core-owned authority/sensitivity policy и fail-closed validation.
+
+### Definition freeze
+
+- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Conversational Workflow Composer: создание и правка workflow из естественного языка».
+- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+
 ## Критерии выхода
 
 - [ ] Ева умеет создавать workflow draft из natural language.

@@ -37,6 +37,25 @@
 - storage schema/store или доказательство отсутствия persistence;
 - focused contract/security/migration tests.
 
+## Предметная декомпозиция
+
+### Поверхности и контракт
+
+- `crates/evohime-core/src/revision_safe_workspace_files.rs`: ввести `RevisionSafeWorkspaceFilesDefinition`, `RevisionSafeWorkspaceFilesPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Storage: состояние этапа остаётся ephemeral; новую durable таблицу и migration не добавлять. Добавить negative persistence test, а диагностический результат передавать через существующий event/release evidence.
+- Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/revision_safe_workspace_files_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+
+### Acceptance-to-contract matrix
+
+- `C02` — File refs несут content hash/revision. → зафиксировать fingerprint, preconditions и provenance-поля.
+- `C08` — Path traversal/symlink/reparse escape закрыты. → зафиксировать typed invariant, error code и deterministic fixture.
+
+### Definition freeze
+
+- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Revision-Safe Workspace Files: uploads/workspace/outputs namespaces и stale-write protection».
+- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+
 ## Критерии выхода
 
 - [ ] Есть typed namespaces uploads/workspace/outputs/scratch.

@@ -29,6 +29,28 @@
 4. Сделать fault-injection для crash до/после dispatch, stale version/lease, duplicate delivery, policy change и corruption.
 5. Зафиксировать metadata-only projection и redacted evidence для этапов 3–4.
 
+## Предметная декомпозиция
+
+### Runtime vertical slice
+
+- Entrypoint: `crates/evohime-core/src/remote_conversation_channels.rs` + handler в `crates/evohime-core/src/lib.rs`; сервис `RemoteConversationChannelsService` должен выполнять `validate → policy → bounded operation → typed result/event`.
+- На старте run загрузить exact contract/policy snapshot и проверить correlation, idempotency, budget, cancellation и capability grant непосредственно перед effect.
+- Для каждого внешнего/необратимого вызова записать before/after-dispatch evidence; unknown outcome переводить в reconciliation, без blind retry.
+- Тесты: `crates/evohime-core/tests/remote_conversation_channels_recovery.rs` — timeout/cancel, duplicate, stale version/lease, crash до/после dispatch, restart и optional-unavailable.
+
+### Acceptance-to-runtime matrix
+
+- `C01` — Есть versioned ChannelProvider/ChannelConnection contracts. → разрешить Core snapshot, проверить capability/locality и закрепить его на run.
+- `C04` — Inbound queue/rate/attachment limits bounded. → журналировать переходы и восстановление через replay/reconciliation.
+- `C08` — High-risk remote approvals deny-by-default. → повторить authorization непосредственно перед dispatch/effect.
+- `C09` — Provider credentials и outbound data проходят обычные sensitive-data boundaries. → разрешить Core snapshot, проверить capability/locality и закрепить его на run.
+- `C10` — Connections переживают restart и могут быть немедленно revoked. → журналировать переходы и восстановление через replay/reconciliation.
+
+### Recovery contract
+
+- Durable transitions восстанавливаются replay/reconciliation; transient work после restart получает typed `unknown`/`unavailable`, а не повтор side effect.
+- Fault injection должна доказать отсутствие duplicate effect, потерю approval, обход policy или расширение capability set.
+
 ## Критерии выхода
 
 - [ ] Happy path выдаёт typed result только после Core validation.

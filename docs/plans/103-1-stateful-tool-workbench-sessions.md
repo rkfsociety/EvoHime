@@ -41,6 +41,24 @@
 - storage schema/store или доказательство отсутствия persistence;
 - focused contract/security/migration tests.
 
+## Предметная декомпозиция
+
+### Поверхности и контракт
+
+- `crates/evohime-core/src/stateful_tool_workbench_sessions.rs`: ввести `StatefulToolWorkbenchSessionsDefinition`, `StatefulToolWorkbenchSessionsPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Storage: `crates/evohime-local-storage/src/stateful_tool_workbench_sessions_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
+- Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/stateful_tool_workbench_sessions_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+
+### Acceptance-to-contract matrix
+
+- `C03` — Session scope и concurrency policy формализованы. → задать Core-owned authority/sensitivity policy и fail-closed validation.
+
+### Definition freeze
+
+- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Stateful Tool Workbench Sessions: lifecycle, shared state и snapshot для tool collections».
+- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+
 ## Критерии выхода
 
 - [ ] Есть versioned WorkbenchDefinition и runtime session.

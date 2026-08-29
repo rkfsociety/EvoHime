@@ -31,6 +31,29 @@
 4. Сделать fault-injection для crash до/после dispatch, stale version/lease, duplicate delivery, policy change и corruption.
 5. Зафиксировать metadata-only projection и redacted evidence для этапов 3–4.
 
+## Предметная декомпозиция
+
+### Runtime vertical slice
+
+- Entrypoint: `crates/evohime-core/src/durable_remote_task_bridge.rs` + handler в `crates/evohime-core/src/lib.rs`; сервис `DurableRemoteTaskBridgeService` должен выполнять `validate → policy → bounded operation → typed result/event`.
+- На старте run загрузить exact contract/policy snapshot и проверить correlation, idempotency, budget, cancellation и capability grant непосредственно перед effect.
+- Для каждого внешнего/необратимого вызова записать before/after-dispatch evidence; unknown outcome переводить в reconciliation, без blind retry.
+- Тесты: `crates/evohime-core/tests/durable_remote_task_bridge_recovery.rs` — timeout/cancel, duplicate, stale version/lease, crash до/после dispatch, restart и optional-unavailable.
+
+### Acceptance-to-runtime matrix
+
+- `C01` — Есть versioned RemoteTaskToolset/RemoteTaskRecord contracts. → провести через typed outcome, timeout, cancellation и idempotency.
+- `C02` — Submit/status/cancel lifecycle Core-owned и durable. → журналировать переходы и восстановление через replay/reconciliation.
+- `C03` — Pending tasks переживают restart. → журналировать переходы и восстановление через replay/reconciliation.
+- `C04` — Polling bounded, leased и backoff-aware. → провести через typed outcome, timeout, cancellation и idempotency.
+- `C06` — Results сохраняются как structured data/artifact refs. → проверить exact revision/hash перед mutation и сохранить observed evidence.
+- `C07` — MCP и Integration Provider могут использовать один bridge. → разрешить Core snapshot, проверить capability/locality и закрепить его на run.
+
+### Recovery contract
+
+- Durable transitions восстанавливаются replay/reconciliation; transient work после restart получает typed `unknown`/`unavailable`, а не повтор side effect.
+- Fault injection должна доказать отсутствие duplicate effect, потерю approval, обход policy или расширение capability set.
+
 ## Критерии выхода
 
 - [ ] Happy path выдаёт typed result только после Core validation.

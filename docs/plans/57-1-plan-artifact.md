@@ -38,6 +38,27 @@
 - storage schema/store или доказательство отсутствия persistence;
 - focused contract/security/migration tests.
 
+## Предметная декомпозиция
+
+### Поверхности и контракт
+
+- `crates/evohime-core/src/plan_artifact.rs`: ввести `PlanArtifactDefinition`, `PlanArtifactPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Storage: `crates/evohime-local-storage/src/plan_artifact_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
+- Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/plan_artifact_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+
+### Acceptance-to-contract matrix
+
+- `C02` — Acceptance criteria типизированы, имеют `evidence_kind`, а их status → зафиксировать typed invariant, error code и deterministic fixture.
+- `C03` — Переход `Plan -> Execute` выполняется только Core-командой до первого → зафиксировать typed invariant, error code и deterministic fixture.
+- `C04` — Plan steps разрешают capabilities через Core registry и не несут raw → ввести versioned Rust-типы, enum-состояния и canonical serialization.
+- `C05` — Accepted plan revision/hash immutable; material deviation требует → зафиксировать fingerprint, preconditions и provenance-поля.
+
+### Definition freeze
+
+- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Plan Artifact: versioned planning contract и явный переход Plan → Execute».
+- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+
 ## Критерии выхода
 
 - [ ] Есть versioned `PlanArtifact`/`PlanStep` contract с identity, revision,

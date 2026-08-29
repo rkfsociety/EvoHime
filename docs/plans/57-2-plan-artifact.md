@@ -27,6 +27,26 @@
 4. Сделать fault-injection для crash до/после dispatch, stale version/lease, duplicate delivery, policy change и corruption.
 5. Зафиксировать metadata-only projection и redacted evidence для этапов 3–4.
 
+## Предметная декомпозиция
+
+### Runtime vertical slice
+
+- Entrypoint: `crates/evohime-core/src/plan_artifact.rs` + handler в `crates/evohime-core/src/lib.rs`; сервис `PlanArtifactService` должен выполнять `validate → policy → bounded operation → typed result/event`.
+- На старте run загрузить exact contract/policy snapshot и проверить correlation, idempotency, budget, cancellation и capability grant непосредственно перед effect.
+- Для каждого внешнего/необратимого вызова записать before/after-dispatch evidence; unknown outcome переводить в reconciliation, без blind retry.
+- Тесты: `crates/evohime-core/tests/plan_artifact_recovery.rs` — timeout/cancel, duplicate, stale version/lease, crash до/после dispatch, restart и optional-unavailable.
+
+### Acceptance-to-runtime matrix
+
+- `C01` — Есть versioned `PlanArtifact`/`PlanStep` contract с identity, revision, → проверить exact revision/hash перед mutation и сохранить observed evidence.
+- `C06` — Execution/recovery сохраняют unknown outcome и не повторяют внешний → журналировать переходы и восстановление через replay/reconciliation.
+- `C07` — Plan, criteria и evidence переживают restart в bounded durable state. → журналировать переходы и восстановление через replay/reconciliation.
+
+### Recovery contract
+
+- Durable transitions восстанавливаются replay/reconciliation; transient work после restart получает typed `unknown`/`unavailable`, а не повтор side effect.
+- Fault injection должна доказать отсутствие duplicate effect, потерю approval, обход policy или расширение capability set.
+
 ## Критерии выхода
 
 - [ ] Переход `Plan -> Execute` выполняется только Core-командой до первого side effect.

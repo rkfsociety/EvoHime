@@ -37,6 +37,28 @@
 - storage schema/store или доказательство отсутствия persistence;
 - focused contract/security/migration tests.
 
+## Предметная декомпозиция
+
+### Поверхности и контракт
+
+- `crates/evohime-core/src/sensitive_data_guardrails.rs`: ввести `SensitiveDataGuardrailsDefinition`, `SensitiveDataGuardrailsPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Storage: состояние этапа остаётся ephemeral; новую durable таблицу и migration не добавлять. Добавить negative persistence test, а диагностический результат передавать через существующий event/release evidence.
+- Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/sensitive_data_guardrails_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+
+### Acceptance-to-contract matrix
+
+- `C01` — Есть versioned SensitiveDataRule. → ввести versioned Rust-типы, enum-состояния и canonical serialization.
+- `C03` — Поддерживаются redact/mask/hash/block. → зафиксировать fingerprint, preconditions и provenance-поля.
+- `C04` — Structured payload обрабатывается рекурсивно. → зафиксировать typed invariant, error code и deterministic fixture.
+- `C05` — Streaming detector ловит patterns между chunks. → зафиксировать typed invariant, error code и deterministic fixture.
+- `C07` — Trace может существовать без raw payload. → зафиксировать typed invariant, error code и deterministic fixture.
+
+### Definition freeze
+
+- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Sensitive Data Guardrails: PII/secret detection и streaming redaction на model/tool boundaries».
+- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+
 ## Критерии выхода
 
 - [ ] Есть versioned SensitiveDataRule.

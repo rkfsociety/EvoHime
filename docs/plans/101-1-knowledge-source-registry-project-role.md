@@ -41,6 +41,27 @@
 - storage schema/store или доказательство отсутствия persistence;
 - focused contract/security/migration tests.
 
+## Предметная декомпозиция
+
+### Поверхности и контракт
+
+- `crates/evohime-core/src/knowledge_source_registry_project_role.rs`: ввести `KnowledgeSourceRegistryProjectRoleDefinition`, `KnowledgeSourceRegistryProjectRolePolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Storage: состояние этапа остаётся ephemeral; новую durable таблицу и migration не добавлять. Добавить negative persistence test, а диагностический результат передавать через существующий event/release evidence.
+- Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/knowledge_source_registry_project_role_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+
+### Acceptance-to-contract matrix
+
+- `C01` — Knowledge и Memory являются отдельными подсистемами. → зафиксировать typed invariant, error code и deterministic fixture.
+- `C02` — Есть versioned KnowledgeSource/Binding/View contracts. → ввести versioned Rust-типы, enum-состояния и canonical serialization.
+- `C03` — Поддерживается минимум несколько локальных source types. → зафиксировать typed invariant, error code и deterministic fixture.
+- `C05` — Hits содержат source revision + locator provenance. → зафиксировать fingerprint, preconditions и provenance-поля.
+
+### Definition freeze
+
+- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Knowledge Source Registry: project/role RAG, source provenance и indexed reference context».
+- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+
 ## Критерии выхода
 
 - [ ] Knowledge и Memory являются отдельными подсистемами.

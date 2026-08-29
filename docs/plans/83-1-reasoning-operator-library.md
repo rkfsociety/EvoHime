@@ -40,6 +40,26 @@
 - storage schema/store или доказательство отсутствия persistence;
 - focused contract/security/migration tests.
 
+## Предметная декомпозиция
+
+### Поверхности и контракт
+
+- `crates/evohime-core/src/reasoning_operator_library.rs`: ввести `ReasoningOperatorLibraryDefinition`, `ReasoningOperatorLibraryPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Storage: `crates/evohime-local-storage/src/reasoning_operator_library_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
+- Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/reasoning_operator_library_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+
+### Acceptance-to-contract matrix
+
+- `C01` — Есть versioned ReasoningOperatorDefinition/Registry. → ввести versioned Rust-типы, enum-состояния и canonical serialization.
+- `C03` — Machine outputs используют Structured Response Contract. → ввести versioned Rust-типы, enum-состояния и canonical serialization.
+- `C05` — Operator invocation имеет provenance/usage metrics. → зафиксировать fingerprint, preconditions и provenance-поля.
+
+### Definition freeze
+
+- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Reasoning Operator Library: typed Generate/Review/Revise/Ensemble primitives для agent workflows».
+- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+
 ## Критерии выхода
 
 - [ ] Есть versioned ReasoningOperatorDefinition/Registry.

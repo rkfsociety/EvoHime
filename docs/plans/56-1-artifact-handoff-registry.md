@@ -40,6 +40,25 @@
 - storage schema/store или доказательство отсутствия persistence;
 - focused contract/security/migration tests.
 
+## Предметная декомпозиция
+
+### Поверхности и контракт
+
+- `crates/evohime-core/src/artifact_handoff_registry.rs`: ввести `ArtifactHandoffRegistryDefinition`, `ArtifactHandoffRegistryPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Storage: `crates/evohime-local-storage/src/artifact_handoff_registry_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
+- Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/artifact_handoff_registry_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+
+### Acceptance-to-contract matrix
+
+- `C03` — Есть immutable revisions и lineage DAG. → зафиксировать fingerprint, preconditions и provenance-поля.
+- `C05` — Есть acceptance/revision lifecycle. → зафиксировать fingerprint, preconditions и provenance-поля.
+
+### Definition freeze
+
+- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Artifact Handoff Registry: typed deliverables, lineage и freshness для multi-agent работы».
+- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+
 ## Критерии выхода
 
 - [ ] ArtifactStore дополнен semantic ProjectArtifact registry.

@@ -36,6 +36,30 @@
 - storage schema/store или доказательство отсутствия persistence;
 - focused contract/security/migration tests.
 
+## Предметная декомпозиция
+
+### Поверхности и контракт
+
+- `crates/evohime-core/src/agent_benchmark_matrix.rs`: ввести `AgentBenchmarkMatrixDefinition`, `AgentBenchmarkMatrixPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Storage: `crates/evohime-local-storage/src/agent_benchmark_matrix_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
+- Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/agent_benchmark_matrix_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+
+### Acceptance-to-contract matrix
+
+- `C01` — Existing deterministic evals остаются отдельным быстрым gate. → зафиксировать typed invariant, error code и deterministic fixture.
+- `C04` — Поддерживаются multiple attempts и pass-rate/statistics. → зафиксировать typed invariant, error code и deterministic fixture.
+- `C05` — Есть baseline и regression comparison. → зафиксировать typed invariant, error code и deterministic fixture.
+- `C06` — Есть maintain/improve/explore sets. → зафиксировать typed invariant, error code и deterministic fixture.
+- `C07` — Security regressions являются hard failures. → задать Core-owned authority/sensitivity policy и fail-closed validation.
+- `C09` — Reports machine-readable и redacted. → зафиксировать typed invariant, error code и deterministic fixture.
+- `C10` — Benchmark failure можно превратить в deterministic regression fixture. → зафиксировать typed invariant, error code и deterministic fixture.
+
+### Definition freeze
+
+- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Agent Benchmark Matrix: многократные model/strategy evals и regression tracking».
+- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+
 ## Критерии выхода
 
 - [ ] Existing deterministic evals остаются отдельным быстрым gate.

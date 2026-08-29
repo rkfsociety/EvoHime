@@ -39,6 +39,27 @@
 - storage schema/store или доказательство отсутствия persistence;
 - focused contract/security/migration tests.
 
+## Предметная декомпозиция
+
+### Поверхности и контракт
+
+- `crates/evohime-core/src/structured_response_contract.rs`: ввести `StructuredResponseContractDefinition`, `StructuredResponseContractPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Storage: состояние этапа остаётся ephemeral; новую durable таблицу и migration не добавлять. Добавить negative persistence test, а диагностический результат передавать через существующий event/release evidence.
+- Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/structured_response_contract_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+
+### Acceptance-to-contract matrix
+
+- `C01` — Есть versioned ResponseContract. → ввести versioned Rust-типы, enum-состояния и canonical serialization.
+- `C04` — Все outputs проходят Core-side schema validation. → ввести versioned Rust-типы, enum-состояния и canonical serialization.
+- `C05` — Ошибки typed и различают parse/validation/multiple/unsupported. → зафиксировать typed invariant, error code и deterministic fixture.
+- `C06` — Repair retries bounded. → задать bounded limits и typed overflow/limit errors.
+
+### Definition freeze
+
+- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Structured Response Contract: schema-first ответы модели с provider/tool fallback».
+- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+
 ## Критерии выхода
 
 - [ ] Есть versioned ResponseContract.

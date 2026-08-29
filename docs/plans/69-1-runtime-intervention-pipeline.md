@@ -38,6 +38,29 @@
 - storage schema/store или доказательство отсутствия persistence;
 - focused contract/security/migration tests.
 
+## Предметная декомпозиция
+
+### Поверхности и контракт
+
+- `crates/evohime-core/src/runtime_intervention_pipeline.rs`: ввести `RuntimeInterventionPipelineDefinition`, `RuntimeInterventionPipelinePolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Storage: состояние этапа остаётся ephemeral; новую durable таблицу и migration не добавлять. Добавить negative persistence test, а диагностический результат передавать через существующий event/release evidence.
+- Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/runtime_intervention_pipeline_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+
+### Acceptance-to-contract matrix
+
+- `C01` — Все hook points имеют typed contracts → ввести versioned Rust-типы, enum-состояния и canonical serialization.
+- `C02` — Handler ordering детерминирован → зафиксировать typed invariant, error code и deterministic fixture.
+- `C03` — Есть explicit decision enum → зафиксировать typed invariant, error code и deterministic fixture.
+- `C04` — Security handlers fail closed → задать Core-owned authority/sensitivity policy и fail-closed validation.
+- `C05` — Модификации полностью аудируемы без утечки секретов → зафиксировать typed invariant, error code и deterministic fixture.
+- `C07` — Есть recursion/reentrancy protection → зафиксировать typed invariant, error code и deterministic fixture.
+
+### Definition freeze
+
+- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Runtime Intervention Pipeline: Core-owned middleware for agent messages and tool boundaries».
+- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+
 ## Критерии выхода
 
 - [ ] Все hook points имеют typed contracts.

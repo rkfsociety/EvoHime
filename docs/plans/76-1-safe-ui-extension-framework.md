@@ -39,6 +39,26 @@
 - storage schema/store или доказательство отсутствия persistence;
 - focused contract/security/migration tests.
 
+## Предметная декомпозиция
+
+### Поверхности и контракт
+
+- `crates/evohime-core/src/safe_ui_extension_framework.rs`: ввести `SafeUiExtensionFrameworkDefinition`, `SafeUiExtensionFrameworkPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Storage: состояние этапа остаётся ephemeral; новую durable таблицу и migration не добавлять. Добавить negative persistence test, а диагностический результат передавать через существующий event/release evidence.
+- Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/safe_ui_extension_framework_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+
+### Acceptance-to-contract matrix
+
+- `C02` — Installation и enablement разделены. → зафиксировать typed invariant, error code и deterministic fixture.
+- `C05` — Revision/compatibility/trust фиксируются Core-side. → задать Core-owned authority/sensitivity policy и fail-closed validation.
+- `C06` — Update permission delta видим и revalidated. → задать Core-owned authority/sensitivity policy и fail-closed validation.
+
+### Definition freeze
+
+- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Safe UI Extension Framework: declarative pages, panels и themes без renderer authority».
+- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+
 ## Критерии выхода
 
 - [ ] Есть versioned UiExtensionManifest.

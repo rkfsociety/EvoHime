@@ -40,6 +40,26 @@
 - storage schema/store или доказательство отсутствия persistence;
 - focused contract/security/migration tests.
 
+## Предметная декомпозиция
+
+### Поверхности и контракт
+
+- `crates/evohime-core/src/team_coordination_strategies.rs`: ввести `TeamCoordinationStrategiesDefinition`, `TeamCoordinationStrategiesPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Storage: `crates/evohime-local-storage/src/team_coordination_strategies_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
+- Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/team_coordination_strategies_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+
+### Acceptance-to-contract matrix
+
+- `C01` — Есть versioned TeamCoordinationStrategy. → ввести versioned Rust-типы, enum-состояния и canonical serialization.
+- `C02` — Поддерживаются RoundRobin и минимум одна dynamic strategy. → зафиксировать typed invariant, error code и deterministic fixture.
+- `C03` — Eligible set вычисляется Core до selection. → зафиксировать typed invariant, error code и deterministic fixture.
+
+### Definition freeze
+
+- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Team Coordination Strategies: pluggable selector, round-robin, swarm и graph routing».
+- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+
 ## Критерии выхода
 
 - [ ] Есть versioned TeamCoordinationStrategy.

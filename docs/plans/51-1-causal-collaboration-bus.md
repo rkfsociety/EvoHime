@@ -38,6 +38,26 @@
 - storage schema/store или доказательство отсутствия persistence;
 - focused contract/security/migration tests.
 
+## Предметная декомпозиция
+
+### Поверхности и контракт
+
+- `crates/evohime-core/src/causal_collaboration_bus.rs`: ввести `CausalCollaborationBusDefinition`, `CausalCollaborationBusPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Storage: `crates/evohime-local-storage/src/causal_collaboration_bus_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
+- Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/causal_collaboration_bus_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+
+### Acceptance-to-contract matrix
+
+- `C04` — Есть causation/correlation/sequence metadata. → зафиксировать typed invariant, error code и deterministic fixture.
+- `C05` — Inbox bounded и имеет backpressure semantics. → задать bounded limits и typed overflow/limit errors.
+- `C07` — Layer переиспользует/расширяет child mailbox, а не дублирует его без причины. → зафиксировать typed invariant, error code и deterministic fixture.
+
+### Definition freeze
+
+- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Causal Collaboration Bus: typed pub/sub для team agents поверх child mailbox».
+- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+
 ## Критерии выхода
 
 - [ ] Есть typed CollaborationMessage envelope.

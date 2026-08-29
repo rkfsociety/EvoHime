@@ -42,6 +42,26 @@
 - storage schema/store или доказательство отсутствия persistence;
 - focused contract/security/migration tests.
 
+## Предметная декомпозиция
+
+### Поверхности и контракт
+
+- `crates/evohime-core/src/message_intervention_policies.rs`: ввести `MessageInterventionPoliciesDefinition`, `MessageInterventionPoliciesPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Storage: состояние этапа остаётся ephemeral; новую durable таблицу и migration не добавлять. Добавить negative persistence test, а диагностический результат передавать через существующий event/release evidence.
+- Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/message_intervention_policies_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+
+### Acceptance-to-contract matrix
+
+- `C02` — Intervention выполняется до recipient context injection. → зафиксировать typed invariant, error code и deterministic fixture.
+- `C03` — Есть Route/Sensitivity/Phase/Duplicate guards. → зафиксировать typed invariant, error code и deterministic fixture.
+- `C05` — Security hooks fail-closed и имеют fixed ordering. → задать Core-owned authority/sensitivity policy и fail-closed validation.
+
+### Definition freeze
+
+- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Message Intervention Policies: typed interceptors для agent/team message routing».
+- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+
 ## Критерии выхода
 
 - [ ] Есть versioned MessageInterventionPolicy pipeline.

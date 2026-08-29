@@ -41,6 +41,26 @@
 - storage schema/store или доказательство отсутствия persistence;
 - focused contract/security/migration tests.
 
+## Предметная декомпозиция
+
+### Поверхности и контракт
+
+- `crates/evohime-core/src/code_diagnostics_feedback_loop.rs`: ввести `CodeDiagnosticsFeedbackLoopDefinition`, `CodeDiagnosticsFeedbackLoopPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Storage: `crates/evohime-local-storage/src/code_diagnostics_feedback_loop_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
+- Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/code_diagnostics_feedback_loop_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+
+### Acceptance-to-contract matrix
+
+- `C02` — Diagnostics нормализованы в единый versioned contract. → ввести versioned Rust-типы, enum-состояния и canonical serialization.
+- `C06` — Diagnostics могут использоваться как evidence quality gate. → зафиксировать typed invariant, error code и deterministic fixture.
+- `C07` — Stale diagnostics не считаются актуальными. → зафиксировать fingerprint, preconditions и provenance-поля.
+
+### Definition freeze
+
+- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Code Diagnostics Feedback Loop: LSP/compiler evidence и regression delta после agent edits».
+- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+
 ## Критерии выхода
 
 - [ ] Есть Core-owned diagnostics provider registry.

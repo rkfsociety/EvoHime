@@ -27,6 +27,27 @@
 4. Сделать fault-injection для crash до/после dispatch, stale version/lease, duplicate delivery, policy change и corruption.
 5. Зафиксировать metadata-only projection и redacted evidence для этапов 3–4.
 
+## Предметная декомпозиция
+
+### Runtime vertical slice
+
+- Entrypoint: `crates/evohime-core/src/tool_simulation_runtime.rs` + handler в `crates/evohime-core/src/lib.rs`; сервис `ToolSimulationRuntimeService` должен выполнять `validate → policy → bounded operation → typed result/event`.
+- На старте run загрузить exact contract/policy snapshot и проверить correlation, idempotency, budget, cancellation и capability grant непосредственно перед effect.
+- Для каждого внешнего/необратимого вызова записать before/after-dispatch evidence; unknown outcome переводить в reconciliation, без blind retry.
+- Тесты: `crates/evohime-core/tests/tool_simulation_runtime_recovery.rs` — timeout/cancel, duplicate, stale version/lease, crash до/после dispatch, restart и optional-unavailable.
+
+### Acceptance-to-runtime matrix
+
+- `C01` — Tool runtime имеет explicit Real/Fixture/Emulated/DryRun modes. → провести через typed outcome, timeout, cancellation и idempotency.
+- `C03` — Missing fixture не вызывает real side effect. → провести через typed outcome, timeout, cancellation и idempotency.
+- `C06` — Workflow может исполняться end-to-end в dry-run. → провести через typed outcome, timeout, cancellation и idempotency.
+- `C07` — Benchmark Matrix может использовать fixture tools. → провести через typed outcome, timeout, cancellation и idempotency.
+
+### Recovery contract
+
+- Durable transitions восстанавливаются replay/reconciliation; transient work после restart получает typed `unknown`/`unavailable`, а не повтор side effect.
+- Fault injection должна доказать отсутствие duplicate effect, потерю approval, обход policy или расширение capability set.
+
 ## Критерии выхода
 
 - [ ] Happy path выдаёт typed result только после Core validation.

@@ -38,6 +38,27 @@
 - storage schema/store или доказательство отсутствия persistence;
 - focused contract/security/migration tests.
 
+## Предметная декомпозиция
+
+### Поверхности и контракт
+
+- `crates/evohime-core/src/context_mentions.rs`: ввести `ContextMentionsDefinition`, `ContextMentionsPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Storage: состояние этапа остаётся ephemeral; новую durable таблицу и migration не добавлять. Добавить negative persistence test, а диагностический результат передавать через существующий event/release evidence.
+- Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/context_mentions_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+
+### Acceptance-to-contract matrix
+
+- `C01` — Есть typed ContextMention/ResourceRef contract. → ввести versioned Rust-типы, enum-состояния и canonical serialization.
+- `C03` — Explicit mentions resolve Core-side и фиксируют revision/hash. → зафиксировать fingerprint, preconditions и provenance-поля.
+- `C07` — Mention не расширяет capabilities и не auto-expands из untrusted content. → задать Core-owned authority/sensitivity policy и fail-closed validation.
+- `C08` — Turn provenance знает, какие exact resources были показаны модели. → зафиксировать fingerprint, preconditions и provenance-поля.
+
+### Definition freeze
+
+- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Context Mentions: typed @references для files, folders, git, diagnostics и runtime resources».
+- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+
 ## Критерии выхода
 
 - [ ] Есть typed ContextMention/ResourceRef contract.
