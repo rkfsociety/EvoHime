@@ -3632,6 +3632,51 @@ mod tests {
     }
 
     #[test]
+    fn migrates_schema_37_to_analysis_kernel_schema_38_with_backup() {
+        let path = temp_database_path("migration-37-to-38-analysis-kernel");
+        let _ = std::fs::remove_file(&path);
+        let backup_path = path.with_extension("db.bak");
+        let _ = std::fs::remove_file(&backup_path);
+        {
+            let connection = rusqlite::Connection::open(&path).expect("legacy database opens");
+            connection
+                .execute_batch(
+                    "CREATE TABLE legacy_marker(id INTEGER);
+                     INSERT INTO legacy_marker(id) VALUES (28);
+                     PRAGMA user_version = 37;",
+                )
+                .expect("legacy schema seeds");
+        }
+        let database = LocalDatabase::open(&path).expect("migration succeeds");
+        assert_eq!(database.schema_version().unwrap(), SCHEMA_VERSION);
+        assert!(backup_path.exists(), "pre-migration backup must be written");
+        for table in [
+            "analysis_kernel_sessions",
+            "analysis_kernel_objects",
+            "analysis_kernel_events",
+            "analysis_kernel_idempotency",
+        ] {
+            let exists: i64 = database
+                .connection()
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(exists, 1, "{table} must exist after migration to schema 38");
+        }
+        let preserved: i64 = database
+            .connection()
+            .query_row("SELECT id FROM legacy_marker", [], |row| row.get(0))
+            .expect("legacy row survives");
+        assert_eq!(preserved, 28);
+        drop(database);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&backup_path);
+    }
+
+    #[test]
     fn migrates_schema_18_to_workspace_rag_schema_19_transactionally() {
         let path = temp_database_path("migration-18-to-19-rag");
         let _ = std::fs::remove_file(&path);
