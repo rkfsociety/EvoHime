@@ -23,17 +23,21 @@ activation → observation/rollback`. Агент не может через refi
 
 ### Блокирующие
 
-- план 23 TaskCheckpoint как bounded trajectory/evidence source;
-- план 24 Agent Skills как Core-owned registry для skill candidate activation;
+- канонический TaskCheckpoint contract закрытого плана 23 как bounded
+  trajectory/evidence source;
+- канонический Agent Skills contract закрытого плана 24 как Core-owned
+  registry для skill candidate activation;
 - существующие typed memory extraction/retrieval, provenance, privacy и
   confirmation/approval flows;
 - Core event journal, SQLite migrations, audit, redaction и authenticated IPC.
 
 ### Опциональные
 
-- план 25 Persistent Goals для goal-level source/evidence;
-- план 26 Continuation Policy для quality-gate trajectory;
-- план 27 retained children для child evidence;
+- канонический Persistent Goals contract закрытого плана 25 для goal-level
+  source/evidence;
+- канонический Continuation Policy contract закрытого плана 26 для
+  quality-gate trajectory;
+- канонический retained-child contract закрытого плана 27 для child evidence;
 - план 28 Analysis Kernel для bounded eval fixtures, без kernel authority.
 
 ## Candidate contract и lifecycle

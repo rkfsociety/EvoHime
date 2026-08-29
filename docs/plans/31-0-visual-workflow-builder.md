@@ -11,11 +11,6 @@
 
 Builder не создаёт новый runtime. Он является безопасной authoring/inspection поверхностью над уже существующими Core-owned workflow contracts и registry.
 
-Его Core authoring-контракт (validated draft -> immutable `workflow/v1` revision,
-optimistic revision/hash и redacted provenance) является общей точкой handoff для
-Conversational Workflow Composer; Composer не создаёт отдельное хранилище или
-второй save authority.
-
 ## Текущее основание и граница
 
 Новый контур должен оставаться Core-owned и typed. Renderer является только
