@@ -35,6 +35,7 @@ const PROTOCOL_MINOR: u32 = 0;
 const TASK_CHECKPOINT_IPC_MAX_REPLAY_EVENTS: usize = 256;
 const TASK_CHECKPOINT_IPC_MAX_ITEMS: usize = 32;
 const TASK_CHECKPOINT_IPC_MAX_TEXT_BYTES: usize = 512;
+const GOAL_LIST_MAX_PROJECTION_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TaskCheckpointActionRecord {
@@ -2382,6 +2383,64 @@ impl IpcBridge {
             }
             Some(generated::command_envelope::Command::LoadSkillReference(request)) => {
                 self.dispatch_load_skill_reference(request, writer).await?;
+            }
+            Some(generated::command_envelope::Command::CreateGoal(request)) => {
+                let result = self.dispatch_create_goal(request, &command_hash).await;
+                self.write_goal_action_result(writer, result).await?;
+            }
+            Some(generated::command_envelope::Command::GetGoal(request)) => {
+                let projection = self.dispatch_get_goal(request).await;
+                self.write_goal_projection(writer, projection).await?;
+            }
+            Some(generated::command_envelope::Command::ListGoals(request)) => {
+                let projection = self.dispatch_list_goals(request).await;
+                self.write_goal_list_projection(writer, projection).await?;
+            }
+            Some(generated::command_envelope::Command::PauseGoal(request)) => {
+                let result = self
+                    .dispatch_goal_transition(
+                        request,
+                        crate::goal::GoalStatus::Paused,
+                        &command_hash,
+                    )
+                    .await;
+                self.write_goal_action_result(writer, result).await?;
+            }
+            Some(generated::command_envelope::Command::ResumeGoal(request)) => {
+                let result = self
+                    .dispatch_goal_transition(
+                        request,
+                        crate::goal::GoalStatus::Active,
+                        &command_hash,
+                    )
+                    .await;
+                self.write_goal_action_result(writer, result).await?;
+            }
+            Some(generated::command_envelope::Command::CancelGoal(request)) => {
+                let result = self
+                    .dispatch_goal_transition(
+                        request,
+                        crate::goal::GoalStatus::Cancelled,
+                        &command_hash,
+                    )
+                    .await;
+                self.write_goal_action_result(writer, result).await?;
+            }
+            Some(generated::command_envelope::Command::UpdateGoal(request)) => {
+                let result = self.dispatch_update_goal(request, &command_hash).await;
+                self.write_goal_action_result(writer, result).await?;
+            }
+            Some(generated::command_envelope::Command::VerifyGoalCriterion(request)) => {
+                let result = self
+                    .dispatch_verify_goal_criterion(request, &command_hash)
+                    .await;
+                self.write_goal_action_result(writer, result).await?;
+            }
+            Some(generated::command_envelope::Command::LinkGoalReference(request)) => {
+                let result = self
+                    .dispatch_link_goal_reference(request, &command_hash)
+                    .await;
+                self.write_goal_action_result(writer, result).await?;
             }
             Some(generated::command_envelope::Command::StopTask(stop)) => {
                 if let Some(coordinator) = &self.coordinator {
@@ -7343,6 +7402,433 @@ impl IpcBridge {
         Ok(task_checkpoint_action_result_from_record(record))
     }
 
+    async fn dispatch_create_goal(
+        &self,
+        request: generated::CreateGoal,
+        command_hash: &str,
+    ) -> generated::GoalActionResult {
+        let invalid = !valid_goal_token(&request.goal_id)
+            || !valid_checkpoint_workspace(&request.workspace_path)
+            || (!request.chat_id.is_empty() && !valid_goal_token(&request.chat_id))
+            || request.objective.trim().is_empty()
+            || request.success_criteria.len() > crate::goal::GOAL_MAX_CRITERIA
+            || !valid_goal_token(&request.idempotency_key);
+        if invalid {
+            return goal_action_error(
+                "",
+                "create",
+                "invalid_argument",
+                "Параметры цели отклонены.",
+            );
+        }
+        let criteria = match goal_criteria_from_request(&request.success_criteria) {
+            Ok(criteria) if !criteria.is_empty() => criteria,
+            _ => {
+                return goal_action_error(
+                    &request.goal_id,
+                    "create",
+                    "invalid_argument",
+                    "Цель должна содержать хотя бы один критерий.",
+                )
+            }
+        };
+        let now = crate::goal::now_ms();
+        let goal = crate::goal::GoalV1 {
+            id: request.goal_id.clone(),
+            version: 1,
+            workspace_id: crate::goal::workspace_id_from_path(&request.workspace_path),
+            chat_id: (!request.chat_id.is_empty()).then_some(request.chat_id),
+            objective: request.objective,
+            success_criteria: criteria,
+            status: crate::goal::GoalStatus::Active,
+            progress_summary: "Цель создана; доказательства ещё не подтверждены.".into(),
+            completed_criteria: Vec::new(),
+            remaining_criteria: Vec::new(),
+            blockers: Vec::new(),
+            next_action: Some("Выполнить критерии и подтвердить Core evidence.".into()),
+            workflow_run_ids: Vec::new(),
+            child_run_ids: Vec::new(),
+            checkpoint_id: None,
+            token_budget: (request.token_budget > 0).then_some(request.token_budget),
+            cost_budget_micros: (request.cost_budget_micros > 0)
+                .then_some(request.cost_budget_micros),
+            continuation_budget: (request.continuation_budget > 0)
+                .then_some(request.continuation_budget),
+            created_at_ms: now,
+            updated_at_ms: now,
+            created_by: "shell".into(),
+            updated_by: "shell".into(),
+            content_hash: String::new(),
+        };
+        let runtime = crate::goal::GoalRuntime::new(self.journal.clone());
+        let goal_command_hash = crate::research::sha256_hex(command_hash.as_bytes());
+        match runtime
+            .create(
+                &goal,
+                crate::goal::GoalCommand::new(
+                    "shell",
+                    &request.idempotency_key,
+                    &goal_command_hash,
+                ),
+            )
+            .await
+        {
+            Ok(result) => {
+                self.notify_goal_event(result.event_sequence);
+                goal_action_result_from_mutation(result)
+            }
+            Err(error) => goal_action_error(
+                &request.goal_id,
+                "create",
+                goal_storage_error_code(&error),
+                &goal_storage_error_message(&error),
+            ),
+        }
+    }
+
+    async fn dispatch_get_goal(&self, request: generated::GetGoal) -> generated::GoalProjection {
+        if !valid_goal_token(&request.goal_id) {
+            return goal_projection_error("", "invalid_argument");
+        }
+        let runtime = crate::goal::GoalRuntime::new(self.journal.clone());
+        match runtime.get(&request.goal_id).await {
+            Ok(Some(goal)) => goal_projection(&goal, ""),
+            Ok(None) => goal_projection_error(&request.goal_id, "not_found"),
+            Err(error) => goal_projection_error(&request.goal_id, goal_storage_error_code(&error)),
+        }
+    }
+
+    async fn dispatch_list_goals(
+        &self,
+        request: generated::ListGoals,
+    ) -> generated::GoalListProjection {
+        let limit = if request.limit == 0 {
+            crate::goal::GOAL_MAX_READ_LIMIT
+        } else {
+            request.limit as usize
+        };
+        if !valid_checkpoint_workspace(&request.workspace_path)
+            || limit > crate::goal::GOAL_MAX_READ_LIMIT
+        {
+            return generated::GoalListProjection {
+                schema_version: crate::goal::GOAL_SCHEMA_VERSION,
+                error_code: "invalid_argument".into(),
+                ..Default::default()
+            };
+        }
+        let workspace_id = crate::goal::workspace_id_from_path(&request.workspace_path);
+        let runtime = crate::goal::GoalRuntime::new(self.journal.clone());
+        match (
+            runtime.list(&workspace_id, limit).await,
+            runtime.recovery(&workspace_id).await,
+        ) {
+            (Ok(goals), Ok(recovery)) => {
+                let warnings = recovery
+                    .into_iter()
+                    .map(|item| (item.goal_id, item.warning))
+                    .collect::<std::collections::HashMap<_, _>>();
+                let mut projected_goals = Vec::new();
+                let mut projected_bytes = 0usize;
+                let mut truncated = false;
+                for goal in &goals {
+                    let projection = goal_projection(
+                        goal,
+                        warnings.get(&goal.id).map(String::as_str).unwrap_or(""),
+                    );
+                    let next_bytes = projected_bytes.saturating_add(projection.encoded_len());
+                    if next_bytes > GOAL_LIST_MAX_PROJECTION_BYTES {
+                        truncated = true;
+                        break;
+                    }
+                    projected_bytes = next_bytes;
+                    projected_goals.push(projection);
+                }
+                generated::GoalListProjection {
+                    schema_version: crate::goal::GOAL_SCHEMA_VERSION,
+                    goals: projected_goals,
+                    error_code: if truncated {
+                        "projection_truncated".into()
+                    } else {
+                        String::new()
+                    },
+                    truncated,
+                }
+            }
+            (Err(error), _) | (_, Err(error)) => generated::GoalListProjection {
+                schema_version: crate::goal::GOAL_SCHEMA_VERSION,
+                error_code: goal_storage_error_code(&error).into(),
+                ..Default::default()
+            },
+        }
+    }
+
+    async fn dispatch_goal_transition(
+        &self,
+        request: generated::GoalAction,
+        status: crate::goal::GoalStatus,
+        command_hash: &str,
+    ) -> generated::GoalActionResult {
+        let action = match status {
+            crate::goal::GoalStatus::Paused => "pause",
+            crate::goal::GoalStatus::Active => "resume",
+            crate::goal::GoalStatus::Cancelled => "cancel",
+            _ => "transition",
+        };
+        if !valid_goal_action(
+            &request.goal_id,
+            request.expected_version,
+            &request.idempotency_key,
+        ) {
+            return goal_action_error(
+                &request.goal_id,
+                action,
+                "invalid_argument",
+                "Действие цели отклонено.",
+            );
+        }
+        let runtime = crate::goal::GoalRuntime::new(self.journal.clone());
+        let goal_command_hash = crate::research::sha256_hex(command_hash.as_bytes());
+        match runtime
+            .transition(
+                &request.goal_id,
+                request.expected_version,
+                status,
+                crate::goal::GoalCommand::new(
+                    "shell",
+                    &request.idempotency_key,
+                    &goal_command_hash,
+                ),
+            )
+            .await
+        {
+            Ok(result) => {
+                self.notify_goal_event(result.event_sequence);
+                goal_action_result_from_mutation(result)
+            }
+            Err(error) => goal_action_error(
+                &request.goal_id,
+                action,
+                goal_storage_error_code(&error),
+                &goal_storage_error_message(&error),
+            ),
+        }
+    }
+
+    async fn dispatch_update_goal(
+        &self,
+        request: generated::UpdateGoal,
+        command_hash: &str,
+    ) -> generated::GoalActionResult {
+        if !valid_goal_action(
+            &request.goal_id,
+            request.expected_version,
+            &request.idempotency_key,
+        ) {
+            return goal_action_error(
+                &request.goal_id,
+                "update",
+                "invalid_argument",
+                "Обновление цели отклонено.",
+            );
+        }
+        let criteria = if request.success_criteria.is_empty() {
+            None
+        } else {
+            match goal_criteria_from_request(&request.success_criteria) {
+                Ok(criteria) => Some(criteria),
+                Err(_) => {
+                    return goal_action_error(
+                        &request.goal_id,
+                        "update",
+                        "invalid_argument",
+                        "Критерии цели отклонены.",
+                    )
+                }
+            }
+        };
+        let objective = (!request.objective.trim().is_empty()).then_some(request.objective);
+        if objective.is_none() && criteria.is_none() {
+            return goal_action_error(
+                &request.goal_id,
+                "update",
+                "invalid_argument",
+                "Нет изменений для цели.",
+            );
+        }
+        let runtime = crate::goal::GoalRuntime::new(self.journal.clone());
+        let goal_command_hash = crate::research::sha256_hex(command_hash.as_bytes());
+        match runtime
+            .update(
+                &request.goal_id,
+                request.expected_version,
+                objective,
+                criteria,
+                crate::goal::GoalCommand::new(
+                    "shell",
+                    &request.idempotency_key,
+                    &goal_command_hash,
+                ),
+            )
+            .await
+        {
+            Ok(result) => {
+                self.notify_goal_event(result.event_sequence);
+                goal_action_result_from_mutation(result)
+            }
+            Err(error) => goal_action_error(
+                &request.goal_id,
+                "update",
+                goal_storage_error_code(&error),
+                &goal_storage_error_message(&error),
+            ),
+        }
+    }
+
+    async fn dispatch_verify_goal_criterion(
+        &self,
+        request: generated::VerifyGoalCriterion,
+        command_hash: &str,
+    ) -> generated::GoalActionResult {
+        if !valid_goal_action(
+            &request.goal_id,
+            request.expected_version,
+            &request.idempotency_key,
+        ) || !valid_goal_token(&request.criterion_id)
+        {
+            return goal_action_error(
+                &request.goal_id,
+                "verify_criterion",
+                "invalid_argument",
+                "Evidence критерия отклонена.",
+            );
+        }
+        let runtime = crate::goal::GoalRuntime::new(self.journal.clone());
+        let goal_command_hash = crate::research::sha256_hex(command_hash.as_bytes());
+        let goal = match runtime.get(&request.goal_id).await {
+            Ok(Some(goal)) => goal,
+            Ok(None) => {
+                return goal_action_error(
+                    &request.goal_id,
+                    "verify_criterion",
+                    "not_found",
+                    "Цель не найдена.",
+                )
+            }
+            Err(error) => {
+                return goal_action_error(
+                    &request.goal_id,
+                    "verify_criterion",
+                    goal_storage_error_code(&error),
+                    &goal_storage_error_message(&error),
+                )
+            }
+        };
+        let is_manual = goal
+            .success_criteria
+            .iter()
+            .find(|criterion| criterion.id == request.criterion_id)
+            .is_some_and(|criterion| criterion.kind == crate::goal::GoalCriterionKind::Manual);
+        if !is_manual {
+            return goal_action_error(
+                &request.goal_id,
+                "verify_criterion",
+                "authority_denied",
+                "Этот критерий подтверждается только Core runtime.",
+            );
+        }
+        let evidence_digest = crate::research::sha256_hex(
+            format!(
+                "{}:{}:{}",
+                request.goal_id, request.criterion_id, goal_command_hash
+            )
+            .as_bytes(),
+        );
+        let evidence_ref = format!("core:user-decision:{evidence_digest}");
+        match runtime
+            .verify_criterion(
+                &request.goal_id,
+                request.expected_version,
+                crate::goal::GoalCriterionEvidence::new(
+                    &request.criterion_id,
+                    &evidence_ref,
+                    "core.user-decision",
+                    "goal-v1",
+                ),
+                crate::goal::GoalCommand::new(
+                    "shell",
+                    &request.idempotency_key,
+                    &goal_command_hash,
+                ),
+            )
+            .await
+        {
+            Ok(result) => {
+                self.notify_goal_event(result.event_sequence);
+                goal_action_result_from_mutation(result)
+            }
+            Err(error) => goal_action_error(
+                &request.goal_id,
+                "verify_criterion",
+                goal_storage_error_code(&error),
+                &goal_storage_error_message(&error),
+            ),
+        }
+    }
+
+    async fn dispatch_link_goal_reference(
+        &self,
+        request: generated::LinkGoalReference,
+        command_hash: &str,
+    ) -> generated::GoalActionResult {
+        if !valid_goal_action(
+            &request.goal_id,
+            request.expected_version,
+            &request.idempotency_key,
+        ) || !valid_goal_token(&request.kind)
+            || !valid_goal_token(&request.reference_id)
+        {
+            return goal_action_error(
+                &request.goal_id,
+                "link_reference",
+                "invalid_argument",
+                "Ссылка цели отклонена.",
+            );
+        }
+        let runtime = crate::goal::GoalRuntime::new(self.journal.clone());
+        let goal_command_hash = crate::research::sha256_hex(command_hash.as_bytes());
+        match runtime
+            .link_reference(
+                &request.goal_id,
+                request.expected_version,
+                &request.kind,
+                &request.reference_id,
+                crate::goal::GoalCommand::new(
+                    "shell",
+                    &request.idempotency_key,
+                    &goal_command_hash,
+                ),
+            )
+            .await
+        {
+            Ok(result) => {
+                self.notify_goal_event(result.event_sequence);
+                goal_action_result_from_mutation(result)
+            }
+            Err(error) => goal_action_error(
+                &request.goal_id,
+                "link_reference",
+                goal_storage_error_code(&error),
+                &goal_storage_error_message(&error),
+            ),
+        }
+    }
+
+    fn notify_goal_event(&self, sequence: i64) {
+        if let Some(coordinator) = &self.coordinator {
+            coordinator.notify_journalled(sequence.max(0) as u64);
+        }
+    }
+
     async fn dispatch_list_skills<W: AsyncWrite + Unpin>(
         &self,
         request: generated::ListSkills,
@@ -7605,6 +8091,63 @@ impl IpcBridge {
         Ok(())
     }
 
+    async fn write_goal_projection<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        projection: generated::GoalProjection,
+    ) -> Result<(), IpcBridgeError> {
+        let event = generated::EventEnvelope {
+            protocol: Some(protocol()),
+            sequence_id: 0,
+            task_id: projection.goal_id.clone(),
+            event_type: "goal.projection".into(),
+            payload: Vec::new(),
+            core_instance_id: self.core_instance_id.clone(),
+            session_epoch: self.session_epoch,
+            event: Some(generated::event_envelope::Event::Goal(projection)),
+        };
+        transport::write_frame(writer, &event.encode_to_vec()).await?;
+        Ok(())
+    }
+
+    async fn write_goal_list_projection<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        projection: generated::GoalListProjection,
+    ) -> Result<(), IpcBridgeError> {
+        let event = generated::EventEnvelope {
+            protocol: Some(protocol()),
+            sequence_id: 0,
+            task_id: String::new(),
+            event_type: "goal.list".into(),
+            payload: Vec::new(),
+            core_instance_id: self.core_instance_id.clone(),
+            session_epoch: self.session_epoch,
+            event: Some(generated::event_envelope::Event::GoalList(projection)),
+        };
+        transport::write_frame(writer, &event.encode_to_vec()).await?;
+        Ok(())
+    }
+
+    async fn write_goal_action_result<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        result: generated::GoalActionResult,
+    ) -> Result<(), IpcBridgeError> {
+        let event = generated::EventEnvelope {
+            protocol: Some(protocol()),
+            sequence_id: 0,
+            task_id: result.goal_id.clone(),
+            event_type: "goal.action".into(),
+            payload: Vec::new(),
+            core_instance_id: self.core_instance_id.clone(),
+            session_epoch: self.session_epoch,
+            event: Some(generated::event_envelope::Event::GoalAction(result)),
+        };
+        transport::write_frame(writer, &event.encode_to_vec()).await?;
+        Ok(())
+    }
+
     async fn write_response<W: AsyncWrite + Unpin>(
         &self,
         writer: &mut W,
@@ -7721,6 +8264,205 @@ fn skill_reference_error(
         reference: bounded_skill_field(reference),
         error_code: code.into(),
         error_message: "Reference не удалось загрузить; содержимое не выдано.".into(),
+        ..Default::default()
+    }
+}
+
+fn valid_goal_token(value: &str) -> bool {
+    valid_checkpoint_token(value, crate::goal::GOAL_MAX_ID_CHARS)
+}
+
+fn valid_goal_action(goal_id: &str, expected_version: u64, idempotency_key: &str) -> bool {
+    valid_goal_token(goal_id) && expected_version > 0 && valid_goal_token(idempotency_key)
+}
+
+fn goal_criteria_from_request(
+    criteria: &[generated::GoalCriterionInput],
+) -> Result<Vec<crate::goal::GoalCriterionV1>, ()> {
+    criteria
+        .iter()
+        .map(|criterion| {
+            let kind = match criterion.kind.as_str() {
+                "manual" => crate::goal::GoalCriterionKind::Manual,
+                "gate" => crate::goal::GoalCriterionKind::Gate,
+                "workflow_evidence" => crate::goal::GoalCriterionKind::WorkflowEvidence,
+                "artifact" => crate::goal::GoalCriterionKind::Artifact,
+                _ => return Err(()),
+            };
+            if !valid_goal_token(&criterion.id)
+                || criterion.statement.trim().is_empty()
+                || criterion.statement.len() > crate::goal::GOAL_MAX_TEXT_CHARS
+            {
+                return Err(());
+            }
+            Ok(crate::goal::GoalCriterionV1::new(
+                &criterion.id,
+                kind,
+                &criterion.statement,
+            ))
+        })
+        .collect()
+}
+
+fn goal_storage_error_code(error: &StorageError) -> &'static str {
+    match error {
+        StorageError::Goal(error) => error.code(),
+        StorageError::VersionConflict { .. } => "stale_version",
+        StorageError::DeduplicationConflict { .. } => "idempotency_conflict",
+        _ => "storage_failed",
+    }
+}
+
+fn goal_storage_error_message(error: &StorageError) -> String {
+    match error {
+        StorageError::Goal(crate::goal::GoalError::NotFound(_)) => "Цель не найдена.".into(),
+        StorageError::Goal(crate::goal::GoalError::ReferenceNotFound { .. }) => {
+            "Связанный runtime-объект не найден или недоступен.".into()
+        }
+        StorageError::VersionConflict { .. } => {
+            "Состояние цели уже изменилось; обнови проекцию.".into()
+        }
+        StorageError::DeduplicationConflict { .. } => {
+            "Ключ idempotency уже использован для другой команды.".into()
+        }
+        StorageError::Goal(crate::goal::GoalError::CompletionEvidenceMissing) => {
+            "Цель нельзя завершить без подтверждённых Core evidence.".into()
+        }
+        StorageError::Goal(crate::goal::GoalError::InvalidField { .. }) => {
+            "Контракт цели нарушен.".into()
+        }
+        _ => "Операция с целью не записалась.".into(),
+    }
+}
+
+fn goal_projection_error(goal_id: &str, error_code: &str) -> generated::GoalProjection {
+    generated::GoalProjection {
+        schema_version: crate::goal::GOAL_SCHEMA_VERSION,
+        goal_id: if valid_goal_token(goal_id) {
+            goal_id.to_owned()
+        } else {
+            String::new()
+        },
+        error_code: error_code.into(),
+        recovery_warning: "Проекция цели недоступна; автоматическое продолжение запрещено.".into(),
+        ..Default::default()
+    }
+}
+
+fn goal_projection(
+    goal: &crate::goal::GoalV1,
+    recovery_warning: &str,
+) -> generated::GoalProjection {
+    generated::GoalProjection {
+        schema_version: crate::goal::GOAL_SCHEMA_VERSION,
+        goal_id: bounded_checkpoint_text(&goal.id),
+        version: goal.version,
+        workspace_id: bounded_checkpoint_text(&goal.workspace_id),
+        chat_id: goal.chat_id.clone().unwrap_or_default(),
+        objective: bounded_checkpoint_text(&goal.objective),
+        success_criteria: goal
+            .success_criteria
+            .iter()
+            .take(crate::goal::GOAL_MAX_CRITERIA)
+            .map(goal_criterion_projection)
+            .collect(),
+        status: goal.status.as_str().into(),
+        progress_summary: bounded_checkpoint_text(&goal.progress_summary),
+        completed_criteria: goal
+            .completed_criteria
+            .iter()
+            .take(crate::goal::GOAL_MAX_CRITERIA)
+            .cloned()
+            .collect(),
+        remaining_criteria: goal
+            .remaining_criteria
+            .iter()
+            .take(crate::goal::GOAL_MAX_CRITERIA)
+            .cloned()
+            .collect(),
+        blockers: goal
+            .blockers
+            .iter()
+            .take(TASK_CHECKPOINT_IPC_MAX_ITEMS)
+            .map(|value| bounded_checkpoint_text(value))
+            .collect(),
+        next_action: goal.next_action.clone().unwrap_or_default(),
+        workflow_run_ids: goal
+            .workflow_run_ids
+            .iter()
+            .take(TASK_CHECKPOINT_IPC_MAX_ITEMS)
+            .cloned()
+            .collect(),
+        child_run_ids: goal
+            .child_run_ids
+            .iter()
+            .take(TASK_CHECKPOINT_IPC_MAX_ITEMS)
+            .cloned()
+            .collect(),
+        checkpoint_id: goal.checkpoint_id.clone().unwrap_or_default(),
+        token_budget: goal.token_budget.unwrap_or_default(),
+        cost_budget_micros: goal.cost_budget_micros.unwrap_or_default(),
+        continuation_budget: goal.continuation_budget.unwrap_or_default(),
+        created_at_ms: goal.created_at_ms,
+        updated_at_ms: goal.updated_at_ms,
+        content_hash: bounded_checkpoint_text(&goal.content_hash),
+        recovery_warning: bounded_checkpoint_text(recovery_warning),
+        error_code: String::new(),
+    }
+}
+
+fn goal_criterion_projection(
+    criterion: &crate::goal::GoalCriterionV1,
+) -> generated::GoalCriterionProjection {
+    generated::GoalCriterionProjection {
+        id: bounded_checkpoint_text(&criterion.id),
+        kind: criterion.kind.as_str().into(),
+        statement: bounded_checkpoint_text(&criterion.statement),
+        status: criterion.status.as_str().into(),
+        evidence_ref: criterion.evidence_ref.clone().unwrap_or_default(),
+        verifier_id: criterion.verifier_id.clone().unwrap_or_default(),
+        verifier_version: criterion.verifier_version.clone().unwrap_or_default(),
+        verified_at_ms: criterion.verified_at_ms.unwrap_or_default(),
+        provenance: match criterion.provenance {
+            crate::goal::GoalProvenance::User => "user",
+            crate::goal::GoalProvenance::Core => "core",
+        }
+        .into(),
+    }
+}
+
+fn goal_action_result_from_mutation(
+    result: crate::goal::GoalMutationResult,
+) -> generated::GoalActionResult {
+    generated::GoalActionResult {
+        schema_version: crate::goal::GOAL_SCHEMA_VERSION,
+        goal_id: bounded_checkpoint_text(&result.goal.id),
+        action: bounded_checkpoint_text(&result.action),
+        applied: result.applied,
+        deduplicated: result.deduplicated,
+        goal_version: result.goal.version,
+        sequence_id: result.event_sequence,
+        goal: Some(goal_projection(&result.goal, "")),
+        ..Default::default()
+    }
+}
+
+fn goal_action_error(
+    goal_id: &str,
+    action: &str,
+    error_code: &str,
+    error_message: &str,
+) -> generated::GoalActionResult {
+    generated::GoalActionResult {
+        schema_version: crate::goal::GOAL_SCHEMA_VERSION,
+        goal_id: if valid_goal_token(goal_id) {
+            goal_id.to_owned()
+        } else {
+            String::new()
+        },
+        action: bounded_checkpoint_text(action),
+        error_code: bounded_checkpoint_text(error_code),
+        error_message: bounded_checkpoint_text(error_message),
         ..Default::default()
     }
 }
@@ -8057,6 +8799,7 @@ fn core_info() -> generated::CoreInfo {
             "resync".into(),
             "task_checkpoint".into(),
             "skills".into(),
+            "goals".into(),
         ],
         feature_flags: vec!["authenticated-ipc".into()],
         max_frame_bytes: evohime_desktop_ipc::MAX_FRAME_BYTES as u32,
@@ -12064,6 +12807,332 @@ mod tests {
             .await
             .expect("typed checkpoint response reads");
         generated::EventEnvelope::decode(response.as_slice()).expect("typed checkpoint decodes")
+    }
+
+    async fn typed_goal_call(
+        bridge: &IpcBridge,
+        request_id: &str,
+        command: generated::command_envelope::Command,
+    ) -> generated::EventEnvelope {
+        let (mut client, server) = duplex(256 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        let envelope = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: request_id.into(),
+            client_id: "goal-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(command),
+        };
+        transport::write_frame(&mut client, &envelope.encode_to_vec())
+            .await
+            .expect("typed goal request writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("typed goal request serves");
+        let response = transport::read_frame(&mut client)
+            .await
+            .expect("typed goal response reads");
+        generated::EventEnvelope::decode(response.as_slice()).expect("typed goal decodes")
+    }
+
+    #[tokio::test]
+    async fn persistent_goal_ipc_is_typed_bounded_and_recoverable() {
+        let path =
+            std::env::temp_dir().join(format!("evohime-ipc-goal-{}.db", uuid::Uuid::new_v4()));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let bridge = IpcBridge::new(journal);
+        let workspace = std::env::temp_dir().join("evohime-goal-workspace");
+        std::fs::create_dir_all(&workspace).expect("goal workspace creates");
+        let create = generated::CreateGoal {
+            goal_id: "goal-ipc-1".into(),
+            workspace_path: workspace.to_string_lossy().into_owned(),
+            chat_id: "chat-1".into(),
+            objective: "Проверить typed Goal".into(),
+            success_criteria: vec![generated::GoalCriterionInput {
+                id: "criterion-1".into(),
+                kind: "manual".into(),
+                statement: "Core evidence сохранено".into(),
+            }],
+            idempotency_key: "goal-create-1".into(),
+            ..Default::default()
+        };
+        let created = typed_goal_call(
+            &bridge,
+            "goal-create-request",
+            generated::command_envelope::Command::CreateGoal(create.clone()),
+        )
+        .await;
+        let created = match created.event {
+            Some(generated::event_envelope::Event::GoalAction(result)) => result,
+            other => panic!("expected typed GoalAction, got {other:?}"),
+        };
+        assert!(
+            created.applied,
+            "create error={} message={}",
+            created.error_code, created.error_message
+        );
+        assert_eq!(created.goal_version, 1);
+        let projection = created.goal.expect("create carries projection");
+        assert_eq!(projection.status, "active");
+        assert_eq!(projection.remaining_criteria, vec!["criterion-1"]);
+        assert!(!projection.workspace_id.contains("evohime-goal-workspace"));
+
+        let replay = typed_goal_call(
+            &bridge,
+            "goal-create-request",
+            generated::command_envelope::Command::CreateGoal(create),
+        )
+        .await;
+        let replay = match replay.event {
+            Some(generated::event_envelope::Event::GoalAction(result)) => result,
+            other => panic!("expected typed replay GoalAction, got {other:?}"),
+        };
+        assert!(replay.deduplicated);
+        assert_eq!(replay.goal_version, 1);
+
+        let listed = typed_goal_call(
+            &bridge,
+            "goal-list-request",
+            generated::command_envelope::Command::ListGoals(generated::ListGoals {
+                workspace_path: workspace.to_string_lossy().into_owned(),
+                limit: 16,
+            }),
+        )
+        .await;
+        let listed = match listed.event {
+            Some(generated::event_envelope::Event::GoalList(result)) => result,
+            other => panic!("expected typed GoalList, got {other:?}"),
+        };
+        assert_eq!(listed.goals.len(), 1);
+        assert_eq!(listed.goals[0].objective, "Проверить typed Goal");
+
+        let fetched = typed_goal_call(
+            &bridge,
+            "goal-get-request",
+            generated::command_envelope::Command::GetGoal(generated::GetGoal {
+                goal_id: "goal-ipc-1".into(),
+            }),
+        )
+        .await;
+        let fetched = match fetched.event {
+            Some(generated::event_envelope::Event::Goal(goal)) => goal,
+            other => panic!("expected typed Goal projection, got {other:?}"),
+        };
+        assert_eq!(fetched.objective, "Проверить typed Goal");
+
+        let updated = typed_goal_call(
+            &bridge,
+            "goal-update-request",
+            generated::command_envelope::Command::UpdateGoal(generated::UpdateGoal {
+                goal_id: "goal-ipc-1".into(),
+                expected_version: 1,
+                objective: "Проверить typed Goal и историю".into(),
+                idempotency_key: "goal-update-key".into(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        let updated = match updated.event {
+            Some(generated::event_envelope::Event::GoalAction(result)) => result,
+            other => panic!("expected typed update result, got {other:?}"),
+        };
+        assert!(updated.applied);
+        assert_eq!(updated.goal_version, 2);
+
+        let paused = typed_goal_call(
+            &bridge,
+            "goal-pause-request",
+            generated::command_envelope::Command::PauseGoal(generated::GoalAction {
+                goal_id: "goal-ipc-1".into(),
+                expected_version: 2,
+                idempotency_key: "goal-pause-key".into(),
+            }),
+        )
+        .await;
+        let paused = match paused.event {
+            Some(generated::event_envelope::Event::GoalAction(result)) => result,
+            other => panic!("expected typed pause result, got {other:?}"),
+        };
+        assert_eq!(
+            paused.goal.as_ref().map(|goal| goal.status.as_str()),
+            Some("paused")
+        );
+
+        let resumed = typed_goal_call(
+            &bridge,
+            "goal-resume-request",
+            generated::command_envelope::Command::ResumeGoal(generated::GoalAction {
+                goal_id: "goal-ipc-1".into(),
+                expected_version: 3,
+                idempotency_key: "goal-resume-key".into(),
+            }),
+        )
+        .await;
+        let resumed = match resumed.event {
+            Some(generated::event_envelope::Event::GoalAction(result)) => result,
+            other => panic!("expected typed resume result, got {other:?}"),
+        };
+        assert_eq!(
+            resumed.goal.as_ref().map(|goal| goal.status.as_str()),
+            Some("active")
+        );
+
+        let checkpoint = crate::task_checkpoint::TaskCheckpointRuntime::new(bridge.journal.clone())
+            .capture(
+                "goal-checkpoint-task",
+                &workspace,
+                crate::task_checkpoint::CheckpointStatus::Blocked,
+                crate::task_checkpoint::CheckpointCaptureReason::RecoveryBlocked,
+                None,
+            )
+            .await
+            .expect("goal checkpoint persists");
+        let linked = typed_goal_call(
+            &bridge,
+            "goal-link-checkpoint-request",
+            generated::command_envelope::Command::LinkGoalReference(generated::LinkGoalReference {
+                goal_id: "goal-ipc-1".into(),
+                expected_version: 4,
+                kind: "checkpoint".into(),
+                reference_id: checkpoint.id,
+                idempotency_key: "goal-link-checkpoint-key".into(),
+            }),
+        )
+        .await;
+        let linked = match linked.event {
+            Some(generated::event_envelope::Event::GoalAction(result)) => result,
+            other => panic!("expected typed checkpoint link result, got {other:?}"),
+        };
+        assert!(linked.applied);
+        assert_eq!(linked.goal_version, 5);
+
+        let missing_link = typed_goal_call(
+            &bridge,
+            "goal-link-missing-request",
+            generated::command_envelope::Command::LinkGoalReference(generated::LinkGoalReference {
+                goal_id: "goal-ipc-1".into(),
+                expected_version: 5,
+                kind: "workflow".into(),
+                reference_id: "missing-workflow".into(),
+                idempotency_key: "goal-link-missing-key".into(),
+            }),
+        )
+        .await;
+        let missing_link = match missing_link.event {
+            Some(generated::event_envelope::Event::GoalAction(result)) => result,
+            other => panic!("expected typed link result, got {other:?}"),
+        };
+        assert_eq!(missing_link.error_code, "reference_not_found");
+
+        let stale = typed_goal_call(
+            &bridge,
+            "goal-pause-stale",
+            generated::command_envelope::Command::PauseGoal(generated::GoalAction {
+                goal_id: "goal-ipc-1".into(),
+                expected_version: 99,
+                idempotency_key: "goal-pause-stale-key".into(),
+            }),
+        )
+        .await;
+        let stale = match stale.event {
+            Some(generated::event_envelope::Event::GoalAction(result)) => result,
+            other => panic!("expected typed stale GoalAction, got {other:?}"),
+        };
+        assert_eq!(stale.error_code, "stale_version");
+
+        let verified = typed_goal_call(
+            &bridge,
+            "goal-verify-request",
+            generated::command_envelope::Command::VerifyGoalCriterion(
+                generated::VerifyGoalCriterion {
+                    goal_id: "goal-ipc-1".into(),
+                    expected_version: 5,
+                    criterion_id: "criterion-1".into(),
+                    idempotency_key: "goal-verify-key".into(),
+                },
+            ),
+        )
+        .await;
+        let verified = match verified.event {
+            Some(generated::event_envelope::Event::GoalAction(result)) => result,
+            other => panic!("expected typed verified GoalAction, got {other:?}"),
+        };
+        assert!(verified.applied);
+        assert_eq!(
+            verified.goal.as_ref().map(|goal| goal.status.as_str()),
+            Some("completed")
+        );
+        let verified_criterion = &verified
+            .goal
+            .as_ref()
+            .expect("verified projection")
+            .success_criteria[0];
+        assert_eq!(verified_criterion.provenance, "core");
+        assert!(verified_criterion
+            .evidence_ref
+            .starts_with("core:user-decision:"));
+
+        let cancelled = typed_goal_call(
+            &bridge,
+            "goal-cancel-completed",
+            generated::command_envelope::Command::CancelGoal(generated::GoalAction {
+                goal_id: "goal-ipc-1".into(),
+                expected_version: 6,
+                idempotency_key: "goal-cancel-completed-key".into(),
+            }),
+        )
+        .await;
+        let cancelled = match cancelled.event {
+            Some(generated::event_envelope::Event::GoalAction(result)) => result,
+            other => panic!("expected typed cancel result, got {other:?}"),
+        };
+        assert_eq!(cancelled.error_code, "invalid_state_transition");
+
+        let cancel_target = typed_goal_call(
+            &bridge,
+            "goal-create-cancel-target",
+            generated::command_envelope::Command::CreateGoal(generated::CreateGoal {
+                goal_id: "goal-ipc-cancel-target".into(),
+                workspace_path: workspace.to_string_lossy().into_owned(),
+                objective: "Отменяемая цель".into(),
+                success_criteria: vec![generated::GoalCriterionInput {
+                    id: "criterion-1".into(),
+                    kind: "manual".into(),
+                    statement: "Не требуется подтверждение".into(),
+                }],
+                idempotency_key: "goal-create-cancel-target-key".into(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        let cancel_target = match cancel_target.event {
+            Some(generated::event_envelope::Event::GoalAction(result)) => result,
+            other => panic!("expected cancel target creation, got {other:?}"),
+        };
+        assert!(cancel_target.applied);
+        let cancelled = typed_goal_call(
+            &bridge,
+            "goal-cancel-active",
+            generated::command_envelope::Command::CancelGoal(generated::GoalAction {
+                goal_id: "goal-ipc-cancel-target".into(),
+                expected_version: 1,
+                idempotency_key: "goal-cancel-active-key".into(),
+            }),
+        )
+        .await;
+        let cancelled = match cancelled.event {
+            Some(generated::event_envelope::Event::GoalAction(result)) => result,
+            other => panic!("expected successful cancel result, got {other:?}"),
+        };
+        assert_eq!(
+            cancelled.goal.as_ref().map(|goal| goal.status.as_str()),
+            Some("cancelled")
+        );
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(&workspace);
     }
 
     #[tokio::test]

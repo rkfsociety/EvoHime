@@ -1323,6 +1323,125 @@ message SaveAutomationSchedule {
   bool enabled = 9;
 }
 
+// Core-owned durable Goal. The workspace path is an input-only scope selector;
+// projections contain only its stable hashed workspace_id. No prompt,
+// credentials, capabilities or hidden model reasoning cross this boundary.
+message GoalCriterionInput {
+  string id = 1;
+  string kind = 2;
+  string statement = 3;
+}
+
+message CreateGoal {
+  string goal_id = 1;
+  string workspace_path = 2;
+  string chat_id = 3;
+  string objective = 4;
+  repeated GoalCriterionInput success_criteria = 5;
+  uint64 token_budget = 6;
+  uint64 cost_budget_micros = 7;
+  uint64 continuation_budget = 8;
+  string idempotency_key = 9;
+}
+
+message GetGoal { string goal_id = 1; }
+
+message ListGoals {
+  string workspace_path = 1;
+  uint32 limit = 2;
+}
+
+message GoalAction {
+  string goal_id = 1;
+  uint64 expected_version = 2;
+  string idempotency_key = 3;
+}
+
+message UpdateGoal {
+  string goal_id = 1;
+  uint64 expected_version = 2;
+  string objective = 3;
+  repeated GoalCriterionInput success_criteria = 4;
+  string idempotency_key = 5;
+}
+
+message VerifyGoalCriterion {
+  string goal_id = 1;
+  uint64 expected_version = 2;
+  string criterion_id = 3;
+  // Evidence is Core-owned. Client-supplied evidence/verifier fields from an
+  // early draft are intentionally reserved so a renderer cannot self-attest.
+  reserved 4 to 6;
+  string idempotency_key = 7;
+}
+
+message LinkGoalReference {
+  string goal_id = 1;
+  uint64 expected_version = 2;
+  string kind = 3;
+  string reference_id = 4;
+  string idempotency_key = 5;
+}
+
+message GoalCriterionProjection {
+  string id = 1;
+  string kind = 2;
+  string statement = 3;
+  string status = 4;
+  string evidence_ref = 5;
+  string verifier_id = 6;
+  string verifier_version = 7;
+  int64 verified_at_ms = 8;
+  string provenance = 9;
+}
+
+message GoalProjection {
+  uint32 schema_version = 1;
+  string goal_id = 2;
+  uint64 version = 3;
+  string workspace_id = 4;
+  string chat_id = 5;
+  string objective = 6;
+  repeated GoalCriterionProjection success_criteria = 7;
+  string status = 8;
+  string progress_summary = 9;
+  repeated string completed_criteria = 10;
+  repeated string remaining_criteria = 11;
+  repeated string blockers = 12;
+  string next_action = 13;
+  repeated string workflow_run_ids = 14;
+  repeated string child_run_ids = 15;
+  string checkpoint_id = 16;
+  uint64 token_budget = 17;
+  uint64 cost_budget_micros = 18;
+  uint64 continuation_budget = 19;
+  int64 created_at_ms = 20;
+  int64 updated_at_ms = 21;
+  string content_hash = 22;
+  string recovery_warning = 23;
+  string error_code = 24;
+}
+
+message GoalListProjection {
+  uint32 schema_version = 1;
+  repeated GoalProjection goals = 2;
+  string error_code = 3;
+  bool truncated = 4;
+}
+
+message GoalActionResult {
+  uint32 schema_version = 1;
+  string goal_id = 2;
+  string action = 3;
+  bool applied = 4;
+  bool deduplicated = 5;
+  uint64 goal_version = 6;
+  string error_code = 7;
+  string error_message = 8;
+  int64 sequence_id = 9;
+  GoalProjection goal = 10;
+}
+
 message TriggerAutomation {
   string definition_id = 1;
   uint64 revision = 2;
@@ -1497,6 +1616,15 @@ message CommandEnvelope {
     ListSkills list_skills = 139;
     LoadSkill load_skill = 140;
     LoadSkillReference load_skill_reference = 141;
+    CreateGoal create_goal = 142;
+    GetGoal get_goal = 143;
+    ListGoals list_goals = 144;
+    GoalAction pause_goal = 145;
+    GoalAction resume_goal = 146;
+    GoalAction cancel_goal = 147;
+    UpdateGoal update_goal = 148;
+    VerifyGoalCriterion verify_goal_criterion = 149;
+    LinkGoalReference link_goal_reference = 150;
   }
 }
 
@@ -1537,6 +1665,9 @@ message EventEnvelope {
     SkillCatalogProjection skill_catalog = 17;
     SkillContentResult skill_content = 18;
     SkillReferenceResult skill_reference = 19;
+    GoalProjection goal = 20;
+    GoalListProjection goal_list = 21;
+    GoalActionResult goal_action = 22;
   }
 }
 

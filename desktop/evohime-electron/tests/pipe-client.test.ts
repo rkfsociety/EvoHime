@@ -226,6 +226,58 @@ function skillCatalogFrame(sequenceId: number): Uint8Array {
   )
 }
 
+function goalListFrame(sequenceId: number): Uint8Array {
+  return encodeFrame(
+    EventEnvelope.encode({
+      protocol: { major: 1, minor: 0 },
+      sequenceId,
+      eventType: 'goal.list',
+      coreInstanceId: CORE_INSTANCE,
+      sessionEpoch: SESSION_EPOCH,
+      goalList: {
+        schemaVersion: 1,
+        truncated: false,
+        errorCode: '',
+        goals: [{
+          schemaVersion: 1,
+          goalId: 'goal-1',
+          version: 3,
+          workspaceId: 'workspace-hash',
+          objective: 'Долгая проверка',
+          successCriteria: [{
+            id: 'criterion-1',
+            kind: 'manual',
+            statement: 'Core подтверждает результат',
+            status: 'pending',
+            evidenceRef: '',
+            verifierId: '',
+            verifierVersion: '',
+            verifiedAtMs: 0,
+            provenance: 'user'
+          }],
+          status: 'active',
+          progressSummary: '0 из 1',
+          completedCriteria: [],
+          remainingCriteria: ['criterion-1'],
+          blockers: ['нужна проверка'],
+          nextAction: 'Подтвердить',
+          workflowRunIds: ['workflow-1'],
+          childRunIds: ['child-1'],
+          checkpointId: 'checkpoint-1',
+          tokenBudget: 100,
+          costBudgetMicros: 200,
+          continuationBudget: 1,
+          createdAtMs: 1,
+          updatedAtMs: 2,
+          contentHash: 'hash-1',
+          recoveryWarning: '',
+          errorCode: ''
+        }]
+      }
+    }).finish()
+  )
+}
+
 const TEST_SECRET = 'ab'.repeat(32)
 
 function launchContext(pipeName: string, secret = ''): LaunchContext {
@@ -304,7 +356,7 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
 
     expect(state.protocol).toEqual({ major: 1, minor: 0 })
     expect(state.coreVersion).toBe('0.1.0-test')
-    expect(state.capabilities).toEqual(['replay', 'resync', 'skills', 'task_checkpoint'])
+    expect(state.capabilities).toEqual(['goals', 'replay', 'resync', 'skills', 'task_checkpoint'])
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(requestedResync).toBe(true)
   })
@@ -379,6 +431,27 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
       skillId: 'reviewer',
       sourceKind: 'project_native',
       contentHash: 'hash-reviewer'
+    })
+  })
+
+  it('projects a typed Goal list with refs and bounded truncation state', async () => {
+    const pipeName = uniquePipeName()
+    server = await startStubCore(pipeName, {
+      onCommand: (command) => (command.handshake ? [readyFrame(), goalListFrame(1)] : [])
+    })
+
+    const target = createClient(pipeName)
+    const received = waitForEvent(target, (event) => event.goalList?.goals[0]?.goalId === 'goal-1')
+    target.start()
+    const event = await received
+
+    expect(event.payload).toBe('')
+    expect(event.goalList?.truncated).toBe(false)
+    expect(event.goalList?.goals[0]).toMatchObject({
+      objective: 'Долгая проверка',
+      workflowRunIds: ['workflow-1'],
+      childRunIds: ['child-1'],
+      checkpointId: 'checkpoint-1'
     })
   })
 

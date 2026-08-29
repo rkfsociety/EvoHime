@@ -177,6 +177,65 @@ export interface TaskCheckpointActionResult {
   readonly errorMessage: string
 }
 
+export interface GoalCriterion {
+  readonly id: string
+  readonly kind: string
+  readonly statement: string
+  readonly status: string
+  readonly evidenceRef: string
+  readonly verifierId: string
+  readonly verifierVersion: string
+  readonly verifiedAtMs: number
+  readonly provenance: string
+}
+
+export interface GoalProjection {
+  readonly schemaVersion: number
+  readonly goalId: string
+  readonly version: number
+  readonly workspaceId: string
+  readonly chatId: string
+  readonly objective: string
+  readonly successCriteria: readonly GoalCriterion[]
+  readonly status: string
+  readonly progressSummary: string
+  readonly completedCriteria: readonly string[]
+  readonly remainingCriteria: readonly string[]
+  readonly blockers: readonly string[]
+  readonly nextAction: string
+  readonly workflowRunIds: readonly string[]
+  readonly childRunIds: readonly string[]
+  readonly checkpointId: string
+  readonly tokenBudget: number
+  readonly costBudgetMicros: number
+  readonly continuationBudget: number
+  readonly createdAtMs: number
+  readonly updatedAtMs: number
+  readonly contentHash: string
+  readonly recoveryWarning: string
+  readonly errorCode: string
+}
+
+export interface GoalListProjection {
+  readonly schemaVersion: number
+  readonly goals: readonly GoalProjection[]
+  readonly errorCode: string
+  readonly truncated: boolean
+}
+
+export interface GoalActionResult {
+  readonly schemaVersion: number
+  readonly goalId: string
+  readonly action: string
+  readonly applied: boolean
+  readonly deduplicated: boolean
+  readonly goalVersion: number
+  readonly errorCode: string
+  readonly errorMessage: string
+  readonly sequenceId: number
+  readonly goal: GoalProjection | null
+}
+
 export interface CoreEvent {
   readonly sequenceId: number
   readonly taskId: string
@@ -194,6 +253,10 @@ export interface CoreEvent {
   /** Present only for explicit skill progressive-disclosure responses. */
   readonly skillContent?: SkillContentResult | null
   readonly skillReference?: SkillReferenceResult | null
+  /** Present only for the typed Core Goal projection response. */
+  readonly goal?: GoalProjection | null
+  readonly goalList?: GoalListProjection | null
+  readonly goalAction?: GoalActionResult | null
 }
 
 export type ShellEvent =
@@ -778,6 +841,15 @@ export const RENDERER_COMMANDS = [
   'core.listSkills',
   'core.loadSkill',
   'core.loadSkillReference',
+  'core.createGoal',
+  'core.getGoal',
+  'core.listGoals',
+  'core.pauseGoal',
+  'core.resumeGoal',
+  'core.cancelGoal',
+  'core.updateGoal',
+  'core.verifyGoalCriterion',
+  'core.linkGoalReference',
   'core.stopTask',
   'core.resolveApproval',
   'core.resolveRoutingDecision',
@@ -939,6 +1011,42 @@ export interface CommandPayloads {
   'core.listSkills': { workspacePath: string; limit?: number }
   'core.loadSkill': { workspacePath: string; skillId: string; maxBytes?: number }
   'core.loadSkillReference': { workspacePath: string; skillId: string; reference: string; maxBytes?: number }
+  'core.createGoal': {
+    goalId: string
+    workspacePath: string
+    chatId?: string | null
+    objective: string
+    successCriteria: readonly { id: string; kind: 'manual' | 'gate' | 'workflow_evidence' | 'artifact'; statement: string }[]
+    tokenBudget?: number
+    costBudgetMicros?: number
+    continuationBudget?: number
+    idempotencyKey: string
+  }
+  'core.getGoal': { goalId: string }
+  'core.listGoals': { workspacePath: string; limit?: number }
+  'core.pauseGoal': { goalId: string; expectedVersion: number; idempotencyKey: string }
+  'core.resumeGoal': { goalId: string; expectedVersion: number; idempotencyKey: string }
+  'core.cancelGoal': { goalId: string; expectedVersion: number; idempotencyKey: string }
+  'core.updateGoal': {
+    goalId: string
+    expectedVersion: number
+    objective?: string
+    successCriteria?: readonly { id: string; kind: 'manual' | 'gate' | 'workflow_evidence' | 'artifact'; statement: string }[]
+    idempotencyKey: string
+  }
+  'core.verifyGoalCriterion': {
+    goalId: string
+    expectedVersion: number
+    criterionId: string
+    idempotencyKey: string
+  }
+  'core.linkGoalReference': {
+    goalId: string
+    expectedVersion: number
+    kind: 'workflow' | 'child' | 'checkpoint'
+    referenceId: string
+    idempotencyKey: string
+  }
   'core.stopTask': { taskId: string }
   'core.resolveApproval': { approvalId: string; granted: boolean; idempotencyKey?: string; rejectionReason?: string; cancel?: boolean }
   'core.resolveRoutingDecision': { traceId: string; approve: boolean }
@@ -1186,6 +1294,15 @@ export interface CommandResults {
   'core.listSkills': { accepted: boolean }
   'core.loadSkill': { accepted: boolean }
   'core.loadSkillReference': { accepted: boolean }
+  'core.createGoal': { accepted: boolean }
+  'core.getGoal': { accepted: boolean }
+  'core.listGoals': { accepted: boolean }
+  'core.pauseGoal': { accepted: boolean }
+  'core.resumeGoal': { accepted: boolean }
+  'core.cancelGoal': { accepted: boolean }
+  'core.updateGoal': { accepted: boolean }
+  'core.verifyGoalCriterion': { accepted: boolean }
+  'core.linkGoalReference': { accepted: boolean }
   'core.stopTask': { accepted: boolean }
   'core.resolveApproval': { accepted: boolean }
   'core.resolveRoutingDecision': { accepted: boolean }

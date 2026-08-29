@@ -6,6 +6,10 @@ import type {
   ConnectionState,
   CoreAvailabilityCode,
   CoreEvent,
+  GoalActionResult,
+  GoalCriterion,
+  GoalListProjection,
+  GoalProjection,
   SkillCatalog,
   SkillContentResult,
   SkillDiagnostic,
@@ -48,7 +52,7 @@ type ICommandEnvelope = evohime.desktop.v1.ICommandEnvelope
  * (plan 0, stage 1).
  */
 
-export const CLIENT_CAPABILITIES = ['replay', 'resync', 'task_checkpoint', 'skills'] as const
+export const CLIENT_CAPABILITIES = ['replay', 'resync', 'task_checkpoint', 'skills', 'goals'] as const
 
 export const DEFAULT_CONNECT_TIMEOUT_MS = 5_000
 export const DEFAULT_HANDSHAKE_TIMEOUT_MS = 5_000
@@ -535,7 +539,10 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       taskCheckpointAction: decodeTaskCheckpointAction(event.taskCheckpointActionResult),
       skillCatalog: decodeSkillCatalog(event.skillCatalog),
       skillContent: decodeSkillContent(event.skillContent),
-      skillReference: decodeSkillReference(event.skillReference)
+      skillReference: decodeSkillReference(event.skillReference),
+      goal: decodeGoal(event.goal),
+      goalList: decodeGoalList(event.goalList),
+      goalAction: decodeGoalAction(event.goalAction)
     })
   }
 
@@ -822,5 +829,85 @@ function decodeSkillReference(
     sourceRef: projected.sourceRef ?? '',
     errorCode: projected.errorCode ?? '',
     errorMessage: projected.errorMessage ?? ''
+  }
+}
+
+function decodeGoal(
+  projected: evohime.desktop.v1.IGoalProjection | null | undefined
+): GoalProjection | null {
+  if (!projected || !projected.goalId) return null
+  return decodeGoalProjection(projected)
+}
+
+function decodeGoalList(
+  projected: evohime.desktop.v1.IGoalListProjection | null | undefined
+): GoalListProjection | null {
+  if (!projected) return null
+  return {
+    schemaVersion: Number(projected.schemaVersion ?? 0),
+    goals: (projected.goals ?? []).map(decodeGoalProjection),
+    errorCode: projected.errorCode ?? '',
+    truncated: projected.truncated ?? false
+  }
+}
+
+function decodeGoalProjection(projected: evohime.desktop.v1.IGoalProjection): GoalProjection {
+  return {
+    schemaVersion: Number(projected.schemaVersion ?? 0),
+    goalId: projected.goalId ?? '',
+    version: Number(projected.version ?? 0),
+    workspaceId: projected.workspaceId ?? '',
+    chatId: projected.chatId ?? '',
+    objective: projected.objective ?? '',
+    successCriteria: (projected.successCriteria ?? []).map(decodeGoalCriterion),
+    status: projected.status ?? '',
+    progressSummary: projected.progressSummary ?? '',
+    completedCriteria: [...(projected.completedCriteria ?? [])],
+    remainingCriteria: [...(projected.remainingCriteria ?? [])],
+    blockers: [...(projected.blockers ?? [])],
+    nextAction: projected.nextAction ?? '',
+    workflowRunIds: [...(projected.workflowRunIds ?? [])],
+    childRunIds: [...(projected.childRunIds ?? [])],
+    checkpointId: projected.checkpointId ?? '',
+    tokenBudget: Number(projected.tokenBudget ?? 0),
+    costBudgetMicros: Number(projected.costBudgetMicros ?? 0),
+    continuationBudget: Number(projected.continuationBudget ?? 0),
+    createdAtMs: Number(projected.createdAtMs ?? 0),
+    updatedAtMs: Number(projected.updatedAtMs ?? 0),
+    contentHash: projected.contentHash ?? '',
+    recoveryWarning: projected.recoveryWarning ?? '',
+    errorCode: projected.errorCode ?? ''
+  }
+}
+
+function decodeGoalCriterion(projected: evohime.desktop.v1.IGoalCriterionProjection): GoalCriterion {
+  return {
+    id: projected.id ?? '',
+    kind: projected.kind ?? '',
+    statement: projected.statement ?? '',
+    status: projected.status ?? '',
+    evidenceRef: projected.evidenceRef ?? '',
+    verifierId: projected.verifierId ?? '',
+    verifierVersion: projected.verifierVersion ?? '',
+    verifiedAtMs: Number(projected.verifiedAtMs ?? 0),
+    provenance: projected.provenance ?? ''
+  }
+}
+
+function decodeGoalAction(
+  projected: evohime.desktop.v1.IGoalActionResult | null | undefined
+): GoalActionResult | null {
+  if (!projected || !projected.goalId) return null
+  return {
+    schemaVersion: Number(projected.schemaVersion ?? 0),
+    goalId: projected.goalId,
+    action: projected.action ?? '',
+    applied: Boolean(projected.applied),
+    deduplicated: Boolean(projected.deduplicated),
+    goalVersion: Number(projected.goalVersion ?? 0),
+    errorCode: projected.errorCode ?? '',
+    errorMessage: projected.errorMessage ?? '',
+    sequenceId: Number(projected.sequenceId ?? 0),
+    goal: projected.goal ? decodeGoalProjection(projected.goal) : null
   }
 }

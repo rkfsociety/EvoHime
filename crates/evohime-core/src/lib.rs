@@ -953,6 +953,7 @@ pub mod context_budget;
 pub mod doctor;
 pub mod evals;
 pub mod export;
+pub mod goal;
 #[cfg(windows)]
 mod listener_pipe;
 pub mod memory_api;

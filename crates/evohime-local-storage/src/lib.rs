@@ -18,6 +18,7 @@ pub mod context_command_store;
 pub mod context_ledger_store;
 pub mod execution_ledger;
 pub mod feedback_store;
+pub mod goal;
 pub mod memory_store;
 pub mod model_limit_store;
 pub mod model_provenance;
@@ -33,7 +34,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 32;
+pub const SCHEMA_VERSION: u32 = 33;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -86,6 +87,8 @@ pub enum StorageError {
     Context(String),
     #[error("task checkpoint contract violation: {0}")]
     TaskCheckpoint(#[from] task_checkpoint::TaskCheckpointError),
+    #[error("goal contract violation: {0}")]
+    Goal(#[from] goal::GoalError),
     /// Нарушение контракта execution ledger (план 08-1/08-2).
     #[error("execution ledger contract violation: {0}")]
     LedgerContract(#[from] execution_ledger::LedgerContractError),
@@ -505,6 +508,8 @@ impl LocalDatabase {
         context_ledger_store::install_compaction_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         task_checkpoint::install_schema(&connection)?;
+        goal::install_schema(&connection)
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
@@ -3413,6 +3418,11 @@ impl LocalDatabase {
             task_checkpoint::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 32;")?;
         }
+        if current < 33 {
+            goal::install_schema(&transaction)
+                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+            transaction.execute_batch("PRAGMA user_version = 33;")?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -3502,6 +3512,48 @@ mod tests {
         assert!(metrics[0].recovery_hint);
         drop(database);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn migrates_schema_32_to_goals_schema_33_with_backup() {
+        let path = temp_database_path("migration-32-to-33-goals");
+        let _ = std::fs::remove_file(&path);
+        let backup_path = path.with_extension("db.bak");
+        let _ = std::fs::remove_file(&backup_path);
+        {
+            let connection = rusqlite::Connection::open(&path).expect("legacy database opens");
+            connection
+                .execute_batch(
+                    "CREATE TABLE legacy_marker(id INTEGER);
+                     INSERT INTO legacy_marker(id) VALUES (25);
+                     PRAGMA user_version = 32;",
+                )
+                .expect("legacy schema seeds");
+        }
+
+        let database = LocalDatabase::open(&path).expect("migration succeeds");
+        assert_eq!(database.schema_version().unwrap(), SCHEMA_VERSION);
+        assert!(backup_path.exists(), "pre-migration backup must be written");
+        for table in ["goals", "goal_revisions", "goal_events", "goal_commands"] {
+            let exists: i64 = database
+                .connection()
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(exists, 1, "{table} must exist after migration to schema 33");
+        }
+        let preserved: i64 = database
+            .connection()
+            .query_row("SELECT id FROM legacy_marker", [], |row| row.get(0))
+            .expect("legacy row survives");
+        assert_eq!(preserved, 25);
+
+        drop(database);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&backup_path);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-29. Планы 01–24 завершены и
+Обновлено: 2026-08-29. Планы 01–25 завершены и
 удалены из каталога временных планов. План 19.0 добавил только пользовательский
 self-repair/self-update цикл; автоматического ремонта, push или перезапуска нет.
 Code signing явно исключён из текущего release scope.
@@ -15,6 +15,17 @@ evidence) реализованы и проверены. Комплект пла�
 capability intersection, typed authenticated IPC tags 139–141, renderer panel
 и metadata-only trace без durable хранения тела. Комплект 24.0–24.4 удалён
 после проверки полного Rust/Electron контура.
+План 25 добавил Persistent Goal v1: Core-owned durable objective/progress
+projection с immutable revisions/events, canonical SHA-256 hash, Core-evidence
+completion, optimistic version/idempotency, links на workflow/child/checkpoint,
+BudgetLimited recovery и schema v33. Authenticated Goal commands используют
+tags 142–150, typed projections — oneof 20–22; Verify принимает только
+идентификатор manual-критерия, а evidence/verifier mint-ит Core. Ссылки проходят
+проверку существования runtime-объекта, список ограничен protobuf budget и
+возвращает `projection_truncated`; Electron `GoalPanel` показывает только
+bounded projection и посылает явные действия. Recovery не повторяет unknown
+effect, а Goal не создаётся автоматически из каждого сообщения.
+Комплект планов 25.0–25.4 удалён после полного Rust/Electron verification.
 
 ## Продукт
 
@@ -58,7 +69,8 @@ Core и supervisor — внутренние компоненты установ�
   model-proposed данных, SHA-256 content hash, immutable parent chain,
   idempotent insert, workspace/event-sequence/state-transition checks, typed
   errors, SQL/JSON metadata consistency и fallback на предыдущую валидную
-  запись; storage schema — v32. Core сохраняет checkpoints перед lease,
+  запись; TaskCheckpoint был добавлен в schema v32, текущая общая storage
+  schema — v33. Core сохраняет checkpoints перед lease,
   compaction/context projection и terminal состояниями, публикует только
   bounded metadata-событие, а recovery блокирует усечённый replay, неизвестный
   outcome и blind retry. Проверки 23.1–23.2: 10 focused storage tests,
@@ -150,7 +162,7 @@ Core и supervisor — внутренние компоненты установ�
 - выбор модели в чате (`ModelPicker`) с разделением каталога на free/paid; выбор применяется без перезапуска Core через IPC `SelectModelRequest`;
 - настройки API-провайдера и Codex собраны в один блок с внутренними вкладками; отдельный `WorkspacePicker` убран — папка выбирается из панели проектов;
 - `RecoveryBanner` показывает подтверждённое Core состояние восстановления;
-- после перезапуска Core durable build-effect и обычные agent-run проходят lease heartbeat; подтверждённый terminal event приходит в UI как `RESUMABLE`, а неподтверждённый результат остаётся `BLOCKED`; текущая общая storage schema — v32;
+- после перезапуска Core durable build-effect и обычные agent-run проходят lease heartbeat; подтверждённый terminal event приходит в UI как `RESUMABLE`, а неподтверждённый результат остаётся `BLOCKED`; текущая общая storage schema — v33;
 - `OperationsPanel` («Память и Pulse») — очередь подтверждения памяти и конфликты (только metadata, с действиями «сохранить»/«отклонить»/«заменить»), typed read-only projection child workflow (timeline, role/state/revision/budget, lease и dead-letter) и schedule-событий, а также управление локальным индексом workspace: status, update/rebuild/cancel, optional embeddings и bounded search;
 - пользовательский self-repair: после трёх ошибок задач `OperationsPanel` показывает bounded digest и кнопку «Починить». Main сохраняет FSM в `shell\\repair.json`, создаёт изолированную копию канонического GitHub-репозитория, запускает через Core отдельные diagnose/patch, commit и push операции, показывает diff/tests/CI и не запускает эти шаги без клика пользователя;
 - repair защищает `.codex`, `AGENTS.md`, workflows, updater, supervisor, receipt, security и `.env*`; transaction worker держит backup до authenticated Core startup новой версии и откатывает установку при health timeout;

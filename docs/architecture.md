@@ -741,8 +741,8 @@ TaskCheckpoint v1 добавляет bounded immutable continuity record пов�
 отделено от model-proposed remaining/open/next/narrative/semantic decisions;
 модель не может подтвердить effect, approval, test или completion.
 
-SQLite storage schema v32 хранит только canonical JSON и bounded metadata в
-append-only `task_checkpoints`. Повторная запись того же id и payload
+Migration v32 добавила SQLite storage для TaskCheckpoint: она хранит только
+canonical JSON и bounded metadata в append-only `task_checkpoints`. Повторная запись того же id и payload
 идемпотентна, другая запись с тем же id отклоняется. Parent checkpoint обязан
 принадлежать тому же workspace и иметь более ранний event sequence. Чтение
 `latest_valid` пропускает повреждённую последнюю запись и возвращает предыдущую
@@ -802,6 +802,41 @@ skill id, version, hash и source reference.
 oneof tags 17–19. Electron main валидирует bounds и traversal, renderer
 показывает metadata и запрашивает полный документ только по явному клику;
 generic payload и authority в UI не используются.
+
+### Persistent Goals
+
+Persistent Goal v1 — Core-owned durable projection цели, переживающая model
+turn, чат и перезапуск Core. Контракт и `GoalStore` находятся в
+`evohime-local-storage::goal`, runtime facade — в `evohime-core::goal`; общая
+SQLite schema — v33. Projection хранит только bounded objective, criteria,
+статус, progress, blockers, next action, budgets и ссылки на workflow/child/
+checkpoint. Workspace path используется только как входной scope selector и
+преобразуется в стабильный SHA-256 `workspace_id`; сам путь, credentials,
+capabilities, prompt и hidden reasoning в Goal не сохраняются. Link-команда
+принимается только для существующего Core-owned runtime-объекта; отсутствующий
+optional backend даёт typed `reference_not_found`, а не успешную ссылку.
+
+Изменения objective/criteria получают новую immutable revision и append-only
+event. Повтор команды с тем же idempotency key возвращает прежний typed result,
+а устаревший `expected_version` отклоняется. `Completed` разрешён только после
+Core-подтверждения всех criteria с evidence ref и verifier identity/version; для
+manual criterion клиент передаёт только явное решение пользователя, а
+evidence/verifier mint-ит Core. Текст модели или completion одного workflow/
+child этого не делает. Исчерпание доступного бюджета представляется статусом
+`BudgetLimited`, а recovery сверяет связанные durable ссылки, выдаёт только
+bounded warning и не повторяет неизвестный внешний effect.
+
+В authenticated `desktop-ipc-v1` Goal добавлен additive-комплект команд
+`CreateGoal`, `GetGoal`, `ListGoals`, `GoalAction`, `UpdateGoal`,
+`VerifyGoalCriterion` и `LinkGoalReference` (tags 142–150). Typed
+`GoalProjection`, `GoalListProjection` и `GoalActionResult` используют
+EventEnvelope oneof tags 20–22; список ограничивается фактическим protobuf
+размером и сообщает `projection_truncated` до записи во frame. Electron
+main/preload только проверяет форму и маршрутизирует команды; `GoalPanel` в
+Overview отображает Core projection и посылает явные
+create/pause/resume/cancel/verify actions. Goal не является
+scheduler: автоматического создания или продолжения задач из одного сообщения
+нет.
 
 ## Local telemetry и deterministic evaluation
 

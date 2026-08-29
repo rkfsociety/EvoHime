@@ -240,6 +240,86 @@ function dispatch(
       return accepted(client.send({ resolveTaskCheckpoint: { taskId, workspacePath, checkpointId, expectedSourceEventSeq, action, idempotencyKey } }))
     }
 
+    case 'core.createGoal': {
+      const value = asRecord(payload)
+      const goalId = asGoalToken(value['goalId'])
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const chatId = value['chatId'] === undefined || value['chatId'] === null || value['chatId'] === ''
+        ? ''
+        : asGoalToken(value['chatId'])
+      const objective = asBoundedString(value['objective'])
+      const successCriteria = asGoalCriteria(value['successCriteria'])
+      const tokenBudget = asOptionalGoalBudget(value['tokenBudget'])
+      const costBudgetMicros = asOptionalGoalBudget(value['costBudgetMicros'])
+      const continuationBudget = asOptionalGoalBudget(value['continuationBudget'])
+      const idempotencyKey = asGoalToken(value['idempotencyKey'])
+      if (goalId === null || workspacePath === null || chatId === null || objective === null || successCriteria === null || tokenBudget === null || costBudgetMicros === null || continuationBudget === null || idempotencyKey === null) {
+        return failure('invalid-payload', 'Некорректные параметры цели.')
+      }
+      log('info', 'shell.command_forwarded', { command })
+      return accepted(client.send({ createGoal: { goalId, workspacePath, chatId, objective, successCriteria: [...successCriteria], tokenBudget, costBudgetMicros, continuationBudget, idempotencyKey } }))
+    }
+
+    case 'core.getGoal': {
+      const goalId = asGoalToken(asRecord(payload)['goalId'])
+      if (goalId === null) return failure('invalid-payload', 'Некорректный идентификатор цели.')
+      return accepted(client.send({ getGoal: { goalId } }))
+    }
+
+    case 'core.listGoals': {
+      const value = asRecord(payload)
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const limit = value['limit'] === undefined ? 0 : asOptionalLimit(value['limit'], 128)
+      if (workspacePath === null || limit === null) return failure('invalid-payload', 'Некорректный список целей.')
+      return accepted(client.send({ listGoals: { workspacePath, limit } }))
+    }
+
+    case 'core.pauseGoal':
+    case 'core.resumeGoal':
+    case 'core.cancelGoal': {
+      const value = asRecord(payload)
+      const goalId = asGoalToken(value['goalId'])
+      const expectedVersion = asNonNegativeInteger(value['expectedVersion'])
+      const idempotencyKey = asGoalToken(value['idempotencyKey'])
+      if (goalId === null || expectedVersion === null || expectedVersion === 0 || idempotencyKey === null) return failure('invalid-payload', 'Некорректное действие цели.')
+      const wireCommand = command === 'core.pauseGoal' ? 'pauseGoal' : command === 'core.resumeGoal' ? 'resumeGoal' : 'cancelGoal'
+      if (wireCommand === 'pauseGoal') return accepted(client.send({ pauseGoal: { goalId, expectedVersion, idempotencyKey } }))
+      if (wireCommand === 'resumeGoal') return accepted(client.send({ resumeGoal: { goalId, expectedVersion, idempotencyKey } }))
+      return accepted(client.send({ cancelGoal: { goalId, expectedVersion, idempotencyKey } }))
+    }
+
+    case 'core.updateGoal': {
+      const value = asRecord(payload)
+      const goalId = asGoalToken(value['goalId'])
+      const expectedVersion = asNonNegativeInteger(value['expectedVersion'])
+      const objective = value['objective'] === undefined ? '' : asBoundedString(value['objective'])
+      const successCriteria = value['successCriteria'] === undefined ? [] : asGoalCriteria(value['successCriteria'])
+      const idempotencyKey = asGoalToken(value['idempotencyKey'])
+      if (goalId === null || expectedVersion === null || expectedVersion === 0 || objective === null || successCriteria === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректное обновление цели.')
+      return accepted(client.send({ updateGoal: { goalId, expectedVersion, objective, successCriteria: [...successCriteria], idempotencyKey } }))
+    }
+
+    case 'core.verifyGoalCriterion': {
+      const value = asRecord(payload)
+      const goalId = asGoalToken(value['goalId'])
+      const expectedVersion = asNonNegativeInteger(value['expectedVersion'])
+      const criterionId = asGoalToken(value['criterionId'])
+      const idempotencyKey = asGoalToken(value['idempotencyKey'])
+      if (goalId === null || expectedVersion === null || expectedVersion === 0 || criterionId === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректное подтверждение критерия.')
+      return accepted(client.send({ verifyGoalCriterion: { goalId, expectedVersion, criterionId, idempotencyKey } }))
+    }
+
+    case 'core.linkGoalReference': {
+      const value = asRecord(payload)
+      const goalId = asGoalToken(value['goalId'])
+      const expectedVersion = asNonNegativeInteger(value['expectedVersion'])
+      const kind = asGoalReferenceKind(value['kind'])
+      const referenceId = asGoalToken(value['referenceId'])
+      const idempotencyKey = asGoalToken(value['idempotencyKey'])
+      if (goalId === null || expectedVersion === null || expectedVersion === 0 || kind === null || referenceId === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректная связь цели.')
+      return accepted(client.send({ linkGoalReference: { goalId, expectedVersion, kind, referenceId, idempotencyKey } }))
+    }
+
     case 'core.listSkills': {
       const value = asRecord(payload)
       const workspacePath = asBoundedString(value['workspacePath'])
@@ -1546,6 +1626,42 @@ function isSafeSkillId(value: string): boolean {
 
 function isSafeSkillReference(value: string): boolean {
   return value.length <= 256 && !value.startsWith('/') && !value.startsWith('\\\\') && !value.split(/[\\/]+/u).includes('..')
+}
+
+function asGoalToken(value: unknown): string | null {
+  const token = asBoundedString(value)
+  return token !== null && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u.test(token) ? token : null
+}
+
+type GoalCriterionPayload = {
+  readonly id: string
+  readonly kind: 'manual' | 'gate' | 'workflow_evidence' | 'artifact'
+  readonly statement: string
+}
+
+function asGoalCriteria(value: unknown): readonly GoalCriterionPayload[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 64) return null
+  const criteria = value.map((entry): GoalCriterionPayload | null => {
+    const record = asRecord(entry)
+    const id = asGoalToken(record['id'])
+    const statement = asBoundedString(record['statement'])
+    const kind = record['kind'] === 'manual' || record['kind'] === 'gate' || record['kind'] === 'workflow_evidence' || record['kind'] === 'artifact'
+      ? record['kind']
+      : null
+    return id !== null && statement !== null && statement.trim().length > 0 && kind !== null
+      ? { id, kind, statement }
+      : null
+  })
+  return criteria.every((criterion): criterion is GoalCriterionPayload => criterion !== null) ? criteria : null
+}
+
+function asOptionalGoalBudget(value: unknown): number | null {
+  if (value === undefined || value === null || value === 0) return 0
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= 0xffffffff ? value : null
+}
+
+function asGoalReferenceKind(value: unknown): 'workflow' | 'child' | 'checkpoint' | null {
+  return value === 'workflow' || value === 'child' || value === 'checkpoint' ? value : null
 }
 
 function asTraceContent(value: unknown): string | null {
