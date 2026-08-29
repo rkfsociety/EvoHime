@@ -19,7 +19,14 @@
 
 ## Матрица критериев
 
-- [ ] проверяемый результат по контракту.
+- [ ] Есть versioned `PlanArtifact`/`PlanStep` contract с identity, revision, hash и provenance.
+- [ ] Acceptance criteria типизированы, имеют `evidence_kind`, а их status выводится из Core-owned evidence, не из `done=true` модели.
+- [ ] Переход `Plan -> Execute` выполняется только Core-командой до первого side effect.
+- [ ] Plan steps разрешают capabilities через Core registry и не несут raw executable identity как authority.
+- [ ] Accepted plan revision/hash immutable; material deviation требует revalidation или replan.
+- [ ] Execution/recovery сохраняют unknown outcome и не повторяют внешний effect вслепую.
+- [ ] Plan, criteria и evidence переживают restart в bounded durable state.
+- [ ] IPC/UI показывают только bounded redacted projection и явные actions.
 
 ## Обязательная проверка
 
@@ -35,7 +42,7 @@
 - Bundle содержит commit, versions, test IDs, hashes, typed outcomes и redaction status; credentials, raw output, transcripts, absolute paths и PII исключены.
 - Rollback/disable и recovery procedure записаны; unknown side effect не объявляется success и не повторяется вслепую.
 - После свежих проверок обновить docs/architecture.md, docs/current-state.md, docs/development-plan.md и при необходимости docs/release-evidence.md.
-- Завершённый stage удалить после переноса подтверждённого контракта; незавершённый оставить blocked с evidence.
+- После закрытия всего направления и переноса подтверждённого контракта удалить комплект `57-0` … `57-4`; отдельные stage-файлы до этого не удалять. Незавершённое направление оставить blocked с evidence.
 
 ## Definition of Done
 

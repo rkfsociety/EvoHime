@@ -25,7 +25,7 @@ event-journal, provider и supervisor контракты не заменяютс
 immutable/versioned записи; для внешних эффектов сохранять unknown outcome, а
 не повторять side effect вслепую.
 
-Кандидатная точка интеграции: `crates/evohime-core/src/model-edit-protocol-registry.rs`,
+Кандидатная точка интеграции: `crates/evohime-core/src/model_edit_protocol_registry.rs`,
 а также соответствующий storage store, `crates/desktop-ipc/proto/evohime.desktop.proto`,
 Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются

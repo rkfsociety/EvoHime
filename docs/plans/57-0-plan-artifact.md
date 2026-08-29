@@ -21,7 +21,7 @@ event-journal, provider и supervisor контракты не заменяютс
 immutable/versioned записи; для внешних эффектов сохранять unknown outcome, а
 не повторять side effect вслепую.
 
-Кандидатная точка интеграции: `crates/evohime-core/src/plan-artifact.rs`,
+Кандидатная точка интеграции: `crates/evohime-core/src/plan_artifact.rs`,
 а также соответствующий storage store, `crates/desktop-ipc/proto/evohime.desktop.proto`,
 Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
@@ -83,7 +83,8 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ## Критерии готовности из issue
 
-Критерии должны быть отдельной структурой:
+Критерии должны быть отдельной структурой и подтверждаться независимо от
+свободного текста модели:
 
 ```text
 AcceptanceCriterion {
@@ -110,6 +111,23 @@ ManualCheck
 На planning этапе это expectation. Во время execution критерии связываются с фактическим evidence.
 
 Модель не может просто написать `done=true` и считать criterion выполненным.
+
+Критерии направления:
+
+- [ ] Есть versioned `PlanArtifact`/`PlanStep` contract с identity, revision,
+  hash и provenance.
+- [ ] Acceptance criteria типизированы, имеют `evidence_kind`, а их status
+  выводится из Core-owned evidence, не из `done=true` модели.
+- [ ] Переход `Plan -> Execute` выполняется только Core-командой до первого
+  side effect.
+- [ ] Plan steps разрешают capabilities через Core registry и не несут raw
+  executable identity как authority.
+- [ ] Accepted plan revision/hash immutable; material deviation требует
+  revalidation или replan.
+- [ ] Execution/recovery сохраняют unknown outcome и не повторяют внешний
+  effect вслепую.
+- [ ] Plan, criteria и evidence переживают restart в bounded durable state.
+- [ ] IPC/UI показывают только bounded redacted projection и явные actions.
 
 ## Ограничения и non-goals
 

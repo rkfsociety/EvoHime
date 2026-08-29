@@ -52,7 +52,7 @@ ledger или ArtifactStore.
 
 ### Опциональные
 
-  для обычной task без Goal;
+- обычная task без Goal;
 - планы 27–28: retained child и kernel refs могут быть добавлены в массивы
   typed refs после их появления.
 

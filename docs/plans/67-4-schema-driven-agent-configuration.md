@@ -41,7 +41,7 @@
 - Bundle содержит commit, versions, test IDs, hashes, typed outcomes и redaction status; credentials, raw output, transcripts, absolute paths и PII исключены.
 - Rollback/disable и recovery procedure записаны; unknown side effect не объявляется success и не повторяется вслепую.
 - После свежих проверок обновить docs/architecture.md, docs/current-state.md, docs/development-plan.md и при необходимости docs/release-evidence.md.
-- Завершённый stage удалить после переноса подтверждённого контракта; незавершённый оставить blocked с evidence.
+- После закрытия всего направления и переноса подтверждённого контракта удалить комплект `67-0` … `67-4`; отдельные stage-файлы до этого не удалять. Незавершённое направление оставить blocked с evidence.
 
 ## Definition of Done
 

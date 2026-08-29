@@ -42,7 +42,7 @@
 - Evidence содержит commit, contract/schema versions, test IDs, hashes, typed outcomes и redaction status; credentials, raw provider output, transcripts, absolute paths и PII исключены.
 - Зафиксировать rollback/disable и recovery procedure; side effects с unknown outcome не объявлять успешными и не повторять вслепую.
 - Обновить docs/architecture.md, docs/current-state.md, docs/development-plan.md и при необходимости docs/release-evidence.md только после свежих проверок.
-- После переноса подтверждённого контракта удалить завершённые stage files согласно docs/plans/README.md; если критерий не выполнен, оставить статус blocked с причиной и evidence.
+- После закрытия всего направления и переноса подтверждённого контракта удалить комплект `23-0` … `23-4` согласно docs/plans/README.md; отдельные stage files до этого не удалять. Если критерий не выполнен, оставить направление blocked с причиной и evidence.
 
 ## Definition of Done
 

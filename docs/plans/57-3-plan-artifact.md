@@ -29,6 +29,8 @@
 
 ## Критерии выхода
 
+- [ ] IPC/UI показывают bounded redacted plan/criteria/evidence projection и явные actions.
+- [ ] Execute/accept/replan actions повторно проверяются Core и не меняют accepted revision in-place.
 - [ ] Новая surface additive и authenticated.
 - [ ] Mutations повторно проверяются Core и защищены idempotency/version.
 - [ ] Renderer/CLI получает только bounded projection.

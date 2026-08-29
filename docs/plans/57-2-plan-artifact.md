@@ -29,6 +29,8 @@
 
 ## Критерии выхода
 
+- [ ] Переход `Plan -> Execute` выполняется только Core-командой до первого side effect.
+- [ ] Accepted plan revision/hash закреплён на run; material deviation даёт revalidation или replan.
 - [ ] Happy path выдаёт typed result только после Core validation.
 - [ ] Duplicate/stale/limit/cancel/restart/unavailable имеют отдельные outcomes.
 - [ ] Unknown external effect не повторяется автоматически.

@@ -4,12 +4,12 @@
 
 ## Цель
 
-Зафиксировать authoritative contract «Plan Artifact: versioned planning contract и явный переход Plan → Execute» и сделать его реализуемым: первичный выход — «проверяемый результат по контракту».
+Зафиксировать authoritative contract «Plan Artifact: versioned planning contract и явный переход Plan → Execute» и сделать его реализуемым: первичный выход — versioned `PlanArtifact`/`PlanStep` contract с типизированными acceptance criteria.
 
 ## Граница
 
 - Core владеет типами, состояниями, policy, provenance и записью. Model/user input только предлагает данные и не доказывает effect, approval, test или completion.
-- Кандидатные поверхности из обзора: `crates/evohime-core/src/plan-artifact.rs`, а также соответствующий storage store, `crates/desktop-ipc/proto/evohime.desktop.proto`, Electron main/preload bridge, bounded renderer projection и focused tests. Имена файлов проверяются по live checkout на этапе реализации и не являются заранее утверждённым API.. Пути, schema revision и IPC tags подтверждаются на evidence freeze.
+- Кандидатные поверхности из обзора: `crates/evohime-core/src/plan_artifact.rs`, а также соответствующий storage store, `crates/desktop-ipc/proto/evohime.desktop.proto`, Electron main/preload bridge, bounded renderer projection и focused tests. Имена файлов проверяются по live checkout на этапе реализации и не являются заранее утверждённым API. Пути, schema revision и IPC tags подтверждаются на evidence freeze.
 
 ## Зависимости
 
@@ -40,8 +40,10 @@
 
 ## Критерии выхода
 
-- [ ] проверяемый результат по контракту.
-- [ ] контракт валидируется до выполнения.
+- [ ] Есть versioned `PlanArtifact`/`PlanStep` contract с identity, revision,
+  hash и provenance.
+- [ ] Acceptance criteria типизированы, имеют `evidence_kind`, а их status
+  выводится из Core-owned evidence.
 - [ ] Contract не расширяет capabilities и не переносит authority за пределы Core.
 - [ ] Storage/ephemeral decision и rollback доказаны тестом.
 
