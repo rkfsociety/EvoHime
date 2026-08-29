@@ -358,3 +358,14 @@ Windows compatibility, package/installer и release gates.
 Пользовательский продукт ограничен `EvoHime-Setup.exe`, `EvoHime.exe`, локальным Core, supervisor и данными в профиле Windows. Исследовательские и экспериментальные каталоги не входят в установочный runtime.
 
 Legacy web UI, HTTP server, browser launcher и PostgreSQL migrations удалены из репозитория. Electron UI и authenticated versioned named-pipe IPC — текущая пользовательская оболочка и transport boundary; WinUI остаётся временным compatibility runtime для совместимости и тестов.
+
+План 27 реализован в Core/storage/runtime surface: retained-child contract и
+registry находятся в `crates/evohime-core/src/retained_child.rs`, durable
+таблицы и recovery mailbox — в `crates/evohime-local-storage/src/retained_child_store.rs`,
+текущая SQLite schema — v37. IPC использует additive tags 157–161 и
+metadata-only projection в OperationsPanel.
+29 августа 2026 года свежая проверка этого направления дала: Core 563 теста,
+local-storage 208, desktop IPC 35, Electron 470 passed и 2 штатно skipped;
+`cargo clippy` с `-D warnings`, `npm run typecheck`, `npm run check:protocol` и
+`git diff --check` прошли. Первоначальный timeout chat-store был отдельно
+повторён как 8/8 passed, а повторный полный Electron-прогон завершился 470/470.

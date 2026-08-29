@@ -49,6 +49,12 @@ Workflow/evidence adapters с отсутствующим provider остаютс
 5. **Продуктовая граница.** Не возвращать web runtime, public HTTP, внешний
    Node/Python runtime или автоматические repair/push/restart действия.
 
+План 27 закрыт: retained child contexts, durable mailbox, restart reconciliation
+и metadata-only IPC/UI перенесены в canonical architecture/current-state
+и подтверждены свежим полным прогоном 29 августа 2026 года: Rust 563/208/35,
+Electron 470 passed и 2 штатно skipped, clippy/typecheck/protocol check passed.
+контракт; schema revision — v37.
+
 Владельцы, критерии закрытия и влияние на выпуск находятся в
 [`decision-register.md`](decision-register.md). Порядок работ не меняет
 границы продукта: внешний cloud control plane, public HTTP, обязательный GPU,

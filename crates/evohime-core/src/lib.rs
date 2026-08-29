@@ -1560,6 +1560,12 @@ pub enum CoreCommand {
         now_ms: u64,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    GetRetainedChild {
+        parent_id: String,
+        child_id: String,
+        now_ms: u64,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     SendChildFollowUp {
         request: crate::retained_child::ChildFollowUpRequestV1,
         now_ms: u64,
@@ -1569,11 +1575,13 @@ pub enum CoreCommand {
     ListRetainedChildren {
         parent_id: String,
         now_ms: u64,
+        limit: u32,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
     DeleteRetainedChild {
         parent_id: String,
         child_id: String,
+        expected_registry_version: u64,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
 }
@@ -1841,6 +1849,23 @@ impl EventJournal {
             }
         }
         Ok(recovered)
+    }
+
+    /// A dispatched retained-child message has an uncertain external outcome
+    /// after restart. Mark it unknown and never retry it blindly.
+    pub async fn recover_retained_children(&self) -> Result<(u32, u32), StorageError> {
+        let database = self.database.lock().await;
+        let unknown =
+            evohime_local_storage::retained_child_store::RetainedChildStore::reconcile_all_unknown(
+                database.connection(),
+            )
+            .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
+        let expired = evohime_local_storage::retained_child_store::RetainedChildStore::expire_due(
+            database.connection(),
+            task_memory::now_millis(),
+        )
+        .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
+        Ok((unknown, expired))
     }
 
     /// Builds and atomically publishes one Core-owned workspace RAG
@@ -12542,15 +12567,25 @@ impl TaskCoordinator {
                 now_ms,
                 reply,
             } => {
-                let result = state
-                    .lock()
-                    .await
-                    .retained_children
-                    .retain(child, now_ms)
-                    .map(|applied| {
-                        serde_json::to_vec(&serde_json::json!({"applied":applied})).unwrap()
-                    })
-                    .map_err(|e| e.to_string());
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    child.validate(now_ms).map_err(|e| e.to_string())?;
+                    let journal = journal.ok_or_else(|| "storage_unavailable".to_string())?;
+                    let database = journal.database().lock().await;
+                    let applied = state.lock().await.retained_children.retain(child.clone(), now_ms).map_err(|e| e.to_string())?;
+                    if applied { evohime_local_storage::retained_child_store::RetainedChildStore::upsert_child(database.connection(), &child.parent_id, &child.child_id, &child.family_root_id, child.revision, child.registry_version, "idle_retained", &child, child.created_at_ms, child.last_active_at_ms, child.retained_until_ms).map_err(|e| e.to_string())?; }
+                    serde_json::to_vec(&serde_json::json!({"applied":applied,"child_id":child.child_id})).map_err(|e| e.to_string())
+                }.await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::GetRetainedChild {
+                parent_id,
+                child_id,
+                now_ms,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async { let journal=journal.ok_or_else(||"storage_unavailable".to_string())?; let database=journal.database().lock().await; let child=evohime_local_storage::retained_child_store::RetainedChildStore::get_child::<crate::retained_child::RetainedChildV1>(database.connection(),&parent_id,&child_id).map_err(|e|e.to_string())?.ok_or_else(||"not_found".to_string())?; child.validate(now_ms).map_err(|e|e.to_string())?; let projection=crate::retained_child::RetainedChildProjectionV1::from(&child); serde_json::to_vec(&projection).map_err(|e|e.to_string()) }.await;
                 let _ = reply.send(result);
             }
             CoreCommand::SendChildFollowUp {
@@ -12559,37 +12594,119 @@ impl TaskCoordinator {
                 busy,
                 reply,
             } => {
-                let result = state.lock().await.retained_children.follow_up(&request, now_ms, busy)
-                    .map(|outcome| serde_json::to_vec(&serde_json::json!({"outcome":format!("{outcome:?}").to_ascii_lowercase()})).unwrap())
-                    .map_err(|e| e.to_string());
+                let journal = state.lock().await.journal.clone();
+                if let Some(journal) = &journal {
+                    let database = journal.database().lock().await;
+                    if let Ok(Some(child)) =
+                        evohime_local_storage::retained_child_store::RetainedChildStore::get_child::<
+                            crate::retained_child::RetainedChildV1,
+                        >(
+                            database.connection(), &request.parent_id, &request.child_id
+                        )
+                    {
+                        let _ = state.lock().await.retained_children.restore(child);
+                    }
+                }
+                let result = async {
+                    let durable_duplicate = if let Some(journal) = &journal {
+                        let database = journal.database().lock().await;
+                        evohime_local_storage::retained_child_store::RetainedChildStore::has_follow_up(
+                            database.connection(),
+                            &request.idempotency_key,
+                        ).map_err(|e| e.to_string())?
+                    } else { false };
+                    let outcome = if durable_duplicate {
+                        crate::retained_child::FollowUpOutcome::Duplicate
+                    } else {
+                        state.lock().await.retained_children.follow_up(&request, now_ms, busy)
+                            .map_err(|e| e.to_string())?
+                    };
+                    if !matches!(outcome, crate::retained_child::FollowUpOutcome::Duplicate) {
+                        let journal = journal.ok_or_else(|| "storage_unavailable".to_string())?;
+                        let mut database = journal.database().lock().await;
+                        let message_id = uuid::Uuid::new_v4().to_string();
+                        let delivery = if matches!(outcome, crate::retained_child::FollowUpOutcome::Dispatched) {
+                            crate::retained_child::DeliveryState::Dispatched
+                        } else {
+                            crate::retained_child::DeliveryState::Pending
+                        };
+                        evohime_local_storage::retained_child_store::RetainedChildStore::enqueue_follow_up(
+                            database.connection_mut(),
+                            &request.parent_id,
+                            &request.child_id,
+                            &request.idempotency_key,
+                            request.expected_child_revision,
+                            &request,
+                            &message_id,
+                            |sequence| crate::retained_child::MailboxEntryV1 {
+                                version: 1,
+                                message_id: message_id.clone(),
+                                sender_id: request.parent_id.clone(),
+                                receiver_id: request.child_id.clone(),
+                                family_root_id: request.family_root_id.clone(),
+                                mode: request.mode,
+                                kind: "follow_up".into(),
+                                correlation_id: request.correlation_id.clone(),
+                                parent_sequence: sequence,
+                                payload_ref: None,
+                                inline_payload: Some(request.instruction.as_bytes().to_vec()),
+                                sensitivity: "public".into(),
+                                delivery,
+                                delivered_at_ms: None,
+                                idempotency_key: request.idempotency_key.clone(),
+                                created_at_ms: now_ms,
+                            },
+                            now_ms,
+                        )
+                        .map_err(|e| e.to_string())?;
+                        if matches!(outcome, crate::retained_child::FollowUpOutcome::Dispatched | crate::retained_child::FollowUpOutcome::Queued) {
+                            if let Some(child) = state.lock().await.retained_children.get(&request.parent_id, &request.child_id, now_ms).ok().cloned() {
+                                let lifecycle = match child.lifecycle {
+                                    crate::retained_child::RetainedLifecycle::RunningFollowUp => "running_follow_up",
+                                    crate::retained_child::RetainedLifecycle::QueuedFollowUp => "queued_follow_up",
+                                    _ => "idle_retained",
+                                };
+                                evohime_local_storage::retained_child_store::RetainedChildStore::upsert_child(database.connection(), &child.parent_id, &child.child_id, &child.family_root_id, child.revision, child.registry_version, lifecycle, &child, child.created_at_ms, child.last_active_at_ms, child.retained_until_ms).map_err(|e| e.to_string())?;
+                            }
+                        }
+                    }
+                    serde_json::to_vec(&serde_json::json!({
+                        "outcome": format!("{outcome:?}").to_ascii_lowercase(),
+                        "idempotency_key": request.idempotency_key,
+                    }))
+                    .map_err(|e| e.to_string())
+                }
+                .await;
                 let _ = reply.send(result);
             }
             CoreCommand::ListRetainedChildren {
                 parent_id,
                 now_ms,
+                limit,
                 reply,
             } => {
-                let result = state
-                    .lock()
-                    .await
-                    .retained_children
-                    .list(&parent_id, now_ms)
-                    .map_err(|e| e.to_string())
-                    .and_then(|items| serde_json::to_vec(&items).map_err(|e| e.to_string()));
+                let journal = state.lock().await.journal.clone();
+                let result = async { let journal=journal.ok_or_else(||"storage_unavailable".to_string())?; let database=journal.database().lock().await; let items=evohime_local_storage::retained_child_store::RetainedChildStore::list_children::<crate::retained_child::RetainedChildV1>(database.connection(),&parent_id,now_ms,limit).map_err(|e|e.to_string())?; let projections: Vec<_>=items.iter().map(crate::retained_child::RetainedChildProjectionV1::from).collect(); serde_json::to_vec(&serde_json::json!({"children": projections})).map_err(|e|e.to_string()) }.await;
                 let _ = reply.send(result);
             }
             CoreCommand::DeleteRetainedChild {
                 parent_id,
                 child_id,
+                expected_registry_version,
                 reply,
             } => {
-                let result = state
-                    .lock()
-                    .await
-                    .retained_children
-                    .delete(&parent_id, &child_id)
-                    .map(|_| b"{\"deleted\":true}".to_vec())
-                    .map_err(|e| e.to_string());
+                let journal = state.lock().await.journal.clone();
+                if let Some(journal) = &journal {
+                    let database = journal.database().lock().await;
+                    if let Ok(Some(child)) =
+                        evohime_local_storage::retained_child_store::RetainedChildStore::get_child::<
+                            crate::retained_child::RetainedChildV1,
+                        >(database.connection(), &parent_id, &child_id)
+                    {
+                        let _ = state.lock().await.retained_children.restore(child);
+                    }
+                }
+                let result = async { let journal=journal.ok_or_else(||"storage_unavailable".to_string())?; let database=journal.database().lock().await; let deleted=evohime_local_storage::retained_child_store::RetainedChildStore::delete_child(database.connection(),&parent_id,&child_id,expected_registry_version).map_err(|e|e.to_string())?; if !deleted{return Err("stale_revision".into())} let _=state.lock().await.retained_children.delete(&parent_id,&child_id); serde_json::to_vec(&serde_json::json!({"deleted":true,"child_id":child_id})).map_err(|e|e.to_string()) }.await;
                 let _ = reply.send(result);
             }
         }

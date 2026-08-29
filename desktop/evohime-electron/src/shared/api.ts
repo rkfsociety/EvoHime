@@ -895,6 +895,11 @@ export const RENDERER_COMMANDS = [
   'core.stopContinuation',
   'core.pauseContinuation',
   'core.resumeContinuation',
+  'core.listRetainedChildren',
+  'core.getRetainedChild',
+  'core.retainChild',
+  'core.sendChildFollowUp',
+  'core.deleteRetainedChild',
   'core.stopTask',
   'core.resolveApproval',
   'core.resolveRoutingDecision',
@@ -1098,6 +1103,19 @@ export interface CommandPayloads {
   'core.stopContinuation': { runId: string; expectedState?: 'running'; idempotencyKey: string }
   'core.pauseContinuation': { runId: string; expectedState?: 'running'; idempotencyKey: string }
   'core.resumeContinuation': { runId: string; expectedState?: 'paused'; idempotencyKey: string }
+  'core.listRetainedChildren': { limit?: number }
+  'core.getRetainedChild': { childId: string }
+  'core.retainChild': {
+    childId: string; familyRootId?: string; role: string; stableName?: string; revision?: number
+    grantSnapshotHash: string; contextScopeHash: string; workspaceStateRef?: string; lastReportRef?: string
+    retainedUntilMs?: number; createdAtMs?: number; lastActiveAtMs?: number; expectedRegistryVersion?: number
+  }
+  'core.sendChildFollowUp': {
+    childId: string; idempotencyKey: string; expectedChildRevision: number; instruction: string
+    contextRefs?: readonly string[]; requestedGrants?: readonly string[]; budgetJson?: string
+    mode?: 'follow_up' | 'steer' | 'auto'; correlationId: string
+  }
+  'core.deleteRetainedChild': { childId: string; expectedRegistryVersion?: number }
   'core.stopTask': { taskId: string }
   'core.resolveApproval': { approvalId: string; granted: boolean; idempotencyKey?: string; rejectionReason?: string; cancel?: boolean }
   'core.resolveRoutingDecision': { traceId: string; approve: boolean }
@@ -1360,6 +1378,11 @@ export interface CommandResults {
   'core.stopContinuation': { accepted: boolean }
   'core.pauseContinuation': { accepted: boolean }
   'core.resumeContinuation': { accepted: boolean }
+  'core.listRetainedChildren': { accepted: boolean }
+  'core.getRetainedChild': { accepted: boolean }
+  'core.retainChild': { accepted: boolean }
+  'core.sendChildFollowUp': { accepted: boolean }
+  'core.deleteRetainedChild': { accepted: boolean }
   'core.stopTask': { accepted: boolean }
   'core.resolveApproval': { accepted: boolean }
   'core.resolveRoutingDecision': { accepted: boolean }

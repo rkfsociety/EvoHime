@@ -382,6 +382,61 @@ function dispatch(
     }
 
 
+    case 'core.listRetainedChildren': {
+      const value = asRecord(payload)
+      const limit = value['limit'] === undefined ? 0 : asBoundedNumber(value['limit'], 100)
+      if (limit === null) return failure('invalid-payload', 'Некорректный лимит retained children.')
+      return accepted(client.send({ listRetainedChildren: { parentId: '', limit } }))
+    }
+
+    case 'core.getRetainedChild': {
+      const childId = asGoalToken(asRecord(payload)['childId'])
+      if (childId === null) return failure('invalid-payload', 'Некорректный child id.')
+      return accepted(client.send({ getRetainedChild: { parentId: '', childId } }))
+    }
+
+    case 'core.retainChild': {
+      const value = asRecord(payload)
+      const childId = asGoalToken(value['childId'])
+      const familyRootId = value['familyRootId'] === undefined ? '' : asGoalToken(value['familyRootId'])
+      const role = asBoundedString(value['role'])
+      const stableName = value['stableName'] === undefined ? '' : asBoundedString(value['stableName'])
+      const revision = value['revision'] === undefined ? 0 : asBoundedNumber(value['revision'], Number.MAX_SAFE_INTEGER)
+      const grantSnapshotHash = asBoundedString(value['grantSnapshotHash'])
+      const contextScopeHash = asBoundedString(value['contextScopeHash'])
+      const workspaceStateRef = value['workspaceStateRef'] === undefined ? '' : asBoundedString(value['workspaceStateRef'])
+      const lastReportRef = value['lastReportRef'] === undefined ? '' : asBoundedString(value['lastReportRef'])
+      const retainedUntilMs = value['retainedUntilMs'] === undefined ? 0 : asBoundedNumber(value['retainedUntilMs'], Number.MAX_SAFE_INTEGER)
+      const createdAtMs = value['createdAtMs'] === undefined ? 0 : asBoundedNumber(value['createdAtMs'], Number.MAX_SAFE_INTEGER)
+      const lastActiveAtMs = value['lastActiveAtMs'] === undefined ? 0 : asBoundedNumber(value['lastActiveAtMs'], Number.MAX_SAFE_INTEGER)
+      const expectedRegistryVersion = value['expectedRegistryVersion'] === undefined ? 0 : asBoundedNumber(value['expectedRegistryVersion'], Number.MAX_SAFE_INTEGER)
+      if (childId === null || familyRootId === null || role === null || stableName === null || revision === null || grantSnapshotHash === null || contextScopeHash === null || workspaceStateRef === null || lastReportRef === null || retainedUntilMs === null || createdAtMs === null || lastActiveAtMs === null || expectedRegistryVersion === null) return failure('invalid-payload', 'Некорректный retained child.')
+      return accepted(client.send({ retainChild: { parentId: '', childId, familyRootId, role, stableName, revision, grantSnapshotHash, contextScopeHash, workspaceStateRef, lastReportRef, retainedUntilMs, createdAtMs, lastActiveAtMs, expectedRegistryVersion } }))
+    }
+
+    case 'core.sendChildFollowUp': {
+      const value = asRecord(payload)
+      const childId = asGoalToken(value['childId'])
+      const idempotencyKey = asGoalToken(value['idempotencyKey'])
+      const expectedChildRevision = asBoundedNumber(value['expectedChildRevision'], Number.MAX_SAFE_INTEGER)
+      const instruction = asBoundedString(value['instruction'])
+      const contextRefs = value['contextRefs'] === undefined ? [] : asRetainedStringArray(value['contextRefs'], 32, 512)
+      const requestedGrants = value['requestedGrants'] === undefined ? [] : asRetainedStringArray(value['requestedGrants'], 16, 256)
+      const budgetJson = value['budgetJson'] === undefined ? '' : asBoundedString(value['budgetJson'])
+      const mode = value['mode'] === undefined ? 'follow_up' : value['mode']
+      const correlationId = asGoalToken(value['correlationId'])
+      if (childId === null || idempotencyKey === null || expectedChildRevision === null || instruction === null || contextRefs === null || requestedGrants === null || budgetJson === null || !['follow_up', 'steer', 'auto'].includes(String(mode)) || correlationId === null) return failure('invalid-payload', 'Некорректный follow-up.')
+      return accepted(client.send({ sendChildFollowUp: { parentId: '', childId, idempotencyKey, expectedChildRevision, instruction, contextRefs, requestedGrants, budgetJson, mode: String(mode), correlationId } }))
+    }
+
+    case 'core.deleteRetainedChild': {
+      const value = asRecord(payload)
+      const childId = asGoalToken(value['childId'])
+      const expectedRegistryVersion = value['expectedRegistryVersion'] === undefined ? 0 : asBoundedNumber(value['expectedRegistryVersion'], Number.MAX_SAFE_INTEGER)
+      if (childId === null || expectedRegistryVersion === null) return failure('invalid-payload', 'Некорректное удаление retained child.')
+      return accepted(client.send({ deleteRetainedChild: { parentId: '', childId, expectedRegistryVersion } }))
+    }
+
     case 'core.listSkills': {
       const value = asRecord(payload)
       const workspacePath = asBoundedString(value['workspacePath'])
@@ -1752,6 +1807,12 @@ function asMemoryIds(value: unknown): readonly string[] | null {
   if (!Array.isArray(value) || value.length === 0 || value.length > 64) return null
   const ids = value.map((entry) => asBoundedString(entry))
   return ids.every((id): id is string => id !== null) ? ids : null
+}
+
+function asRetainedStringArray(value: unknown, maxItems: number, maxChars: number): string[] | null {
+  if (!Array.isArray(value) || value.length > maxItems) return null
+  const items = value.map((entry) => typeof entry === 'string' && entry.length > 0 && entry.length <= maxChars ? entry : null)
+  return items.every((item): item is string => item !== null) ? items : null
 }
 
 /** The supersession reason is a closed enum, never free text. */

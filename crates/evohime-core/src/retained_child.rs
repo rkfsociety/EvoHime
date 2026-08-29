@@ -55,6 +55,7 @@ pub enum DeliveryState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RetainedChildV1 {
     pub version: u32,
     pub child_id: String,
@@ -64,6 +65,7 @@ pub struct RetainedChildV1 {
     pub stable_name: Option<String>,
     pub lifecycle: RetainedLifecycle,
     pub revision: u64,
+    #[serde(skip_serializing)]
     pub active_session_id: Option<String>,
     pub grant_snapshot_hash: String,
     pub context_scope_hash: String,
@@ -76,6 +78,7 @@ pub struct RetainedChildV1 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ChildFollowUpRequestV1 {
     pub version: u32,
     pub idempotency_key: String,
@@ -93,6 +96,7 @@ pub struct ChildFollowUpRequestV1 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MailboxEntryV1 {
     pub version: u32,
     pub message_id: String,
@@ -110,6 +114,35 @@ pub struct MailboxEntryV1 {
     pub delivered_at_ms: Option<u64>,
     pub idempotency_key: String,
     pub created_at_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RetainedChildProjectionV1 {
+    pub child_id: String,
+    pub role: String,
+    pub stable_name: Option<String>,
+    pub lifecycle: RetainedLifecycle,
+    pub revision: u64,
+    pub registry_version: u64,
+    pub last_active_at_ms: u64,
+    pub retained_until_ms: u64,
+    pub invalidation_reason: Option<String>,
+}
+
+impl From<&RetainedChildV1> for RetainedChildProjectionV1 {
+    fn from(child: &RetainedChildV1) -> Self {
+        Self {
+            child_id: child.child_id.clone(),
+            role: child.role.clone(),
+            stable_name: child.stable_name.clone(),
+            lifecycle: child.lifecycle,
+            revision: child.revision,
+            registry_version: child.registry_version,
+            last_active_at_ms: child.last_active_at_ms,
+            retained_until_ms: child.retained_until_ms,
+            invalidation_reason: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,6 +192,23 @@ fn ids<T: AsRef<str>>(name: &'static str, values: &[T]) -> Result<(), RetainedEr
     }
     Ok(())
 }
+fn safe_ref(name: &'static str, value: &str) -> Result<(), RetainedError> {
+    bounded(name, value, MAX_REF_BYTES, true)?;
+    if value.contains("..")
+        || value.starts_with('/')
+        || value.starts_with('\\')
+        || value.as_bytes().get(1) == Some(&b':')
+    {
+        return Err(RetainedError::InvalidScope);
+    }
+    Ok(())
+}
+fn hash(name: &'static str, value: &str) -> Result<(), RetainedError> {
+    if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(RetainedError::InvalidScope);
+    }
+    bounded(name, value, 64, true)
+}
 
 impl RetainedChildV1 {
     pub fn validate(&self, now_ms: u64) -> Result<(), RetainedError> {
@@ -170,8 +220,16 @@ impl RetainedChildV1 {
             &[&self.child_id, &self.parent_id, &self.family_root_id],
         )?;
         bounded("role", &self.role, MAX_ROLE_BYTES, true)?;
+        hash("grant_snapshot_hash", &self.grant_snapshot_hash)?;
+        hash("context_scope_hash", &self.context_scope_hash)?;
         if let Some(x) = &self.stable_name {
             bounded("stable_name", x, MAX_NAME_BYTES, false)?;
+        }
+        if let Some(x) = &self.workspace_state_ref {
+            safe_ref("workspace_state_ref", x)?;
+        }
+        if let Some(x) = &self.last_report_ref {
+            safe_ref("last_report_ref", x)?;
         }
         if self.retained_until_ms < now_ms {
             return Err(RetainedError::InvalidatedContext);
@@ -260,6 +318,16 @@ pub fn canonical_hash<T: Serialize>(value: &T) -> Result<String, RetainedError> 
     Ok(hex::encode(h.finalize()))
 }
 pub fn can_transition(from: RetainedLifecycle, to: RetainedLifecycle) -> bool {
+    if from == to
+        || matches!(
+            from,
+            RetainedLifecycle::Deleted
+                | RetainedLifecycle::Expired
+                | RetainedLifecycle::Invalidated
+        )
+    {
+        return false;
+    }
     matches!(
         (from, to),
         (RetainedLifecycle::Active, RetainedLifecycle::IdleRetained)
@@ -300,6 +368,18 @@ pub struct RetainedRegistry {
     follow_ups: std::collections::BTreeSet<String>,
 }
 impl RetainedRegistry {
+    pub fn restore(&mut self, child: RetainedChildV1) -> Result<(), RetainedError> {
+        if child.version != CONTRACT_VERSION {
+            return Err(RetainedError::UnsupportedVersion);
+        }
+        ids(
+            "id",
+            &[&child.child_id, &child.parent_id, &child.family_root_id],
+        )?;
+        self.children
+            .insert((child.parent_id.clone(), child.child_id.clone()), child);
+        Ok(())
+    }
     pub fn retain(
         &mut self,
         mut child: RetainedChildV1,
@@ -338,7 +418,7 @@ impl RetainedRegistry {
         busy: bool,
     ) -> Result<FollowUpOutcome, RetainedError> {
         request.validate()?;
-        if !self.follow_ups.insert(request.idempotency_key.clone()) {
+        if self.follow_ups.contains(&request.idempotency_key) {
             return Ok(FollowUpOutcome::Duplicate);
         }
         let child = self
@@ -352,16 +432,24 @@ impl RetainedRegistry {
         if child.revision != request.expected_child_revision {
             return Ok(FollowUpOutcome::Stale);
         }
+        if request.mode == FollowUpMode::Steer {
+            return Ok(FollowUpOutcome::Rejected);
+        }
+        let mut accepted = false;
         match child.lifecycle {
             RetainedLifecycle::IdleRetained if !busy => {
                 child.lifecycle = RetainedLifecycle::RunningFollowUp;
                 child.revision += 1;
+                child.registry_version += 1;
+                accepted = true;
                 Ok(FollowUpOutcome::Dispatched)
             }
             RetainedLifecycle::IdleRetained | RetainedLifecycle::RunningFollowUp
                 if request.mode == FollowUpMode::Auto || busy =>
             {
                 child.lifecycle = RetainedLifecycle::QueuedFollowUp;
+                child.registry_version += 1;
+                accepted = true;
                 Ok(FollowUpOutcome::Queued)
             }
             RetainedLifecycle::Deleted
@@ -369,6 +457,11 @@ impl RetainedRegistry {
             | RetainedLifecycle::Invalidated => Ok(FollowUpOutcome::Rejected),
             _ => Ok(FollowUpOutcome::Rejected),
         }
+        .inspect(|_outcome| {
+            if accepted {
+                self.follow_ups.insert(request.idempotency_key.clone());
+            }
+        })
     }
     pub fn delete(&mut self, parent_id: &str, child_id: &str) -> Result<(), RetainedError> {
         let child = self
@@ -433,5 +526,14 @@ mod tests {
             RetainedLifecycle::Deleted,
             RetainedLifecycle::IdleRetained
         ));
+    }
+    #[test]
+    fn contract_rejects_unknown_fields_and_absolute_refs() {
+        let unknown = r#"{"version":1,"child_id":"c","parent_id":"p","family_root_id":"f","role":"r","lifecycle":"idle_retained","revision":1,"grant_snapshot_hash":"0000000000000000000000000000000000000000000000000000000000000000","context_scope_hash":"0000000000000000000000000000000000000000000000000000000000000000","retained_until_ms":10,"created_at_ms":1,"last_active_at_ms":1,"registry_version":1,"extra":true}"#;
+        assert!(serde_json::from_str::<RetainedChildV1>(unknown).is_err());
+        let mut child: RetainedChildV1 =
+            serde_json::from_str(&unknown.replace(",\"extra\":true", "")).unwrap();
+        child.workspace_state_ref = Some("C:\\secret".into());
+        assert!(child.validate(1).is_err());
     }
 }

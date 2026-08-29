@@ -907,3 +907,16 @@ Recovery UI consumes Core events as the source of truth and preserves typed `rea
 Repair and update statuses retain bounded stage evidence. Commit, push, CI refresh, update preparation and restart remain separate user actions; CI or an unknown outcome never triggers a blind effect.
 
 The Security settings panel selects backup/restore paths in main and forwards only the selected path to Core. Core remains responsible for checksum, preview, approval, progress, cancellation, safety backup and rollback. DPAPI via Electron `safeStorage` remains the canonical provider credential contract. Provider persistence applies a defense-in-depth size/type check to stored ciphertext and writes through a mode-600 temporary file with flush, atomic rename and cleanup on failure.
+
+## Retained child contexts и mailbox
+
+Retained child metadata принадлежит Core и scoped по parent. `RetainedChildV1`,
+bounded follow-up и mailbox entries проходят fail-closed validation, canonical
+hash и additive SQLite schema v37. Уникальность `(parent_id, child_id)`,
+idempotency и parent sequence enforced SQLite; transcript не сохраняется.
+Lifecycle retained отделён от terminal child run states. После рестарта
+dispatched mailbox entries переходят в `unknown` и не повторяются вслепую.
+
+IPC использует additive command tags 157–161 и event tags 25–26. OperationsPanel
+получает только metadata: role/name, lifecycle, revision, activity, pending count
+и stale/invalidated/delivery outcome.

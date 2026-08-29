@@ -281,6 +281,21 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
     void api.invoke('core.getIndexStatus', { workspacePath })
   }, [api, connected, workspacePath])
 
+  useEffect(() => {
+    if (!api || !connected) return
+    void api.invoke('core.listRetainedChildren', { limit: 16 })
+  }, [api, connected])
+
+  const deleteRetainedChild = useCallback(async (child: RetainedChildProjection): Promise<void> => {
+    if (!api || !child.child_id || child.registry_version === undefined) return
+    const outcome = await api.invoke('core.deleteRetainedChild', {
+      childId: child.child_id,
+      expectedRegistryVersion: child.registry_version
+    })
+    setMessage(outcome.ok ? `Сохранённый child ${child.child_id} удалён.` : outcome.message)
+    if (outcome.ok) void api.invoke('core.listRetainedChildren', { limit: 16 })
+  }, [api])
+
   // Предложения не привязаны к воркспейсу: речь у стола не принадлежит
   // рабочему каталогу, поэтому список запрашивается отдельно от очереди
   // памяти и не ждёт выбранной папки.
@@ -720,6 +735,7 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
             <li key={`${child.child_id ?? 'child'}-${index}`}>
               <code>{child.stable_name || child.child_id || 'child'} · {child.role || 'role'}</code>
               <span>{child.lifecycle || 'unknown'} · rev {child.revision ?? 0} · pending {child.pending_count ?? 0}{child.last_delivery_outcome ? ` · ${child.last_delivery_outcome}` : ''}{child.invalidation_reason ? ` · ${child.invalidation_reason}` : ''}</span>
+              {child.lifecycle !== 'deleted' && child.child_id && child.registry_version !== undefined ? <button type="button" onClick={() => void deleteRetainedChild(child)}>Удалить контекст</button> : null}
             </li>
           ))}
         </ol>
