@@ -355,11 +355,13 @@ async fn run_supervisor_command_channel(
     context: SupervisorSessionContext,
     logger: std::sync::Arc<SupervisorLogger>,
 ) -> io::Result<()> {
+    use self::analysis_kernel_worker::{KernelWorkerLaunchSpec, KernelWorkerProcess};
     use crate::local_provider::{LocalAdapterProcess, LocalProviderManager, ResourceLimits};
     use std::collections::BTreeMap;
 
     let mut provider_manager = LocalProviderManager::default();
     let mut adapter_processes: BTreeMap<String, LocalAdapterProcess> = BTreeMap::new();
+    let mut kernel_processes: BTreeMap<String, KernelWorkerProcess> = BTreeMap::new();
     let mut verifier = evohime_desktop_ipc::session::HandshakeVerifier::new(
         context.launch_context.clone(),
         evohime_desktop_ipc::session::DEFAULT_NONCE_TTL_MS,
@@ -432,6 +434,92 @@ async fn run_supervisor_command_channel(
             .and_then(serde_json::Value::as_str)
             .unwrap_or("");
         let response = match op {
+            "kernel_launch" => {
+                let kernel_id = value
+                    .get("kernel_id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("");
+                let package_manifest_hash = value
+                    .get("package_manifest_hash")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("");
+                if kernel_id.is_empty()
+                    || kernel_id.len() > 128
+                    || kernel_processes.contains_key(kernel_id)
+                {
+                    json!({"accepted": false, "reason": "invalid_request"})
+                } else {
+                    let spec = KernelWorkerLaunchSpec {
+                        runtime_version: "trusted-local-1".into(),
+                        package_manifest_hash: package_manifest_hash.into(),
+                    };
+                    match std::env::current_exe()
+                        .map_err(io::Error::other)
+                        .and_then(|path| KernelWorkerProcess::spawn(path, spec))
+                    {
+                        Ok(process) => {
+                            let child_id = process.child_id();
+                            kernel_processes.insert(kernel_id.to_owned(), process);
+                            let _ = logger.write(
+                                "supervisor.analysis_kernel_started",
+                                json!({"kernel_id": kernel_id, "child_id": child_id}),
+                            );
+                            json!({"accepted": true, "child_id": child_id})
+                        }
+                        Err(error) => {
+                            json!({"accepted": false, "reason": "process_start_failed", "error": error.to_string()})
+                        }
+                    }
+                }
+            }
+            "kernel_execute" => {
+                let kernel_id = value
+                    .get("kernel_id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("");
+                let request = value
+                    .get("request")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+                let request = match serde_json::to_vec(&request) {
+                    Ok(bytes) if bytes.len() <= 16 * 1024 => bytes,
+                    _ => Vec::new(),
+                };
+                if request.is_empty() || kernel_id.is_empty() {
+                    json!({"accepted": false, "reason": "invalid_request"})
+                } else if let Some(process) = kernel_processes.get_mut(kernel_id) {
+                    match process.request(&request).await {
+                        Ok(response) => {
+                            match serde_json::from_slice::<serde_json::Value>(&response) {
+                                Ok(value) => json!({"accepted": true, "response": value}),
+                                Err(_) => {
+                                    json!({"accepted": false, "reason": "invalid_worker_response"})
+                                }
+                            }
+                        }
+                        Err(_) => json!({"accepted": false, "reason": "worker_unavailable"}),
+                    }
+                } else {
+                    json!({"accepted": false, "reason": "kernel_not_running"})
+                }
+            }
+            "kernel_stop" => {
+                let kernel_id = value
+                    .get("kernel_id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("");
+                match kernel_processes.remove(kernel_id) {
+                    Some(process) => {
+                        let _ = process.stop().await;
+                        let _ = logger.write(
+                            "supervisor.analysis_kernel_stopped",
+                            json!({"kernel_id": kernel_id}),
+                        );
+                        json!({"accepted": true})
+                    }
+                    None => json!({"accepted": false, "reason": "kernel_not_running"}),
+                }
+            }
             "launch" => {
                 let model_id = value
                     .get("model_id")

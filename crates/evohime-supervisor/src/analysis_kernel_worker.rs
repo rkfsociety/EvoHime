@@ -6,7 +6,8 @@
 
 use std::{io, path::PathBuf};
 
-use tokio::process::{Child, Command};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
 use super::JobObject;
 
@@ -46,6 +47,8 @@ impl KernelWorkerLaunchSpec {
 pub(crate) struct KernelWorkerProcess {
     _job: JobObject,
     child: Child,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
 }
 
 impl KernelWorkerProcess {
@@ -71,10 +74,25 @@ impl KernelWorkerProcess {
             .current_dir(supervisor_exe.parent().ok_or_else(|| {
                 io::Error::new(io::ErrorKind::NotFound, "supervisor directory missing")
             })?)
-            .kill_on_drop(true);
-        let child = command.spawn()?;
+            .kill_on_drop(true)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped());
+        let mut child = command.spawn()?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| io::Error::other("kernel worker stdin unavailable"))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| io::Error::other("kernel worker stdout unavailable"))?;
         job.assign(&child)?;
-        Ok(Self { _job: job, child })
+        Ok(Self {
+            _job: job,
+            child,
+            stdin,
+            stdout: BufReader::new(stdout),
+        })
     }
 
     pub(crate) fn child_id(&self) -> Option<u32> {
@@ -83,6 +101,27 @@ impl KernelWorkerProcess {
 
     pub(crate) async fn stop(mut self) -> io::Result<()> {
         self.child.kill().await
+    }
+
+    pub(crate) async fn request(&mut self, request: &[u8]) -> io::Result<Vec<u8>> {
+        if request.len() > 16 * 1024 || request.contains(&b'\n') {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "kernel worker request exceeds line protocol",
+            ));
+        }
+        self.stdin.write_all(request).await?;
+        self.stdin.write_all(b"\n").await?;
+        self.stdin.flush().await?;
+        let mut response = Vec::new();
+        self.stdout.read_until(b'\n', &mut response).await?;
+        if response.len() > 16 * 1024 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "kernel worker response exceeds line protocol",
+            ));
+        }
+        Ok(response)
     }
 }
 
