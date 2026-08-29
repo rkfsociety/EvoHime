@@ -9,6 +9,17 @@ output, transcripts, absolute paths и PII запрещены.
 
 Статус: `TECHNICAL_GATES_PASS / RELEASE_GREEN`.
 
+Последнее evidence для направления TaskCheckpoint зафиксировано на коммите
+`3e48852541334d79ec3ed8c2b7e81ca995b81494` (29 августа 2026 года): contract
+`TaskCheckpoint v1`, SQLite schema `v32`, additive `desktop-ipc-v1` команды
+`GetTaskCheckpoint`/`ResolveTaskCheckpoint` (tags 137–138) и typed события
+`TaskCheckpointProjection`/`TaskCheckpointActionResult` (oneof tags 15–16).
+Проверены 548 Core unit tests, 35 desktop-ipc tests, 196 local-storage tests,
+462 Electron tests (2 skipped), production bundle checks, strict clippy,
+rustfmt, protocol/typecheck, backup/restore, automation boundary, redaction и
+license gates. IPC action outcomes typed and idempotent; внешние effects не
+запускаются.
+
 Свежая проверка запускается `scripts/final-release-audit.tests.ps1` и включает
 Rust Core/storage/IPC tests, rustfmt, automation boundary, backup/restore и
 redaction gates, Electron protocol и typecheck. Полный локальный прогон 26
