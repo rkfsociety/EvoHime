@@ -91,6 +91,47 @@ impl TaskCheckpointRuntime {
         reason: CheckpointCaptureReason,
         ledger: Option<&ContextLedgerEntry>,
     ) -> Result<TaskCheckpointV1, evohime_local_storage::StorageError> {
+        self.capture_inner(task_id, workspace_root, status, reason, ledger, None)
+            .await
+    }
+
+    /// Captures a checkpoint with explicitly selected, immutable analysis
+    /// kernel refs. Values remain in the kernel/ArtifactStore; the checkpoint
+    /// receives only the bounded metadata references.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn capture_with_analysis_kernel(
+        &self,
+        task_id: &str,
+        workspace_root: &Path,
+        status: CheckpointStatus,
+        reason: CheckpointCaptureReason,
+        ledger: Option<&ContextLedgerEntry>,
+        session: &crate::analysis_kernel::AnalysisKernelSessionV1,
+        objects: &[crate::analysis_kernel::KernelObjectRefV1],
+    ) -> Result<TaskCheckpointV1, evohime_local_storage::StorageError> {
+        self.capture_inner(
+            task_id,
+            workspace_root,
+            status,
+            reason,
+            ledger,
+            Some((session, objects)),
+        )
+        .await
+    }
+
+    async fn capture_inner(
+        &self,
+        task_id: &str,
+        workspace_root: &Path,
+        status: CheckpointStatus,
+        reason: CheckpointCaptureReason,
+        ledger: Option<&ContextLedgerEntry>,
+        kernel: Option<(
+            &crate::analysis_kernel::AnalysisKernelSessionV1,
+            &[crate::analysis_kernel::KernelObjectRefV1],
+        )>,
+    ) -> Result<TaskCheckpointV1, evohime_local_storage::StorageError> {
         let workspace_id = crate::task_memory::workspace_scope_id(workspace_root);
         let checkpoint = {
             let database = self.journal.database().lock().await;
@@ -102,7 +143,7 @@ impl TaskCheckpointRuntime {
                 .map(|parent| parent.source_event_seq.saturating_add(1))
                 .unwrap_or_default()
                 .max(latest_event_sequence);
-            build_checkpoint(
+            let checkpoint = build_checkpoint(
                 task_id,
                 &workspace_id,
                 source_event_seq,
@@ -110,7 +151,14 @@ impl TaskCheckpointRuntime {
                 status,
                 reason,
                 ledger,
-            )?
+            )?;
+            match kernel {
+                Some((session, objects)) => {
+                    crate::analysis_kernel::attach_checkpoint_refs(checkpoint, session, objects)
+                        .map_err(evohime_local_storage::StorageError::TaskCheckpoint)
+                }
+                None => Ok(checkpoint),
+            }?
         };
 
         let payload = serde_json::to_vec(&serde_json::json!({
@@ -404,6 +452,60 @@ mod tests {
             .any(|event| event.event_type == "tool.started"));
         let serialized = serde_json::to_string(&recovery).unwrap();
         assert!(!serialized.contains("secret"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn runtime_capture_persists_selected_analysis_kernel_refs() {
+        let path = temporary_database_path("kernel-refs");
+        let _ = std::fs::remove_file(&path);
+        let journal = crate::EventJournal::open(&path).expect("journal opens");
+        let runtime = TaskCheckpointRuntime::new(journal);
+        let session = crate::analysis_kernel::AnalysisKernelSessionV1 {
+            schema_version: 1,
+            id: "kernel-1".into(),
+            task_id: "task-kernel".into(),
+            workspace_id: "workspace-kernel".into(),
+            runtime_version: "trusted-local-1".into(),
+            package_manifest_hash: "a".repeat(64),
+            policy_hash: "b".repeat(64),
+            status: crate::analysis_kernel::KernelStatus::Running,
+            revision: 1,
+            limits: crate::analysis_kernel::KernelLimitsV1::default(),
+            created_at_ms: 1,
+            updated_at_ms: 1,
+        };
+        let object = crate::analysis_kernel::KernelObjectRefV1 {
+            id: "object-1".into(),
+            kernel_id: session.id.clone(),
+            logical_name: "rows".into(),
+            type_hint: "json".into(),
+            size: 2,
+            sensitivity: crate::analysis_kernel::KernelSensitivity::Internal,
+            persistence: crate::analysis_kernel::KernelObjectPersistence::Checkpointed,
+            content_hash: Some("c".repeat(64)),
+            artifact_locator: Some("artifact://kernel/object-1".into()),
+            provenance: "core:analysis-kernel".into(),
+            created_at_ms: 2,
+            invalidated_at_ms: None,
+        };
+        let checkpoint = runtime
+            .capture_with_analysis_kernel(
+                "task-kernel",
+                Path::new("C:/workspace/evohime"),
+                CheckpointStatus::InProgress,
+                CheckpointCaptureReason::BeforeCompaction,
+                None,
+                &session,
+                &[object],
+            )
+            .await
+            .expect("kernel refs persist through checkpoint capture");
+        assert!(checkpoint
+            .artifact_refs
+            .iter()
+            .any(|reference| reference.id == "object-1"));
+        assert!(checkpoint.validate().is_ok());
         let _ = std::fs::remove_file(path);
     }
 
