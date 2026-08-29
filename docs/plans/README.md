@@ -6,9 +6,10 @@
 подтверждённое состояние — в [`../current-state.md`](../current-state.md).
 
 Планы 01–22 завершены и удалены после реализации. Планы 23–29 — обзорные
-планы, созданные из открытых архитектурных issues; они ожидают отдельного
-evidence review и реализации в порядке зависимостей. Следующий новый план
-получает следующий свободный номер после 29.
+планы, созданные из архитектурных issues; они ожидают отдельного evidence review
+и реализации в порядке зависимостей. Планы 30–115 — обзорные планы, созданные
+из issues #10–#95, с отдельным файлом на каждый issue. Следующий новый план
+получает следующий свободный номер после 115.
 
 ## Формат и порядок
 
@@ -52,4 +53,6 @@ evidence review и реализации в порядке зависимосте
 [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md).
 Планы 23–29 являются issue-derived предложениями и выполняются в таком порядке:
 TaskCheckpoint, Agent Skills, Persistent Goals, Continuation Policy, retained
-child contexts, Persistent Analysis Kernel, Continual Refinement.
+child contexts, Persistent Analysis Kernel, Continual Refinement. Планы 30–115
+следуют порядку issues #10–#95; межплановые блокирующие зависимости явно
+перечислены внутри каждого файла.
