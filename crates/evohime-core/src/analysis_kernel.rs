@@ -34,6 +34,14 @@ pub enum KernelOperation {
 }
 
 impl KernelOperation {
+    pub const fn required_capability(&self) -> Option<&'static str> {
+        match self {
+            Self::ArtifactRead => Some("artifact.read"),
+            Self::ToolRequest => Some("tool.request"),
+            _ => None,
+        }
+    }
+
     fn allowed(self) -> bool {
         matches!(
             self,
@@ -87,6 +95,14 @@ impl KernelHostRequestV1 {
         }
         if !self.operation.clone().allowed() {
             return Err(AnalysisKernelError::ForbiddenOperation);
+        }
+        match (
+            self.operation.required_capability(),
+            self.requested_capability.as_deref(),
+        ) {
+            (None, None) => {}
+            (Some(required), Some(requested)) if requested == required => {}
+            _ => return Err(AnalysisKernelError::ForbiddenCapability),
         }
         Ok(())
     }
@@ -198,6 +214,58 @@ impl KernelRuntime {
         self.last_activity = None;
         self.request_count = 0;
         self.objects.clear();
+    }
+
+    /// Registers only a bounded in-process value and returns metadata. The
+    /// bytes are never serialized or exposed to the renderer; checkpointed
+    /// values must go through Core's ArtifactStore separately.
+    pub fn put_ephemeral_object(
+        &mut self,
+        logical_name: String,
+        type_hint: String,
+        value: Vec<u8>,
+        sensitivity: KernelSensitivity,
+        now_ms: i64,
+    ) -> Result<KernelObjectRefV1, KernelRuntimeError> {
+        if !matches!(self.state, KernelRuntimeState::Running) {
+            return Err(KernelRuntimeError::NotRunning);
+        }
+        let limits = &self.session.limits;
+        if value.len() > limits.object_bytes as usize {
+            return Err(KernelRuntimeError::LimitExceeded("object_bytes"));
+        }
+        let current_bytes: usize = self.objects.values().map(Vec::len).sum();
+        if !self.objects.contains_key(&logical_name)
+            && self.objects.len() >= limits.object_count as usize
+        {
+            return Err(KernelRuntimeError::LimitExceeded("object_count"));
+        }
+        let replacing = self.objects.get(&logical_name).map_or(0, Vec::len);
+        if current_bytes
+            .saturating_sub(replacing)
+            .saturating_add(value.len())
+            > limits.object_bytes as usize
+        {
+            return Err(KernelRuntimeError::LimitExceeded("object_bytes"));
+        }
+        let size = value.len() as u64;
+        self.objects.insert(logical_name.clone(), value);
+        let reference = KernelObjectRefV1 {
+            id: format!("{}:{}", self.session.id, logical_name),
+            kernel_id: self.session.id.clone(),
+            logical_name,
+            type_hint,
+            size,
+            sensitivity,
+            persistence: KernelObjectPersistence::Ephemeral,
+            content_hash: None,
+            artifact_locator: None,
+            provenance: "core:analysis-kernel-runtime".into(),
+            created_at_ms: now_ms,
+            invalidated_at_ms: None,
+        };
+        reference.validate()?;
+        Ok(reference)
     }
 
     pub fn execute(
@@ -415,5 +483,31 @@ mod runtime_tests {
                 AnalysisKernelError::SensitiveInlinePayload
             ))
         ));
+    }
+
+    #[test]
+    fn capability_is_exact_and_ephemeral_objects_are_bounded() {
+        let now = Instant::now();
+        let mut runtime = KernelRuntime::new(session()).unwrap();
+        runtime.start(now).unwrap();
+        let mut request = request(KernelOperation::JsonParse, b"{}".to_vec());
+        request.requested_capability = Some("tool.request".into());
+        assert!(matches!(
+            runtime.execute(request, now),
+            Err(KernelRuntimeError::Contract(
+                AnalysisKernelError::ForbiddenCapability
+            ))
+        ));
+        let reference = runtime
+            .put_ephemeral_object(
+                "rows".into(),
+                "json".into(),
+                b"{}".to_vec(),
+                KernelSensitivity::Internal,
+                2,
+            )
+            .unwrap();
+        assert_eq!(reference.persistence, KernelObjectPersistence::Ephemeral);
+        assert!(reference.artifact_locator.is_none());
     }
 }

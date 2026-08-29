@@ -222,7 +222,11 @@ impl KernelObjectRefV1 {
         if self.size > ANALYSIS_KERNEL_MAX_OBJECT_BYTES {
             return Err(AnalysisKernelError::ObjectTooLarge(self.size));
         }
-        if self.sensitivity.allows_inline() && self.size > 0 && self.artifact_locator.is_none() {
+        if self.persistence == KernelObjectPersistence::Checkpointed
+            && self.sensitivity.allows_inline()
+            && self.size > 0
+            && self.artifact_locator.is_none()
+        {
             return Err(AnalysisKernelError::MissingArtifactRef);
         }
         if self.persistence == KernelObjectPersistence::Checkpointed
@@ -258,6 +262,8 @@ pub enum AnalysisKernelError {
     RequestTooLarge(usize),
     #[error("analysis kernel operation is not permitted")]
     ForbiddenOperation,
+    #[error("analysis kernel capability is not permitted")]
+    ForbiddenCapability,
     #[error("analysis kernel object requires an ArtifactStore reference")]
     MissingArtifactRef,
     #[error("checkpointed object requires a hash and ArtifactStore reference")]
