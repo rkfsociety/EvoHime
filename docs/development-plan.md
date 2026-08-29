@@ -53,6 +53,12 @@ Workflow/evidence adapters с отсутствующим provider остаютс
 и metadata-only IPC/UI перенесены в canonical architecture/current-state
 и подтверждены свежим полным прогоном 29 августа 2026 года: Rust 563/208/35,
 Electron 470 passed и 2 штатно skipped, clippy/typecheck/protocol check passed.
+
+План 28 закрыт: Persistent Analysis Kernel перенесён в canonical
+architecture/current-state/release-evidence. Подтверждены schema v38,
+metadata-only object registry, Core-authoritative host bridge, allowlisted
+supervisor worker, crash/recovery fencing, checkpoint/selected-child refs,
+typed IPC/UI и redacted packaged fault evidence; stage-комплект плана удалён.
 контракт; schema revision — v37.
 
 Владельцы, критерии закрытия и влияние на выпуск находятся в

@@ -922,7 +922,7 @@ IPC использует additive command tags 157–161 и event tags 25–26. 
 получает только metadata: role/name, lifecycle, revision, activity, pending count
 и stale/invalidated/delivery outcome.
 
-## Persistent Analysis Kernel (план 28, текущая вертикаль)
+## Persistent Analysis Kernel (план 28, реализован)
 
 Analysis Kernel остаётся bounded вычислительной средой и не является security
 authority: Core владеет `AnalysisKernelSessionV1`, лимитами, object metadata,
@@ -950,10 +950,12 @@ Core отправляет worker-запрос только после повто
 использует typed result и переводит runtime в `Crashed` при transport failure;
 на рестарте running manifests fencing-ятся без blind retry, а supervisor worker
 останавливается. TaskCheckpoint/child handoff получают только явно выбранные
-immutable checkpointable refs; ephemeral memory в handoff запрещена.
+immutable checkpointable refs; ephemeral memory в handoff запрещена. Для
+optional artifact/tool surfaces отсутствие capability даёт typed
+`forbidden_capability`/`unavailable`, а не обход host bridge.
 
-Работа плана 28 ещё не закрыта: требуется end-to-end fault injection на
-реальном packaged supervisor restart, полный approval/capability host bridge
-для optional artifact/tool surfaces и финальная release evidence matrix. До
-этого stage-файлы плана сохраняются, а kernel не считается полностью
-implemented.
+План 28 закрыт 30 августа 2026 года. Release evidence включает migration,
+storage/runtime/IPC/replay/approval-boundary, real worker protocol, packaged
+worker manifest и Core/supervisor fault smoke; raw values, credentials,
+transcripts и абсолютные пути в bundle не попадают. При сбое reset/stop,
+recovery fencing и optimistic revision не допускают blind retry.

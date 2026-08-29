@@ -370,16 +370,20 @@ local-storage 208, desktop IPC 35, Electron 470 passed и 2 штатно skipped
 `git diff --check` прошли. Первоначальный timeout chat-store был отдельно
 повторён как 8/8 passed, а повторный полный Electron-прогон завершился 470/470.
 
-План 28 находится в реализации. Зафиксирован Core/storage contract v1,
+План 28 закрыт 30 августа 2026 года. Реализованы Core/storage contract v1,
 canonical SHA-256 session hash, SQLite schema v38 с metadata-only manifest,
 bounded ephemeral `KernelRuntime`, отдельный allowlisted worker binary с
 supervisor Job Object launch contract, authenticated additive IPC commands
 162–165/events 27–28 и Electron projection/вкладка `Анализ`. Core↔supervisor↔worker
-transport подключён для authenticated packaged запуска: Core выполняет
-admission, supervisor владеет process lifecycle, а transport failure переводит
-runtime в `Crashed`. Добавлены checkpointable immutable refs и selected child
-subset; ephemeral memory в handoff запрещена. Focused checks подтверждают
-storage/runtime/supervisor contracts, protocol generation, Electron
-typecheck/build и release-evidence gate. Полное закрытие отложено до
-end-to-end packaged restart/fault-injection, approval host bridge optional
-surfaces и release-evidence matrix; stage-файлы `28-0` … `28-4` сохранены.
+transport проверен в authenticated packaged запуске: Core выполняет admission,
+supervisor владеет process lifecycle, а transport failure переводит runtime в
+`Crashed`; recovery fencing очищает ephemeral state и запрещает blind retry.
+Checkpointable immutable refs и selected child subset подключены к
+TaskCheckpoint; ephemeral memory в handoff запрещена. Optional artifact/tool
+surfaces fail closed typed `forbidden_capability`/`unavailable`.
+
+Свежая release-проверка: Core 573 теста, local-storage 212, supervisor 32 unit
+и 2 real-worker integration, Electron protocol/typecheck/build/bundle checks,
+packaged worker manifest и Core/supervisor fault smoke прошли; `clippy` с
+`-D warnings` и `git diff --check` прошли. Evidence redacted: raw values,
+credentials, transcripts и абсолютные пути не сохраняются.
