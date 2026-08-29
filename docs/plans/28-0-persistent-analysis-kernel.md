@@ -26,14 +26,19 @@ Tool/Workflow/MCP`. Kernel не получает полномочий; side effe
 - существующий Core capability/tool/workflow registry и approval/audit path;
 - существующий ArtifactStore с sensitivity, size и parent-scope checks;
 - supervisor/process lifecycle, Job Object/resource limit primitives и crash
-  recovery;
+  recovery (`crates/evohime-supervisor`, `crates/evohime-core` launch/recovery
+  path);
 - authenticated versioned IPC и Core-owned SQLite.
+- план 27 для обязательной child-интеграции: kernel выдаёт child только
+  selected immutable refs. До закрытия 27 child handoff остаётся blocked, а не
+  implicit success.
 
 ### Опциональные
 
-- план 24 Agent Skills для skill-инструкций/helpers без расширения permissions;
-- план 25 Persistent Goals для goal linkage/budgets;
-- план 27 retained child contexts для immutable read-only object refs;
+- существующие canonical contracts Agent Skills и Persistent Goals — только для
+  optional linkage/helpers, без расширения permissions;
+- план 27 retained child contexts для immutable read-only object refs (blocking
+  только для child handoff; прочие kernel scenarios от mailbox не зависят);
 - план 26 Continuation Policy для bounded repeated kernel executions.
 
 ## Контракты и host bridge
@@ -47,7 +52,10 @@ capability, policy, approval, limits и object refs при каждом request.
 `KernelObjectRefV1` содержит id/kernel id, logical name, type hint, size,
 sensitivity, `ephemeral|checkpointed`, optional content hash и timestamps.
 Object registry Core-visible, но values и process memory не отправляются в
-renderer. Большие результаты offload-ятся только в ArtifactStore.
+renderer. Большие результаты offload-ятся только в существующий
+`evohime-local-storage::artifact_store::ArtifactStore`; kernel не создаёт
+второй blob store и сохраняет parent/context/sensitivity checks этого
+контракта.
 
 ## Runtime и isolation decision
 
@@ -104,6 +112,23 @@ error; sensitive values скрыты.
 5. Adversarial tests/evals, включая direct FS/network/shell attempts, secrets,
    object overflow, unknown outcome, child isolation и stale version.
 
+## Владельцы и handoff
+
+- contract/validation/hash: новый `crates/evohime-core/src/analysis_kernel.rs`;
+- durable manifest/object metadata: новый
+  `crates/evohime-local-storage/src/analysis_kernel_store.rs`, подключённый к
+  `LocalDatabase` migration ladder;
+- worker launch, limits и reset: существующие Core/supervisor lifecycle paths;
+- authenticated command/event projection: `crates/desktop-ipc/proto`,
+  `crates/evohime-core/src/ipc_bridge.rs` и Electron main/preload;
+- checkpoint/child handoff: существующие TaskCheckpoint и plan-27 selected-ref
+  contracts. Kernel не владеет approval, capability, scheduler или provider
+  authority.
+
+Текущая live schema — v36; план 27 резервирует следующую additive revision
+(ожидаемо v37). План 28 получает фактическую свободную revision на evidence
+freeze после 27 и не предполагает номер заранее.
+
 ## Критерии готовности
 
 - controlled worker/runtime и persistent in-session state существуют;
@@ -115,6 +140,10 @@ error; sensitive values скрыты.
 - UI/diagnostics bounded и не раскрывает raw values;
 - проходят resource, security, restart, compaction, approval и package manifest
   tests.
+
+Каждый критерий закрывается строкой evidence matrix этапа 28.4. Отсутствие
+optional Goal/Continuation/backend integration даёт typed `unavailable` или
+`degraded`, а не success.
 
 ## Не входит
 

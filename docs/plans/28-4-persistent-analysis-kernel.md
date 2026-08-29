@@ -28,20 +28,33 @@
 - [ ] UI/diagnostics bounded и не раскрывает raw values.
 - [ ] проходят resource, security, restart, compaction, approval и package manifest tests.
 
+Трассировка: критерии 1–2 закрываются 28.1/28.2 contract/storage/runtime
+evidence; критерии 3–5 — 28.2 fault/security и 28.4 release checks; критерий 6
+закрывается 28.2 вместе с plan-27 selected immutable refs; критерий 7 — 28.3
+projection tests; критерий 8 — focused suites ниже. Optional Goal/Continuation
+интеграции не являются скрытым blocking criterion и при отсутствии дают
+typed `unavailable`/`degraded`.
+
 ## Обязательная проверка
 
-1. Unit/contract tests для schema, hash, transitions, bounds и errors.
+1. Unit/contract tests для schema, hash, transitions, bounds, owner/ref checks и
+   errors.
 2. Storage/migration tests для backup, rollback, idempotency и corruption.
 3. Runtime/recovery/fault-injection tests для cancel, stale, denial, restart и unknown outcome.
 4. IPC/adapter/renderer or CLI tests для auth, redaction, replay/resync и optimistic conflict.
 5. Security/eval tests по фактическим критериям направления: traversal, escalation, secret leakage и untrusted input.
-6. Проверить cargo fmt --all -- --check, релевантный cargo clippy -D warnings, npm run check:protocol, npm run typecheck, npm test и git diff --check.
+6. Проверить `cargo fmt --all -- --check`, релевантный `cargo clippy` с
+   `-D warnings`, `cargo check -p evohime-supervisor`, `npm run check:protocol`,
+   `npm run typecheck`, релевантный `npm test` и `git diff --check`.
 
 ## Release-evidence и закрытие
 
 - Bundle содержит commit, versions, test IDs, hashes, typed outcomes и redaction status; credentials, raw output, transcripts, absolute paths и PII исключены.
 - Rollback/disable и recovery procedure записаны; unknown side effect не объявляется success и не повторяется вслепую.
 - После свежих проверок обновить docs/architecture.md, docs/current-state.md, docs/development-plan.md и при необходимости docs/release-evidence.md.
+- До переноса контракта в canonical docs не удалять ни один stage-файл; если
+  schema/worker/child handoff не доказан, статус остаётся `blocked` с exact
+  failing test/evidence и следующим действием.
 - После закрытия всего направления и переноса подтверждённого контракта удалить комплект `28-0` … `28-4`; отдельные stage-файлы до этого не удалять. Незавершённое направление оставить blocked с evidence.
 
 ## Definition of Done

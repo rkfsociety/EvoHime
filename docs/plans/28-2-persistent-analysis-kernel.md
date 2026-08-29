@@ -12,6 +12,8 @@
 
 - План 28.1 — contract, validators, storage policy и errors.
 - Existing workflow/child/provider/tool/memory boundaries, budgets, cancellation, audit и unknown-outcome semantics.
+- Supervisor launch/recovery path и действующие Job Object/resource-limit
+  primitives; новый worker не должен обходить этот lifecycle.
 
 ### Опциональные
 
@@ -19,12 +21,26 @@
 
 ## Реализация
 
-0. Загрузить stage-1 artifacts и закрепить immutable contract/policy snapshot active run.
-1. Добавить Core handler/state machine; повторить authorization непосредственно перед effect и связать result/event с correlation + idempotency.
-2. Подключить только заявленные registry/workflow/child/provider/tool surfaces. Optional backend даёт typed unavailable/degraded.
-3. Формализовать timeout, lease, retry, backpressure, partial failure, cancellation и unknown outcome; после restart только replay/reconciliation, без blind retry.
-4. Сделать fault-injection для crash до/после dispatch, stale version/lease, duplicate delivery, policy change и corruption.
-5. Зафиксировать metadata-only projection и redacted evidence для этапов 3–4.
+0. Загрузить stage-1 artifacts, schema/hash и закрепить immutable
+   contract/policy/grant snapshot для active run; проверить child refs против
+   plan-27 allowlist.
+1. Добавить Core handler/state machine и supervisor-managed worker/process;
+   повторить authorization непосредственно перед host effect и связать
+   result/event с correlation + idempotency.
+2. Ограничить worker environment/handles/working directory и ресурсы явными
+   defaults (CPU/time, memory, output, object count/size, request rate,
+   idle/lifetime); при превышении — typed limit и hard reset. Не использовать
+   незафиксированные OS sandbox assumptions.
+3. Подключить только заявленные registry/workflow/child/provider/tool surfaces.
+   Optional Goal/Continuation/backend даёт typed `unavailable`/`degraded` и не
+   меняет state/authority.
+4. Формализовать timeout, lease, retry, backpressure, partial failure,
+   cancellation и unknown outcome; dispatch marker до host effect, после
+   restart только replay/reconciliation, без blind retry.
+5. Сделать fault-injection для crash до/после marker, stale version/lease,
+   duplicate delivery, policy change, object corruption, direct FS/network/
+   shell/credential attempts и worker escape.
+6. Зафиксировать metadata-only projection и redacted evidence для этапов 3–4.
 
 ## Критерии выхода
 
@@ -33,6 +49,9 @@
 - [ ] Unknown external effect не повторяется автоматически.
 - [ ] Active run pinned к exact contract/policy snapshot.
 - [ ] Recovery/fault-injection tests воспроизводимы.
+- [ ] Worker действительно запускается через supervisor/Core lifecycle,
+  resource breach приводит к reset, а direct FS/network/shell/credential
+  attempts дают отказ без side effect.
 
 ## Не входит
 

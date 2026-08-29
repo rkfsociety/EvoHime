@@ -4,12 +4,18 @@
 
 ## Цель
 
-Зафиксировать authoritative contract «Persistent Analysis Kernel» и сделать его реализуемым: первичный выход — «controlled worker/runtime и persistent in-session state существуют».
+Зафиксировать authoritative contract «Persistent Analysis Kernel», schema
+границу, validators и storage policy. Worker/runtime остаются выходом этапа
+28.2; этот этап обязан подготовить контракт, который 28.2 сможет исполнять.
 
 ## Граница
 
 - Core владеет типами, состояниями, policy, provenance и записью. Model/user input только предлагает данные и не доказывает effect, approval, test или completion.
-- Кандидатные поверхности из обзора: crates/evohime-core, crates/evohime-local-storage, crates/desktop-ipc, Electron и focused tests. Пути, schema revision и IPC tags подтверждаются на evidence freeze.
+- Владелец contract: `crates/evohime-core/src/analysis_kernel.rs`;
+  storage: `crates/evohime-local-storage/src/analysis_kernel_store.rs`;
+  общая migration ladder — `crates/evohime-local-storage/src/lib.rs`.
+  IPC types принадлежат этапу 28.3 и здесь не создаются. Пути, schema revision
+  и IPC tags подтверждаются на evidence freeze.
 
 ## Зависимости
 
@@ -17,6 +23,8 @@
 
 - План 28.0 — scope, requirements, non-goals и dependency map.
 - Core capability/policy/approval, SQLite migration, event journal и authenticated IPC.
+- live schema handoff после плана 27; если plan 27 ещё не закрыт, child-ref
+  acceptance не может быть объявлен выполненным.
 
 ### Опциональные
 
@@ -24,11 +32,25 @@
 
 ## Реализация
 
-0. Сверить overview с live code/docs/tests/git log; если контракт уже существует, собрать evidence для закрытия, не создавая второй authority.
-1. Описать versioned fields, enums, transitions, scope, actor/provenance, idempotency, limits, sensitivity и compatibility. Для mutation определить optimistic version и stale outcome.
-2. Реализовать Rust validators и canonical serde/JSON/Proto representation; unknown version, oversized input и authority-bearing unknown data дают typed error.
-3. Добавить durable store и additive migration с backup-before-migrate только если состояние переживает restart; ephemeral state закрепить отрицательным persistence test.
-4. Добавить deterministic fixtures: valid/invalid, duplicate, stale, redaction, limit и migration failure; выдать evidence-пакет этапу 2.
+0. Сверить overview с live code/docs/tests/git log; подтвердить фактическую
+   свободную schema revision после 27 и отсутствие kernel authority. Если часть
+   контракта уже существует, собрать evidence, не создавая вторую authority.
+1. Описать versioned fields, enums, transitions, parent/session scope,
+   actor/provenance, idempotency, limits, sensitivity, ref kinds и compatibility.
+   Для каждой mutation определить optimistic version, stale outcome и
+   owner-check; отдельно запретить process memory/raw transcript storage.
+2. Реализовать Rust validators и canonical serde/JSON representation в
+   `analysis_kernel.rs`; typed IPC representation остаётся 28.3. Unknown
+   version, oversized input, unknown authority-bearing data, invalid ref и
+   secret/sensitive inline payload дают typed error.
+3. Реализовать `analysis_kernel_store.rs` и additive migration с
+   backup-before-migrate: durable manifest/object metadata, idempotency,
+   sequence/event rows и invalidation markers; blob bytes идут только через
+   существующий ArtifactStore. Ephemeral runtime получает отрицательный
+   persistence test.
+4. Добавить deterministic fixtures: valid/invalid, duplicate, stale,
+   parent-isolation, redaction, limit, hash, migration rollback/corruption и
+   unknown-outcome metadata; выдать evidence-пакет этапу 28.2.
 
 ## Артефакты
 
@@ -39,10 +61,12 @@
 
 ## Критерии выхода
 
-- [ ] controlled worker/runtime и persistent in-session state существуют.
-- [ ] typed Core host bridge — единственный side-effect path.
+- [ ] Contract/schema/storage policy полностью определены, валидаторы и
+  canonical hash проходят fixtures.
+- [ ] Durable manifest/object metadata и ephemeral-vs-durable boundary доказаны;
+  worker/runtime не выдаются как результат этого этапа.
 - [ ] Contract не расширяет capabilities и не переносит authority за пределы Core.
-- [ ] Storage/ephemeral decision и rollback доказаны тестом.
+- [ ] Storage/ephemeral decision, parent isolation и rollback доказаны тестом.
 
 ## Rollback
 

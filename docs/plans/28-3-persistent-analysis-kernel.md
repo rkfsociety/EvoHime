@@ -12,6 +12,9 @@
 
 - План 28.2 — runtime vertical slice, recovery и стабильные commands/events.
 - Authenticated named-pipe IPC, sequence replay/resync и generated TypeScript protocol.
+- Contract/schema/event inventory из 28.1–28.2 и live proto; numeric tags
+  назначаются только после проверки текущего последнего command tag (156) и
+  event oneof, с сохранением старых generated clients.
 
 ### Опциональные
 
@@ -19,12 +22,21 @@
 
 ## Реализация
 
-0. Проверить proto и зарезервировать additive names/tags, не меняя semantics старых clients.
-1. Добавить bounded request/result/event messages с correlation, idempotency, optimistic version и typed errors; исключить secrets, raw prompt и hidden reasoning.
-2. Реализовать Electron main/preload и предусмотренный client adapter; он только сериализует и маршрутизирует Core commands.
-3. Добавить renderer/CLI projection для status, progress, blockers, refs, warnings и actions; renderer не вычисляет state machine и не запускает effect.
-4. Проверить reconnect, replay gap, duplicate event, stale/denied action и unavailable optional backend.
-5. Привязать UI/CLI trace к Core event/provenance IDs без запрещённых payload.
+0. Проверить proto и зарезервировать additive names/tags после 28.2; записать
+   exact command/event tags, schema version и old-client behavior в evidence.
+1. Добавить bounded request/result/event messages с correlation, idempotency,
+   optimistic version, projection budget и typed errors; исключить secrets, raw
+   prompt, hidden reasoning, arbitrary paths и object bytes.
+2. Реализовать Core handlers в `crates/evohime-core/src/ipc_bridge.rs`, затем
+   Electron main/preload adapter; adapter только сериализует и маршрутизирует,
+   а authorization/storage/state machine остаются в Core.
+3. Добавить bounded renderer projection/diagnostics для status, progress,
+   blockers, refs, warnings, limits, reset и actions. CLI не входит в MVP;
+   отсутствие CLI даёт documented omission, не вторую обязательную surface.
+4. Проверить reconnect, replay gap/resync, duplicate event, stale/denied action,
+   redaction, old-client compatibility и unavailable optional backend.
+5. Привязать UI trace к Core event/provenance IDs без запрещённых payload и
+   добавить negative test, что renderer не может запросить raw object value.
 
 ## Критерии выхода
 
@@ -33,6 +45,8 @@
 - [ ] Renderer/CLI получает только bounded projection.
 - [ ] Reconnect/replay и stale actions предсказуемы.
 - [ ] UI показывает фактический Core state.
+- [ ] Exact tags/schema и generated Rust/C#/TypeScript surfaces зафиксированы;
+  старые clients продолжают handshake/replay и не получают authority.
 
 ## Не входит
 
