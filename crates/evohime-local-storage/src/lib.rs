@@ -3289,49 +3289,6 @@ impl LocalDatabase {
                 PRAGMA user_version = 24;",
             )?;
         }
-        if current < 34 {
-            continuation_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 34;")?;
-        }
-        if current < 35 {
-            let columns = transaction
-                .prepare("PRAGMA table_info(continuation_runs)")?
-                .query_map([], |row| row.get::<_, String>(1))?
-                .collect::<Result<Vec<_>, _>>()?;
-            if !columns.iter().any(|column| column == "idempotency_key") {
-                transaction.execute_batch(
-                    "ALTER TABLE continuation_runs ADD COLUMN idempotency_key TEXT NOT NULL DEFAULT '';",
-                )?;
-            }
-            if !columns.iter().any(|column| column == "task_id") {
-                transaction.execute_batch(
-                    "ALTER TABLE continuation_runs ADD COLUMN task_id TEXT NOT NULL DEFAULT '';",
-                )?;
-            }
-            transaction.execute_batch(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_continuation_runs_idempotency
-                   ON continuation_runs(owner_scope, idempotency_key);
-                 CREATE INDEX IF NOT EXISTS idx_continuation_runs_task
-                   ON continuation_runs(task_id, state, updated_at_ms);
-                 PRAGMA user_version = 35;",
-            )?;
-        }
-        if current < 36 {
-            let columns = transaction
-                .prepare("PRAGMA table_info(continuation_runs)")?
-                .query_map([], |row| row.get::<_, String>(1))?
-                .collect::<Result<Vec<_>, _>>()?;
-            if !columns.iter().any(|column| column == "prompt") {
-                transaction
-                    .execute_batch("ALTER TABLE continuation_runs ADD COLUMN prompt TEXT;")?;
-            }
-            if !columns.iter().any(|column| column == "workspace_path") {
-                transaction.execute_batch(
-                    "ALTER TABLE continuation_runs ADD COLUMN workspace_path TEXT;",
-                )?;
-            }
-            transaction.execute_batch("PRAGMA user_version = 36;")?;
-        }
         if current < 25 {
             // Этап 04.2: ambient-эпизоды, высказывания и tombstone.
             // Колонок для аудио здесь нет по конструкции: схема физически не
@@ -3467,6 +3424,49 @@ impl LocalDatabase {
                 .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
             transaction.execute_batch("PRAGMA user_version = 33;")?;
         }
+        if current < 34 {
+            continuation_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 34;")?;
+        }
+        if current < 35 {
+            let columns = transaction
+                .prepare("PRAGMA table_info(continuation_runs)")?
+                .query_map([], |row| row.get::<_, String>(1))?
+                .collect::<Result<Vec<_>, _>>()?;
+            if !columns.iter().any(|column| column == "idempotency_key") {
+                transaction.execute_batch(
+                    "ALTER TABLE continuation_runs ADD COLUMN idempotency_key TEXT NOT NULL DEFAULT '';",
+                )?;
+            }
+            if !columns.iter().any(|column| column == "task_id") {
+                transaction.execute_batch(
+                    "ALTER TABLE continuation_runs ADD COLUMN task_id TEXT NOT NULL DEFAULT '';",
+                )?;
+            }
+            transaction.execute_batch(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_continuation_runs_idempotency
+                   ON continuation_runs(owner_scope, idempotency_key);
+                 CREATE INDEX IF NOT EXISTS idx_continuation_runs_task
+                   ON continuation_runs(task_id, state, updated_at_ms);
+                 PRAGMA user_version = 35;",
+            )?;
+        }
+        if current < 36 {
+            let columns = transaction
+                .prepare("PRAGMA table_info(continuation_runs)")?
+                .query_map([], |row| row.get::<_, String>(1))?
+                .collect::<Result<Vec<_>, _>>()?;
+            if !columns.iter().any(|column| column == "prompt") {
+                transaction
+                    .execute_batch("ALTER TABLE continuation_runs ADD COLUMN prompt TEXT;")?;
+            }
+            if !columns.iter().any(|column| column == "workspace_path") {
+                transaction.execute_batch(
+                    "ALTER TABLE continuation_runs ADD COLUMN workspace_path TEXT;",
+                )?;
+            }
+            transaction.execute_batch("PRAGMA user_version = 36;")?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -3536,6 +3536,23 @@ mod tests {
             SCHEMA_VERSION
         );
         assert!(database.has_events_table().expect("table exists"));
+        for table in [
+            "continuation_policies",
+            "continuation_runs",
+            "continuation_attempts",
+            "continuation_actions",
+            "continuation_gate_results",
+        ] {
+            let exists: i64 = database
+                .connection()
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .expect("continuation table lookup");
+            assert_eq!(exists, 1, "{table} must exist in a fresh schema");
+        }
         let id = database
             .record_tool_metric(
                 "task-1",

@@ -9085,7 +9085,26 @@ impl TaskCoordinator {
                         .map(|(run, _)| run.continuation_index)
                         .unwrap_or(0);
                     loop {
-                        let attempt = if let Some((run, _)) = &continuation_context {
+                        let attempt = if let Some((run, policy)) = &continuation_context {
+                            if policy.budget.max_wall_clock_ms.is_some_and(|limit| {
+                                crate::task_memory::now_millis()
+                                    .saturating_sub(run.created_at_ms.max(0) as u64)
+                                    >= limit
+                            }) {
+                                if let Some(journal) = &journal {
+                                    if let Ok(database) = journal.database().try_lock() {
+                                        let _ = evohime_local_storage::continuation_store::transition_run(
+                                            database.connection(),
+                                            &run.run_id,
+                                            "running",
+                                            "budget_limited",
+                                            Some("max_wall_clock_ms"),
+                                            crate::task_memory::now_millis() as i64,
+                                        );
+                                    }
+                                }
+                                break;
+                            }
                             let fingerprint =
                                 format!("{}:{}", task_id, continuation_index.saturating_add(1));
                             let mut database = journal

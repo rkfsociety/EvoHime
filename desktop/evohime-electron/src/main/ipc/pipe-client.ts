@@ -544,9 +544,9 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       skillReference: decodeSkillReference(event.skillReference),
       goal: decodeGoal(event.goal),
       goalList: decodeGoalList(event.goalList),
-      goalAction: decodeGoalAction(event.goalAction)
-      ,continuation: decodeContinuation(event.continuation)
-      ,continuationAction: decodeContinuationAction(event.continuationAction)
+      goalAction: decodeGoalAction(event.goalAction),
+      continuation: decodeContinuation(event.continuation),
+      continuationAction: decodeContinuationAction(event.continuationAction)
     })
   }
 

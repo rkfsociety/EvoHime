@@ -27,14 +27,17 @@ bounded projection и посылает явные действия. Recovery н�
 effect, а Goal не создаётся автоматически из каждого сообщения.
 Комплект планов 25.0–25.4 удалён после полного Rust/Electron verification.
 
-План 26 находится в реализации. Уже добавлены Core contract/decision table,
-schema v36 с durable continuation policy/run/attempt storage, task binding,
-bounded budget reservation, authenticated IPC tags 151–156 и Electron
-`ContinuationPanel`.
-Policy snapshot, scope, typed gates и duplicate fingerprint валидируются Core.
-Полная автоматическая связка model/workflow result → следующий Core request,
-gate execution, approval resume и restart reconciliation ещё не закрыты; план
-26 не должен считаться завершённым до прохождения stage 2–4 evidence.
+План 26 реализован в текущем checkout: Core владеет `ContinuationPolicyV1`,
+решением по typed evidence, durable policy/run/attempt/action/gate storage
+(schema v36), task binding, bounded reservations, restart blocking и
+idempotent pause/resume/stop. Typed authenticated IPC использует tags 151–156,
+а Electron показывает metadata-only `ContinuationPanel`. Tool gates повторно
+проверяют capability/approval непосредственно в Core; unavailable и failed
+outcomes не превращаются в success. Полный реальный Core IPC E2E также
+проверяет handshake, reconnect и workflow command path после boxing oversized
+`process_once` future. Дальнейшие workflow/evidence gate adapters остаются
+явно unavailable до появления соответствующих Core-owned providers и не
+расширяют authority policy.
 
 ## Продукт
 

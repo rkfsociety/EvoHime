@@ -9,6 +9,18 @@ output, transcripts, absolute paths и PII запрещены.
 
 Статус: `TECHNICAL_GATES_PASS / RELEASE_GREEN`.
 
+Continuation Policy v1 зафиксирован task-only коммитом `605c5ba1` с последующим
+исправлением миграционного порядка и boxed IPC future в текущем task commit:
+schema `v36`, authenticated IPC tags `151–156`, Core decision outcomes
+`Continue/Complete/PauseForApproval/Blocked/BudgetLimited/StopFailed/StopUser`,
+durable idempotency/action dedup, task binding, restart-to-block recovery и
+metadata-only typed projection. Regression evidence: fresh-schema continuation
+table assertions, 206 local-storage tests, 560 Core tests, 35 desktop-ipc
+tests, `cargo fmt --all -- --check`, strict clippy, `npm run check:protocol`,
+`npm run typecheck`, continuation panel test и реальный Core E2E (3 tests
+passed: handshake, reconnect, workflow template). Prompt, workspace path,
+secrets, raw provider output и hidden reasoning не входят в projection.
+
 Последнее evidence для Persistent Goals зафиксировано на task-only коммите
 `6d3c1c98` (29 августа 2026 года): `GoalV1`/`GoalStore` v1, SQLite schema
 `v33`, canonical SHA-256 hash, immutable revisions/events, Core-minted
