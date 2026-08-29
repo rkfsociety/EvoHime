@@ -23,8 +23,9 @@
 
 - План 28.0 — scope, requirements, non-goals и dependency map.
 - Core capability/policy/approval, SQLite migration, event journal и authenticated IPC.
-- live schema handoff после плана 27; если plan 27 ещё не закрыт, child-ref
-  acceptance не может быть объявлен выполненным.
+- текущая live schema и retained-child handoff плана 27; child-ref acceptance
+  опирается на его канонический contract и не считается выполненным без
+  проверки selected immutable refs.
 
 ### Опциональные
 
@@ -33,7 +34,7 @@
 ## Реализация
 
 0. Сверить overview с live code/docs/tests/git log; подтвердить фактическую
-   свободную schema revision после 27 и отсутствие kernel authority. Если часть
+   следующую свободную schema revision после v37 и отсутствие kernel authority. Если часть
    контракта уже существует, собрать evidence, не создавая вторую authority.
 1. Описать versioned fields, enums, transitions, parent/session scope,
    actor/provenance, idempotency, limits, sensitivity, ref kinds и compatibility.

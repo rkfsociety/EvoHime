@@ -24,9 +24,13 @@
 0. Загрузить stage-1 artifacts, schema/hash и закрепить immutable
    contract/policy/grant snapshot для active run; проверить child refs против
    plan-27 allowlist.
-1. Добавить Core handler/state machine и supervisor-managed worker/process;
-   повторить authorization непосредственно перед host effect и связать
-   result/event с correlation + idempotency.
+1. Добавить Core handler/state machine и supervisor-managed worker/process.
+   Launch command принимает только фиксированный runtime/package identity и
+   bounded manifest, не executable или arguments от model/renderer; supervisor
+   создаёт отдельный Job Object, применяет limits, whitelist environment и
+   отсутствие наследуемых credentials/лишних handles, затем возвращает typed
+   launch outcome. Повторить authorization непосредственно перед host effect и
+   связать result/event с correlation + idempotency.
 2. Ограничить worker environment/handles/working directory и ресурсы явными
    defaults (CPU/time, memory, output, object count/size, request rate,
    idle/lifetime); при превышении — typed limit и hard reset. Не использовать
@@ -49,9 +53,10 @@
 - [ ] Unknown external effect не повторяется автоматически.
 - [ ] Active run pinned к exact contract/policy snapshot.
 - [ ] Recovery/fault-injection tests воспроизводимы.
-- [ ] Worker действительно запускается через supervisor/Core lifecycle,
-  resource breach приводит к reset, а direct FS/network/shell/credential
-  attempts дают отказ без side effect.
+- [ ] Worker действительно запускается через allowlisted supervisor/Core
+  lifecycle и отдельный Job Object; resource breach приводит к reset, а
+  подмена runtime/manifest и direct FS/network/shell/credential attempts дают
+  отказ без side effect.
 
 ## Не входит
 

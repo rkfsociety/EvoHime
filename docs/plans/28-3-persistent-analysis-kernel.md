@@ -13,8 +13,9 @@
 - План 28.2 — runtime vertical slice, recovery и стабильные commands/events.
 - Authenticated named-pipe IPC, sequence replay/resync и generated TypeScript protocol.
 - Contract/schema/event inventory из 28.1–28.2 и live proto; numeric tags
-  назначаются только после проверки текущего последнего command tag (156) и
-  event oneof, с сохранением старых generated clients.
+  назначаются только после проверки текущего последнего command tag (161) и
+  event oneof (последний занятый tag 26), с сохранением старых generated
+  clients.
 
 ### Опциональные
 

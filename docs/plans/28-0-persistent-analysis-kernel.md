@@ -22,23 +22,24 @@ Tool/Workflow/MCP`. Kernel не получает полномочий; side effe
 
 ### Блокирующие
 
-- план 23 TaskCheckpoint для object refs, compaction и recovery;
+- канонический TaskCheckpoint contract из закрытого плана 23
+  ([`../architecture.md`](../architecture.md)) для object refs, compaction и
+  recovery;
 - существующий Core capability/tool/workflow registry и approval/audit path;
 - существующий ArtifactStore с sensitivity, size и parent-scope checks;
 - supervisor/process lifecycle, Job Object/resource limit primitives и crash
   recovery (`crates/evohime-supervisor`, `crates/evohime-core` launch/recovery
   path);
 - authenticated versioned IPC и Core-owned SQLite.
-- план 27 для обязательной child-интеграции: kernel выдаёт child только
-  selected immutable refs. До закрытия 27 child handoff остаётся blocked, а не
-  implicit success.
 
 ### Опциональные
 
 - существующие canonical contracts Agent Skills и Persistent Goals — только для
   optional linkage/helpers, без расширения permissions;
-- план 27 retained child contexts для immutable read-only object refs (blocking
-  только для child handoff; прочие kernel scenarios от mailbox не зависят);
+- закрытый retained-child contract плана 27
+  ([`../architecture.md`](../architecture.md)) для immutable read-only object refs;
+  он обязателен только для child handoff, прочие kernel scenarios от mailbox не
+  зависят;
 - план 26 Continuation Policy для bounded repeated kernel executions.
 
 ## Контракты и host bridge
@@ -118,16 +119,17 @@ error; sensitive values скрыты.
 - durable manifest/object metadata: новый
   `crates/evohime-local-storage/src/analysis_kernel_store.rs`, подключённый к
   `LocalDatabase` migration ladder;
-- worker launch, limits и reset: существующие Core/supervisor lifecycle paths;
+- worker launch, limits и reset: существующие Core/supervisor lifecycle paths,
+  с отдельным allowlisted supervisor launch command и отдельным Job Object;
 - authenticated command/event projection: `crates/desktop-ipc/proto`,
   `crates/evohime-core/src/ipc_bridge.rs` и Electron main/preload;
 - checkpoint/child handoff: существующие TaskCheckpoint и plan-27 selected-ref
   contracts. Kernel не владеет approval, capability, scheduler или provider
   authority.
 
-Текущая live schema — v36; план 27 резервирует следующую additive revision
-(ожидаемо v37). План 28 получает фактическую свободную revision на evidence
-freeze после 27 и не предполагает номер заранее.
+Текущая live schema — v37 после закрытия плана 27. План 28 получает фактическую
+следующую свободную additive revision (ожидаемо v38) на evidence freeze и не
+предполагает номер заранее.
 
 ## Критерии готовности
 
