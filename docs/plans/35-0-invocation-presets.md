@@ -42,12 +42,15 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Блокирующие
 
-- План 30.0 — Workflow Package: переносимый import/export без секретов и с rebinding зависимостей.
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 
 ### Опциональные
 
 - План 33.0 — Integration Provider SDK: единый контракт auth, actions, webhooks и test fixtures.
+- План 30.0 — Workflow Package: export/import presets — только отдельная
+  optional portable-форма; user-specific presets не экспортируются по умолчанию.
+- План 34.0 — Event Trigger Runtime: optional base-preset mapping для trigger
+  inputs с fail-closed degradation до обычного event mapping.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue
@@ -57,21 +60,28 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ```text
 InvocationPreset {
   id,
+  owner_scope,
   name,
   description?,
   workflow_id,
   workflow_version,
+  workflow_definition_hash,
+  input_schema_hash,
   input_values,
   credential_bindings,
   execution_options,
   created_from_run_id?,
+  revision,
   created_at,
   updated_at,
   content_hash
 }
 ```
 
-Ключевой инвариант: preset **прибит к конкретной workflow version**.
+Ключевые инварианты: preset **прибит к конкретной workflow version и hash
+снимка definition/input schema**, а каждая правка создаёт новую immutable
+`revision`. `content_hash` считается по canonical redacted payload и не
+включает secret material.
 
 Новая версия workflow не должна молча менять смысл старого preset.
 
@@ -84,7 +94,12 @@ InvocationPreset {
 - credential scopes проверяются заново при каждом run;
 - workflow version pinned;
 - renderer получает masked values для sensitive fields;
-- удаление credential инвалидирует binding, а не оставляет dangling secret cache.
+- удаление или expiry credential переводит binding в `NeedsRebinding`, а не
+  оставляет dangling secret cache;
+- schedule фиксирует `preset revision` и `content_hash` либо эквивалентный
+  resolved snapshot;
+- trigger может использовать preset только как optional base configuration;
+  event mapping не переопределяет credential/capability identities.
 
 ## План реализации
 
@@ -104,14 +119,20 @@ InvocationPreset {
 
 ## Критерии готовности из issue
 
-- [ ] Есть durable InvocationPreset contract.
-- [ ] Preset pinned к workflow version.
-- [ ] Можно создать preset из completed run.
-- [ ] Credentials хранятся только как refs.
-- [ ] Secret inputs не сохраняются raw по умолчанию.
-- [ ] Есть migration flow между workflow versions.
-- [ ] Preset запускается через обычный workflow runtime.
-- [ ] Preset можно использовать scheduler без обхода approvals.
+- [ ] `C01` — Есть durable InvocationPreset contract.
+- [ ] `C02` — Preset pinned к workflow version.
+- [ ] `C03` — Можно создать preset из completed run.
+- [ ] `C04` — Credentials хранятся только как refs.
+- [ ] `C05` — Secret inputs не сохраняются raw по умолчанию.
+- [ ] `C06` — Есть migration flow между workflow versions.
+- [ ] `C07` — Preset запускается через обычный workflow runtime.
+- [ ] `C08` — Preset можно использовать scheduler без обхода approvals.
+- [ ] `C09` — Preset можно создать вручную из workflow detail.
+- [ ] `C10` — Удалённый/expired credential даёт `NeedsRebinding`.
+- [ ] `C11` — Временный override не изменяет сохранённую revision.
+- [ ] `C12` — Schedule фиксирует revision/hash snapshot.
+- [ ] `C13` — Version drift показывает preview и не выполняет silent migration.
+- [ ] `C14` — Trigger base mapping optional и не переопределяет protected identities.
 
 ## Ограничения и non-goals
 
@@ -132,3 +153,14 @@ InvocationPreset {
 ## Связанный issue
 
 - [#15 Invocation Presets: version-pinned шаблоны запусков без копирования секретов](https://github.com/rkfsociety/EvoHime/issues/15)
+
+## Результат ревью 2026-08-29
+
+- Модель дополнена owner scope, immutable revision и hash снимков workflow
+  definition/input schema; зафиксированы canonical redacted hash и schedule
+  snapshot.
+- Требования issue разложены по acceptance IDs: manual creation, completed-run
+  sanitization, rebinding, drift/migration, temporary override, scheduler и
+  optional trigger base configuration.
+- План 30 переведён из blocking в optional: его portable export не нужен для
+  локального durable preset и по умолчанию исключает user-specific presets.

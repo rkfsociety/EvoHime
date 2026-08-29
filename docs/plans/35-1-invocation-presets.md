@@ -20,8 +20,11 @@
 
 ### Опциональные
 
-- План 30.0 — зависимость из обзора.
 - План 33.0 — зависимость из обзора.
+- План 30.0 — только optional portable export/import; локальный preset должен
+  работать без package-контуров.
+- План 34.0 — только optional trigger base mapping; без него preset остаётся
+  usable для manual/schedule запуска.
 
 ## Реализация
 
@@ -36,21 +39,36 @@
 - contract/types + validator + transition table;
 - canonical serialization/hash, error codes и provenance matrix;
 - storage schema/store или доказательство отсутствия persistence;
+- immutable revision, workflow/schema snapshot hashes, run sanitizer and
+  schedule snapshot contract;
 - focused contract/security/migration tests.
 
 ## Предметная декомпозиция
 
 ### Поверхности и контракт
 
-- `crates/evohime-core/src/invocation_presets.rs`: ввести `InvocationPresetsDefinition`, `InvocationPresetsPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- `crates/evohime-core/src/invocation_presets.rs`: ввести
+  `InvocationPresetDefinition`, `InvocationPresetPolicy`, typed state/event/error
+  types и public validation entrypoint; зарегистрировать модуль в
+  `crates/evohime-core/src/lib.rs`.
 - Storage: `crates/evohime-local-storage/src/invocation_presets_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
 - Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
-- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/invocation_presets_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/invocation_presets_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale, owner scope, immutable revision, schema hashes, completed-run sanitization, credential refs/NeedsRebinding и migration/ephemeral решения.
 
 ### Acceptance-to-contract matrix
 
 - `C04` — Credentials хранятся только как refs. → задать Core-owned authority/sensitivity policy и fail-closed validation.
 - `C05` — Secret inputs не сохраняются raw по умолчанию. → задать Core-owned authority/sensitivity policy и fail-closed validation.
+- `C01` — Есть durable InvocationPreset contract. → определить owner scope, immutable revision, canonical redacted hash и durable schema.
+- `C02` — Preset pinned к workflow version. → хранить workflow definition hash и input schema hash; mismatch становится typed drift.
+- `C03` — Можно создать preset из completed run. → определить allowlist invocation metadata и fail-closed sanitizer для ephemeral IDs, tokens, paths, artifacts и trigger payload.
+- `C06` — Есть migration flow между workflow versions. → определить compatible mapping, required user mapping и typed incompatible outcomes; silent migration запрещена.
+- `C09` — Preset можно создать вручную из workflow detail. → валидировать inputs against frozen schema до persistence.
+- `C10` — Удалённый/expired credential даёт `NeedsRebinding`. → определить binding status и отсутствие secret cache.
+- `C11` — Временный override не изменяет сохранённую revision. → разделить persisted payload и run-only overlay.
+- `C12` — Schedule фиксирует revision/hash snapshot. → определить typed schedule reference/snapshot без зависимости от package import.
+- `C13` — Version drift показывает preview и не выполняет silent migration. → определить hash comparison и migration preconditions.
+- `C14` — Trigger base mapping optional и не переопределяет protected identities. → определить bounded mapping contract и fail-closed unavailable fallback.
 
 ### Definition freeze
 
