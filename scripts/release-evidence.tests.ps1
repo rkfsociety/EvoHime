@@ -25,7 +25,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Automation evidence tests failed with exit code $LASTEXITCODE" }
     & cargo test --locked -p evohime-core analysis_kernel --lib
     if ($LASTEXITCODE -ne 0) { throw "Analysis kernel Core evidence tests failed with exit code $LASTEXITCODE" }
-    & cargo test --locked -p evohime-supervisor --bin evohime-analysis-worker --bin evohime-supervisor
+    & cargo test --locked -p evohime-supervisor
     if ($LASTEXITCODE -ne 0) { throw "Analysis kernel worker/supervisor evidence tests failed with exit code $LASTEXITCODE" }
     & (Join-Path $repo 'scripts\license-inventory.tests.ps1')
     if ($LASTEXITCODE -ne 0) { throw "License inventory gate failed with exit code $LASTEXITCODE" }
