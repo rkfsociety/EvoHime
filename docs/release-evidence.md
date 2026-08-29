@@ -9,17 +9,25 @@ output, transcripts, absolute paths и PII запрещены.
 
 Статус: `TECHNICAL_GATES_PASS / RELEASE_GREEN`.
 
-Последнее evidence для направлений TaskCheckpoint и Agent Skills зафиксировано
-на коммите
-`90853fd7` (29 августа 2026 года): contract
-`TaskCheckpoint v1`, Agent Skills v1, SQLite schema `v32`, additive `desktop-ipc-v1` команды
-`GetTaskCheckpoint`/`ResolveTaskCheckpoint` (tags 137–138) и typed события
-`TaskCheckpointProjection`/`TaskCheckpointActionResult` (oneof tags 15–16).
-Проверены 553 Core unit tests, 35 desktop-ipc tests, 196 local-storage tests,
-466 Electron tests (2 skipped), production bundle checks, strict clippy,
-rustfmt, protocol/typecheck, backup/restore, automation boundary, redaction и
-license gates. IPC action outcomes typed and idempotent; внешние effects не
-запускаются.
+Последнее evidence для Persistent Goals зафиксировано на task-only коммите
+`6d3c1c98` (29 августа 2026 года): `GoalV1`/`GoalStore` v1, SQLite schema
+`v33`, canonical SHA-256 hash, immutable revisions/events, Core-minted
+user-decision evidence, проверка runtime-ссылок и bounded `projection_truncated`.
+Authenticated `desktop-ipc-v1` использует Goal commands tags `142–150` и typed
+events oneof `20–22`; клиентские Verify-поля evidence/verifier зарезервированы,
+поэтому renderer не может self-attest.
+
+Reproducible gates: `cargo test -p evohime-core -p evohime-local-storage
+-p evohime-desktop-ipc` — Core 556, local-storage 204, desktop-ipc 35 passed;
+`cargo clippy -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc
+--all-targets -- -D warnings`; `cargo fmt --all -- --check`; `cargo check -p
+evohime-supervisor`; `npm run check:protocol`; `npm run typecheck`; `npm test
+-- --run` — 60 files, 469 passed, 2 skipped; `git diff --check`. Focused
+evidence includes `persistent_goal_ipc_is_typed_bounded_and_recoverable`,
+`recovery_reports_missing_link_without_retrying_any_effect`, all Goal storage
+contract/migration/corruption tests, typed pipe projection and GoalPanel tests.
+No credentials, raw provider output, prompts, hidden reasoning, absolute paths
+or PII enter the Goal projection/release evidence.
 
 Свежая проверка запускается `scripts/final-release-audit.tests.ps1` и включает
 Rust Core/storage/IPC tests, rustfmt, automation boundary, backup/restore и
@@ -44,6 +52,7 @@ Code signing не входит в текущий release scope; manifest/hash о
 | User-triggered self-repair update | isolated checkout, bounded diff/tests, commit SHA, CI state и installer marker | health timeout или failed startup возвращает полный backup | repair остаётся failed/recoverable, без повторного push или restart | Electron repair tests, updater health-marker tests, authenticated Core E2E |
 | Optional browser/voice/vision adapter | capability manifest/hash и typed availability | `backend_unavailable`, без Core state mutation | disable adapter, remove staging/runtime cache | `decision-register.md`, adapter contract tests |
 | Automation simulation | ephemeral state, fake-provider fixture | discard ephemeral state; no production recovery | delete temp workspace after run | automation A05/A06 fixtures |
+| Persistent Goal projection | schema v33 backup, immutable Goal revisions/events and Core-owned evidence | restore the pre-v33 safety backup; corrupt/missing references stay typed error or bounded recovery warning; no blind retry | disable by withholding the additive `goals` capability; old clients remain compatible; retain audit rows per Core policy | Goal storage, recovery, IPC and Electron focused tests |
 
 Rollback не обещает откат уже совершённых внешних side effects: такие effects
 идут через existing receipts/reconciliation и требуют typed unknown outcome.
