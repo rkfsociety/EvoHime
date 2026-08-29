@@ -1,15 +1,20 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-29. Планы 01–22 завершены и
+Обновлено: 2026-08-29. Планы 01–24 завершены и
 удалены из каталога временных планов. План 19.0 добавил только пользовательский
 self-repair/self-update цикл; автоматического ремонта, push или перезапуска нет.
 Code signing явно исключён из текущего release scope.
 
-План 23 полностью реализован и закрыт: этапы 23.1 (versioned TaskCheckpoint
+Планы 23 и 24 полностью реализованы и закрыты: этапы 23.1 (versioned TaskCheckpoint
 contract, provenance validation, immutable storage и schema v32), 23.2 (Core
 runtime capture/recovery), 23.3 (IPC/UI projection) и 23.4 (acceptance/release
 evidence) реализованы и проверены. Комплект планов 23.0–23.4 удалён после
 переноса контракта и подтверждённого состояния в эту документацию.
+План 24 добавил Agent Skills v1: bounded deterministic discovery локальных
+`SKILL.md`, progressive disclosure metadata/body, fail-closed validation,
+capability intersection, typed authenticated IPC tags 139–141, renderer panel
+и metadata-only trace без durable хранения тела. Комплект 24.0–24.4 удалён
+после проверки полного Rust/Electron контура.
 
 ## Продукт
 
@@ -42,6 +47,13 @@ Core и supervisor — внутренние компоненты установ�
   compromise/recovery boundaries, signed checkpoint contract и offline
   `evohime-verify.exe`; Electron получает только status и public metadata;
 - Core, SQLite, IPC, supervisor, event replay и diagnostics;
+- Agent Skills v1: Core-owned registry с precedence explicit → project-native →
+  global → compatibility → bundled, bounded frontmatter/reference reads,
+  collision diagnostics, unsafe/secret/executable metadata rejection,
+  capability subset validation и process-local cache. Typed `ListSkills`,
+  `LoadSkill`, `LoadSkillReference` (139–141) и projections oneof 17–19 не
+  переносят тело в generic payload и не записывают его в journal; Electron
+  `SkillCatalogPanel` открывает полный документ только после явного действия;
 - TaskCheckpoint v1: bounded canonical contract с разделением Core-derived и
   model-proposed данных, SHA-256 content hash, immutable parent chain,
   idempotent insert, workspace/event-sequence/state-transition checks, typed
@@ -51,12 +63,12 @@ Core и supervisor — внутренние компоненты установ�
   bounded metadata-событие, а recovery блокирует усечённый replay, неизвестный
   outcome и blind retry. Проверки 23.1–23.2: 10 focused storage tests,
   4 focused runtime tests, полный `evohime-local-storage` suite (196 tests),
-  полный `evohime-core` suite (548 tests), `cargo check -p evohime-core`,
+  полный `evohime-core` suite (553 tests), `cargo check -p evohime-core`,
   `cargo fmt --all -- --check` и `git diff --check`. IPC/UI 23.3 добавляет
   typed `GetTaskCheckpoint`/`ResolveTaskCheckpoint`, bounded projection и
   action result в protobuf, атомарную idempotency запись Core и панель
-  `TaskCheckpointPanel`; проверены typed Rust IPC (548 Core tests, 35
-  desktop-ipc tests), 2 renderer tests, полный Electron suite (462 tests, 2
+  `TaskCheckpointPanel`; проверены typed Rust IPC (553 Core tests, 35
+  desktop-ipc tests), 2 renderer tests, полный Electron suite (466 tests, 2
   skipped), `npm run check:protocol`, `npm run typecheck`, production build и
   bundle checks. Release audit подтвердил backup/restore, redaction,
   automation и license gates; evidence для закрытия зафиксирован в

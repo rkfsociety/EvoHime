@@ -20,13 +20,15 @@ desktop-клиент, выбирает workspace, выполняет задач�
 
 ## Текущий порядок работ
 
-Планы 22 и 23 реализованы и закрыты. План 23 — TaskCheckpoint для compaction
+Планы 22, 23 и 24 реализованы и закрыты. План 23 — TaskCheckpoint для compaction
 и recovery — прошёл этапы 23.1 (contract/storage), 23.2 (runtime/recovery),
 23.3 (IPC/UI) и 23.4 (acceptance/release evidence); комплект `23-0` … `23-4`
 удалён после переноса контракта и состояния в актуальную документацию. После
-плана 23 порядок продолжится согласно `docs/plans/README.md`.
+плана 23 порядок продолжится согласно `docs/plans/README.md`. План 24 — Agent
+Skills — закрыт после проверки registry, fail-closed validation, typed IPC/UI,
+metadata-only trace и полного release-контура; его комплект также удалён.
 
-1. **Планы 23–115.** Выполнять численно по `(NN, M)`, не перескакивая через
+1. **Планы 24–115.** Выполнять численно по `(NN, M)`, не перескакивая через
    blocking dependency; закрытый комплект переносить в каноническую
    документацию и удалять из `docs/plans/`.
 2. **Поддержка релиза.** Сохранять зелёными Rust/Electron/package gates и

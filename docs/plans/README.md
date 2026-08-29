@@ -89,10 +89,10 @@ Stage-файлы не удаляются по отдельности: после
 
 ## Текущий план
 
-Планы 01–23 реализованы и перенесены в канонические разделы
+Планы 01–24 реализованы и перенесены в канонические разделы
 [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md).
-Планы 24–29 являются issue-derived направлениями и выполняются в таком порядке:
-Agent Skills, Persistent Goals, Continuation Policy, retained child contexts,
+Планы 25–29 являются issue-derived направлениями и выполняются в таком порядке:
+Persistent Goals, Continuation Policy, retained child contexts,
 Persistent Analysis Kernel, Continual Refinement. Планы 30–115
 следуют порядку issues #10–#95. Для каждого направления сначала выполняется
 `NN-0`, затем четыре stage-файла; межплановые блокирующие зависимости и

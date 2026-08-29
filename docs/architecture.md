@@ -777,6 +777,32 @@ hidden reasoning и raw payload отсутствуют. `ResolveTaskCheckpoint` 
 форму и пересылает команды, а renderer отображает projection и посылает явное
 действие; reconnect/resync продолжает использовать существующий sequence cursor.
 
+### Agent Skills
+
+Agent Skills v1 — Core-owned локальный registry для bounded `SKILL.md`. Для
+workspace используются roots `.agents/skills`, `%APPDATA%/EvoHime/skills`,
+совместимые `.codex/skills`/`.claude/skills` и bundled resources; явный session
+root доступен через тот же registry API. Приоритет детерминирован: explicit,
+project-native, global, compatibility, bundled. Collision не скрывается:
+победившая запись выбирается по приоритету, а диагностика остаётся bounded.
+
+Discovery читает только bounded frontmatter и metadata; тело и
+`references/` загружаются только отдельной typed-командой. Пакеты с unsafe
+path, prompt-injection/secret-shaped metadata, запрещёнными executable или
+permission-полями, неизвестной схемой и превышением лимитов становятся
+`invalid` и не исполняются. Capability grant — пересечение с родительским
+grant; требование вне него возвращает `capability_escalation`. Registry не
+запускает scripts, install/network hooks или model invocation и не сохраняет
+тело skill: cache живёт только в процессе Core, а durable trace содержит лишь
+skill id, version, hash и source reference.
+
+В `desktop-ipc-v1` добавлены additive commands `ListSkills`, `LoadSkill` и
+`LoadSkillReference` (tags 139–141), а typed projections
+`SkillCatalogProjection`, `SkillContentResult` и `SkillReferenceResult` имеют
+oneof tags 17–19. Electron main валидирует bounds и traversal, renderer
+показывает metadata и запрашивает полный документ только по явному клику;
+generic payload и authority в UI не используются.
+
 ## Local telemetry и deterministic evaluation
 
 `telemetry/v1` — bounded derived projection над Core event journal, receipts и
