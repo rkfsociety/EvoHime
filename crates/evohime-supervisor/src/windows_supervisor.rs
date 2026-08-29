@@ -177,6 +177,11 @@ pub fn recover_pending_update(state_dir: &Path) -> io::Result<bool> {
     Ok(evohime_tx::UpdateTransaction::recover(state_dir)?.recovered)
 }
 
+fn is_deferred_update_recovery_error(error: &io::Error) -> bool {
+    error.kind() == io::ErrorKind::PermissionDenied
+        || matches!(error.raw_os_error(), Some(5) | Some(32) | Some(33))
+}
+
 fn update_state_dir() -> PathBuf {
     std::env::var_os("EVOHIME_UPDATE_STATE_DIR")
         .map(PathBuf::from)
@@ -614,11 +619,18 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         Ok(false) => {}
         Err(error) => {
+            let event = if is_deferred_update_recovery_error(&error) {
+                "update.recovery_deferred"
+            } else {
+                "update.recovery_failed"
+            };
             let _ = logger.write(
-                "update.recovery_failed",
+                event,
                 json!({"state_dir": state_dir.display().to_string(), "error": error.to_string()}),
             );
-            return Err(error.into());
+            if !is_deferred_update_recovery_error(&error) {
+                return Err(error.into());
+            }
         }
     }
     let core_exe = normalized_env_path("EVOHIME_CORE_EXE")
@@ -919,8 +931,8 @@ async fn wait_for_core(
 mod tests {
     use super::{
         heartbeat_is_current_generation, heartbeat_is_stale, heartbeat_is_stale_for_generation,
-        recover_pending_update, restart_backoff, should_reset_restart_budget, JobObject,
-        SupervisorSession,
+        is_deferred_update_recovery_error, recover_pending_update, restart_backoff,
+        should_reset_restart_budget, JobObject, SupervisorSession,
     };
     use evohime_tx::UpdateTransaction;
     use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
@@ -983,6 +995,23 @@ mod tests {
         );
         assert!(!transaction.state_path().exists());
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn defers_only_file_lock_recovery_errors() {
+        assert!(is_deferred_update_recovery_error(
+            &std::io::Error::from_raw_os_error(5)
+        ));
+        assert!(is_deferred_update_recovery_error(
+            &std::io::Error::from_raw_os_error(32)
+        ));
+        assert!(is_deferred_update_recovery_error(
+            &std::io::Error::from_raw_os_error(33)
+        ));
+        assert!(!is_deferred_update_recovery_error(&std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "broken transaction",
+        )));
     }
 
     #[test]
