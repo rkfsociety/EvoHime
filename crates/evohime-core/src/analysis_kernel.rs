@@ -398,6 +398,32 @@ pub fn checkpoint_refs(
     Ok(refs)
 }
 
+/// Selects a child-visible subset while preserving the same immutable-ref
+/// checks. Unknown, duplicate or ephemeral IDs are rejected instead of being
+/// silently dropped, keeping child handoff scoped to explicit Core selection.
+pub fn selected_child_refs(
+    session: &AnalysisKernelSessionV1,
+    objects: &[KernelObjectRefV1],
+    selected_ids: &[String],
+) -> Result<Vec<CheckpointRef>, AnalysisKernelError> {
+    if selected_ids.is_empty() || selected_ids.len() > 64 {
+        return Err(AnalysisKernelError::InvalidField("selected_ids"));
+    }
+    let mut selected: Vec<KernelObjectRefV1> = Vec::with_capacity(selected_ids.len());
+    for id in selected_ids {
+        if selected.iter().any(|object| object.id == *id) {
+            return Err(AnalysisKernelError::InvalidField("selected_ids"));
+        }
+        let object = objects
+            .iter()
+            .find(|object| object.id == *id)
+            .ok_or(AnalysisKernelError::InvalidField("selected_ids"))?;
+        selected.push(object.clone());
+    }
+    let refs = checkpoint_refs(session, &selected)?;
+    Ok(refs.into_iter().skip(1).collect())
+}
+
 /// Attaches the selected immutable kernel refs to a Core-owned checkpoint and
 /// reseals its canonical hash. Callers can place the returned refs in
 /// `artifact_refs` or `child_refs` according to the existing workflow scope.
@@ -715,5 +741,35 @@ mod runtime_tests {
             .content_hash
             .as_ref()
             .is_some_and(|hash| hash.len() == 64));
+    }
+
+    #[test]
+    fn selected_child_refs_require_explicit_checkpointable_objects() {
+        let object = KernelObjectRefV1 {
+            id: "object-1".into(),
+            kernel_id: "kernel".into(),
+            logical_name: "rows".into(),
+            type_hint: "json".into(),
+            size: 2,
+            sensitivity: KernelSensitivity::Internal,
+            persistence: KernelObjectPersistence::Checkpointed,
+            content_hash: Some("c".repeat(64)),
+            artifact_locator: Some("artifact://kernel/object-1".into()),
+            provenance: "core:analysis-kernel".into(),
+            created_at_ms: 2,
+            invalidated_at_ms: None,
+        };
+        let refs = selected_child_refs(
+            &session(),
+            std::slice::from_ref(&object),
+            &["object-1".into()],
+        )
+        .unwrap();
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].id, "object-1");
+        assert!(matches!(
+            selected_child_refs(&session(), &[object], &["missing".into()]),
+            Err(AnalysisKernelError::InvalidField("selected_ids"))
+        ));
     }
 }

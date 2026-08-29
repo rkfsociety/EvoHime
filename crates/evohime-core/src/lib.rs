@@ -1878,6 +1878,7 @@ impl EventJournal {
             evohime_local_storage::analysis_kernel::AnalysisKernelStore::new(database.connection());
         let sessions = store.list_running_sessions()?;
         let mut recovered = 0;
+        let mut crashed_ids = Vec::new();
         for session in sessions {
             store.set_status(
                 &session.id,
@@ -1885,6 +1886,7 @@ impl EventJournal {
                 evohime_local_storage::analysis_kernel::KernelStatus::Crashed,
                 task_memory::now_millis() as i64,
             )?;
+            crashed_ids.push(session.id.clone());
             store.append_event(
                 &session.id,
                 "runtime.recovered",
@@ -1892,6 +1894,17 @@ impl EventJournal {
                 task_memory::now_millis() as i64,
             )?;
             recovered += 1;
+        }
+        drop(database);
+        #[cfg(windows)]
+        if std::env::var_os("EVOHIME_LAUNCH_CONTEXT").is_some() {
+            for kernel_id in crashed_ids {
+                let _ = crate::analysis_kernel::supervisor_command(serde_json::json!({
+                    "op": "kernel_stop",
+                    "kernel_id": kernel_id,
+                }))
+                .await;
+            }
         }
         Ok(recovered)
     }
