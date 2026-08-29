@@ -539,11 +539,17 @@ async function ensureSupervisorSession(
   child.unref()
   log('info', 'shell.supervisor_started', {})
 
-  const deadline = Date.now() + 5_000
+  // Update rollback may retry a locked Electron file for up to 30 seconds
+  // before the supervisor can publish its fresh launch context.
+  const deadline = Date.now() + 45_000
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 100))
     const next = readLaunchContext()
-    if (!next.developerLaunch) return next
+    // The context file may still contain the previous supervisor session for
+    // a short time after spawn. Returning it immediately makes the liveness
+    // monitor kill the freshly started client because it observes the stale
+    // PID. Accept only the context whose recorded owner is alive.
+    if (!next.developerLaunch && hasLiveSupervisor(next, processIsAlive)) return next
   }
   log('warn', 'shell.supervisor_context_timeout', {})
   return readLaunchContext()
