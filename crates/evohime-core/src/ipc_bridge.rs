@@ -8195,12 +8195,26 @@ impl IpcBridge {
         &self,
         request: generated::ResetAnalysisKernel,
     ) -> generated::AnalysisKernelResult {
-        let mut kernels = self.analysis_kernels.lock().await;
-        let Some(runtime) = kernels.get_mut(&request.kernel_id) else {
+        if !request.idempotency_key.is_empty() {
+            let database = self.journal.database().lock().await;
+            let store = crate::analysis_kernel::AnalysisKernelStore::new(database.connection());
+            if store
+                .get_idempotency(&request.kernel_id, &request.idempotency_key, "reset")
+                .ok()
+                .flatten()
+                .is_some()
+            {
+                return analysis_kernel_result_error("", "duplicate_request");
+            }
+        }
+        if !self
+            .analysis_kernels
+            .lock()
+            .await
+            .contains_key(&request.kernel_id)
+        {
             return analysis_kernel_result_error("", "not_found");
-        };
-        runtime.reset();
-        drop(kernels);
+        }
         #[cfg(windows)]
         if std::env::var_os("EVOHIME_LAUNCH_CONTEXT").is_some() {
             let stopped = crate::analysis_kernel::supervisor_command(serde_json::json!({
@@ -8213,26 +8227,49 @@ impl IpcBridge {
                 return analysis_kernel_result_error("", "worker_unavailable");
             }
         }
-        let database = self.journal.database().lock().await;
-        let store = crate::analysis_kernel::AnalysisKernelStore::new(database.connection());
-        match store.set_status(
-            &request.kernel_id,
-            request.expected_revision,
-            crate::analysis_kernel::KernelStatus::Reset,
-            crate::task_memory::now_millis() as i64,
-        ) {
-            Ok(_) => generated::AnalysisKernelResult {
-                schema_version: crate::analysis_kernel::KERNEL_HOST_REQUEST_VERSION,
-                request_id: String::new(),
-                status: "reset".into(),
-                inline_result: Vec::new(),
-                object_ref: None,
-                sensitivity: "internal".into(),
-                provenance: "core:analysis-kernel".into(),
-                error_class: String::new(),
-            },
+        let status_result = {
+            let database = self.journal.database().lock().await;
+            let store = crate::analysis_kernel::AnalysisKernelStore::new(database.connection());
+            store.set_status(
+                &request.kernel_id,
+                request.expected_revision,
+                crate::analysis_kernel::KernelStatus::Reset,
+                crate::task_memory::now_millis() as i64,
+            )
+        };
+        let result = match status_result {
+            Ok(_) => {
+                self.analysis_kernels
+                    .lock()
+                    .await
+                    .get_mut(&request.kernel_id)
+                    .expect("kernel existence checked before reset")
+                    .reset();
+                generated::AnalysisKernelResult {
+                    schema_version: crate::analysis_kernel::KERNEL_HOST_REQUEST_VERSION,
+                    request_id: String::new(),
+                    status: "reset".into(),
+                    inline_result: Vec::new(),
+                    object_ref: None,
+                    sensitivity: "internal".into(),
+                    provenance: "core:analysis-kernel".into(),
+                    error_class: String::new(),
+                }
+            }
             Err(error) => analysis_kernel_result_error("", kernel_storage_error_code(&error)),
+        };
+        if result.status == "reset" && !request.idempotency_key.is_empty() {
+            let database = self.journal.database().lock().await;
+            let store = crate::analysis_kernel::AnalysisKernelStore::new(database.connection());
+            let _ = store.put_idempotency(
+                &request.kernel_id,
+                &request.idempotency_key,
+                "reset",
+                b"{\"status\":\"reset\"}",
+                crate::task_memory::now_millis() as i64,
+            );
         }
+        result
     }
 
     async fn dispatch_get_task_checkpoint(
@@ -15762,5 +15799,90 @@ mod tests {
         assert!(tail_events
             .iter()
             .all(|event| event["sequence"].as_i64().unwrap_or_default() > 0));
+    }
+
+    #[tokio::test]
+    async fn analysis_kernel_ipc_is_bounded_idempotent_and_version_checked() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let journal =
+            EventJournal::open(directory.path().join("kernel-ipc.db")).expect("journal opens");
+        let bridge = IpcBridge::new(journal);
+        let created = bridge
+            .dispatch_create_analysis_kernel(generated::CreateAnalysisKernel {
+                task_id: "task-kernel-ipc".into(),
+                workspace_id: "workspace-kernel-ipc".into(),
+                runtime_version: "trusted-local-1".into(),
+                package_manifest_hash: "a".repeat(64),
+                policy_hash: "b".repeat(64),
+                ..Default::default()
+            })
+            .await;
+        assert_eq!(created.status, "running");
+        assert_eq!(created.revision, 1);
+
+        let put = generated::ExecuteAnalysisKernel {
+            kernel_id: created.kernel_id.clone(),
+            request_id: "object-put-request".into(),
+            operation: "object_put".into(),
+            args: br#"{"logical_name":"rows","type_hint":"json","value":[1,2,3],"sensitivity":"internal"}"#.to_vec(),
+            correlation_id: "object-put-correlation".into(),
+            idempotency_key: "object-put-idem".into(),
+            ..Default::default()
+        };
+        let result = bridge.dispatch_execute_analysis_kernel(put.clone()).await;
+        assert_eq!(result.status, "ok", "error={}", result.error_class);
+        assert!(result.inline_result.is_empty());
+        let object = result.object_ref.expect("metadata object ref");
+        assert_eq!(object.logical_name, "rows");
+        assert!(object.artifact_locator.is_empty());
+        let duplicate = bridge.dispatch_execute_analysis_kernel(put).await;
+        assert_eq!(duplicate.error_class, "duplicate_request");
+
+        let denied = bridge
+            .dispatch_execute_analysis_kernel(generated::ExecuteAnalysisKernel {
+                kernel_id: created.kernel_id.clone(),
+                request_id: "artifact-read-request".into(),
+                operation: "artifact_read".into(),
+                args: br#"{"locator":"artifact://missing"}"#.to_vec(),
+                correlation_id: "artifact-read-correlation".into(),
+                idempotency_key: "artifact-read-idem".into(),
+                ..Default::default()
+            })
+            .await;
+        assert_eq!(denied.error_class, "forbidden_capability");
+
+        let stale = bridge
+            .dispatch_reset_analysis_kernel(generated::ResetAnalysisKernel {
+                kernel_id: created.kernel_id.clone(),
+                expected_revision: 0,
+                idempotency_key: "reset-idem".into(),
+            })
+            .await;
+        assert_eq!(stale.error_class, "stale_revision");
+        let still_running = bridge
+            .dispatch_get_analysis_kernel(generated::GetAnalysisKernel {
+                kernel_id: created.kernel_id.clone(),
+                ..Default::default()
+            })
+            .await;
+        assert_eq!(still_running.status, "running");
+        assert_eq!(still_running.object_count, 1);
+
+        let reset = bridge
+            .dispatch_reset_analysis_kernel(generated::ResetAnalysisKernel {
+                kernel_id: created.kernel_id.clone(),
+                expected_revision: 1,
+                idempotency_key: "reset-idem".into(),
+            })
+            .await;
+        assert_eq!(reset.status, "reset");
+        let duplicate_reset = bridge
+            .dispatch_reset_analysis_kernel(generated::ResetAnalysisKernel {
+                kernel_id: created.kernel_id,
+                expected_revision: 1,
+                idempotency_key: "reset-idem".into(),
+            })
+            .await;
+        assert_eq!(duplicate_reset.error_class, "duplicate_request");
     }
 }
