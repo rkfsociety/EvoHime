@@ -22,17 +22,17 @@
 0. Проверить proto и зарезервировать additive names/tags, не меняя semantics старых clients.
 1. Добавить bounded request/result/event messages с correlation, idempotency, optimistic version и typed errors; исключить secrets, raw prompt и hidden reasoning.
 2. Реализовать Electron main/preload и предусмотренный client adapter; он только сериализует и маршрутизирует Core commands.
-3. Добавить renderer/CLI projection для status, progress, blockers, refs, warnings и actions; renderer не вычисляет state machine и не запускает effect.
+3. Расширить существующий `WorkflowPanel` либо добавить builder-поверхность для draft/canvas и read-only run inspection; CLI в текущий scope не входит. Renderer не вычисляет state machine и не запускает effect.
 4. Проверить reconnect, replay gap, duplicate event, stale/denied action и unavailable optional backend.
-5. Привязать UI/CLI trace к Core event/provenance IDs без запрещённых payload.
+5. Привязать UI trace к Core event/provenance IDs без запрещённых payload.
 
 ## Предметная декомпозиция
 
 ### Protocol and client surfaces
 
 - Proto: добавить additive `VisualWorkflowBuilderRequest`, `VisualWorkflowBuilderResponse`, `VisualWorkflowBuilderEvent` и command/event oneof в `crates/desktop-ipc/proto/evohime.desktop.proto` после проверки свободных tags; сохранить major, replay/resync и bounded frame limits.
-- Bridge: связать `crates/evohime-core/src/ipc_bridge.rs`, `desktop/evohime-electron/src/shared/api.ts`, `desktop/evohime-electron/src/preload/index.ts` и `desktop/evohime-electron/src/main/shell-bridge.ts`; renderer не получает Core/storage authority.
-- UI: создать `desktop/evohime-electron/src/renderer/src/VisualWorkflowBuilderPanel.tsx` только как projection/action surface; тесты — `desktop/evohime-electron/tests/visual_workflow_builder.test.tsx` и protocol/typecheck gates.
+- Bridge: расширить `crates/evohime-core/src/ipc_bridge.rs`, `desktop/evohime-electron/src/shared/api.ts`, `desktop/evohime-electron/src/preload/index.ts`, `desktop/evohime-electron/src/renderer/src/shell-api.ts` и `desktop/evohime-electron/src/main/shell-bridge.ts`; renderer не получает Core/storage authority.
+- UI: расширить существующий `desktop/evohime-electron/src/renderer/src/WorkflowPanel.tsx` или добавить отдельную panel только после проверки UX-интеграции в `App.tsx`; тесты — `desktop/evohime-electron/tests/visual_workflow_builder.test.tsx` и protocol/typecheck gates.
 
 ### Acceptance-to-projection matrix
 
@@ -48,7 +48,7 @@
 
 - [ ] Новая surface additive и authenticated.
 - [ ] Mutations повторно проверяются Core и защищены idempotency/version.
-- [ ] Renderer/CLI получает только bounded projection.
+- [ ] Renderer получает только bounded projection.
 - [ ] Reconnect/replay и stale actions предсказуемы.
 - [ ] UI показывает фактический Core state.
 

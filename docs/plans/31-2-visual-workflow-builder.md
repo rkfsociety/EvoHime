@@ -1,17 +1,17 @@
-# План 31.2 — Visual Workflow Builder: typed canvas, validation и live runtime inspection: runtime-интеграция и recovery
+# План 31.2 — Visual Workflow Builder: typed canvas, validation и live runtime inspection: authoring-интеграция, read-only inspection и recovery draft
 
 Статус: этап 2 для [плана 31.0](./31-0-visual-workflow-builder.md); после [плана 31.1](./31-1-visual-workflow-builder.md).
 
 ## Цель
 
-Провести «Visual Workflow Builder: typed canvas, validation и live runtime inspection» через Core runtime: validation -> authorization -> bounded operation -> typed result/event -> recovery.
+Реализовать Core-owned authoring и read-only inspection: draft edit -> validation -> conflict-safe save -> immutable workflow version, а также восстановление draft и чтение snapshot/event state уже существующего runtime. Этот этап не запускает workflow и не создаёт новый runtime.
 
 ## Зависимости
 
 ### Блокирующие
 
 - План 31.1 — contract, validators, storage policy и errors.
-- Existing workflow/child/provider/tool/memory boundaries, budgets, cancellation, audit и unknown-outcome semantics.
+- Existing workflow registry/contract, workflow runtime journal, audit и authenticated Core boundary; runtime execution semantics остаются в существующем workflow runtime.
 
 ### Опциональные
 
@@ -19,39 +19,38 @@
 
 ## Реализация
 
-0. Загрузить stage-1 artifacts и закрепить immutable contract/policy snapshot active run.
-1. Добавить Core handler/state machine; повторить authorization непосредственно перед effect и связать result/event с correlation + idempotency.
-2. Подключить только заявленные registry/workflow/child/provider/tool surfaces. Optional backend даёт typed unavailable/degraded.
-3. Формализовать timeout, lease, retry, backpressure, partial failure, cancellation и unknown outcome; после restart только replay/reconciliation, без blind retry.
-4. Сделать fault-injection для crash до/после dispatch, stale version/lease, duplicate delivery, policy change и corruption.
-5. Зафиксировать metadata-only projection и redacted evidence для этапов 3–4.
+0. Загрузить stage-1 contract и принимать только typed draft commands: add/remove/move/connect/update metadata, с bounded payload и optimistic version.
+1. Реализовать Core handler/state machine для normalize -> registry bind -> validate -> persist draft -> publish immutable definition; повторить authorization перед сохранением.
+2. Разделить execution hash и layout hash и доказать, что layout edit не меняет graph semantics. Запрещать mutation published definition и любого running snapshot.
+3. Реализовать recovery draft: после restart восстановить только последний валидный draft/revision либо typed conflict/corrupt outcome; не превращать незавершённый draft в published workflow.
+4. Реализовать read-only projection существующего `workflow_runtime`/event journal: состояния узлов, sequence/replay и redacted refs без повторного dispatch, retry или изменения run.
+5. Сделать fault-injection для crash во время draft save, stale revision, duplicate command, registry/policy change и corruption; зафиксировать metadata-only evidence для этапа 3.
 
 ## Предметная декомпозиция
 
-### Runtime vertical slice
+### Authoring and inspection vertical slice
 
-- Entrypoint: `crates/evohime-core/src/visual_workflow_builder.rs` + handler в `crates/evohime-core/src/lib.rs`; сервис `VisualWorkflowBuilderService` должен выполнять `validate → policy → bounded operation → typed result/event`.
-- На старте run загрузить exact contract/policy snapshot и проверить correlation, idempotency, budget, cancellation и capability grant непосредственно перед effect.
-- Для каждого внешнего/необратимого вызова записать before/after-dispatch evidence; unknown outcome переводить в reconciliation, без blind retry.
-- Тесты: `crates/evohime-core/tests/visual_workflow_builder_recovery.rs` — timeout/cancel, duplicate, stale version/lease, crash до/после dispatch, restart и optional-unavailable.
+- Entrypoint: `crates/evohime-core/src/visual_workflow_builder.rs` + command handler в `crates/evohime-core/src/ipc_bridge.rs`; сервис выполняет только `validate → policy → bounded draft mutation → typed result/event`.
+- Для публикации сохранить immutable definition и execution hash; для инспекции читать только уже созданные runtime snapshot/events.
+- Тесты: `crates/evohime-core/tests/visual_workflow_builder_recovery.rs` — draft crash/restart, duplicate, stale revision, invalid binding, corruption, published/running immutability и replay.
 
-### Acceptance-to-runtime matrix
+### Acceptance-to-authoring/inspection matrix
 
-- `C01` — Есть canvas над существующим workflow contract. → провести через typed outcome, timeout, cancellation и idempotency.
-- `C05` — Layout metadata отделена от execution hash. → провести через typed outcome, timeout, cancellation и idempotency.
-- `C06` — Есть recovery draft. → журналировать переходы и восстановление через replay/reconciliation.
+- `C01` — Есть canvas над существующим workflow contract. → провести через typed draft mutations, validation и idempotency.
+- `C05` — Layout metadata отделена от execution hash. → доказать независимыми hashes и fixture с перемещением узла.
+- `C06` — Есть recovery draft. → журналировать draft transitions и восстановление без публикации/dispatch.
 
 ### Recovery contract
 
-- Durable transitions восстанавливаются replay/reconciliation; transient work после restart получает typed `unknown`/`unavailable`, а не повтор side effect.
-- Fault injection должна доказать отсутствие duplicate effect, потерю approval, обход policy или расширение capability set.
+- Durable draft transitions восстанавливаются replay/reconciliation; повреждённый или stale draft получает typed `corrupt`/`conflict`, а не публикуется молча.
+- Fault injection должна доказать отсутствие частичной записи, изменения published/running graph, обход policy или расширения capability set.
 
 ## Критерии выхода
 
-- [ ] Happy path выдаёт typed result только после Core validation.
-- [ ] Duplicate/stale/limit/cancel/restart/unavailable имеют отдельные outcomes.
-- [ ] Unknown external effect не повторяется автоматически.
-- [ ] Active run pinned к exact contract/policy snapshot.
+- [ ] Happy path draft mutation/publish выдаёт typed result только после Core validation.
+- [ ] Duplicate/stale/limit/corrupt/restart имеют отдельные outcomes.
+- [ ] Published definition и active run snapshot не изменяются Builder-ом.
+- [ ] Live inspection read-only и pinned к фактическому runtime snapshot/event sequence.
 - [ ] Recovery/fault-injection tests воспроизводимы.
 
 ## Не входит

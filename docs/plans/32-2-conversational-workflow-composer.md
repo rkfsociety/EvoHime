@@ -11,21 +11,22 @@
 ### Блокирующие
 
 - План 32.1 — contract, validators, storage policy и errors.
+- План 31.0 — Builder authoring contract для передачи validated draft и сохранения immutable version.
 - Existing workflow/child/provider/tool/memory boundaries, budgets, cancellation, audit и unknown-outcome semantics.
 
 ### Опциональные
 
 - План 30.0 — зависимость из обзора.
-- План 31.0 — зависимость из обзора.
+- Existing Core model gateway/provider route, model provenance/receipt и bounded catalog surfaces — для безопасной генерации proposal; Composer не вызывает provider напрямую.
 
 ## Реализация
 
-0. Загрузить stage-1 artifacts и закрепить immutable contract/policy snapshot active run.
+0. Загрузить stage-1 artifacts и закрепить immutable contract/policy/catalog/model-route snapshot для active composition session.
 1. Добавить Core handler/state machine; повторить authorization непосредственно перед effect и связать result/event с correlation + idempotency.
-2. Подключить только заявленные registry/workflow/child/provider/tool surfaces. Optional backend даёт typed unavailable/degraded.
-3. Формализовать timeout, lease, retry, backpressure, partial failure, cancellation и unknown outcome; после restart только replay/reconciliation, без blind retry.
-4. Сделать fault-injection для crash до/после dispatch, stale version/lease, duplicate delivery, policy change и corruption.
-5. Зафиксировать metadata-only projection и redacted evidence для этапов 3–4.
+2. Вызвать модель только через Core gateway с bounded catalog snapshot; после ответа выполнить parse -> proposal validation -> binding -> static validation -> risk preview. Модельный вызов не имеет tool/effect authority; provider unavailable, timeout, malformed output и catalog drift дают typed outcome.
+3. Подключить только заявленные registry/workflow/child/provider/tool surfaces для binding/preview. Optional integration даёт typed missing/unavailable, а не выдуманную capability.
+4. Формализовать timeout, cancellation, bounded repair loops, backpressure, partial failure, duplicate/idempotency и stale draft revision; после restart unsaved session теряется предсказуемо, accepted immutable graph читается через Builder storage, без blind retry или автоматического запуска.
+5. Сделать fault-injection для crash до/после model dispatch, duplicate delivery, policy/catalog change, malformed response и save failure; зафиксировать metadata-only projection и redacted evidence для этапов 3–4.
 
 ## Предметная декомпозиция
 
@@ -42,6 +43,7 @@
 - `C02` — Proposal отделён от authoritative workflow contract. → провести через typed outcome, timeout, cancellation и idempotency.
 - `C04` — Есть iterative typed edits. → проверить exact revision/hash перед mutation и сохранить observed evidence.
 - `C06` — Есть risk/side-effect preview. → повторить authorization непосредственно перед dispatch/effect.
+- `C07` — Draft можно открыть в builder и сохранить как immutable version. → передать validated draft в Builder authoring API с optimistic revision и explicit Save.
 
 ### Recovery contract
 
@@ -52,9 +54,11 @@
 
 - [ ] Happy path выдаёт typed result только после Core validation.
 - [ ] Duplicate/stale/limit/cancel/restart/unavailable имеют отдельные outcomes.
-- [ ] Unknown external effect не повторяется автоматически.
-- [ ] Active run pinned к exact contract/policy snapshot.
+- [ ] Composer не выполняет external effect и не повторяет model dispatch автоматически.
+- [ ] Active composition session pinned к exact contract/policy/catalog/model-route snapshot.
 - [ ] Recovery/fault-injection tests воспроизводимы.
+- [ ] Model invocation не имеет tool/effect authority и имеет bounded unavailable/invalid outcomes.
+- [ ] Unsaved restart и accepted save/reload имеют разные доказанные outcomes.
 
 ## Не входит
 

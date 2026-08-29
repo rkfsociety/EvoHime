@@ -4,7 +4,7 @@
 
 ## Цель
 
-Зафиксировать authoritative contract «Visual Workflow Builder: typed canvas, validation и live runtime inspection» и сделать его реализуемым: первичный выход — «Есть canvas над существующим workflow contract».
+Зафиксировать typed contract для canvas draft поверх существующего `workflow/v1` и сделать его реализуемым: первичный выход — Core-owned contract, на котором этап UI сможет построить canvas.
 
 ## Граница
 
@@ -25,9 +25,9 @@
 ## Реализация
 
 0. Сверить overview с live code/docs/tests/git log; если контракт уже существует, собрать evidence для закрытия, не создавая второй authority.
-1. Описать versioned fields, enums, transitions, scope, actor/provenance, idempotency, limits, sensitivity и compatibility. Для mutation определить optimistic version и stale outcome.
+1. Описать versioned fields, enums, draft transitions, scope, actor/provenance, idempotency, limits, sensitivity и compatibility. Для mutation определить optimistic version и stale outcome; published workflow и running snapshot остаются immutable.
 2. Реализовать Rust validators и canonical serde/JSON/Proto representation; unknown version, oversized input и authority-bearing unknown data дают typed error.
-3. Добавить durable store и additive migration с backup-before-migrate только если состояние переживает restart; ephemeral state закрепить отрицательным persistence test.
+3. Добавить durable store и additive migration с backup-before-migrate для draft/recovery state; layout и draft переживают restart, а published/running graph не переписываются.
 4. Добавить deterministic fixtures: valid/invalid, duplicate, stale, redaction, limit и migration failure; выдать evidence-пакет этапу 2.
 
 ## Артефакты
@@ -42,27 +42,28 @@
 ### Поверхности и контракт
 
 - `crates/evohime-core/src/visual_workflow_builder.rs`: ввести `VisualWorkflowBuilderDefinition`, `VisualWorkflowBuilderPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
-- Storage: `crates/evohime-local-storage/src/visual_workflow_builder_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
+- Storage: расширить существующий `LocalDatabase`/workflow storage либо добавить отдельный store только после evidence freeze; draft и layout могут переживать restart, published definition хранится как immutable version. Не дублировать runtime snapshot из `workflow_store`.
 - Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
-- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/visual_workflow_builder_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/visual_workflow_builder_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale, layout-vs-execution hash и draft persistence/migration решения.
 
 ### Acceptance-to-contract matrix
 
 - `C02` — Pins и block metadata приходят из Core registry. → ввести versioned Rust-типы, enum-состояния и canonical serialization.
 - `C03` — Core выполняет authoritative validation. → зафиксировать typed invariant, error code и deterministic fixture.
 - `C04` — Сохранение создаёт immutable новую version. → ввести versioned Rust-типы, enum-состояния и canonical serialization.
+- `C05` — Layout metadata отделена от execution hash. → хранить layout отдельно и доказать, что перемещение узлов не меняет execution hash.
 
 ### Definition freeze
 
-- До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Visual Workflow Builder: typed canvas, validation и live runtime inspection».
+- До stage 2 зафиксировать schema revision, execution/layout hash rules, sensitivity/provenance matrix, typed error codes и exact persistence decision для draft/recovery.
 - Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
 
 ## Критерии выхода
 
-- [ ] Есть canvas над существующим workflow contract.
+- [ ] Есть Core-owned typed contract для canvas над существующим workflow contract.
 - [ ] Pins и block metadata приходят из Core registry.
 - [ ] Contract не расширяет capabilities и не переносит authority за пределы Core.
-- [ ] Storage/ephemeral decision и rollback доказаны тестом.
+- [ ] Draft/recovery persistence decision и rollback доказаны тестом; running workflow не изменяется.
 
 ## Rollback
 

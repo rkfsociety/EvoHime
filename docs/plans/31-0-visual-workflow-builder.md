@@ -11,6 +11,11 @@
 
 Builder не создаёт новый runtime. Он является безопасной authoring/inspection поверхностью над уже существующими Core-owned workflow contracts и registry.
 
+Его Core authoring-контракт (validated draft -> immutable `workflow/v1` revision,
+optimistic revision/hash и redacted provenance) является общей точкой handoff для
+Conversational Workflow Composer; Composer не создаёт отдельное хранилище или
+второй save authority.
+
 ## Текущее основание и граница
 
 Новый контур должен оставаться Core-owned и typed. Renderer является только
@@ -30,7 +35,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ## Этапы направления
 
 - [Этап 1 — Core-контракт, schema и storage](./31-1-visual-workflow-builder.md)
-- [Этап 2 — runtime-интеграция и recovery](./31-2-visual-workflow-builder.md)
+- [Этап 2 — authoring-интеграция, read-only inspection и recovery draft](./31-2-visual-workflow-builder.md)
 - [Этап 3 — IPC, client projection и UI](./31-3-visual-workflow-builder.md)
 - [Этап 4 — verification, release-evidence и закрытие](./31-4-visual-workflow-builder.md)
 
@@ -38,7 +43,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Блокирующие
 
-- Специфических межплановых blocking зависимостей нет; используется текущий Core/IPC фундамент проекта.
+- Специфических blocking зависимостей от будущих планов нет; используется текущий Core/IPC фундамент проекта.
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 
 ### Опциональные
@@ -76,17 +81,18 @@ Renderer может держать presentation draft для UX, но authoritat
 
 ## План реализации
 
-1. Зафиксировать versioned typed contract, state machine, provenance, limits,
-   failure/unknown-outcome semantics и threat model; отдельно перечислить
-   поля, которые могут быть предложены моделью, и authoritative Core evidence.
-2. Реализовать Core validation и durable storage/event transitions. Миграция
-   должна быть additive, транзакционной, с backup/recovery и deterministic
-   serialization/hash там, где сущность versioned.
-3. Подключить существующие registry/tool/workflow/provider/child контуры,
-   повторные grant/policy/approval проверки и bounded retry/cancellation.
-4. Добавить additive IPC, main/preload adapter и metadata-only renderer/UI;
+1. Зафиксировать versioned typed draft contract, layout contract, provenance,
+   limits, conflict outcomes и threat model; явно отделить поля layout от
+   authoritative workflow definition и execution hash.
+2. Реализовать Core validation, draft storage и публикацию новой immutable
+   workflow version. Draft recovery допускает восстановление незавершённого
+   редактирования, но не меняет уже запущенный snapshot и не запускает effect.
+3. Подключить только существующие registry/workflow contracts для binding и
+   проверки; Builder не добавляет runtime, capability или собственную retry/
+   cancellation семантику.
+4. Добавить additive IPC, main/preload adapter и metadata-only renderer UI;
    sensitive payload, raw prompt/output и credentials не передавать.
-5. Провести focused unit/storage/integration/recovery/security/eval tests,
+5. Провести focused unit/storage/conflict/recovery/security/eval tests,
    обновить architecture/current-state только после фактической реализации
    и сохранить команду воспроизведения проверки.
 
@@ -97,7 +103,7 @@ Renderer может держать presentation draft для UX, но authoritat
 - [ ] Core выполняет authoritative validation.
 - [ ] Сохранение создаёт immutable новую version.
 - [ ] Layout metadata отделена от execution hash.
-- [ ] Есть recovery draft.
+- [ ] Есть recovery draft без изменения published/running graph.
 - [ ] Есть read-only live runtime inspection.
 - [ ] Sensitive payload не утекает в renderer.
 

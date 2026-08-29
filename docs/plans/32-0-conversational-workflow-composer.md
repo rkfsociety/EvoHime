@@ -26,11 +26,12 @@ immutable/versioned записи; для внешних эффектов сох�
 не повторять side effect вслепую.
 
 Кандидатная точка интеграции: `crates/evohime-core/src/conversational_workflow_composer.rs`,
-а также соответствующий storage store, `crates/desktop-ipc/proto/evohime.desktop.proto`,
-Electron main/preload bridge, bounded renderer projection и focused tests.
-Имена файлов проверяются по live checkout на этапе реализации и не являются
-заранее утверждённым API.
-
+существующие `workflow/v1` и Core-owned registry/runtime, authoring/storage surface,
+`crates/desktop-ipc/proto/evohime.desktop.proto`, Electron main/preload bridge,
+чатовая и Builder-проекции и focused tests. Composer не создаёт второй workflow-
+authority: authoritative graph, immutable revision, binding, hash и сохранение
+принадлежат общему Core authoring-контракту Builder-а. Имена файлов проверяются
+по live checkout на этапе реализации и не являются заранее утверждённым API.
 ## Этапы направления
 
 - [Этап 1 — Core-контракт, schema и storage](./32-1-conversational-workflow-composer.md)
@@ -42,13 +43,15 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Блокирующие
 
-- Специфических межплановых blocking зависимостей нет; используется текущий Core/IPC фундамент проекта.
+- План 31.0 — Visual Workflow Builder: его Core authoring-контракт и UI handoff
+  являются обязательными для критерия «открыть draft в builder и сохранить как
+  immutable version». Если Builder ещё не предоставляет этот контракт, Composer
+  не объявляется готовым; временный fallback — только preview/discard.
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 
 ### Опциональные
 
 - План 30.0 — Workflow Package: переносимый import/export без секретов и с rebinding зависимостей.
-- План 31.0 — Visual Workflow Builder: typed canvas, validation и live runtime inspection.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue
@@ -88,9 +91,11 @@ Composer не получает право самостоятельно реги�
 1. Зафиксировать versioned typed contract, state machine, provenance, limits,
    failure/unknown-outcome semantics и threat model; отдельно перечислить
    поля, которые могут быть предложены моделью, и authoritative Core evidence.
-2. Реализовать Core validation и durable storage/event transitions. Миграция
-   должна быть additive, транзакционной, с backup/recovery и deterministic
-   serialization/hash там, где сущность versioned.
+2. Реализовать Core validation и event transitions. Unsaved proposal/draft session
+   может быть ephemeral, но accepted draft сохраняется как immutable `workflow/v1`
+   version через общий Builder authoring/storage contract; не создавать второй
+   durable store. Если для provenance нужна запись, она должна быть additive,
+   транзакционной и redacted; serialization/hash — deterministic.
 3. Подключить существующие registry/tool/workflow/provider/child контуры,
    повторные grant/policy/approval проверки и bounded retry/cancellation.
 4. Добавить additive IPC, main/preload adapter и metadata-only renderer/UI;
@@ -110,6 +115,11 @@ Composer не получает право самостоятельно реги�
 - [ ] Draft можно открыть в builder и сохранить как immutable version.
 - [ ] Composer не может расширить permissions или выполнить draft самовольно.
 
+### Обязательный cross-cutting gate
+
+- [ ] Model request/response bounded, provenance сохраняет catalog/model/version
+      и request/graph hashes без raw prompt/output.
+
 ## Ограничения и non-goals
 
 - бесконтрольная генерация новых tools;
@@ -119,6 +129,8 @@ Composer не получает право самостоятельно реги�
 - свободное редактирование raw workflow JSON моделью в обход Core operations;
 - преобразование любой переписки в workflow без preview;
 - замена обычного agent loop.
+- сохранение unsaved proposal как durable workflow или запуск model-generated
+  graph без явного Core-validated Save/Run действия пользователя.
 
 Дополнительно обязательно: новая поверхность не расширяет capabilities,
 не обходится через renderer или imported content, не превращает неизвестный

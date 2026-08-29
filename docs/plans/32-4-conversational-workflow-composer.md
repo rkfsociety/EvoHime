@@ -11,6 +11,7 @@
 ### Блокирующие
 
 - План 32.3 — Core, IPC и client projection.
+- План 31.4 — verification builder surface для совместного acceptance.
 - Project release-evidence, documentation и security/eval gates.
 
 ### Опциональные
@@ -27,14 +28,15 @@
 - [ ] Есть risk/side-effect preview.
 - [ ] Draft можно открыть в builder и сохранить как immutable version.
 - [ ] Composer не может расширить permissions или выполнить draft самовольно.
+- [ ] Model/catalog bounds, provenance redaction и unavailable/invalid outcomes доказаны.
 
 ## Обязательная проверка
 
-1. Unit/contract tests для schema, hash, transitions, bounds и errors.
-2. Storage/migration tests для backup, rollback, idempotency и corruption.
-3. Runtime/recovery/fault-injection tests для cancel, stale, denial, restart и unknown outcome.
-4. IPC/adapter/renderer or CLI tests для auth, redaction, replay/resync и optimistic conflict.
-5. Security/eval tests по фактическим критериям направления: traversal, escalation, secret leakage и untrusted input.
+1. Unit/contract tests для proposal vs `workflow/v1`, schema, hash, transitions, model/catalog bounds, typed edits и errors.
+2. Storage tests для unsaved non-persistence, immutable save/reload, idempotency, optimistic conflict и corruption; migration tests только если изменён общий Builder schema.
+3. Runtime/recovery/fault-injection tests для model timeout/cancel, malformed response, catalog drift, denial, restart, save failure и unknown outcome.
+4. IPC/adapter/chat/Builder-handoff tests для auth, redaction, replay/resync, optimistic conflict, missing credentials и explicit Save/Run actions.
+5. Security/eval tests по фактическим критериям направления: prompt injection, unknown capability, approval removal, permission escalation, secret leakage, untrusted input и bounded repair loops.
 6. Проверить cargo fmt --all -- --check, релевантный cargo clippy -D warnings, npm run check:protocol, npm run typecheck, npm test и git diff --check.
 
 ## Release-evidence и закрытие
@@ -50,6 +52,7 @@
 - [ ] Blocking dependencies закрыты.
 - [ ] Ссылки и версии соответствуют checkout.
 - [ ] Release bundle redacted.
+- [ ] Все восемь acceptance criteria сопоставлены с reproducible test/evidence IDs; факт «модель предложила» не считается доказательством Core validation/save.
 
 ## Связанный issue
 
