@@ -151,3 +151,41 @@ fn write_response(writer: &mut impl Write, response: Response) -> io::Result<()>
     writer.write_all(b"\n")?;
     writer.flush()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(operation: &str, args: serde_json::Value) -> Request {
+        Request {
+            request_id: "r1".into(),
+            operation: operation.into(),
+            args,
+        }
+    }
+
+    #[test]
+    fn pure_operations_return_bounded_results() {
+        let response = execute(request(
+            "json_select",
+            serde_json::json!({"value":{"x":7},"path":["x"]}),
+        ));
+        assert_eq!(response.status, "ok");
+        assert_eq!(response.result, Some(serde_json::json!(7)));
+    }
+
+    #[test]
+    fn direct_effect_operations_require_the_core_host() {
+        for operation in ["filesystem", "network", "shell", "credentials"] {
+            let response = execute(request(operation, serde_json::Value::Null));
+            assert_eq!(response.status, "error");
+            assert_eq!(response.error_class, Some("host_request_required"));
+        }
+    }
+
+    #[test]
+    fn malformed_select_does_not_panic_or_execute() {
+        let response = execute(request("json_select", serde_json::json!({"value": 1})));
+        assert_eq!(response.error_class, Some("invalid_select"));
+    }
+}
