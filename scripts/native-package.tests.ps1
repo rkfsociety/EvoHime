@@ -9,6 +9,7 @@ if ($manifest.client -ne 'electron-shell') { throw 'manifest client must be elec
 if ($manifest.architecture -ne 'x64') { throw 'manifest architecture must be x64' }
 if ($manifest.components.core -ne 'evohime-core.exe') { throw 'core component is missing' }
 if ($manifest.components.supervisor -ne 'evohime-supervisor.exe') { throw 'supervisor component is missing' }
+if ($manifest.components.analysis_worker -ne 'evohime-analysis-worker.exe') { throw 'analysis worker component is missing' }
 if ($manifest.components.listener -ne 'evohime-listener.exe') { throw 'listener component is missing' }
 if ($manifest.components.updater -ne 'evohime-transaction.exe') { throw 'updater component is missing' }
 if ($manifest.components.verifier -ne 'evohime-verify.exe') { throw 'verifier component is missing' }
@@ -24,6 +25,7 @@ New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
 Set-Content -LiteralPath (Join-Path $packageRoot 'EvoHime.exe') -Value 'ui'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-core.exe') -Value 'core'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-supervisor.exe') -Value 'supervisor'
+Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-analysis-worker.exe') -Value 'analysis-worker'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-listener.exe') -Value 'listener'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-transaction.exe') -Value 'updater'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-verify.exe') -Value 'verifier'

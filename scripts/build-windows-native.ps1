@@ -53,7 +53,7 @@ if (-not $SkipBuild) {
 
 New-Item -ItemType Directory -Force -Path $resolvedOutput | Out-Null
 $cargoTarget = Join-Path $repoRoot "target\$cargoProfile"
-$requiredNative = @('evohime-core.exe', 'evohime-supervisor.exe', 'evohime-listener.exe', 'evohime-transaction.exe', 'evohime-verify.exe')
+$requiredNative = @('evohime-core.exe', 'evohime-supervisor.exe', 'evohime-analysis-worker.exe', 'evohime-listener.exe', 'evohime-transaction.exe', 'evohime-verify.exe')
 foreach ($component in $requiredNative) {
     $destination = Join-Path $resolvedOutput $component
     $source = if ($SkipBuild) { $destination } else { Join-Path $cargoTarget $component }
