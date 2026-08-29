@@ -21,8 +21,9 @@ function RepairCard({ status }: { readonly status: RepairStatus }): React.JSX.El
     setMessage(outcome.ok ? outcome.value.summary : outcome.message)
   }
 
-  const action = status.phase === 'available'
-    ? { label: 'Починить', name: 'repair.start' as const, payload: { workspacePath: '' }, disabled: false }
+  const retryable = status.phase === 'available' || (status.phase === 'failed' && status.errorCount >= 3)
+  const action = retryable
+    ? { label: status.phase === 'failed' ? 'Повторить' : 'Починить', name: 'repair.start' as const, payload: { workspacePath: '' }, disabled: false }
     : status.phase === 'ready_to_commit'
       ? { label: 'Применить и закоммитить', name: 'repair.commit' as const, payload: {}, disabled: false }
       : status.phase === 'ready_to_push'

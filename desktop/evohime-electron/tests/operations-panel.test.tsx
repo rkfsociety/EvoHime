@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import type { CommandOutcome, CoreEvent, EvoHimeApiV1, RendererCommand } from '../src/shared/api'
+import type { CommandOutcome, CoreEvent, EvoHimeApiV1, RendererCommand, RepairStatus } from '../src/shared/api'
 import { OperationsPanel } from '../src/renderer/src/OperationsPanel'
 
 const calls: Array<{ command: string; payload: unknown }> = []
@@ -81,6 +81,32 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe('operations panel', () => {
+  it('позволяет повторить repair-run после recoverable failure без workspace', async () => {
+    const repair: RepairStatus = {
+      phase: 'failed',
+      repairId: 'repair-1',
+      workspacePath: 'C:\\repair',
+      baseCommit: null,
+      branch: 'main',
+      taskId: null,
+      errorCount: 36,
+      repeatedPatterns: 1,
+      summary: 'Repair-run не запустился.',
+      diffStat: '',
+      tests: [],
+      commit: null,
+      ciState: 'unknown',
+      error: 'Выбранный workspace не является исходным репозиторием EvoHime.',
+      updatedAtMs: 1
+    }
+    render(<OperationsPanel connection="connected" events={[]} repair={repair} />)
+
+    const button = await screen.findByRole('button', { name: 'Повторить' })
+    await userEvent.click(button)
+
+    expect(calls.find((call) => call.command === 'repair.start')?.payload).toEqual({ workspacePath: '' })
+  })
+
   it('asks Core for the pending queue and conflicts once the workspace is known', async () => {
     render(<OperationsPanel connection="connected" events={[]} />)
     await waitFor(() => {
