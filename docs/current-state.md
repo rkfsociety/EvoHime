@@ -6,9 +6,9 @@ self-repair/self-update цикл; автоматического ремонта,
 Code signing явно исключён из текущего release scope.
 
 План 23 выполняется последовательно: этапы 23.1 (versioned TaskCheckpoint
-contract, provenance validation, immutable storage и schema v32) и 23.2
-(Core runtime capture/recovery) реализованы и проверены; IPC/UI и полное
-acceptance закрытие остаются этапами 23.3–23.4.
+contract, provenance validation, immutable storage и schema v32), 23.2 (Core
+runtime capture/recovery) и 23.3 (IPC/UI projection) реализованы и проверены;
+полное acceptance закрытие остаётся этапом 23.4.
 
 ## Продукт
 
@@ -51,7 +51,12 @@ Core и supervisor — внутренние компоненты установ�
   outcome и blind retry. Проверки 23.1–23.2: 10 focused storage tests,
   4 focused runtime tests, полный `evohime-local-storage` suite (196 tests),
   полный `evohime-core` suite (547 tests), `cargo check -p evohime-core`,
-  `cargo fmt --all -- --check` и `git diff --check`;
+  `cargo fmt --all -- --check` и `git diff --check`. IPC/UI 23.3 добавляет
+  typed `GetTaskCheckpoint`/`ResolveTaskCheckpoint`, bounded projection и
+  action result в protobuf, атомарную idempotency запись Core и панель
+  `TaskCheckpointPanel`; проверены typed Rust IPC, 2 renderer tests, полный
+  Electron suite (462 tests, 2 skipped), `npm run check:protocol` и
+  `npm run typecheck`;
 - streamed task timeline, cancellation и approval round-trip;
 - Windows package smoke tests и Windows CI;
 - единый Inno Setup installer с одним desktop shortcut; установленный клиент сам поднимает supervisor, а supervisor — Core;

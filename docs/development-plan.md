@@ -22,10 +22,10 @@ desktop-клиент, выбирает workspace, выполняет задач�
 
 План 22 (diagnostics/recovery, credential persistence и compatibility/release
 hardening) реализован и закрыт. Сейчас выполняется план 23 — TaskCheckpoint для
-compaction и recovery: этапы 23.1 (contract/storage) и 23.2 (runtime/recovery)
-закрыты по свежему evidence, следующим идёт 23.3 (IPC/UI), затем 23.4
-(acceptance и удаление полного комплекта плана). После плана 23 порядок
-продолжится согласно `docs/plans/README.md`.
+compaction и recovery: этапы 23.1 (contract/storage), 23.2 (runtime/recovery)
+и 23.3 (IPC/UI) закрыты по свежему evidence, следующим идёт 23.4 (acceptance
+и удаление полного комплекта плана). После плана 23 порядок продолжится
+согласно `docs/plans/README.md`.
 
 1. **Планы 23–115.** Выполнять численно по `(NN, M)`, не перескакивая через
    blocking dependency; закрытый комплект переносить в каноническую

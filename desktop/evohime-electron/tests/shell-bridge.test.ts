@@ -304,6 +304,47 @@ describe('renderer command surface', () => {
     ])
   })
 
+  it('forwards bounded TaskCheckpoint reads and explicit actions', () => {
+    expect(invoke('core.getTaskCheckpoint', {
+      taskId: 'task-1',
+      workspacePath: 'C:\\work'
+    })).toEqual({ ok: true, value: { accepted: true } })
+    expect(invoke('core.resolveTaskCheckpoint', {
+      taskId: 'task-1',
+      workspacePath: 'C:\\work',
+      checkpointId: 'checkpoint-1',
+      expectedSourceEventSeq: 7,
+      action: 'request_resume',
+      idempotencyKey: 'checkpoint-action-1'
+    })).toEqual({ ok: true, value: { accepted: true } })
+    expect(sent).toEqual([
+      { getTaskCheckpoint: { taskId: 'task-1', workspacePath: 'C:\\work', maxReplayEvents: 0 } },
+      {
+        resolveTaskCheckpoint: {
+          taskId: 'task-1',
+          workspacePath: 'C:\\work',
+          checkpointId: 'checkpoint-1',
+          expectedSourceEventSeq: 7,
+          action: 'request_resume',
+          idempotencyKey: 'checkpoint-action-1'
+        }
+      }
+    ])
+  })
+
+  it('refuses malformed TaskCheckpoint actions before Core', () => {
+    expect(invoke('core.getTaskCheckpoint', { taskId: 'task-1' })).toMatchObject({ ok: false, code: 'invalid-payload' })
+    expect(invoke('core.resolveTaskCheckpoint', {
+      taskId: 'task-1',
+      workspacePath: 'C:\\work',
+      checkpointId: 'checkpoint-1',
+      expectedSourceEventSeq: 7,
+      action: 'resume_anyway',
+      idempotencyKey: 'checkpoint-action-1'
+    })).toMatchObject({ ok: false, code: 'invalid-payload' })
+    expect(sent).toHaveLength(0)
+  })
+
   it('forwards Codex only for an explicit coding intent', () => {
     const outcome = invoke('core.startTask', {
       taskId: 'task-codex',

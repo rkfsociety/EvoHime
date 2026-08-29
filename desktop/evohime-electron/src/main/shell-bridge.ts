@@ -209,6 +209,37 @@ function dispatch(
       return accepted(client.send({ startTask: { taskId, prompt, workspacePath, preferredRouteHint: preferredRouteHint ?? '', executionKind } }))
     }
 
+    case 'core.getTaskCheckpoint': {
+      const value = asRecord(payload)
+      const taskId = asBoundedString(value['taskId'])
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const maxReplayEvents = value['maxReplayEvents'] === undefined
+        ? 0
+        : asBoundedNumber(value['maxReplayEvents'], 256)
+      if (taskId === null || workspacePath === null || maxReplayEvents === null) {
+        return failure('invalid-payload', 'Некорректные параметры checkpoint.')
+      }
+      log('info', 'shell.command_forwarded', { command })
+      return accepted(client.send({ getTaskCheckpoint: { taskId, workspacePath, maxReplayEvents } }))
+    }
+
+    case 'core.resolveTaskCheckpoint': {
+      const value = asRecord(payload)
+      const taskId = asBoundedString(value['taskId'])
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const checkpointId = asBoundedString(value['checkpointId'])
+      const expectedSourceEventSeq = asNonNegativeInteger(value['expectedSourceEventSeq'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const action = value['action'] === 'acknowledge_recovery' || value['action'] === 'request_resume'
+        ? value['action']
+        : null
+      if (taskId === null || workspacePath === null || checkpointId === null || expectedSourceEventSeq === null || idempotencyKey === null || action === null) {
+        return failure('invalid-payload', 'Некорректное действие checkpoint.')
+      }
+      log('info', 'shell.command_forwarded', { command })
+      return accepted(client.send({ resolveTaskCheckpoint: { taskId, workspacePath, checkpointId, expectedSourceEventSeq, action, idempotencyKey } }))
+    }
+
     case 'core.stopTask': {
       const taskId = asBoundedString(asRecord(payload)['taskId'])
       if (taskId === null) {
@@ -1511,6 +1542,10 @@ function asSupersessionReason(value: unknown): string | null {
 function asBoundedNumber(value: unknown, maximum: number): number | null {
   if (value === undefined) return maximum
   return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= maximum ? value : null
+}
+
+function asNonNegativeInteger(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null
 }
 
 /** Unlike `asBoundedNumber`, an omitted limit means "let Core apply its own

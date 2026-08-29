@@ -14,6 +14,7 @@ import { PermissionModePicker } from './PermissionModePicker'
 import { ContextUsage } from './ContextUsage'
 import { RoutingStatus } from './RoutingStatus'
 import { ChatProviderPicker } from './ChatProviderPicker'
+import { TaskCheckpointPanel } from './TaskCheckpointPanel'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 const MAX_RENDERED_ITEMS = 80
@@ -227,6 +228,7 @@ export function TaskTimeline({
   const canStart = connected && workspace !== null && prompt.trim().length > 0 && !busy
   const running = taskId !== null && !finished
   const history = chat?.messages ?? []
+  const checkpointTaskId = taskId ?? [...(chat?.taskIds ?? [])].reverse()[0] ?? null
   // Запрос разрешения может прийти раньше любой другой записи ленты.
   const empty =
     entries.length === 0 && sentPrompt === null && approval === null && history.length === 0
@@ -238,6 +240,12 @@ export function TaskTimeline({
         events={taskEvents}
         onOpenTask={() => {}}
         showOpenTask={false}
+      />
+      <TaskCheckpointPanel
+        connection={connection}
+        events={taskEvents}
+        taskId={checkpointTaskId}
+        workspace={workspace}
       />
       <RoutingStatus events={taskEvents} connection={connection} />
       <div className="chat__scroll">

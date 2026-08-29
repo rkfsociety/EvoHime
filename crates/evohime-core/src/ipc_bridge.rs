@@ -1,7 +1,7 @@
 use evohime_desktop_ipc::{generated, transport, FrameError};
 use prost::Message;
 use rusqlite::OptionalExtension;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     time::{SystemTime, UNIX_EPOCH},
@@ -13,7 +13,9 @@ use crate::{
     ApprovalCoordinator, CoreCommand, CoreEvent, EventJournal, SelectedModel, TaskCoordinator,
 };
 use evohime_listener_contract::{ListeningReason, ListeningState};
-use evohime_local_storage::{execution_ledger, EventRecord, LocalDatabase, WorkItemRecord};
+use evohime_local_storage::{
+    execution_ledger, EventRecord, LocalDatabase, StorageError, WorkItemRecord,
+};
 use evohime_model_gateway::ModelGatewayConfig;
 use evohime_permissions::{Permission, PermissionMode};
 use evohime_receipts::{
@@ -30,6 +32,20 @@ const PROTOCOL_MAJOR: u32 = 1;
 /// to gate functionality.
 const EXPECTED_TOOL_COUNT: u32 = 23;
 const PROTOCOL_MINOR: u32 = 0;
+const TASK_CHECKPOINT_IPC_MAX_REPLAY_EVENTS: usize = 256;
+const TASK_CHECKPOINT_IPC_MAX_ITEMS: usize = 32;
+const TASK_CHECKPOINT_IPC_MAX_TEXT_BYTES: usize = 512;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TaskCheckpointActionRecord {
+    task_id: String,
+    checkpoint_id: String,
+    action: String,
+    applied: bool,
+    deduplicated: bool,
+    error_code: String,
+    error_message: String,
+}
 
 fn bounded_tool_error_code(error: &evohime_tool_runtime::ToolError) -> &'static str {
     match error {
@@ -2347,6 +2363,16 @@ impl IpcBridge {
                         .await
                         .map_err(|error| FrameError::Io(error.to_string()))?;
                 }
+            }
+            Some(generated::command_envelope::Command::GetTaskCheckpoint(request)) => {
+                let projection = self.dispatch_get_task_checkpoint(request).await;
+                self.write_task_checkpoint_projection(writer, projection)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::ResolveTaskCheckpoint(request)) => {
+                let result = self.dispatch_resolve_task_checkpoint(request).await?;
+                self.write_task_checkpoint_action_result(writer, result)
+                    .await?;
             }
             Some(generated::command_envelope::Command::StopTask(stop)) => {
                 if let Some(coordinator) = &self.coordinator {
@@ -7123,6 +7149,229 @@ impl IpcBridge {
         .await
     }
 
+    async fn dispatch_get_task_checkpoint(
+        &self,
+        request: generated::GetTaskCheckpoint,
+    ) -> generated::TaskCheckpointProjection {
+        let task_id = request.task_id;
+        let max_replay_events = if request.max_replay_events == 0 {
+            TASK_CHECKPOINT_IPC_MAX_REPLAY_EVENTS
+        } else {
+            request.max_replay_events as usize
+        };
+        if !valid_checkpoint_token(&task_id, 128)
+            || !valid_checkpoint_workspace(&request.workspace_path)
+            || max_replay_events > TASK_CHECKPOINT_IPC_MAX_REPLAY_EVENTS
+        {
+            return task_checkpoint_projection_error(&task_id, "invalid_argument");
+        }
+        let runtime = crate::task_checkpoint::TaskCheckpointRuntime::new(self.journal.clone());
+        match runtime
+            .recover(&task_id, std::path::Path::new(&request.workspace_path))
+            .await
+        {
+            Ok(recovery) => task_checkpoint_projection(&task_id, recovery, max_replay_events),
+            Err(error) => task_checkpoint_projection_error(&task_id, checkpoint_error_code(&error)),
+        }
+    }
+
+    async fn dispatch_resolve_task_checkpoint(
+        &self,
+        request: generated::ResolveTaskCheckpoint,
+    ) -> Result<generated::TaskCheckpointActionResult, IpcBridgeError> {
+        let task_id = request.task_id;
+        let checkpoint_id = request.checkpoint_id;
+        let action = request.action;
+        let idempotency_key = request.idempotency_key;
+        let invalid = !valid_checkpoint_token(&task_id, 128)
+            || !valid_checkpoint_workspace(&request.workspace_path)
+            || !valid_checkpoint_token(&checkpoint_id, 128)
+            || request.expected_source_event_seq < 0
+            || !matches!(action.as_str(), "acknowledge_recovery" | "request_resume")
+            || !valid_checkpoint_token(&idempotency_key, 128);
+        if invalid {
+            return Ok(task_checkpoint_action_result(
+                task_id,
+                checkpoint_id,
+                action,
+                false,
+                false,
+                "invalid_argument",
+                "Запрос действия checkpoint отклонён.",
+            ));
+        }
+
+        let runtime = crate::task_checkpoint::TaskCheckpointRuntime::new(self.journal.clone());
+        let recovery = match runtime
+            .recover(&task_id, std::path::Path::new(&request.workspace_path))
+            .await
+        {
+            Ok(recovery) => recovery,
+            Err(error) => {
+                return Ok(task_checkpoint_action_result(
+                    task_id,
+                    checkpoint_id,
+                    action,
+                    false,
+                    false,
+                    checkpoint_error_code(&error),
+                    "Состояние checkpoint недоступно.",
+                ));
+            }
+        };
+        let (applied, error_code, error_message) = match recovery.checkpoint.as_ref() {
+            None => (
+                false,
+                "checkpoint_not_found",
+                "Checkpoint для задачи не найден.",
+            ),
+            Some(checkpoint)
+                if checkpoint.id != checkpoint_id
+                    || checkpoint.source_event_seq != request.expected_source_event_seq =>
+            {
+                (
+                    false,
+                    "stale_action",
+                    "Состояние checkpoint уже изменилось; обнови проекцию.",
+                )
+            }
+            Some(_) if action == "request_resume" => {
+                if recovery.disposition == crate::task_checkpoint::RecoveryDisposition::Replayable {
+                    (
+                        true,
+                        "",
+                        "Запрос reconciliation записан; внешний effect автоматически не повторяется.",
+                    )
+                } else {
+                    (
+                        false,
+                        "recovery_blocked",
+                        "Продолжение заблокировано до явной reconciliation.",
+                    )
+                }
+            }
+            Some(_) => (true, "", "Состояние checkpoint подтверждено пользователем."),
+        };
+        let request_id = format!("{task_id}:{idempotency_key}");
+        let command_hash = crate::research::sha256_hex(
+            format!(
+                "{task_id}|{checkpoint_id}|{}|{}",
+                request.expected_source_event_seq, action
+            )
+            .as_bytes(),
+        );
+        let record = TaskCheckpointActionRecord {
+            task_id: task_id.clone(),
+            checkpoint_id: checkpoint_id.clone(),
+            action: action.clone(),
+            applied,
+            deduplicated: false,
+            error_code: error_code.into(),
+            error_message: error_message.into(),
+        };
+        let result_payload = serde_json::to_vec(&record)?;
+        let event_payload = serde_json::to_vec(&serde_json::json!({
+            "checkpoint_id": checkpoint_id,
+            "action": action,
+            "expected_source_event_seq": request.expected_source_event_seq,
+            "applied": applied,
+            "error_code": error_code,
+        }))?;
+        let stored = match self
+            .journal
+            .record_task_checkpoint_action(
+                &task_id,
+                &request_id,
+                &command_hash,
+                &event_payload,
+                &result_payload,
+            )
+            .await
+        {
+            Ok(stored) => stored,
+            Err(StorageError::DeduplicationConflict { .. }) => {
+                return Ok(task_checkpoint_action_result(
+                    task_id,
+                    checkpoint_id,
+                    action,
+                    false,
+                    false,
+                    "idempotency_conflict",
+                    "Ключ idempotency уже использован для другого действия.",
+                ));
+            }
+            Err(_) => {
+                return Ok(task_checkpoint_action_result(
+                    task_id,
+                    checkpoint_id,
+                    action,
+                    false,
+                    false,
+                    "storage_failed",
+                    "Действие checkpoint не удалось записать.",
+                ));
+            }
+        };
+        let deduplicated = stored.is_some();
+        let mut record = match stored {
+            Some(stored) => match serde_json::from_slice::<TaskCheckpointActionRecord>(&stored) {
+                Ok(record) => record,
+                Err(_) => {
+                    return Ok(task_checkpoint_action_result(
+                        task_id,
+                        checkpoint_id,
+                        action,
+                        false,
+                        true,
+                        "storage_failed",
+                        "Сохранённый результат действия checkpoint повреждён.",
+                    ));
+                }
+            },
+            None => record,
+        };
+        record.deduplicated = deduplicated;
+        Ok(task_checkpoint_action_result_from_record(record))
+    }
+
+    async fn write_task_checkpoint_projection<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        projection: generated::TaskCheckpointProjection,
+    ) -> Result<(), IpcBridgeError> {
+        let event = generated::EventEnvelope {
+            protocol: Some(protocol()),
+            sequence_id: 0,
+            task_id: projection.task_id.clone(),
+            event_type: "task.checkpoint".into(),
+            payload: Vec::new(),
+            core_instance_id: self.core_instance_id.clone(),
+            session_epoch: self.session_epoch,
+            event: Some(generated::event_envelope::Event::TaskCheckpoint(projection)),
+        };
+        transport::write_frame(writer, &event.encode_to_vec()).await?;
+        Ok(())
+    }
+
+    async fn write_task_checkpoint_action_result<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        result: generated::TaskCheckpointActionResult,
+    ) -> Result<(), IpcBridgeError> {
+        let event = generated::EventEnvelope {
+            protocol: Some(protocol()),
+            sequence_id: 0,
+            task_id: result.task_id.clone(),
+            event_type: "task.checkpoint.action".into(),
+            payload: Vec::new(),
+            core_instance_id: self.core_instance_id.clone(),
+            session_epoch: self.session_epoch,
+            event: Some(generated::event_envelope::Event::TaskCheckpointActionResult(result)),
+        };
+        transport::write_frame(writer, &event.encode_to_vec()).await?;
+        Ok(())
+    }
+
     async fn write_response<W: AsyncWrite + Unpin>(
         &self,
         writer: &mut W,
@@ -7146,6 +7395,197 @@ impl IpcBridge {
         .await?;
         Ok(())
     }
+}
+
+fn valid_checkpoint_token(value: &str, max_bytes: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= max_bytes
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':'))
+}
+
+fn valid_checkpoint_workspace(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 4096 && !value.bytes().any(|byte| byte.is_ascii_control())
+}
+
+fn checkpoint_status_text(status: crate::task_checkpoint::CheckpointStatus) -> String {
+    serde_json::to_string(&status)
+        .unwrap_or_else(|_| "unknown".into())
+        .trim_matches('"')
+        .to_owned()
+}
+
+fn checkpoint_disposition_text(disposition: crate::task_checkpoint::RecoveryDisposition) -> String {
+    serde_json::to_string(&disposition)
+        .unwrap_or_else(|_| "blocked".into())
+        .trim_matches('"')
+        .to_owned()
+}
+
+fn bounded_checkpoint_text(value: &str) -> String {
+    value
+        .chars()
+        .take(TASK_CHECKPOINT_IPC_MAX_TEXT_BYTES)
+        .collect()
+}
+
+fn bounded_checkpoint_event_type(value: &str) -> String {
+    if value.is_empty() || value.len() > 128 || value.bytes().any(|byte| byte.is_ascii_control()) {
+        "unknown".into()
+    } else {
+        value.to_owned()
+    }
+}
+
+fn checkpoint_error_code(error: &StorageError) -> &'static str {
+    match error {
+        StorageError::TaskCheckpoint(error) => error.code(),
+        _ => "storage_failed",
+    }
+}
+
+fn task_checkpoint_projection_error(
+    task_id: &str,
+    error_code: &str,
+) -> generated::TaskCheckpointProjection {
+    generated::TaskCheckpointProjection {
+        schema_version: crate::task_checkpoint::TASK_CHECKPOINT_VERSION,
+        task_id: if valid_checkpoint_token(task_id, 128) {
+            task_id.to_owned()
+        } else {
+            String::new()
+        },
+        recovery_disposition: "blocked".into(),
+        recovery_warning: "Проекция checkpoint недоступна; автоматическое продолжение запрещено."
+            .into(),
+        error_code: error_code.into(),
+        ..Default::default()
+    }
+}
+
+fn task_checkpoint_projection(
+    task_id: &str,
+    recovery: crate::task_checkpoint::TaskCheckpointRecovery,
+    max_replay_events: usize,
+) -> generated::TaskCheckpointProjection {
+    let Some(checkpoint) = recovery.checkpoint else {
+        return generated::TaskCheckpointProjection {
+            schema_version: crate::task_checkpoint::TASK_CHECKPOINT_VERSION,
+            task_id: task_id.to_owned(),
+            recovery_disposition: "no_checkpoint".into(),
+            recovery_warning: "Для задачи ещё нет сохранённого checkpoint.".into(),
+            ..Default::default()
+        };
+    };
+    let blockers = checkpoint
+        .blockers
+        .iter()
+        .take(TASK_CHECKPOINT_IPC_MAX_ITEMS)
+        .map(|item| bounded_checkpoint_text(&item.text))
+        .collect();
+    let mut refs = Vec::new();
+    for reference in checkpoint
+        .workflow_refs
+        .iter()
+        .chain(checkpoint.child_refs.iter())
+        .chain(checkpoint.artifact_refs.iter())
+        .take(TASK_CHECKPOINT_IPC_MAX_ITEMS)
+    {
+        refs.push(generated::TaskCheckpointRef {
+            kind: bounded_checkpoint_text(&reference.kind),
+            id: bounded_checkpoint_text(&reference.id),
+            content_hash: reference.content_hash.clone().unwrap_or_default(),
+            sensitivity: serde_json::to_string(&reference.sensitivity)
+                .unwrap_or_else(|_| "internal".into())
+                .trim_matches('"')
+                .to_owned(),
+        });
+    }
+    let policy_id = checkpoint
+        .workflow_refs
+        .iter()
+        .find(|reference| reference.kind == "policy_snapshot")
+        .map(|reference| bounded_checkpoint_text(&reference.id))
+        .unwrap_or_default();
+    let replayed_event_types = recovery
+        .replayed_events
+        .iter()
+        .take(max_replay_events)
+        .map(|event| bounded_checkpoint_event_type(&event.event_type))
+        .collect();
+    generated::TaskCheckpointProjection {
+        schema_version: checkpoint.version,
+        checkpoint_id: bounded_checkpoint_text(&checkpoint.id),
+        task_id: task_id.to_owned(),
+        workspace_id: bounded_checkpoint_text(&checkpoint.workspace_id),
+        parent_checkpoint_id: checkpoint.parent_checkpoint_id.unwrap_or_default(),
+        status: checkpoint_status_text(checkpoint.status),
+        source_event_seq: checkpoint.source_event_seq,
+        created_at: checkpoint.created_at,
+        completed_count: checkpoint.completed_items.len().min(u32::MAX as usize) as u32,
+        remaining_count: checkpoint.remaining_items.len().min(u32::MAX as usize) as u32,
+        blocker_count: checkpoint.blockers.len().min(u32::MAX as usize) as u32,
+        blockers,
+        refs,
+        recovery_disposition: checkpoint_disposition_text(recovery.disposition),
+        recovery_warning: recovery
+            .warning
+            .as_deref()
+            .map(bounded_checkpoint_text)
+            .unwrap_or_default(),
+        replayed_event_types,
+        can_request_resume: recovery.disposition
+            == crate::task_checkpoint::RecoveryDisposition::Replayable,
+        replayed_event_count: recovery.replayed_events.len().min(u32::MAX as usize) as u32,
+        policy_id,
+        error_code: String::new(),
+    }
+}
+
+fn task_checkpoint_action_result(
+    task_id: String,
+    checkpoint_id: String,
+    action: String,
+    applied: bool,
+    deduplicated: bool,
+    error_code: &str,
+    error_message: &str,
+) -> generated::TaskCheckpointActionResult {
+    generated::TaskCheckpointActionResult {
+        task_id: if valid_checkpoint_token(&task_id, 128) {
+            task_id
+        } else {
+            String::new()
+        },
+        checkpoint_id: if valid_checkpoint_token(&checkpoint_id, 128) {
+            checkpoint_id
+        } else {
+            String::new()
+        },
+        action: matches!(action.as_str(), "acknowledge_recovery" | "request_resume")
+            .then_some(action)
+            .unwrap_or_default(),
+        applied,
+        deduplicated,
+        error_code: error_code.into(),
+        error_message: bounded_checkpoint_text(error_message),
+        sequence_id: 0,
+    }
+}
+
+fn task_checkpoint_action_result_from_record(
+    record: TaskCheckpointActionRecord,
+) -> generated::TaskCheckpointActionResult {
+    task_checkpoint_action_result(
+        record.task_id,
+        record.checkpoint_id,
+        record.action,
+        record.applied,
+        record.deduplicated,
+        &record.error_code,
+        &record.error_message,
+    )
 }
 
 /// Результат `SetAmbientListening` в одном месте: неизвестный код не
@@ -7284,7 +7724,7 @@ fn core_info() -> generated::CoreInfo {
             .unwrap_or("unknown")
             .into(),
         runtime_revision: "rust-core".into(),
-        capabilities: vec!["replay".into(), "resync".into()],
+        capabilities: vec!["replay".into(), "resync".into(), "task_checkpoint".into()],
         feature_flags: vec!["authenticated-ipc".into()],
         max_frame_bytes: evohime_desktop_ipc::MAX_FRAME_BYTES as u32,
         max_replay_events: evohime_desktop_ipc::MAX_REPLAY_EVENTS as u32,
@@ -11264,6 +11704,118 @@ mod tests {
         let event = generated::EventEnvelope::decode(response.as_slice()).expect("event decodes");
         let payload = serde_json::from_slice(&event.payload).unwrap_or(serde_json::Value::Null);
         (event.event_type, payload)
+    }
+
+    async fn typed_checkpoint_call(
+        bridge: &IpcBridge,
+        command: generated::command_envelope::Command,
+    ) -> generated::EventEnvelope {
+        let (mut client, server) = duplex(256 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        let envelope = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: uuid::Uuid::now_v7().to_string(),
+            client_id: "checkpoint-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(command),
+        };
+        transport::write_frame(&mut client, &envelope.encode_to_vec())
+            .await
+            .expect("typed checkpoint request writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("typed checkpoint request serves");
+        let response = transport::read_frame(&mut client)
+            .await
+            .expect("typed checkpoint response reads");
+        generated::EventEnvelope::decode(response.as_slice()).expect("typed checkpoint decodes")
+    }
+
+    #[tokio::test]
+    async fn task_checkpoint_ipc_is_typed_bounded_and_idempotent() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let journal =
+            EventJournal::open(directory.path().join("checkpoint-ipc.db")).expect("journal opens");
+        let runtime = crate::task_checkpoint::TaskCheckpointRuntime::new(journal.clone());
+        let checkpoint = runtime
+            .capture(
+                "task-1",
+                directory.path(),
+                crate::task_checkpoint::CheckpointStatus::Blocked,
+                crate::task_checkpoint::CheckpointCaptureReason::RecoveryBlocked,
+                None,
+            )
+            .await
+            .expect("checkpoint persists");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal.clone(), coordinator);
+
+        let projection_event = typed_checkpoint_call(
+            &bridge,
+            generated::command_envelope::Command::GetTaskCheckpoint(generated::GetTaskCheckpoint {
+                task_id: "task-1".into(),
+                workspace_path: directory.path().to_string_lossy().into_owned(),
+                max_replay_events: 64,
+            }),
+        )
+        .await;
+        assert!(projection_event.payload.is_empty());
+        let Some(generated::event_envelope::Event::TaskCheckpoint(projection)) =
+            projection_event.event
+        else {
+            panic!("expected typed checkpoint projection");
+        };
+        assert_eq!(projection.checkpoint_id, checkpoint.id);
+        assert_eq!(projection.recovery_disposition, "blocked");
+        assert!(projection
+            .refs
+            .iter()
+            .all(|reference| reference.content_hash.len() <= 128));
+
+        let action = generated::ResolveTaskCheckpoint {
+            task_id: "task-1".into(),
+            workspace_path: directory.path().to_string_lossy().into_owned(),
+            checkpoint_id: checkpoint.id.clone(),
+            expected_source_event_seq: checkpoint.source_event_seq,
+            action: "acknowledge_recovery".into(),
+            idempotency_key: "ack-1".into(),
+        };
+        let first_action = typed_checkpoint_call(
+            &bridge,
+            generated::command_envelope::Command::ResolveTaskCheckpoint(action.clone()),
+        )
+        .await;
+        let Some(generated::event_envelope::Event::TaskCheckpointActionResult(first_result)) =
+            first_action.event
+        else {
+            panic!("expected typed checkpoint action result");
+        };
+        assert!(first_result.applied);
+        assert!(!first_result.deduplicated);
+        assert!(first_action.payload.is_empty());
+
+        let repeated_action = typed_checkpoint_call(
+            &bridge,
+            generated::command_envelope::Command::ResolveTaskCheckpoint(action),
+        )
+        .await;
+        let Some(generated::event_envelope::Event::TaskCheckpointActionResult(repeated_result)) =
+            repeated_action.event
+        else {
+            panic!("expected deduplicated checkpoint action result");
+        };
+        assert!(repeated_result.applied);
+        assert!(repeated_result.deduplicated);
+        let action_events = journal
+            .task_history("task-1", 32)
+            .await
+            .expect("checkpoint history reads")
+            .into_iter()
+            .filter(|event| event.event_type == "task.checkpoint.action")
+            .count();
+        assert_eq!(action_events, 1);
     }
 
     #[tokio::test]

@@ -8,6 +8,9 @@ import type {
   CoreEvent,
   ProtocolVersion,
   ShellState,
+  TaskCheckpointActionResult,
+  TaskCheckpointProjection,
+  TaskCheckpointRef,
   TypedExecutionEvent
 } from '@shared/api'
 
@@ -40,7 +43,7 @@ type ICommandEnvelope = evohime.desktop.v1.ICommandEnvelope
  * (plan 0, stage 1).
  */
 
-export const CLIENT_CAPABILITIES = ['replay', 'resync'] as const
+export const CLIENT_CAPABILITIES = ['replay', 'resync', 'task_checkpoint'] as const
 
 export const DEFAULT_CONNECT_TIMEOUT_MS = 5_000
 export const DEFAULT_HANDSHAKE_TIMEOUT_MS = 5_000
@@ -522,7 +525,9 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       taskId: event.taskId ?? '',
       eventType: event.eventType ?? '',
       payload: decodePayload(event.payload),
-      executionEvent: decodeExecutionEvent(event.executionEvent)
+      executionEvent: decodeExecutionEvent(event.executionEvent),
+      taskCheckpoint: decodeTaskCheckpoint(event.taskCheckpoint),
+      taskCheckpointAction: decodeTaskCheckpointAction(event.taskCheckpointActionResult)
     })
   }
 
@@ -680,5 +685,59 @@ function decodeExecutionEvent(
     body,
     secretsPresent: Boolean(projected.secretsPresent),
     redactionDigest: projected.redactionDigest ?? ''
+  }
+}
+
+function decodeTaskCheckpoint(
+  projected: evohime.desktop.v1.ITaskCheckpointProjection | null | undefined
+): TaskCheckpointProjection | null {
+  if (!projected || !projected.taskId) return null
+  return {
+    schemaVersion: Number(projected.schemaVersion ?? 0),
+    checkpointId: projected.checkpointId ?? '',
+    taskId: projected.taskId,
+    workspaceId: projected.workspaceId ?? '',
+    parentCheckpointId: projected.parentCheckpointId ?? '',
+    status: projected.status ?? '',
+    sourceEventSeq: Number(projected.sourceEventSeq ?? 0),
+    createdAt: Number(projected.createdAt ?? 0),
+    completedCount: Number(projected.completedCount ?? 0),
+    remainingCount: Number(projected.remainingCount ?? 0),
+    blockerCount: Number(projected.blockerCount ?? 0),
+    blockers: [...(projected.blockers ?? [])],
+    refs: (projected.refs ?? []).map(decodeTaskCheckpointRef),
+    recoveryDisposition: projected.recoveryDisposition ?? 'blocked',
+    recoveryWarning: projected.recoveryWarning ?? '',
+    replayedEventTypes: [...(projected.replayedEventTypes ?? [])],
+    canRequestResume: Boolean(projected.canRequestResume),
+    replayedEventCount: Number(projected.replayedEventCount ?? 0),
+    policyId: projected.policyId ?? '',
+    errorCode: projected.errorCode ?? ''
+  }
+}
+
+function decodeTaskCheckpointRef(
+  reference: evohime.desktop.v1.ITaskCheckpointRef
+): TaskCheckpointRef {
+  return {
+    kind: reference.kind ?? '',
+    id: reference.id ?? '',
+    contentHash: reference.contentHash ?? '',
+    sensitivity: reference.sensitivity ?? ''
+  }
+}
+
+function decodeTaskCheckpointAction(
+  projected: evohime.desktop.v1.ITaskCheckpointActionResult | null | undefined
+): TaskCheckpointActionResult | null {
+  if (!projected || !projected.taskId) return null
+  return {
+    taskId: projected.taskId,
+    checkpointId: projected.checkpointId ?? '',
+    action: projected.action ?? '',
+    applied: Boolean(projected.applied),
+    deduplicated: Boolean(projected.deduplicated),
+    errorCode: projected.errorCode ?? '',
+    errorMessage: projected.errorMessage ?? ''
   }
 }

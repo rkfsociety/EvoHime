@@ -74,6 +74,53 @@ export interface TypedExecutionEvent {
   readonly redactionDigest: string
 }
 
+/** Bounded Core-owned projection of a TaskCheckpoint, without raw task data. */
+export interface TaskCheckpointRef {
+  readonly kind: string
+  readonly id: string
+  readonly contentHash: string
+  readonly sensitivity: string
+}
+
+export type TaskCheckpointRecoveryDisposition =
+  | 'no_checkpoint'
+  | 'replayable'
+  | 'terminal'
+  | 'blocked'
+
+export interface TaskCheckpointProjection {
+  readonly schemaVersion: number
+  readonly checkpointId: string
+  readonly taskId: string
+  readonly workspaceId: string
+  readonly parentCheckpointId: string
+  readonly status: string
+  readonly sourceEventSeq: number
+  readonly createdAt: number
+  readonly completedCount: number
+  readonly remainingCount: number
+  readonly blockerCount: number
+  readonly blockers: readonly string[]
+  readonly refs: readonly TaskCheckpointRef[]
+  readonly recoveryDisposition: TaskCheckpointRecoveryDisposition | string
+  readonly recoveryWarning: string
+  readonly replayedEventTypes: readonly string[]
+  readonly canRequestResume: boolean
+  readonly replayedEventCount: number
+  readonly policyId: string
+  readonly errorCode: string
+}
+
+export interface TaskCheckpointActionResult {
+  readonly taskId: string
+  readonly checkpointId: string
+  readonly action: 'acknowledge_recovery' | 'request_resume' | string
+  readonly applied: boolean
+  readonly deduplicated: boolean
+  readonly errorCode: string
+  readonly errorMessage: string
+}
+
 export interface CoreEvent {
   readonly sequenceId: number
   readonly taskId: string
@@ -82,6 +129,10 @@ export interface CoreEvent {
   readonly payload: string
   /** Present only for typed `ledger.*` rows (plan 08-3); null otherwise. */
   readonly executionEvent: TypedExecutionEvent | null
+  /** Present only for the typed TaskCheckpoint projection response. */
+  readonly taskCheckpoint?: TaskCheckpointProjection | null
+  /** Present only for the typed TaskCheckpoint action response. */
+  readonly taskCheckpointAction?: TaskCheckpointActionResult | null
 }
 
 export type ShellEvent =
@@ -661,6 +712,8 @@ export const RENDERER_COMMANDS = [
   'workspace.select',
   'workspace.forget',
   'core.startTask',
+  'core.getTaskCheckpoint',
+  'core.resolveTaskCheckpoint',
   'core.stopTask',
   'core.resolveApproval',
   'core.resolveRoutingDecision',
@@ -810,6 +863,15 @@ export interface CommandPayloads {
   'workspace.select': { path: string }
   'workspace.forget': { path: string }
   'core.startTask': { taskId: string; prompt: string; workspacePath: string; preferredRouteHint?: 'local' | 'cloud' | 'codex_cli' | null; executionKind?: 'dialogue' | 'coding' }
+  'core.getTaskCheckpoint': { taskId: string; workspacePath: string; maxReplayEvents?: number }
+  'core.resolveTaskCheckpoint': {
+    taskId: string
+    workspacePath: string
+    checkpointId: string
+    expectedSourceEventSeq: number
+    action: 'acknowledge_recovery' | 'request_resume'
+    idempotencyKey: string
+  }
   'core.stopTask': { taskId: string }
   'core.resolveApproval': { approvalId: string; granted: boolean; idempotencyKey?: string; rejectionReason?: string; cancel?: boolean }
   'core.resolveRoutingDecision': { traceId: string; approve: boolean }
@@ -1052,6 +1114,8 @@ export interface CommandResults {
   'workspace.select': WorkspaceSelection
   'workspace.forget': WorkspaceSelection
   'core.startTask': { accepted: boolean }
+  'core.getTaskCheckpoint': { accepted: boolean }
+  'core.resolveTaskCheckpoint': { accepted: boolean }
   'core.stopTask': { accepted: boolean }
   'core.resolveApproval': { accepted: boolean }
   'core.resolveRoutingDecision': { accepted: boolean }

@@ -765,6 +765,18 @@ checkpoint и повреждённая цепочка требуют явной 
 `task.checkpoint.saved` содержит только идентификатор, hash, причину и sequence,
 без prompt, ledger payload или другого сырого содержимого.
 
+Desktop surface этапа 23.3 остаётся additive в `desktop-ipc-v1`: команды
+`GetTaskCheckpoint` и `ResolveTaskCheckpoint` используют tags 137–138, а
+`TaskCheckpointProjection` и `TaskCheckpointActionResult` — typed EventEnvelope
+oneof tags 15–16. Проекция содержит bounded counts, статус, blockers, typed refs,
+policy id, recovery disposition и event-type metadata; prompt, credentials,
+hidden reasoning и raw payload отсутствуют. `ResolveTaskCheckpoint` принимает
+только `acknowledge_recovery` или `request_resume`, проверяет checkpoint id и
+`source_event_seq`, пишет action вместе с `command_dedup` одной SQLite-транзакцией
+и никогда не запускает внешний effect. Electron main/preload только валидирует
+форму и пересылает команды, а renderer отображает projection и посылает явное
+действие; reconnect/resync продолжает использовать существующий sequence cursor.
+
 ## Local telemetry и deterministic evaluation
 
 `telemetry/v1` — bounded derived projection над Core event journal, receipts и

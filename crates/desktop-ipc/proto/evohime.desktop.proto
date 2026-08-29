@@ -234,6 +234,65 @@ message RestoreTaskSnapshot {
   string snapshot_id = 3;
 }
 
+// Bounded, read-only projection of the Core-owned TaskCheckpoint contract.
+// It deliberately contains counts and metadata rather than prompt, raw
+// context, credentials, hidden reasoning or tool output.
+message GetTaskCheckpoint {
+  string task_id = 1;
+  string workspace_path = 2;
+  uint32 max_replay_events = 3;
+}
+
+message ResolveTaskCheckpoint {
+  string task_id = 1;
+  string workspace_path = 2;
+  string checkpoint_id = 3;
+  int64 expected_source_event_seq = 4;
+  string action = 5;
+  string idempotency_key = 6;
+}
+
+message TaskCheckpointRef {
+  string kind = 1;
+  string id = 2;
+  string content_hash = 3;
+  string sensitivity = 4;
+}
+
+message TaskCheckpointProjection {
+  uint32 schema_version = 1;
+  string checkpoint_id = 2;
+  string task_id = 3;
+  string workspace_id = 4;
+  string parent_checkpoint_id = 5;
+  string status = 6;
+  int64 source_event_seq = 7;
+  int64 created_at = 8;
+  uint32 completed_count = 9;
+  uint32 remaining_count = 10;
+  uint32 blocker_count = 11;
+  repeated string blockers = 12;
+  repeated TaskCheckpointRef refs = 13;
+  string recovery_disposition = 14;
+  string recovery_warning = 15;
+  repeated string replayed_event_types = 16;
+  bool can_request_resume = 17;
+  uint32 replayed_event_count = 18;
+  string policy_id = 19;
+  string error_code = 20;
+}
+
+message TaskCheckpointActionResult {
+  string task_id = 1;
+  string checkpoint_id = 2;
+  string action = 3;
+  bool applied = 4;
+  bool deduplicated = 5;
+  string error_code = 6;
+  string error_message = 7;
+  uint64 sequence_id = 8;
+}
+
 message GetBuildPolicy {
   string project_id = 1;
 }
@@ -1354,6 +1413,8 @@ message CommandEnvelope {
     ListAutomationEvents list_automation_events = 134;
     CancelAutomationRun cancel_automation_run = 135;
     SetAutomationScheduleEnabled set_automation_schedule_enabled = 136;
+    GetTaskCheckpoint get_task_checkpoint = 137;
+    ResolveTaskCheckpoint resolve_task_checkpoint = 138;
   }
 }
 
@@ -1389,6 +1450,8 @@ message EventEnvelope {
     FullSnapshot full_snapshot = 12;
     AuthChallenge auth_challenge = 13;
     ExecutionEvent execution_event = 14;
+    TaskCheckpointProjection task_checkpoint = 15;
+    TaskCheckpointActionResult task_checkpoint_action_result = 16;
   }
 }
 

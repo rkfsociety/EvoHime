@@ -932,6 +932,7 @@ use evohime_receipts::{
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use futures_util::future::BoxFuture;
 use futures_util::StreamExt;
+use rusqlite::OptionalExtension;
 use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use tokio::time::timeout;
@@ -3905,6 +3906,52 @@ impl EventJournal {
     ) -> Result<Option<Vec<u8>>, StorageError> {
         let database = self.database.lock().await;
         database.record_deduplicated(client_id, request_id, command_hash, result)
+    }
+
+    /// Atomically records a TaskCheckpoint user action and its idempotency
+    /// result. The event and dedup row must commit together: otherwise a
+    /// reconnect between the two writes could either repeat the action or
+    /// report a success that is absent from the journal.
+    pub async fn record_task_checkpoint_action(
+        &self,
+        task_id: &str,
+        request_id: &str,
+        command_hash: &str,
+        event_payload: &[u8],
+        result: &[u8],
+    ) -> Result<Option<Vec<u8>>, StorageError> {
+        let mut database = self.database.lock().await;
+        let transaction = database.connection_mut().transaction()?;
+        let existing = transaction
+            .query_row(
+                "SELECT command_hash, result FROM command_dedup
+                 WHERE client_id = 'task-checkpoint-ipc' AND request_id = ?1",
+                [request_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+            )
+            .optional()?;
+        if let Some((stored_hash, stored_result)) = existing {
+            if stored_hash == command_hash {
+                transaction.commit()?;
+                return Ok(Some(stored_result));
+            }
+            return Err(StorageError::DeduplicationConflict {
+                client_id: "task-checkpoint-ipc".into(),
+                request_id: request_id.into(),
+            });
+        }
+        transaction.execute(
+            "INSERT INTO events(task_id, event_type, payload)
+             VALUES (?1, 'task.checkpoint.action', ?2)",
+            rusqlite::params![task_id, event_payload],
+        )?;
+        transaction.execute(
+            "INSERT INTO command_dedup(client_id, request_id, command_hash, result)
+             VALUES ('task-checkpoint-ipc', ?1, ?2, ?3)",
+            rusqlite::params![request_id, command_hash, result],
+        )?;
+        transaction.commit()?;
+        Ok(None)
     }
 }
 

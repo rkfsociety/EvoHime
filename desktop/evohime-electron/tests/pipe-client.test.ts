@@ -169,6 +169,29 @@ function ledgerEventFrame(
   )
 }
 
+function taskCheckpointFrame(sequenceId: number): Uint8Array {
+  return encodeFrame(
+    EventEnvelope.encode({
+      protocol: { major: 1, minor: 0 },
+      sequenceId,
+      taskId: 'task-1',
+      eventType: 'task.checkpoint',
+      coreInstanceId: CORE_INSTANCE,
+      sessionEpoch: SESSION_EPOCH,
+      taskCheckpoint: {
+        schemaVersion: 1,
+        checkpointId: 'checkpoint-1',
+        taskId: 'task-1',
+        status: 'blocked',
+        recoveryDisposition: 'blocked',
+        recoveryWarning: 'explicit reconciliation',
+        blockers: ['unknown outcome'],
+        refs: [{ kind: 'policy_snapshot', id: 'policy-v1', sensitivity: 'public' }]
+      }
+    }).finish()
+  )
+}
+
 const TEST_SECRET = 'ab'.repeat(32)
 
 function launchContext(pipeName: string, secret = ''): LaunchContext {
@@ -247,7 +270,7 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
 
     expect(state.protocol).toEqual({ major: 1, minor: 0 })
     expect(state.coreVersion).toBe('0.1.0-test')
-    expect(state.capabilities).toEqual(['replay', 'resync'])
+    expect(state.capabilities).toEqual(['replay', 'resync', 'task_checkpoint'])
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(requestedResync).toBe(true)
   })
@@ -287,6 +310,23 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
     expect(event.executionEvent?.runScope).toBe('standalone')
     expect(event.executionEvent?.stateAfter).toBe('running')
     expect(event.executionEvent?.body).toEqual({ kind: 'tool_call', tool_name: 'shell' })
+  })
+
+  it('projects a typed TaskCheckpoint response without generic payload parsing', async () => {
+    const pipeName = uniquePipeName()
+    server = await startStubCore(pipeName, {
+      onCommand: (command) => (command.handshake ? [readyFrame(), taskCheckpointFrame(1)] : [])
+    })
+
+    const target = createClient(pipeName)
+    const received = waitForEvent(target, (event) => event.taskCheckpoint?.checkpointId === 'checkpoint-1')
+    target.start()
+    const event = await received
+
+    expect(event.payload).toBe('')
+    expect(event.taskCheckpoint?.recoveryDisposition).toBe('blocked')
+    expect(event.taskCheckpoint?.refs[0]).toMatchObject({ kind: 'policy_snapshot', id: 'policy-v1' })
+    expect(event.taskCheckpointAction).toBeNull()
   })
 
   it('suppresses a repeat delivery of the same typed ledger event_id', async () => {
