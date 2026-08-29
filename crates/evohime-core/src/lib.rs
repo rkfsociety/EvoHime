@@ -967,6 +967,7 @@ pub mod plan;
 pub mod policy_gate;
 pub mod prd;
 pub mod provider_resilience;
+pub mod retained_child;
 pub use provider_resilience::{
     default_tool_specs, filter_readonly_tools, handle_provider_error, is_retriable_error,
     ProviderResilienceConfig,
@@ -1552,6 +1553,27 @@ pub enum CoreCommand {
     ReadContextArtifact {
         task_id: String,
         locator: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    RetainChild {
+        child: crate::retained_child::RetainedChildV1,
+        now_ms: u64,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    SendChildFollowUp {
+        request: crate::retained_child::ChildFollowUpRequestV1,
+        now_ms: u64,
+        busy: bool,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    ListRetainedChildren {
+        parent_id: String,
+        now_ms: u64,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    DeleteRetainedChild {
+        parent_id: String,
+        child_id: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
 }
@@ -8621,6 +8643,7 @@ struct CoordinatorState {
     executor: Option<Arc<dyn TaskExecutor>>,
     journal: Option<EventJournal>,
     audit: crate::audit::AuditTrail,
+    retained_children: crate::retained_child::RetainedRegistry,
 }
 
 struct ActiveTask {
@@ -8703,6 +8726,7 @@ impl TaskCoordinator {
             executor,
             journal: journal.clone(),
             audit: crate::audit::AuditTrail::default(),
+            retained_children: crate::retained_child::RetainedRegistry::default(),
         }));
         // The shell is fed from the journal, so it must be told after a record
         // lands — not when the event was broadcast. Watching the broadcast
@@ -12511,6 +12535,61 @@ impl TaskCoordinator {
                     .map_err(|error| error.to_string())
                 }
                 .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::RetainChild {
+                child,
+                now_ms,
+                reply,
+            } => {
+                let result = state
+                    .lock()
+                    .await
+                    .retained_children
+                    .retain(child, now_ms)
+                    .map(|applied| {
+                        serde_json::to_vec(&serde_json::json!({"applied":applied})).unwrap()
+                    })
+                    .map_err(|e| e.to_string());
+                let _ = reply.send(result);
+            }
+            CoreCommand::SendChildFollowUp {
+                request,
+                now_ms,
+                busy,
+                reply,
+            } => {
+                let result = state.lock().await.retained_children.follow_up(&request, now_ms, busy)
+                    .map(|outcome| serde_json::to_vec(&serde_json::json!({"outcome":format!("{outcome:?}").to_ascii_lowercase()})).unwrap())
+                    .map_err(|e| e.to_string());
+                let _ = reply.send(result);
+            }
+            CoreCommand::ListRetainedChildren {
+                parent_id,
+                now_ms,
+                reply,
+            } => {
+                let result = state
+                    .lock()
+                    .await
+                    .retained_children
+                    .list(&parent_id, now_ms)
+                    .map_err(|e| e.to_string())
+                    .and_then(|items| serde_json::to_vec(&items).map_err(|e| e.to_string()));
+                let _ = reply.send(result);
+            }
+            CoreCommand::DeleteRetainedChild {
+                parent_id,
+                child_id,
+                reply,
+            } => {
+                let result = state
+                    .lock()
+                    .await
+                    .retained_children
+                    .delete(&parent_id, &child_id)
+                    .map(|_| b"{\"deleted\":true}".to_vec())
+                    .map_err(|e| e.to_string());
                 let _ = reply.send(result);
             }
         }

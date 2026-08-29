@@ -1554,6 +1554,14 @@ message SetAutomationScheduleEnabled {
   bool enabled = 2;
 }
 
+// Plan 27: additive metadata-only retained-child surface. Core derives actor,
+// sender and receiver from the authenticated session.
+message ListRetainedChildren { string parent_id = 1; uint32 limit = 2; }
+message GetRetainedChild { string parent_id = 1; string child_id = 2; }
+message RetainChild { string parent_id = 1; string child_id = 2; string family_root_id = 3; string role = 4; string stable_name = 5; uint64 revision = 6; string grant_snapshot_hash = 7; string context_scope_hash = 8; string workspace_state_ref = 9; string last_report_ref = 10; uint64 retained_until_ms = 11; uint64 created_at_ms = 12; uint64 last_active_at_ms = 13; uint64 expected_registry_version = 14; }
+message SendChildFollowUp { string parent_id = 1; string child_id = 2; string idempotency_key = 3; uint64 expected_child_revision = 4; string instruction = 5; repeated string context_refs = 6; repeated string requested_grants = 7; string budget_json = 8; string mode = 9; string correlation_id = 10; }
+message DeleteRetainedChild { string parent_id = 1; string child_id = 2; uint64 expected_registry_version = 3; }
+
 message CommandEnvelope {
   ProtocolVersion protocol = 1;
   string request_id = 2;
@@ -1708,6 +1716,11 @@ message CommandEnvelope {
     StopContinuation stop_continuation = 154;
     PauseContinuation pause_continuation = 155;
     ResumeContinuation resume_continuation = 156;
+    ListRetainedChildren list_retained_children = 157;
+    GetRetainedChild get_retained_child = 158;
+    RetainChild retain_child = 159;
+    SendChildFollowUp send_child_follow_up = 160;
+    DeleteRetainedChild delete_retained_child = 161;
   }
 }
 
@@ -1753,7 +1766,23 @@ message EventEnvelope {
     GoalActionResult goal_action = 22;
     ContinuationProjection continuation = 23;
     ContinuationActionResult continuation_action = 24;
+    RetainedChildProjection retained_child = 25;
+    RetainedChildListProjection retained_child_list = 26;
   }
+}
+
+message RetainedChildProjection {
+  uint32 schema_version = 1; string parent_id = 2; string child_id = 3;
+  string family_root_id = 4; string role = 5; string stable_name = 6;
+  string lifecycle = 7; uint64 revision = 8; uint64 registry_version = 9;
+  int64 last_active_at_ms = 10; int64 retained_until_ms = 11;
+  uint32 pending_count = 12; string invalidation_reason = 13;
+  repeated string goal_refs = 14; repeated string workflow_refs = 15;
+  string last_delivery_outcome = 16; string error_code = 17;
+}
+message RetainedChildListProjection {
+  uint32 schema_version = 1; repeated RetainedChildProjection children = 2;
+  bool truncated = 3; string error_code = 4;
 }
 
 // Bounded typed execution-ledger projection (план 08-1/08-2/08-3). Общие

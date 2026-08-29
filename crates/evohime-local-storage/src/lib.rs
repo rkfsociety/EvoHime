@@ -25,6 +25,7 @@ pub mod model_limit_store;
 pub mod model_provenance;
 pub mod reconciliation_verifier;
 pub mod research_store;
+pub mod retained_child_store;
 pub mod scratchpad_store;
 pub mod task_checkpoint;
 pub mod toolkit_store;
@@ -35,7 +36,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 36;
+pub const SCHEMA_VERSION: u32 = 37;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -511,6 +512,7 @@ impl LocalDatabase {
         task_checkpoint::install_schema(&connection)?;
         goal::install_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        retained_child_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
@@ -3466,6 +3468,10 @@ impl LocalDatabase {
                 )?;
             }
             transaction.execute_batch("PRAGMA user_version = 36;")?;
+        }
+        if current < 37 {
+            retained_child_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 37;")?;
         }
         transaction.commit()?;
         Ok(())

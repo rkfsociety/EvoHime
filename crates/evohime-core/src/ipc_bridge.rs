@@ -2839,6 +2839,128 @@ impl IpcBridge {
                             .await?;
                     }
                 }
+                Some(generated::command_envelope::Command::ListRetainedChildren(request)) => {
+                    let (reply, response) = oneshot::channel();
+                    if let Some(coordinator) = &self.coordinator {
+                        coordinator
+                            .dispatch(CoreCommand::ListRetainedChildren {
+                                parent_id: request.parent_id,
+                                now_ms: crate::task_memory::now_millis() as u64,
+                                reply,
+                            })
+                            .await
+                            .map_err(|e| FrameError::Io(e.to_string()))?;
+                    }
+                    let payload = response
+                        .await
+                        .map_err(|e| FrameError::Io(e.to_string()))?
+                        .map_err(FrameError::Io)?;
+                    self.write_response(writer, "retained_child.list", payload)
+                        .await?;
+                }
+                Some(generated::command_envelope::Command::GetRetainedChild(request)) => {
+                    self.write_response(writer, "retained_child", serde_json::to_vec(&serde_json::json!({"parent_id":request.parent_id,"child_id":request.child_id,"error_code":"not_found"}))?).await?;
+                }
+                Some(generated::command_envelope::Command::RetainChild(request)) => {
+                    let (reply, response) = oneshot::channel();
+                    let child = crate::retained_child::RetainedChildV1 {
+                        version: 1,
+                        child_id: request.child_id,
+                        parent_id: request.parent_id,
+                        family_root_id: request.family_root_id,
+                        role: request.role,
+                        stable_name: (!request.stable_name.is_empty())
+                            .then_some(request.stable_name),
+                        lifecycle: crate::retained_child::RetainedLifecycle::Active,
+                        revision: request.revision,
+                        active_session_id: None,
+                        grant_snapshot_hash: request.grant_snapshot_hash,
+                        context_scope_hash: request.context_scope_hash,
+                        workspace_state_ref: (!request.workspace_state_ref.is_empty())
+                            .then_some(request.workspace_state_ref),
+                        last_report_ref: (!request.last_report_ref.is_empty())
+                            .then_some(request.last_report_ref),
+                        retained_until_ms: request.retained_until_ms,
+                        created_at_ms: request.created_at_ms,
+                        last_active_at_ms: request.last_active_at_ms,
+                        registry_version: request.expected_registry_version.saturating_add(1),
+                    };
+                    if let Some(coordinator) = &self.coordinator {
+                        coordinator
+                            .dispatch(CoreCommand::RetainChild {
+                                child,
+                                now_ms: crate::task_memory::now_millis() as u64,
+                                reply,
+                            })
+                            .await
+                            .map_err(|e| FrameError::Io(e.to_string()))?;
+                    }
+                    let payload = response
+                        .await
+                        .map_err(|e| FrameError::Io(e.to_string()))?
+                        .map_err(FrameError::Io)?;
+                    self.write_response(writer, "retained_child.retained", payload)
+                        .await?;
+                }
+                Some(generated::command_envelope::Command::SendChildFollowUp(request)) => {
+                    let (reply, response) = oneshot::channel();
+                    let mode = match request.mode.as_str() {
+                        "auto" => crate::retained_child::FollowUpMode::Auto,
+                        "steer" => crate::retained_child::FollowUpMode::Steer,
+                        _ => crate::retained_child::FollowUpMode::FollowUp,
+                    };
+                    let follow = crate::retained_child::ChildFollowUpRequestV1 {
+                        version: 1,
+                        idempotency_key: request.idempotency_key,
+                        parent_id: request.parent_id,
+                        child_id: request.child_id,
+                        family_root_id: String::new(),
+                        parent_sequence: 0,
+                        expected_child_revision: request.expected_child_revision,
+                        instruction: request.instruction,
+                        context_refs: request.context_refs,
+                        requested_grants: request.requested_grants,
+                        budget_json: request.budget_json,
+                        mode,
+                        correlation_id: request.correlation_id,
+                    };
+                    if let Some(coordinator) = &self.coordinator {
+                        coordinator
+                            .dispatch(CoreCommand::SendChildFollowUp {
+                                request: follow,
+                                now_ms: crate::task_memory::now_millis() as u64,
+                                busy: false,
+                                reply,
+                            })
+                            .await
+                            .map_err(|e| FrameError::Io(e.to_string()))?;
+                    }
+                    let payload = response
+                        .await
+                        .map_err(|e| FrameError::Io(e.to_string()))?
+                        .map_err(FrameError::Io)?;
+                    self.write_response(writer, "retained_child.follow_up", payload)
+                        .await?;
+                }
+                Some(generated::command_envelope::Command::DeleteRetainedChild(request)) => {
+                    let (reply, response) = oneshot::channel();
+                    if let Some(coordinator) = &self.coordinator {
+                        coordinator
+                            .dispatch(CoreCommand::DeleteRetainedChild {
+                                parent_id: request.parent_id,
+                                child_id: request.child_id,
+                                reply,
+                            })
+                            .await
+                            .map_err(|e| FrameError::Io(e.to_string()))?;
+                    }
+                    let payload = response
+                        .await
+                        .map_err(|e| FrameError::Io(e.to_string()))?
+                        .map_err(FrameError::Io)?;
+                    self.write_response(writer, "retained_child.delete", payload)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopTask(stop)) => {
                     if let Some(coordinator) = &self.coordinator {
                         coordinator

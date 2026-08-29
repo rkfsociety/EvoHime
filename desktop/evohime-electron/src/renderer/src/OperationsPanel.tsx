@@ -111,6 +111,20 @@ interface ChildTimelineItem {
   readonly budget?: { readonly max_tokens?: number; readonly max_time_seconds?: number; readonly max_tool_calls?: number }
 }
 
+interface RetainedChildProjection {
+  readonly child_id?: string
+  readonly role?: string
+  readonly stable_name?: string
+  readonly lifecycle?: string
+  readonly revision?: number
+  readonly registry_version?: number
+  readonly last_active_at_ms?: number
+  readonly retained_until_ms?: number
+  readonly pending_count?: number
+  readonly invalidation_reason?: string
+  readonly last_delivery_outcome?: string
+}
+
 const KIND_LABELS: Record<string, string> = {
   preference: 'предпочтение',
   constraint: 'ограничение',
@@ -179,8 +193,16 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
     let activeChildren = 0
     let deadLetters = 0
     let liveLeases = 0
+    const retainedChildren: RetainedChildProjection[] = []
     for (const event of events) {
       counts.set(event.eventType, (counts.get(event.eventType) ?? 0) + 1)
+      if (event.eventType === 'retained_child' || event.eventType === 'retained_child.list') {
+        try {
+          const payload = JSON.parse(event.payload) as { children?: RetainedChildProjection[] }
+          if (payload.children) retainedChildren.push(...payload.children)
+          else retainedChildren.push(payload as RetainedChildProjection)
+        } catch { /* malformed Core payload is ignored, never rendered as authority */ }
+      }
       if (!event.eventType.startsWith('child.')) continue
       let item: ChildTimelineItem
       try { item = JSON.parse(event.payload) as ChildTimelineItem } catch { item = {} }
@@ -189,10 +211,10 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
       if (item.dead_letter === true) deadLetters += 1
       if (item.lease_live === true && item.dead_letter !== true) activeChildren += 1
     }
-    return { counts, childProjection, activeChildren, deadLetters, liveLeases }
+    return { counts, childProjection, retainedChildren, activeChildren, deadLetters, liveLeases }
   }, [events])
   const count = (name: string): number => eventSummary.counts.get(name) ?? 0
-  const { childProjection, activeChildren, deadLetters, liveLeases } = eventSummary
+  const { childProjection, retainedChildren, activeChildren, deadLetters, liveLeases } = eventSummary
   const pulseFailed = count('runtime.schedule_failed') + count('runtime.schedule_dead_letter')
   const toolCalls = count('tool.started')
   const toolOutputs = count('tool.output')
@@ -691,6 +713,17 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
           ))}
         </ol>
       ) : <p className="empty-state">Child timeline появится после запуска bounded read-only задачи.</p>}
+
+      {retainedChildren.length > 0 ? (
+        <ol className="operations-timeline" aria-label="Сохранённые child контексты">
+          {retainedChildren.slice(0, 16).map((child, index) => (
+            <li key={`${child.child_id ?? 'child'}-${index}`}>
+              <code>{child.stable_name || child.child_id || 'child'} · {child.role || 'role'}</code>
+              <span>{child.lifecycle || 'unknown'} · rev {child.revision ?? 0} · pending {child.pending_count ?? 0}{child.last_delivery_outcome ? ` · ${child.last_delivery_outcome}` : ''}{child.invalidation_reason ? ` · ${child.invalidation_reason}` : ''}</span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
     </section>
   )
 }
