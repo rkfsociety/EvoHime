@@ -6,6 +6,8 @@ import type {
   ConnectionState,
   ContinuationActionResult,
   ContinuationProjection,
+  AnalysisKernelProjection,
+  AnalysisKernelResult,
   CoreAvailabilityCode,
   CoreEvent,
   GoalActionResult,
@@ -546,7 +548,9 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       goalList: decodeGoalList(event.goalList),
       goalAction: decodeGoalAction(event.goalAction),
       continuation: decodeContinuation(event.continuation),
-      continuationAction: decodeContinuationAction(event.continuationAction)
+      continuationAction: decodeContinuationAction(event.continuationAction),
+      analysisKernel: decodeAnalysisKernel(event.analysisKernel),
+      analysisKernelResult: decodeAnalysisKernelResult(event.analysisKernelResult)
     })
   }
 
@@ -755,6 +759,42 @@ function decodeTaskCheckpoint(
     replayedEventCount: Number(projected.replayedEventCount ?? 0),
     policyId: projected.policyId ?? '',
     errorCode: projected.errorCode ?? ''
+  }
+}
+
+function decodeAnalysisKernel(
+  projected: evohime.desktop.v1.IAnalysisKernelProjection | null | undefined
+): AnalysisKernelProjection | null {
+  if (!projected || !projected.kernelId) return null
+  return {
+    schemaVersion: Number(projected.schemaVersion ?? 0),
+    kernelId: projected.kernelId,
+    taskId: projected.taskId ?? '',
+    workspaceId: projected.workspaceId ?? '',
+    runtimeVersion: projected.runtimeVersion ?? '',
+    packageManifestHash: projected.packageManifestHash ?? '',
+    policyHash: projected.policyHash ?? '',
+    status: projected.status ?? '',
+    revision: Number(projected.revision ?? 0),
+    limitsJson: decodePayload(projected.limitsJson),
+    objectCount: Number(projected.objectCount ?? 0),
+    truncated: Boolean(projected.truncated),
+    errorCode: projected.errorCode ?? ''
+  }
+}
+
+function decodeAnalysisKernelResult(
+  projected: evohime.desktop.v1.IAnalysisKernelResult | null | undefined
+): AnalysisKernelResult | null {
+  if (!projected || (!projected.requestId && !projected.errorClass)) return null
+  return {
+    schemaVersion: Number(projected.schemaVersion ?? 0),
+    requestId: projected.requestId ?? '',
+    status: projected.status ?? '',
+    inlineResult: decodePayload(projected.inlineResult),
+    sensitivity: projected.sensitivity ?? '',
+    provenance: projected.provenance ?? '',
+    errorClass: projected.errorClass ?? ''
   }
 }
 

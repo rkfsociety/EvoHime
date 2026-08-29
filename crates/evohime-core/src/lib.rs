@@ -941,6 +941,7 @@ use uuid::Uuid;
 
 pub mod ambient;
 pub mod ambient_proactivity;
+pub mod analysis_kernel;
 pub mod audit;
 pub mod build;
 pub mod capability_registry;
@@ -1866,6 +1867,33 @@ impl EventJournal {
         )
         .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
         Ok((unknown, expired))
+    }
+
+    /// A Core restart cannot rehydrate worker process memory. Running kernel
+    /// manifests are fenced as crashed and require an explicit reset/start
+    /// path instead of an automatic retry.
+    pub async fn recover_analysis_kernels(&self) -> Result<usize, StorageError> {
+        let database = self.database.lock().await;
+        let store =
+            evohime_local_storage::analysis_kernel::AnalysisKernelStore::new(database.connection());
+        let sessions = store.list_running_sessions()?;
+        let mut recovered = 0;
+        for session in sessions {
+            store.set_status(
+                &session.id,
+                session.revision,
+                evohime_local_storage::analysis_kernel::KernelStatus::Crashed,
+                task_memory::now_millis() as i64,
+            )?;
+            store.append_event(
+                &session.id,
+                "runtime.recovered",
+                br#"{"disposition":"crashed_no_memory_rehydrate"}"#,
+                task_memory::now_millis() as i64,
+            )?;
+            recovered += 1;
+        }
+        Ok(recovered)
     }
 
     /// Builds and atomically publishes one Core-owned workspace RAG

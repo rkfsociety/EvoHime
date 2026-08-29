@@ -302,6 +302,10 @@ pub struct IpcBridge {
     review_results: Arc<tokio::sync::Mutex<HashMap<String, crate::plan_review::ReviewResult>>>,
     revision_tasks: Arc<tokio::sync::Mutex<HashMap<String, CancellationToken>>>,
     revision_results: Arc<tokio::sync::Mutex<HashMap<String, crate::plan_review::RevisionResult>>>,
+    /// Active kernel runtimes are process-local; only their validated manifest
+    /// and object metadata are durable in LocalDatabase.
+    analysis_kernels:
+        Arc<tokio::sync::Mutex<HashMap<String, crate::analysis_kernel::KernelRuntime>>>,
     /// Единственный источник истины о состоянии постоянного слушания.
     ///
     /// Трей, глобальный хоткей и панель «Слух» — три точки входа одной и той
@@ -609,6 +613,7 @@ impl IpcBridge {
             review_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             revision_tasks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             revision_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            analysis_kernels: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             ambient: crate::ambient::AmbientListeningRegistry::default(),
             ambient_data_dir: None,
             proactivity: crate::ambient::AmbientProactivityRegistry::default(),
@@ -636,6 +641,7 @@ impl IpcBridge {
             review_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             revision_tasks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             revision_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            analysis_kernels: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             ambient: crate::ambient::AmbientListeningRegistry::default(),
             ambient_data_dir: None,
             proactivity: crate::ambient::AmbientProactivityRegistry::default(),
@@ -670,6 +676,7 @@ impl IpcBridge {
             review_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             revision_tasks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             revision_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            analysis_kernels: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             ambient: crate::ambient::AmbientListeningRegistry::default(),
             ambient_data_dir: None,
             proactivity: crate::ambient::AmbientProactivityRegistry::default(),
@@ -3016,6 +3023,46 @@ impl IpcBridge {
                         .map_err(FrameError::Io)?;
                     self.write_response(writer, "retained_child.delete", payload)
                         .await?;
+                }
+                Some(generated::command_envelope::Command::CreateAnalysisKernel(request)) => {
+                    let projection = self.dispatch_create_analysis_kernel(request).await;
+                    write_analysis_kernel_projection(
+                        writer,
+                        projection,
+                        &self.core_instance_id,
+                        self.session_epoch,
+                    )
+                    .await?;
+                }
+                Some(generated::command_envelope::Command::GetAnalysisKernel(request)) => {
+                    let projection = self.dispatch_get_analysis_kernel(request).await;
+                    write_analysis_kernel_projection(
+                        writer,
+                        projection,
+                        &self.core_instance_id,
+                        self.session_epoch,
+                    )
+                    .await?;
+                }
+                Some(generated::command_envelope::Command::ExecuteAnalysisKernel(request)) => {
+                    let result = self.dispatch_execute_analysis_kernel(request).await;
+                    write_analysis_kernel_result(
+                        writer,
+                        result,
+                        &self.core_instance_id,
+                        self.session_epoch,
+                    )
+                    .await?;
+                }
+                Some(generated::command_envelope::Command::ResetAnalysisKernel(request)) => {
+                    let result = self.dispatch_reset_analysis_kernel(request).await;
+                    write_analysis_kernel_result(
+                        writer,
+                        result,
+                        &self.core_instance_id,
+                        self.session_epoch,
+                    )
+                    .await?;
                 }
                 Some(generated::command_envelope::Command::StopTask(stop)) => {
                     if let Some(coordinator) = &self.coordinator {
@@ -7875,6 +7922,197 @@ impl IpcBridge {
         .await
     }
 
+    async fn dispatch_create_analysis_kernel(
+        &self,
+        request: generated::CreateAnalysisKernel,
+    ) -> generated::AnalysisKernelProjection {
+        let limits = if request.limits_json.is_empty() {
+            crate::analysis_kernel::KernelLimitsV1::default()
+        } else {
+            match serde_json::from_slice(&request.limits_json) {
+                Ok(limits) => limits,
+                Err(_) => return analysis_kernel_projection_error("invalid_limits"),
+            }
+        };
+        let now = crate::task_memory::now_millis() as i64;
+        let session = crate::analysis_kernel::AnalysisKernelSessionV1 {
+            schema_version: crate::analysis_kernel::ANALYSIS_KERNEL_SCHEMA_VERSION,
+            id: format!("kernel-{}", uuid::Uuid::new_v4()),
+            task_id: request.task_id,
+            workspace_id: request.workspace_id,
+            runtime_version: request.runtime_version,
+            package_manifest_hash: request.package_manifest_hash,
+            policy_hash: request.policy_hash,
+            status: crate::analysis_kernel::KernelStatus::Created,
+            revision: 0,
+            limits,
+            created_at_ms: now,
+            updated_at_ms: now,
+        };
+        if session.validate().is_err() {
+            return analysis_kernel_projection_error("invalid_argument");
+        }
+        let database = self.journal.database().lock().await;
+        let store = crate::analysis_kernel::AnalysisKernelStore::new(database.connection());
+        if store.create_session(&session).is_err() {
+            return analysis_kernel_projection_error("storage_failed");
+        }
+        if store
+            .set_status(
+                &session.id,
+                session.revision,
+                crate::analysis_kernel::KernelStatus::Running,
+                now,
+            )
+            .is_err()
+        {
+            return analysis_kernel_projection_error("runtime_unavailable");
+        }
+        let mut session = session;
+        session.status = crate::analysis_kernel::KernelStatus::Running;
+        session.revision = session.revision.saturating_add(1);
+        let mut runtime = match crate::analysis_kernel::KernelRuntime::new(session.clone()) {
+            Ok(runtime) => runtime,
+            Err(_) => return analysis_kernel_projection_error("invalid_argument"),
+        };
+        if runtime.start(std::time::Instant::now()).is_err() {
+            return analysis_kernel_projection_error("runtime_unavailable");
+        }
+        self.analysis_kernels
+            .lock()
+            .await
+            .insert(session.id.clone(), runtime);
+        analysis_kernel_projection(&session, 0, "")
+    }
+
+    async fn dispatch_get_analysis_kernel(
+        &self,
+        request: generated::GetAnalysisKernel,
+    ) -> generated::AnalysisKernelProjection {
+        let database = self.journal.database().lock().await;
+        let store = crate::analysis_kernel::AnalysisKernelStore::new(database.connection());
+        let Ok(Some(session)) = store.get_session(&request.kernel_id) else {
+            return analysis_kernel_projection_error("not_found");
+        };
+        let objects = store.list_objects(&session.id).unwrap_or_default();
+        analysis_kernel_projection(&session, objects.len(), "")
+    }
+
+    async fn dispatch_execute_analysis_kernel(
+        &self,
+        request: generated::ExecuteAnalysisKernel,
+    ) -> generated::AnalysisKernelResult {
+        let operation_name = request.operation.clone();
+        if !request.idempotency_key.is_empty() {
+            let database = self.journal.database().lock().await;
+            let store = crate::analysis_kernel::AnalysisKernelStore::new(database.connection());
+            if store
+                .get_idempotency(
+                    &request.kernel_id,
+                    &request.idempotency_key,
+                    &operation_name,
+                )
+                .ok()
+                .flatten()
+                .is_some()
+            {
+                return analysis_kernel_result_error(&request.request_id, "duplicate_request");
+            }
+        }
+        let operation = match serde_json::from_str(&format!("\"{}\"", request.operation)) {
+            Ok(crate::analysis_kernel::KernelOperation::JsonParse) => {
+                crate::analysis_kernel::KernelOperation::JsonParse
+            }
+            Ok(crate::analysis_kernel::KernelOperation::JsonSelect) => {
+                crate::analysis_kernel::KernelOperation::JsonSelect
+            }
+            Ok(crate::analysis_kernel::KernelOperation::CsvSummary) => {
+                crate::analysis_kernel::KernelOperation::CsvSummary
+            }
+            Ok(crate::analysis_kernel::KernelOperation::ArtifactRead) => {
+                crate::analysis_kernel::KernelOperation::ArtifactRead
+            }
+            Ok(crate::analysis_kernel::KernelOperation::ToolRequest) => {
+                crate::analysis_kernel::KernelOperation::ToolRequest
+            }
+            _ => return analysis_kernel_result_error(&request.request_id, "unsupported_operation"),
+        };
+        let host_request = crate::analysis_kernel::KernelHostRequestV1 {
+            version: crate::analysis_kernel::KERNEL_HOST_REQUEST_VERSION,
+            request_id: request.request_id,
+            kernel_id: request.kernel_id.clone(),
+            session_id: request.kernel_id.clone(),
+            operation,
+            args: request.args,
+            requested_capability: (!request.requested_capability.is_empty())
+                .then_some(request.requested_capability),
+            context_refs: request.context_refs,
+            correlation_id: request.correlation_id,
+            idempotency_key: request.idempotency_key.clone(),
+        };
+        let mut kernels = self.analysis_kernels.lock().await;
+        let Some(runtime) = kernels.get_mut(&request.kernel_id) else {
+            return analysis_kernel_result_error(&host_request.request_id, "kernel_not_running");
+        };
+        let request_id = host_request.request_id.clone();
+        match runtime.execute(host_request, std::time::Instant::now()) {
+            Ok(response) => {
+                let result = generated::AnalysisKernelResult {
+                    schema_version: crate::analysis_kernel::KERNEL_HOST_REQUEST_VERSION,
+                    request_id: response.request_id,
+                    status: "ok".into(),
+                    inline_result: response.inline_result.unwrap_or_default(),
+                    object_ref: None,
+                    sensitivity: response.sensitivity.as_str().into(),
+                    provenance: response.provenance,
+                    error_class: String::new(),
+                };
+                let database = self.journal.database().lock().await;
+                let store = crate::analysis_kernel::AnalysisKernelStore::new(database.connection());
+                let _ = store.put_idempotency(
+                    &request.kernel_id,
+                    &request.idempotency_key,
+                    &operation_name,
+                    b"{\"status\":\"ok\"}",
+                    crate::task_memory::now_millis() as i64,
+                );
+                result
+            }
+            Err(error) => analysis_kernel_result_error(&request_id, kernel_error_code(&error)),
+        }
+    }
+
+    async fn dispatch_reset_analysis_kernel(
+        &self,
+        request: generated::ResetAnalysisKernel,
+    ) -> generated::AnalysisKernelResult {
+        let mut kernels = self.analysis_kernels.lock().await;
+        let Some(runtime) = kernels.get_mut(&request.kernel_id) else {
+            return analysis_kernel_result_error("", "not_found");
+        };
+        runtime.reset();
+        let database = self.journal.database().lock().await;
+        let store = crate::analysis_kernel::AnalysisKernelStore::new(database.connection());
+        match store.set_status(
+            &request.kernel_id,
+            request.expected_revision,
+            crate::analysis_kernel::KernelStatus::Reset,
+            crate::task_memory::now_millis() as i64,
+        ) {
+            Ok(_) => generated::AnalysisKernelResult {
+                schema_version: crate::analysis_kernel::KERNEL_HOST_REQUEST_VERSION,
+                request_id: String::new(),
+                status: "reset".into(),
+                inline_result: Vec::new(),
+                object_ref: None,
+                sensitivity: "internal".into(),
+                provenance: "core:analysis-kernel".into(),
+                error_class: String::new(),
+            },
+            Err(error) => analysis_kernel_result_error("", kernel_storage_error_code(&error)),
+        }
+    }
+
     async fn dispatch_get_task_checkpoint(
         &self,
         request: generated::GetTaskCheckpoint,
@@ -9288,6 +9526,113 @@ fn valid_checkpoint_token(value: &str, max_bytes: usize) -> bool {
 
 fn valid_checkpoint_workspace(value: &str) -> bool {
     !value.is_empty() && value.len() <= 4096 && !value.bytes().any(|byte| byte.is_ascii_control())
+}
+
+fn analysis_kernel_projection_error(code: &str) -> generated::AnalysisKernelProjection {
+    generated::AnalysisKernelProjection {
+        schema_version: crate::analysis_kernel::ANALYSIS_KERNEL_SCHEMA_VERSION,
+        error_code: code.into(),
+        ..Default::default()
+    }
+}
+
+fn analysis_kernel_projection(
+    session: &crate::analysis_kernel::AnalysisKernelSessionV1,
+    object_count: usize,
+    error_code: &str,
+) -> generated::AnalysisKernelProjection {
+    generated::AnalysisKernelProjection {
+        schema_version: session.schema_version,
+        kernel_id: session.id.clone(),
+        task_id: session.task_id.clone(),
+        workspace_id: session.workspace_id.clone(),
+        runtime_version: session.runtime_version.clone(),
+        package_manifest_hash: session.package_manifest_hash.clone(),
+        policy_hash: session.policy_hash.clone(),
+        status: session.status.as_str().into(),
+        revision: session.revision,
+        limits_json: serde_json::to_vec(&session.limits).unwrap_or_default(),
+        object_count: object_count as u32,
+        truncated: object_count > 1024,
+        error_code: error_code.into(),
+    }
+}
+
+fn analysis_kernel_result_error(request_id: &str, code: &str) -> generated::AnalysisKernelResult {
+    generated::AnalysisKernelResult {
+        schema_version: crate::analysis_kernel::KERNEL_HOST_REQUEST_VERSION,
+        request_id: request_id.into(),
+        status: "error".into(),
+        error_class: code.into(),
+        sensitivity: "internal".into(),
+        provenance: "core:analysis-kernel".into(),
+        ..Default::default()
+    }
+}
+
+fn kernel_error_code(error: &crate::analysis_kernel::KernelRuntimeError) -> &'static str {
+    match error {
+        crate::analysis_kernel::KernelRuntimeError::NotRunning => "kernel_not_running",
+        crate::analysis_kernel::KernelRuntimeError::Denied(_) => "host_request_denied",
+        crate::analysis_kernel::KernelRuntimeError::LimitExceeded(_) => "limit_exceeded",
+        crate::analysis_kernel::KernelRuntimeError::Operation(_) => "operation_failed",
+        crate::analysis_kernel::KernelRuntimeError::Contract(error) => match error {
+            crate::analysis_kernel::AnalysisKernelError::ForbiddenOperation => {
+                "forbidden_operation"
+            }
+            crate::analysis_kernel::AnalysisKernelError::RequestTooLarge(_) => "request_too_large",
+            _ => "invalid_argument",
+        },
+    }
+}
+
+fn kernel_storage_error_code(error: &evohime_local_storage::StorageError) -> &'static str {
+    match error {
+        evohime_local_storage::StorageError::AnalysisKernel(
+            crate::analysis_kernel::AnalysisKernelError::VersionConflict { .. },
+        ) => "stale_revision",
+        _ => "storage_failed",
+    }
+}
+
+async fn write_analysis_kernel_projection<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    projection: generated::AnalysisKernelProjection,
+    core_instance_id: &str,
+    session_epoch: u64,
+) -> Result<(), FrameError> {
+    let event = generated::EventEnvelope {
+        protocol: Some(protocol()),
+        sequence_id: 0,
+        task_id: projection.task_id.clone(),
+        event_type: "analysis_kernel.projection".into(),
+        payload: Vec::new(),
+        core_instance_id: core_instance_id.into(),
+        session_epoch,
+        event: Some(generated::event_envelope::Event::AnalysisKernel(projection)),
+    };
+    transport::write_frame(writer, &event.encode_to_vec()).await
+}
+
+async fn write_analysis_kernel_result<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    result: generated::AnalysisKernelResult,
+    core_instance_id: &str,
+    session_epoch: u64,
+) -> Result<(), FrameError> {
+    let event = generated::EventEnvelope {
+        protocol: Some(protocol()),
+        sequence_id: 0,
+        task_id: String::new(),
+        event_type: "analysis_kernel.result".into(),
+        payload: Vec::new(),
+        core_instance_id: core_instance_id.into(),
+        session_epoch,
+        event: Some(generated::event_envelope::Event::AnalysisKernelResult(
+            result,
+        )),
+    };
+    transport::write_frame(writer, &event.encode_to_vec()).await
 }
 
 fn checkpoint_status_text(status: crate::task_checkpoint::CheckpointStatus) -> String {

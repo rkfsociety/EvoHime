@@ -8,6 +8,7 @@ use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 pub mod ambient_store;
+pub mod analysis_kernel;
 pub mod artifact_store;
 pub mod automation_store;
 pub mod backup;
@@ -36,7 +37,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 37;
+pub const SCHEMA_VERSION: u32 = 38;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -89,6 +90,8 @@ pub enum StorageError {
     Context(String),
     #[error("task checkpoint contract violation: {0}")]
     TaskCheckpoint(#[from] task_checkpoint::TaskCheckpointError),
+    #[error("analysis kernel contract violation: {0}")]
+    AnalysisKernel(#[from] analysis_kernel::AnalysisKernelError),
     #[error("goal contract violation: {0}")]
     Goal(#[from] goal::GoalError),
     /// Нарушение контракта execution ledger (план 08-1/08-2).
@@ -513,6 +516,7 @@ impl LocalDatabase {
         goal::install_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         retained_child_store::install_schema(&connection)?;
+        analysis_kernel::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
@@ -3472,6 +3476,10 @@ impl LocalDatabase {
         if current < 37 {
             retained_child_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 37;")?;
+        }
+        if current < 38 {
+            analysis_kernel::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 38;")?;
         }
         transaction.commit()?;
         Ok(())

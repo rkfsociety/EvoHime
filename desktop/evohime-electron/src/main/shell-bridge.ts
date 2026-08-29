@@ -240,6 +240,53 @@ function dispatch(
       return accepted(client.send({ resolveTaskCheckpoint: { taskId, workspacePath, checkpointId, expectedSourceEventSeq, action, idempotencyKey } }))
     }
 
+    case 'core.createAnalysisKernel': {
+      const value = asRecord(payload)
+      const taskId = asBoundedString(value['taskId'])
+      const workspaceId = asBoundedString(value['workspaceId'])
+      const runtimeVersion = asBoundedString(value['runtimeVersion'])
+      const packageManifestHash = asBoundedString(value['packageManifestHash'])
+      const policyHash = asBoundedString(value['policyHash'])
+      const limitsJson = value['limitsJson'] === undefined ? '' : asBoundedString(value['limitsJson'])
+      if (taskId === null || workspaceId === null || runtimeVersion === null || packageManifestHash === null || policyHash === null || limitsJson === null) {
+        return failure('invalid-payload', 'Некорректные параметры analysis kernel.')
+      }
+      return accepted(client.send({ createAnalysisKernel: { taskId, workspaceId, runtimeVersion, packageManifestHash, policyHash, limitsJson: Buffer.from(limitsJson, 'utf8') } }))
+    }
+
+    case 'core.getAnalysisKernel': {
+      const value = asRecord(payload)
+      const kernelId = asBoundedString(value['kernelId'])
+      const maxObjects = value['maxObjects'] === undefined ? 0 : asBoundedNumber(value['maxObjects'], 1024)
+      if (kernelId === null || maxObjects === null) return failure('invalid-payload', 'Некорректный идентификатор kernel.')
+      return accepted(client.send({ getAnalysisKernel: { kernelId, maxObjects } }))
+    }
+
+    case 'core.executeAnalysisKernel': {
+      const value = asRecord(payload)
+      const kernelId = asBoundedString(value['kernelId'])
+      const requestId = asBoundedString(value['requestId'])
+      const operation = asBoundedString(value['operation'])
+      const args = asBoundedString(value['args'])
+      const requestedCapability = value['requestedCapability'] === undefined ? '' : asBoundedString(value['requestedCapability'])
+      const correlationId = asBoundedString(value['correlationId'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const contextRefs = Array.isArray(value['contextRefs']) && value['contextRefs'].every((ref): ref is string => typeof ref === 'string' && ref.length <= 256) ? value['contextRefs'] : []
+      if (kernelId === null || requestId === null || operation === null || args === null || requestedCapability === null || correlationId === null || idempotencyKey === null || contextRefs.length > 32) {
+        return failure('invalid-payload', 'Некорректный запрос analysis kernel.')
+      }
+      return accepted(client.send({ executeAnalysisKernel: { kernelId, requestId, operation, args: Buffer.from(args, 'utf8'), requestedCapability, contextRefs, correlationId, idempotencyKey } }))
+    }
+
+    case 'core.resetAnalysisKernel': {
+      const value = asRecord(payload)
+      const kernelId = asBoundedString(value['kernelId'])
+      const expectedRevision = asNonNegativeInteger(value['expectedRevision'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (kernelId === null || expectedRevision === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректный reset analysis kernel.')
+      return accepted(client.send({ resetAnalysisKernel: { kernelId, expectedRevision, idempotencyKey } }))
+    }
+
     case 'core.createGoal': {
       const value = asRecord(payload)
       const goalId = asGoalToken(value['goalId'])

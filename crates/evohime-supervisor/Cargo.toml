@@ -7,6 +7,10 @@ edition = "2021"
 name = "evohime-supervisor"
 path = "src/main.rs"
 
+[[bin]]
+name = "evohime-analysis-worker"
+path = "src/analysis_worker_main.rs"
+
 [dependencies]
 tokio = { version = "1", features = ["macros", "net", "process", "rt-multi-thread", "signal", "time"] }
 serde_json = "1"

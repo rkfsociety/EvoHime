@@ -177,6 +177,32 @@ export interface TaskCheckpointActionResult {
   readonly errorMessage: string
 }
 
+export interface AnalysisKernelProjection {
+  readonly schemaVersion: number
+  readonly kernelId: string
+  readonly taskId: string
+  readonly workspaceId: string
+  readonly runtimeVersion: string
+  readonly packageManifestHash: string
+  readonly policyHash: string
+  readonly status: string
+  readonly revision: number
+  readonly limitsJson: string
+  readonly objectCount: number
+  readonly truncated: boolean
+  readonly errorCode: string
+}
+
+export interface AnalysisKernelResult {
+  readonly schemaVersion: number
+  readonly requestId: string
+  readonly status: string
+  readonly inlineResult: string
+  readonly sensitivity: string
+  readonly provenance: string
+  readonly errorClass: string
+}
+
 export interface GoalCriterion {
   readonly id: string
   readonly kind: string
@@ -285,6 +311,8 @@ export interface CoreEvent {
   readonly taskCheckpoint?: TaskCheckpointProjection | null
   /** Present only for the typed TaskCheckpoint action response. */
   readonly taskCheckpointAction?: TaskCheckpointActionResult | null
+  readonly analysisKernel?: AnalysisKernelProjection | null
+  readonly analysisKernelResult?: AnalysisKernelResult | null
   /** Present only for the typed Core skill catalog response. */
   readonly skillCatalog?: SkillCatalog | null
   /** Present only for explicit skill progressive-disclosure responses. */
@@ -877,6 +905,10 @@ export const RENDERER_COMMANDS = [
   'core.startTask',
   'core.getTaskCheckpoint',
   'core.resolveTaskCheckpoint',
+  'core.createAnalysisKernel',
+  'core.getAnalysisKernel',
+  'core.executeAnalysisKernel',
+  'core.resetAnalysisKernel',
   'core.listSkills',
   'core.loadSkill',
   'core.loadSkillReference',
@@ -1058,6 +1090,10 @@ export interface CommandPayloads {
     action: 'acknowledge_recovery' | 'request_resume'
     idempotencyKey: string
   }
+  'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
+  'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
+  'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
+  'core.resetAnalysisKernel': { kernelId: string; expectedRevision: number; idempotencyKey: string }
   'core.listSkills': { workspacePath: string; limit?: number }
   'core.loadSkill': { workspacePath: string; skillId: string; maxBytes?: number }
   'core.loadSkillReference': { workspacePath: string; skillId: string; reference: string; maxBytes?: number }
@@ -1360,6 +1396,10 @@ export interface CommandResults {
   'core.startTask': { accepted: boolean }
   'core.getTaskCheckpoint': { accepted: boolean }
   'core.resolveTaskCheckpoint': { accepted: boolean }
+  'core.createAnalysisKernel': { accepted: boolean }
+  'core.getAnalysisKernel': { accepted: boolean }
+  'core.executeAnalysisKernel': { accepted: boolean }
+  'core.resetAnalysisKernel': { accepted: boolean }
   'core.listSkills': { accepted: boolean }
   'core.loadSkill': { accepted: boolean }
   'core.loadSkillReference': { accepted: boolean }

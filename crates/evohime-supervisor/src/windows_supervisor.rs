@@ -34,6 +34,10 @@ use windows_sys::Win32::{
     System::Threading::{CreateEventW, CreateMutexW},
 };
 
+#[allow(dead_code)]
+#[path = "analysis_kernel_worker.rs"]
+mod analysis_kernel_worker;
+
 struct SingleInstance(HANDLE);
 
 struct SupervisorLiveness(HANDLE);

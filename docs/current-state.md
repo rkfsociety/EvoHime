@@ -369,3 +369,13 @@ local-storage 208, desktop IPC 35, Electron 470 passed и 2 штатно skipped
 `cargo clippy` с `-D warnings`, `npm run typecheck`, `npm run check:protocol` и
 `git diff --check` прошли. Первоначальный timeout chat-store был отдельно
 повторён как 8/8 passed, а повторный полный Electron-прогон завершился 470/470.
+
+План 28 находится в реализации. Зафиксирован Core/storage contract v1,
+canonical SHA-256 session hash, SQLite schema v38 с metadata-only manifest,
+bounded ephemeral `KernelRuntime`, отдельный allowlisted worker binary с
+supervisor Job Object launch contract, authenticated additive IPC commands
+162–165/events 27–28 и Electron projection/вкладка `Анализ`. Focused checks
+подтверждают storage/runtime/supervisor contracts, protocol generation,
+Electron typecheck/build и pipe/shell adapter tests. Полное закрытие отложено
+до реального worker transport, restart reconciliation, checkpoint/child-ref
+integration и release-evidence matrix; stage-файлы `28-0` … `28-4` сохранены.

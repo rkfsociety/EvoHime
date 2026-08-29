@@ -921,3 +921,30 @@ dispatched mailbox entries переходят в `unknown` и не повтор�
 IPC использует additive command tags 157–161 и event tags 25–26. OperationsPanel
 получает только metadata: role/name, lifecycle, revision, activity, pending count
 и stale/invalidated/delivery outcome.
+
+## Persistent Analysis Kernel (план 28, текущая вертикаль)
+
+Analysis Kernel остаётся bounded вычислительной средой и не является security
+authority: Core владеет `AnalysisKernelSessionV1`, лимитами, object metadata,
+идемпотентностью и host-request validation. Durable metadata хранится в
+`analysis_kernel_sessions`, `analysis_kernel_objects`,
+`analysis_kernel_events` и `analysis_kernel_idempotency`; большие значения не
+дублируются и должны адресоваться существующим ArtifactStore. Migration v38
+добавляет эту схему транзакционно поверх текущей v37.
+
+`KernelRuntime` поддерживает только `json_parse`, `json_select` и
+`csv_summary`; `filesystem`, `network`, `shell`, `credentials`, raw tool и
+прямое чтение artifact отклоняются typed error до эффекта. Runtime state
+ephemeral и не сериализуется. Лимиты включают lifetime/idle timeout, request
+rate и output budget; чувствительные inline markers fail-closed.
+
+Supervisor имеет allowlisted `evohime-analysis-worker` launch contract:
+фиксированный sibling executable, `trusted-local-1`, очищенное окружение и
+отдельный kill-on-close Job Object с memory/CPU limits. IPC добавляет commands
+162–165 и events 27–28; Electron main/preload маршрутизирует bounded payload,
+а вкладка `Анализ` показывает только metadata projection.
+
+Работа плана 28 ещё не закрыта: требуется завершить реальное Core↔worker
+transport, crash/restart reconciliation, TaskCheckpoint/selected-child refs,
+полный approval/capability host bridge и release evidence matrix. До этого
+stage-файлы плана сохраняются, а kernel не считается полностью implemented.
