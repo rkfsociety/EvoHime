@@ -2,45 +2,54 @@
 
 Статус: самостоятельный этап 3 для [плана 27.0](./27-0-retained-child-contexts.md); начинается после [плана 27.2](./27-2-retained-child-contexts.md).
 
-## Цель
-
-Дать desktop/CLI-клиенту минимальную typed поверхность для чтения состояния и явных действий пользователя, не перенося state или authority из Core.
-
 ## Зависимости
 
 ### Блокирующие
 
-- План 27.2 — работающий Core vertical slice, recovery и список стабильных команд/events.
-- Authenticated versioned named-pipe IPC, sequence replay/resync и generated TypeScript protocol.
+- работающий Core vertical slice/recovery и command-event inventory из
+  [27.2](./27-2-retained-child-contexts.md);
+- `crates/desktop-ipc/proto/evohime.desktop.proto`, Rust transport,
+  `desktop/EvoHime.IpcTests`, Electron main/preload adapter и generated protocol
+  check; C# compatibility oracle обновляется вместе с additive proto.
 
 ### Опциональные
 
-- Нет дополнительных межплановых зависимостей.
+- CLI/headless client не входит в MVP; его отсутствие не блокирует этап и не
+  должно порождать отдельную обязательную surface.
 
 ## Реализация по шагам
 
-0. Зарезервировать additive message/event names и tags после проверки proto; compatibility clients не меняют смысл старых команд.
-1. Добавить request/result/event messages с bounded fields, correlation, idempotency, optimistic version и typed errors. Запретить raw prompt, credentials, hidden reasoning и необезличенный sensitive payload.
-2. Реализовать Electron main/preload adapter и предусмотренный обзором headless client; adapter только сериализует и маршрутизирует Core commands.
-3. Добавить bounded renderer projection: status, progress, blockers, refs, policy/recovery warnings и user actions. Renderer не вычисляет state machine и не запускает effects.
-4. Проверить reconnect, replay gap, duplicate events, stale action, denied action и отсутствующий optional backend.
-5. Привязать UI/CLI traces к Core event/provenance IDs без вывода запрещённых payload.
+0. Проверить live oneof/event tags (сейчас последняя занятая command tag — 156),
+   выбрать следующий свободный диапазон без reuse, записать names/tags/schema
+   revision в evidence и обновить Rust/C#/TypeScript generated surfaces.
+1. Добавить additive typed messages `ListRetainedChildren`, `GetRetainedChild`,
+   `RetainChild`, `SendChildFollowUp` и `DeleteRetainedChild`, а также bounded
+   registry/mailbox projections. Поля correlation, idempotency,
+   optimistic version и typed error обязательны; Core игнорирует client actor,
+   sender и receiver claims.
+2. Реализовать handler в `crates/evohime-core/src/ipc_bridge.rs`, Electron
+   `desktop/evohime-electron/src/main`/preload adapter и C# compatibility
+   mappings. Adapter только сериализует и маршрутизирует; storage/state machine
+   остаются в Core.
+3. Добавить OperationsPanel projection: lifecycle, role/name, revision,
+   activity, pending count, TTL, stale/invalidated reason, Goal/workflow refs,
+   delivery outcome и explicit actions. Renderer не строит state machine и не
+   получает prompt, transcript, secret, hidden reasoning или absolute path.
+4. Проверить reconnect, replay gap/resync, duplicate events, stale action,
+   denied action, deleted/expired child, redaction и old-client behavior.
+   Compatibility tests должны доказать, что старый client игнорирует additive
+   surface, а новый не обходит Core.
 
-## Артефакты выхода
+## Артефакты и критерии выхода
 
-- additive protobuf contract и generated adapter types;
-- main/preload/client bridge без обхода Core;
-- bounded UI/CLI projection и typed error states;
-- IPC, adapter и renderer/client tests на reconnect и tamper cases.
-
-## Критерии выхода
-
-- [ ] Новая surface additive и совместима с authenticated IPC.
-- [ ] Все mutations повторно проверяются Core и защищены idempotency/version.
-- [ ] Renderer/CLI не получает raw secrets, hidden reasoning или полномочия.
-- [ ] Reconnect/replay и stale actions дают предсказуемый результат.
-- [ ] UI показывает фактический Core state, а не локально вычисленную копию.
+- additive proto contract с exact tags/schema и generated Rust/C#/TS types;
+- Core IPC handlers, main/preload bridge и metadata-only UI projection;
+- Rust IPC, C# compatibility, adapter и renderer tests на reconnect/tamper;
+- все mutations проходят Core authorization, idempotency и optimistic version;
+- UI показывает фактический Core state и различает pending/delivered/unknown,
+  без capability escalation.
 
 ## Не входит
 
-Новый transport, direct database access, model/provider credentials в client state или самостоятельная бизнес-логика renderer.
+Новый transport, direct database access, headless client как blocking scope,
+credentials в client state и самостоятельная бизнес-логика renderer.

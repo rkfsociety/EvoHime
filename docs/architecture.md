@@ -404,7 +404,7 @@ correlation-полями (`action_id`, `tool_call_id`, `receipt_id`,
 отклоняют вторую терминальную запись для того же `action_id` уже на уровне
 записи в SQLite, а не только как in-memory проверка.
 
-SQLite schema поднята до v30 идемпотентными installer'ами (тем же путём, что
+SQLite schema поднята до v36 идемпотентными installer'ами (тем же путём, что
 receipts/model provenance/workflow store — без отдельной ветки `migrate()`,
 которая не выполняется для уже смигрированных v26+ баз): `events` получила
 nullable typed-колонки (`event_id`, `run_scope`, `run_id`, `session_id`,

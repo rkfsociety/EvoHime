@@ -2,55 +2,65 @@
 
 Статус: самостоятельный этап 4 для [плана 27.0](./27-0-retained-child-contexts.md); начинается после [плана 27.3](./27-3-retained-child-contexts.md).
 
-## Цель
-
-Проверить весь контракт сквозным образом, зафиксировать redacted evidence, rollback/disable procedure и только затем признать направление реализованным или обоснованно заблокированным.
-
 ## Зависимости
 
 ### Блокирующие
 
-- План 27.3 — завершённые Core, IPC и client projection surfaces.
-- Действующие release-evidence, documentation и security/eval gates проекта.
+- [27.3](./27-3-retained-child-contexts.md) и фактически зелёные
+  Core/storage/runtime/IPC/client tests;
+- `docs/architecture.md`, `docs/current-state.md`, `docs/development-plan.md`,
+  `docs/decision-register.md`, `docs/release-evidence.md` и действующие release,
+  security/eval gates.
 
 ### Опциональные
 
-- Связанные планы из overview расширяют matrix только после прохождения базовых критериев.
+- Goal/Continuation integrations расширяют matrix только после базового MVP;
+  отсутствие optional provider остаётся typed `unavailable`.
 
-## Матрица критериев
+## Evidence matrix
 
-- [ ] parent-scoped registry и typed follow-up contract durable.
-- [ ] mailbox доставляет/очередит bounded messages с duplicate protection.
-- [ ] grants, context, provenance, revision и freshness проверяются на каждом run.
-- [ ] formal child report/fan-in остаётся отдельным контрактом.
-- [ ] restart, pending delivery, expiry, deletion и uncertain outcome recoverable.
-- [ ] sibling escape, secret payload и raw transcript не попадают в UI.
-- [ ] limits/overflow дают явный typed outcome.
-- [ ] проходят child, storage, recovery, IPC и security tests.
+- Contract: schema/hash/transitions/bounds/error codes и unknown-field rejection.
+- Storage: fresh/legacy migration, backup/rollback, parent isolation,
+  corruption, atomic sequence и idempotency.
+- Runtime: retain, idle follow-up, busy queue, auto/steer policy, cancellation,
+  lease/boot recovery, stale/invalidation, expiry/delete и unknown delivery.
+- IPC/client: additive tags, Rust/C#/Electron compatibility, replay/resync,
+  stale mutation, redaction и old-client behavior.
+- Security: sender spoofing, sibling escape, grant escalation, traversal,
+  secret/sensitive leakage, imported/untrusted payload и unsafe fallback.
 
 ## Обязательная проверка
 
-1. Unit/contract tests для schema, canonical hash, state transitions, bounds и error codes.
-2. Storage/migration tests с backup, rollback, duplicate/idempotency и corruption cases.
-3. Runtime integration/recovery/fault-injection tests для cancellation, stale state, policy denial, restart и unknown outcome.
-4. IPC/adapter/renderer or CLI tests для authorization, redaction, replay/resync и optimistic conflicts.
-5. Security/eval tests на traversal, capability escalation, secret leakage, imported/untrusted content и unsafe fallback; набор выбирается по критериям направления.
-6. Проверить cargo fmt --all -- --check, релевантный cargo clippy с -D warnings, npm run check:protocol, npm run typecheck, релевантный npm test и git diff --check.
+1. Запустить focused Rust Core/storage/desktop-ipc tests и C# compatibility suite.
+2. Запустить `cargo fmt --all -- --check`, relevant `cargo clippy --all-targets
+   -- -D warnings`, `cargo check -p evohime-supervisor`,
+   `npm run check:protocol`, `npm run typecheck`, relevant `npm test` и
+   `git diff --check`; зафиксировать exact command/result/date.
+3. Выполнить fault/restart matrix с redacted fixtures; ни один `Unknown` effect
+   не объявлять успешным и не повторять blind.
 
 ## Release-evidence и закрытие
 
-- Evidence содержит commit, contract/schema versions, test IDs, hashes, typed outcomes и redaction status; credentials, raw provider output, transcripts, absolute paths и PII исключены.
-- Зафиксировать rollback/disable и recovery procedure; side effects с unknown outcome не объявлять успешными и не повторять вслепую.
-- Обновить docs/architecture.md, docs/current-state.md, docs/development-plan.md и при необходимости docs/release-evidence.md только после свежих проверок.
-- После закрытия всего направления и переноса подтверждённого контракта удалить комплект `27-0` … `27-4` согласно docs/plans/README.md; отдельные stage files до этого не удалять. Если критерий не выполнен, оставить направление blocked с причиной и evidence.
+Evidence допускает только commit, contract/schema versions, test IDs, hashes,
+typed outcomes, bounded metrics и recovery state. Credentials, raw provider
+output, prompts, transcripts, absolute paths и PII исключены. Зафиксировать
+rollback/disable и recovery procedure, включая feature gate и сохранение старых
+child rows.
+
+После свежих проверок обновить архитектурный контракт, confirmed state,
+development plan, decision register и release evidence. Если направление
+полностью подтверждено, перенести контракт и состояние в canonical docs, затем
+удалить весь комплект `27-0`…`27-4` по правилу `docs/plans/README.md`. Если хотя
+бы один blocking criterion не выполнен, оставить комплект и записать blocked
+reason, evidence и следующее действие.
 
 ## Definition of Done
 
-- [ ] Все критерии выше подтверждены reproducible tests/evidence.
-- [ ] Нет незакрытых blocking dependencies или implicit downgrade.
-- [ ] Документация и ссылки указывают на фактические версии и пути.
-- [ ] В release bundle отсутствуют secrets/PII/raw payload.
-- [ ] Решение implemented или blocked записано с причиной и следующим действием.
+- [ ] Все acceptance/evidence matrix подтверждены воспроизводимыми тестами.
+- [ ] Нет blocking dependency, implicit downgrade или stale documentation claim.
+- [ ] Registry/mailbox recovery и redaction подтверждены на fresh и legacy DB.
+- [ ] Compatibility clients не получают authority и не ломаются additive change.
+- [ ] Решение `implemented` или `blocked` записано с причиной и следующим шагом.
 
 ## Связанный issue
 
