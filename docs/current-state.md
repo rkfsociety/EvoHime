@@ -5,10 +5,10 @@
 self-repair/self-update цикл; автоматического ремонта, push или перезапуска нет.
 Code signing явно исключён из текущего release scope.
 
-План 23 выполняется последовательно: этап 23.1 (versioned TaskCheckpoint
-contract, provenance validation, immutable storage и schema v32) реализован и
-проверен; runtime, recovery, IPC/UI и полное acceptance закрытие остаются
-этапами 23.2–23.4.
+План 23 выполняется последовательно: этапы 23.1 (versioned TaskCheckpoint
+contract, provenance validation, immutable storage и schema v32) и 23.2
+(Core runtime capture/recovery) реализованы и проверены; IPC/UI и полное
+acceptance закрытие остаются этапами 23.3–23.4.
 
 ## Продукт
 
@@ -45,9 +45,13 @@ Core и supervisor — внутренние компоненты установ�
   model-proposed данных, SHA-256 content hash, immutable parent chain,
   idempotent insert, workspace/event-sequence/state-transition checks, typed
   errors, SQL/JSON metadata consistency и fallback на предыдущую валидную
-  запись; storage schema — v32. Проверки 23.1: 10 focused tests,
-  полный `evohime-local-storage` suite (196 tests), `cargo check -p
-  evohime-core`, `cargo fmt --all -- --check` и `git diff --check`;
+  запись; storage schema — v32. Core сохраняет checkpoints перед lease,
+  compaction/context projection и terminal состояниями, публикует только
+  bounded metadata-событие, а recovery блокирует усечённый replay, неизвестный
+  outcome и blind retry. Проверки 23.1–23.2: 10 focused storage tests,
+  4 focused runtime tests, полный `evohime-local-storage` suite (196 tests),
+  полный `evohime-core` suite (547 tests), `cargo check -p evohime-core`,
+  `cargo fmt --all -- --check` и `git diff --check`;
 - streamed task timeline, cancellation и approval round-trip;
 - Windows package smoke tests и Windows CI;
 - единый Inno Setup installer с одним desktop shortcut; установленный клиент сам поднимает supervisor, а supervisor — Core;

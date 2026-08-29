@@ -1103,6 +1103,38 @@ impl<'a> TaskCheckpointStore<'a> {
         Ok(None)
     }
 
+    /// Returns the newest valid checkpoint for one workspace/chat scope.
+    /// Chat scope is the runtime task identity; keeping it in the query avoids
+    /// accidentally continuing another task that shares the workspace.
+    pub fn latest_valid_for_chat(
+        &self,
+        workspace_id: &str,
+        chat_id: &str,
+    ) -> Result<Option<TaskCheckpointV1>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, version, workspace_id, chat_id, goal_id,
+                    parent_checkpoint_id, status, source_event_seq, created_at,
+                    content_hash, canonical_json
+             FROM task_checkpoints
+             WHERE workspace_id = ?1 AND chat_id = ?2
+             ORDER BY source_event_seq DESC, id DESC LIMIT ?3",
+        )?;
+        let rows = statement.query_map(
+            rusqlite::params![workspace_id, chat_id, TASK_CHECKPOINT_READ_LIMIT as i64],
+            read_checkpoint_row,
+        )?;
+        let stored_rows = rows.collect::<rusqlite::Result<Vec<StoredCheckpointRow>>>()?;
+        for row in stored_rows {
+            if let Ok(checkpoint) = decode_stored_checkpoint(row) {
+                if !self.has_valid_parent_chain(&checkpoint)? {
+                    continue;
+                }
+                return Ok(Some(checkpoint));
+            }
+        }
+        Ok(None)
+    }
+
     fn has_valid_parent_chain(&self, checkpoint: &TaskCheckpointV1) -> Result<bool, StorageError> {
         let mut current = checkpoint.clone();
         let mut seen = HashSet::new();
@@ -1314,6 +1346,12 @@ mod tests {
         assert_eq!(store.insert(&first).unwrap(), InsertOutcome::AlreadyPresent);
         assert_eq!(store.get(&first.id).unwrap(), Some(first.clone()));
         assert_eq!(store.get("missing").unwrap(), None);
+        assert_eq!(
+            store
+                .latest_valid_for_chat("workspace-1", "chat-1")
+                .unwrap(),
+            Some(first.clone())
+        );
 
         let mut conflicting = first.clone();
         conflicting.objective = "different".into();

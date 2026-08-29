@@ -754,6 +754,17 @@ canonical JSON. Parent projection также проходит документи
 допустимых state transitions; нарушения возвращаются стабильными typed error
 codes, а не строковым контекстом.
 
+Runtime использует этот контракт в Core-owned `TaskCheckpointRuntime`: перед
+получением durable agent lease выполняется bounded recovery, затем сохраняется
+checkpoint `run_started`. Перед крупной compaction и после проекции контекста
+сохраняются throttled checkpoints с hash-ссылкой на ledger; terminal, paused и
+conflicted результаты также фиксируются до публикации финального состояния run.
+Recovery возвращает только bounded metadata event replay и не повторяет внешний
+effect вслепую: усечённое окно, неизвестный outcome, stale/conflicted/blocked
+checkpoint и повреждённая цепочка требуют явной reconciliation. Событие
+`task.checkpoint.saved` содержит только идентификатор, hash, причину и sequence,
+без prompt, ledger payload или другого сырого содержимого.
+
 ## Local telemetry и deterministic evaluation
 
 `telemetry/v1` — bounded derived projection над Core event journal, receipts и

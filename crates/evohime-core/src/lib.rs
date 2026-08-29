@@ -7287,6 +7287,7 @@ impl ToolAgent {
         let mut research_has_search = false;
         let mut observability_sequence = 0_u64;
         let mut reroutes_used = 0_u32;
+        let mut last_pre_compaction_checkpoint_iteration = None;
         let max_reroutes = 1_u32;
         let provenance_source_refs = rag_validation
             .as_ref()
@@ -7325,6 +7326,29 @@ impl ToolAgent {
                     "tool_choice": "auto"
                 }),
             );
+            let history_bytes = messages
+                .iter()
+                .map(|message| message.content.len())
+                .sum::<usize>();
+            let should_capture_before_compaction = iteration > 0
+                && (history_bytes > 16 * 1024 || messages.len() > 6)
+                && last_pre_compaction_checkpoint_iteration
+                    .is_none_or(|last| iteration.saturating_sub(last) >= 4);
+            if should_capture_before_compaction {
+                if let Some(journal) = &self.journal {
+                    crate::task_checkpoint::TaskCheckpointRuntime::new(journal.clone())
+                        .capture(
+                            &task_id,
+                            &context.workspace_root,
+                            crate::task_checkpoint::CheckpointStatus::InProgress,
+                            crate::task_checkpoint::CheckpointCaptureReason::BeforeCompaction,
+                            None,
+                        )
+                        .await
+                        .map_err(|error| AgentRunError::Internal(error.to_string()))?;
+                    last_pre_compaction_checkpoint_iteration = Some(iteration);
+                }
+            }
             // Сборка контекста: selection -> compress/offload -> финальная
             // проверка бюджета -> ModelContext event -> model call.
             let assembled = self
@@ -7338,6 +7362,22 @@ impl ToolAgent {
                     selected_model.as_deref(),
                 )
                 .await;
+            if let Some(journal) = &self.journal {
+                if !assembled.ledger().compression.is_empty()
+                    || !assembled.ledger().dropped_items.is_empty()
+                {
+                    crate::task_checkpoint::TaskCheckpointRuntime::new(journal.clone())
+                        .capture(
+                            &task_id,
+                            &context.workspace_root,
+                            crate::task_checkpoint::CheckpointStatus::InProgress,
+                            crate::task_checkpoint::CheckpointCaptureReason::ContextProjected,
+                            Some(assembled.ledger()),
+                        )
+                        .await
+                        .map_err(|error| AgentRunError::Internal(error.to_string()))?;
+                }
+            }
             let _ = events.send(CoreEvent::ModelContext {
                 task_id: task_id.clone(),
                 workspace_path: context.workspace_root.display().to_string(),
@@ -8756,10 +8796,62 @@ impl TaskCoordinator {
                 let events = state_guard.events.clone();
                 let executor = state_guard.executor.clone();
                 let journal = state_guard.journal.clone();
+                let workspace_root =
+                    workspace_root.unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
                 drop(state_guard);
                 tokio::spawn(async move {
                     let intent_hash = crate::research::sha256_hex(prompt.as_bytes());
                     if let Some(journal) = &journal {
+                        let checkpoint_runtime =
+                            crate::task_checkpoint::TaskCheckpointRuntime::new(journal.clone());
+                        match checkpoint_runtime.recover(&task_id, &workspace_root).await {
+                            Ok(recovery)
+                                if matches!(
+                                    recovery.disposition,
+                                    crate::task_checkpoint::RecoveryDisposition::Blocked
+                                        | crate::task_checkpoint::RecoveryDisposition::Terminal
+                                ) =>
+                            {
+                                let mut state_guard = state.lock().await;
+                                state_guard.tasks.remove(&task_id);
+                                let warning = recovery.warning.unwrap_or_else(|| {
+                                    "checkpoint recovery requires explicit reconciliation".into()
+                                });
+                                let _ = state_guard.events.send(CoreEvent::TaskFailed {
+                                    task_id,
+                                    error: warning,
+                                });
+                                return;
+                            }
+                            Err(error) => {
+                                let mut state_guard = state.lock().await;
+                                state_guard.tasks.remove(&task_id);
+                                let _ = state_guard.events.send(CoreEvent::TaskFailed {
+                                    task_id,
+                                    error: format!("task checkpoint recovery failed: {error}"),
+                                });
+                                return;
+                            }
+                            Ok(_) => {}
+                        }
+                        if let Err(error) = checkpoint_runtime
+                            .capture(
+                                &task_id,
+                                &workspace_root,
+                                crate::task_checkpoint::CheckpointStatus::InProgress,
+                                crate::task_checkpoint::CheckpointCaptureReason::RunStarted,
+                                None,
+                            )
+                            .await
+                        {
+                            let mut state_guard = state.lock().await;
+                            state_guard.tasks.remove(&task_id);
+                            let _ = state_guard.events.send(CoreEvent::TaskFailed {
+                                task_id,
+                                error: format!("task checkpoint could not be persisted: {error}"),
+                            });
+                            return;
+                        }
                         if let Err(error) = journal
                             .begin_agent_run(&run_id, &task_id, &intent_hash)
                             .await
@@ -8805,14 +8897,13 @@ impl TaskCoordinator {
                         .ok()
                         .and_then(|value| value.parse().ok())
                         .unwrap_or(DEFAULT_TASK_TIMEOUT_SECONDS);
-                    let result = match executor {
+                    let mut result = match executor {
                         Some(executor) => match timeout(
                             Duration::from_secs(task_timeout_secs),
                             executor.execute_in_workspace_with_routing_hint(
                                 task_id.clone(),
                                 prompt,
-                                workspace_root
-                                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
+                                workspace_root.clone(),
                                 preferred_route_hint,
                                 cancellation.clone(),
                                 events.clone(),
@@ -8837,6 +8928,36 @@ impl TaskCoordinator {
                         .expect("heartbeat failure lock")
                         .clone();
                     if let Some(journal) = &journal {
+                        let checkpoint_status = if heartbeat_error.is_some() {
+                            crate::task_checkpoint::CheckpointStatus::Conflicted
+                        } else if result.is_ok() {
+                            crate::task_checkpoint::CheckpointStatus::Completed
+                        } else if matches!(&result, Err(AgentRunError::Cancelled)) {
+                            crate::task_checkpoint::CheckpointStatus::Paused
+                        } else {
+                            crate::task_checkpoint::CheckpointStatus::Failed
+                        };
+                        let reason = match checkpoint_status {
+                            crate::task_checkpoint::CheckpointStatus::Completed => {
+                                crate::task_checkpoint::CheckpointCaptureReason::Completed
+                            }
+                            crate::task_checkpoint::CheckpointStatus::Paused => {
+                                crate::task_checkpoint::CheckpointCaptureReason::Paused
+                            }
+                            _ => crate::task_checkpoint::CheckpointCaptureReason::Failed,
+                        };
+                        let checkpoint_runtime =
+                            crate::task_checkpoint::TaskCheckpointRuntime::new(journal.clone());
+                        if let Err(error) = checkpoint_runtime
+                            .capture(&task_id, &workspace_root, checkpoint_status, reason, None)
+                            .await
+                        {
+                            if result.is_ok() {
+                                result = Err(AgentRunError::Internal(format!(
+                                    "task checkpoint could not be persisted: {error}"
+                                )));
+                            }
+                        }
                         if heartbeat_error.is_none() || result.is_err() {
                             let _ = journal.complete_agent_run(&run_id, result.is_ok()).await;
                         }
@@ -13637,15 +13758,44 @@ mod tests {
         let mut replay = Vec::new();
         for _ in 0..20 {
             replay = journal.replay(0, 10).await.expect("replay works");
-            if replay.len() >= 3 {
+            if replay.len() >= 5 {
                 break;
             }
             tokio::task::yield_now().await;
         }
-        assert_eq!(replay.len(), 3);
-        assert_eq!(replay[0].event_type, "task.started");
-        assert_eq!(replay[1].event_type, "routing.terminal");
-        assert_eq!(replay[2].event_type, "task.stopped");
+        assert_eq!(replay.len(), 5);
+        let event_types = replay
+            .iter()
+            .map(|event| event.event_type.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            event_types
+                .iter()
+                .filter(|event| **event == "task.started")
+                .count(),
+            1
+        );
+        assert_eq!(
+            event_types
+                .iter()
+                .filter(|event| **event == "task.checkpoint.saved")
+                .count(),
+            2
+        );
+        assert_eq!(
+            event_types
+                .iter()
+                .filter(|event| **event == "routing.terminal")
+                .count(),
+            1
+        );
+        assert_eq!(
+            event_types
+                .iter()
+                .filter(|event| **event == "task.stopped")
+                .count(),
+            1
+        );
         let _ = std::fs::remove_file(path);
     }
 
