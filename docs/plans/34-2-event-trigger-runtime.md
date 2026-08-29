@@ -11,11 +11,13 @@
 ### Блокирующие
 
 - План 34.1 — contract, validators, storage policy и errors.
+- План 33.0 — provider trigger capability contract для provider-originated
+  events; локальные события без него не расширяют этот scope.
 - Existing workflow/child/provider/tool/memory boundaries, budgets, cancellation, audit и unknown-outcome semantics.
 
 ### Опциональные
 
-- План 33.0 — зависимость из обзора.
+- Конкретные provider implementations сверх capability, необходимой выбранному MVP; без них локальные события возвращают typed unavailable для provider-only paths.
 
 ## Реализация
 
@@ -42,6 +44,8 @@
 - `C03` — Webhook authenticity и schema проверяются до enqueue. → журналировать переходы и восстановление через replay/reconciliation.
 - `C04` — Есть dedup/replay protection. → нормализовать, дедуплицировать и ограничить вход до enqueue.
 - `C05` — Workflow version pinned. → провести через typed outcome, timeout, cancellation и idempotency.
+- `C06` — Input mapping ограничивает payload. → выполнить allowlisted mapping до workflow enqueue; rejected/missing/invalid fields не попадают в runtime.
+- `C07` — Есть rate limits/circuit breaker. → применить per-trigger rate/concurrency/queue bounds, coalescing и typed overflow/circuit outcomes до dispatch.
 - `C08` — State durable/recoverable. → журналировать переходы и восстановление через replay/reconciliation.
 - `C09` — Existing workflow approvals/grants сохраняются. → повторить authorization непосредственно перед dispatch/effect.
 

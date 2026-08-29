@@ -22,8 +22,11 @@ immutable/versioned записи; для внешних эффектов сох�
 не повторять side effect вслепую.
 
 Кандидатная точка интеграции: `crates/evohime-core/src/integration_provider_sdk.rs`,
-а также соответствующий storage store, `crates/desktop-ipc/proto/evohime.desktop.proto`,
-Electron main/preload bridge, bounded renderer projection и focused tests.
+а также существующие `workflow_registry`/`workflow_runtime`, model-provider и
+credential boundaries, соответствующий storage store,
+`crates/desktop-ipc/proto/evohime.desktop.proto`, Electron main/preload bridge,
+bounded renderer projection и focused tests. Model-provider settings не становятся
+Integration Provider registry: это отдельный контур выбора модели и его секретов.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
@@ -89,6 +92,12 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 - [ ] Webhook capability можно объявить отдельно от runtime.
 - [ ] Built-in actions имеют test fixtures.
 - [ ] Secrets остаются внутри Core credential boundary.
+
+Credential metadata, bindings и dependency report — durable Core-owned state;
+secret material — отдельный resolver boundary и никогда не часть manifest,
+workflow, IPC projection или fixture. Существующий shell `provider.json` для
+модельных ключей не считается реализацией этого lifecycle без отдельного
+доказанного adapter/ownership решения.
 
 ## Ограничения и non-goals
 

@@ -27,14 +27,17 @@
 0. Сверить overview с live code/docs/tests/git log; если контракт уже существует, собрать evidence для закрытия, не создавая второй authority.
 1. Описать versioned fields, enums, transitions, scope, actor/provenance, idempotency, limits, sensitivity и compatibility. Для mutation определить optimistic version и stale outcome.
 2. Реализовать Rust validators и canonical serde/JSON/Proto representation; unknown version, oversized input и authority-bearing unknown data дают typed error.
-3. Добавить durable store и additive migration с backup-before-migrate только если состояние переживает restart; ephemeral state закрепить отрицательным persistence test.
+3. Добавить durable Core store для versioned manifests, credential references,
+   workflow bindings и dependency relationships; secret material в него не
+   записывать. Migration additive, transactional и backup-before-migrate.
+   Ephemeral health/operation details закрепить отрицательным persistence test.
 4. Добавить deterministic fixtures: valid/invalid, duplicate, stale, redaction, limit и migration failure; выдать evidence-пакет этапу 2.
 
 ## Артефакты
 
 - contract/types + validator + transition table;
 - canonical serialization/hash, error codes и provenance matrix;
-- storage schema/store или доказательство отсутствия persistence;
+- durable metadata storage schema/store и граница secret resolver;
 - focused contract/security/migration tests.
 
 ## Предметная декомпозиция
@@ -42,15 +45,33 @@
 ### Поверхности и контракт
 
 - `crates/evohime-core/src/integration_provider_sdk.rs`: ввести `IntegrationProviderSdkDefinition`, `IntegrationProviderSdkPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
-- Storage: состояние этапа остаётся ephemeral; новую durable таблицу и migration не добавлять. Добавить negative persistence test, а диагностический результат передавать через существующий event/release evidence.
+- Storage: durable должны переживать restart provider/action manifests,
+  `CredentialRef`, lifecycle status, workflow/trigger bindings и dependency
+  report source data; OAuth/API secret bytes остаются за отдельным Core-owned
+  resolver boundary. Health probe details и transient tokens не persist.
+  Зафиксировать schema owner, migration revision, backup/rollback и negative
+  persistence test для transient data.
 - Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
 - Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/integration_provider_sdk_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
 
 ### Acceptance-to-contract matrix
 
-- `C02` — Есть единый credential reference lifecycle. → задать Core-owned authority/sensitivity policy и fail-closed validation.
-- `C05` — Есть dependency report при удалении credential. → задать Core-owned authority/sensitivity policy и fail-closed validation.
-- `C08` — Secrets остаются внутри Core credential boundary. → задать Core-owned authority/sensitivity policy и fail-closed validation.
+- `C01` — versioned provider/action contracts → manifest/action schemas,
+  identity/version compatibility и canonical hash.
+- `C02` — credential reference lifecycle → durable metadata и typed
+  connect/verify/refresh/revoke/reconnect/expired transitions, без secret bytes.
+- `C03` — action schemas/scopes/risk metadata → typed action validation and
+  Core policy intersection.
+- `C04` — stable workflow identities → version-pinned binding DTO and unresolved
+  outcome on missing/incompatible registry entry.
+- `C05` — dependency report → durable typed relationship model and deterministic
+  report contract before removal.
+- `C06` — webhook capability separate from runtime → manifest-only trigger
+  capability, with no enqueue/receiver ownership in this stage.
+- `C07` — built-in fixtures → fixture identity/version contract and redaction
+  rules.
+- `C08` — Core credential boundary → explicit resolver interface and forbidden
+  fields/serialization tests.
 
 ### Definition freeze
 
@@ -62,7 +83,8 @@
 - [ ] Есть versioned provider/action contracts.
 - [ ] Есть единый credential reference lifecycle.
 - [ ] Contract не расширяет capabilities и не переносит authority за пределы Core.
-- [ ] Storage/ephemeral decision и rollback доказаны тестом.
+- [ ] Durable metadata ownership, secret boundary, migration and rollback
+  доказаны тестами; transient data has a negative persistence test.
 
 ## Rollback
 

@@ -11,11 +11,12 @@
 ### Блокирующие
 
 - План 34.2 — runtime vertical slice, recovery и стабильные commands/events.
+- План 33.0 — provider trigger capability projection contract.
 - Authenticated named-pipe IPC, sequence replay/resync и generated TypeScript protocol.
 
 ### Опциональные
 
-- План 33.0 — зависимость из обзора.
+- Provider-specific UI details; без конкретного provider UI показывает typed unavailable/degraded, не скрывая состояние trigger.
 
 ## Реализация
 
@@ -36,7 +37,15 @@
 
 ### Acceptance-to-projection matrix
 
-- `C07` — Есть rate limits/circuit breaker. → дать bounded projection и явные Core-checked actions.
+- `C01` — Есть versioned TriggerDefinition. → показывать stable id/version/workflow binding и не позволять renderer выбирать новую workflow version.
+- `C02` — Есть normalized EventEnvelope. → показывать только bounded redacted source/event/time/hash metadata.
+- `C03` — Webhook authenticity и schema проверяются до enqueue. → показывать фактические Core outcomes `accepted/rejected/unavailable`, без локального self-attestation.
+- `C04` — Есть dedup/replay protection. → показывать duplicate/coalesced/replayed outcomes и counters из Core events.
+- `C05` — Workflow version pinned. → показывать pinned version и typed stale outcome при изменении binding.
+- `C06` — Input mapping ограничивает payload. → показывать allowlisted mapping summary и validation blockers, без raw payload.
+- `C07` — Есть rate limits/circuit breaker. → дать bounded projection и явные Core-checked pause/resume/reconcile actions.
+- `C08` — State durable/recoverable. → показывать persisted status, pending count, last execution ref и recovery/error state из replayable Core events.
+- `C09` — Existing workflow approvals/grants сохраняются. → показывать approval-required/denied outcomes, не превращая trigger configuration в approval.
 
 ### Client safety and replay
 

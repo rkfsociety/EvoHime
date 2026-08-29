@@ -22,9 +22,14 @@
 0. Проверить proto и зарезервировать additive names/tags, не меняя semantics старых clients.
 1. Добавить bounded request/result/event messages с correlation, idempotency, optimistic version и typed errors; исключить secrets, raw prompt и hidden reasoning.
 2. Реализовать Electron main/preload и предусмотренный client adapter; он только сериализует и маршрутизирует Core commands.
-3. Добавить renderer/CLI projection для status, progress, blockers, refs, warnings и actions; renderer не вычисляет state machine и не запускает effect.
+3. Добавить renderer projection для Settings → Integrations и существующих
+   Builder/Composer surfaces: status, scopes, blockers, refs, warnings и явные
+   actions; отдельный CLI не добавлять, если в checkout нет существующего
+   authenticated client contract. Renderer не вычисляет state machine и не
+   запускает effect.
 4. Проверить reconnect, replay gap, duplicate event, stale/denied action и unavailable optional backend.
-5. Привязать UI/CLI trace к Core event/provenance IDs без запрещённых payload.
+5. Привязать renderer trace к Core event/provenance IDs без запрещённых
+   payload; CLI не добавлять без отдельного решения о существующем transport.
 
 ## Предметная декомпозиция
 
@@ -32,14 +37,25 @@
 
 - Proto: добавить additive `IntegrationProviderSdkRequest`, `IntegrationProviderSdkResponse`, `IntegrationProviderSdkEvent` и command/event oneof в `crates/desktop-ipc/proto/evohime.desktop.proto` после проверки свободных tags; сохранить major, replay/resync и bounded frame limits.
 - Bridge: связать `crates/evohime-core/src/ipc_bridge.rs`, `desktop/evohime-electron/src/shared/api.ts`, `desktop/evohime-electron/src/preload/index.ts` и `desktop/evohime-electron/src/main/shell-bridge.ts`; renderer не получает Core/storage authority.
-- UI: создать `desktop/evohime-electron/src/renderer/src/IntegrationProviderSdkPanel.tsx` только как projection/action surface; тесты — `desktop/evohime-electron/tests/integration_provider_sdk.test.tsx` и protocol/typecheck gates.
+- UI: определить существующие Settings/Builder/Composer entrypoints по live
+  checkout; новый panel допустим только если нет подходящей composition point.
+  Projection/action tests должны покрыть integration metadata, credential
+  lifecycle status, dependency warning, action risk/scopes, missing binding,
+  fixture status и отсутствие secret. Тестовый файл и component path
+  подтверждаются на evidence freeze, а не считаются заранее существующим API.
 
 ### Acceptance-to-projection matrix
 
-- `C01` — Есть versioned provider/action contracts. → дать bounded projection и явные Core-checked actions.
-- `C03` — Actions содержат schemas/scopes/risk metadata. → дать bounded projection и явные Core-checked actions.
-- `C04` — Workflow ссылается на stable provider/action identities. → дать bounded projection и явные Core-checked actions.
-- `C07` — Built-in actions имеют test fixtures. → дать bounded projection и явные Core-checked actions.
+- `C01`/`C03` — provider/action identity, schemas, scopes and risk → bounded
+  metadata projection, never manifest authority.
+- `C02`/`C05` — credential lifecycle and dependency report → explicit user
+  actions and warnings; secret values never cross IPC.
+- `C04` — stable workflow binding → show provider/action/version and unresolved
+  state from Core.
+- `C06` — trigger capability → show declaration only; no trigger activation.
+- `C07` — fixture status → show bounded pass/fail metadata, not mock payload.
+- `C08` — secret boundary → protocol and redaction tests reject secret-shaped
+  fields and payloads.
 
 ### Client safety and replay
 
@@ -50,7 +66,8 @@
 
 - [ ] Новая surface additive и authenticated.
 - [ ] Mutations повторно проверяются Core и защищены idempotency/version.
-- [ ] Renderer/CLI получает только bounded projection.
+- [ ] Renderer получает только bounded projection (CLI не входит без existing
+  authenticated surface).
 - [ ] Reconnect/replay и stale actions предсказуемы.
 - [ ] UI показывает фактический Core state.
 

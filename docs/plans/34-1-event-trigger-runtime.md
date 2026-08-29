@@ -16,11 +16,14 @@
 ### Блокирующие
 
 - План 34.0 — scope, requirements, non-goals и dependency map.
+- План 33.0 — Integration Provider SDK capability declarations and provider
+  identity contract; без него provider-originated events должны оставаться
+  typed `unavailable`.
 - Core capability/policy/approval, SQLite migration, event journal и authenticated IPC.
 
 ### Опциональные
 
-- План 33.0 — зависимость из обзора.
+- Нет дополнительных межплановых зависимостей.
 
 ## Реализация
 
@@ -42,13 +45,21 @@
 ### Поверхности и контракт
 
 - `crates/evohime-core/src/event_trigger_runtime.rs`: ввести `EventTriggerRuntimeDefinition`, `EventTriggerRuntimePolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
-- Storage: `crates/evohime-local-storage/src/event_trigger_runtime_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
+- Storage: `crates/evohime-local-storage/src/event_trigger_runtime_store.rs` и существующий `LocalDatabase` migration path; durable schema должна охватывать definition/version, subscription status, accepted pending events, bounded dedup journal, last execution ref, rate/circuit state и reconnect/error state. Migration additive, backup-before-migrate, rollback без частичной записи.
 - Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
-- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/event_trigger_runtime_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
+- Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/event_trigger_runtime_contract.rs` для всех source kinds, valid/invalid authenticity/schema, bounds, mapping, redaction, duplicate/stale, subscription states, circuit outcomes и migration/restart решения.
 
 ### Acceptance-to-contract matrix
 
-- `C06` — Input mapping ограничивает payload. → зафиксировать typed invariant, error code и deterministic fixture.
+- `C01` — Есть versioned TriggerDefinition. → определить immutable version, content hash, stable workflow binding и typed lifecycle.
+- `C02` — Есть normalized EventEnvelope. → определить source/event/schema/received timestamps, payload ref-or-bounded-inline, hash, sensitivity, authenticity и correlation.
+- `C03` — Webhook authenticity и schema проверяются до enqueue. → определить provider validation strategy, credential ref, content-type/size limits и fail-closed errors.
+- `C04` — Есть dedup/replay protection. → определить stable provider event key и bounded payload-hash/time-window fallback, TTL и `duplicate_ignored` outcome.
+- `C05` — Workflow version pinned. → запретить binding к «последней версии» и зафиксировать immutable workflow version/hash.
+- `C06` — Input mapping ограничивает payload. → зафиксировать allowlisted source paths, required fields, safe transforms и deterministic fixture.
+- `C07` — Есть rate limits/circuit breaker. → определить per-trigger event/minute, concurrency, queue depth, coalescing/overflow и typed circuit states.
+- `C08` — State durable/recoverable. → определить additive tables, accepted marker, pending event recovery и backup/rollback evidence.
+- `C09` — Existing workflow approvals/grants сохраняются. → зафиксировать provenance/policy references и invariant, что trigger не является approval или capability grant.
 
 ### Definition freeze
 

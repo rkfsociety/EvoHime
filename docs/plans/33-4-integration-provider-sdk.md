@@ -31,9 +31,13 @@
 ## Обязательная проверка
 
 1. Unit/contract tests для schema, hash, transitions, bounds и errors.
-2. Storage/migration tests для backup, rollback, idempotency и corruption.
+2. Storage/migration tests для durable metadata, backup, rollback, idempotency,
+   corruption и negative persistence transient data; отдельно доказать, что
+   secret bytes не записываются.
 3. Runtime/recovery/fault-injection tests для cancel, stale, denial, restart и unknown outcome.
-4. IPC/adapter/renderer or CLI tests для auth, redaction, replay/resync и optimistic conflict.
+4. IPC/adapter/renderer tests для auth lifecycle, redaction, replay/resync,
+   dependency warning и optimistic conflict; CLI проверять только при наличии
+   существующего authenticated surface.
 5. Security/eval tests по фактическим критериям направления: traversal, escalation, secret leakage и untrusted input.
 6. Проверить cargo fmt --all -- --check, релевантный cargo clippy -D warnings, npm run check:protocol, npm run typecheck, npm test и git diff --check.
 
