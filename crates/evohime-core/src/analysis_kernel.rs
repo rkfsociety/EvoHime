@@ -9,6 +9,9 @@ pub use evohime_local_storage::analysis_kernel::{
     KernelObjectPersistence, KernelObjectRefV1, KernelSensitivity, KernelStatus,
     ANALYSIS_KERNEL_SCHEMA_VERSION, ANALYSIS_KERNEL_VERSION,
 };
+pub use evohime_local_storage::task_checkpoint::{
+    CheckpointRef, CheckpointSensitivity, Provenance, TaskCheckpointError, TaskCheckpointV1,
+};
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -356,6 +359,62 @@ impl KernelRuntime {
     }
 }
 
+/// Converts only immutable, checkpointable kernel metadata into the existing
+/// TaskCheckpoint reference contract. Ephemeral process memory is rejected so
+/// a child or a resumed task can never receive a dangling in-memory handle.
+pub fn checkpoint_refs(
+    session: &AnalysisKernelSessionV1,
+    objects: &[KernelObjectRefV1],
+) -> Result<Vec<CheckpointRef>, AnalysisKernelError> {
+    session.validate()?;
+    let mut refs = vec![CheckpointRef {
+        id: session.id.clone(),
+        kind: "analysis_kernel.session".into(),
+        content_hash: Some(session.content_hash()?),
+        sensitivity: CheckpointSensitivity::Internal,
+        provenance: Provenance::core("analysis-kernel.session"),
+    }];
+    for object in objects {
+        object.validate()?;
+        if object.kernel_id != session.id {
+            return Err(AnalysisKernelError::InvalidField("object.kernel_id"));
+        }
+        if object.persistence != KernelObjectPersistence::Checkpointed {
+            return Err(AnalysisKernelError::ProcessMemoryPersistence);
+        }
+        refs.push(CheckpointRef {
+            id: object.id.clone(),
+            kind: "analysis_kernel.object".into(),
+            content_hash: object.content_hash.clone(),
+            sensitivity: match object.sensitivity {
+                KernelSensitivity::Public => CheckpointSensitivity::Public,
+                KernelSensitivity::Internal => CheckpointSensitivity::Internal,
+                KernelSensitivity::Sensitive => CheckpointSensitivity::Sensitive,
+                KernelSensitivity::Secret => CheckpointSensitivity::Secret,
+            },
+            provenance: Provenance::core(object.provenance.clone()),
+        });
+    }
+    Ok(refs)
+}
+
+/// Attaches the selected immutable kernel refs to a Core-owned checkpoint and
+/// reseals its canonical hash. Callers can place the returned refs in
+/// `artifact_refs` or `child_refs` according to the existing workflow scope.
+pub fn attach_checkpoint_refs(
+    mut checkpoint: TaskCheckpointV1,
+    session: &AnalysisKernelSessionV1,
+    objects: &[KernelObjectRefV1],
+) -> Result<TaskCheckpointV1, TaskCheckpointError> {
+    let refs =
+        checkpoint_refs(session, objects).map_err(|error| TaskCheckpointError::InvalidField {
+            field: "analysis_kernel_refs",
+            reason: error.to_string(),
+        })?;
+    checkpoint.artifact_refs.extend(refs);
+    checkpoint.seal()
+}
+
 /// Opens the already authenticated Core -> supervisor lifecycle channel for
 /// one bounded request. A new connection per command prevents a stale worker
 /// stream from surviving a supervisor generation change.
@@ -629,5 +688,32 @@ mod runtime_tests {
             .unwrap();
         assert_eq!(reference.persistence, KernelObjectPersistence::Ephemeral);
         assert!(reference.artifact_locator.is_none());
+    }
+
+    #[test]
+    fn checkpoint_refs_reject_ephemeral_memory_and_preserve_kernel_identity() {
+        let now = Instant::now();
+        let mut runtime = KernelRuntime::new(session()).unwrap();
+        runtime.start(now).unwrap();
+        let ephemeral = runtime
+            .put_ephemeral_object(
+                "rows".into(),
+                "json".into(),
+                b"{}".to_vec(),
+                KernelSensitivity::Internal,
+                2,
+            )
+            .unwrap();
+        assert!(matches!(
+            checkpoint_refs(runtime.session(), &[ephemeral]),
+            Err(AnalysisKernelError::ProcessMemoryPersistence)
+        ));
+        let refs = checkpoint_refs(runtime.session(), &[]).unwrap();
+        assert_eq!(refs[0].id, "kernel");
+        assert_eq!(refs[0].kind, "analysis_kernel.session");
+        assert!(refs[0]
+            .content_hash
+            .as_ref()
+            .is_some_and(|hash| hash.len() == 64));
     }
 }
