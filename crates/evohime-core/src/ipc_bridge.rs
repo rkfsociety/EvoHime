@@ -8042,6 +8042,9 @@ impl IpcBridge {
             Ok(crate::analysis_kernel::KernelOperation::CsvSummary) => {
                 crate::analysis_kernel::KernelOperation::CsvSummary
             }
+            Ok(crate::analysis_kernel::KernelOperation::ObjectPut) => {
+                crate::analysis_kernel::KernelOperation::ObjectPut
+            }
             Ok(crate::analysis_kernel::KernelOperation::ArtifactRead) => {
                 crate::analysis_kernel::KernelOperation::ArtifactRead
             }
@@ -8069,7 +8072,12 @@ impl IpcBridge {
         };
         let request_id = host_request.request_id.clone();
         #[cfg(windows)]
-        if std::env::var_os("EVOHIME_LAUNCH_CONTEXT").is_some() {
+        if std::env::var_os("EVOHIME_LAUNCH_CONTEXT").is_some()
+            && !matches!(
+                &host_request.operation,
+                crate::analysis_kernel::KernelOperation::ObjectPut
+            )
+        {
             let worker_args = match host_request.operation {
                 crate::analysis_kernel::KernelOperation::CsvSummary => {
                     serde_json::Value::String(String::from_utf8_lossy(&host_request.args).into())
@@ -8160,13 +8168,16 @@ impl IpcBridge {
                     request_id: response.request_id,
                     status: "ok".into(),
                     inline_result: response.inline_result.unwrap_or_default(),
-                    object_ref: None,
+                    object_ref: response.object_ref.as_ref().map(analysis_kernel_object_ref),
                     sensitivity: response.sensitivity.as_str().into(),
                     provenance: response.provenance,
                     error_class: String::new(),
                 };
                 let database = self.journal.database().lock().await;
                 let store = crate::analysis_kernel::AnalysisKernelStore::new(database.connection());
+                if let Some(object) = response.object_ref.as_ref() {
+                    let _ = store.put_object(object);
+                }
                 let _ = store.put_idempotency(
                     &request.kernel_id,
                     &request.idempotency_key,
@@ -9669,6 +9680,22 @@ fn analysis_kernel_projection(
     }
 }
 
+fn analysis_kernel_object_ref(
+    object: &crate::analysis_kernel::KernelObjectRefV1,
+) -> generated::AnalysisKernelObjectRef {
+    generated::AnalysisKernelObjectRef {
+        id: object.id.clone(),
+        logical_name: object.logical_name.clone(),
+        type_hint: object.type_hint.clone(),
+        size: object.size,
+        sensitivity: object.sensitivity.as_str().into(),
+        persistence: object.persistence.as_str().into(),
+        content_hash: object.content_hash.clone().unwrap_or_default(),
+        artifact_locator: object.artifact_locator.clone().unwrap_or_default(),
+        provenance: object.provenance.clone(),
+    }
+}
+
 fn analysis_kernel_result_error(request_id: &str, code: &str) -> generated::AnalysisKernelResult {
     generated::AnalysisKernelResult {
         schema_version: crate::analysis_kernel::KERNEL_HOST_REQUEST_VERSION,
@@ -9690,6 +9717,9 @@ fn kernel_error_code(error: &crate::analysis_kernel::KernelRuntimeError) -> &'st
         crate::analysis_kernel::KernelRuntimeError::Contract(error) => match error {
             crate::analysis_kernel::AnalysisKernelError::ForbiddenOperation => {
                 "forbidden_operation"
+            }
+            crate::analysis_kernel::AnalysisKernelError::ForbiddenCapability => {
+                "forbidden_capability"
             }
             crate::analysis_kernel::AnalysisKernelError::RequestTooLarge(_) => "request_too_large",
             _ => "invalid_argument",

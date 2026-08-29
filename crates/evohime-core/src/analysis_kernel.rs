@@ -31,6 +31,7 @@ pub enum KernelOperation {
     JsonParse,
     JsonSelect,
     CsvSummary,
+    ObjectPut,
     ArtifactRead,
     ToolRequest,
     Filesystem,
@@ -54,6 +55,7 @@ impl KernelOperation {
             Self::JsonParse
                 | Self::JsonSelect
                 | Self::CsvSummary
+                | Self::ObjectPut
                 | Self::ArtifactRead
                 | Self::ToolRequest
         )
@@ -335,6 +337,37 @@ impl KernelRuntime {
         now: Instant,
     ) -> Result<KernelHostResponseV1, KernelRuntimeError> {
         self.admit(&request, now)?;
+        if matches!(&request.operation, KernelOperation::ObjectPut) {
+            #[derive(Deserialize)]
+            struct ObjectPutInput {
+                logical_name: String,
+                type_hint: String,
+                value: serde_json::Value,
+                sensitivity: KernelSensitivity,
+            }
+            let input: ObjectPutInput = serde_json::from_slice(&request.args).map_err(|error| {
+                KernelRuntimeError::Operation(format!("invalid_object:{error}"))
+            })?;
+            let value = serde_json::to_vec(&input.value)
+                .map_err(|error| KernelRuntimeError::Operation(error.to_string()))?;
+            let object = self.put_ephemeral_object(
+                input.logical_name,
+                input.type_hint,
+                value,
+                input.sensitivity,
+                crate::task_memory::now_millis() as i64,
+            )?;
+            return Ok(KernelHostResponseV1 {
+                version: KERNEL_HOST_REQUEST_VERSION,
+                request_id: request.request_id,
+                status: KernelResponseStatus::Ok,
+                inline_result: None,
+                object_ref: Some(object),
+                sensitivity: input.sensitivity,
+                provenance: "core:analysis-kernel-runtime".into(),
+                error_class: None,
+            });
+        }
         let result = match request.operation {
             KernelOperation::JsonParse => parse_json(&request.args),
             KernelOperation::JsonSelect => select_json(&request.args),
@@ -349,6 +382,7 @@ impl KernelRuntime {
             | KernelOperation::Network
             | KernelOperation::Shell
             | KernelOperation::Credentials => unreachable!(),
+            KernelOperation::ObjectPut => unreachable!(),
         }?;
         self.accept_output(result.len())?;
         let response = KernelHostResponseV1 {
@@ -720,6 +754,28 @@ mod runtime_tests {
             )
             .unwrap();
         assert_eq!(reference.persistence, KernelObjectPersistence::Ephemeral);
+        assert!(reference.artifact_locator.is_none());
+    }
+
+    #[test]
+    fn object_put_keeps_value_in_runtime_and_returns_metadata_only_ref() {
+        let now = Instant::now();
+        let mut runtime = KernelRuntime::new(session()).unwrap();
+        runtime.start(now).unwrap();
+        let response = runtime
+            .execute(
+                request(
+                    KernelOperation::ObjectPut,
+                    br#"{"logical_name":"rows","type_hint":"json","value":{"x":7},"sensitivity":"internal"}"#.to_vec(),
+                ),
+                now,
+            )
+            .unwrap();
+        assert!(response.inline_result.is_none());
+        let reference = response.object_ref.unwrap();
+        assert_eq!(reference.logical_name, "rows");
+        assert_eq!(reference.persistence, KernelObjectPersistence::Ephemeral);
+        assert!(reference.content_hash.is_none());
         assert!(reference.artifact_locator.is_none());
     }
 
