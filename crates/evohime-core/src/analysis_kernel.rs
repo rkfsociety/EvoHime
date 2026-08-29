@@ -15,6 +15,9 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(windows)]
+use serde_json::Value;
+
 pub const KERNEL_HOST_REQUEST_VERSION: u32 = 1;
 pub const KERNEL_MAX_REQUEST_BYTES: usize = 16 * 1024;
 pub const KERNEL_MAX_RESULT_BYTES: usize = 1024 * 1024;
@@ -268,11 +271,14 @@ impl KernelRuntime {
         Ok(reference)
     }
 
-    pub fn execute(
+    /// Performs the Core-side admission checks and accounts one request
+    /// without executing it. The supervisor worker path uses this before
+    /// forwarding a request, so the worker cannot become a second authority.
+    pub fn admit(
         &mut self,
-        request: KernelHostRequestV1,
+        request: &KernelHostRequestV1,
         now: Instant,
-    ) -> Result<KernelHostResponseV1, KernelRuntimeError> {
+    ) -> Result<(), KernelRuntimeError> {
         request.validate()?;
         if !matches!(self.state, KernelRuntimeState::Running) {
             return Err(KernelRuntimeError::NotRunning);
@@ -301,6 +307,24 @@ impl KernelRuntime {
             ));
         }
         self.last_activity = Some(now);
+        Ok(())
+    }
+
+    pub fn accept_output(&mut self, size: usize) -> Result<(), KernelRuntimeError> {
+        if size > self.session.limits.output_bytes as usize || size > KERNEL_MAX_RESULT_BYTES {
+            self.state = KernelRuntimeState::LimitExceeded;
+            self.objects.clear();
+            return Err(KernelRuntimeError::LimitExceeded("output"));
+        }
+        Ok(())
+    }
+
+    pub fn execute(
+        &mut self,
+        request: KernelHostRequestV1,
+        now: Instant,
+    ) -> Result<KernelHostResponseV1, KernelRuntimeError> {
+        self.admit(&request, now)?;
         let result = match request.operation {
             KernelOperation::JsonParse => parse_json(&request.args),
             KernelOperation::JsonSelect => select_json(&request.args),
@@ -316,13 +340,7 @@ impl KernelRuntime {
             | KernelOperation::Shell
             | KernelOperation::Credentials => unreachable!(),
         }?;
-        if result.len() > self.session.limits.output_bytes as usize
-            || result.len() > KERNEL_MAX_RESULT_BYTES
-        {
-            self.state = KernelRuntimeState::LimitExceeded;
-            self.objects.clear();
-            return Err(KernelRuntimeError::LimitExceeded("output"));
-        }
+        self.accept_output(result.len())?;
         let response = KernelHostResponseV1 {
             version: KERNEL_HOST_REQUEST_VERSION,
             request_id: request.request_id,
@@ -336,6 +354,108 @@ impl KernelRuntime {
         let _ = &self.objects;
         Ok(response)
     }
+}
+
+/// Opens the already authenticated Core -> supervisor lifecycle channel for
+/// one bounded request. A new connection per command prevents a stale worker
+/// stream from surviving a supervisor generation change.
+#[cfg(windows)]
+pub async fn supervisor_command(request: Value) -> Result<Value, String> {
+    use evohime_desktop_ipc::session::{read_launch_context, SessionSecret};
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::windows::named_pipe::ClientOptions;
+
+    let context_path = std::env::var_os("EVOHIME_LAUNCH_CONTEXT")
+        .ok_or_else(|| "supervisor_context_unavailable".to_string())?;
+    let context = read_launch_context(std::path::Path::new(&context_path))
+        .map_err(|error| error.to_string())?;
+    let pipe = context
+        .supervisor_pipe_name
+        .as_deref()
+        .ok_or_else(|| "supervisor_channel_unavailable".to_string())?;
+    let secret = context
+        .supervisor_secret
+        .as_ref()
+        .ok_or_else(|| "supervisor_secret_unavailable".to_string())?;
+    let client_id = format!("core-kernel-{}", std::process::id());
+    let client = ClientOptions::new()
+        .open(pipe)
+        .map_err(|error| error.to_string())?;
+    let mut channel = BufReader::new(client);
+    let mut line = Vec::new();
+    if channel
+        .read_until(b'\n', &mut line)
+        .await
+        .map_err(|e| e.to_string())?
+        > 16 * 1024
+    {
+        return Err("supervisor_challenge_too_large".into());
+    }
+    let challenge: Value = serde_json::from_slice(&line).map_err(|e| e.to_string())?;
+    let nonce = challenge
+        .get("nonce")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "supervisor_nonce_missing".to_string())?;
+    let proof = SessionSecret::parse(secret.expose())
+        .map_err(|error| error.to_string())?
+        .proof("core", &client_id, nonce);
+    let handshake = serde_json::json!({
+        "client_id": client_id,
+        "client_role": "core",
+        "nonce": nonce,
+        "proof": proof,
+        "peer": {
+            "user_sid": evohime_desktop_ipc::windows_security::current_user_sid().map_err(|e| e.to_string())?,
+            "logon_session": evohime_desktop_ipc::windows_security::current_logon_session().map_err(|e| e.to_string())?
+        }
+    });
+    channel
+        .get_mut()
+        .write_all(
+            serde_json::to_string(&handshake)
+                .map_err(|e| e.to_string())?
+                .as_bytes(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    channel
+        .get_mut()
+        .write_all(b"\n")
+        .await
+        .map_err(|e| e.to_string())?;
+    line.clear();
+    channel
+        .read_until(b'\n', &mut line)
+        .await
+        .map_err(|e| e.to_string())?;
+    let authenticated: Value = serde_json::from_slice(&line).map_err(|e| e.to_string())?;
+    if authenticated.get("authenticated") != Some(&Value::Bool(true)) {
+        return Err("supervisor_authentication_rejected".into());
+    }
+    let encoded = serde_json::to_vec(&request).map_err(|e| e.to_string())?;
+    if encoded.len() > 16 * 1024 {
+        return Err("supervisor_request_too_large".into());
+    }
+    channel
+        .get_mut()
+        .write_all(&encoded)
+        .await
+        .map_err(|e| e.to_string())?;
+    channel
+        .get_mut()
+        .write_all(b"\n")
+        .await
+        .map_err(|e| e.to_string())?;
+    line.clear();
+    if channel
+        .read_until(b'\n', &mut line)
+        .await
+        .map_err(|e| e.to_string())?
+        > 16 * 1024
+    {
+        return Err("supervisor_response_too_large".into());
+    }
+    serde_json::from_slice(&line).map_err(|e| e.to_string())
 }
 
 fn parse_json(args: &[u8]) -> Result<Vec<u8>, KernelRuntimeError> {

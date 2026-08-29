@@ -7952,6 +7952,19 @@ impl IpcBridge {
         if session.validate().is_err() {
             return analysis_kernel_projection_error("invalid_argument");
         }
+        #[cfg(windows)]
+        if std::env::var_os("EVOHIME_LAUNCH_CONTEXT").is_some() {
+            let launch = crate::analysis_kernel::supervisor_command(serde_json::json!({
+                "op": "kernel_launch",
+                "kernel_id": session.id,
+                "package_manifest_hash": session.package_manifest_hash,
+            }))
+            .await;
+            if !matches!(launch, Ok(value) if value.get("accepted") == Some(&serde_json::Value::Bool(true)))
+            {
+                return analysis_kernel_projection_error("worker_unavailable");
+            }
+        }
         let database = self.journal.database().lock().await;
         let store = crate::analysis_kernel::AnalysisKernelStore::new(database.connection());
         if store.create_session(&session).is_err() {
@@ -8055,6 +8068,81 @@ impl IpcBridge {
             return analysis_kernel_result_error(&host_request.request_id, "kernel_not_running");
         };
         let request_id = host_request.request_id.clone();
+        #[cfg(windows)]
+        if std::env::var_os("EVOHIME_LAUNCH_CONTEXT").is_some() {
+            let worker_args = match host_request.operation {
+                crate::analysis_kernel::KernelOperation::CsvSummary => {
+                    serde_json::Value::String(String::from_utf8_lossy(&host_request.args).into())
+                }
+                _ => serde_json::from_slice(&host_request.args).unwrap_or_else(|_| {
+                    serde_json::Value::String(String::from_utf8_lossy(&host_request.args).into())
+                }),
+            };
+            if let Err(error) = runtime.admit(&host_request, std::time::Instant::now()) {
+                return analysis_kernel_result_error(&request_id, kernel_error_code(&error));
+            }
+            drop(kernels);
+            let worker_response = crate::analysis_kernel::supervisor_command(serde_json::json!({
+                "op": "kernel_execute",
+                "kernel_id": request.kernel_id,
+                "request": {
+                    "request_id": host_request.request_id,
+                    "operation": operation_name,
+                    "args": worker_args,
+                },
+            }))
+            .await;
+            let response = match worker_response {
+                Ok(value) if value.get("accepted") == Some(&serde_json::Value::Bool(true)) => value
+                    .get("response")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null),
+                Ok(value) => {
+                    return analysis_kernel_result_error(
+                        &request_id,
+                        value
+                            .get("reason")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("worker_unavailable"),
+                    )
+                }
+                Err(_) => return analysis_kernel_result_error(&request_id, "worker_unavailable"),
+            };
+            let status = response
+                .get("status")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("error");
+            if status != "ok" {
+                return analysis_kernel_result_error(
+                    &request_id,
+                    response
+                        .get("error_class")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("worker_error"),
+                );
+            }
+            let inline_result =
+                serde_json::to_vec(response.get("result").unwrap_or(&serde_json::Value::Null))
+                    .unwrap_or_default();
+            let mut kernels = self.analysis_kernels.lock().await;
+            if let Some(runtime) = kernels.get_mut(&request.kernel_id) {
+                if let Err(error) = runtime.accept_output(inline_result.len()) {
+                    return analysis_kernel_result_error(&request_id, kernel_error_code(&error));
+                }
+            }
+            return generated::AnalysisKernelResult {
+                schema_version: crate::analysis_kernel::KERNEL_HOST_REQUEST_VERSION,
+                request_id,
+                status: "ok".into(),
+                inline_result,
+                object_ref: None,
+                sensitivity: crate::analysis_kernel::KernelSensitivity::Internal
+                    .as_str()
+                    .into(),
+                provenance: "core:analysis-kernel-worker".into(),
+                error_class: String::new(),
+            };
+        }
         match runtime.execute(host_request, std::time::Instant::now()) {
             Ok(response) => {
                 let result = generated::AnalysisKernelResult {
@@ -8091,6 +8179,19 @@ impl IpcBridge {
             return analysis_kernel_result_error("", "not_found");
         };
         runtime.reset();
+        drop(kernels);
+        #[cfg(windows)]
+        if std::env::var_os("EVOHIME_LAUNCH_CONTEXT").is_some() {
+            let stopped = crate::analysis_kernel::supervisor_command(serde_json::json!({
+                "op": "kernel_stop",
+                "kernel_id": request.kernel_id,
+            }))
+            .await;
+            if !matches!(stopped, Ok(value) if value.get("accepted") == Some(&serde_json::Value::Bool(true)))
+            {
+                return analysis_kernel_result_error("", "worker_unavailable");
+            }
+        }
         let database = self.journal.database().lock().await;
         let store = crate::analysis_kernel::AnalysisKernelStore::new(database.connection());
         match store.set_status(
