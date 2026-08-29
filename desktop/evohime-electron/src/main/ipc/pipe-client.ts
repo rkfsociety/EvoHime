@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto'
 
 import type {
   ConnectionState,
+  ContinuationActionResult,
+  ContinuationProjection,
   CoreAvailabilityCode,
   CoreEvent,
   GoalActionResult,
@@ -543,6 +545,8 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       goal: decodeGoal(event.goal),
       goalList: decodeGoalList(event.goalList),
       goalAction: decodeGoalAction(event.goalAction)
+      ,continuation: decodeContinuation(event.continuation)
+      ,continuationAction: decodeContinuationAction(event.continuationAction)
     })
   }
 
@@ -614,6 +618,25 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
     this.availability = availabilityFor(connection, reason)
     this.emit('state', this.state)
   }
+}
+
+function decodeContinuation(projected: evohime.desktop.v1.IContinuationProjection | null | undefined): ContinuationProjection | null {
+  if (!projected || !projected.runId) return null
+  return {
+    schemaVersion: Number(projected.schemaVersion ?? 0), runId: projected.runId,
+    ownerScope: projected.ownerScope ?? '', policyId: projected.policyId ?? '',
+    policyRevision: Number(projected.policyRevision ?? 0), policyHash: projected.policyHash ?? '',
+    state: projected.state ?? '', continuationIndex: Number(projected.continuationIndex ?? 0),
+    maxContinuations: Number(projected.maxContinuations ?? 0), modelTurns: Number(projected.modelTurns ?? 0),
+    maxModelTurns: Number(projected.maxModelTurns ?? 0), tokenUsed: Number(projected.tokenUsed ?? 0),
+    costUsedMicros: Number(projected.costUsedMicros ?? 0), stopReason: projected.stopReason ?? '',
+    errorCode: projected.errorCode ?? ''
+  }
+}
+
+function decodeContinuationAction(projected: evohime.desktop.v1.IContinuationActionResult | null | undefined): ContinuationActionResult | null {
+  if (!projected || !projected.runId) return null
+  return { schemaVersion: Number(projected.schemaVersion ?? 0), runId: projected.runId, action: projected.action ?? '', applied: Boolean(projected.applied), deduplicated: Boolean(projected.deduplicated), errorCode: projected.errorCode ?? '' }
 }
 
 function availabilityFor(

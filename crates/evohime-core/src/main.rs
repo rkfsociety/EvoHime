@@ -61,6 +61,10 @@ async fn main() {
         eprintln!("evohime-core model provenance recovery failed: {error}");
         std::process::exit(1);
     }
+    if let Err(error) = journal.recover_continuation_runs().await {
+        eprintln!("evohime-core continuation recovery failed: {error}");
+        std::process::exit(1);
+    }
     let _model_provenance_retention_task =
         evohime_core::spawn_model_provenance_retention(journal.clone());
     let heartbeat_task = spawn_heartbeat(data_dir.join("core-heartbeat"));

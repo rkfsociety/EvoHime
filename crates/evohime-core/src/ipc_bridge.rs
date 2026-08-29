@@ -873,6 +873,208 @@ impl IpcBridge {
         }
     }
 
+    async fn dispatch_save_continuation_policy(
+        &self,
+        request: generated::SaveContinuationPolicy,
+        client_id: &str,
+        request_id: &str,
+        command_hash: &str,
+    ) -> Result<Vec<u8>, String> {
+        let policy: crate::continuation::ContinuationPolicyV1 =
+            serde_json::from_slice(&request.policy_json)
+                .map_err(|_| "invalid_argument".to_string())?;
+        if request.policy_json.len() > crate::continuation::MAX_POLICY_BYTES
+            || (!request.owner_scope.is_empty() && request.owner_scope != policy.scope.owner_scope)
+            || (!request.actor.is_empty() && request.actor != policy.actor)
+        {
+            return Err("invalid_argument".into());
+        }
+        policy
+            .validate()
+            .map_err(|_| "invalid_policy".to_string())?;
+        let canonical = policy
+            .canonical_json()
+            .map_err(|_| "invalid_policy".to_string())?;
+        let result = serde_json::to_vec(&serde_json::json!({
+            "schema_version": crate::continuation::POLICY_SCHEMA_VERSION,
+            "policy_id": policy.id,
+            "revision": policy.revision,
+            "content_hash": policy.content_hash,
+            "enabled": policy.enabled
+        }))
+        .map_err(|_| "serialization_failed".to_string())?;
+        let journal = self.journal.clone();
+        let database = journal.database().lock().await;
+        if let Some(previous) = database
+            .record_deduplicated(client_id, request_id, command_hash, &[])
+            .map_err(|_| "idempotency_conflict".to_string())?
+        {
+            return Ok(previous);
+        }
+        evohime_local_storage::continuation_store::save_policy(
+            database.connection(),
+            &evohime_local_storage::continuation_store::PolicyRecord {
+                policy_id: policy.id.clone(),
+                revision: policy.revision as i64,
+                owner_scope: policy.scope.owner_scope.clone(),
+                actor: policy.actor.clone(),
+                enabled: policy.enabled,
+                canonical_json: canonical,
+                content_hash: policy.content_hash.clone(),
+                created_at_ms: policy.created_at_ms,
+                updated_at_ms: policy.updated_at_ms,
+            },
+        )
+        .map_err(|_| "storage_failed".to_string())?;
+        database
+            .record_deduplicated(client_id, request_id, command_hash, &result)
+            .map_err(|_| "idempotency_conflict".to_string())?;
+        Ok(result)
+    }
+
+    async fn dispatch_start_continuation(
+        &self,
+        request: generated::StartContinuationRun,
+    ) -> Result<Vec<u8>, String> {
+        if request.run_id.is_empty()
+            || request.policy_id.is_empty()
+            || request.owner_scope.is_empty()
+            || request.idempotency_key.is_empty()
+            || request.task_id.is_empty()
+        {
+            return Err("invalid_argument".into());
+        }
+        let journal = self.journal.clone();
+        let database = journal.database().lock().await;
+        if let Some(existing) = evohime_local_storage::continuation_store::get_run_by_idempotency(
+            database.connection(),
+            &request.owner_scope,
+            &request.idempotency_key,
+        )
+        .map_err(|_| "storage_failed".to_string())?
+        {
+            if existing.run_id == request.run_id
+                && existing.task_id == request.task_id
+                && existing.policy_id == request.policy_id
+                && existing.policy_revision == request.policy_revision as i64
+            {
+                return serde_json::to_vec(&existing).map_err(|_| "serialization_failed".into());
+            }
+            return Err("idempotency_conflict".into());
+        }
+        let policy = evohime_local_storage::continuation_store::get_policy(
+            database.connection(),
+            &request.policy_id,
+            request.policy_revision as i64,
+            &request.owner_scope,
+        )
+        .map_err(|_| "storage_failed".to_string())?
+        .ok_or_else(|| "policy_not_found".to_string())?;
+        if !policy.enabled {
+            return Err("policy_disabled".into());
+        }
+        let policy_json: crate::continuation::ContinuationPolicyV1 =
+            serde_json::from_slice(&policy.canonical_json)
+                .map_err(|_| "policy_corrupt".to_string())?;
+        let now = crate::task_memory::now_millis() as i64;
+        let record = evohime_local_storage::continuation_store::RunRecord {
+            run_id: request.run_id.clone(),
+            idempotency_key: request.idempotency_key,
+            task_id: request.task_id,
+            owner_scope: request.owner_scope,
+            policy_id: request.policy_id,
+            policy_revision: request.policy_revision as i64,
+            policy_hash: policy.content_hash,
+            goal_id: (!request.goal_id.is_empty()).then_some(request.goal_id),
+            goal_version: (request.goal_version > 0).then_some(request.goal_version as i64),
+            state: "running".into(),
+            continuation_index: 0,
+            max_continuations: policy_json.budget.max_continuations as i64,
+            max_model_turns: policy_json.budget.max_model_turns as i64,
+            used_model_turns: 0,
+            token_budget: policy_json.budget.max_tokens.map(|v| v as i64),
+            token_used: 0,
+            cost_budget_micros: policy_json.budget.max_cost_micros.map(|v| v as i64),
+            cost_used_micros: 0,
+            stop_reason: None,
+            created_at_ms: now,
+            updated_at_ms: now,
+        };
+        evohime_local_storage::continuation_store::create_run(database.connection(), &record)
+            .map_err(|error| {
+                if matches!(error, rusqlite::Error::SqliteFailure(_, _)) {
+                    "run_exists"
+                } else {
+                    "storage_failed"
+                }
+                .to_string()
+            })?;
+        serde_json::to_vec(&record).map_err(|_| "serialization_failed".into())
+    }
+
+    async fn dispatch_get_continuation(
+        &self,
+        request: generated::GetContinuationRun,
+    ) -> Result<Vec<u8>, String> {
+        let database = self.journal.database().lock().await;
+        let run = evohime_local_storage::continuation_store::get_run(
+            database.connection(),
+            &request.run_id,
+        )
+        .map_err(|_| "storage_failed".to_string())?
+        .ok_or_else(|| "run_not_found".to_string())?;
+        serde_json::to_vec(&run).map_err(|_| "serialization_failed".into())
+    }
+
+    async fn dispatch_stop_continuation(
+        &self,
+        request: generated::StopContinuation,
+    ) -> Result<Vec<u8>, String> {
+        if request.run_id.is_empty() || request.expected_state != "running" {
+            return Err("invalid_argument".into());
+        }
+        let database = self.journal.database().lock().await;
+        let applied = evohime_local_storage::continuation_store::stop_run(
+            database.connection(),
+            &request.run_id,
+            &request.expected_state,
+            "user_stop",
+            crate::task_memory::now_millis() as i64,
+        )
+        .map_err(|_| "storage_failed".to_string())?;
+        serde_json::to_vec(&serde_json::json!({"run_id":request.run_id,"action":"stop","applied":applied,"error_code":if applied {""} else {"stale_action"}}))
+            .map_err(|_| "serialization_failed".into())
+    }
+
+    async fn dispatch_transition_continuation(
+        &self,
+        run_id: String,
+        expected_state: String,
+        next_state: &'static str,
+        action: &'static str,
+    ) -> Result<Vec<u8>, String> {
+        if run_id.is_empty() || expected_state != "running" && expected_state != "paused" {
+            return Err("invalid_argument".into());
+        }
+        let database = self.journal.database().lock().await;
+        let applied = evohime_local_storage::continuation_store::transition_run(
+            database.connection(),
+            &run_id,
+            &expected_state,
+            next_state,
+            Some(action),
+            crate::task_memory::now_millis() as i64,
+        )
+        .map_err(|_| "storage_failed".to_string())?;
+        serde_json::to_vec(&serde_json::json!({
+            "run_id": run_id,
+            "action": action,
+            "applied": applied,
+            "error_code": if applied { "" } else { "stale_action" }
+        }))
+        .map_err(|_| "serialization_failed".into())
+    }
+
     pub async fn process_once<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
         &self,
         reader: &mut R,
@@ -2442,6 +2644,76 @@ impl IpcBridge {
                     .await;
                 self.write_goal_action_result(writer, result).await?;
             }
+            Some(generated::command_envelope::Command::SaveContinuationPolicy(request)) => {
+                let result = self
+                    .dispatch_save_continuation_policy(
+                        request,
+                        &client_id,
+                        &request_id,
+                        &command_hash,
+                    )
+                    .await;
+                self.write_response(
+                    writer,
+                    "continuation.policy",
+                    result.unwrap_or_else(|error| {
+                        serde_json::to_vec(&serde_json::json!({"error_code": error}))
+                            .unwrap_or_default()
+                    }),
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::StartContinuationRun(request)) => {
+                let result = self.dispatch_start_continuation(request).await;
+                let payload = result.unwrap_or_else(|error| {
+                    serde_json::to_vec(&serde_json::json!({"error_code": error}))
+                        .unwrap_or_default()
+                });
+                if serde_json::from_slice::<serde_json::Value>(&payload)
+                    .ok()
+                    .and_then(|v| v.get("run_id").cloned())
+                    .is_some()
+                {
+                    self.write_continuation_projection(writer, payload).await?;
+                } else {
+                    self.write_response(writer, "continuation.run", payload)
+                        .await?;
+                }
+            }
+            Some(generated::command_envelope::Command::GetContinuationRun(request)) => {
+                let result = self.dispatch_get_continuation(request).await;
+                let payload = result.unwrap_or_else(|error| {
+                    serde_json::to_vec(&serde_json::json!({"error_code": error}))
+                        .unwrap_or_default()
+                });
+                if serde_json::from_slice::<serde_json::Value>(&payload)
+                    .ok()
+                    .and_then(|v| v.get("run_id").cloned())
+                    .is_some()
+                {
+                    self.write_continuation_projection(writer, payload).await?;
+                } else {
+                    self.write_response(writer, "continuation.run", payload)
+                        .await?;
+                }
+            }
+            Some(generated::command_envelope::Command::StopContinuation(request)) => {
+                let result = self.dispatch_stop_continuation(request).await;
+                let payload = result.unwrap_or_else(|error| {
+                    serde_json::to_vec(&serde_json::json!({"error_code": error}))
+                        .unwrap_or_default()
+                });
+                if serde_json::from_slice::<serde_json::Value>(&payload)
+                    .ok()
+                    .and_then(|v| v.get("run_id").cloned())
+                    .is_some()
+                {
+                    self.write_continuation_action(writer, payload).await?;
+                } else {
+                    self.write_response(writer, "continuation.action", payload)
+                        .await?;
+                }
+            }
             Some(generated::command_envelope::Command::StopTask(stop)) => {
                 if let Some(coordinator) = &self.coordinator {
                     coordinator
@@ -2471,6 +2743,36 @@ impl IpcBridge {
                     .map_err(|error| FrameError::Io(error.to_string()))?;
                 self.write_response(writer, "workspace.list", payload)
                     .await?;
+            }
+            Some(generated::command_envelope::Command::PauseContinuation(request)) => {
+                let payload = self
+                    .dispatch_transition_continuation(
+                        request.run_id,
+                        request.expected_state,
+                        "paused",
+                        "pause",
+                    )
+                    .await
+                    .unwrap_or_else(|error| {
+                        serde_json::to_vec(&serde_json::json!({"error_code": error}))
+                            .unwrap_or_default()
+                    });
+                self.write_continuation_action(writer, payload).await?;
+            }
+            Some(generated::command_envelope::Command::ResumeContinuation(request)) => {
+                let payload = self
+                    .dispatch_transition_continuation(
+                        request.run_id,
+                        request.expected_state,
+                        "running",
+                        "resume",
+                    )
+                    .await
+                    .unwrap_or_else(|error| {
+                        serde_json::to_vec(&serde_json::json!({"error_code": error}))
+                            .unwrap_or_default()
+                    });
+                self.write_continuation_action(writer, payload).await?;
             }
             Some(generated::command_envelope::Command::ReadWorkspaceFile(request)) => {
                 let content = crate::workspace::read_text_file(
@@ -8143,6 +8445,125 @@ impl IpcBridge {
             core_instance_id: self.core_instance_id.clone(),
             session_epoch: self.session_epoch,
             event: Some(generated::event_envelope::Event::GoalAction(result)),
+        };
+        transport::write_frame(writer, &event.encode_to_vec()).await?;
+        Ok(())
+    }
+
+    async fn write_continuation_projection<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value =
+            serde_json::from_slice(&payload).map_err(|error| FrameError::Io(error.to_string()))?;
+        let number = |name: &str| {
+            value
+                .get(name)
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0)
+        };
+        let projection = generated::ContinuationProjection {
+            schema_version: 1,
+            run_id: value
+                .get("run_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .into(),
+            owner_scope: value
+                .get("owner_scope")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .into(),
+            policy_id: value
+                .get("policy_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .into(),
+            policy_revision: number("policy_revision"),
+            policy_hash: value
+                .get("policy_hash")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .into(),
+            state: value
+                .get("state")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .into(),
+            continuation_index: number("continuation_index"),
+            max_continuations: number("max_continuations"),
+            model_turns: number("used_model_turns"),
+            max_model_turns: number("max_model_turns"),
+            token_used: number("token_used"),
+            cost_used_micros: number("cost_used_micros"),
+            stop_reason: value
+                .get("stop_reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .into(),
+            error_code: value
+                .get("error_code")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .into(),
+        };
+        let event = generated::EventEnvelope {
+            protocol: Some(protocol()),
+            sequence_id: 0,
+            task_id: projection.run_id.clone(),
+            event_type: "continuation.run".into(),
+            payload,
+            core_instance_id: self.core_instance_id.clone(),
+            session_epoch: self.session_epoch,
+            event: Some(generated::event_envelope::Event::Continuation(projection)),
+        };
+        transport::write_frame(writer, &event.encode_to_vec()).await?;
+        Ok(())
+    }
+
+    async fn write_continuation_action<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value =
+            serde_json::from_slice(&payload).map_err(|error| FrameError::Io(error.to_string()))?;
+        let result = generated::ContinuationActionResult {
+            schema_version: 1,
+            run_id: value
+                .get("run_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .into(),
+            action: value
+                .get("action")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .into(),
+            applied: value
+                .get("applied")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            deduplicated: value
+                .get("deduplicated")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            error_code: value
+                .get("error_code")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .into(),
+        };
+        let event = generated::EventEnvelope {
+            protocol: Some(protocol()),
+            sequence_id: 0,
+            task_id: result.run_id.clone(),
+            event_type: "continuation.action".into(),
+            payload,
+            core_instance_id: self.core_instance_id.clone(),
+            session_epoch: self.session_epoch,
+            event: Some(generated::event_envelope::Event::ContinuationAction(result)),
         };
         transport::write_frame(writer, &event.encode_to_vec()).await?;
         Ok(())

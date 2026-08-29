@@ -950,6 +950,7 @@ pub mod child_roles;
 pub mod child_runtime;
 pub mod child_workflow;
 pub mod context_budget;
+pub mod continuation;
 pub mod doctor;
 pub mod evals;
 pub mod export;
@@ -1796,6 +1797,28 @@ impl EventJournal {
 
     pub fn database_path(&self) -> &std::path::Path {
         self.database_path.as_ref()
+    }
+
+    /// После перезапуска незавершённый continuation не возобновляется
+    /// вслепую: Core переводит его в blocked до явного запуска пользователем.
+    pub async fn recover_continuation_runs(&self) -> Result<usize, StorageError> {
+        let database = self.database.lock().await;
+        let runs =
+            evohime_local_storage::continuation_store::list_running_runs(database.connection())?;
+        let mut recovered = 0;
+        for run in runs {
+            if evohime_local_storage::continuation_store::transition_run(
+                database.connection(),
+                &run.run_id,
+                "running",
+                "blocked",
+                Some("core_restart_requires_explicit_resume"),
+                crate::task_memory::now_millis() as i64,
+            )? {
+                recovered += 1;
+            }
+        }
+        Ok(recovered)
     }
 
     /// Builds and atomically publishes one Core-owned workspace RAG
@@ -8946,28 +8969,162 @@ impl TaskCoordinator {
                         .ok()
                         .and_then(|value| value.parse().ok())
                         .unwrap_or(DEFAULT_TASK_TIMEOUT_SECONDS);
-                    let mut result = match executor {
-                        Some(executor) => match timeout(
-                            Duration::from_secs(task_timeout_secs),
-                            executor.execute_in_workspace_with_routing_hint(
-                                task_id.clone(),
-                                prompt,
-                                workspace_root.clone(),
-                                preferred_route_hint,
-                                cancellation.clone(),
-                                events.clone(),
-                            ),
+                    let continuation_context = if let Some(journal) = &journal {
+                        let database = journal.database().lock().await;
+                        let run = evohime_local_storage::continuation_store::get_run_by_task(
+                            database.connection(),
+                            &task_id,
                         )
-                        .await
-                        {
-                            Ok(result) => result,
-                            Err(_) => Err(AgentRunError::Timeout(task_timeout_secs)),
-                        },
-                        None => {
-                            cancellation.cancelled().await;
-                            Err(AgentRunError::Cancelled)
-                        }
+                        .ok()
+                        .flatten();
+                        run.and_then(|run| {
+                            serde_json::from_slice::<crate::continuation::ContinuationPolicyV1>(
+                                &evohime_local_storage::continuation_store::get_policy(
+                                    database.connection(),
+                                    &run.policy_id,
+                                    run.policy_revision,
+                                    &run.owner_scope,
+                                )
+                                .ok()
+                                .flatten()?
+                                .canonical_json,
+                            )
+                            .ok()
+                            .map(|policy| (run, policy))
+                        })
+                    } else {
+                        None
                     };
+                    let mut result = Err(AgentRunError::Internal(
+                        "continuation did not execute an attempt".into(),
+                    ));
+                    let mut continuation_index = continuation_context
+                        .as_ref()
+                        .map(|(run, _)| run.continuation_index)
+                        .unwrap_or(0);
+                    loop {
+                        let attempt = if let Some((run, _)) = &continuation_context {
+                            let fingerprint =
+                                format!("{}:{}", task_id, continuation_index.saturating_add(1));
+                            let mut database = journal
+                                .as_ref()
+                                .expect("continuation has a journal")
+                                .database()
+                                .lock()
+                                .await;
+                            match evohime_local_storage::continuation_store::reserve_attempt(
+                                database.connection_mut(),
+                                &run.run_id,
+                                "task",
+                                &fingerprint,
+                                0,
+                                0,
+                                crate::task_memory::now_millis() as i64,
+                            ) {
+                                Ok(true) => Some((run.run_id.clone(), continuation_index + 1)),
+                                Ok(false) => None,
+                                Err(_) => {
+                                    let _ = state.lock().await.events.send(CoreEvent::TaskFailed {
+                                        task_id: task_id.clone(),
+                                        error:
+                                            "continuation budget or state rejected the next attempt"
+                                                .into(),
+                                    });
+                                    break;
+                                }
+                            }
+                        } else {
+                            None
+                        };
+                        result = match executor.as_ref() {
+                            Some(executor) => match timeout(
+                                Duration::from_secs(task_timeout_secs),
+                                executor.execute_in_workspace_with_routing_hint(
+                                    task_id.clone(),
+                                    prompt.clone(),
+                                    workspace_root.clone(),
+                                    preferred_route_hint.clone(),
+                                    cancellation.clone(),
+                                    events.clone(),
+                                ),
+                            )
+                            .await
+                            {
+                                Ok(result) => result,
+                                Err(_) => Err(AgentRunError::Timeout(task_timeout_secs)),
+                            },
+                            None => {
+                                cancellation.cancelled().await;
+                                Err(AgentRunError::Cancelled)
+                            }
+                        };
+                        let Some((run_id, attempt_index)) = attempt else {
+                            break;
+                        };
+                        continuation_index = continuation_index.saturating_add(1);
+                        let success = result.is_ok();
+                        let decision = if let Some((run, policy)) = &continuation_context {
+                            let database = journal
+                                .as_ref()
+                                .expect("continuation has a journal")
+                                .database()
+                                .lock()
+                                .await;
+                            let result_json = serde_json::to_vec(&serde_json::json!({
+                                "success": success,
+                                "error": result.as_ref().err().map(ToString::to_string)
+                            }))
+                            .unwrap_or_default();
+                            let _ = evohime_local_storage::continuation_store::finish_attempt(
+                                database.connection(),
+                                &run_id,
+                                attempt_index,
+                                if success { "completed" } else { "failed" },
+                                &result_json,
+                                crate::task_memory::now_millis() as i64,
+                            );
+                            let decision = crate::continuation::decide(
+                                &crate::continuation::DecisionEvidence {
+                                    required_gates_passed: policy.gates.is_empty(),
+                                    goal_criteria_complete: policy.linked_goal_id.is_none(),
+                                    unknown_outcome: result.is_err(),
+                                    non_retryable_failure: result.is_err(),
+                                    continuation_index: continuation_index as u32,
+                                    max_continuations: run.max_continuations as u32,
+                                    model_turns: continuation_index as u32,
+                                    max_model_turns: run.max_model_turns as u32,
+                                    ..Default::default()
+                                },
+                            );
+                            let next_state = match decision {
+                                crate::continuation::Decision::Complete => "completed",
+                                crate::continuation::Decision::BudgetLimited => "budget_limited",
+                                crate::continuation::Decision::StopFailed => "failed",
+                                crate::continuation::Decision::StopUser => "stopped",
+                                crate::continuation::Decision::PauseForApproval => {
+                                    "waiting_approval"
+                                }
+                                crate::continuation::Decision::Blocked => "blocked",
+                                crate::continuation::Decision::Continue => "running",
+                            };
+                            if next_state != "running" {
+                                let _ = evohime_local_storage::continuation_store::transition_run(
+                                    database.connection(),
+                                    &run.run_id,
+                                    "running",
+                                    next_state,
+                                    Some(&format!("continuation_{next_state}")),
+                                    crate::task_memory::now_millis() as i64,
+                                );
+                            }
+                            decision
+                        } else {
+                            crate::continuation::Decision::Complete
+                        };
+                        if !matches!(decision, crate::continuation::Decision::Continue) {
+                            break;
+                        }
+                    }
                     heartbeat_cancel.cancel();
                     if let Some(heartbeat_task) = heartbeat_task {
                         let _ = heartbeat_task.await;

@@ -194,7 +194,7 @@ function dispatch(
 
     case 'core.startTask': {
       const value = asRecord(payload)
-      const taskId = asBoundedString(value['taskId'])
+      const taskId = asGoalToken(value['taskId'])
       const prompt = asBoundedString(value['prompt'])
       const workspacePath = asBoundedString(value['workspacePath'])
       const preferredRouteHint = value['preferredRouteHint'] === undefined || value['preferredRouteHint'] === null
@@ -319,6 +319,68 @@ function dispatch(
       if (goalId === null || expectedVersion === null || expectedVersion === 0 || kind === null || referenceId === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректная связь цели.')
       return accepted(client.send({ linkGoalReference: { goalId, expectedVersion, kind, referenceId, idempotencyKey } }))
     }
+
+    case 'core.saveContinuationPolicy': {
+      const value = asRecord(payload)
+      const policyJson = asBoundedString(value['policyJson'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const actor = asBoundedString(value['actor'])
+      const idempotencyKey = asGoalToken(value['idempotencyKey'])
+      if (policyJson === null || ownerScope === null || actor === null || idempotencyKey === null || policyJson.length > 65536) {
+        return failure('invalid-payload', 'Некорректная Continuation Policy.')
+      }
+      return accepted(client.send({ saveContinuationPolicy: { policyJson: Buffer.from(policyJson, 'utf8'), ownerScope, actor, idempotencyKey } }))
+    }
+
+    case 'core.startContinuationRun': {
+      const value = asRecord(payload)
+      const runId = asGoalToken(value['runId'])
+      const policyId = asGoalToken(value['policyId'])
+      const policyRevision = asNonNegativeInteger(value['policyRevision'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const taskId = asBoundedString(value['taskId'])
+      const goalId = value['goalId'] === undefined ? '' : asGoalToken(value['goalId'])
+      const goalVersion = value['goalVersion'] === undefined ? 0 : asNonNegativeInteger(value['goalVersion'])
+      const idempotencyKey = asGoalToken(value['idempotencyKey'])
+      if (runId === null || policyId === null || policyRevision === null || policyRevision === 0 || ownerScope === null || taskId === null || goalId === null || goalVersion === null || idempotencyKey === null) {
+        return failure('invalid-payload', 'Некорректный запуск continuation.')
+      }
+      return accepted(client.send({ startContinuationRun: { runId, policyId, policyRevision, ownerScope, taskId, goalId, goalVersion, idempotencyKey } }))
+    }
+
+    case 'core.getContinuationRun': {
+      const runId = asGoalToken(asRecord(payload)['runId'])
+      if (runId === null) return failure('invalid-payload', 'Некорректный continuation run.')
+      return accepted(client.send({ getContinuationRun: { runId } }))
+    }
+
+    case 'core.stopContinuation': {
+      const value = asRecord(payload)
+      const runId = asGoalToken(value['runId'])
+      const expectedState = value['expectedState'] === undefined ? 'running' : asBoundedString(value['expectedState'])
+      const idempotencyKey = asGoalToken(value['idempotencyKey'])
+      if (runId === null || expectedState !== 'running' || idempotencyKey === null) return failure('invalid-payload', 'Некорректная остановка continuation.')
+      return accepted(client.send({ stopContinuation: { runId, expectedState, idempotencyKey } }))
+    }
+
+    case 'core.pauseContinuation': {
+      const value = asRecord(payload)
+      const runId = asGoalToken(value['runId'])
+      const expectedState = value['expectedState'] === undefined ? 'running' : value['expectedState']
+      const idempotencyKey = asGoalToken(value['idempotencyKey'])
+      if (runId === null || expectedState !== 'running' || idempotencyKey === null) return failure('invalid-payload', 'Некорректная пауза continuation.')
+      return accepted(client.send({ pauseContinuation: { runId, expectedState, idempotencyKey } }))
+    }
+
+    case 'core.resumeContinuation': {
+      const value = asRecord(payload)
+      const runId = asGoalToken(value['runId'])
+      const expectedState = value['expectedState'] === undefined ? 'paused' : value['expectedState']
+      const idempotencyKey = asGoalToken(value['idempotencyKey'])
+      if (runId === null || expectedState !== 'paused' || idempotencyKey === null) return failure('invalid-payload', 'Некорректное возобновление continuation.')
+      return accepted(client.send({ resumeContinuation: { runId, expectedState, idempotencyKey } }))
+    }
+
 
     case 'core.listSkills': {
       const value = asRecord(payload)

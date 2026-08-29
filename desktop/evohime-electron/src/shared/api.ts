@@ -236,6 +236,33 @@ export interface GoalActionResult {
   readonly goal: GoalProjection | null
 }
 
+export interface ContinuationProjection {
+  readonly schemaVersion: number
+  readonly runId: string
+  readonly ownerScope: string
+  readonly policyId: string
+  readonly policyRevision: number
+  readonly policyHash: string
+  readonly state: string
+  readonly continuationIndex: number
+  readonly maxContinuations: number
+  readonly modelTurns: number
+  readonly maxModelTurns: number
+  readonly tokenUsed: number
+  readonly costUsedMicros: number
+  readonly stopReason: string
+  readonly errorCode: string
+}
+
+export interface ContinuationActionResult {
+  readonly schemaVersion: number
+  readonly runId: string
+  readonly action: string
+  readonly applied: boolean
+  readonly deduplicated: boolean
+  readonly errorCode: string
+}
+
 export interface CoreEvent {
   readonly sequenceId: number
   readonly taskId: string
@@ -257,6 +284,8 @@ export interface CoreEvent {
   readonly goal?: GoalProjection | null
   readonly goalList?: GoalListProjection | null
   readonly goalAction?: GoalActionResult | null
+  readonly continuation?: ContinuationProjection | null
+  readonly continuationAction?: ContinuationActionResult | null
 }
 
 export type ShellEvent =
@@ -850,6 +879,12 @@ export const RENDERER_COMMANDS = [
   'core.updateGoal',
   'core.verifyGoalCriterion',
   'core.linkGoalReference',
+  'core.saveContinuationPolicy',
+  'core.startContinuationRun',
+  'core.getContinuationRun',
+  'core.stopContinuation',
+  'core.pauseContinuation',
+  'core.resumeContinuation',
   'core.stopTask',
   'core.resolveApproval',
   'core.resolveRoutingDecision',
@@ -1047,6 +1082,12 @@ export interface CommandPayloads {
     referenceId: string
     idempotencyKey: string
   }
+  'core.saveContinuationPolicy': { policyJson: string; ownerScope: string; actor: string; idempotencyKey: string }
+  'core.startContinuationRun': { runId: string; policyId: string; policyRevision: number; ownerScope: string; taskId: string; goalId?: string; goalVersion?: number; idempotencyKey: string }
+  'core.getContinuationRun': { runId: string }
+  'core.stopContinuation': { runId: string; expectedState?: 'running'; idempotencyKey: string }
+  'core.pauseContinuation': { runId: string; expectedState?: 'running'; idempotencyKey: string }
+  'core.resumeContinuation': { runId: string; expectedState?: 'paused'; idempotencyKey: string }
   'core.stopTask': { taskId: string }
   'core.resolveApproval': { approvalId: string; granted: boolean; idempotencyKey?: string; rejectionReason?: string; cancel?: boolean }
   'core.resolveRoutingDecision': { traceId: string; approve: boolean }
@@ -1303,6 +1344,12 @@ export interface CommandResults {
   'core.updateGoal': { accepted: boolean }
   'core.verifyGoalCriterion': { accepted: boolean }
   'core.linkGoalReference': { accepted: boolean }
+  'core.saveContinuationPolicy': { accepted: boolean }
+  'core.startContinuationRun': { accepted: boolean }
+  'core.getContinuationRun': { accepted: boolean }
+  'core.stopContinuation': { accepted: boolean }
+  'core.pauseContinuation': { accepted: boolean }
+  'core.resumeContinuation': { accepted: boolean }
   'core.stopTask': { accepted: boolean }
   'core.resolveApproval': { accepted: boolean }
   'core.resolveRoutingDecision': { accepted: boolean }

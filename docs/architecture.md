@@ -838,6 +838,32 @@ create/pause/resume/cancel/verify actions. Goal не является
 scheduler: автоматического создания или продолжения задач из одного сообщения
 нет.
 
+### Continuation Policy v1 (план 26, текущий implementation slice)
+
+Continuation Policy отделяет Goal и Workflow от решения о следующем bounded
+шаге. Core-контракт находится в `crates/evohime-core/src/continuation.rs`:
+`ContinuationPolicyV1` валидирует owner/workspace scope, actor, immutable
+revision, typed gate arguments, limits и domain-separated SHA-256 hash. Pure
+decision table имеет hard-stop precedence для user stop, approval и unknown
+outcome; client-supplied completion evidence не является доверенным входом.
+
+Durable state хранится в `continuation_policies`, `continuation_runs` и
+`continuation_attempts`, которыми владеет
+`crates/evohime-local-storage/src/continuation_store.rs`. Migration v35
+устанавливает таблицы транзакционно. Attempt fingerprint уникален внутри run,
+а turn/token/cost reservation выполняется до effect в SQLite-транзакции. Run
+закреплён за task и idempotency key; после перезапуска незавершённые runs
+переходят в blocked и не повторяются автоматически. Authenticated IPC добавляет
+policy/run/stop/pause/resume messages tags 151–156; Electron
+получает bounded response payload и отображает Core-owned run projection в
+`ContinuationPanel`. Renderer не отправляет evidence и не меняет counters.
+
+Встроенный task bridge резервирует и фиксирует каждый проход с Core-owned
+decision; неизвестный/ошибочный результат fail-closed. Полная интеграция
+реестров Tool/Workflow/Approval и воспроизводимые fault-injection fixtures
+остаются обязательным runtime/evidence срезом плана 26; наличие storage или
+панели не считается завершением задачи.
+
 ## Local telemetry и deterministic evaluation
 
 `telemetry/v1` — bounded derived projection над Core event journal, receipts и

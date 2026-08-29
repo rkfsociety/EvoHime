@@ -27,6 +27,15 @@ bounded projection и посылает явные действия. Recovery н�
 effect, а Goal не создаётся автоматически из каждого сообщения.
 Комплект планов 25.0–25.4 удалён после полного Rust/Electron verification.
 
+План 26 находится в реализации. Уже добавлены Core contract/decision table,
+schema v35 с durable continuation policy/run/attempt storage, task binding,
+bounded budget reservation, authenticated IPC tags 151–156 и Electron
+`ContinuationPanel`.
+Policy snapshot, scope, typed gates и duplicate fingerprint валидируются Core.
+Полная автоматическая связка model/workflow result → следующий Core request,
+gate execution, approval resume и restart reconciliation ещё не закрыты; план
+26 не должен считаться завершённым до прохождения stage 2–4 evidence.
+
 ## Продукт
 
 EvoHime — локальный Windows-клиент для coding-agent задач. Пользовательское имя агента — **Ева**. Пользовательские версионные релизы для текущего цикла не создаются; установленная сборка определяется коммитом и веткой в `evohime.build.json`.

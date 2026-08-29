@@ -16,6 +16,7 @@ pub mod capability_store;
 pub mod child_store;
 pub mod context_command_store;
 pub mod context_ledger_store;
+pub mod continuation_store;
 pub mod execution_ledger;
 pub mod feedback_store;
 pub mod goal;
@@ -34,7 +35,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 33;
+pub const SCHEMA_VERSION: u32 = 35;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3286,6 +3287,33 @@ impl LocalDatabase {
                     next_sequence INTEGER NOT NULL DEFAULT 0
                 );
                 PRAGMA user_version = 24;",
+            )?;
+        }
+        if current < 34 {
+            continuation_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 34;")?;
+        }
+        if current < 35 {
+            let columns = transaction
+                .prepare("PRAGMA table_info(continuation_runs)")?
+                .query_map([], |row| row.get::<_, String>(1))?
+                .collect::<Result<Vec<_>, _>>()?;
+            if !columns.iter().any(|column| column == "idempotency_key") {
+                transaction.execute_batch(
+                    "ALTER TABLE continuation_runs ADD COLUMN idempotency_key TEXT NOT NULL DEFAULT '';",
+                )?;
+            }
+            if !columns.iter().any(|column| column == "task_id") {
+                transaction.execute_batch(
+                    "ALTER TABLE continuation_runs ADD COLUMN task_id TEXT NOT NULL DEFAULT '';",
+                )?;
+            }
+            transaction.execute_batch(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_continuation_runs_idempotency
+                   ON continuation_runs(owner_scope, idempotency_key);
+                 CREATE INDEX IF NOT EXISTS idx_continuation_runs_task
+                   ON continuation_runs(task_id, state, updated_at_ms);
+                 PRAGMA user_version = 35;",
             )?;
         }
         if current < 25 {

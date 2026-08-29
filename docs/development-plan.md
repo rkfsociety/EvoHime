@@ -31,6 +31,11 @@ metadata-only trace и полного release-контура; его компл�
 SQLite schema v33, revision/event history, recovery, typed IPC/UI и redacted
 release evidence; его комплект также удалён.
 
+План 26 — Continuation Policy — начат: contract/storage и additive IPC slice
+реализованы, но runtime orchestration/recovery, полноценная client projection
+и release evidence ещё не закрыты. До завершения плана не удалять комплект
+`26-0` … `26-4` и не объявлять autonomous continuation production-ready.
+
 1. **Планы 26–115.** Выполнять численно по `(NN, M)`, не перескакивая через
    blocking dependency; закрытый комплект переносить в каноническую
    документацию и удалять из `docs/plans/`.

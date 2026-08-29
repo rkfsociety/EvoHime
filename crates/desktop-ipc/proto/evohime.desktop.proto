@@ -1383,6 +1383,73 @@ message LinkGoalReference {
   string idempotency_key = 5;
 }
 
+// Core-owned Continuation Policy v1. The policy bytes are canonical contract
+// bytes; Core validates and hashes them before persistence.
+message SaveContinuationPolicy {
+  bytes policy_json = 1;
+  string owner_scope = 2;
+  string actor = 3;
+  string idempotency_key = 4;
+}
+
+message StartContinuationRun {
+  string run_id = 1;
+  string policy_id = 2;
+  uint64 policy_revision = 3;
+  string owner_scope = 4;
+  string goal_id = 5;
+  uint64 goal_version = 6;
+  string idempotency_key = 7;
+  string task_id = 8;
+}
+
+message GetContinuationRun { string run_id = 1; }
+
+message StopContinuation {
+  string run_id = 1;
+  string expected_state = 2;
+  string idempotency_key = 3;
+}
+
+message PauseContinuation {
+  string run_id = 1;
+  string expected_state = 2;
+  string idempotency_key = 3;
+}
+
+message ResumeContinuation {
+  string run_id = 1;
+  string expected_state = 2;
+  string idempotency_key = 3;
+}
+
+message ContinuationProjection {
+  uint32 schema_version = 1;
+  string run_id = 2;
+  string owner_scope = 3;
+  string policy_id = 4;
+  uint64 policy_revision = 5;
+  string policy_hash = 6;
+  string state = 7;
+  uint64 continuation_index = 8;
+  uint64 max_continuations = 9;
+  uint64 model_turns = 10;
+  uint64 max_model_turns = 11;
+  uint64 token_used = 12;
+  uint64 cost_used_micros = 13;
+  string stop_reason = 14;
+  string error_code = 15;
+}
+
+message ContinuationActionResult {
+  uint32 schema_version = 1;
+  string run_id = 2;
+  string action = 3;
+  bool applied = 4;
+  bool deduplicated = 5;
+  string error_code = 6;
+}
+
 message GoalCriterionProjection {
   string id = 1;
   string kind = 2;
@@ -1625,6 +1692,12 @@ message CommandEnvelope {
     UpdateGoal update_goal = 148;
     VerifyGoalCriterion verify_goal_criterion = 149;
     LinkGoalReference link_goal_reference = 150;
+    SaveContinuationPolicy save_continuation_policy = 151;
+    StartContinuationRun start_continuation_run = 152;
+    GetContinuationRun get_continuation_run = 153;
+    StopContinuation stop_continuation = 154;
+    PauseContinuation pause_continuation = 155;
+    ResumeContinuation resume_continuation = 156;
   }
 }
 
@@ -1668,6 +1741,8 @@ message EventEnvelope {
     GoalProjection goal = 20;
     GoalListProjection goal_list = 21;
     GoalActionResult goal_action = 22;
+    ContinuationProjection continuation = 23;
+    ContinuationActionResult continuation_action = 24;
   }
 }
 
