@@ -27,8 +27,12 @@
 0. Сверить overview с live code/docs/tests/git log; если контракт уже существует, собрать evidence для закрытия, не создавая второй authority.
 1. Описать versioned fields, enums, draft transitions, scope, actor/provenance, idempotency, limits, sensitivity и compatibility. Для mutation определить optimistic version и stale outcome; published workflow и running snapshot остаются immutable.
 2. Реализовать Rust validators и canonical serde/JSON/Proto representation; unknown version, oversized input и authority-bearing unknown data дают typed error.
-3. Добавить durable store и additive migration с backup-before-migrate для draft/recovery state; layout и draft переживают restart, а published/running graph не переписываются.
-4. Добавить deterministic fixtures: valid/invalid, duplicate, stale, redaction, limit и migration failure; выдать evidence-пакет этапу 2.
+3. Добавить в contract versioned Builder authoring handoff для Composer:
+   validated draft handle, contract/schema version, draft revision/hash, owner
+   scope и explicit Save precondition; stale/revoked handle должен fail closed.
+4. Добавить durable store и additive migration с backup-before-migrate для draft/recovery state; layout и draft переживают restart, а published/running graph не переписываются.
+5. Добавить deterministic fixtures: valid/invalid, duplicate, stale, redaction,
+   limit, invalidated handoff и migration failure; выдать evidence-пакет этапу 2.
 
 ## Артефакты
 
@@ -52,6 +56,8 @@
 - `C03` — Core выполняет authoritative validation. → зафиксировать typed invariant, error code и deterministic fixture.
 - `C04` — Сохранение создаёт immutable новую version. → ввести versioned Rust-типы, enum-состояния и canonical serialization.
 - `C05` — Layout metadata отделена от execution hash. → хранить layout отдельно и доказать, что перемещение узлов не меняет execution hash.
+- Cross-plan handoff → доказать bounded/versioned validated draft handle,
+  optimistic revision/hash, Save precondition и отказ для stale/revoked handle.
 
 ### Definition freeze
 

@@ -22,9 +22,14 @@
 0. Загрузить stage-1 contract и принимать только typed draft commands: add/remove/move/connect/update metadata, с bounded payload и optimistic version.
 1. Реализовать Core handler/state machine для normalize -> registry bind -> validate -> persist draft -> publish immutable definition; повторить authorization перед сохранением.
 2. Разделить execution hash и layout hash и доказать, что layout edit не меняет graph semantics. Запрещать mutation published definition и любого running snapshot.
-3. Реализовать recovery draft: после restart восстановить только последний валидный draft/revision либо typed conflict/corrupt outcome; не превращать незавершённый draft в published workflow.
-4. Реализовать read-only projection существующего `workflow_runtime`/event journal: состояния узлов, sequence/replay и redacted refs без повторного dispatch, retry или изменения run.
-5. Сделать fault-injection для crash во время draft save, stale revision, duplicate command, registry/policy change и corruption; зафиксировать metadata-only evidence для этапа 3.
+3. Реализовать versioned Builder handoff: выдавать Composer только validated
+   draft handle с contract/schema version, revision/hash, owner scope и explicit
+   Save precondition; stale/revoked handle отклонять до сохранения.
+4. Реализовать recovery draft: после restart восстановить только последний валидный draft/revision либо typed conflict/corrupt outcome; не превращать незавершённый draft в published workflow.
+5. Реализовать read-only projection существующего `workflow_runtime`/event journal: состояния узлов, sequence/replay и redacted refs без повторного dispatch, retry или изменения run.
+6. Сделать fault-injection для crash во время draft save, stale revision,
+   duplicate command, stale/revoked handoff, registry/policy change и
+   corruption; зафиксировать metadata-only evidence для этапа 3.
 
 ## Предметная декомпозиция
 

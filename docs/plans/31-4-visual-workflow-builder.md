@@ -27,12 +27,14 @@
 - [ ] Есть recovery draft.
 - [ ] Есть read-only live runtime inspection.
 - [ ] Sensitive payload не утекает в renderer.
+- [ ] Есть bounded versioned handoff для Composer без второго save/run authority.
 
 ## Обязательная проверка
 
 1. Unit/contract tests для schema, hash, transitions, bounds и errors.
 2. Storage/migration tests для backup, rollback, idempotency и corruption.
-3. Draft/recovery/fault-injection tests для stale, denial, duplicate, restart, corruption и immutability published/running graph.
+3. Draft/recovery/fault-injection tests для stale, denial, duplicate, restart,
+   corruption, invalidated Composer handoff и immutability published/running graph.
 4. IPC/adapter/renderer tests для auth, redaction, replay/resync и optimistic conflict.
 5. Security/eval tests по фактическим критериям направления: traversal, escalation, secret leakage и untrusted input.
 6. Проверить cargo fmt --all -- --check, релевантный cargo clippy -D warnings, npm run check:protocol, npm run typecheck, npm test и git diff --check.

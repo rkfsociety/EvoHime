@@ -46,12 +46,17 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Блокирующие
 
-- План 33.0 — Integration Provider SDK: единый контракт auth, actions, webhooks и test fixtures.
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
-- Для provider-backed webhook MVP — provider trigger capability, validation strategy, credential reference и subscription adapter из плана 33; локальные источники не могут подменять этот контракт.
+- Для выбранного локального/system-event MVP достаточно bounded local ingress,
+  нормализации, dedup и обычного workflow runtime; provider SDK не блокирует
+  этот путь.
 
 ### Опциональные
 
+- План 33.0 — Integration Provider SDK для provider-backed webhook,
+  authenticity strategy, credential reference и subscription adapter. Без него
+  provider-originated paths дают typed `unavailable`, но локальные источники
+  продолжают работать.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue
@@ -141,3 +146,9 @@ External/local event
 ## Связанный issue
 
 - [#14 Event Trigger Runtime: безопасный запуск workflow по внешним событиям](https://github.com/rkfsociety/EvoHime/issues/14)
+
+## Результат повторного ревью 2026-08-30
+
+- Исправлена чрезмерно широкая blocking-зависимость от плана 33: локальные и
+  системные события теперь имеют самостоятельный bounded путь, а provider SDK
+  блокирует только provider-backed webhook/subscription capabilities.

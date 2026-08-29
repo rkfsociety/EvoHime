@@ -11,13 +11,13 @@
 ### Блокирующие
 
 - План 34.1 — contract, validators, storage policy и errors.
-- План 33.0 — provider trigger capability contract для provider-originated
-  events; локальные события без него не расширяют этот scope.
 - Existing workflow/child/provider/tool/memory boundaries, budgets, cancellation, audit и unknown-outcome semantics.
 
 ### Опциональные
 
-- Конкретные provider implementations сверх capability, необходимой выбранному MVP; без них локальные события возвращают typed unavailable для provider-only paths.
+- План 33.0 и конкретные provider implementations для provider-originated
+  webhook paths; без них такие paths возвращают typed `unavailable`, а local
+  workspace/system events работают через bounded local ingress.
 
 ## Реализация
 

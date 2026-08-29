@@ -11,11 +11,13 @@
 ### Блокирующие
 
 - План 34.2 — runtime vertical slice, recovery и стабильные commands/events.
-- План 33.0 — provider trigger capability projection contract.
 - Authenticated named-pipe IPC, sequence replay/resync и generated TypeScript protocol.
 
 ### Опциональные
 
+- План 33.0 — provider trigger capability projection contract; без него UI
+  показывает typed `unavailable/degraded` для provider-backed paths и сохраняет
+  локальные/system-event actions доступными.
 - Provider-specific UI details; без конкретного provider UI показывает typed unavailable/degraded, не скрывая состояние trigger.
 
 ## Реализация

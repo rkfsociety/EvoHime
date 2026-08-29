@@ -16,14 +16,13 @@
 ### Блокирующие
 
 - План 34.0 — scope, requirements, non-goals и dependency map.
-- План 33.0 — Integration Provider SDK capability declarations and provider
-  identity contract; без него provider-originated events должны оставаться
-  typed `unavailable`.
 - Core capability/policy/approval, SQLite migration, event journal и authenticated IPC.
 
 ### Опциональные
 
-- Нет дополнительных межплановых зависимостей.
+- План 33.0 — provider trigger capability declarations and provider identity
+  contract; без него provider-originated events остаются typed `unavailable`,
+  а local/system source kinds реализуются без provider SDK.
 
 ## Реализация
 

@@ -11,6 +11,12 @@
 
 Builder не создаёт новый runtime. Он является безопасной authoring/inspection поверхностью над уже существующими Core-owned workflow contracts и registry.
 
+Builder также публикует versioned typed handoff для Conversational Workflow
+Composer: validated draft handle, builder contract/schema version, draft
+revision и optimistic hash. Handoff не является вторым save authority и не
+позволяет Composer-у запускать graph; сохранение по-прежнему выполняется
+только Core Builder authoring service.
+
 ## Текущее основание и граница
 
 Новый контур должен оставаться Core-owned и typed. Renderer является только
@@ -82,12 +88,16 @@ Renderer может держать presentation draft для UX, но authoritat
 2. Реализовать Core validation, draft storage и публикацию новой immutable
    workflow version. Draft recovery допускает восстановление незавершённого
    редактирования, но не меняет уже запущенный snapshot и не запускает effect.
-3. Подключить только существующие registry/workflow contracts для binding и
+3. Зафиксировать versioned Builder authoring handoff для Composer: validated
+   draft handle, contract/schema version, draft revision/hash, owner scope и
+   explicit Save precondition. Handoff должен быть bounded, redacted и
+   недействительным после stale/revoked draft.
+4. Подключить только существующие registry/workflow contracts для binding и
    проверки; Builder не добавляет runtime, capability или собственную retry/
    cancellation семантику.
-4. Добавить additive IPC, main/preload adapter и metadata-only renderer UI;
+5. Добавить additive IPC, main/preload adapter и metadata-only renderer UI;
    sensitive payload, raw prompt/output и credentials не передавать.
-5. Провести focused unit/storage/conflict/recovery/security/eval tests,
+6. Провести focused unit/storage/conflict/recovery/security/eval tests,
    обновить architecture/current-state только после фактической реализации
    и сохранить команду воспроизведения проверки.
 
@@ -101,6 +111,7 @@ Renderer может держать presentation draft для UX, но authoritat
 - [ ] Есть recovery draft без изменения published/running graph.
 - [ ] Есть read-only live runtime inspection.
 - [ ] Sensitive payload не утекает в renderer.
+- [ ] Есть bounded versioned handoff для Composer без второго save/run authority.
 
 ## Ограничения и non-goals
 
@@ -121,3 +132,10 @@ Renderer может держать presentation draft для UX, но authoritat
 ## Связанный issue
 
 - [#11 Visual Workflow Builder: typed canvas, validation и live runtime inspection](https://github.com/rkfsociety/EvoHime/issues/11)
+
+## Результат повторного ревью 2026-08-30
+
+- Исправлен межплановый разрыв: обязательный для плана 32 Builder handoff
+  теперь является явным bounded/versioned артефактом и критерием плана 31.
+- Handoff ограничен validated draft и explicit Save precondition; второй
+  authority, запуск graph и перенос sensitive payload запрещены.
