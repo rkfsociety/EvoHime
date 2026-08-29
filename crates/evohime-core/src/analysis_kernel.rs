@@ -222,6 +222,13 @@ impl KernelRuntime {
         self.objects.clear();
     }
 
+    pub fn mark_crashed(&mut self) {
+        self.state = KernelRuntimeState::Crashed;
+        self.started_at = None;
+        self.last_activity = None;
+        self.objects.clear();
+    }
+
     /// Registers only a bounded in-process value and returns metadata. The
     /// bytes are never serialized or exposed to the renderer; checkpointed
     /// values must go through Core's ArtifactStore separately.
@@ -771,5 +778,32 @@ mod runtime_tests {
             selected_child_refs(&session(), &[object], &["missing".into()]),
             Err(AnalysisKernelError::InvalidField("selected_ids"))
         ));
+    }
+
+    #[test]
+    fn crash_is_terminal_for_ephemeral_state_until_explicit_reset() {
+        let now = Instant::now();
+        let mut runtime = KernelRuntime::new(session()).unwrap();
+        runtime.start(now).unwrap();
+        runtime
+            .put_ephemeral_object(
+                "rows".into(),
+                "json".into(),
+                b"{}".to_vec(),
+                KernelSensitivity::Internal,
+                2,
+            )
+            .unwrap();
+        runtime.mark_crashed();
+        assert_eq!(runtime.state(), KernelRuntimeState::Crashed);
+        assert!(matches!(
+            runtime.execute(request(KernelOperation::JsonParse, b"{}".to_vec()), now),
+            Err(KernelRuntimeError::NotRunning)
+        ));
+        runtime.reset();
+        runtime.start(now).unwrap();
+        assert!(runtime
+            .execute(request(KernelOperation::JsonParse, b"{}".to_vec()), now)
+            .is_ok());
     }
 }

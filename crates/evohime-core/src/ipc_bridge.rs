@@ -8098,15 +8098,25 @@ impl IpcBridge {
                     .cloned()
                     .unwrap_or(serde_json::Value::Null),
                 Ok(value) => {
+                    let mut kernels = self.analysis_kernels.lock().await;
+                    if let Some(runtime) = kernels.get_mut(&request.kernel_id) {
+                        runtime.mark_crashed();
+                    }
                     return analysis_kernel_result_error(
                         &request_id,
                         value
                             .get("reason")
                             .and_then(serde_json::Value::as_str)
                             .unwrap_or("worker_unavailable"),
-                    )
+                    );
                 }
-                Err(_) => return analysis_kernel_result_error(&request_id, "worker_unavailable"),
+                Err(_) => {
+                    let mut kernels = self.analysis_kernels.lock().await;
+                    if let Some(runtime) = kernels.get_mut(&request.kernel_id) {
+                        runtime.mark_crashed();
+                    }
+                    return analysis_kernel_result_error(&request_id, "worker_unavailable");
+                }
             };
             let status = response
                 .get("status")

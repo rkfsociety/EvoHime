@@ -938,13 +938,22 @@ authority: Core владеет `AnalysisKernelSessionV1`, лимитами, obje
 ephemeral и не сериализуется. Лимиты включают lifetime/idle timeout, request
 rate и output budget; чувствительные inline markers fail-closed.
 
-Supervisor имеет allowlisted `evohime-analysis-worker` launch contract:
-фиксированный sibling executable, `trusted-local-1`, очищенное окружение и
-отдельный kill-on-close Job Object с memory/CPU limits. IPC добавляет commands
-162–165 и events 27–28; Electron main/preload маршрутизирует bounded payload,
-а вкладка `Анализ` показывает только metadata projection.
+Supervisor имеет allowlisted `evohime-analysis-worker` launch contract и
+аутентифицированный Core command channel для `kernel_launch`, `kernel_execute`
+и `kernel_stop`: фиксированный sibling executable, `trusted-local-1`,
+очищенное окружение и отдельный kill-on-close Job Object с memory/CPU limits.
+IPC добавляет commands 162–165 и events 27–28; Electron main/preload
+маршрутизирует bounded payload, а вкладка `Анализ` показывает только metadata
+projection.
 
-Работа плана 28 ещё не закрыта: требуется завершить реальное Core↔worker
-transport, crash/restart reconciliation, TaskCheckpoint/selected-child refs,
-полный approval/capability host bridge и release evidence matrix. До этого
-stage-файлы плана сохраняются, а kernel не считается полностью implemented.
+Core отправляет worker-запрос только после повторной admission-проверки,
+использует typed result и переводит runtime в `Crashed` при transport failure;
+на рестарте running manifests fencing-ятся без blind retry, а supervisor worker
+останавливается. TaskCheckpoint/child handoff получают только явно выбранные
+immutable checkpointable refs; ephemeral memory в handoff запрещена.
+
+Работа плана 28 ещё не закрыта: требуется end-to-end fault injection на
+реальном packaged supervisor restart, полный approval/capability host bridge
+для optional artifact/tool surfaces и финальная release evidence matrix. До
+этого stage-файлы плана сохраняются, а kernel не считается полностью
+implemented.

@@ -374,8 +374,12 @@ local-storage 208, desktop IPC 35, Electron 470 passed и 2 штатно skipped
 canonical SHA-256 session hash, SQLite schema v38 с metadata-only manifest,
 bounded ephemeral `KernelRuntime`, отдельный allowlisted worker binary с
 supervisor Job Object launch contract, authenticated additive IPC commands
-162–165/events 27–28 и Electron projection/вкладка `Анализ`. Focused checks
-подтверждают storage/runtime/supervisor contracts, protocol generation,
-Electron typecheck/build и pipe/shell adapter tests. Полное закрытие отложено
-до реального worker transport, restart reconciliation, checkpoint/child-ref
-integration и release-evidence matrix; stage-файлы `28-0` … `28-4` сохранены.
+162–165/events 27–28 и Electron projection/вкладка `Анализ`. Core↔supervisor↔worker
+transport подключён для authenticated packaged запуска: Core выполняет
+admission, supervisor владеет process lifecycle, а transport failure переводит
+runtime в `Crashed`. Добавлены checkpointable immutable refs и selected child
+subset; ephemeral memory в handoff запрещена. Focused checks подтверждают
+storage/runtime/supervisor contracts, protocol generation, Electron
+typecheck/build и release-evidence gate. Полное закрытие отложено до
+end-to-end packaged restart/fault-injection, approval host bridge optional
+surfaces и release-evidence matrix; stage-файлы `28-0` … `28-4` сохранены.
