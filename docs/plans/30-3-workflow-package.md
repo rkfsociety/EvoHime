@@ -4,7 +4,8 @@
 
 ## Цель
 
-Добавить typed client surface для чтения Core state и явных user actions без переноса authority.
+Добавить typed client surface для export, import preview, credential rebinding и
+явного commit без переноса authority.
 
 ## Зависимости
 
@@ -20,7 +21,10 @@
 ## Реализация
 
 0. Проверить proto и зарезервировать additive names/tags, не меняя semantics старых clients.
-1. Добавить bounded request/result/event messages с correlation, idempotency, optimistic version и typed errors; исключить secrets, raw prompt и hidden reasoning.
+1. Добавить bounded request/result/event messages для export, preview, resolve,
+   rebind и commit с correlation, idempotency, optimistic version и typed
+   errors; исключить secrets, raw prompt/output, package bytes сверх лимита и
+   hidden reasoning.
 2. Реализовать Electron main/preload и предусмотренный client adapter; он только сериализует и маршрутизирует Core commands.
 3. Добавить renderer/CLI projection для status, progress, blockers, refs, warnings и actions; renderer не вычисляет state machine и не запускает effect.
 4. Проверить reconnect, replay gap, duplicate event, stale/denied action и unavailable optional backend.
@@ -30,13 +34,24 @@
 
 ### Protocol and client surfaces
 
-- Proto: добавить additive `WorkflowPackageRequest`, `WorkflowPackageResponse`, `WorkflowPackageEvent` и command/event oneof в `crates/desktop-ipc/proto/evohime.desktop.proto` после проверки свободных tags; сохранить major, replay/resync и bounded frame limits.
+- Proto: добавить additive package commands/results/events (export, preview,
+  rebind, commit) и command/event oneof после проверки свободных tags; сохранить
+  major, replay/resync и bounded frame limits. Commit не должен принимать
+  capability definition или credential value.
 - Bridge: связать `crates/evohime-core/src/ipc_bridge.rs`, `desktop/evohime-electron/src/shared/api.ts`, `desktop/evohime-electron/src/preload/index.ts` и `desktop/evohime-electron/src/main/shell-bridge.ts`; renderer не получает Core/storage authority.
-- UI: создать `desktop/evohime-electron/src/renderer/src/WorkflowPackagePanel.tsx` только как projection/action surface; тесты — `desktop/evohime-electron/tests/workflow_package.test.tsx` и protocol/typecheck gates.
+- UI: создать `WorkflowPackagePanel.tsx` как projection/action surface:
+  export preview/stripped fields/hash/dependencies и import report; кнопка
+   commit disabled при обязательных unresolved dependencies или отсутствии
+   rebinding. Credential picker возвращает renderer только opaque slot state;
+   raw secret и даже provider credential value не покидают Core-owned store.
+   Тесты покрывают отсутствие parse/preview effect и redaction.
 
 ### Acceptance-to-projection matrix
 
-- `C08` — Import не расширяет Core capability registry. → показывать состояние только из Core event/evidence, без локального вывода renderer.
+- `C08` — Import не расширяет Core capability registry. → показывать только
+  Core report; renderer не регистрирует capability и не считает resolution.
+- `C04` — Import выполняет validate/resolve/preview до записи. → разделить
+  preview и commit в UI и явно показывать phase/blocked reason.
 
 ### Client safety and replay
 
