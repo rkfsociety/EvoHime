@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./106-1-declarative-runtime-components.md)
+- [Этап 2 — runtime-интеграция и recovery](./106-2-declarative-runtime-components.md)
+- [Этап 3 — IPC, client projection и UI](./106-3-declarative-runtime-components.md)
+- [Этап 4 — verification, release-evidence и закрытие](./106-4-declarative-runtime-components.md)
+
 ## Зависимости
 
 ### Блокирующие

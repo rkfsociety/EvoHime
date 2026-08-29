@@ -38,6 +38,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./76-1-safe-ui-extension-framework.md)
+- [Этап 2 — runtime-интеграция и recovery](./76-2-safe-ui-extension-framework.md)
+- [Этап 3 — IPC, client projection и UI](./76-3-safe-ui-extension-framework.md)
+- [Этап 4 — verification, release-evidence и закрытие](./76-4-safe-ui-extension-framework.md)
+
 ## Зависимости
 
 ### Блокирующие

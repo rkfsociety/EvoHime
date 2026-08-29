@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./105-1-prompt-cache-planner.md)
+- [Этап 2 — runtime-интеграция и recovery](./105-2-prompt-cache-planner.md)
+- [Этап 3 — IPC, client projection и UI](./105-3-prompt-cache-planner.md)
+- [Этап 4 — verification, release-evidence и закрытие](./105-4-prompt-cache-planner.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -40,8 +47,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 - План 67.0 — Schema-Driven Agent Configuration: Core-owned schemas для agent/conversation settings.
 - План 75.0 — Typed Context References: адресные @refs на файлы, diff, diagnostics, terminal и artifacts.
 - План 86.0 — Semantic Repository Map: symbol graph и token-budgeted контекст большого репозитория.
-- План 111.0 — Project Guidance Registry: scoped coding conventions и read-only instruction layers.
-- План 115.0 — Model Purpose Routing: отдельные model profiles для primary, editor, selector, summarizer и auxiliary calls.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

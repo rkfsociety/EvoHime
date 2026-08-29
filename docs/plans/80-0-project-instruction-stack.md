@@ -32,6 +32,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./80-1-project-instruction-stack.md)
+- [Этап 2 — runtime-интеграция и recovery](./80-2-project-instruction-stack.md)
+- [Этап 3 — IPC, client projection и UI](./80-3-project-instruction-stack.md)
+- [Этап 4 — verification, release-evidence и закрытие](./80-4-project-instruction-stack.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -43,7 +50,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 - План 60.0 — Revision-Safe Workspace Files: uploads/workspace/outputs namespaces и stale-write protection.
 - План 64.0 — Workspace Bootstrap Manifest: безопасная подготовка project environment перед agent run.
-- План 111.0 — Project Guidance Registry: scoped coding conventions и read-only instruction layers.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

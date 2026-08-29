@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./104-1-remote-conversation-channels.md)
+- [Этап 2 — runtime-интеграция и recovery](./104-2-remote-conversation-channels.md)
+- [Этап 3 — IPC, client projection и UI](./104-3-remote-conversation-channels.md)
+- [Этап 4 — verification, release-evidence и закрытие](./104-4-remote-conversation-channels.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -39,7 +46,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 - План 34.0 — Event Trigger Runtime: безопасный запуск workflow по внешним событиям.
 - План 40.0 — Sensitive Data Guardrails: PII/secret detection и streaming redaction на model/tool boundaries.
 - План 98.0 — Durable Remote Task Bridge: submit/status/cancel protocol для долгих tool и MCP операций.
-- План 110.0 — Message Intervention Policies: typed interceptors для agent/team message routing.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

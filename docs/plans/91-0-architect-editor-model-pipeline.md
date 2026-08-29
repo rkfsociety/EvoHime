@@ -38,6 +38,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./91-1-architect-editor-model-pipeline.md)
+- [Этап 2 — runtime-интеграция и recovery](./91-2-architect-editor-model-pipeline.md)
+- [Этап 3 — IPC, client projection и UI](./91-3-architect-editor-model-pipeline.md)
+- [Этап 4 — verification, release-evidence и закрытие](./91-4-architect-editor-model-pipeline.md)
+
 ## Зависимости
 
 ### Блокирующие

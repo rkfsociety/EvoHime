@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./33-1-integration-provider-sdk.md)
+- [Этап 2 — runtime-интеграция и recovery](./33-2-integration-provider-sdk.md)
+- [Этап 3 — IPC, client projection и UI](./33-3-integration-provider-sdk.md)
+- [Этап 4 — verification, release-evidence и закрытие](./33-4-integration-provider-sdk.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -36,9 +43,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 34.0 — Event Trigger Runtime: безопасный запуск workflow по внешним событиям.
-- План 40.0 — Sensitive Data Guardrails: PII/secret detection и streaming redaction на model/tool boundaries.
-- План 108.0 — Extension Conformance Kit: contract tests и transactional registration для providers/adapters/extensions.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

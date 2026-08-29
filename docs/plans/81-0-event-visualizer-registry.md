@@ -29,6 +29,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./81-1-event-visualizer-registry.md)
+- [Этап 2 — runtime-интеграция и recovery](./81-2-event-visualizer-registry.md)
+- [Этап 3 — IPC, client projection и UI](./81-3-event-visualizer-registry.md)
+- [Этап 4 — verification, release-evidence и закрытие](./81-4-event-visualizer-registry.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -39,7 +46,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 76.0 — Safe UI Extension Framework: declarative pages, panels и themes без renderer authority.
-- План 110.0 — Message Intervention Policies: typed interceptors для agent/team message routing.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

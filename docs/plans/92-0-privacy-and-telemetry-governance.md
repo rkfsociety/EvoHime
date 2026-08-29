@@ -29,6 +29,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./92-1-privacy-and-telemetry-governance.md)
+- [Этап 2 — runtime-интеграция и recovery](./92-2-privacy-and-telemetry-governance.md)
+- [Этап 3 — IPC, client projection и UI](./92-3-privacy-and-telemetry-governance.md)
+- [Этап 4 — verification, release-evidence и закрытие](./92-4-privacy-and-telemetry-governance.md)
+
 ## Зависимости
 
 ### Блокирующие

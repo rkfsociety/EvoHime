@@ -39,6 +39,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./82-1-context-mentions.md)
+- [Этап 2 — runtime-интеграция и recovery](./82-2-context-mentions.md)
+- [Этап 3 — IPC, client projection и UI](./82-3-context-mentions.md)
+- [Этап 4 — verification, release-evidence и закрытие](./82-4-context-mentions.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -49,8 +56,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 86.0 — Semantic Repository Map: symbol graph и token-budgeted контекст большого репозитория.
-- План 96.0 — Memory Views & Adaptive Recall: hierarchical scopes, read-only slices и composite retrieval.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

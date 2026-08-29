@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./37-1-agent-middleware-pipeline.md)
+- [Этап 2 — runtime-интеграция и recovery](./37-2-agent-middleware-pipeline.md)
+- [Этап 3 — IPC, client projection и UI](./37-3-agent-middleware-pipeline.md)
+- [Этап 4 — verification, release-evidence и закрытие](./37-4-agent-middleware-pipeline.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -36,9 +43,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 40.0 — Sensitive Data Guardrails: PII/secret detection и streaming redaction на model/tool boundaries.
-- План 69.0 — Runtime Intervention Pipeline: Core-owned middleware for agent messages and tool boundaries.
-- План 72.0 — Core Topic/Subscription Event Bus: typed pub/sub routing for agent runtime.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

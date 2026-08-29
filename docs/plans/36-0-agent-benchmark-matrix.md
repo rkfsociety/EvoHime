@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./36-1-agent-benchmark-matrix.md)
+- [Этап 2 — runtime-интеграция и recovery](./36-2-agent-benchmark-matrix.md)
+- [Этап 3 — IPC, client projection и UI](./36-3-agent-benchmark-matrix.md)
+- [Этап 4 — verification, release-evidence и закрытие](./36-4-agent-benchmark-matrix.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -36,9 +43,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 42.0 — Model Resilience Policy: retry, fallback и provider-safe request adaptation.
-- План 44.0 — Tool Simulation Runtime: fixture/emulated dry-run без реальных side effects.
-- План 71.0 — Workflow Optimization Lab: offline search и benchmark-driven улучшение agent workflows.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

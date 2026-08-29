@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./102-1-agent-git-change-sets.md)
+- [Этап 2 — runtime-интеграция и recovery](./102-2-agent-git-change-sets.md)
+- [Этап 3 — IPC, client projection и UI](./102-3-agent-git-change-sets.md)
+- [Этап 4 — verification, release-evidence и закрытие](./102-4-agent-git-change-sets.md)
+
 ## Зависимости
 
 ### Блокирующие

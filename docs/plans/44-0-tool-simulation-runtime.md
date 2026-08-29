@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./44-1-tool-simulation-runtime.md)
+- [Этап 2 — runtime-интеграция и recovery](./44-2-tool-simulation-runtime.md)
+- [Этап 3 — IPC, client projection и UI](./44-3-tool-simulation-runtime.md)
+- [Этап 4 — verification, release-evidence и закрытие](./44-4-tool-simulation-runtime.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -37,8 +44,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 36.0 — Agent Benchmark Matrix: многократные model/strategy evals и regression tracking.
-- План 64.0 — Workspace Bootstrap Manifest: безопасная подготовка project environment перед agent run.
-- План 71.0 — Workflow Optimization Lab: offline search и benchmark-driven улучшение agent workflows.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

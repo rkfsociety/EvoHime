@@ -29,6 +29,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./62-1-team-resource-budget.md)
+- [Этап 2 — runtime-интеграция и recovery](./62-2-team-resource-budget.md)
+- [Этап 3 — IPC, client projection и UI](./62-3-team-resource-budget.md)
+- [Этап 4 — verification, release-evidence и закрытие](./62-4-team-resource-budget.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -39,8 +46,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 65.0 — Team Coordination Policies: pluggable routing for multi-agent collaboration.
-- План 79.0 — Team Coordinator: capability-aware delegation, dynamic task routing и managerial validation.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

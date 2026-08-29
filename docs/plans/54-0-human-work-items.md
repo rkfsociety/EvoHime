@@ -35,6 +35,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./54-1-human-work-items.md)
+- [Этап 2 — runtime-интеграция и recovery](./54-2-human-work-items.md)
+- [Этап 3 — IPC, client projection и UI](./54-3-human-work-items.md)
+- [Этап 4 — verification, release-evidence и закрытие](./54-4-human-work-items.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -46,7 +53,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 - План 34.0 — Event Trigger Runtime: безопасный запуск workflow по внешним событиям.
 - План 35.0 — Invocation Presets: version-pinned шаблоны запусков без копирования секретов.
-- План 104.0 — Remote Conversation Channels: безопасное управление Евой через Telegram, Slack и другие мессенджеры.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

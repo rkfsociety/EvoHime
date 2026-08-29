@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./72-1-core-topic-subscription-event-bus.md)
+- [Этап 2 — runtime-интеграция и recovery](./72-2-core-topic-subscription-event-bus.md)
+- [Этап 3 — IPC, client projection и UI](./72-3-core-topic-subscription-event-bus.md)
+- [Этап 4 — verification, release-evidence и закрытие](./72-4-core-topic-subscription-event-bus.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -37,7 +44,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 69.0 — Runtime Intervention Pipeline: Core-owned middleware for agent messages and tool boundaries.
-- План 81.0 — Event Visualizer Registry: typed renderers для tool, workflow и artifact events.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

@@ -11,6 +11,13 @@ AST, индексов и промежуточных вычислений меж�
 `Model → Kernel → typed host request → Core → Capability/Policy/Approval →
 Tool/Workflow/MCP`. Kernel не получает полномочий; side effects остаются в Core.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./28-1-persistent-analysis-kernel.md)
+- [Этап 2 — runtime-интеграция и recovery](./28-2-persistent-analysis-kernel.md)
+- [Этап 3 — IPC, client projection и UI](./28-3-persistent-analysis-kernel.md)
+- [Этап 4 — verification, release-evidence и закрытие](./28-4-persistent-analysis-kernel.md)
+
 ## Зависимости
 
 ### Блокирующие

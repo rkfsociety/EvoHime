@@ -37,6 +37,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./48-1-team-sop-protocols.md)
+- [Этап 2 — runtime-интеграция и recovery](./48-2-team-sop-protocols.md)
+- [Этап 3 — IPC, client projection и UI](./48-3-team-sop-protocols.md)
+- [Этап 4 — verification, release-evidence и закрытие](./48-4-team-sop-protocols.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -46,9 +53,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 66.0 — Typed Agent Handoff Contract: explicit transfer of task ownership and context.
-- План 72.0 — Core Topic/Subscription Event Bus: typed pub/sub routing for agent runtime.
-- План 86.0 — Semantic Repository Map: symbol graph и token-budgeted контекст большого репозитория.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

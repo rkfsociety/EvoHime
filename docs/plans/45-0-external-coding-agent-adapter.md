@@ -35,6 +35,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./45-1-external-coding-agent-adapter.md)
+- [Этап 2 — runtime-интеграция и recovery](./45-2-external-coding-agent-adapter.md)
+- [Этап 3 — IPC, client projection и UI](./45-3-external-coding-agent-adapter.md)
+- [Этап 4 — verification, release-evidence и закрытие](./45-4-external-coding-agent-adapter.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -45,9 +52,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 46.0 — Agent Role Profiles: versioned специализация, ограничения и strategy contracts.
-- План 54.0 — Human Work Items: пользователь как полноценный участник workflow/team, а не только approval.
-- План 65.0 — Team Coordination Policies: pluggable routing for multi-agent collaboration.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

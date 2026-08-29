@@ -44,6 +44,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./85-1-customization-inventory.md)
+- [Этап 2 — runtime-интеграция и recovery](./85-2-customization-inventory.md)
+- [Этап 3 — IPC, client projection и UI](./85-3-customization-inventory.md)
+- [Этап 4 — verification, release-evidence и закрытие](./85-4-customization-inventory.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -58,7 +65,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 - План 65.0 — Team Coordination Policies: pluggable routing for multi-agent collaboration.
 - План 74.0 — Declarative Agent Component Registry: versioned runtime components with schema-safe loading.
 - План 80.0 — Project Instruction Stack: conditional rules, AGENTS.md compatibility и deterministic precedence.
-- План 111.0 — Project Guidance Registry: scoped coding conventions и read-only instruction layers.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./69-1-runtime-intervention-pipeline.md)
+- [Этап 2 — runtime-интеграция и recovery](./69-2-runtime-intervention-pipeline.md)
+- [Этап 3 — IPC, client projection и UI](./69-3-runtime-intervention-pipeline.md)
+- [Этап 4 — verification, release-evidence и закрытие](./69-4-runtime-intervention-pipeline.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -37,8 +44,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 51.0 — Causal Collaboration Bus: typed pub/sub для team agents поверх child mailbox.
-- План 72.0 — Core Topic/Subscription Event Bus: typed pub/sub routing for agent runtime.
-- План 110.0 — Message Intervention Policies: typed interceptors для agent/team message routing.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

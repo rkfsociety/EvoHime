@@ -39,6 +39,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./78-1-capability-workbenches.md)
+- [Этап 2 — runtime-интеграция и recovery](./78-2-capability-workbenches.md)
+- [Этап 3 — IPC, client projection и UI](./78-3-capability-workbenches.md)
+- [Этап 4 — verification, release-evidence и закрытие](./78-4-capability-workbenches.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -51,7 +58,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 - План 58.0 — Workspace State Checkpoints: безопасный rollback файлов отдельно от task history.
 - План 61.0 — Task Worktree Isolation: отдельные Git worktrees для параллельных agent/child задач.
-- План 89.0 — Checkpoint Forking & Replay: branch-and-compare запусков из сохранённого состояния.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

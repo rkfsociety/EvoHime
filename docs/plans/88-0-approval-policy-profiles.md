@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./88-1-approval-policy-profiles.md)
+- [Этап 2 — runtime-интеграция и recovery](./88-2-approval-policy-profiles.md)
+- [Этап 3 — IPC, client projection и UI](./88-3-approval-policy-profiles.md)
+- [Этап 4 — verification, release-evidence и закрытие](./88-4-approval-policy-profiles.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -40,7 +47,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 - План 36.0 — Agent Benchmark Matrix: многократные model/strategy evals и regression tracking.
 - План 49.0 — Resumable Conversation Event Log: cursor-based history, live sync и reconnect без дублей.
 - План 68.0 — Experience Replay Library: episodic trajectories, success/failure retrieval и context injection.
-- План 107.0 — Guided Calibration Sessions: iterative human feedback и versioned role guidance.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

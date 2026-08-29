@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./50-1-memory-governance.md)
+- [Этап 2 — runtime-интеграция и recovery](./50-2-memory-governance.md)
+- [Этап 3 — IPC, client projection и UI](./50-3-memory-governance.md)
+- [Этап 4 — verification, release-evidence и закрытие](./50-4-memory-governance.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -37,8 +44,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 68.0 — Experience Replay Library: episodic trajectories, success/failure retrieval и context injection.
-- План 96.0 — Memory Views & Adaptive Recall: hierarchical scopes, read-only slices и composite retrieval.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

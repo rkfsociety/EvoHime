@@ -34,6 +34,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./89-1-checkpoint-forking-and-replay.md)
+- [Этап 2 — runtime-интеграция и recovery](./89-2-checkpoint-forking-and-replay.md)
+- [Этап 3 — IPC, client projection и UI](./89-3-checkpoint-forking-and-replay.md)
+- [Этап 4 — verification, release-evidence и закрытие](./89-4-checkpoint-forking-and-replay.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -46,7 +53,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 73.0 — Dependency-Aware Task Graph: selective replanning и downstream invalidation.
-- План 100.0 — Workspace Sets: multi-root и cross-repository задачи с независимыми grants, VCS и checkpoints.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

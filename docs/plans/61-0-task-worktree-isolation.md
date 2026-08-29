@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./61-1-task-worktree-isolation.md)
+- [Этап 2 — runtime-интеграция и recovery](./61-2-task-worktree-isolation.md)
+- [Этап 3 — IPC, client projection и UI](./61-3-task-worktree-isolation.md)
+- [Этап 4 — verification, release-evidence и закрытие](./61-4-task-worktree-isolation.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -39,8 +46,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 - План 43.0 — Execution Backend Registry: несколько agent backends, health и capability handshake.
 - План 45.0 — External Coding Agent Adapter: подключение Codex/Claude/Gemini-подобных executors через typed protocol.
-- План 63.0 — Composable Termination Conditions: first-class stop policies for agent and team runs.
-- План 80.0 — Project Instruction Stack: conditional rules, AGENTS.md compatibility и deterministic precedence.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

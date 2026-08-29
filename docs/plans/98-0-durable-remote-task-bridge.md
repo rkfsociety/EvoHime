@@ -35,6 +35,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./98-1-durable-remote-task-bridge.md)
+- [Этап 2 — runtime-интеграция и recovery](./98-2-durable-remote-task-bridge.md)
+- [Этап 3 — IPC, client projection и UI](./98-3-durable-remote-task-bridge.md)
+- [Этап 4 — verification, release-evidence и закрытие](./98-4-durable-remote-task-bridge.md)
+
 ## Зависимости
 
 ### Блокирующие

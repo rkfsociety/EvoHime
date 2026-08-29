@@ -36,6 +36,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./108-1-extension-conformance-kit.md)
+- [Этап 2 — runtime-интеграция и recovery](./108-2-extension-conformance-kit.md)
+- [Этап 3 — IPC, client projection и UI](./108-3-extension-conformance-kit.md)
+- [Этап 4 — verification, release-evidence и закрытие](./108-4-extension-conformance-kit.md)
+
 ## Зависимости
 
 ### Блокирующие

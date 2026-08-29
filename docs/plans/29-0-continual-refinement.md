@@ -12,6 +12,13 @@
 activation → observation/rollback`. Агент не может через refinement расширить
 свои tools, grants, credentials, approvals или security policy.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./29-1-continual-refinement.md)
+- [Этап 2 — runtime-интеграция и recovery](./29-2-continual-refinement.md)
+- [Этап 3 — IPC, client projection и UI](./29-3-continual-refinement.md)
+- [Этап 4 — verification, release-evidence и закрытие](./29-4-continual-refinement.md)
+
 ## Зависимости
 
 ### Блокирующие

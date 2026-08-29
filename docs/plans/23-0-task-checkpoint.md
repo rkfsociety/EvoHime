@@ -33,6 +33,13 @@ ledger или ArtifactStore.
 - Electron main/preload и `OverviewPanel`/`OperationsPanel` — bounded read-only
   projection без raw prompt, secrets или полного transcript.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./23-1-task-checkpoint.md)
+- [Этап 2 — runtime-интеграция и recovery](./23-2-task-checkpoint.md)
+- [Этап 3 — IPC, client projection и UI](./23-3-task-checkpoint.md)
+- [Этап 4 — verification, release-evidence и закрытие](./23-4-task-checkpoint.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -45,9 +52,7 @@ ledger или ArtifactStore.
 
 ### Опциональные
 
-- план 25 Persistent Goals: checkpoint может получить `goal_id`, но работает и
   для обычной task без Goal;
-- план 26 Continuation Policy: checkpoint может хранить continuation marker;
 - планы 27–28: retained child и kernel refs могут быть добавлены в массивы
   typed refs после их появления.
 

@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./55-1-agentic-browser-session.md)
+- [Этап 2 — runtime-интеграция и recovery](./55-2-agentic-browser-session.md)
+- [Этап 3 — IPC, client projection и UI](./55-3-agentic-browser-session.md)
+- [Этап 4 — verification, release-evidence и закрытие](./55-4-agentic-browser-session.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -37,8 +44,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 41.0 — Execution Policy Profiles: sandboxed shell/process runtime с Windows-first isolation.
-- План 64.0 — Workspace Bootstrap Manifest: безопасная подготовка project environment перед agent run.
-- План 77.0 — Headless Core CLI: non-interactive agent/workflow runs для CI, scripts и NDJSON automation.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

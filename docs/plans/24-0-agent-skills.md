@@ -31,6 +31,13 @@ Skill metadata не расширяет grants, а `allowed-tools` и `required-c
   loaded-skill trace;
 - проектная документация/fixtures — sample native и compatibility packages.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./24-1-agent-skills.md)
+- [Этап 2 — runtime-интеграция и recovery](./24-2-agent-skills.md)
+- [Этап 3 — IPC, client projection и UI](./24-3-agent-skills.md)
+- [Этап 4 — verification, release-evidence и закрытие](./24-4-agent-skills.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -43,7 +50,6 @@ Skill metadata не расширяет grants, а `allowed-tools` и `required-c
 ### Опциональные
 
 - план 23 TaskCheckpoint для фиксации selected skill refs между compactions;
-- план 29 Continual Refinement для controlled proposals новых/изменённых skills;
 - планы 25–28 для использования skills в Goal, continuation, child и kernel.
 
 ## Skill package и discovery

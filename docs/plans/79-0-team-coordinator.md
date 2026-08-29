@@ -33,6 +33,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./79-1-team-coordinator.md)
+- [Этап 2 — runtime-интеграция и recovery](./79-2-team-coordinator.md)
+- [Этап 3 — IPC, client projection и UI](./79-3-team-coordinator.md)
+- [Этап 4 — verification, release-evidence и закрытие](./79-4-team-coordinator.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -46,7 +53,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 68.0 — Experience Replay Library: episodic trajectories, success/failure retrieval и context injection.
-- План 95.0 — Team Coordination Strategies: pluggable selector, round-robin, swarm и graph routing.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

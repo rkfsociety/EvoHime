@@ -40,6 +40,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./59-1-incremental-change-protocol.md)
+- [Этап 2 — runtime-интеграция и recovery](./59-2-incremental-change-protocol.md)
+- [Этап 3 — IPC, client projection и UI](./59-3-incremental-change-protocol.md)
+- [Этап 4 — verification, release-evidence и закрытие](./59-4-incremental-change-protocol.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -51,7 +58,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 38.0 — Adaptive Tool Catalog: dynamic selection и deferred tool schemas.
-- План 84.0 — Output Guardrail Pipeline: semantic validators, transforms и bounded correction loops.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

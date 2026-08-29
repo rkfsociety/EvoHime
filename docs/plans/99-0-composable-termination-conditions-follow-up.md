@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./99-1-composable-termination-conditions-follow-up.md)
+- [Этап 2 — runtime-интеграция и recovery](./99-2-composable-termination-conditions-follow-up.md)
+- [Этап 3 — IPC, client projection и UI](./99-3-composable-termination-conditions-follow-up.md)
+- [Этап 4 — verification, release-evidence и закрытие](./99-4-composable-termination-conditions-follow-up.md)
+
 ## Зависимости
 
 ### Блокирующие

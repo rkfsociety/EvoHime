@@ -31,6 +31,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./73-1-dependency-aware-task-graph.md)
+- [Этап 2 — runtime-интеграция и recovery](./73-2-dependency-aware-task-graph.md)
+- [Этап 3 — IPC, client projection и UI](./73-3-dependency-aware-task-graph.md)
+- [Этап 4 — verification, release-evidence и закрытие](./73-4-dependency-aware-task-graph.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -43,8 +50,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 45.0 — External Coding Agent Adapter: подключение Codex/Claude/Gemini-подобных executors через typed protocol.
-- План 77.0 — Headless Core CLI: non-interactive agent/workflow runs для CI, scripts и NDJSON automation.
-- План 89.0 — Checkpoint Forking & Replay: branch-and-compare запусков из сохранённого состояния.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

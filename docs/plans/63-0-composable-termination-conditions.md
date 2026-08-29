@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./63-1-composable-termination-conditions.md)
+- [Этап 2 — runtime-интеграция и recovery](./63-2-composable-termination-conditions.md)
+- [Этап 3 — IPC, client projection и UI](./63-3-composable-termination-conditions.md)
+- [Этап 4 — verification, release-evidence и закрытие](./63-4-composable-termination-conditions.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -38,8 +45,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 62.0 — Team Resource Budget: shared cost envelope, per-role allocations и reserved verification budget.
-- План 79.0 — Team Coordinator: capability-aware delegation, dynamic task routing и managerial validation.
-- План 99.0 — Composable Termination Conditions: typed stop algebra для agent/team runs.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

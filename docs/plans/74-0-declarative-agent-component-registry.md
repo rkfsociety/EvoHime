@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./74-1-declarative-agent-component-registry.md)
+- [Этап 2 — runtime-интеграция и recovery](./74-2-declarative-agent-component-registry.md)
+- [Этап 3 — IPC, client projection и UI](./74-3-declarative-agent-component-registry.md)
+- [Этап 4 — verification, release-evidence и закрытие](./74-4-declarative-agent-component-registry.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -37,7 +44,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 46.0 — Agent Role Profiles: versioned специализация, ограничения и strategy contracts.
-- План 106.0 — Declarative Runtime Components: versioned component config, provider registry и safe rehydration.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

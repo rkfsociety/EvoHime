@@ -34,6 +34,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./49-1-resumable-conversation-event-log.md)
+- [Этап 2 — runtime-интеграция и recovery](./49-2-resumable-conversation-event-log.md)
+- [Этап 3 — IPC, client projection и UI](./49-3-resumable-conversation-event-log.md)
+- [Этап 4 — verification, release-evidence и закрытие](./49-4-resumable-conversation-event-log.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -44,8 +51,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 43.0 — Execution Backend Registry: несколько agent backends, health и capability handshake.
-- План 50.0 — Memory Governance: typed memory, evidence gates, reinforcement и retention policy.
-- План 68.0 — Experience Replay Library: episodic trajectories, success/failure retrieval и context injection.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

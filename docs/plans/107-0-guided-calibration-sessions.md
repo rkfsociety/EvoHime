@@ -38,6 +38,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./107-1-guided-calibration-sessions.md)
+- [Этап 2 — runtime-интеграция и recovery](./107-2-guided-calibration-sessions.md)
+- [Этап 3 — IPC, client projection и UI](./107-3-guided-calibration-sessions.md)
+- [Этап 4 — verification, release-evidence и закрытие](./107-4-guided-calibration-sessions.md)
+
 ## Зависимости
 
 ### Блокирующие

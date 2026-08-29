@@ -29,6 +29,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./67-1-schema-driven-agent-configuration.md)
+- [Этап 2 — runtime-интеграция и recovery](./67-2-schema-driven-agent-configuration.md)
+- [Этап 3 — IPC, client projection и UI](./67-3-schema-driven-agent-configuration.md)
+- [Этап 4 — verification, release-evidence и закрытие](./67-4-schema-driven-agent-configuration.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -40,8 +47,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 - План 44.0 — Tool Simulation Runtime: fixture/emulated dry-run без реальных side effects.
 - План 47.0 — Skill Trust Pipeline: deterministic scanning, contextual review и quarantine перед активацией.
-- План 80.0 — Project Instruction Stack: conditional rules, AGENTS.md compatibility и deterministic precedence.
-- План 111.0 — Project Guidance Registry: scoped coding conventions и read-only instruction layers.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

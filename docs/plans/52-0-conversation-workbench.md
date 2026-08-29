@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./52-1-conversation-workbench.md)
+- [Этап 2 — runtime-интеграция и recovery](./52-2-conversation-workbench.md)
+- [Этап 3 — IPC, client projection и UI](./52-3-conversation-workbench.md)
+- [Этап 4 — verification, release-evidence и закрытие](./52-4-conversation-workbench.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -36,10 +43,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 75.0 — Typed Context References: адресные @refs на файлы, diff, diagnostics, terminal и artifacts.
-- План 76.0 — Safe UI Extension Framework: declarative pages, panels и themes без renderer authority.
-- План 80.0 — Project Instruction Stack: conditional rules, AGENTS.md compatibility и deterministic precedence.
-- План 94.0 — Conversation Bridge Adapters: безопасное управление EvoHime conversations из внешних chat threads.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

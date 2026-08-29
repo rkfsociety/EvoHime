@@ -35,6 +35,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./34-1-event-trigger-runtime.md)
+- [Этап 2 — runtime-интеграция и recovery](./34-2-event-trigger-runtime.md)
+- [Этап 3 — IPC, client projection и UI](./34-3-event-trigger-runtime.md)
+- [Этап 4 — verification, release-evidence и закрытие](./34-4-event-trigger-runtime.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -44,8 +51,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 35.0 — Invocation Presets: version-pinned шаблоны запусков без копирования секретов.
-- План 42.0 — Model Resilience Policy: retry, fallback и provider-safe request adaptation.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

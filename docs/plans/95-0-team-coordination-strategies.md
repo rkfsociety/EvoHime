@@ -37,6 +37,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./95-1-team-coordination-strategies.md)
+- [Этап 2 — runtime-интеграция и recovery](./95-2-team-coordination-strategies.md)
+- [Этап 3 — IPC, client projection и UI](./95-3-team-coordination-strategies.md)
+- [Этап 4 — verification, release-evidence и закрытие](./95-4-team-coordination-strategies.md)
+
 ## Зависимости
 
 ### Блокирующие

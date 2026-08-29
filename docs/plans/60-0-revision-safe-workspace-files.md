@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./60-1-revision-safe-workspace-files.md)
+- [Этап 2 — runtime-интеграция и recovery](./60-2-revision-safe-workspace-files.md)
+- [Этап 3 — IPC, client projection и UI](./60-3-revision-safe-workspace-files.md)
+- [Этап 4 — verification, release-evidence и закрытие](./60-4-revision-safe-workspace-files.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -37,9 +44,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 40.0 — Sensitive Data Guardrails: PII/secret detection и streaming redaction на model/tool boundaries.
-- План 69.0 — Runtime Intervention Pipeline: Core-owned middleware for agent messages and tool boundaries.
-- План 92.0 — Privacy & Telemetry Governance: consent, typed analytics events и sensitive-data boundaries.
-- План 113.0 — Policy-Aware Tool Result Cache: freshness, provenance и safe reuse read-only calls.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

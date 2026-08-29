@@ -29,6 +29,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./75-1-typed-context-references.md)
+- [Этап 2 — runtime-интеграция и recovery](./75-2-typed-context-references.md)
+- [Этап 3 — IPC, client projection и UI](./75-3-typed-context-references.md)
+- [Этап 4 — verification, release-evidence и закрытие](./75-4-typed-context-references.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -40,8 +47,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 56.0 — Artifact Handoff Registry: typed deliverables, lineage и freshness для multi-agent работы.
-- План 82.0 — Context Mentions: typed @references для files, folders, git, diagnostics и runtime resources.
-- План 100.0 — Workspace Sets: multi-root и cross-repository задачи с независимыми grants, VCS и checkpoints.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

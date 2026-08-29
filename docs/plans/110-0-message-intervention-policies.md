@@ -31,6 +31,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./110-1-message-intervention-policies.md)
+- [Этап 2 — runtime-интеграция и recovery](./110-2-message-intervention-policies.md)
+- [Этап 3 — IPC, client projection и UI](./110-3-message-intervention-policies.md)
+- [Этап 4 — verification, release-evidence и закрытие](./110-4-message-intervention-policies.md)
+
 ## Зависимости
 
 ### Блокирующие

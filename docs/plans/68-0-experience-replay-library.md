@@ -31,6 +31,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./68-1-experience-replay-library.md)
+- [Этап 2 — runtime-интеграция и recovery](./68-2-experience-replay-library.md)
+- [Этап 3 — IPC, client projection и UI](./68-3-experience-replay-library.md)
+- [Этап 4 — verification, release-evidence и закрытие](./68-4-experience-replay-library.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -42,7 +49,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 - План 48.0 — Team SOP Protocols: versioned multi-agent playbooks и формальные handoff правила.
 - План 66.0 — Typed Agent Handoff Contract: explicit transfer of task ownership and context.
-- План 79.0 — Team Coordinator: capability-aware delegation, dynamic task routing и managerial validation.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

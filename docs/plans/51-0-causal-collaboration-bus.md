@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./51-1-causal-collaboration-bus.md)
+- [Этап 2 — runtime-интеграция и recovery](./51-2-causal-collaboration-bus.md)
+- [Этап 3 — IPC, client projection и UI](./51-3-causal-collaboration-bus.md)
+- [Этап 4 — verification, release-evidence и закрытие](./51-4-causal-collaboration-bus.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -37,8 +44,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 47.0 — Skill Trust Pipeline: deterministic scanning, contextual review и quarantine перед активацией.
-- План 65.0 — Team Coordination Policies: pluggable routing for multi-agent collaboration.
-- План 72.0 — Core Topic/Subscription Event Bus: typed pub/sub routing for agent runtime.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

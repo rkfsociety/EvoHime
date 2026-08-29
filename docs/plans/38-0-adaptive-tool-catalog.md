@@ -31,6 +31,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./38-1-adaptive-tool-catalog.md)
+- [Этап 2 — runtime-интеграция и recovery](./38-2-adaptive-tool-catalog.md)
+- [Этап 3 — IPC, client projection и UI](./38-3-adaptive-tool-catalog.md)
+- [Этап 4 — verification, release-evidence и закрытие](./38-4-adaptive-tool-catalog.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -43,7 +50,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 - План 24.0 — Agent Skills: registry, SKILL.md и progressive disclosure.
 - План 33.0 — Integration Provider SDK: единый контракт auth, actions, webhooks и test fixtures.
 - План 37.0 — Agent Middleware Pipeline: typed hooks вокруг model/tool execution.
-- План 44.0 — Tool Simulation Runtime: fixture/emulated dry-run без реальных side effects.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

@@ -31,6 +31,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./113-1-policy-aware-tool-result-cache.md)
+- [Этап 2 — runtime-интеграция и recovery](./113-2-policy-aware-tool-result-cache.md)
+- [Этап 3 — IPC, client projection и UI](./113-3-policy-aware-tool-result-cache.md)
+- [Этап 4 — verification, release-evidence и закрытие](./113-4-policy-aware-tool-result-cache.md)
+
 ## Зависимости
 
 ### Блокирующие

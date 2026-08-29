@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./70-1-code-diagnostics-feedback-loop.md)
+- [Этап 2 — runtime-интеграция и recovery](./70-2-code-diagnostics-feedback-loop.md)
+- [Этап 3 — IPC, client projection и UI](./70-3-code-diagnostics-feedback-loop.md)
+- [Этап 4 — verification, release-evidence и закрытие](./70-4-code-diagnostics-feedback-loop.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -40,7 +47,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 - План 41.0 — Execution Policy Profiles: sandboxed shell/process runtime с Windows-first isolation.
 - План 55.0 — Agentic Browser Session: sandboxed browser automation со stable refs и SSRF-защитой.
 - План 60.0 — Revision-Safe Workspace Files: uploads/workspace/outputs namespaces и stale-write protection.
-- План 73.0 — Dependency-Aware Task Graph: selective replanning и downstream invalidation.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

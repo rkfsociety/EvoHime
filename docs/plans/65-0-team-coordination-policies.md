@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./65-1-team-coordination-policies.md)
+- [Этап 2 — runtime-интеграция и recovery](./65-2-team-coordination-policies.md)
+- [Этап 3 — IPC, client projection и UI](./65-3-team-coordination-policies.md)
+- [Этап 4 — verification, release-evidence и закрытие](./65-4-team-coordination-policies.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -38,7 +45,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 - План 33.0 — Integration Provider SDK: единый контракт auth, actions, webhooks и test fixtures.
 - План 43.0 — Execution Backend Registry: несколько agent backends, health и capability handshake.
-- План 74.0 — Declarative Agent Component Registry: versioned runtime components with schema-safe loading.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

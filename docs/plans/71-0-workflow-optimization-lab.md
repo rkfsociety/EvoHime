@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./71-1-workflow-optimization-lab.md)
+- [Этап 2 — runtime-интеграция и recovery](./71-2-workflow-optimization-lab.md)
+- [Этап 3 — IPC, client projection и UI](./71-3-workflow-optimization-lab.md)
+- [Этап 4 — verification, release-evidence и закрытие](./71-4-workflow-optimization-lab.md)
+
 ## Зависимости
 
 ### Блокирующие

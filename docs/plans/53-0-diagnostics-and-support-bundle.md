@@ -29,6 +29,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./53-1-diagnostics-and-support-bundle.md)
+- [Этап 2 — runtime-интеграция и recovery](./53-2-diagnostics-and-support-bundle.md)
+- [Этап 3 — IPC, client projection и UI](./53-3-diagnostics-and-support-bundle.md)
+- [Этап 4 — verification, release-evidence и закрытие](./53-4-diagnostics-and-support-bundle.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -38,9 +45,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 55.0 — Agentic Browser Session: sandboxed browser automation со stable refs и SSRF-защитой.
-- План 67.0 — Schema-Driven Agent Configuration: Core-owned schemas для agent/conversation settings.
-- План 108.0 — Extension Conformance Kit: contract tests и transactional registration для providers/adapters/extensions.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

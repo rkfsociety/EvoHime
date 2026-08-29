@@ -12,6 +12,13 @@ leases, grants, provenance, fan-in или формальные run states.
 lifecycle/communication layer. Старый report не считается актуальным после
 изменения workspace.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./27-1-retained-child-contexts.md)
+- [Этап 2 — runtime-интеграция и recovery](./27-2-retained-child-contexts.md)
+- [Этап 3 — IPC, client projection и UI](./27-3-retained-child-contexts.md)
+- [Этап 4 — verification, release-evidence и закрытие](./27-4-retained-child-contexts.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -29,7 +36,6 @@ lifecycle/communication layer. Старый report не считается ак�
   под обычным parent workflow;
 - план 26 Continuation Policy для auto delivery; базовый follow-up остаётся
   explicit и bounded;
-- план 28 Analysis Kernel для read-only object refs.
 
 ## Registry и lifecycle
 

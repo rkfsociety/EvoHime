@@ -32,6 +32,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./84-1-output-guardrail-pipeline.md)
+- [Этап 2 — runtime-интеграция и recovery](./84-2-output-guardrail-pipeline.md)
+- [Этап 3 — IPC, client projection и UI](./84-3-output-guardrail-pipeline.md)
+- [Этап 4 — verification, release-evidence и закрытие](./84-4-output-guardrail-pipeline.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -44,7 +51,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 - План 57.0 — Plan Artifact: versioned planning contract и явный переход Plan → Execute.
 - План 69.0 — Runtime Intervention Pipeline: Core-owned middleware for agent messages and tool boundaries.
-- План 97.0 — Model Edit Protocol Registry: строгие patch/search-replace стратегии и repair feedback.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

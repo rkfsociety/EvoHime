@@ -37,6 +37,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./94-1-conversation-bridge-adapters.md)
+- [Этап 2 — runtime-интеграция и recovery](./94-2-conversation-bridge-adapters.md)
+- [Этап 3 — IPC, client projection и UI](./94-3-conversation-bridge-adapters.md)
+- [Этап 4 — verification, release-evidence и закрытие](./94-4-conversation-bridge-adapters.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -49,7 +56,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 - План 74.0 — Declarative Agent Component Registry: versioned runtime components with schema-safe loading.
 - План 76.0 — Safe UI Extension Framework: declarative pages, panels и themes без renderer authority.
 - План 85.0 — Customization Inventory: единый каталог Skills, Integrations, Profiles, Workflows и UI Extensions.
-- План 106.0 — Declarative Runtime Components: versioned component config, provider registry и safe rehydration.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

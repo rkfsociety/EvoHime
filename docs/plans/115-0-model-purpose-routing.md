@@ -45,6 +45,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./115-1-model-purpose-routing.md)
+- [Этап 2 — runtime-интеграция и recovery](./115-2-model-purpose-routing.md)
+- [Этап 3 — IPC, client projection и UI](./115-3-model-purpose-routing.md)
+- [Этап 4 — verification, release-evidence и закрытие](./115-4-model-purpose-routing.md)
+
 ## Зависимости
 
 ### Блокирующие

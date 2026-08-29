@@ -35,6 +35,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./93-1-headless-cli-client.md)
+- [Этап 2 — runtime-интеграция и recovery](./93-2-headless-cli-client.md)
+- [Этап 3 — IPC, client projection и UI](./93-3-headless-cli-client.md)
+- [Этап 4 — verification, release-evidence и закрытие](./93-4-headless-cli-client.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -45,7 +52,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 77.0 — Headless Core CLI: non-interactive agent/workflow runs для CI, scripts и NDJSON automation.
-- План 98.0 — Durable Remote Task Bridge: submit/status/cancel protocol для долгих tool и MCP операций.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

@@ -32,6 +32,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./90-1-runtime-stall-guard.md)
+- [Этап 2 — runtime-интеграция и recovery](./90-2-runtime-stall-guard.md)
+- [Этап 3 — IPC, client projection и UI](./90-3-runtime-stall-guard.md)
+- [Этап 4 — verification, release-evidence и закрытие](./90-4-runtime-stall-guard.md)
+
 ## Зависимости
 
 ### Блокирующие

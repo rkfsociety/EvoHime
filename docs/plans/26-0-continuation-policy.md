@@ -12,6 +12,13 @@ turn/workflow result; она не превращается в daemon или shel
 принимается Core на основе typed evidence, immutable policy snapshot, budgets и
 quality gates. Модель может предложить intent, но не может продолжить сама.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./26-1-continuation-policy.md)
+- [Этап 2 — runtime-интеграция и recovery](./26-2-continuation-policy.md)
+- [Этап 3 — IPC, client projection и UI](./26-3-continuation-policy.md)
+- [Этап 4 — verification, release-evidence и закрытие](./26-4-continuation-policy.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -24,9 +31,6 @@ quality gates. Модель может предложить intent, но не м
 
 ### Опциональные
 
-- план 27 retained child contexts для child states/follow-up evidence;
-- план 28 Analysis Kernel для bounded pure analysis между итерациями;
-- план 29 Refinement для последующего анализа quality evidence.
 
 ## Контракт
 

@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./100-1-workspace-sets.md)
+- [Этап 2 — runtime-интеграция и recovery](./100-2-workspace-sets.md)
+- [Этап 3 — IPC, client projection и UI](./100-3-workspace-sets.md)
+- [Этап 4 — verification, release-evidence и закрытие](./100-4-workspace-sets.md)
+
 ## Зависимости
 
 ### Блокирующие

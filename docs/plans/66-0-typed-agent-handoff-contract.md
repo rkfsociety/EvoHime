@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./66-1-typed-agent-handoff-contract.md)
+- [Этап 2 — runtime-интеграция и recovery](./66-2-typed-agent-handoff-contract.md)
+- [Этап 3 — IPC, client projection и UI](./66-3-typed-agent-handoff-contract.md)
+- [Этап 4 — verification, release-evidence и закрытие](./66-4-typed-agent-handoff-contract.md)
+
 ## Зависимости
 
 ### Блокирующие

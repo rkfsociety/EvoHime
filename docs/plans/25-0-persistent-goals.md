@@ -15,6 +15,13 @@ Continuation Policy отдельно решает, разрешено ли пр�
 Operations остаются действующими контурами. Goal не получает capabilities и не
 хранит credentials.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./25-1-persistent-goals.md)
+- [Этап 2 — runtime-интеграция и recovery](./25-2-persistent-goals.md)
+- [Этап 3 — IPC, client projection и UI](./25-3-persistent-goals.md)
+- [Этап 4 — verification, release-evidence и закрытие](./25-4-persistent-goals.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -26,9 +33,6 @@ Operations остаются действующими контурами. Goal н
 
 ### Опциональные
 
-- план 26 Continuation Policy для bounded autonomous next action;
-- план 27 retained child contexts для повторных специализированных runs;
-- план 29 Continual Refinement для evidence из завершённых goals.
 
 ## Контракт и состояния
 

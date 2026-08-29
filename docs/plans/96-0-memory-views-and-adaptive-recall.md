@@ -29,6 +29,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./96-1-memory-views-and-adaptive-recall.md)
+- [Этап 2 — runtime-интеграция и recovery](./96-2-memory-views-and-adaptive-recall.md)
+- [Этап 3 — IPC, client projection и UI](./96-3-memory-views-and-adaptive-recall.md)
+- [Этап 4 — verification, release-evidence и закрытие](./96-4-memory-views-and-adaptive-recall.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -40,8 +47,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 - План 68.0 — Experience Replay Library: episodic trajectories, success/failure retrieval и context injection.
 - План 70.0 — Code Diagnostics Feedback Loop: LSP/compiler evidence и regression delta после agent edits.
-- План 101.0 — Knowledge Source Registry: project/role RAG, source provenance и indexed reference context.
-- План 109.0 — Knowledge Source Registry: versioned RAG corpora, ingestion lineage и role-scoped retrieval.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

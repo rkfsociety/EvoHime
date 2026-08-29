@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./86-1-semantic-repository-map.md)
+- [Этап 2 — runtime-интеграция и recovery](./86-2-semantic-repository-map.md)
+- [Этап 3 — IPC, client projection и UI](./86-3-semantic-repository-map.md)
+- [Этап 4 — verification, release-evidence и закрытие](./86-4-semantic-repository-map.md)
+
 ## Зависимости
 
 ### Блокирующие

@@ -46,6 +46,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./114-1-code-anchored-intent-markers.md)
+- [Этап 2 — runtime-интеграция и recovery](./114-2-code-anchored-intent-markers.md)
+- [Этап 3 — IPC, client projection и UI](./114-3-code-anchored-intent-markers.md)
+- [Этап 4 — verification, release-evidence и закрытие](./114-4-code-anchored-intent-markers.md)
+
 ## Зависимости
 
 ### Блокирующие

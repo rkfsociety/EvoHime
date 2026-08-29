@@ -39,6 +39,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./83-1-reasoning-operator-library.md)
+- [Этап 2 — runtime-интеграция и recovery](./83-2-reasoning-operator-library.md)
+- [Этап 3 — IPC, client projection и UI](./83-3-reasoning-operator-library.md)
+- [Этап 4 — verification, release-evidence и закрытие](./83-4-reasoning-operator-library.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -51,7 +58,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 - План 63.0 — Composable Termination Conditions: first-class stop policies for agent and team runs.
 - План 79.0 — Team Coordinator: capability-aware delegation, dynamic task routing и managerial validation.
-- План 99.0 — Composable Termination Conditions: typed stop algebra для agent/team runs.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

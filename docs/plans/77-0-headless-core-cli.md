@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./77-1-headless-core-cli.md)
+- [Этап 2 — runtime-интеграция и recovery](./77-2-headless-core-cli.md)
+- [Этап 3 — IPC, client projection и UI](./77-3-headless-core-cli.md)
+- [Этап 4 — verification, release-evidence и закрытие](./77-4-headless-core-cli.md)
+
 ## Зависимости
 
 ### Блокирующие

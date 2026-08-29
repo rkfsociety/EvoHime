@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./30-1-workflow-package.md)
+- [Этап 2 — runtime-интеграция и recovery](./30-2-workflow-package.md)
+- [Этап 3 — IPC, client projection и UI](./30-3-workflow-package.md)
+- [Этап 4 — verification, release-evidence и закрытие](./30-4-workflow-package.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -36,9 +43,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 31.0 — Visual Workflow Builder: typed canvas, validation и live runtime inspection.
-- План 32.0 — Conversational Workflow Composer: создание и правка workflow из естественного языка.
-- План 35.0 — Invocation Presets: version-pinned шаблоны запусков без копирования секретов.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

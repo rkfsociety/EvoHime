@@ -27,6 +27,13 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 Имена файлов проверяются по live checkout на этапе реализации и не являются
 заранее утверждённым API.
 
+## Этапы направления
+
+- [Этап 1 — Core-контракт, schema и storage](./56-1-artifact-handoff-registry.md)
+- [Этап 2 — runtime-интеграция и recovery](./56-2-artifact-handoff-registry.md)
+- [Этап 3 — IPC, client projection и UI](./56-3-artifact-handoff-registry.md)
+- [Этап 4 — verification, release-evidence и закрытие](./56-4-artifact-handoff-registry.md)
+
 ## Зависимости
 
 ### Блокирующие
@@ -39,8 +46,6 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 - План 30.0 — Workflow Package: переносимый import/export без секретов и с rebinding зависимостей.
 - План 36.0 — Agent Benchmark Matrix: многократные model/strategy evals и regression tracking.
-- План 68.0 — Experience Replay Library: episodic trajectories, success/failure retrieval и context injection.
-- План 76.0 — Safe UI Extension Framework: declarative pages, panels и themes без renderer authority.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue
