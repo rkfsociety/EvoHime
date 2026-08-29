@@ -28,6 +28,8 @@
 - [ ] Есть risk/side-effect preview.
 - [ ] Draft можно открыть в builder и сохранить как immutable version.
 - [ ] Composer не может расширить permissions или выполнить draft самовольно.
+### Обязательный cross-cutting gate
+
 - [ ] Model/catalog bounds, provenance redaction и unavailable/invalid outcomes доказаны.
 
 ## Обязательная проверка

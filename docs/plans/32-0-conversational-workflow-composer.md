@@ -32,6 +32,7 @@ immutable/versioned записи; для внешних эффектов сох�
 authority: authoritative graph, immutable revision, binding, hash и сохранение
 принадлежат общему Core authoring-контракту Builder-а. Имена файлов проверяются
 по live checkout на этапе реализации и не являются заранее утверждённым API.
+
 ## Этапы направления
 
 - [Этап 1 — Core-контракт, schema и storage](./32-1-conversational-workflow-composer.md)

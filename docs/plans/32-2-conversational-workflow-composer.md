@@ -22,7 +22,9 @@
 ## Реализация
 
 0. Загрузить stage-1 artifacts и закрепить immutable contract/policy/catalog/model-route snapshot для active composition session.
-1. Добавить Core handler/state machine; повторить authorization непосредственно перед effect и связать result/event с correlation + idempotency.
+1. Добавить Core handler/state machine; повторить authorization перед сохранением
+   или Builder handoff и связать result/event с correlation + idempotency. Composer
+   не получает права запускать workflow effect.
 2. Вызвать модель только через Core gateway с bounded catalog snapshot; после ответа выполнить parse -> proposal validation -> binding -> static validation -> risk preview. Модельный вызов не имеет tool/effect authority; provider unavailable, timeout, malformed output и catalog drift дают typed outcome.
 3. Подключить только заявленные registry/workflow/child/provider/tool surfaces для binding/preview. Optional integration даёт typed missing/unavailable, а не выдуманную capability.
 4. Формализовать timeout, cancellation, bounded repair loops, backpressure, partial failure, duplicate/idempotency и stale draft revision; после restart unsaved session теряется предсказуемо, accepted immutable graph читается через Builder storage, без blind retry или автоматического запуска.
@@ -33,8 +35,11 @@
 ### Runtime vertical slice
 
 - Entrypoint: `crates/evohime-core/src/conversational_workflow_composer.rs` + handler в `crates/evohime-core/src/lib.rs`; сервис `ConversationalWorkflowComposerService` должен выполнять `validate → policy → bounded operation → typed result/event`.
-- На старте run загрузить exact contract/policy snapshot и проверить correlation, idempotency, budget, cancellation и capability grant непосредственно перед effect.
-- Для каждого внешнего/необратимого вызова записать before/after-dispatch evidence; unknown outcome переводить в reconciliation, без blind retry.
+- На старте composition session загрузить exact contract/policy/catalog/model-route
+  snapshot и проверить correlation, idempotency, budget и cancellation.
+- Для model dispatch записать bounded before/after evidence; provider/model
+  unknown outcome переводить в typed unavailable/unknown, без blind retry. Никакой
+  внешний workflow effect на этом этапе не запускается.
 - Тесты: `crates/evohime-core/tests/conversational_workflow_composer_recovery.rs` — timeout/cancel, duplicate, stale version/lease, crash до/после dispatch, restart и optional-unavailable.
 
 ### Acceptance-to-runtime matrix
@@ -47,8 +52,12 @@
 
 ### Recovery contract
 
-- Durable transitions восстанавливаются replay/reconciliation; transient work после restart получает typed `unknown`/`unavailable`, а не повтор side effect.
-- Fault injection должна доказать отсутствие duplicate effect, потерю approval, обход policy или расширение capability set.
+- Durable accepted definitions восстанавливаются через Builder storage; unsaved
+  composition после restart получает typed discarded/unavailable outcome. Model
+  dispatch не повторяется вслепую.
+- Fault injection должна доказать отсутствие duplicate model dispatch, потери
+  approval, обхода policy или расширения capability set и отсутствие запуска
+  workflow до explicit Save/Run.
 
 ## Критерии выхода
 
