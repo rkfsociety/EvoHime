@@ -26,6 +26,35 @@
 4. Проверить reconnect, replay gap, duplicate event, stale/denied action и unavailable optional backend.
 5. Привязать UI/CLI trace к Core event/provenance IDs без запрещённых payload.
 
+### Protocol and projection contract
+
+- После проверки свободных tags добавить additive versioned commands/events:
+  list/get candidate metadata, evaluate/re-evaluate, approve, reject, activate,
+  rollback и list history. Все mutation requests несут correlation,
+  idempotency key, expected revision и при необходимости approval token.
+- Projection включает schema version, candidate id/revision, kind/target,
+  owner scope, lifecycle, bounded counts, confidence, evaluation status,
+  conflict/error code, before/after hashes и provenance ids. Statement,
+  transcript, secret/sensitive body и hidden reasoning не передаются.
+- Electron main/preload только валидирует bounded payload и маршрутизирует
+  Core-команды; renderer `OperationsPanel` отображает очередь/history/diff и
+  явные actions, но не считает evidence threshold, не решает policy и не
+  вызывает target registry напрямую.
+- Reconnect/replay gap, duplicate event, stale action, denied approval,
+  deleted source и unavailable PromptRule target должны отображаться typed
+  состояниями, а не исчезать из очереди.
+- Focused tests должны покрыть generated protocol, adapter allowlist,
+  redaction/bounds, replay/resync, idempotency и UI projection.
+
+### Acceptance-to-projection matrix
+
+- `R29-C02`/`R29-C03` → version/revision, counts, conflict and typed eval
+  projection.
+- `R29-C05`/`R29-C06` → approve/reject/activate/rollback actions with stale and
+  idempotency handling.
+- `R29-C07`/`R29-C08` → authenticated additive protocol, redaction and replay
+  tests.
+
 ## Критерии выхода
 
 - [ ] Новая surface additive и authenticated.
@@ -33,6 +62,8 @@
 - [ ] Renderer/CLI получает только bounded projection.
 - [ ] Reconnect/replay и stale actions предсказуемы.
 - [ ] UI показывает фактический Core state.
+- [ ] Queue/history/diff bounded, redacted и показывает unavailable/conflict/
+  stale outcomes без локального решения policy.
 
 ## Не входит
 

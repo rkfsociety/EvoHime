@@ -38,7 +38,8 @@ activation → observation/rollback`. Агент не может через refi
 
 ## Candidate contract и lifecycle
 
-Ввести versioned `RefinementCandidateV1`: id, kind, scope, status, title,
+Ввести versioned `RefinementCandidateV1`: id, immutable revision, kind, target,
+scope, owner scope, status, title,
 rationale, proposed content, source task ids, evidence refs, conflicting refs,
 confidence, author, created/evaluated/activated timestamps, optional supersedes и
 content hash. `kind` расширяемый (`Memory`, `Skill`, `PromptRule`, позже
@@ -48,6 +49,24 @@ Scope: `session`, `workspace`, `global`. Более широкий scope тре�
 строгой policy. Состояния: `Draft → Evaluating → Proposed → Approved → Active →
 Superseded/RolledBack`, а также `Rejected/FailedEvaluation`. Все переходы
 durable, append-only и содержат actor/policy/evidence refs.
+
+### Evidence admission и boundedness
+
+Candidate создаётся только из завершённой task trajectory либо явного действия
+пользователя. Core нормализует observation в bounded fingerprint `pattern_key`,
+привязанный к owner scope, kind и target; одинаковый эпизод не считается
+независимым подтверждением. Для каждого kind/scope до реализации фиксируются в
+policy минимальное число наблюдений, минимальное число независимых task ids,
+окно времени, лимит кандидатов на scope, максимальные размеры
+title/content/evidence refs и retention. Если порог не достигнут, наблюдение
+остаётся evidence, но candidate не создаётся; threshold не выводится моделью и
+не меняется самим candidate.
+
+Каждая evidence ref должна иметь durable source id, source kind, owner scope,
+content hash, observed-at и redaction/sensitivity metadata. Core проверяет, что
+source существует и не был удалён или отозван, а conflicting evidence нельзя
+считать подтверждением. При удалении источника candidate переводится в
+`FailedEvaluation`/`Rejected` с typed reason, а не остаётся активируемым.
 
 Reflection получает Core-owned projection: objective, decisions, tool failures,
 user corrections, test/gate results, child evidence, result и активные
@@ -67,6 +86,12 @@ shell/network или изменить security policy.
 workspace memory требует user approval либо строгой reversible policy; global
 memory/skill/prompt rule требует явного подтверждения. Любая запись проходит
 `SkillRegistry`/memory API и не пишет файл или registry напрямую из model output.
+
+Для `PromptRule` должен существовать отдельный Core-owned versioned registry
+либо typed adapter к владельцу prompt policy; до его появления этот target
+возвращает `unavailable` и не активируется обходным путём. Ни один candidate не
+получает право менять system prompt, capability registry, approval policy или
+tool routing policy.
 
 Activation сохраняет before/after version, content hash, actor, evidence,
 evaluation result и rollback ref. Наблюдение после activation может создать
@@ -106,6 +131,25 @@ reject, activate и rollback идемпотентны, повторно пров
 - refinement не расширяет capabilities и не меняет security policy;
 - UI показывает bounded queue/history/diff без sensitive raw content;
 - provenance переживает restart, а tests покрывают memory/skill/prompt paths.
+
+### Acceptance IDs
+
+- `R29-C01` — repeated independent evidence создаёт candidate, единичное
+  наблюдение не создаёт global rule;
+- `R29-C02` — candidate version, scope, provenance, hash, owner и lifecycle
+  durable и bounded;
+- `R29-C03` — duplicate/conflict/expired-or-deleted evidence и evaluation
+  failure дают typed non-active outcome;
+- `R29-C04` — activation проходит только через Core-owned Memory API,
+  `SkillRegistry` или versioned prompt-rule adapter и exact policy snapshot;
+- `R29-C05` — global/high-risk activation требует explicit approval, а
+  unsupported target даёт `unavailable`;
+- `R29-C06` — before/after revision, rollback и observation сохраняются без
+  blind retry или in-place mutation;
+- `R29-C07` — authenticated IPC/UI показывает только bounded metadata/diff и
+  повторяемые user actions;
+- `R29-C08` — restart, retention, redaction и adversarial self-escalation
+  подтверждены reproducible evidence.
 
 ## Не входит
 

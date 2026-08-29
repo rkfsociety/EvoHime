@@ -28,6 +28,22 @@
 - [ ] UI показывает bounded queue/history/diff без sensitive raw content.
 - [ ] provenance переживает restart, а tests покрывают memory/skill/prompt paths.
 
+### Evidence matrix
+
+- `R29-C01`: fixtures с одной ошибкой, повтором в одной задаче, независимыми
+  task ids и threshold/retention policy.
+- `R29-C02`: contract/hash/schema/storage tests с immutable revision и bounds.
+- `R29-C03`: duplicate, conflict, revoked/deleted source, insufficient
+  evidence, security rejection и evaluation failure.
+- `R29-C04`/`R29-C05`: memory API, SkillRegistry и PromptRule adapter; explicit
+  approval для global/high-risk; typed `unavailable` для отсутствующего target.
+- `R29-C06`: crash до/после dispatch, stale revision, idempotent replay,
+  before/after history и rollback без blind retry.
+- `R29-C07`: authenticated IPC, generated protocol, reconnect/replay gap,
+  redacted renderer projection и stale action.
+- `R29-C08`: secret/sensitive leakage, self-escalation, raw transcript,
+  retention/forget, restart provenance и package/release evidence.
+
 ## Обязательная проверка
 
 1. Unit/contract tests для schema, hash, transitions, bounds и errors.
@@ -50,6 +66,9 @@
 - [ ] Blocking dependencies закрыты.
 - [ ] Ссылки и версии соответствуют checkout.
 - [ ] Release bundle redacted.
+- [ ] Evidence содержит команды, commit, schema/protocol versions, test IDs,
+  hashes и typed outcomes; отсутствуют credentials, raw transcript, sensitive
+  candidate body и абсолютные пути.
 
 ## Связанный issue
 
