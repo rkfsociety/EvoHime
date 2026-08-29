@@ -31,10 +31,14 @@ export function ContinuationPanel({ connection, events }: Props): React.JSX.Elem
       {runs.map((run) => {
         const runId = String('runId' in run ? run.runId : run.run_id)
         const state = String(run.state ?? ('decision' in run ? run.decision : 'unknown'))
+        const gates = 'gates' in run && Array.isArray(run.gates) ? run.gates as readonly { gateId?: string; status?: string }[] : []
+        const stopReason = 'stopReason' in run && typeof run.stopReason === 'string' ? run.stopReason : ''
         const stopped = ['stopped', 'completed', 'blocked', 'failed', 'budget_limited'].includes(state)
         return <article className="stack-list__item" key={runId}>
           <div><strong>{runId}</strong><span className="panel__muted"> · {state}</span></div>
           <div className="panel__muted">Продолжений: {String('continuationIndex' in run ? run.continuationIndex : run.continuation_index ?? '—')} · turns: {String('modelTurns' in run ? run.modelTurns : run.used_model_turns ?? '—')}</div>
+          {gates.length > 0 ? <div className="panel__muted">Проверки: {gates.map((gate) => `${gate.gateId ?? ''}: ${gate.status ?? ''}`).join(', ')}</div> : null}
+          {stopReason ? <div className="panel__muted">Причина: {stopReason}</div> : null}
           {!stopped && api ? <button type="button" onClick={() => { void api.invoke('core.stopContinuation', { runId, expectedState: 'running', idempotencyKey: `ui-stop-${runId}-${Date.now()}` }) }}>Остановить</button> : null}
           {'error_code' in run && typeof run.error_code === 'string' && run.error_code ? <div className="error-text">{run.error_code}</div> : null}
         </article>

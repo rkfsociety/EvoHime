@@ -4275,6 +4275,21 @@ pub trait TaskExecutor: Send + Sync {
         self.execute_in_workspace(task_id, prompt, workspace_root, cancellation, events)
     }
 
+    fn execute_continuation_gate(
+        &self,
+        gate: crate::continuation::GateV1,
+        task_id: String,
+        workspace_root: PathBuf,
+        cancellation: CancellationToken,
+    ) -> BoxFuture<'static, crate::continuation::GateOutcome> {
+        let _ = (gate, task_id, workspace_root, cancellation);
+        Box::pin(async {
+            crate::continuation::GateOutcome::Unavailable {
+                code: "gate_executor_unavailable".into(),
+            }
+        })
+    }
+
     /// Ambient-извлечение по закрытому эпизоду (04.6).
     ///
     /// Отдельный вход, а не задача: у эпизода нет ни промпта, ни воркспейса,
@@ -8421,6 +8436,63 @@ impl TaskExecutor for ToolAgent {
         )
     }
 
+    fn execute_continuation_gate(
+        &self,
+        gate: crate::continuation::GateV1,
+        task_id: String,
+        workspace_root: PathBuf,
+        cancellation: CancellationToken,
+    ) -> BoxFuture<'static, crate::continuation::GateOutcome> {
+        let tools = self.tools.clone();
+        Box::pin(async move {
+            if !matches!(gate.kind, crate::continuation::GateKind::Tool) {
+                return crate::continuation::GateOutcome::Unavailable {
+                    code: "gate_kind_not_supported_by_task_executor".into(),
+                };
+            }
+            let input = match gate.args {
+                crate::continuation::GateArgs::Empty => serde_json::json!({}),
+                crate::continuation::GateArgs::Named { values } => {
+                    let mut object = serde_json::Map::new();
+                    for value in values {
+                        object.insert(value.key, serde_json::Value::String(value.value));
+                    }
+                    serde_json::Value::Object(object)
+                }
+            };
+            let context = ToolContext {
+                workspace_root,
+                task_id: uuid::Uuid::parse_str(&task_id).unwrap_or_else(|_| uuid::Uuid::new_v4()),
+                session_id: None,
+                progress_tx: None,
+            };
+            match tools
+                .execute_with_cancellation(&context, &gate.capability_ref, input, cancellation)
+                .await
+            {
+                Ok(_) => crate::continuation::GateOutcome::Passed {
+                    evidence_ref: format!("gate:{}", gate.id),
+                },
+                Err(evohime_tool_runtime::ToolError::NeedsApproval(details)) => {
+                    crate::continuation::GateOutcome::PendingApproval {
+                        approval_id: details.approval_id.to_string(),
+                    }
+                }
+                Err(evohime_tool_runtime::ToolError::TimedOut(_))
+                | Err(evohime_tool_runtime::ToolError::Execution(_)) => {
+                    crate::continuation::GateOutcome::Failed {
+                        retryable: true,
+                        code: "gate_execution_failed".into(),
+                    }
+                }
+                Err(error) => crate::continuation::GateOutcome::Failed {
+                    retryable: false,
+                    code: error.to_string(),
+                },
+            }
+        })
+    }
+
     fn execute_in_workspace(
         &self,
         task_id: String,
@@ -8870,6 +8942,16 @@ impl TaskCoordinator {
                 let journal = state_guard.journal.clone();
                 let workspace_root =
                     workspace_root.unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+                if let Some(journal) = &state_guard.journal {
+                    let database = journal.database().lock().await;
+                    let _ = evohime_local_storage::continuation_store::attach_task_context(
+                        database.connection(),
+                        &task_id,
+                        &prompt,
+                        &workspace_root.to_string_lossy(),
+                        crate::task_memory::now_millis() as i64,
+                    );
+                }
                 drop(state_guard);
                 tokio::spawn(async move {
                     let intent_hash = crate::research::sha256_hex(prompt.as_bytes());
@@ -9063,6 +9145,100 @@ impl TaskCoordinator {
                         };
                         continuation_index = continuation_index.saturating_add(1);
                         let success = result.is_ok();
+                        let mut required_gates_passed = true;
+                        let mut pending_approval = false;
+                        let mut pending_approval_id: Option<String> = None;
+                        let mut gate_unknown = false;
+                        let mut gate_non_retryable = false;
+                        if success {
+                            if let Some((_, policy)) = &continuation_context {
+                                for gate in &policy.gates {
+                                    let outcome = match executor.as_ref() {
+                                        Some(executor) => {
+                                            executor
+                                                .execute_continuation_gate(
+                                                    gate.clone(),
+                                                    task_id.clone(),
+                                                    workspace_root.clone(),
+                                                    cancellation.clone(),
+                                                )
+                                                .await
+                                        }
+                                        None => crate::continuation::GateOutcome::Unavailable {
+                                            code: "gate_executor_unavailable".into(),
+                                        },
+                                    };
+                                    if let Some((run, _)) = &continuation_context {
+                                        let (status, evidence_ref, error_code) = match &outcome {
+                                            crate::continuation::GateOutcome::Passed {
+                                                evidence_ref,
+                                            } => ("passed", Some(evidence_ref.clone()), None),
+                                            crate::continuation::GateOutcome::PendingApproval {
+                                                ..
+                                            } => (
+                                                "pending_approval",
+                                                None,
+                                                Some("approval_required".into()),
+                                            ),
+                                            crate::continuation::GateOutcome::Failed {
+                                                code,
+                                                ..
+                                            } => ("failed", None, Some(code.clone())),
+                                            crate::continuation::GateOutcome::Unavailable {
+                                                code,
+                                            } => ("unavailable", None, Some(code.clone())),
+                                        };
+                                        let database = journal
+                                            .as_ref()
+                                            .expect("continuation has a journal")
+                                            .database()
+                                            .lock()
+                                            .await;
+                                        let _ = evohime_local_storage::continuation_store::record_gate_result(
+                                            database.connection(),
+                                            &evohime_local_storage::continuation_store::GateResultRecord {
+                                                run_id: run.run_id.clone(),
+                                                gate_id: gate.id.clone(),
+                                                attempt_index,
+                                                status: status.into(),
+                                                evidence_ref,
+                                                error_code,
+                                                created_at_ms: crate::task_memory::now_millis() as i64,
+                                            },
+                                        );
+                                    }
+                                    match outcome {
+                                        crate::continuation::GateOutcome::Passed { .. } => {}
+                                        crate::continuation::GateOutcome::PendingApproval {
+                                            approval_id,
+                                        } => {
+                                            required_gates_passed = false;
+                                            pending_approval = true;
+                                            pending_approval_id = Some(approval_id);
+                                            break;
+                                        }
+                                        crate::continuation::GateOutcome::Failed {
+                                            retryable,
+                                            ..
+                                        } => {
+                                            required_gates_passed = false;
+                                            gate_non_retryable |= !retryable;
+                                            gate_unknown |= retryable;
+                                            break;
+                                        }
+                                        crate::continuation::GateOutcome::Unavailable {
+                                            ..
+                                        } => {
+                                            required_gates_passed = false;
+                                            gate_unknown = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            required_gates_passed = false;
+                        }
                         let decision = if let Some((run, policy)) = &continuation_context {
                             let database = journal
                                 .as_ref()
@@ -9083,12 +9259,28 @@ impl TaskCoordinator {
                                 &result_json,
                                 crate::task_memory::now_millis() as i64,
                             );
+                            let goal_criteria_complete =
+                                policy.linked_goal_id.as_ref().is_none_or(|goal_id| {
+                                    evohime_local_storage::goal::GoalStore::new(
+                                        database.connection(),
+                                    )
+                                    .get(goal_id)
+                                    .ok()
+                                    .flatten()
+                                    .is_some_and(|goal| {
+                                        matches!(
+                                            goal.status,
+                                            evohime_local_storage::goal::GoalStatus::Completed
+                                        ) && goal.remaining_criteria.is_empty()
+                                    })
+                                });
                             let decision = crate::continuation::decide(
                                 &crate::continuation::DecisionEvidence {
-                                    required_gates_passed: policy.gates.is_empty(),
-                                    goal_criteria_complete: policy.linked_goal_id.is_none(),
-                                    unknown_outcome: result.is_err(),
-                                    non_retryable_failure: result.is_err(),
+                                    required_gates_passed,
+                                    goal_criteria_complete,
+                                    pending_approval,
+                                    unknown_outcome: result.is_err() || gate_unknown,
+                                    non_retryable_failure: result.is_err() || gate_non_retryable,
                                     continuation_index: continuation_index as u32,
                                     max_continuations: run.max_continuations as u32,
                                     model_turns: continuation_index as u32,
@@ -9107,6 +9299,28 @@ impl TaskCoordinator {
                                 crate::continuation::Decision::Blocked => "blocked",
                                 crate::continuation::Decision::Continue => "running",
                             };
+                            if let Some(approval_id) = pending_approval_id {
+                                let _ = events.send(CoreEvent::ApprovalRequired {
+                                    task_id: task_id.clone(),
+                                    approval_id,
+                                    tool_name: "continuation_gate".into(),
+                                    permission: "continuation_gate".into(),
+                                    scope: workspace_root
+                                        .to_string_lossy()
+                                        .chars()
+                                        .take(256)
+                                        .collect(),
+                                    preview: evohime_permissions::ApprovalPreview {
+                                        kind: "continuation_gate".into(),
+                                        summary: "Continuation gate requires user approval".into(),
+                                        command: None,
+                                        cwd: None,
+                                        path: None,
+                                        details: None,
+                                        truncated: false,
+                                    },
+                                });
+                            }
                             if next_state != "running" {
                                 let _ = evohime_local_storage::continuation_store::transition_run(
                                     database.connection(),

@@ -25,6 +25,8 @@ pub struct RunRecord {
     pub run_id: String,
     pub idempotency_key: String,
     pub task_id: String,
+    pub prompt: Option<String>,
+    pub workspace_path: Option<String>,
     pub owner_scope: String,
     pub policy_id: String,
     pub policy_revision: i64,
@@ -56,6 +58,17 @@ pub struct AttemptRecord {
     pub created_at_ms: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct GateResultRecord {
+    pub run_id: String,
+    pub gate_id: String,
+    pub attempt_index: i64,
+    pub status: String,
+    pub evidence_ref: Option<String>,
+    pub error_code: Option<String>,
+    pub created_at_ms: i64,
+}
+
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS continuation_policies (
@@ -76,6 +89,8 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
             run_id TEXT PRIMARY KEY NOT NULL,
             idempotency_key TEXT NOT NULL,
             task_id TEXT NOT NULL,
+            prompt TEXT,
+            workspace_path TEXT,
             owner_scope TEXT NOT NULL,
             policy_id TEXT NOT NULL,
             policy_revision INTEGER NOT NULL,
@@ -113,8 +128,72 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_continuation_attempts_run
             ON continuation_attempts(run_id, created_at_ms);
+        CREATE TABLE IF NOT EXISTS continuation_actions (
+            run_id TEXT NOT NULL REFERENCES continuation_runs(run_id) ON DELETE CASCADE,
+            idempotency_key TEXT NOT NULL,
+            action TEXT NOT NULL,
+            result_json BLOB NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            PRIMARY KEY(run_id, idempotency_key)
+        );
+        CREATE TABLE IF NOT EXISTS continuation_gate_results (
+            run_id TEXT NOT NULL REFERENCES continuation_runs(run_id) ON DELETE CASCADE,
+            gate_id TEXT NOT NULL,
+            attempt_index INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            evidence_ref TEXT,
+            error_code TEXT,
+            created_at_ms INTEGER NOT NULL,
+            PRIMARY KEY(run_id, gate_id, attempt_index)
+        );
         ",
     )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn apply_transition_action(
+    connection: &mut Connection,
+    run_id: &str,
+    idempotency_key: &str,
+    action: &str,
+    expected_state: &str,
+    next_state: &str,
+    stop_reason: &str,
+    now_ms: i64,
+) -> rusqlite::Result<Vec<u8>> {
+    let transaction = connection.transaction()?;
+    if let Some(result) = transaction
+        .query_row(
+            "SELECT result_json FROM continuation_actions
+             WHERE run_id=?1 AND idempotency_key=?2",
+            params![run_id, idempotency_key],
+            |row| row.get::<_, Vec<u8>>(0),
+        )
+        .optional()?
+    {
+        return Ok(result);
+    }
+    let applied = transaction.execute(
+        "UPDATE continuation_runs SET state=?3,stop_reason=?4,updated_at_ms=?5
+         WHERE run_id=?1 AND state=?2",
+        params![run_id, expected_state, next_state, stop_reason, now_ms],
+    )? == 1;
+    let result = serde_json::to_vec(&serde_json::json!({
+        "run_id": run_id,
+        "action": action,
+        "applied": applied,
+        "deduplicated": false,
+        "error_code": if applied { "" } else { "stale_action" }
+    }))
+    .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    transaction.execute(
+        "INSERT INTO continuation_actions
+         (run_id,idempotency_key,action,result_json,created_at_ms)
+         VALUES (?1,?2,?3,?4,?5)",
+        params![run_id, idempotency_key, action, result, now_ms],
+    )?;
+    transaction.commit()?;
+    Ok(result)
 }
 
 pub fn save_policy(connection: &Connection, record: &PolicyRecord) -> rusqlite::Result<()> {
@@ -175,14 +254,16 @@ pub fn get_policy(
 pub fn create_run(connection: &Connection, record: &RunRecord) -> rusqlite::Result<()> {
     connection.execute(
         "INSERT INTO continuation_runs
-         (run_id,idempotency_key,task_id,owner_scope,policy_id,policy_revision,policy_hash,goal_id,goal_version,state,
+         (run_id,idempotency_key,task_id,prompt,workspace_path,owner_scope,policy_id,policy_revision,policy_hash,goal_id,goal_version,state,
           continuation_index,max_continuations,max_model_turns,used_model_turns,token_budget,
           token_used,cost_budget_micros,cost_used_micros,stop_reason,created_at_ms,updated_at_ms)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21)",
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23)",
         params![
             record.run_id,
             record.idempotency_key,
             record.task_id,
+            record.prompt,
+            record.workspace_path,
             record.owner_scope,
             record.policy_id,
             record.policy_revision,
@@ -209,7 +290,7 @@ pub fn create_run(connection: &Connection, record: &RunRecord) -> rusqlite::Resu
 pub fn get_run(connection: &Connection, run_id: &str) -> rusqlite::Result<Option<RunRecord>> {
     connection
         .query_row(
-            "SELECT run_id,idempotency_key,task_id,owner_scope,policy_id,policy_revision,policy_hash,goal_id,goal_version,
+            "SELECT run_id,idempotency_key,task_id,prompt,workspace_path,owner_scope,policy_id,policy_revision,policy_hash,goal_id,goal_version,
                     state,continuation_index,max_continuations,max_model_turns,used_model_turns,
                     token_budget,token_used,cost_budget_micros,cost_used_micros,stop_reason,
                     created_at_ms,updated_at_ms
@@ -220,24 +301,26 @@ pub fn get_run(connection: &Connection, run_id: &str) -> rusqlite::Result<Option
                     run_id: row.get(0)?,
                     idempotency_key: row.get(1)?,
                     task_id: row.get(2)?,
-                    owner_scope: row.get(3)?,
-                    policy_id: row.get(4)?,
-                    policy_revision: row.get(5)?,
-                    policy_hash: row.get(6)?,
-                    goal_id: row.get(7)?,
-                    goal_version: row.get(8)?,
-                    state: row.get(9)?,
-                    continuation_index: row.get(10)?,
-                    max_continuations: row.get(11)?,
-                    max_model_turns: row.get(12)?,
-                    used_model_turns: row.get(13)?,
-                    token_budget: row.get(14)?,
-                    token_used: row.get(15)?,
-                    cost_budget_micros: row.get(16)?,
-                    cost_used_micros: row.get(17)?,
-                    stop_reason: row.get(18)?,
-                    created_at_ms: row.get(19)?,
-                    updated_at_ms: row.get(20)?,
+                    prompt: row.get(3)?,
+                    workspace_path: row.get(4)?,
+                    owner_scope: row.get(5)?,
+                    policy_id: row.get(6)?,
+                    policy_revision: row.get(7)?,
+                    policy_hash: row.get(8)?,
+                    goal_id: row.get(9)?,
+                    goal_version: row.get(10)?,
+                    state: row.get(11)?,
+                    continuation_index: row.get(12)?,
+                    max_continuations: row.get(13)?,
+                    max_model_turns: row.get(14)?,
+                    used_model_turns: row.get(15)?,
+                    token_budget: row.get(16)?,
+                    token_used: row.get(17)?,
+                    cost_budget_micros: row.get(18)?,
+                    cost_used_micros: row.get(19)?,
+                    stop_reason: row.get(20)?,
+                    created_at_ms: row.get(21)?,
+                    updated_at_ms: row.get(22)?,
                 })
             },
         )
@@ -273,6 +356,21 @@ pub fn get_run_by_task(
         )
         .optional()?;
     run_id.map_or(Ok(None), |id| get_run(connection, &id))
+}
+
+pub fn attach_task_context(
+    connection: &Connection,
+    task_id: &str,
+    prompt: &str,
+    workspace_path: &str,
+    now_ms: i64,
+) -> rusqlite::Result<bool> {
+    let changed = connection.execute(
+        "UPDATE continuation_runs SET prompt=?2,workspace_path=?3,updated_at_ms=?4
+         WHERE task_id=?1 AND state='running' AND prompt IS NULL",
+        params![task_id, prompt, workspace_path, now_ms],
+    )?;
+    Ok(changed == 1)
 }
 
 pub fn list_running_runs(connection: &Connection) -> rusqlite::Result<Vec<RunRecord>> {
@@ -445,6 +543,55 @@ pub fn list_attempts(
     rows.collect()
 }
 
+pub fn record_gate_result(
+    connection: &Connection,
+    record: &GateResultRecord,
+) -> rusqlite::Result<()> {
+    connection.execute(
+        "INSERT OR REPLACE INTO continuation_gate_results
+         (run_id,gate_id,attempt_index,status,evidence_ref,error_code,created_at_ms)
+         VALUES (?1,?2,?3,?4,?5,?6,?7)",
+        params![
+            record.run_id,
+            record.gate_id,
+            record.attempt_index,
+            record.status,
+            record.evidence_ref,
+            record.error_code,
+            record.created_at_ms
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn list_latest_gate_results(
+    connection: &Connection,
+    run_id: &str,
+) -> rusqlite::Result<Vec<GateResultRecord>> {
+    let mut statement = connection.prepare(
+        "SELECT run_id,gate_id,attempt_index,status,evidence_ref,error_code,created_at_ms
+         FROM continuation_gate_results
+         WHERE run_id=?1 AND attempt_index IN
+           (SELECT MAX(attempt_index) FROM continuation_gate_results
+            WHERE run_id=?1 GROUP BY gate_id)
+         ORDER BY gate_id LIMIT 32",
+    )?;
+    let rows = statement
+        .query_map([run_id], |row| {
+            Ok(GateResultRecord {
+                run_id: row.get(0)?,
+                gate_id: row.get(1)?,
+                attempt_index: row.get(2)?,
+                status: row.get(3)?,
+                evidence_ref: row.get(4)?,
+                error_code: row.get(5)?,
+                created_at_ms: row.get(6)?,
+            })
+        })?
+        .collect();
+    rows
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -468,6 +615,8 @@ mod tests {
             run_id: "r1".into(),
             idempotency_key: "i1".into(),
             task_id: "t1".into(),
+            prompt: None,
+            workspace_path: None,
             owner_scope: "w1".into(),
             policy_id: "p1".into(),
             policy_revision: 1,
@@ -495,6 +644,23 @@ mod tests {
         install_schema(&connection).unwrap();
         save_policy(&connection, &policy()).unwrap();
         create_run(&connection, &run()).unwrap();
+        assert_eq!(
+            get_run_by_idempotency(&connection, "w1", "i1")
+                .unwrap()
+                .unwrap()
+                .run_id,
+            "r1"
+        );
+        assert!(attach_task_context(&connection, "t1", "redacted prompt", "workspace", 2).unwrap());
+        assert_eq!(
+            get_run(&connection, "r1")
+                .unwrap()
+                .unwrap()
+                .prompt
+                .as_deref(),
+            Some("redacted prompt")
+        );
+        assert!(!attach_task_context(&connection, "t1", "other", "workspace", 3).unwrap());
         assert!(reserve_attempt(&mut connection, "r1", "g1", "f1", 20, 2, 2).unwrap());
         assert!(!reserve_attempt(&mut connection, "r1", "g1", "f1", 20, 2, 3).unwrap());
         assert_eq!(get_run(&connection, "r1").unwrap().unwrap().token_used, 20);
@@ -503,11 +669,33 @@ mod tests {
 
     #[test]
     fn stop_is_compare_and_set() {
-        let connection = Connection::open_in_memory().unwrap();
+        let mut connection = Connection::open_in_memory().unwrap();
         install_schema(&connection).unwrap();
         save_policy(&connection, &policy()).unwrap();
         create_run(&connection, &run()).unwrap();
-        assert!(stop_run(&connection, "r1", "running", "user_stop", 2).unwrap());
-        assert!(!stop_run(&connection, "r1", "running", "again", 3).unwrap());
+        let first = apply_transition_action(
+            &mut connection,
+            "r1",
+            "stop-1",
+            "stop",
+            "running",
+            "stopped",
+            "user_stop",
+            2,
+        )
+        .unwrap();
+        let duplicate = apply_transition_action(
+            &mut connection,
+            "r1",
+            "stop-1",
+            "stop",
+            "running",
+            "stopped",
+            "user_stop",
+            3,
+        )
+        .unwrap();
+        assert_eq!(first, duplicate);
+        assert!(!stop_run(&connection, "r1", "running", "again", 4).unwrap());
     }
 }

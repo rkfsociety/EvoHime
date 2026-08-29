@@ -256,6 +256,14 @@ pub enum Decision {
     StopUser,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GateOutcome {
+    Passed { evidence_ref: String },
+    PendingApproval { approval_id: String },
+    Failed { retryable: bool, code: String },
+    Unavailable { code: String },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DecisionEvidence {
     pub required_gates_passed: bool,
@@ -295,7 +303,9 @@ pub fn decide(evidence: &DecisionEvidence) -> Decision {
     {
         return Decision::BudgetLimited;
     }
-    if evidence.no_progress_cycles >= evidence.max_no_progress_cycles {
+    if evidence.max_no_progress_cycles > 0
+        && evidence.no_progress_cycles >= evidence.max_no_progress_cycles
+    {
         return Decision::Blocked;
     }
     if evidence.retryable_failure && (!evidence.workspace_changed) {
@@ -376,5 +386,83 @@ mod tests {
             }),
             Decision::Complete
         );
+    }
+
+    #[test]
+    fn decision_covers_each_terminal_outcome() {
+        let cases = [
+            (
+                DecisionEvidence {
+                    pending_approval: true,
+                    ..Default::default()
+                },
+                Decision::PauseForApproval,
+            ),
+            (
+                DecisionEvidence {
+                    unknown_outcome: true,
+                    ..Default::default()
+                },
+                Decision::Blocked,
+            ),
+            (
+                DecisionEvidence {
+                    model_turns: 2,
+                    max_model_turns: 2,
+                    ..Default::default()
+                },
+                Decision::BudgetLimited,
+            ),
+            (
+                DecisionEvidence {
+                    non_retryable_failure: true,
+                    ..Default::default()
+                },
+                Decision::StopFailed,
+            ),
+            (
+                DecisionEvidence {
+                    user_stop: true,
+                    ..Default::default()
+                },
+                Decision::StopUser,
+            ),
+            (
+                DecisionEvidence {
+                    required_gates_passed: true,
+                    goal_criteria_complete: true,
+                    ..Default::default()
+                },
+                Decision::Complete,
+            ),
+            (
+                DecisionEvidence {
+                    retryable_failure: true,
+                    workspace_changed: false,
+                    max_continuations: 10,
+                    max_model_turns: 10,
+                    ..Default::default()
+                },
+                Decision::Blocked,
+            ),
+            (
+                DecisionEvidence {
+                    max_continuations: 10,
+                    max_model_turns: 10,
+                    ..Default::default()
+                },
+                Decision::Continue,
+            ),
+        ];
+        for (evidence, expected) in cases {
+            assert_eq!(decide(&evidence), expected);
+        }
+    }
+
+    #[test]
+    fn policy_rejects_budget_overflow() {
+        let mut value = policy();
+        value.budget.max_tokens = Some(i64::MAX as u64 + 1);
+        assert!(matches!(value.seal(), Err(ContractError::Invalid(_))));
     }
 }

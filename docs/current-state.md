@@ -28,7 +28,7 @@ effect, а Goal не создаётся автоматически из кажд
 Комплект планов 25.0–25.4 удалён после полного Rust/Electron verification.
 
 План 26 находится в реализации. Уже добавлены Core contract/decision table,
-schema v35 с durable continuation policy/run/attempt storage, task binding,
+schema v36 с durable continuation policy/run/attempt storage, task binding,
 bounded budget reservation, authenticated IPC tags 151–156 и Electron
 `ContinuationPanel`.
 Policy snapshot, scope, typed gates и duplicate fingerprint валидируются Core.

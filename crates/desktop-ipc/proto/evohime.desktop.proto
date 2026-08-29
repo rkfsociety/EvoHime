@@ -1439,6 +1439,16 @@ message ContinuationProjection {
   uint64 cost_used_micros = 13;
   string stop_reason = 14;
   string error_code = 15;
+  repeated ContinuationGateProjection gates = 16;
+}
+
+message ContinuationGateProjection {
+  string gate_id = 1;
+  string kind = 2;
+  string capability_ref = 3;
+  string status = 4;
+  string evidence_ref = 5;
+  string error_code = 6;
 }
 
 message ContinuationActionResult {

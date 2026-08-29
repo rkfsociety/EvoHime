@@ -360,6 +360,36 @@ fn workflow_start_failure(code: &str) -> serde_json::Value {
     })
 }
 
+fn continuation_public_json(
+    run: &evohime_local_storage::continuation_store::RunRecord,
+    gates: &[evohime_local_storage::continuation_store::GateResultRecord],
+) -> Result<Vec<u8>, String> {
+    serde_json::to_vec(&serde_json::json!({
+        "schema_version": crate::continuation::POLICY_SCHEMA_VERSION,
+        "run_id": run.run_id,
+        "owner_scope": run.owner_scope,
+        "policy_id": run.policy_id,
+        "policy_revision": run.policy_revision,
+        "policy_hash": run.policy_hash,
+        "task_id": run.task_id,
+        "goal_id": run.goal_id,
+        "goal_version": run.goal_version,
+        "state": run.state,
+        "continuation_index": run.continuation_index,
+        "max_continuations": run.max_continuations,
+        "used_model_turns": run.used_model_turns,
+        "max_model_turns": run.max_model_turns,
+        "token_used": run.token_used,
+        "cost_used_micros": run.cost_used_micros,
+        "stop_reason": run.stop_reason,
+        "created_at_ms": run.created_at_ms,
+        "updated_at_ms": run.updated_at_ms,
+        "error_code": "",
+        "gates": gates
+    }))
+    .map_err(|_| "serialization_failed".into())
+}
+
 /// Родительские возможности запуска из оболочки.
 ///
 /// Оболочка не назначает права: набор фиксирован Core и совпадает с тем, что
@@ -892,6 +922,28 @@ impl IpcBridge {
         policy
             .validate()
             .map_err(|_| "invalid_policy".to_string())?;
+        for gate in &policy.gates {
+            let available = match gate.kind {
+                crate::continuation::GateKind::Tool => {
+                    self.tools
+                        .as_ref()
+                        .is_some_and(|tools| tools.manifest_for(&gate.capability_ref).is_some())
+                        && gate.capability_ref != "shell"
+                        && !gate.capability_ref.starts_with("shell.")
+                }
+                crate::continuation::GateKind::Workflow => {
+                    crate::workflow_templates::template(&gate.capability_ref).is_some()
+                }
+                crate::continuation::GateKind::Evidence => self
+                    .workflow_registry
+                    .provider(&gate.capability_ref)
+                    .is_some(),
+                crate::continuation::GateKind::Approval => gate.capability_ref == "approval",
+            };
+            if !available {
+                return Err("gate_unavailable".into());
+            }
+        }
         let canonical = policy
             .canonical_json()
             .map_err(|_| "invalid_policy".to_string())?;
@@ -958,7 +1010,7 @@ impl IpcBridge {
                 && existing.policy_id == request.policy_id
                 && existing.policy_revision == request.policy_revision as i64
             {
-                return serde_json::to_vec(&existing).map_err(|_| "serialization_failed".into());
+                return continuation_public_json(&existing, &[]);
             }
             return Err("idempotency_conflict".into());
         }
@@ -997,6 +1049,8 @@ impl IpcBridge {
             cost_budget_micros: policy_json.budget.max_cost_micros.map(|v| v as i64),
             cost_used_micros: 0,
             stop_reason: None,
+            prompt: None,
+            workspace_path: None,
             created_at_ms: now,
             updated_at_ms: now,
         };
@@ -1009,7 +1063,7 @@ impl IpcBridge {
                 }
                 .to_string()
             })?;
-        serde_json::to_vec(&record).map_err(|_| "serialization_failed".into())
+        continuation_public_json(&record, &[])
     }
 
     async fn dispatch_get_continuation(
@@ -1023,7 +1077,12 @@ impl IpcBridge {
         )
         .map_err(|_| "storage_failed".to_string())?
         .ok_or_else(|| "run_not_found".to_string())?;
-        serde_json::to_vec(&run).map_err(|_| "serialization_failed".into())
+        let gates = evohime_local_storage::continuation_store::list_latest_gate_results(
+            database.connection(),
+            &run.run_id,
+        )
+        .map_err(|_| "storage_failed".to_string())?;
+        continuation_public_json(&run, &gates)
     }
 
     async fn dispatch_stop_continuation(
@@ -1033,46 +1092,82 @@ impl IpcBridge {
         if request.run_id.is_empty() || request.expected_state != "running" {
             return Err("invalid_argument".into());
         }
-        let database = self.journal.database().lock().await;
-        let applied = evohime_local_storage::continuation_store::stop_run(
-            database.connection(),
+        let mut database = self.journal.database().lock().await;
+        evohime_local_storage::continuation_store::apply_transition_action(
+            database.connection_mut(),
             &request.run_id,
+            &request.idempotency_key,
+            "stop",
             &request.expected_state,
+            "stopped",
             "user_stop",
             crate::task_memory::now_millis() as i64,
         )
-        .map_err(|_| "storage_failed".to_string())?;
-        serde_json::to_vec(&serde_json::json!({"run_id":request.run_id,"action":"stop","applied":applied,"error_code":if applied {""} else {"stale_action"}}))
-            .map_err(|_| "serialization_failed".into())
+        .map_err(|_| "storage_failed".to_string())
     }
 
     async fn dispatch_transition_continuation(
         &self,
         run_id: String,
+        idempotency_key: String,
         expected_state: String,
         next_state: &'static str,
         action: &'static str,
     ) -> Result<Vec<u8>, String> {
-        if run_id.is_empty() || expected_state != "running" && expected_state != "paused" {
+        if run_id.is_empty()
+            || idempotency_key.is_empty()
+            || (expected_state != "running" && expected_state != "paused")
+        {
             return Err("invalid_argument".into());
         }
-        let database = self.journal.database().lock().await;
-        let applied = evohime_local_storage::continuation_store::transition_run(
-            database.connection(),
+        let mut database = self.journal.database().lock().await;
+        evohime_local_storage::continuation_store::apply_transition_action(
+            database.connection_mut(),
             &run_id,
+            &idempotency_key,
+            action,
             &expected_state,
             next_state,
-            Some(action),
+            action,
+            crate::task_memory::now_millis() as i64,
+        )
+        .map_err(|_| "storage_failed".to_string())
+    }
+
+    async fn dispatch_resume_continuation(
+        &self,
+        request: generated::ResumeContinuation,
+    ) -> Result<evohime_local_storage::continuation_store::RunRecord, String> {
+        if request.run_id.is_empty()
+            || request.idempotency_key.is_empty()
+            || request.expected_state != "paused"
+        {
+            return Err("invalid_argument".into());
+        }
+        let mut database = self.journal.database().lock().await;
+        let run = evohime_local_storage::continuation_store::get_run(
+            database.connection(),
+            &request.run_id,
+        )
+        .map_err(|_| "storage_failed".to_string())?
+        .ok_or_else(|| "run_not_found".to_string())?;
+        if run.prompt.is_none() || run.workspace_path.is_none() {
+            return Err("resume_context_unavailable".into());
+        }
+        let _action_result = evohime_local_storage::continuation_store::apply_transition_action(
+            database.connection_mut(),
+            &request.run_id,
+            &request.idempotency_key,
+            "resume",
+            "paused",
+            "running",
+            "approval_resolution",
             crate::task_memory::now_millis() as i64,
         )
         .map_err(|_| "storage_failed".to_string())?;
-        serde_json::to_vec(&serde_json::json!({
-            "run_id": run_id,
-            "action": action,
-            "applied": applied,
-            "error_code": if applied { "" } else { "stale_action" }
-        }))
-        .map_err(|_| "serialization_failed".into())
+        evohime_local_storage::continuation_store::get_run(database.connection(), &request.run_id)
+            .map_err(|_| "storage_failed".to_string())?
+            .ok_or_else(|| "run_not_found".into())
     }
 
     pub async fn process_once<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
@@ -2748,6 +2843,7 @@ impl IpcBridge {
                 let payload = self
                     .dispatch_transition_continuation(
                         request.run_id,
+                        request.idempotency_key,
                         request.expected_state,
                         "paused",
                         "pause",
@@ -2760,18 +2856,34 @@ impl IpcBridge {
                 self.write_continuation_action(writer, payload).await?;
             }
             Some(generated::command_envelope::Command::ResumeContinuation(request)) => {
-                let payload = self
-                    .dispatch_transition_continuation(
-                        request.run_id,
-                        request.expected_state,
-                        "running",
-                        "resume",
-                    )
-                    .await
-                    .unwrap_or_else(|error| {
-                        serde_json::to_vec(&serde_json::json!({"error_code": error}))
-                            .unwrap_or_default()
-                    });
+                let run = self.dispatch_resume_continuation(request).await;
+                let payload = match run {
+                    Ok(run) => {
+                        if let Some(coordinator) = &self.coordinator {
+                            if let (Some(prompt), Some(workspace_path)) =
+                                (run.prompt.clone(), run.workspace_path.clone())
+                            {
+                                let _ = coordinator
+                                    .dispatch(CoreCommand::StartTask {
+                                        task_id: run.task_id.clone(),
+                                        prompt,
+                                        workspace_root: Some(workspace_path.into()),
+                                        preferred_route_hint: None,
+                                    })
+                                    .await;
+                            }
+                        }
+                        serde_json::to_vec(&serde_json::json!({
+                            "run_id": run.run_id,
+                            "action": "resume",
+                            "applied": true,
+                            "error_code": ""
+                        }))
+                        .unwrap_or_default()
+                    }
+                    Err(error) => serde_json::to_vec(&serde_json::json!({"error_code": error}))
+                        .unwrap_or_default(),
+                };
                 self.write_continuation_action(writer, payload).await?;
             }
             Some(generated::command_envelope::Command::ReadWorkspaceFile(request)) => {
@@ -8507,6 +8619,40 @@ impl IpcBridge {
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .into(),
+            gates: value
+                .get("gates")
+                .and_then(|v| v.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .take(32)
+                        .map(|item| generated::ContinuationGateProjection {
+                            gate_id: item
+                                .get("gate_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or_default()
+                                .into(),
+                            kind: String::new(),
+                            capability_ref: String::new(),
+                            status: item
+                                .get("status")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or_default()
+                                .into(),
+                            evidence_ref: item
+                                .get("evidence_ref")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or_default()
+                                .into(),
+                            error_code: item
+                                .get("error_code")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or_default()
+                                .into(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
         };
         let event = generated::EventEnvelope {
             protocol: Some(protocol()),

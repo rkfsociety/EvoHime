@@ -630,7 +630,11 @@ function decodeContinuation(projected: evohime.desktop.v1.IContinuationProjectio
     maxContinuations: Number(projected.maxContinuations ?? 0), modelTurns: Number(projected.modelTurns ?? 0),
     maxModelTurns: Number(projected.maxModelTurns ?? 0), tokenUsed: Number(projected.tokenUsed ?? 0),
     costUsedMicros: Number(projected.costUsedMicros ?? 0), stopReason: projected.stopReason ?? '',
-    errorCode: projected.errorCode ?? ''
+    errorCode: projected.errorCode ?? '',
+    gates: (projected.gates ?? []).slice(0, 32).map((gate) => ({
+      gateId: gate.gateId ?? '', kind: gate.kind ?? '', capabilityRef: gate.capabilityRef ?? '',
+      status: gate.status ?? '', evidenceRef: gate.evidenceRef ?? '', errorCode: gate.errorCode ?? ''
+    }))
   }
 }
 

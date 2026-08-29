@@ -31658,6 +31658,7 @@ export const evohime = $root.evohime = (() => {
                  * @property {number|null} [costUsedMicros] ContinuationProjection costUsedMicros
                  * @property {string|null} [stopReason] ContinuationProjection stopReason
                  * @property {string|null} [errorCode] ContinuationProjection errorCode
+                 * @property {Array.<evohime.desktop.v1.ContinuationGateProjection.$Properties>|null} [gates] ContinuationProjection gates
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -31683,6 +31684,7 @@ export const evohime = $root.evohime = (() => {
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
                 const ContinuationProjection = function (properties) {
+                    this.gates = [];
                     if (properties)
                         for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
                             if (properties[keys[i]] != null && keys[i] !== "__proto__")
@@ -31810,6 +31812,14 @@ export const evohime = $root.evohime = (() => {
                 ContinuationProjection.prototype.errorCode = "";
 
                 /**
+                 * ContinuationProjection gates.
+                 * @member {Array.<evohime.desktop.v1.ContinuationGateProjection.$Properties>} gates
+                 * @memberof evohime.desktop.v1.ContinuationProjection
+                 * @instance
+                 */
+                ContinuationProjection.prototype.gates = $util.emptyArray;
+
+                /**
                  * Encodes the specified ContinuationProjection message. Does not implicitly {@link evohime.desktop.v1.ContinuationProjection.verify|verify} messages.
                  * @function encode
                  * @memberof evohime.desktop.v1.ContinuationProjection
@@ -31855,6 +31865,9 @@ export const evohime = $root.evohime = (() => {
                         writer.uint32(/* id 14, wireType 2 =*/114).string(message.stopReason);
                     if (message.errorCode != null && $Object.hasOwnProperty.call(message, "errorCode") && message.errorCode !== "")
                         writer.uint32(/* id 15, wireType 2 =*/122).string(message.errorCode);
+                    if (message.gates != null && message.gates.length)
+                        for (let i = 0; i < message.gates.length; ++i)
+                            $root.evohime.desktop.v1.ContinuationGateProjection.encode(message.gates[i], writer.uint32(/* id 16, wireType 2 =*/130).fork(), _depth + 1).ldelim();
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -32024,6 +32037,14 @@ export const evohime = $root.evohime = (() => {
                                     delete message.errorCode;
                                 continue;
                             }
+                        case 16: {
+                                if (wireType !== 2)
+                                    break;
+                                if (!(message.gates && message.gates.length))
+                                    message.gates = [];
+                                message.gates.push($root.evohime.desktop.v1.ContinuationGateProjection.decode(reader, reader.uint32(), $undefined, _depth + 1));
+                                continue;
+                            }
                         }
                         reader.skipType(wireType, _depth, tag);
                         if (!reader.discardUnknown) {
@@ -32051,6 +32072,241 @@ export const evohime = $root.evohime = (() => {
                 };
 
                 return ContinuationProjection;
+            })();
+
+            v1.ContinuationGateProjection = (function() {
+
+                /**
+                 * Properties of a ContinuationGateProjection.
+                 * @typedef {Object} evohime.desktop.v1.ContinuationGateProjection.$Properties
+                 * @property {string|null} [gateId] ContinuationGateProjection gateId
+                 * @property {string|null} [kind] ContinuationGateProjection kind
+                 * @property {string|null} [capabilityRef] ContinuationGateProjection capabilityRef
+                 * @property {string|null} [status] ContinuationGateProjection status
+                 * @property {string|null} [evidenceRef] ContinuationGateProjection evidenceRef
+                 * @property {string|null} [errorCode] ContinuationGateProjection errorCode
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of a ContinuationGateProjection.
+                 * @memberof evohime.desktop.v1
+                 * @interface IContinuationGateProjection
+                 * @augments evohime.desktop.v1.ContinuationGateProjection.$Properties
+                 * @deprecated Use evohime.desktop.v1.ContinuationGateProjection.$Properties instead.
+                 */
+
+                /**
+                 * Shape of a ContinuationGateProjection.
+                 * @typedef {evohime.desktop.v1.ContinuationGateProjection.$Properties} evohime.desktop.v1.ContinuationGateProjection.$Shape
+                 */
+
+                /**
+                 * Constructs a new ContinuationGateProjection.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents a ContinuationGateProjection.
+                 * @constructor
+                 * @param {evohime.desktop.v1.ContinuationGateProjection.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const ContinuationGateProjection = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * ContinuationGateProjection gateId.
+                 * @member {string} gateId
+                 * @memberof evohime.desktop.v1.ContinuationGateProjection
+                 * @instance
+                 */
+                ContinuationGateProjection.prototype.gateId = "";
+
+                /**
+                 * ContinuationGateProjection kind.
+                 * @member {string} kind
+                 * @memberof evohime.desktop.v1.ContinuationGateProjection
+                 * @instance
+                 */
+                ContinuationGateProjection.prototype.kind = "";
+
+                /**
+                 * ContinuationGateProjection capabilityRef.
+                 * @member {string} capabilityRef
+                 * @memberof evohime.desktop.v1.ContinuationGateProjection
+                 * @instance
+                 */
+                ContinuationGateProjection.prototype.capabilityRef = "";
+
+                /**
+                 * ContinuationGateProjection status.
+                 * @member {string} status
+                 * @memberof evohime.desktop.v1.ContinuationGateProjection
+                 * @instance
+                 */
+                ContinuationGateProjection.prototype.status = "";
+
+                /**
+                 * ContinuationGateProjection evidenceRef.
+                 * @member {string} evidenceRef
+                 * @memberof evohime.desktop.v1.ContinuationGateProjection
+                 * @instance
+                 */
+                ContinuationGateProjection.prototype.evidenceRef = "";
+
+                /**
+                 * ContinuationGateProjection errorCode.
+                 * @member {string} errorCode
+                 * @memberof evohime.desktop.v1.ContinuationGateProjection
+                 * @instance
+                 */
+                ContinuationGateProjection.prototype.errorCode = "";
+
+                /**
+                 * Encodes the specified ContinuationGateProjection message. Does not implicitly {@link evohime.desktop.v1.ContinuationGateProjection.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.ContinuationGateProjection
+                 * @static
+                 * @param {evohime.desktop.v1.ContinuationGateProjection.$Properties} message ContinuationGateProjection message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                ContinuationGateProjection.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.gateId != null && $Object.hasOwnProperty.call(message, "gateId") && message.gateId !== "")
+                        writer.uint32(/* id 1, wireType 2 =*/10).string(message.gateId);
+                    if (message.kind != null && $Object.hasOwnProperty.call(message, "kind") && message.kind !== "")
+                        writer.uint32(/* id 2, wireType 2 =*/18).string(message.kind);
+                    if (message.capabilityRef != null && $Object.hasOwnProperty.call(message, "capabilityRef") && message.capabilityRef !== "")
+                        writer.uint32(/* id 3, wireType 2 =*/26).string(message.capabilityRef);
+                    if (message.status != null && $Object.hasOwnProperty.call(message, "status") && message.status !== "")
+                        writer.uint32(/* id 4, wireType 2 =*/34).string(message.status);
+                    if (message.evidenceRef != null && $Object.hasOwnProperty.call(message, "evidenceRef") && message.evidenceRef !== "")
+                        writer.uint32(/* id 5, wireType 2 =*/42).string(message.evidenceRef);
+                    if (message.errorCode != null && $Object.hasOwnProperty.call(message, "errorCode") && message.errorCode !== "")
+                        writer.uint32(/* id 6, wireType 2 =*/50).string(message.errorCode);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes a ContinuationGateProjection message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.ContinuationGateProjection
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.ContinuationGateProjection & evohime.desktop.v1.ContinuationGateProjection.$Shape} ContinuationGateProjection
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                ContinuationGateProjection.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.ContinuationGateProjection(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.gateId = value;
+                                else
+                                    delete message.gateId;
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.kind = value;
+                                else
+                                    delete message.kind;
+                                continue;
+                            }
+                        case 3: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.capabilityRef = value;
+                                else
+                                    delete message.capabilityRef;
+                                continue;
+                            }
+                        case 4: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.status = value;
+                                else
+                                    delete message.status;
+                                continue;
+                            }
+                        case 5: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.evidenceRef = value;
+                                else
+                                    delete message.evidenceRef;
+                                continue;
+                            }
+                        case 6: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.errorCode = value;
+                                else
+                                    delete message.errorCode;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for ContinuationGateProjection
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.ContinuationGateProjection
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                ContinuationGateProjection.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.ContinuationGateProjection";
+                };
+
+                return ContinuationGateProjection;
             })();
 
             v1.ContinuationActionResult = (function() {

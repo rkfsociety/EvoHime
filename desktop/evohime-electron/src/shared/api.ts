@@ -252,6 +252,16 @@ export interface ContinuationProjection {
   readonly costUsedMicros: number
   readonly stopReason: string
   readonly errorCode: string
+  readonly gates: readonly ContinuationGateProjection[]
+}
+
+export interface ContinuationGateProjection {
+  readonly gateId: string
+  readonly kind: string
+  readonly capabilityRef: string
+  readonly status: string
+  readonly evidenceRef: string
+  readonly errorCode: string
 }
 
 export interface ContinuationActionResult {

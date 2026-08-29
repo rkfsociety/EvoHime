@@ -35,7 +35,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 35;
+pub const SCHEMA_VERSION: u32 = 36;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3315,6 +3315,22 @@ impl LocalDatabase {
                    ON continuation_runs(task_id, state, updated_at_ms);
                  PRAGMA user_version = 35;",
             )?;
+        }
+        if current < 36 {
+            let columns = transaction
+                .prepare("PRAGMA table_info(continuation_runs)")?
+                .query_map([], |row| row.get::<_, String>(1))?
+                .collect::<Result<Vec<_>, _>>()?;
+            if !columns.iter().any(|column| column == "prompt") {
+                transaction
+                    .execute_batch("ALTER TABLE continuation_runs ADD COLUMN prompt TEXT;")?;
+            }
+            if !columns.iter().any(|column| column == "workspace_path") {
+                transaction.execute_batch(
+                    "ALTER TABLE continuation_runs ADD COLUMN workspace_path TEXT;",
+                )?;
+            }
+            transaction.execute_batch("PRAGMA user_version = 36;")?;
         }
         if current < 25 {
             // Этап 04.2: ambient-эпизоды, высказывания и tombstone.

@@ -849,7 +849,7 @@ outcome; client-supplied completion evidence не является довере�
 
 Durable state хранится в `continuation_policies`, `continuation_runs` и
 `continuation_attempts`, которыми владеет
-`crates/evohime-local-storage/src/continuation_store.rs`. Migration v35
+`crates/evohime-local-storage/src/continuation_store.rs`. Migration v36
 устанавливает таблицы транзакционно. Attempt fingerprint уникален внутри run,
 а turn/token/cost reservation выполняется до effect в SQLite-транзакции. Run
 закреплён за task и idempotency key; после перезапуска незавершённые runs

@@ -13619,6 +13619,9 @@ export namespace evohime {
                 /** ContinuationProjection errorCode. */
                 errorCode: string;
 
+                /** ContinuationProjection gates. */
+                gates: evohime.desktop.v1.ContinuationGateProjection.$Properties[];
+
                 /**
                  * Encodes the specified ContinuationProjection message. Does not implicitly {@link evohime.desktop.v1.ContinuationProjection.verify|verify} messages.
                  * @param message ContinuationProjection message or plain object to encode
@@ -13695,12 +13698,109 @@ export namespace evohime {
                     /** ContinuationProjection errorCode */
                     errorCode?: (string|null);
 
+                    /** ContinuationProjection gates */
+                    gates?: (evohime.desktop.v1.ContinuationGateProjection.$Properties[]|null);
+
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];
                 }
 
                 /** Shape of a ContinuationProjection. */
                 type $Shape = evohime.desktop.v1.ContinuationProjection.$Properties;
+            }
+
+            /**
+             * Properties of a ContinuationGateProjection.
+             * @deprecated Use evohime.desktop.v1.ContinuationGateProjection.$Properties instead.
+             */
+            interface IContinuationGateProjection extends evohime.desktop.v1.ContinuationGateProjection.$Properties {
+            }
+
+            /** Represents a ContinuationGateProjection. */
+            class ContinuationGateProjection {
+
+                /**
+                 * Constructs a new ContinuationGateProjection.
+                 * @param [properties] Properties to set
+                 */
+                constructor(properties?: evohime.desktop.v1.ContinuationGateProjection.$Properties);
+
+                /** Unknown fields preserved while decoding when enabled */
+                $unknowns?: Uint8Array[];
+
+                /** ContinuationGateProjection gateId. */
+                gateId: string;
+
+                /** ContinuationGateProjection kind. */
+                kind: string;
+
+                /** ContinuationGateProjection capabilityRef. */
+                capabilityRef: string;
+
+                /** ContinuationGateProjection status. */
+                status: string;
+
+                /** ContinuationGateProjection evidenceRef. */
+                evidenceRef: string;
+
+                /** ContinuationGateProjection errorCode. */
+                errorCode: string;
+
+                /**
+                 * Encodes the specified ContinuationGateProjection message. Does not implicitly {@link evohime.desktop.v1.ContinuationGateProjection.verify|verify} messages.
+                 * @param message ContinuationGateProjection message or plain object to encode
+                 * @param [writer] Writer to encode to
+                 * @returns Writer
+                 */
+                static encode(message: evohime.desktop.v1.ContinuationGateProjection.$Properties, writer?: $protobuf.Writer): $protobuf.Writer;
+
+                /**
+                 * Decodes a ContinuationGateProjection message from the specified reader or buffer.
+                 * @param reader Reader or buffer to decode from
+                 * @param [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.ContinuationGateProjection & evohime.desktop.v1.ContinuationGateProjection.$Shape} ContinuationGateProjection
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): evohime.desktop.v1.ContinuationGateProjection & evohime.desktop.v1.ContinuationGateProjection.$Shape;
+
+                /**
+                 * Gets the type url for ContinuationGateProjection
+                 * @param [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns The type url
+                 */
+                static getTypeUrl(prefix?: string): string;
+            }
+
+            namespace ContinuationGateProjection {
+
+                /** Properties of a ContinuationGateProjection. */
+                interface $Properties {
+
+                    /** ContinuationGateProjection gateId */
+                    gateId?: (string|null);
+
+                    /** ContinuationGateProjection kind */
+                    kind?: (string|null);
+
+                    /** ContinuationGateProjection capabilityRef */
+                    capabilityRef?: (string|null);
+
+                    /** ContinuationGateProjection status */
+                    status?: (string|null);
+
+                    /** ContinuationGateProjection evidenceRef */
+                    evidenceRef?: (string|null);
+
+                    /** ContinuationGateProjection errorCode */
+                    errorCode?: (string|null);
+
+                    /** Unknown fields preserved while decoding when enabled */
+                    $unknowns?: Uint8Array[];
+                }
+
+                /** Shape of a ContinuationGateProjection. */
+                type $Shape = evohime.desktop.v1.ContinuationGateProjection.$Properties;
             }
 
             /**
