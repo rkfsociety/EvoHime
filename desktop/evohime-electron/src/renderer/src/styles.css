@@ -3095,3 +3095,124 @@ button.button:hover,
     padding: 16px 14px 28px;
   }
 }
+
+/* Обзор: используем широкие окна без растягивания текста до нечитаемой
+   длины. Это presentation-only слой, состояние и IPC-контракт не меняются. */
+.main__scroll {
+  padding: 28px 40px 44px;
+}
+
+.overview-panel {
+  width: min(100%, 1480px);
+  max-width: none;
+  gap: 24px;
+  margin: 0 auto;
+}
+
+.overview-panel__heading {
+  align-items: flex-start;
+  padding: 4px 2px 0;
+}
+
+.overview-panel__heading h2 {
+  margin: 0;
+  font-size: 26px;
+  letter-spacing: -0.02em;
+}
+
+.overview-panel__heading p {
+  margin: 7px 0 0;
+}
+
+.overview-panel__heading .status-pill {
+  margin-top: 4px;
+}
+
+.overview-grid {
+  gap: 14px;
+}
+
+.overview-card {
+  min-height: 112px;
+  padding: 18px;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 10%);
+}
+
+.overview-card span {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.overview-card strong {
+  font-size: 1.45rem;
+  letter-spacing: -0.02em;
+}
+
+.overview-card small {
+  align-self: end;
+  font-size: 12px;
+}
+
+.overview-section {
+  gap: 11px;
+}
+
+.overview-list li,
+.overview-events li {
+  min-height: 42px;
+  padding: 10px 14px;
+  border: 1px solid transparent;
+}
+
+.overview-list li:hover,
+.overview-events li:hover {
+  border-color: var(--border);
+  background: var(--bg-hover);
+}
+
+@media (max-width: 900px) {
+  .main__scroll {
+    padding: 20px;
+  }
+
+  .overview-panel {
+    width: 100%;
+  }
+
+  .overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .main__scroll {
+    padding: 16px 14px 28px;
+  }
+
+  .overview-panel {
+    gap: 18px;
+  }
+
+  .overview-panel__heading h2 {
+    font-size: 22px;
+  }
+
+  .overview-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .overview-card {
+    min-height: 0;
+    padding: 14px;
+  }
+
+  .overview-section__heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
