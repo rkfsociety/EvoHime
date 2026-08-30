@@ -453,3 +453,15 @@ provider webhook без production adapter остаётся typed `unavailable`.
 desktop IPC protocol, Electron typecheck и полный Electron regression: 477
 passed, 2 штатно skipped; `cargo fmt --all -- --check` и `git diff --check`
 прошли.
+
+План 35 реализован 30 августа 2026 года. Invocation Presets v1 хранит
+version-pinned immutable revisions без credential secrets, считает canonical
+SHA-256 redacted hash и принимает completed-run metadata только через
+fail-closed sanitizer. Explicit migration даёт bounded preview и commit в
+новую revision; temporary overrides применяются только к запуску. Automation
+schedule хранит preset revision/hash/workspace snapshot, проверяет drift и
+передаёт валидный preset в обычный WorkflowRuntime с повторной policy/approval
+проверкой. Authenticated IPC использует commands 179–180/event 37, Electron
+WorkflowPanel показывает только metadata projection. Комплект планов 35-0 …
+35-4 удалён после Core 600, storage 222, desktop IPC 35 и Electron regression
+478 passed/2 skipped, protocol/typecheck, fmt, clippy и diff-check.

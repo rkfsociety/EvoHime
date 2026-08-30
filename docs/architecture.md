@@ -1055,15 +1055,15 @@ Durable metadata schema v41 находится в
 показывает только bounded projection и unavailable provider state. Runtime не
 повторяет unknown external effect вслепую и не выдаёт renderer authority.
 
-### Invocation Presets (план 35, незавершённый foundational slice)
+### Invocation Presets v1
 
 `crates/evohime-core/src/invocation_presets.rs` содержит Core-owned typed
 контракт version-pinned preset, canonical SHA-256 redacted payload, allowlist
 валидацию и completed-run sanitizer. Durable immutable revisions находятся в
 `crates/evohime-local-storage/src/invocation_presets_store.rs`; authenticated
 IPC использует additive commands 179–180/event 37, а Electron показывает
-metadata-only список и ручное сохранение текущих workflow inputs.
-
-Полный scheduler↔workflow adapter с preset revision/hash snapshot и explicit
-workflow-version migration preview/commit ещё не реализован; до его поставки
-планы 35-0 … 35-4 остаются активными.
+metadata-only список, ручное сохранение текущих workflow inputs и запуск
+preset. Automation schedule хранит immutable preset revision/hash/workspace
+snapshot; due slot проверяет drift/rebinding и передаёт inputs в обычный
+WorkflowRuntime. Migration — explicit Core operation с bounded mapping,
+preview и новой immutable revision; temporary overrides не изменяют storage.

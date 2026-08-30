@@ -3830,7 +3830,7 @@ impl IpcBridge {
                 Some(generated::command_envelope::Command::InvocationPresetList(request))
                 | Some(generated::command_envelope::Command::InvocationPresetAction(request)) => {
                     let result = self.dispatch_invocation_preset(request).await;
-                    self.write_response(
+                    self.write_invocation_preset_response(
                         writer,
                         "invocation_preset.result",
                         serde_json::to_vec(&result)?,
@@ -4372,6 +4372,68 @@ impl IpcBridge {
         });
     }
 
+    async fn start_invocation_preset(
+        &self,
+        preset: crate::invocation_presets::InvocationPreset,
+        workspace_path: String,
+        idempotency_key: String,
+    ) -> Result<String, String> {
+        preset.validate().map_err(|error| error.to_string())?;
+        let Some(template) = crate::workflow_templates::template(&preset.workflow_id) else {
+            return Err("unknown_workflow".into());
+        };
+        if template.version != preset.workflow_version {
+            return Err("needs_migration".into());
+        }
+        let inputs = preset
+            .input_values
+            .iter()
+            .map(|(key, value)| {
+                value
+                    .as_str()
+                    .map(|value| (key.clone(), value.to_string()))
+                    .ok_or_else(|| format!("non_string_input:{key}"))
+            })
+            .collect::<Result<std::collections::BTreeMap<_, _>, _>>()?;
+        let graph = template
+            .instantiate(&inputs)
+            .map_err(|error| error.code().to_string())?;
+        if graph.canonical_hash() != preset.workflow_definition_hash {
+            return Err("workflow_definition_drift".into());
+        }
+        let digest = <sha2::Sha256 as sha2::Digest>::digest(
+            format!("{}|{}|{}", preset.id, preset.revision, idempotency_key).as_bytes(),
+        );
+        let run_id = format!("preset-{}", hex_encode(&digest[..16]));
+        if self
+            .journal
+            .workflow_run(&run_id)
+            .await
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            return Ok(run_id);
+        }
+        let runtime = self.workflow_runtime(&workspace_path);
+        let start = crate::workflow_runtime::StartWorkflowRequest {
+            run_id: run_id.clone(),
+            task_id: run_id.clone(),
+            workspace_path: workspace_path.clone(),
+            template_id: template.template_id.clone(),
+            template_version: template.version,
+            inputs,
+            graph,
+            parent: workflow_parent_capabilities(),
+        };
+        let started = runtime
+            .start(start)
+            .await
+            .map_err(|error| error.code().to_string())?;
+        self.spawn_workflow_drive(started.clone(), workspace_path);
+        Ok(started)
+    }
+
     async fn dispatch_list_automation_schedules(
         &self,
         request: generated::ListAutomationSchedules,
@@ -4402,6 +4464,10 @@ impl IpcBridge {
                     "missed_grace_ms": schedule.missed_grace_ms,
                     "enabled": schedule.enabled,
                     "last_slot": schedule.last_slot,
+                    "preset_id": schedule.preset_id,
+                    "preset_revision": schedule.preset_revision,
+                    "preset_content_hash": schedule.preset_content_hash,
+                    "workspace_path": schedule.workspace_path,
                 })).collect::<Vec<_>>(),
                 "error_code": "",
             }),
@@ -4444,6 +4510,29 @@ impl IpcBridge {
             });
         }
         let database = self.journal.database().lock().await;
+        if !request.preset_id.is_empty() {
+            let valid_preset = evohime_local_storage::invocation_presets_store::read_revision(
+                database.connection(),
+                &request.owner_scope,
+                &request.preset_id,
+                request.preset_revision,
+            )
+            .ok()
+            .flatten()
+            .and_then(|(content, hash, state)| {
+                serde_json::from_str::<crate::invocation_presets::InvocationPreset>(&content)
+                    .ok()
+                    .filter(|preset| {
+                        state == "ready"
+                            && preset.content_hash == request.preset_content_hash
+                            && preset.canonical_content_hash() == hash
+                            && preset.revision == request.preset_revision
+                    })
+            });
+            if valid_preset.is_none() {
+                return serde_json::json!({"saved":false,"error_code":"invalid_preset_snapshot"});
+            }
+        }
         let definition = evohime_local_storage::automation_store::get_definition(
             database.connection(),
             &request.definition_id,
@@ -4479,10 +4568,25 @@ impl IpcBridge {
                     last_slot: previous.and_then(|previous| {
                         (previous.definition_id == request.definition_id
                             && previous.revision == request.revision
-                            && previous.owner_scope == request.owner_scope)
-                            .then_some(previous.last_slot)
-                            .flatten()
+                            && previous.owner_scope == request.owner_scope
+                            && previous.preset_id.as_deref()
+                                == (!request.preset_id.is_empty())
+                                    .then_some(request.preset_id.as_str())
+                            && previous.preset_revision
+                                == (!request.preset_id.is_empty())
+                                    .then_some(request.preset_revision)
+                            && previous.preset_content_hash.as_deref()
+                                == (!request.preset_content_hash.is_empty())
+                                    .then_some(request.preset_content_hash.as_str()))
+                        .then_some(previous.last_slot)
+                        .flatten()
                     }),
+                    preset_id: (!request.preset_id.is_empty()).then_some(request.preset_id.clone()),
+                    preset_revision: (!request.preset_id.is_empty())
+                        .then_some(request.preset_revision),
+                    preset_content_hash: (!request.preset_content_hash.is_empty())
+                        .then_some(request.preset_content_hash.clone()),
+                    workspace_path: request.workspace_path.clone(),
                 };
                 match evohime_local_storage::automation_store::upsert_schedule(
                     database.connection(),
@@ -4740,6 +4844,60 @@ impl IpcBridge {
             )
             .unwrap_or(false);
             if !advanced {
+                continue;
+            }
+            if let (Some(preset_id), Some(preset_revision), Some(preset_hash)) = (
+                schedule.preset_id.clone(),
+                schedule.preset_revision,
+                schedule.preset_content_hash.clone(),
+            ) {
+                let preset = evohime_local_storage::invocation_presets_store::read_revision(
+                    database.connection(),
+                    &schedule.owner_scope,
+                    &preset_id,
+                    preset_revision,
+                )
+                .ok()
+                .flatten()
+                .and_then(|(content, stored_hash, state)| {
+                    if stored_hash != preset_hash || state != "ready" {
+                        return None;
+                    }
+                    serde_json::from_str::<crate::invocation_presets::InvocationPreset>(&content)
+                        .ok()
+                        .filter(|preset| {
+                            preset.content_hash == preset_hash && preset.revision == preset_revision
+                        })
+                });
+                let workspace_path = schedule.workspace_path.clone();
+                let schedule_id = schedule.schedule_id.clone();
+                let idempotency_key = idempotency_key.clone();
+                drop(database);
+                match preset {
+                    Some(preset) => {
+                        let result = self
+                            .start_invocation_preset(preset, workspace_path, idempotency_key)
+                            .await;
+                        if result.is_err() {
+                            let database = self.journal.database().lock().await;
+                            let payload = serde_json::json!({"schedule_id":schedule_id,"preset_id":preset_id,"revision":preset_revision,"outcome":"blocked","error_code":result.err().unwrap_or_default()});
+                            let _ = database.append_event(
+                                &schedule_id,
+                                "automation.preset_blocked",
+                                &serde_json::to_vec(&payload).unwrap_or_default(),
+                            );
+                        }
+                    }
+                    None => {
+                        let database = self.journal.database().lock().await;
+                        let payload = serde_json::json!({"schedule_id":schedule_id,"preset_id":preset_id,"revision":preset_revision,"outcome":"blocked","error_code":"preset_drift_or_rebinding"});
+                        let _ = database.append_event(
+                            &schedule_id,
+                            "automation.preset_blocked",
+                            &serde_json::to_vec(&payload).unwrap_or_default(),
+                        );
+                    }
+                }
                 continue;
             }
             if missed {
@@ -10298,6 +10456,78 @@ impl IpcBridge {
         {
             return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"invalid_request"});
         }
+        if request.operation == "run" {
+            let envelope: serde_json::Value =
+                serde_json::from_slice(&request.payload).unwrap_or_default();
+            let preset_id = envelope
+                .get("preset_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            let revision = envelope
+                .get("revision")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let workspace = envelope
+                .get("workspace_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let idempotency = if request.idempotency_key.is_empty() {
+                request.request_id.clone()
+            } else {
+                request.idempotency_key.clone()
+            };
+            let mut preset = {
+                let database = self.journal.database().lock().await;
+                let Some((content, stored_hash, state)) =
+                    evohime_local_storage::invocation_presets_store::read_revision(
+                        database.connection(),
+                        &request.owner_scope,
+                        preset_id,
+                        revision,
+                    )
+                    .ok()
+                    .flatten()
+                else {
+                    return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"run","status":"rejected","error_code":"unknown_preset_revision"});
+                };
+                if state != "ready" {
+                    return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"run","status":"blocked","error_code":"needs_rebinding_or_migration"});
+                }
+                let Ok(preset) =
+                    serde_json::from_str::<crate::invocation_presets::InvocationPreset>(&content)
+                else {
+                    return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"run","status":"rejected","error_code":"corrupt_preset"});
+                };
+                if preset.content_hash != stored_hash
+                    || preset.canonical_content_hash() != stored_hash
+                {
+                    return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"run","status":"rejected","error_code":"preset_hash_mismatch"});
+                }
+                preset
+            };
+            if let Some(overrides) = envelope
+                .get("temporary_overrides")
+                .and_then(|v| v.as_object())
+            {
+                for (key, value) in overrides {
+                    if preset.input_values.contains_key(key) {
+                        preset.input_values.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+            return match self
+                .start_invocation_preset(preset, workspace, idempotency)
+                .await
+            {
+                Ok(run_id) => {
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"run","status":"started","run_id":run_id,"error_code":""})
+                }
+                Err(error) => {
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"run","status":"blocked","error_code":error})
+                }
+            };
+        }
         let database = self.journal.database().lock().await;
         let connection = database.connection();
         match request.operation.as_str() {
@@ -10309,14 +10539,14 @@ impl IpcBridge {
                     request.expected_revision.min(100)
                 };
                 let rows = statement.query_map(rusqlite::params![request.owner_scope, limit as i64], |row| Ok(serde_json::json!({"id":row.get::<_,String>(0)?,"revision":row.get::<_,i64>(1)? as u64,"content_hash":row.get::<_,String>(2)?,"state":row.get::<_,String>(3)?}))).and_then(|rows| rows.collect::<Result<Vec<_>, _>>());
-                return match rows {
+                match rows {
                     Ok(presets) => {
                         serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"list","status":"ok","presets":presets,"error_code":""})
                     }
                     Err(_) => {
                         serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"list","status":"error","presets":[],"error_code":"storage_error"})
                     }
-                };
+                }
             }
             "create" | "save" => {
                 let mut preset: crate::invocation_presets::InvocationPreset =
@@ -10370,6 +10600,99 @@ impl IpcBridge {
                     serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"sanitize","status":"rejected","error_code":error.to_string()})
                 }
             },
+            "preview_migration" | "migrate" => {
+                let envelope: serde_json::Value =
+                    serde_json::from_slice(&request.payload).unwrap_or_default();
+                let preset_id = envelope
+                    .get("preset_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                let source_revision = envelope
+                    .get("source_revision")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let migration: crate::invocation_presets::PresetMigrationRequest =
+                    match serde_json::from_value(
+                        envelope.get("migration").cloned().unwrap_or_default(),
+                    ) {
+                        Ok(value) => value,
+                        Err(_) => {
+                            return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"invalid_migration"})
+                        }
+                    };
+                let Some((content, stored_hash, _state)) =
+                    evohime_local_storage::invocation_presets_store::read_revision(
+                        connection,
+                        &request.owner_scope,
+                        preset_id,
+                        source_revision,
+                    )
+                    .ok()
+                    .flatten()
+                else {
+                    return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"unknown_preset_revision"});
+                };
+                let source: crate::invocation_presets::InvocationPreset = match serde_json::from_str(
+                    &content,
+                ) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"corrupt_preset"})
+                    }
+                };
+                if source.content_hash != stored_hash
+                    || source.canonical_content_hash() != stored_hash
+                    || migration.source_revision != source_revision
+                {
+                    return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"preset_hash_mismatch"});
+                }
+                if request.operation == "preview_migration" {
+                    return match crate::invocation_presets::preview_migration(&source, &migration) {
+                        Ok(preview) => {
+                            serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"preview_migration","status":"preview","preview":preview,"error_code":""})
+                        }
+                        Err(error) => {
+                            serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"preview_migration","status":"rejected","error_code":error.to_string()})
+                        }
+                    };
+                }
+                let migrated = match crate::invocation_presets::migrate_preset(
+                    &source,
+                    &migration,
+                    crate::task_memory::now_millis() as i64,
+                ) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"migrate","status":"rejected","error_code":error.to_string()})
+                    }
+                };
+                let content = serde_json::to_string(&migrated).unwrap_or_default();
+                let state = serde_json::to_value(migrated.state)
+                    .unwrap_or_default()
+                    .as_str()
+                    .unwrap_or("ready")
+                    .to_string();
+                match evohime_local_storage::invocation_presets_store::save_revision(
+                    connection,
+                    &migrated.owner_scope,
+                    &migrated.id,
+                    migrated.revision,
+                    &content,
+                    &migrated.content_hash,
+                    &state,
+                    migrated.updated_at_ms,
+                ) {
+                    Ok(true) => {
+                        serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"migrate","status":"migrated","preset_id":migrated.id,"revision":migrated.revision,"content_hash":migrated.content_hash,"error_code":""})
+                    }
+                    Ok(false) => {
+                        serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"migrate","status":"conflict","error_code":"duplicate_revision"})
+                    }
+                    Err(_) => {
+                        serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"migrate","status":"error","error_code":"storage_error"})
+                    }
+                }
+            }
             _ => {
                 serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"unavailable","error_code":"unsupported_operation"})
             }
@@ -10393,6 +10716,74 @@ impl IpcBridge {
                 core_instance_id: self.core_instance_id.clone(),
                 session_epoch: self.session_epoch,
                 event: None,
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn write_invocation_preset_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        event_type: &str,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let projection = value
+            .get("preview")
+            .or_else(|| value.get("presets"))
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let result = generated::InvocationPresetEvent {
+            schema_version: 1,
+            request_id: value
+                .get("request_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .into(),
+            operation: value
+                .get("operation")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .into(),
+            status: value
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .into(),
+            preset_id: value
+                .get("preset_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .into(),
+            revision: value
+                .get("revision")
+                .and_then(|v| v.as_u64())
+                .unwrap_or_default(),
+            content_hash: value
+                .get("content_hash")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .into(),
+            error_code: value
+                .get("error_code")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .into(),
+            projection_json: serde_json::to_vec(&projection).unwrap_or_default(),
+        };
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: event_type.into(),
+                payload,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: Some(generated::event_envelope::Event::InvocationPreset(result)),
             }
             .encode_to_vec(),
         )

@@ -1758,6 +1758,10 @@ function dispatch(
       const timezoneMinutes = value['timezoneMinutes']
       const missedGraceMs = value['missedGraceMs']
       const enabled = value['enabled']
+      const presetId = value['presetId'] === undefined ? '' : asBoundedString(value['presetId'])
+      const presetRevision = value['presetRevision'] === undefined ? 0 : asBoundedNumber(value['presetRevision'], Number.MAX_SAFE_INTEGER)
+      const presetContentHash = value['presetContentHash'] === undefined ? '' : asBoundedString(value['presetContentHash'])
+      const workspacePath = value['workspacePath'] === undefined ? '' : asBoundedString(value['workspacePath'])
       const validInteger = (input: unknown): input is number =>
         typeof input === 'number' && Number.isSafeInteger(input)
       if (
@@ -1779,6 +1783,8 @@ function dispatch(
         missedGraceMs < 0 ||
         missedGraceMs > 86_400_000 ||
         typeof enabled !== 'boolean'
+        || presetId === null || presetRevision === null || presetContentHash === null || workspacePath === null
+        || (presetId !== '' && (presetRevision <= 0 || presetContentHash === ''))
       ) {
         return failure('invalid-payload', 'Некорректная политика расписания.')
       }
@@ -1794,6 +1800,7 @@ function dispatch(
             timezoneMinutes,
             missedGraceMs,
             enabled
+            , presetId, presetRevision, presetContentHash, workspacePath
           }
         })
       )

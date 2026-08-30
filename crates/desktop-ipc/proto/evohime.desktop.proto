@@ -1349,6 +1349,10 @@ message SaveAutomationSchedule {
   sint32 timezone_minutes = 7;
   int64 missed_grace_ms = 8;
   bool enabled = 9;
+  string preset_id = 10;
+  uint64 preset_revision = 11;
+  string preset_content_hash = 12;
+  string workspace_path = 13;
 }
 
 // Core-owned durable Goal. The workspace path is an input-only scope selector;

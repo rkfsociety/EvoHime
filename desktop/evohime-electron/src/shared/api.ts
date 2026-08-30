@@ -1483,6 +1483,10 @@ export interface CommandPayloads {
     timezoneMinutes: number
     missedGraceMs: number
     enabled: boolean
+    presetId?: string
+    presetRevision?: number
+    presetContentHash?: string
+    workspacePath?: string
   }
   'automation.trigger': {
     definitionId: string

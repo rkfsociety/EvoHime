@@ -17,6 +17,7 @@ pub fn install_schema(connection: &Connection) -> Result<(), StorageError> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn save_revision(
     connection: &Connection,
     owner_scope: &str,

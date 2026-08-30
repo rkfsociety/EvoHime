@@ -29506,6 +29506,10 @@ export const evohime = $root.evohime = (() => {
                  * @property {number|null} [timezoneMinutes] SaveAutomationSchedule timezoneMinutes
                  * @property {number|null} [missedGraceMs] SaveAutomationSchedule missedGraceMs
                  * @property {boolean|null} [enabled] SaveAutomationSchedule enabled
+                 * @property {string|null} [presetId] SaveAutomationSchedule presetId
+                 * @property {number|null} [presetRevision] SaveAutomationSchedule presetRevision
+                 * @property {string|null} [presetContentHash] SaveAutomationSchedule presetContentHash
+                 * @property {string|null} [workspacePath] SaveAutomationSchedule workspacePath
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -29610,6 +29614,38 @@ export const evohime = $root.evohime = (() => {
                 SaveAutomationSchedule.prototype.enabled = false;
 
                 /**
+                 * SaveAutomationSchedule presetId.
+                 * @member {string} presetId
+                 * @memberof evohime.desktop.v1.SaveAutomationSchedule
+                 * @instance
+                 */
+                SaveAutomationSchedule.prototype.presetId = "";
+
+                /**
+                 * SaveAutomationSchedule presetRevision.
+                 * @member {number} presetRevision
+                 * @memberof evohime.desktop.v1.SaveAutomationSchedule
+                 * @instance
+                 */
+                SaveAutomationSchedule.prototype.presetRevision = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                /**
+                 * SaveAutomationSchedule presetContentHash.
+                 * @member {string} presetContentHash
+                 * @memberof evohime.desktop.v1.SaveAutomationSchedule
+                 * @instance
+                 */
+                SaveAutomationSchedule.prototype.presetContentHash = "";
+
+                /**
+                 * SaveAutomationSchedule workspacePath.
+                 * @member {string} workspacePath
+                 * @memberof evohime.desktop.v1.SaveAutomationSchedule
+                 * @instance
+                 */
+                SaveAutomationSchedule.prototype.workspacePath = "";
+
+                /**
                  * Encodes the specified SaveAutomationSchedule message. Does not implicitly {@link evohime.desktop.v1.SaveAutomationSchedule.verify|verify} messages.
                  * @function encode
                  * @memberof evohime.desktop.v1.SaveAutomationSchedule
@@ -29643,6 +29679,14 @@ export const evohime = $root.evohime = (() => {
                         writer.uint32(/* id 8, wireType 0 =*/64).int64(message.missedGraceMs);
                     if (message.enabled != null && $Object.hasOwnProperty.call(message, "enabled") && message.enabled !== false)
                         writer.uint32(/* id 9, wireType 0 =*/72).bool(message.enabled);
+                    if (message.presetId != null && $Object.hasOwnProperty.call(message, "presetId") && message.presetId !== "")
+                        writer.uint32(/* id 10, wireType 2 =*/82).string(message.presetId);
+                    if (message.presetRevision != null && $Object.hasOwnProperty.call(message, "presetRevision") && (typeof message.presetRevision === "object" ? message.presetRevision.low || message.presetRevision.high : message.presetRevision !== 0))
+                        writer.uint32(/* id 11, wireType 0 =*/88).uint64(message.presetRevision);
+                    if (message.presetContentHash != null && $Object.hasOwnProperty.call(message, "presetContentHash") && message.presetContentHash !== "")
+                        writer.uint32(/* id 12, wireType 2 =*/98).string(message.presetContentHash);
+                    if (message.workspacePath != null && $Object.hasOwnProperty.call(message, "workspacePath") && message.workspacePath !== "")
+                        writer.uint32(/* id 13, wireType 2 =*/106).string(message.workspacePath);
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -29756,6 +29800,42 @@ export const evohime = $root.evohime = (() => {
                                     message.enabled = value;
                                 else
                                     delete message.enabled;
+                                continue;
+                            }
+                        case 10: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.presetId = value;
+                                else
+                                    delete message.presetId;
+                                continue;
+                            }
+                        case 11: {
+                                if (wireType !== 0)
+                                    break;
+                                if (typeof (value = reader.uint64()) === "object" ? value.low || value.high : value !== 0)
+                                    message.presetRevision = value;
+                                else
+                                    delete message.presetRevision;
+                                continue;
+                            }
+                        case 12: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.presetContentHash = value;
+                                else
+                                    delete message.presetContentHash;
+                                continue;
+                            }
+                        case 13: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.workspacePath = value;
+                                else
+                                    delete message.workspacePath;
                                 continue;
                             }
                         }

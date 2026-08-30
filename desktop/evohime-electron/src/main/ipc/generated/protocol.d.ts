@@ -12699,6 +12699,18 @@ export namespace evohime {
                 /** SaveAutomationSchedule enabled. */
                 enabled: boolean;
 
+                /** SaveAutomationSchedule presetId. */
+                presetId: string;
+
+                /** SaveAutomationSchedule presetRevision. */
+                presetRevision: number;
+
+                /** SaveAutomationSchedule presetContentHash. */
+                presetContentHash: string;
+
+                /** SaveAutomationSchedule workspacePath. */
+                workspacePath: string;
+
                 /**
                  * Encodes the specified SaveAutomationSchedule message. Does not implicitly {@link evohime.desktop.v1.SaveAutomationSchedule.verify|verify} messages.
                  * @param message SaveAutomationSchedule message or plain object to encode
@@ -12756,6 +12768,18 @@ export namespace evohime {
 
                     /** SaveAutomationSchedule enabled */
                     enabled?: (boolean|null);
+
+                    /** SaveAutomationSchedule presetId */
+                    presetId?: (string|null);
+
+                    /** SaveAutomationSchedule presetRevision */
+                    presetRevision?: (number|null);
+
+                    /** SaveAutomationSchedule presetContentHash */
+                    presetContentHash?: (string|null);
+
+                    /** SaveAutomationSchedule workspacePath */
+                    workspacePath?: (string|null);
 
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];

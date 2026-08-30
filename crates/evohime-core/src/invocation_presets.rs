@@ -55,6 +55,109 @@ pub struct SanitizedRunPreview {
     pub rejected_fields: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PresetMigrationRequest {
+    pub source_revision: u64,
+    pub target_workflow_version: u32,
+    pub target_workflow_definition_hash: String,
+    pub target_input_schema_hash: String,
+    pub mapping: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PresetMigrationPreview {
+    pub source_revision: u64,
+    pub target_workflow_version: u32,
+    pub target_workflow_definition_hash: String,
+    pub target_input_schema_hash: String,
+    pub mapped_input_names: Vec<String>,
+    pub missing_required_mapping: Vec<String>,
+    pub status: String,
+}
+
+pub fn preview_migration(
+    source: &InvocationPreset,
+    request: &PresetMigrationRequest,
+) -> Result<PresetMigrationPreview, PresetValidationError> {
+    source.validate()?;
+    bounded_text(
+        "target_workflow_definition_hash",
+        &request.target_workflow_definition_hash,
+        128,
+    )?;
+    bounded_text(
+        "target_input_schema_hash",
+        &request.target_input_schema_hash,
+        128,
+    )?;
+    if request.target_workflow_version <= source.workflow_version {
+        return Err(PresetValidationError::InvalidField(
+            "target_workflow_version".into(),
+        ));
+    }
+    let mut mapped = Vec::new();
+    let mut missing = Vec::new();
+    for (old, new) in &request.mapping {
+        bounded_text("mapping.source", old, MAX_PRESET_ID_BYTES)?;
+        bounded_text("mapping.target", new, MAX_PRESET_ID_BYTES)?;
+        if source.input_values.contains_key(old) {
+            mapped.push(new.clone());
+        }
+    }
+    for key in source.input_values.keys() {
+        if !request.mapping.contains_key(key) {
+            missing.push(key.clone());
+        }
+    }
+    let status = if missing.is_empty() {
+        "compatible"
+    } else {
+        "needs_mapping"
+    };
+    Ok(PresetMigrationPreview {
+        source_revision: source.revision,
+        target_workflow_version: request.target_workflow_version,
+        target_workflow_definition_hash: request.target_workflow_definition_hash.clone(),
+        target_input_schema_hash: request.target_input_schema_hash.clone(),
+        mapped_input_names: mapped,
+        missing_required_mapping: missing,
+        status: status.into(),
+    })
+}
+
+pub fn migrate_preset(
+    source: &InvocationPreset,
+    request: &PresetMigrationRequest,
+    now_ms: i64,
+) -> Result<InvocationPreset, PresetValidationError> {
+    let preview = preview_migration(source, request)?;
+    if preview.status != "compatible" {
+        return Err(PresetValidationError::InvalidField(
+            "migration_mapping".into(),
+        ));
+    }
+    let mut migrated = source.clone();
+    migrated.workflow_version = request.target_workflow_version;
+    migrated.workflow_definition_hash = request.target_workflow_definition_hash.clone();
+    migrated.input_schema_hash = request.target_input_schema_hash.clone();
+    migrated.input_values = request
+        .mapping
+        .iter()
+        .filter_map(|(old, new)| {
+            source
+                .input_values
+                .get(old)
+                .map(|value| (new.clone(), value.clone()))
+        })
+        .collect();
+    migrated.revision = source.revision.saturating_add(1);
+    migrated.created_at_ms = now_ms;
+    migrated.updated_at_ms = now_ms;
+    migrated.content_hash = migrated.canonical_content_hash();
+    migrated.validate()?;
+    Ok(migrated)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PresetValidationError {
     InvalidField(String),
@@ -343,5 +446,20 @@ mod tests {
         assert_eq!(preview.input_values.len(), 1);
         assert_eq!(preview.rejected_fields, vec!["input_values.token"]);
         assert_eq!(preview.removed_fields, vec!["prompt"]);
+    }
+
+    #[test]
+    fn migration_requires_explicit_mapping_and_creates_new_revision() {
+        let source = preset();
+        let request = PresetMigrationRequest {
+            source_revision: 1,
+            target_workflow_version: 2,
+            target_workflow_definition_hash: "def2".into(),
+            target_input_schema_hash: "schema2".into(),
+            mapping: BTreeMap::from([("topic".into(), "subject".into())]),
+        };
+        let migrated = migrate_preset(&source, &request, 2).unwrap();
+        assert_eq!(migrated.revision, 2);
+        assert!(migrated.input_values.contains_key("subject"));
     }
 }

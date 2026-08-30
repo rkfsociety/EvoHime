@@ -122,10 +122,12 @@ workflow pinning, mapping/dedup/rate limits, schema v41, authenticated IPC
 177–178/event 36, Electron projection и typed unavailable для provider webhook.
 Комплект планов 34-0 … 34-4 удалён после полного regression-прогона.
 
-План 35 пока не закрыт. Реализован и проверен первый безопасный срез
-Invocation Presets: Core-owned versioned contract, deterministic redacted hash,
-fail-closed completed-run sanitizer, immutable/idempotent SQLite revisions,
-authenticated IPC 179–180/event 37 и metadata-only Electron WorkflowPanel.
-Обязательные незавершённые части — explicit migration preview/commit и
-immutable preset reference между `automation_store` scheduler и обычным
-workflow runtime; комплекты `35-0` … `35-4` сохраняются до их реализации.
+План 35 закрыт: Invocation Presets v1 перенесён в canonical
+architecture/current-state. Реализованы Core-owned version-pinned contract,
+deterministic redacted hash, completed-run sanitizer, immutable/idempotent
+SQLite revisions, explicit migration preview/commit, temporary run overrides,
+immutable preset revision/hash/workspace snapshot в automation scheduler,
+обычный WorkflowRuntime path, authenticated IPC 179–180/event 37 и
+metadata-only Electron WorkflowPanel. Drift, rebinding, stale revision,
+duplicate slot и unknown outcome остаются fail-closed; комплект 35-0 … 35-4
+удалён после полного regression-прогона.

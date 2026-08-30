@@ -4,6 +4,7 @@ import type {
   ConnectionState,
   CoreEvent,
   WorkflowEventList,
+  WorkflowDefinition,
   WorkflowRunProjection,
   WorkflowTemplateList,
   WorkflowTemplateSummary
@@ -102,6 +103,7 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
   const started = latestPayload<{ run_id: string; error_code: string }>(events, 'workflow.started')
   const run = latestPayload<WorkflowRunProjection>(events, 'workflow.run')
   const eventList = latestPayload<WorkflowEventList>(events, 'workflow.events')
+  const definition = latestPayload<WorkflowDefinition>(events, 'workflow.definition')
   const presetResult = latestPayload<{ status?: string; presets?: { id: string; revision: number; content_hash: string; state: string }[] }>(events, 'invocation_preset.result')
 
   const templates: readonly WorkflowTemplateSummary[] = catalog?.templates ?? []
@@ -113,8 +115,9 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
   useEffect(() => {
     if (!api || !connected) return
     void api.invoke('workflow.listTemplates', {})
+    if (selected) void api.invoke('workflow.getDefinition', { templateId: selected })
     if (workspace) void api.invoke('invocationPreset.list', { requestId: `preset-list:${workspace}`, ownerScope: workspace, limit: 50 })
-  }, [api, connected, workspace])
+  }, [api, connected, workspace, selected])
 
   // Идентификатор запуска приходит ответом ядра, а не придумывается панелью.
   useEffect(() => {
@@ -256,13 +259,33 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
             <li key={`${preset.id}:${preset.revision}`}>
               <strong>{preset.id}</strong> · revision {preset.revision} · {preset.state}
               <small> · {preset.content_hash}</small>
+              <button
+                type="button"
+                disabled={!api || !connected || preset.state !== 'ready'}
+                onClick={() =>
+                  void api?.invoke('invocationPreset.command', {
+                    requestId: `preset-run:${preset.id}:${preset.revision}`,
+                    ownerScope: workspace ?? '',
+                    operation: 'run',
+                    idempotencyKey: `preset-run:${preset.id}:${preset.revision}`,
+                    payload: JSON.stringify({
+                      preset_id: preset.id,
+                      revision: preset.revision,
+                      workspace_path: workspace ?? '',
+                      temporary_overrides: {}
+                    })
+                  })
+                }
+              >
+                Запустить
+              </button>
             </li>
           ))}
         </ul>
       ) : (
         <p role="status">Сохранённых пресетов нет.</p>
       )}
-      {template && workspace ? (
+      {template && workspace && definition?.template_id === template.template_id ? (
         <button
           type="button"
           disabled={!api || !connected}
@@ -281,8 +304,8 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
                 description: template.description,
                 workflow_id: template.template_id,
                 workflow_version: Number(template.version) || 1,
-                workflow_definition_hash: template.template_id,
-                input_schema_hash: template.template_id,
+                workflow_definition_hash: definition.graph_hash,
+                input_schema_hash: definition.graph_hash,
                 input_values: inputs,
                 credential_bindings: {},
                 execution_options: {},
