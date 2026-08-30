@@ -95,3 +95,10 @@ admission, schema v39, metadata-only candidate store, optimistic lifecycle,
 authenticated IPC 166–168 и Electron OperationsPanel. Skill/PromptRule без
 Core-owned activation owner остаются typed `unavailable`; blind activation,
 authority expansion и raw transcript projection запрещены.
+
+План 30 закрыт: Workflow Package v1 перенесён в canonical
+architecture/current-state. Подтверждены bounded JSON export/import,
+metadata-only SQLite ownership, canonical SHA-256, fail-closed redaction,
+credential-slot rebinding, atomic package-file write, explicit commit,
+authenticated IPC 169–172 и Electron Workflow Package panel. Комплект плана
+30 удалён после полного Rust/Electron regression-прогона и bundle gates.

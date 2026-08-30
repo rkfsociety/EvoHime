@@ -1080,6 +1080,10 @@ export const RENDERER_COMMANDS = [
   'workflow.getRun',
   'workflow.cancel',
   'workflow.listEvents',
+  'workflowPackage.preview',
+  'workflowPackage.export',
+  'workflowPackage.commit',
+  'workflowPackage.rebind',
   'automation.listSchedules',
   'automation.saveSchedule',
   'automation.trigger',
@@ -1396,6 +1400,25 @@ export interface CommandPayloads {
   'workflow.getRun': { runId: string }
   'workflow.cancel': { runId: string }
   'workflow.listEvents': { runId: string; afterSequence?: number; limit?: number }
+  'workflowPackage.preview': {
+    graphJson: string
+    name: string
+    description?: string
+    portableArgumentKeys?: readonly string[]
+    credentialSlotsJson?: string
+    createdAt: string
+  }
+  'workflowPackage.export': {
+    graphJson: string
+    name: string
+    description?: string
+    portableArgumentKeys?: readonly string[]
+    credentialSlotsJson?: string
+    createdAt: string
+    destinationPath: string
+  }
+  'workflowPackage.commit': { packageJson: string; sourcePath: string; idempotencyKey: string }
+  'workflowPackage.rebind': { packageJson: string; slotId: string; localCredentialReference: string }
   'automation.listSchedules': { ownerScope: string; limit?: number }
   'automation.saveSchedule': {
     scheduleId: string
@@ -1592,6 +1615,10 @@ export interface CommandResults {
   'workflow.getRun': { accepted: boolean }
   'workflow.cancel': { accepted: boolean }
   'workflow.listEvents': { accepted: boolean }
+  'workflowPackage.preview': { accepted: boolean }
+  'workflowPackage.export': { accepted: boolean }
+  'workflowPackage.commit': { accepted: boolean }
+  'workflowPackage.rebind': { accepted: boolean }
   'automation.listSchedules': { accepted: boolean }
   'automation.saveSchedule': { accepted: boolean }
   'automation.trigger': { accepted: boolean }

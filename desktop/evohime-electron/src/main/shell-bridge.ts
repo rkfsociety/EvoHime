@@ -1577,6 +1577,67 @@ function dispatch(
       return accepted(client.send({ listWorkflowEvents: { runId, afterSequence, limit } }))
     }
 
+    case 'workflowPackage.preview': {
+      const value = asRecord(payload)
+      const graphJson = asBoundedString(value['graphJson'])
+      const name = asBoundedString(value['name'])
+      const description = value['description'] === undefined ? '' : asBoundedString(value['description'])
+      const createdAt = asBoundedString(value['createdAt'])
+      const portableArgumentKeys = asBoundedStringArray(value['portableArgumentKeys'] ?? [])
+      const credentialSlotsJson = value['credentialSlotsJson'] === undefined ? '' : asBoundedString(value['credentialSlotsJson'])
+      if (graphJson === null || name === null || description === null || createdAt === null || portableArgumentKeys === null || credentialSlotsJson === null) {
+        return failure('invalid-payload', 'Некорректный preview Workflow Package.')
+      }
+      return accepted(client.send({ previewWorkflowPackage: {
+        graphJson: Buffer.from(graphJson, 'utf8'), name, description,
+        portableArgumentKeys, credentialSlotsJson: Buffer.from(credentialSlotsJson, 'utf8'), createdAt
+      } }))
+    }
+
+    case 'workflowPackage.export': {
+      const value = asRecord(payload)
+      const graphJson = asBoundedString(value['graphJson'])
+      const name = asBoundedString(value['name'])
+      const description = value['description'] === undefined ? '' : asBoundedString(value['description'])
+      const createdAt = asBoundedString(value['createdAt'])
+      const destinationPath = asBoundedString(value['destinationPath'])
+      const portableArgumentKeys = asBoundedStringArray(value['portableArgumentKeys'] ?? [])
+      const credentialSlotsJson = value['credentialSlotsJson'] === undefined ? '' : asBoundedString(value['credentialSlotsJson'])
+      if (graphJson === null || name === null || description === null || createdAt === null || destinationPath === null || portableArgumentKeys === null || credentialSlotsJson === null) {
+        return failure('invalid-payload', 'Некорректный export Workflow Package.')
+      }
+      return accepted(client.send({ exportWorkflowPackage: {
+        graphJson: Buffer.from(graphJson, 'utf8'), name, description,
+        portableArgumentKeys, credentialSlotsJson: Buffer.from(credentialSlotsJson, 'utf8'), createdAt, destinationPath
+      } }))
+    }
+
+    case 'workflowPackage.commit': {
+      const value = asRecord(payload)
+      const packageJson = asBoundedString(value['packageJson'])
+      const sourcePath = asBoundedString(value['sourcePath'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (packageJson === null || sourcePath === null || idempotencyKey === null) {
+        return failure('invalid-payload', 'Некорректный commit Workflow Package.')
+      }
+      return accepted(client.send({ commitWorkflowPackage: {
+        packageJson: Buffer.from(packageJson, 'utf8'), sourcePath, idempotencyKey
+      } }))
+    }
+
+    case 'workflowPackage.rebind': {
+      const value = asRecord(payload)
+      const packageJson = asBoundedString(value['packageJson'])
+      const slotId = asBoundedString(value['slotId'])
+      const localCredentialReference = asBoundedString(value['localCredentialReference'])
+      if (packageJson === null || slotId === null || localCredentialReference === null) {
+        return failure('invalid-payload', 'Некорректный rebind Workflow Package.')
+      }
+      return accepted(client.send({ rebindWorkflowPackage: {
+        packageJson: Buffer.from(packageJson, 'utf8'), slotId, localCredentialReference
+      } }))
+    }
+
     case 'automation.listSchedules': {
       const value = asRecord(payload)
       const ownerScope = asBoundedString(value['ownerScope'])
@@ -1810,6 +1871,17 @@ function asBoundedString(value: unknown): string | null {
     return null
   }
   return value
+}
+
+function asBoundedStringArray(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > 128) return null
+  const result: string[] = []
+  for (const item of value) {
+    const stringValue = asBoundedString(item)
+    if (stringValue === null || stringValue.length > 128) return null
+    result.push(stringValue)
+  }
+  return result
 }
 
 function isSafeSkillId(value: string): boolean {

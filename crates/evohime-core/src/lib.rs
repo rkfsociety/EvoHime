@@ -995,6 +995,7 @@ pub mod voice_command;
 pub mod workflow;
 pub mod workflow_adapters;
 pub mod workflow_execution;
+pub mod workflow_package;
 pub mod workflow_registry;
 pub mod workflow_runner;
 pub mod workflow_runtime;

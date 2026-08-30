@@ -31,6 +31,7 @@ pub mod retained_child_store;
 pub mod scratchpad_store;
 pub mod task_checkpoint;
 pub mod toolkit_store;
+pub mod workflow_package_store;
 pub mod workflow_store;
 
 pub use backup::{
@@ -519,6 +520,8 @@ impl LocalDatabase {
         retained_child_store::install_schema(&connection)?;
         analysis_kernel::install_schema(&connection)?;
         refinement_store::install_schema(&connection)?;
+        workflow_package_store::install_schema(&connection)
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }

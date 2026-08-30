@@ -1756,7 +1756,40 @@ message CommandEnvelope {
     ListRefinementCandidates list_refinement_candidates = 166;
     GetRefinementCandidate get_refinement_candidate = 167;
     RefinementAction refinement_action = 168;
+    PreviewWorkflowPackage preview_workflow_package = 169;
+    ExportWorkflowPackage export_workflow_package = 170;
+    CommitWorkflowPackage commit_workflow_package = 171;
+    RebindWorkflowPackage rebind_workflow_package = 172;
   }
+}
+
+// Plan 30: package bytes are bounded JSON and are processed only by Core.
+message PreviewWorkflowPackage {
+  bytes graph_json = 1;
+  string name = 2;
+  string description = 3;
+  repeated string portable_argument_keys = 4;
+  bytes credential_slots_json = 5;
+  string created_at = 6;
+}
+message ExportWorkflowPackage {
+  bytes graph_json = 1;
+  string name = 2;
+  string description = 3;
+  repeated string portable_argument_keys = 4;
+  bytes credential_slots_json = 5;
+  string created_at = 6;
+  string destination_path = 7;
+}
+message CommitWorkflowPackage {
+  bytes package_json = 1;
+  string source_path = 2;
+  string idempotency_key = 3;
+}
+message RebindWorkflowPackage {
+  bytes package_json = 1;
+  string slot_id = 2;
+  string local_credential_reference = 3;
 }
 
 message CoreInfo {
@@ -1808,7 +1841,18 @@ message EventEnvelope {
     RefinementProjection refinement = 29;
     RefinementActionResult refinement_action = 30;
     RefinementListProjection refinement_list = 31;
+    WorkflowPackageResult workflow_package = 32;
   }
+}
+
+message WorkflowPackageResult {
+  uint32 schema_version = 1;
+  string operation = 2;
+  string status = 3;
+  string package_hash = 4;
+  string import_id = 5;
+  string local_workflow_id = 6;
+  string error_code = 7;
 }
 
 message AnalysisKernelObjectRef {

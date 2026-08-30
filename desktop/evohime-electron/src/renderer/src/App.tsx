@@ -27,6 +27,7 @@ import { TracePanel } from './TracePanel'
 import { RecoveryBanner } from './RecoveryBanner'
 import { ContinuationPanel } from './ContinuationPanel'
 import { AnalysisKernelPanel } from './AnalysisKernelPanel'
+import { WorkflowPackagePanel } from './WorkflowPackagePanel'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -51,7 +52,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'continuations' | 'kernels' | 'listening'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -68,6 +69,7 @@ const VIEWS: readonly ViewDescriptor[] = [
   { id: 'reviews', label: 'Ревью планов', icon: '✓' },
   { id: 'operations', label: 'Память и Pulse', icon: '◌' },
   { id: 'workflows', label: 'Составные задачи', icon: '⛓' },
+  { id: 'packages', label: 'Workflow Package', icon: '⇄' },
   { id: 'continuations', label: 'Продолжения', icon: '↻' },
   { id: 'kernels', label: 'Анализ', icon: '⌘' },
   { id: 'listening', label: 'Слух', icon: '🎙' },
@@ -297,6 +299,7 @@ export function App(): React.JSX.Element {
               {view === 'workflows' ? (
                 <WorkflowPanel connection={connection} events={events} workspace={workspace} />
               ) : null}
+              {view === 'packages' ? <WorkflowPackagePanel /> : null}
               {view === 'continuations' ? <ContinuationPanel connection={connection} events={events} /> : null}
               {view === 'kernels' ? <AnalysisKernelPanel connection={connection} events={events} /> : null}
               {view === 'listening' ? <ListeningPanel connection={connection} events={events} /> : null}

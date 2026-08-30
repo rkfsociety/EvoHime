@@ -404,3 +404,17 @@ Electron 472 passed и 2 штатно skipped; strict clippy, cargo fmt,
 `npm run check:protocol`, `npm run typecheck`, release Core build и isolated
 real-Core workflow E2E прошли. Skill/PromptRule остаются fail-closed
 `unavailable` до появления их Core-owned activation owners.
+
+План 30 реализован 30 августа 2026 года. Workflow Package v1 находится в
+`crates/evohime-core/src/workflow_package.rs`: bounded JSON до 1 MiB,
+deterministic portable hash, explicit portable/credential argument policy,
+fail-closed validation, safe package extension/path boundary и atomic export.
+Package bytes не сохраняются в SQLite; metadata-only import history находится в
+`crates/evohime-local-storage/src/workflow_package_store.rs` и ставится поверх
+schema v39. Authenticated additive IPC commands 169–172 подключены к Core и
+Electron, а renderer получает только bounded package metadata/actions через
+новую `WorkflowPackagePanel`.
+
+Проверка плана 30: Core package tests, storage package-store test, `cargo check`,
+Electron protocol/typecheck и focused workflow tests прошли; полный workspace и
+полный Electron regression прогон выполнены перед публикацией.

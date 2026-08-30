@@ -3094,6 +3094,97 @@ impl IpcBridge {
                     )
                     .await?;
                 }
+                Some(generated::command_envelope::Command::PreviewWorkflowPackage(request)) => {
+                    let result = crate::workflow_package::preview_from_json(
+                        &request.graph_json,
+                        request.name,
+                        request.description,
+                        request.portable_argument_keys,
+                        &request.credential_slots_json,
+                        request.created_at,
+                    )
+                    .map(|preview| serde_json::json!({
+                        "status": "previewed",
+                        "package_hash": preview.package_hash,
+                        "stripped_fields": preview.stripped_fields,
+                        "package": preview.package,
+                    }))
+                    .map_err(|error| serde_json::json!({"status":"rejected","error_code":error.to_string()}));
+                    let payload = match result {
+                        Ok(value) | Err(value) => serde_json::to_vec(&value)?,
+                    };
+                    self.write_package_response(writer, "preview", payload)
+                        .await?;
+                }
+                Some(generated::command_envelope::Command::ExportWorkflowPackage(request)) => {
+                    let result = crate::workflow_package::preview_from_json(
+                        &request.graph_json,
+                        request.name,
+                        request.description,
+                        request.portable_argument_keys,
+                        &request.credential_slots_json,
+                        request.created_at,
+                    )
+                    .and_then(|preview| {
+                        crate::workflow_package::write_package(
+                            std::path::Path::new(&request.destination_path),
+                            &preview.package,
+                        )?;
+                        Ok(serde_json::json!({"status":"exported","package_hash":preview.package_hash,"stripped_fields":preview.stripped_fields}))
+                    })
+                    .map_err(|error: crate::workflow_package::WorkflowPackageError| serde_json::json!({"status":"rejected","error_code":error.to_string()}));
+                    let payload = match result {
+                        Ok(value) | Err(value) => serde_json::to_vec(&value)?,
+                    };
+                    self.write_package_response(writer, "export", payload)
+                        .await?;
+                }
+                Some(generated::command_envelope::Command::CommitWorkflowPackage(request)) => {
+                    let result = async {
+                        let package = crate::workflow_package::parse_bounded(&request.package_json)?;
+                        let database = self.journal.database().lock().await;
+                        crate::workflow_package::commit_import(
+                            &database,
+                            std::path::Path::new(&request.source_path),
+                            &package,
+                            &request.idempotency_key,
+                            now_ms(),
+                        )
+                    }
+                    .await
+                    .map(|record| serde_json::json!({"status":"committed","import_id":record.import_id,"local_workflow_id":record.local_workflow_id,"package_hash":record.package_hash}))
+                    .map_err(|error: crate::workflow_package::WorkflowPackageError| serde_json::json!({"status":"rejected","error_code":error.to_string()}));
+                    let payload = match result {
+                        Ok(value) | Err(value) => serde_json::to_vec(&value)?,
+                    };
+                    self.write_package_response(writer, "commit", payload)
+                        .await?;
+                }
+                Some(generated::command_envelope::Command::RebindWorkflowPackage(request)) => {
+                    let result = async {
+                        let package =
+                            crate::workflow_package::parse_bounded(&request.package_json)?;
+                        let database = self.journal.database().lock().await;
+                        crate::workflow_package::persist_rebind(
+                            &database,
+                            &package,
+                            &request.slot_id,
+                            &request.local_credential_reference,
+                            now_ms(),
+                        )
+                    }
+                    .await;
+                    let payload = match result {
+                        Ok(value) => serde_json::to_vec(
+                            &serde_json::json!({"status":"rebound","binding":value}),
+                        )?,
+                        Err(error) => serde_json::to_vec(
+                            &serde_json::json!({"status":"rejected","error_code":error.to_string()}),
+                        )?,
+                    };
+                    self.write_package_response(writer, "rebind", payload)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopTask(stop)) => {
                     if let Some(coordinator) = &self.coordinator {
                         coordinator
@@ -9541,6 +9632,39 @@ impl IpcBridge {
             .encode_to_vec(),
         )
         .await?;
+        Ok(())
+    }
+
+    async fn write_package_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        operation: &str,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let result = generated::WorkflowPackageResult {
+            schema_version: 1,
+            operation: operation.into(),
+            status: value["status"].as_str().unwrap_or("unknown").into(),
+            package_hash: value["package_hash"].as_str().unwrap_or_default().into(),
+            import_id: value["import_id"].as_str().unwrap_or_default().into(),
+            local_workflow_id: value["local_workflow_id"]
+                .as_str()
+                .unwrap_or_default()
+                .into(),
+            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+        };
+        let event = generated::EventEnvelope {
+            protocol: Some(protocol()),
+            sequence_id: 0,
+            task_id: String::new(),
+            event_type: format!("workflow.package.{operation}"),
+            payload,
+            core_instance_id: self.core_instance_id.clone(),
+            session_epoch: self.session_epoch,
+            event: Some(generated::event_envelope::Event::WorkflowPackage(result)),
+        };
+        transport::write_frame(writer, &event.encode_to_vec()).await?;
         Ok(())
     }
 }

@@ -185,6 +185,28 @@ deterministic-операции Core.
 Approval узла решается существующей командой `ResolveApproval` и тем же
 approval registry, что и у инструментов: отдельного workflow-approval нет.
 
+### Workflow Package
+
+Переносимость workflow реализована отдельным bounded JSON-контрактом
+`evohime-workflow` v1 в `crates/evohime-core/src/workflow_package.rs`. Он
+проецирует существующий `workflow/v1`, вычисляет deterministic SHA-256 hash и
+принимает только явно отмеченные portable arguments; credential arguments
+заменяются slot references, а неподтверждённые поля отклоняются fail-closed.
+Runtime IDs, leases, approvals, checkpoints и secrets не являются частью
+package content.
+
+Core читает и пишет только `.evohime-workflow.json` до 1 MiB; export выполняет
+atomic temp-to-final write. Package bytes не попадают в SQLite: отдельная
+metadata-only таблица `workflow_package_imports` хранит hash, source
+fingerprint, local identity/version, provenance и bounded phase outcome для
+reconciliation. Preview не создаёт запись, capability, schedule, trigger или
+run; commit повторно валидируется и deduplicates по content hash.
+
+Authenticated IPC commands 169–172 (`Preview/Export/Commit/RebindWorkflowPackage`)
+и Electron main/preload/renderer projection добавлены аддитивно. Renderer
+показывает только bounded metadata/action state и не получает package storage,
+SQLite или credential values.
+
 Этот контур не следует путать с
 [`features/task-dependency-graphs.md`](features/task-dependency-graphs.md):
 там описан граф зависимостей work items проекта.
