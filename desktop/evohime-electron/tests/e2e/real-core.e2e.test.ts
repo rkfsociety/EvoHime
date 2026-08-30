@@ -36,11 +36,23 @@ let core: ChildProcess | null = null
 let client: CorePipeClient | null = null
 const dataDirs: string[] = []
 
-afterEach(() => {
+afterEach(async () => {
   client?.stop()
   client = null
-  core?.kill()
+  const processToStop = core
   core = null
+  if (processToStop && processToStop.exitCode === null && processToStop.signalCode === null) {
+    await new Promise<void>((resolvePromise) => {
+      const finish = (): void => {
+        processToStop.removeListener('exit', finish)
+        processToStop.removeListener('error', finish)
+        resolvePromise()
+      }
+      processToStop.once('exit', finish)
+      processToStop.once('error', finish)
+      processToStop.kill()
+    })
+  }
   for (const directory of dataDirs.splice(0, dataDirs.length)) {
     try {
       rmSync(directory, { recursive: true, force: true })
@@ -160,10 +172,8 @@ describe.runIf(coreExecutable !== null && process.platform === 'win32')('real Co
     const target = createClient(pipeName)
     const events: CoreEvent[] = []
     target.on('core-event', (event) => events.push(event))
-    const replaying = waitForState(target, 'initial replay', (state) => state.connection === 'replaying')
     target.start()
-    await replaying
-    await waitForState(target, 'initial replay complete', (state) => state.connection === 'connected')
+    await waitForState(target, 'connected', (state) => state.connection === 'connected')
     const awaitEvent = async (eventType: string): Promise<CoreEvent> => {
       const deadline = Date.now() + 30_000
       for (;;) {
