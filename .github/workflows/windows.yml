@@ -179,7 +179,7 @@ jobs:
         working-directory: .
         run: cargo build --locked -p evohime-core
       - name: Test shell adapter, security policy and real-Core IPC
-        run: npm test
+        run: npm test -- --no-file-parallelism
       - name: Build shell bundles
         run: npm run build
       - name: Static security checks over the production bundles
