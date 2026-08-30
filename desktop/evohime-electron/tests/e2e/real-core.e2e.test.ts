@@ -160,8 +160,10 @@ describe.runIf(coreExecutable !== null && process.platform === 'win32')('real Co
     const target = createClient(pipeName)
     const events: CoreEvent[] = []
     target.on('core-event', (event) => events.push(event))
+    const replaying = waitForState(target, 'initial replay', (state) => state.connection === 'replaying')
     target.start()
-    await waitForState(target, 'connected', (state) => state.connection === 'connected')
+    await replaying
+    await waitForState(target, 'initial replay complete', (state) => state.connection === 'connected')
     const awaitEvent = async (eventType: string): Promise<CoreEvent> => {
       const deadline = Date.now() + 30_000
       for (;;) {
