@@ -65,6 +65,24 @@ describe('панель «Слух»', () => {
     expect(calls.map((call) => call.command)).toContain('ambient.getPolicy')
   })
 
+  it('перечитывает устройства после сообщения о состоянии listener', async () => {
+    const { rerender } = render(<ListeningPanel connection="connected" events={[]} />)
+    const initialStatusRequests = calls.filter((call) => call.command === 'ambient.getStatus').length
+
+    rerender(
+      <ListeningPanel
+        connection="connected"
+        events={[event('ambient.state', { state: 'listening', reason: 'user_request' })]}
+      />
+    )
+
+    await waitFor(() => {
+      expect(calls.filter((call) => call.command === 'ambient.getStatus').length).toBeGreaterThan(
+        initialStatusRequests
+      )
+    })
+  })
+
   it('без состояния показывает «проверка состояния», а не «выключено»', () => {
     render(<ListeningPanel connection="connected" events={[]} />)
     expect(screen.getByText(/проверка состояния/i)).toBeTruthy()

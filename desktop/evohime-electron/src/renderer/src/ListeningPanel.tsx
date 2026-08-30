@@ -169,6 +169,7 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
     events,
     'ambient.state'
   )
+  const stateEventCount = events.filter((item) => item.eventType === 'ambient.state').length
   const listeningResult = latestPayload<{ state: ListeningState; error_code: string }>(
     events,
     'ambient.listening'
@@ -224,6 +225,15 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  // Listener sends the device snapshot immediately before its state event.
+  // The first status request can race that handshake, so reread the full
+  // status when a fresh listener state arrives; otherwise the panel remains
+  // stuck on an empty device list until the user clicks refresh.
+  useEffect(() => {
+    if (!api || !connected || stateEventCount === 0) return
+    void api.invoke('ambient.getStatus', {})
+  }, [api, connected, stateEventCount])
 
   // Новый транскрипт или удаление меняют список эпизодов — он перечитывается,
   // а не досочиняется на месте.
