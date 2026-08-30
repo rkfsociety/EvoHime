@@ -8,6 +8,8 @@ import type {
   ContinuationProjection,
   AnalysisKernelProjection,
   AnalysisKernelResult,
+  RefinementActionResult,
+  RefinementProjection,
   CoreAvailabilityCode,
   CoreEvent,
   GoalActionResult,
@@ -551,6 +553,9 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       continuationAction: decodeContinuationAction(event.continuationAction),
       analysisKernel: decodeAnalysisKernel(event.analysisKernel),
       analysisKernelResult: decodeAnalysisKernelResult(event.analysisKernelResult)
+      , refinement: decodeRefinement(event.refinement)
+      , refinementList: decodeRefinementList(event.refinementList)
+      , refinementAction: decodeRefinementAction(event.refinementAction)
     })
   }
 
@@ -796,6 +801,21 @@ function decodeAnalysisKernelResult(
     provenance: projected.provenance ?? '',
     errorClass: projected.errorClass ?? ''
   }
+}
+
+function decodeRefinement(projected: evohime.desktop.v1.IRefinementProjection | null | undefined): RefinementProjection | null {
+  if (!projected || (!projected.candidateId && !projected.errorCode)) return null
+  return { schemaVersion: Number(projected.schemaVersion ?? 0), candidateId: projected.candidateId ?? '', revision: Number(projected.revision ?? 0), ownerScope: projected.ownerScope ?? '', kind: projected.kind ?? '', target: projected.target ?? '', status: projected.status ?? '', patternKey: projected.patternKey ?? '', title: projected.title ?? '', evidenceCount: Number(projected.evidenceCount ?? 0), conflictCount: Number(projected.conflictCount ?? 0), confidence: Number(projected.confidence ?? 0), contentHash: projected.contentHash ?? '', policySnapshotHash: projected.policySnapshotHash ?? '', version: Number(projected.version ?? 0), errorCode: projected.errorCode ?? '', updatedAtMs: Number(projected.updatedAtMs ?? 0) }
+}
+
+function decodeRefinementList(projected: evohime.desktop.v1.IRefinementListProjection | null | undefined): { candidates: readonly RefinementProjection[]; truncated: boolean; errorCode: string } | null {
+  if (!projected) return null
+  return { candidates: (projected.candidates ?? []).map((candidate) => decodeRefinement(candidate)).filter((candidate): candidate is RefinementProjection => candidate !== null), truncated: Boolean(projected.truncated), errorCode: projected.errorCode ?? '' }
+}
+
+function decodeRefinementAction(projected: evohime.desktop.v1.IRefinementActionResult | null | undefined): RefinementActionResult | null {
+  if (!projected || (!projected.candidateId && !projected.errorCode)) return null
+  return { schemaVersion: Number(projected.schemaVersion ?? 0), candidateId: projected.candidateId ?? '', revision: Number(projected.revision ?? 0), action: projected.action ?? '', applied: Boolean(projected.applied), deduplicated: Boolean(projected.deduplicated), version: Number(projected.version ?? 0), status: projected.status ?? '', errorCode: projected.errorCode ?? '' }
 }
 
 function decodeTaskCheckpointRef(

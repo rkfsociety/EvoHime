@@ -290,6 +290,38 @@ export interface ContinuationGateProjection {
   readonly errorCode: string
 }
 
+export interface RefinementProjection {
+  readonly schemaVersion: number
+  readonly candidateId: string
+  readonly revision: number
+  readonly ownerScope: string
+  readonly kind: string
+  readonly target: string
+  readonly status: string
+  readonly patternKey: string
+  readonly title: string
+  readonly evidenceCount: number
+  readonly conflictCount: number
+  readonly confidence: number
+  readonly contentHash: string
+  readonly policySnapshotHash: string
+  readonly version: number
+  readonly errorCode: string
+  readonly updatedAtMs: number
+}
+
+export interface RefinementActionResult {
+  readonly schemaVersion: number
+  readonly candidateId: string
+  readonly revision: number
+  readonly action: string
+  readonly applied: boolean
+  readonly deduplicated: boolean
+  readonly version: number
+  readonly status: string
+  readonly errorCode: string
+}
+
 export interface ContinuationActionResult {
   readonly schemaVersion: number
   readonly runId: string
@@ -324,6 +356,9 @@ export interface CoreEvent {
   readonly goalAction?: GoalActionResult | null
   readonly continuation?: ContinuationProjection | null
   readonly continuationAction?: ContinuationActionResult | null
+  readonly refinement?: RefinementProjection | null
+  readonly refinementList?: { readonly candidates: readonly RefinementProjection[]; readonly truncated: boolean; readonly errorCode: string } | null
+  readonly refinementAction?: RefinementActionResult | null
 }
 
 export type ShellEvent =
@@ -909,6 +944,9 @@ export const RENDERER_COMMANDS = [
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
   'core.resetAnalysisKernel',
+  'core.listRefinementCandidates',
+  'core.getRefinementCandidate',
+  'core.refinementAction',
   'core.listSkills',
   'core.loadSkill',
   'core.loadSkillReference',
@@ -1094,6 +1132,9 @@ export interface CommandPayloads {
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
   'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
   'core.resetAnalysisKernel': { kernelId: string; expectedRevision: number; idempotencyKey: string }
+  'core.listRefinementCandidates': { ownerScope: string; limit?: number }
+  'core.getRefinementCandidate': { candidateId: string; revision: number }
+  'core.refinementAction': { candidateId: string; revision: number; expectedVersion: number; action: 'approve' | 'reject' | 'activate' | 'rollback'; approvalToken?: string; idempotencyKey: string }
   'core.listSkills': { workspacePath: string; limit?: number }
   'core.loadSkill': { workspacePath: string; skillId: string; maxBytes?: number }
   'core.loadSkillReference': { workspacePath: string; skillId: string; reference: string; maxBytes?: number }
@@ -1400,6 +1441,9 @@ export interface CommandResults {
   'core.getAnalysisKernel': { accepted: boolean }
   'core.executeAnalysisKernel': { accepted: boolean }
   'core.resetAnalysisKernel': { accepted: boolean }
+  'core.listRefinementCandidates': { accepted: boolean }
+  'core.getRefinementCandidate': { accepted: boolean }
+  'core.refinementAction': { accepted: boolean }
   'core.listSkills': { accepted: boolean }
   'core.loadSkill': { accepted: boolean }
   'core.loadSkillReference': { accepted: boolean }

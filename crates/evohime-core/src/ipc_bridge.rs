@@ -3064,6 +3064,36 @@ impl IpcBridge {
                     )
                     .await?;
                 }
+                Some(generated::command_envelope::Command::ListRefinementCandidates(request)) => {
+                    let projection = self.dispatch_list_refinement_candidates(request).await;
+                    write_refinement_list_projection(
+                        writer,
+                        projection,
+                        &self.core_instance_id,
+                        self.session_epoch,
+                    )
+                    .await?;
+                }
+                Some(generated::command_envelope::Command::GetRefinementCandidate(request)) => {
+                    let projection = self.dispatch_get_refinement_candidate(request).await;
+                    write_refinement_projection(
+                        writer,
+                        projection,
+                        &self.core_instance_id,
+                        self.session_epoch,
+                    )
+                    .await?;
+                }
+                Some(generated::command_envelope::Command::RefinementAction(request)) => {
+                    let result = self.dispatch_refinement_action(request).await;
+                    write_refinement_action_result(
+                        writer,
+                        result,
+                        &self.core_instance_id,
+                        self.session_epoch,
+                    )
+                    .await?;
+                }
                 Some(generated::command_envelope::Command::StopTask(stop)) => {
                     if let Some(coordinator) = &self.coordinator {
                         coordinator
@@ -7922,6 +7952,140 @@ impl IpcBridge {
         .await
     }
 
+    async fn dispatch_list_refinement_candidates(
+        &self,
+        request: generated::ListRefinementCandidates,
+    ) -> generated::RefinementListProjection {
+        let database = self.journal.database().lock().await;
+        let store =
+            evohime_local_storage::refinement_store::RefinementStore::new(database.connection());
+        match store.list(&request.owner_scope, request.limit) {
+            Ok(rows) => generated::RefinementListProjection {
+                schema_version: crate::refinement::CONTRACT_VERSION,
+                candidates: rows.into_iter().map(refinement_projection).collect(),
+                truncated: request.limit > 0 && request.limit < 128,
+                error_code: String::new(),
+            },
+            Err(_) => generated::RefinementListProjection {
+                schema_version: crate::refinement::CONTRACT_VERSION,
+                candidates: Vec::new(),
+                truncated: false,
+                error_code: "storage_failed".into(),
+            },
+        }
+    }
+
+    async fn dispatch_get_refinement_candidate(
+        &self,
+        request: generated::GetRefinementCandidate,
+    ) -> generated::RefinementProjection {
+        let database = self.journal.database().lock().await;
+        let store =
+            evohime_local_storage::refinement_store::RefinementStore::new(database.connection());
+        store
+            .get(&request.candidate_id, request.revision as i64)
+            .ok()
+            .flatten()
+            .map(refinement_projection)
+            .unwrap_or_else(|| refinement_projection_error("not_found"))
+    }
+
+    async fn dispatch_refinement_action(
+        &self,
+        request: generated::RefinementAction,
+    ) -> generated::RefinementActionResult {
+        let database = self.journal.database().lock().await;
+        let store =
+            evohime_local_storage::refinement_store::RefinementStore::new(database.connection());
+        let Some(current) = store
+            .get(&request.candidate_id, request.revision as i64)
+            .ok()
+            .flatten()
+        else {
+            return refinement_action_error(&request, "not_found");
+        };
+        if request.idempotency_key.trim().is_empty() {
+            return refinement_action_error(&request, "missing_idempotency_key");
+        }
+        let request_hash = crate::refinement::content_hash(
+            &serde_json::json!({
+                "candidate_id": request.candidate_id,
+                "revision": request.revision,
+                "expected_version": request.expected_version,
+                "action": request.action,
+                "approval_token": request.approval_token,
+            })
+            .to_string(),
+        );
+        match store.replay_idempotency(
+            &current.owner_scope,
+            &request.idempotency_key,
+            &request_hash,
+        ) {
+            Ok(Some(row)) => {
+                return generated::RefinementActionResult {
+                    schema_version: crate::refinement::CONTRACT_VERSION,
+                    candidate_id: row.id,
+                    revision: row.revision as u64,
+                    action: request.action,
+                    applied: true,
+                    deduplicated: true,
+                    version: row.version as u64,
+                    status: row.status,
+                    error_code: String::new(),
+                };
+            }
+            Err(
+                evohime_local_storage::refinement_store::RefinementStoreError::IdempotencyConflict,
+            ) => return refinement_action_error(&request, "idempotency_conflict"),
+            Ok(None) => {}
+            Err(_) => return refinement_action_error(&request, "storage_failed"),
+        }
+        if request.action == "activate" && current.kind != "memory" {
+            return refinement_action_error(&request, "unavailable");
+        }
+        if request.action == "activate"
+            && current.owner_scope == "global"
+            && request.approval_token.is_empty()
+        {
+            return refinement_action_error(&request, "approval_required");
+        }
+        let status = match request.action.as_str() {
+            "approve" => "approved",
+            "reject" => "rejected",
+            "activate" => "active",
+            "rollback" => "rolled_back",
+            _ => return refinement_action_error(&request, "invalid_action"),
+        };
+        match store.transition_with_idempotency(
+            &request.candidate_id,
+            request.revision as i64,
+            request.expected_version as i64,
+            status,
+            None,
+            crate::task_memory::now_millis() as i64,
+            Some((&request.idempotency_key, &request_hash)),
+        ) {
+            Ok(row) => generated::RefinementActionResult {
+                schema_version: crate::refinement::CONTRACT_VERSION,
+                candidate_id: row.id,
+                revision: row.revision as u64,
+                action: request.action,
+                applied: true,
+                deduplicated: false,
+                version: row.version as u64,
+                status: row.status,
+                error_code: String::new(),
+            },
+            Err(
+                evohime_local_storage::refinement_store::RefinementStoreError::VersionConflict {
+                    ..
+                },
+            ) => refinement_action_error(&request, "stale_version"),
+            Err(_) => refinement_action_error(&request, "storage_failed"),
+        }
+    }
+
     async fn dispatch_create_analysis_kernel(
         &self,
         request: generated::CreateAnalysisKernel,
@@ -9693,6 +9857,109 @@ fn analysis_kernel_projection_error(code: &str) -> generated::AnalysisKernelProj
         error_code: code.into(),
         ..Default::default()
     }
+}
+
+fn refinement_projection(
+    row: evohime_local_storage::refinement_store::CandidateRow,
+) -> generated::RefinementProjection {
+    generated::RefinementProjection {
+        schema_version: crate::refinement::CONTRACT_VERSION,
+        candidate_id: row.id,
+        revision: row.revision as u64,
+        owner_scope: row.owner_scope,
+        kind: row.kind,
+        target: row.target,
+        status: row.status,
+        pattern_key: row.pattern_key,
+        title: row.title,
+        evidence_count: row.evidence_count,
+        conflict_count: row.conflict_count,
+        confidence: row.confidence,
+        content_hash: row.content_hash,
+        policy_snapshot_hash: row.policy_snapshot_hash,
+        version: row.version as u64,
+        error_code: row.error_code.unwrap_or_default(),
+        updated_at_ms: row.updated_at_ms,
+    }
+}
+
+fn refinement_projection_error(code: &str) -> generated::RefinementProjection {
+    generated::RefinementProjection {
+        schema_version: crate::refinement::CONTRACT_VERSION,
+        error_code: code.into(),
+        ..Default::default()
+    }
+}
+
+fn refinement_action_error(
+    request: &generated::RefinementAction,
+    code: &str,
+) -> generated::RefinementActionResult {
+    generated::RefinementActionResult {
+        schema_version: crate::refinement::CONTRACT_VERSION,
+        candidate_id: request.candidate_id.clone(),
+        revision: request.revision,
+        action: request.action.clone(),
+        error_code: code.into(),
+        ..Default::default()
+    }
+}
+
+async fn write_refinement_projection<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    projection: generated::RefinementProjection,
+    core_instance_id: &str,
+    session_epoch: u64,
+) -> Result<(), FrameError> {
+    let event = generated::EventEnvelope {
+        protocol: Some(protocol()),
+        sequence_id: 0,
+        task_id: String::new(),
+        event_type: "refinement.candidate".into(),
+        payload: Vec::new(),
+        core_instance_id: core_instance_id.into(),
+        session_epoch,
+        event: Some(generated::event_envelope::Event::Refinement(projection)),
+    };
+    transport::write_frame(writer, &event.encode_to_vec()).await
+}
+
+async fn write_refinement_list_projection<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    projection: generated::RefinementListProjection,
+    core_instance_id: &str,
+    session_epoch: u64,
+) -> Result<(), FrameError> {
+    let event = generated::EventEnvelope {
+        protocol: Some(protocol()),
+        sequence_id: 0,
+        task_id: String::new(),
+        event_type: "refinement.list".into(),
+        payload: Vec::new(),
+        core_instance_id: core_instance_id.into(),
+        session_epoch,
+        event: Some(generated::event_envelope::Event::RefinementList(projection)),
+    };
+    transport::write_frame(writer, &event.encode_to_vec()).await
+}
+
+async fn write_refinement_action_result<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    result: generated::RefinementActionResult,
+    core_instance_id: &str,
+    session_epoch: u64,
+) -> Result<(), FrameError> {
+    let event = generated::EventEnvelope {
+        protocol: Some(protocol()),
+        sequence_id: 0,
+        task_id: String::new(),
+        event_type: "refinement.action".into(),
+        payload: Vec::new(),
+        core_instance_id: core_instance_id.into(),
+        session_epoch,
+        event: Some(generated::event_envelope::Event::RefinementAction(result)),
+    };
+    transport::write_frame(writer, &event.encode_to_vec()).await
 }
 
 fn analysis_kernel_projection(

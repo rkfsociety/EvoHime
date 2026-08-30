@@ -285,7 +285,27 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
   useEffect(() => {
     if (!api || !connected) return
     void api.invoke('core.listRetainedChildren', { limit: 16 })
+    void api.invoke('core.listRefinementCandidates', { ownerScope: 'workspace', limit: 32 })
   }, [api, connected])
+
+  const refinementList = useMemo(
+    () => latest(events, 'refinement.list')?.refinementList?.candidates ?? [],
+    [events]
+  )
+
+  const refinementAction = useCallback(async (candidateId: string, revision: number, version: number, action: 'approve' | 'reject' | 'activate' | 'rollback') => {
+    if (!api) return
+    const outcome = await api.invoke('core.refinementAction', {
+      candidateId,
+      revision,
+      expectedVersion: version,
+      action,
+      approvalToken: action === 'activate' ? `user-${Date.now()}` : '',
+      idempotencyKey: `refinement-${candidateId}-${revision}-${action}-${version}`
+    })
+    setMessage(outcome.ok ? `Действие refinement «${action}» отправлено в Core.` : outcome.message)
+    if (outcome.ok) void api.invoke('core.listRefinementCandidates', { ownerScope: 'workspace', limit: 32 })
+  }, [api])
 
   const deleteRetainedChild = useCallback(async (child: RetainedChildProjection): Promise<void> => {
     if (!api || !child.child_id || child.registry_version === undefined) return
@@ -560,6 +580,29 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
       </section>
 
       {message ? <p className="empty-state">{message}</p> : null}
+
+      <section className="operations-timeline" aria-label="Кандидаты continual refinement">
+        <h3>Continual refinement</h3>
+        <p>Core показывает только bounded metadata. Содержимое и transcript в UI не передаются.</p>
+        {refinementList.length === 0 ? <p className="empty-state">Кандидатов refinement нет.</p> : (
+          <ol className="operations-timeline">
+            {refinementList.map((candidate) => (
+              <li key={`${candidate.candidateId}-${candidate.revision}`}>
+                <code>{candidate.kind} · {candidate.ownerScope}</code>
+                <span>{candidate.title} · evidence {candidate.evidenceCount} · confidence {candidate.confidence}% · {candidate.status}</span>
+                <small>hash {candidate.contentHash.slice(0, 12)} · policy {candidate.policySnapshotHash.slice(0, 12)}</small>
+                {candidate.errorCode ? <small>ошибка: {candidate.errorCode}</small> : null}
+                <div className="operations-actions">
+                  {candidate.status === 'proposed' ? <button type="button" onClick={() => void refinementAction(candidate.candidateId, candidate.revision, candidate.version, 'approve')}>Одобрить</button> : null}
+                  {candidate.status === 'approved' ? <button type="button" onClick={() => void refinementAction(candidate.candidateId, candidate.revision, candidate.version, 'activate')}>Активировать</button> : null}
+                  {candidate.status === 'active' ? <button type="button" onClick={() => void refinementAction(candidate.candidateId, candidate.revision, candidate.version, 'rollback')}>Откатить</button> : null}
+                  {candidate.status !== 'active' && candidate.status !== 'rejected' ? <button type="button" onClick={() => void refinementAction(candidate.candidateId, candidate.revision, candidate.version, 'reject')}>Отклонить</button> : null}
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
 
       <section className="operations-timeline" aria-label="Предложения по услышанному">
         <h3>Предложения по услышанному</h3>

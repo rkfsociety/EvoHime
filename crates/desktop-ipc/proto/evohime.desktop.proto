@@ -1753,6 +1753,9 @@ message CommandEnvelope {
     GetAnalysisKernel get_analysis_kernel = 163;
     ExecuteAnalysisKernel execute_analysis_kernel = 164;
     ResetAnalysisKernel reset_analysis_kernel = 165;
+    ListRefinementCandidates list_refinement_candidates = 166;
+    GetRefinementCandidate get_refinement_candidate = 167;
+    RefinementAction refinement_action = 168;
   }
 }
 
@@ -1802,6 +1805,9 @@ message EventEnvelope {
     RetainedChildListProjection retained_child_list = 26;
     AnalysisKernelProjection analysis_kernel = 27;
     AnalysisKernelResult analysis_kernel_result = 28;
+    RefinementProjection refinement = 29;
+    RefinementActionResult refinement_action = 30;
+    RefinementListProjection refinement_list = 31;
   }
 }
 
@@ -1821,6 +1827,32 @@ message AnalysisKernelResult {
   uint32 schema_version = 1; string request_id = 2; string status = 3;
   bytes inline_result = 4; AnalysisKernelObjectRef object_ref = 5;
   string sensitivity = 6; string provenance = 7; string error_class = 8;
+}
+
+// Plan 29: metadata-only refinement queue. Candidate content and evidence
+// bodies never cross the desktop boundary.
+message ListRefinementCandidates { string owner_scope = 1; uint32 limit = 2; }
+message GetRefinementCandidate { string candidate_id = 1; uint64 revision = 2; }
+message RefinementAction {
+  string candidate_id = 1; uint64 revision = 2; uint64 expected_version = 3;
+  string action = 4; string approval_token = 5; string idempotency_key = 6;
+}
+message RefinementProjection {
+  uint32 schema_version = 1; string candidate_id = 2; uint64 revision = 3;
+  string owner_scope = 4; string kind = 5; string target = 6; string status = 7;
+  string pattern_key = 8; string title = 9; uint32 evidence_count = 10;
+  uint32 conflict_count = 11; uint32 confidence = 12; string content_hash = 13;
+  string policy_snapshot_hash = 14; uint64 version = 15; string error_code = 16;
+  int64 updated_at_ms = 17;
+}
+message RefinementListProjection {
+  uint32 schema_version = 1; repeated RefinementProjection candidates = 2;
+  bool truncated = 3; string error_code = 4;
+}
+message RefinementActionResult {
+  uint32 schema_version = 1; string candidate_id = 2; uint64 revision = 3;
+  string action = 4; bool applied = 5; bool deduplicated = 6;
+  uint64 version = 7; string status = 8; string error_code = 9;
 }
 
 message RetainedChildProjection {

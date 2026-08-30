@@ -387,3 +387,20 @@ surfaces fail closed typed `forbidden_capability`/`unavailable`.
 packaged worker manifest и Core/supervisor fault smoke прошли; `clippy` с
 `-D warnings` и `git diff --check` прошли. Evidence redacted: raw values,
 credentials, transcripts и абсолютные пути не сохраняются.
+
+План 29 закрыт 30 августа 2026 года. Continual Refinement v1 реализован как
+Core-owned bounded proposal pipeline: `crates/evohime-core/src/refinement.rs`
+проверяет независимые evidence/task ids, canonical SHA-256 content hash,
+запрещённые authority-bearing изменения и typed unavailable для Skill/PromptRule;
+`crates/evohime-local-storage/src/refinement_store.rs` хранит metadata-only
+candidate revisions/events с optimistic versioning в SQLite schema v39. Для
+authenticated desktop IPC добавлены additive commands 166–168 и typed
+metadata-only projections; Electron `OperationsPanel` показывает очередь и
+явные approve/reject/activate/rollback actions. Raw candidate body, transcript,
+credentials и hidden reasoning в projection не передаются.
+
+Проверка плана 29: Core 578 тестов, local-storage 214, desktop IPC 35,
+Electron 472 passed и 2 штатно skipped; strict clippy, cargo fmt,
+`npm run check:protocol`, `npm run typecheck`, release Core build и isolated
+real-Core workflow E2E прошли. Skill/PromptRule остаются fail-closed
+`unavailable` до появления их Core-owned activation owners.

@@ -959,3 +959,18 @@ storage/runtime/IPC/replay/approval-boundary, real worker protocol, packaged
 worker manifest и Core/supervisor fault smoke; raw values, credentials,
 transcripts и абсолютные пути в bundle не попадают. При сбое reset/stop,
 recovery fencing и optimistic revision не допускают blind retry.
+
+### Continual Refinement v1
+
+План 29 закрыт 30 августа 2026 года. Core-контракт находится в
+`crates/evohime-core/src/refinement.rs`: proposal создаётся только после
+bounded independent evidence admission, получает immutable revision,
+owner scope, provenance, policy snapshot hash и canonical content hash.
+Authority-bearing тексты отклоняются, а Skill/PromptRule не активируются без
+отдельного Core-owned activation adapter. Durable metadata/event storage
+находится в `crates/evohime-local-storage/src/refinement_store.rs` и добавлен
+транзакционно в schema v39; renderer не получает candidate body, transcript,
+secret или hidden reasoning. Authenticated IPC commands 166–168 дают bounded
+list/get/action projection с optimistic version checks. Electron OperationsPanel
+только отображает состояние и отправляет явные действия; policy и effect
+остаются в Core.

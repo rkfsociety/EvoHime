@@ -976,6 +976,7 @@ pub use provider_resilience::{
 pub mod recovery;
 pub mod run_policy;
 pub use recovery::{classify_tool_outcome, DenialSource, ToolFailureKind, ToolOutcome};
+pub mod refinement;
 pub mod research;
 pub mod research_fetch;
 pub mod research_gate;

@@ -101,9 +101,10 @@ Stage-файлы не удаляются по отдельности: после
 Планы 01–25 реализованы и перенесены в канонические разделы
 [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md).
 План 25 (Persistent Goals) закрыт и удалён после переноса контракта и evidence.
-Планы 26–29 являются issue-derived направлениями и выполняются в таком порядке:
-Continuation Policy, retained child contexts,
-Persistent Analysis Kernel, Continual Refinement. Планы 30–115
+Планы 26–29 были issue-derived направлениями в таком порядке:
+Continuation Policy, retained child contexts, Persistent Analysis Kernel,
+Continual Refinement; все четыре направления закрыты и перенесены в
+канонические документы. Планы 30–115
 следуют порядку issues #10–#95. Для каждого направления сначала выполняется
 `NN-0`, затем четыре stage-файла; межплановые блокирующие зависимости и
 опциональная деградация явно перечислены внутри соответствующих файлов.

@@ -88,3 +88,10 @@ typed IPC/UI и redacted packaged fault evidence; stage-комплект пла�
 [`decision-register.md`](decision-register.md), а статус выпуска — в
 [`release-evidence.md`](release-evidence.md). Исторические результаты не смешиваются
 с текущей проверкой: для них указываются дата, команда и область проверки.
+
+План 29 закрыт: Continual Refinement v1 перенесён в canonical
+architecture/current-state/release-evidence. Подтверждены bounded evidence
+admission, schema v39, metadata-only candidate store, optimistic lifecycle,
+authenticated IPC 166–168 и Electron OperationsPanel. Skill/PromptRule без
+Core-owned activation owner остаются typed `unavailable`; blind activation,
+authority expansion и raw transcript projection запрещены.

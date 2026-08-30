@@ -287,6 +287,34 @@ function dispatch(
       return accepted(client.send({ resetAnalysisKernel: { kernelId, expectedRevision, idempotencyKey } }))
     }
 
+    case 'core.listRefinementCandidates': {
+      const value = asRecord(payload)
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const limit = value['limit'] === undefined ? 0 : asBoundedNumber(value['limit'], 128)
+      if (ownerScope === null || limit === null) return failure('invalid-payload', 'Некорректный scope refinement.')
+      return accepted(client.send({ listRefinementCandidates: { ownerScope, limit } }))
+    }
+
+    case 'core.getRefinementCandidate': {
+      const value = asRecord(payload)
+      const candidateId = asBoundedString(value['candidateId'])
+      const revision = asNonNegativeInteger(value['revision'])
+      if (candidateId === null || revision === null) return failure('invalid-payload', 'Некорректный candidate refinement.')
+      return accepted(client.send({ getRefinementCandidate: { candidateId, revision } }))
+    }
+
+    case 'core.refinementAction': {
+      const value = asRecord(payload)
+      const candidateId = asBoundedString(value['candidateId'])
+      const revision = asNonNegativeInteger(value['revision'])
+      const expectedVersion = asNonNegativeInteger(value['expectedVersion'])
+      const action = ['approve', 'reject', 'activate', 'rollback'].includes(String(value['action'])) ? String(value['action']) : null
+      const approvalToken = value['approvalToken'] === undefined ? '' : asBoundedString(value['approvalToken'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (candidateId === null || revision === null || expectedVersion === null || action === null || approvalToken === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректное действие refinement.')
+      return accepted(client.send({ refinementAction: { candidateId, revision, expectedVersion, action, approvalToken, idempotencyKey } }))
+    }
+
     case 'core.createGoal': {
       const value = asRecord(payload)
       const goalId = asGoalToken(value['goalId'])
