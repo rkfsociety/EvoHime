@@ -177,7 +177,7 @@ jobs:
         run: npm run typecheck
       - name: Build Core for the real-Core IPC E2E tests
         working-directory: .
-        run: cargo build --locked -p evohime-core
+        run: cargo build --locked --release -p evohime-core
       - name: Test shell adapter, security policy and real-Core IPC
         run: npm test -- --no-file-parallelism
       - name: Build shell bundles
