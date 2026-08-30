@@ -174,18 +174,26 @@ describe.runIf(coreExecutable !== null && process.platform === 'win32')('real Co
     target.on('core-event', (event) => events.push(event))
     target.start()
     await waitForState(target, 'connected', (state) => state.connection === 'connected')
-    const awaitEvent = async (eventType: string): Promise<CoreEvent> => {
+    const awaitEvent = async (eventType: string, retry?: () => void): Promise<CoreEvent> => {
       const deadline = Date.now() + 30_000
+      let nextRetryAt = Date.now() + 1_000
       for (;;) {
         const found = events.filter((event) => event.eventType === eventType).at(-1)
         if (found) return found
         if (Date.now() > deadline) throw new Error(`timed out waiting for ${eventType}`)
+        if (retry && Date.now() >= nextRetryAt) {
+          retry()
+          nextRetryAt = Date.now() + 1_000
+        }
         await new Promise((resolvePromise) => setTimeout(resolvePromise, 100))
       }
     }
 
-    target.send({ listWorkflowTemplates: {} })
-    const catalog = JSON.parse((await awaitEvent('workflow.templates')).payload) as {
+    const listTemplates = (): void => {
+      target.send({ listWorkflowTemplates: {} })
+    }
+    listTemplates()
+    const catalog = JSON.parse((await awaitEvent('workflow.templates', listTemplates)).payload) as {
       templates: { template_id: string }[]
     }
     expect(catalog.templates.map((item) => item.template_id)).toContain('parallel-security-review')
