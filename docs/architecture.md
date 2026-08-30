@@ -1038,3 +1038,19 @@ adapters не включены, а offline `fixture.echo` доступен че�
 authenticated/additive: commands 175–176 и event 35; Electron показывает
 metadata-only Integrations в `SettingsModal`. Unknown/unavailable outcomes
 fail closed и не повторяют внешний effect вслепую.
+
+### Event Trigger Runtime v1
+
+План 34 реализован как bounded Core-owned ingress для `local_workspace_event` и
+`system_event`. Контракт находится в
+`crates/evohime-core/src/event_trigger_runtime.rs`: immutable workflow binding
+с pinned version/execution hash, normalized envelope, allowlisted mapping,
+Core-local authenticity, дедупликация, rate/queue bounds и typed outcomes.
+Provider webhook остаётся честным `unavailable` без production adapter.
+
+Durable metadata schema v41 находится в
+`crates/evohime-local-storage/src/event_trigger_runtime_store.rs`; она не
+содержит credentials или raw prompt/output. Authenticated IPC additive commands
+177–178 и event 36 подключены к Electron; Settings → «Триггеры событий»
+показывает только bounded projection и unavailable provider state. Runtime не
+повторяет unknown external effect вслепую и не выдаёт renderer authority.

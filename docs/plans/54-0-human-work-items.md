@@ -51,7 +51,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 34.0 — Event Trigger Runtime: безопасный запуск workflow по внешним событиям.
+- Event Trigger Runtime v1 — реализованный контракт из `../architecture.md`.
 - План 35.0 — Invocation Presets: version-pinned шаблоны запусков без копирования секретов.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 

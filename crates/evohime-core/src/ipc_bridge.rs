@@ -3817,6 +3817,16 @@ impl IpcBridge {
                     )
                     .await?;
                 }
+                Some(generated::command_envelope::Command::EventTriggerRuntimeList(request))
+                | Some(generated::command_envelope::Command::EventTriggerRuntimeAction(request)) => {
+                    let result = self.dispatch_event_trigger_runtime(request);
+                    self.write_response(
+                        writer,
+                        "event_trigger_runtime.result",
+                        serde_json::to_vec(&result)?,
+                    )
+                    .await?;
+                }
                 Some(generated::command_envelope::Command::ListAutomationSchedules(request)) => {
                     let result = self.dispatch_list_automation_schedules(request).await;
                     self.write_response(
@@ -10238,6 +10248,34 @@ impl IpcBridge {
             "operation": operation,
             "error_code": "provider_adapter_unavailable",
         })
+    }
+
+    fn dispatch_event_trigger_runtime(
+        &self,
+        request: generated::EventTriggerRuntimeCommand,
+    ) -> serde_json::Value {
+        let operation = request.operation.as_str();
+        if request.schema_version != 1
+            || request.request_id.is_empty()
+            || request.owner_scope.is_empty()
+        {
+            return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":operation,"status":"rejected","error_code":"invalid_request"});
+        }
+        match operation {
+            "list" | "get" => serde_json::json!({
+                "schema_version": 1, "request_id": request.request_id, "operation": operation,
+                "status": "ok", "triggers": [], "mvp_sources": ["local_workspace_event", "system_event"],
+                "provider_webhook": "unavailable", "error_code": ""
+            }),
+            "reconcile" | "pause" | "resume" => serde_json::json!({
+                "schema_version": 1, "request_id": request.request_id, "operation": operation,
+                "status": "unavailable", "error_code": "no_trigger_configured"
+            }),
+            _ => serde_json::json!({
+                "schema_version": 1, "request_id": request.request_id, "operation": operation,
+                "status": "unavailable", "error_code": "unsupported_operation"
+            }),
+        }
     }
 
     async fn write_response<W: AsyncWrite + Unpin>(

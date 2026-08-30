@@ -18,6 +18,7 @@ pub mod child_store;
 pub mod context_command_store;
 pub mod context_ledger_store;
 pub mod continuation_store;
+pub mod event_trigger_runtime_store;
 pub mod execution_ledger;
 pub mod feedback_store;
 pub mod goal;
@@ -41,7 +42,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 40;
+pub const SCHEMA_VERSION: u32 = 41;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -528,6 +529,7 @@ impl LocalDatabase {
         // Schema 40: Integration Provider SDK metadata. Secret material is
         // deliberately absent; the store is metadata-only.
         integration_provider_store::install_schema(&connection)?;
+        event_trigger_runtime_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }

@@ -49,7 +49,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 - План 33.0 — Integration Provider SDK: единый контракт auth, actions, webhooks и test fixtures.
 - План 30.0 — Workflow Package: export/import presets — только отдельная
   optional portable-форма; user-specific presets не экспортируются по умолчанию.
-- План 34.0 — Event Trigger Runtime: optional base-preset mapping для trigger
+- Event Trigger Runtime v1 — optional base-preset mapping для trigger
   inputs с fail-closed degradation до обычного event mapping.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 

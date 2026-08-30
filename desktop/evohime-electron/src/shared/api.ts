@@ -1088,6 +1088,8 @@ export const RENDERER_COMMANDS = [
   'workflowComposer.command',
   'integrationProvider.listCatalog',
   'integrationProvider.command',
+  'eventTriggerRuntime.list',
+  'eventTriggerRuntime.command',
   'automation.listSchedules',
   'automation.saveSchedule',
   'automation.trigger',
@@ -1450,6 +1452,15 @@ export interface CommandPayloads {
     expectedVersion?: number
     idempotencyKey: string
   }
+  'eventTriggerRuntime.list': { requestId: string; ownerScope: string }
+  'eventTriggerRuntime.command': {
+    requestId: string
+    ownerScope: string
+    operation: string
+    payload?: string
+    expectedVersion?: number
+    idempotencyKey: string
+  }
   'automation.listSchedules': { ownerScope: string; limit?: number }
   'automation.saveSchedule': {
     scheduleId: string
@@ -1654,6 +1665,8 @@ export interface CommandResults {
   'workflowComposer.command': { accepted: boolean }
   'integrationProvider.listCatalog': { accepted: boolean }
   'integrationProvider.command': { accepted: boolean }
+  'eventTriggerRuntime.list': { accepted: boolean }
+  'eventTriggerRuntime.command': { accepted: boolean }
   'automation.listSchedules': { accepted: boolean }
   'automation.saveSchedule': { accepted: boolean }
   'automation.trigger': { accepted: boolean }

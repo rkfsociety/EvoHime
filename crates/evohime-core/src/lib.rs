@@ -955,6 +955,7 @@ pub mod continuation;
 pub mod conversational_workflow_composer;
 pub mod doctor;
 pub mod evals;
+pub mod event_trigger_runtime;
 pub mod export;
 pub mod goal;
 pub mod integration_provider_runtime;

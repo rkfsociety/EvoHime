@@ -23,7 +23,7 @@
 - План 33.0 — зависимость из обзора.
 - План 30.0 — только optional portable export/import; локальный preset должен
   работать без package-контуров.
-- План 34.0 — только optional trigger base mapping; без него preset остаётся
+- Event Trigger Runtime v1 — только optional trigger base mapping; без него preset остаётся
   usable для manual/schedule запуска.
 
 ## Реализация

@@ -17,7 +17,7 @@
 
 - План 33.0 — зависимость из обзора.
 - План 30.0 — optional portable export/import; UI не зависит от него.
-- План 34.0 — optional trigger base mapping с явным unavailable fallback.
+- Event Trigger Runtime v1 — optional trigger base mapping с явным unavailable fallback.
 
 ## Реализация
 

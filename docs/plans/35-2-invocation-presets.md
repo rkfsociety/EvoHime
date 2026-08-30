@@ -18,7 +18,7 @@
 - План 33.0 — зависимость из обзора.
 - План 30.0 — optional portable export/import; local preset run и scheduler
   работают без него.
-- План 34.0 — optional trigger base mapping; без него event fields остаются
+- Event Trigger Runtime v1 — optional trigger base mapping; без него event fields остаются
   единственным trigger input source.
 
 ## Реализация

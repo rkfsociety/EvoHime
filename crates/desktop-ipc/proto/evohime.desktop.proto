@@ -1764,6 +1764,8 @@ message CommandEnvelope {
     ConversationalWorkflowComposerCommand conversational_workflow_composer = 174;
     IntegrationProviderSdkCommand integration_provider_sdk_catalog = 175;
     IntegrationProviderSdkCommand integration_provider_sdk_action = 176;
+    EventTriggerRuntimeCommand event_trigger_runtime_list = 177;
+    EventTriggerRuntimeCommand event_trigger_runtime_action = 178;
   }
 }
 
@@ -1849,6 +1851,7 @@ message EventEnvelope {
   VisualWorkflowBuilderResult visual_workflow_builder = 33;
   ConversationalWorkflowComposerResult conversational_workflow_composer = 34;
   IntegrationProviderSdkEvent integration_provider_sdk = 35;
+  EventTriggerRuntimeEvent event_trigger_runtime = 36;
   }
 }
 
@@ -1863,6 +1866,26 @@ message IntegrationProviderSdkCommand {
   string idempotency_key = 7;
 }
 message IntegrationProviderSdkEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  string error_code = 5;
+  bytes projection_json = 6;
+  bool truncated = 7;
+}
+
+// Plan 34: bounded metadata-only Event Trigger Runtime surface.
+message EventTriggerRuntimeCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string operation = 4;
+  bytes payload = 5;
+  uint64 expected_version = 6;
+  string idempotency_key = 7;
+}
+message EventTriggerRuntimeEvent {
   uint32 schema_version = 1;
   string request_id = 2;
   string operation = 3;

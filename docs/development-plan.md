@@ -115,3 +115,9 @@ Core-owned registry validation, bounded model gateway invocation, typed edits,
 Builder handoff/save, redacted provenance persistence, additive IPC 174/event 34
 и Electron metadata-only Composer surface. После финальной проверки комплект
 32-0 … 32-4 удалён.
+
+План 34 закрыт: Event Trigger Runtime v1 перенесён в canonical
+architecture/current-state. Подтверждены bounded local/system ingress,
+workflow pinning, mapping/dedup/rate limits, schema v41, authenticated IPC
+177–178/event 36, Electron projection и typed unavailable для provider webhook.
+Комплект планов 34-0 … 34-4 удалён после полного regression-прогона.

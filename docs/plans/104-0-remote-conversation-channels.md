@@ -43,7 +43,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 34.0 — Event Trigger Runtime: безопасный запуск workflow по внешним событиям.
+- Реализованный Event Trigger Runtime v1 (контракт перенесён в `../architecture.md`).
 - План 40.0 — Sensitive Data Guardrails: PII/secret detection и streaming redaction на model/tool boundaries.
 - План 98.0 — Durable Remote Task Bridge: submit/status/cancel protocol для долгих tool и MCP операций.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.

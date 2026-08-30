@@ -442,3 +442,14 @@ GitHub/Google/Slack/Linear production adapters остаются typed `unavailab
 отдельных направлений; credentials, raw output и prompt не пересекают Core
 boundary. Проверены Rust contract/storage/runtime tests, protocol/typecheck,
 Electron regression (476 passed, 2 штатно skipped) и clippy.
+
+План 34 реализован 30 августа 2026 года. Event Trigger Runtime v1 добавляет
+Core contract/validator и bounded local/system ingress с pinned workflow
+binding, mapping allowlist, Core-local authenticity, dedup, rate/queue bounds и
+typed duplicate/throttle/reject outcomes. Durable metadata schema — v41;
+provider webhook без production adapter остаётся typed `unavailable`. IPC
+использует additive commands 177–178/event 36, Electron показывает metadata-only
+панель «Триггеры событий». Проверены Core 596 tests, local-storage 220 tests,
+desktop IPC protocol, Electron typecheck и полный Electron regression: 477
+passed, 2 штатно skipped; `cargo fmt --all -- --check` и `git diff --check`
+прошли.
