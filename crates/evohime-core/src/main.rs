@@ -1,6 +1,24 @@
 #[cfg(windows)]
-#[tokio::main]
-async fn main() {
+fn main() {
+    std::thread::Builder::new()
+        // Debug startup has a large async state machine. The default process
+        // stack is too small on Windows and can overflow before Core finishes
+        // establishing its IPC listener.
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("failed to build Tokio runtime")
+                .block_on(run());
+        })
+        .expect("failed to create Core runtime thread")
+        .join()
+        .expect("evohime-core runtime thread failed");
+}
+
+#[cfg(windows)]
+async fn run() {
     let data_dir = normalized_env_path("EVOHIME_DATA_DIR")
         .or_else(|| {
             std::env::var_os("LOCALAPPDATA")
