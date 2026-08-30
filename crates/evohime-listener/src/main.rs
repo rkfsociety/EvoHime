@@ -226,7 +226,15 @@ async fn run_connection(
                         .await?;
                     }
                     Some(generated::envelope::Payload::Policy(policy)) => {
+                        let device_changed = device_selection_changed(&runtime.device_id, &policy.device_id);
                         apply_policy_update(runtime, policy);
+                        if device_changed {
+                            // Выбор микрофона приходит сюда вместе с полной
+                            // политикой из Core. Старый поток нельзя оставлять
+                            // открытым: иначе UI показывает новое устройство,
+                            // а захват продолжает идти со старого.
+                            capture = None;
+                        }
                         if !announced {
                             announced = true;
                             report_engine(&mut stream, runtime, engine_error).await?;
@@ -317,6 +325,25 @@ fn apply_policy_update(runtime: &mut ListenerRuntime, policy: generated::PolicyU
         .collect();
     runtime.enabled = policy.enabled;
     runtime.device_id = policy.device_id;
+}
+
+fn device_selection_changed(current: &str, requested: &str) -> bool {
+    current != requested
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn policy_device_change_is_detected_for_capture_restart() {
+        assert!(super::device_selection_changed(
+            "fifine-Microphone",
+            "Headset-Mic-2"
+        ));
+        assert!(!super::device_selection_changed(
+            "fifine-Microphone",
+            "fifine-Microphone"
+        ));
+    }
 }
 
 /// Перечисляет устройства заново и отправляет снимок в Core.
