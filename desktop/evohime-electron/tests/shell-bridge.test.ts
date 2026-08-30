@@ -273,6 +273,32 @@ beforeEach(() => {
 })
 
 describe('renderer command surface', () => {
+  it('принимает пустой workspace для независимого repair-run', async () => {
+    const start = vi.fn(async () => ({
+      phase: 'preparing', repairId: 'repair-1', workspacePath: 'C:\\repair\\repair-1',
+      baseCommit: null, branch: 'main', taskId: 'task-1', errorCount: 72,
+      repeatedPatterns: 1, summary: 'Готовлю изолированную копию репозитория…',
+      diffStat: '', tests: [], commit: null, ciState: 'unknown', error: null, updatedAtMs: 1
+    }))
+    registerShellBridge({
+      client: client as never,
+      workspaces: workspaces as never,
+      providers: providers as never,
+      codex: {} as never,
+      repair: { start, status: {}, cancel: () => ({}), commit: () => ({}), push: () => ({}), refreshCi: async () => ({}) } as never,
+      chats: chats as never,
+      restartCore: async () => true,
+      updates: updates as never,
+      listenerRuntime: listenerRuntime as never,
+      ambientHotkey: () => ({ combination: 'Control+Alt+M', registered: true }),
+      exportDiagnostics: async () => ({ cancelled: false, path: '' }),
+      log: () => {}
+    })
+
+    await expect(invoke('repair.start', { workspacePath: '' })).resolves.toMatchObject({ ok: true })
+    expect(start).toHaveBeenCalledWith('')
+  })
+
   it('exposes only the documented channels', () => {
     expect([...handlers.keys()].sort()).toEqual(
       [CLIPBOARD_CHANNEL, INVOKE_CHANNEL, OPEN_EXTERNAL_CHANNEL].sort()

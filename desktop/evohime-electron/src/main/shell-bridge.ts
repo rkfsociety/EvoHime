@@ -1233,7 +1233,10 @@ function dispatch(
       return { ok: true, value: repair.status }
 
     case 'repair.start': {
-      const workspacePath = asBoundedString(asRecord(payload)['workspacePath'])
+      // Repair always creates its own isolated checkout. An empty value is
+      // intentional: the selected workspace must neither affect nor receive
+      // repair changes.
+      const workspacePath = asOptionalBoundedString(asRecord(payload)['workspacePath'])
       if (workspacePath === null) return failure('invalid-payload', 'Некорректный workspace для repair-run.')
       return repair.start(workspacePath).then((value) => ({ ok: true, value }))
     }
