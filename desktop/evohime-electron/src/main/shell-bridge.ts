@@ -1715,6 +1715,28 @@ function dispatch(
       return accepted(client.send({ eventTriggerRuntimeAction: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(payloadJson, 'utf8'), expectedVersion, idempotencyKey } }))
     }
 
+    case 'invocationPreset.list': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const limit = value['limit'] === undefined ? 50 : asBoundedNumber(value['limit'], 100)
+      if (requestId === null || ownerScope === null || limit === null) return failure('invalid-payload', 'Некорректный запрос списка пресетов.')
+      return accepted(client.send({ invocationPresetList: { schemaVersion: 1, requestId, ownerScope, operation: 'list', payload: Buffer.alloc(0), expectedRevision: limit, idempotencyKey: requestId } }))
+    }
+
+    case 'invocationPreset.command': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const operation = asBoundedString(value['operation'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const payloadJson = value['payload'] === undefined ? '' : asBoundedString(value['payload'])
+      const expectedRevision = value['expectedRevision'] === undefined ? 0 : asBoundedNumber(value['expectedRevision'], Number.MAX_SAFE_INTEGER)
+      if (requestId === null || ownerScope === null || operation === null || idempotencyKey === null || payloadJson === null || expectedRevision === null) return failure('invalid-payload', 'Некорректная команда пресета.')
+      if (payloadJson.length > 128 * 1024) return failure('invalid-payload', 'Payload пресета слишком большой.')
+      return accepted(client.send({ invocationPresetAction: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(payloadJson, 'utf8'), expectedRevision, idempotencyKey } }))
+    }
+
     case 'automation.listSchedules': {
       const value = asRecord(payload)
       const ownerScope = asBoundedString(value['ownerScope'])

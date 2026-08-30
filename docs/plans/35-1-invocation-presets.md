@@ -34,6 +34,28 @@
 3. Добавить durable store и additive migration с backup-before-migrate только если состояние переживает restart; ephemeral state закрепить отрицательным persistence test.
 4. Добавить deterministic fixtures: valid/invalid, duplicate, stale, redaction, limit и migration failure; выдать evidence-пакет этапу 2.
 
+### Обязательная точность контракта
+
+- `input_values` и `execution_options` задаются явной allowlist-таблицей типов
+  и полей. Запрещаются graph/node/provider/action identity, capability/grant,
+  approval policy, executable/path/network routing, raw credential и secret
+  input; неизвестное authority-bearing поле даёт typed rejection, а не
+  игнорируется.
+- Completed-run sanitizer принимает только Core-owned metadata из успешного
+  завершённого workflow run. Он возвращает bounded preview с retained,
+  removed и rejected field names; неизвестные или неоднозначные поля не
+  сохраняются молча. Tokens, ephemeral IDs, absolute paths, artifact bodies,
+  trigger payload, prompt/output/transcript и credentials должны иметь
+  отрицательные fixtures.
+- Migration contract хранит source/target workflow definition и input-schema
+  hashes, mapping revision и explicit actor/provenance. Mapping может быть
+  только Core-валидированным allowlist-описанием; до commit есть preview,
+  а несовместимость даёт `NeedsMigration` или `IncompatibleSchema` без записи.
+- Для scheduler stage 1 должен определить typed reference/snapshot fields,
+  которые будут добавлены в `automation_schedules`/run admission, чтобы
+  `preset_id`, revision и content hash не потерялись между automation и
+  workflow runtime.
+
 ## Артефакты
 
 - contract/types + validator + transition table;
@@ -73,6 +95,9 @@
 ### Definition freeze
 
 - До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Invocation Presets: version-pinned шаблоны запусков без копирования секретов».
+- Зафиксировать canonical serialization (порядок ключей, omission/defaults,
+  Unicode/number normalization и SHA-256 input) одной общей fixture для
+  storage, runtime, schedule и IPC; hash не включает secret material.
 - Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
 
 ## Критерии выхода

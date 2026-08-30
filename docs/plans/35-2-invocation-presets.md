@@ -32,6 +32,18 @@
 4. Сделать fault-injection для crash до/после dispatch, stale version/lease, duplicate delivery, policy change и corruption.
 5. Зафиксировать metadata-only projection и redacted evidence для этапов 3–4.
 
+### Связка с существующим automation scheduler
+
+`automation_store` и `workflow_store` остаются отдельными владельцами
+состояния. Если preset запускается расписанием, запись schedule и admission
+run должны атомарно нести `preset_id`, `preset_revision` и
+`preset_content_hash` (или immutable resolved snapshot), а handler обязан
+разрешать preset и передавать его inputs в обычный `WorkflowRuntime` с тем же
+policy/approval path. Редактирование preset после создания schedule должно
+давать drift/blocked outcome, но не менять уже зафиксированный запуск.
+Нужны тесты для schedule create, edit-after-schedule, restart и duplicate
+polling; одного теста `DailySchedule` недостаточно.
+
 ## Предметная декомпозиция
 
 ### Runtime vertical slice
@@ -42,8 +54,9 @@
   deterministic sanitizer; preview до сохранения и повторная schema/credential
   validation обязательны.
 - Для migration сравнить pinned definition/schema hashes, выполнить только
-  explicit compatible mapping или вернуть typed `NeedsMigration`/
-  `IncompatibleSchema`; запись preset и migration result атомарны.
+  explicit Core-validated compatible mapping или вернуть typed `NeedsMigration`/
+  `IncompatibleSchema`; preview и commit разделены, запись preset и migration
+  result атомарны. Model output не является mapping authority.
 - Schedule запускается с immutable preset revision/hash snapshot; последующее
   редактирование preset не меняет уже подтверждённый schedule.
 - Для каждого внешнего/необратимого вызова записать before/after-dispatch evidence; unknown outcome переводить в reconciliation, без blind retry.

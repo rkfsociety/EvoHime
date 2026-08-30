@@ -121,3 +121,11 @@ architecture/current-state. Подтверждены bounded local/system ingres
 workflow pinning, mapping/dedup/rate limits, schema v41, authenticated IPC
 177–178/event 36, Electron projection и typed unavailable для provider webhook.
 Комплект планов 34-0 … 34-4 удалён после полного regression-прогона.
+
+План 35 пока не закрыт. Реализован и проверен первый безопасный срез
+Invocation Presets: Core-owned versioned contract, deterministic redacted hash,
+fail-closed completed-run sanitizer, immutable/idempotent SQLite revisions,
+authenticated IPC 179–180/event 37 и metadata-only Electron WorkflowPanel.
+Обязательные незавершённые части — explicit migration preview/commit и
+immutable preset reference между `automation_store` scheduler и обычным
+workflow runtime; комплекты `35-0` … `35-4` сохраняются до их реализации.

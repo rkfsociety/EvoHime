@@ -22,7 +22,13 @@
 ## Реализация
 
 0. Проверить proto и зарезервировать additive names/tags, не меняя semantics старых clients.
-1. Добавить bounded request/result/event messages с correlation, idempotency, optimistic version и typed errors; исключить secrets, raw prompt и hidden reasoning.
+1. Добавить bounded payload types для существующего additive
+   `CommandEnvelope.command` oneof и typed `EventEnvelope.event` (как у
+   соседних workflow/package/provider/trigger surfaces), с correlation,
+   idempotency, optimistic version и typed errors; не вводить отдельный
+   transport или несуществующую generic request/response пару. Свободные tags
+   и event numbers подтвердить по live proto непосредственно перед правкой;
+   исключить secrets, raw prompt и hidden reasoning.
 2. Реализовать Electron main/preload и предусмотренный client adapter; он только сериализует и маршрутизирует Core commands.
 3. Расширить существующий `WorkflowPanel` projection/action surface для списка
    preset, manual create, save-from-completed-run preview, edit, duplicate,
@@ -35,9 +41,14 @@
 
 ### Protocol and client surfaces
 
-- Proto: добавить additive `InvocationPresetsRequest`, `InvocationPresetsResponse`, `InvocationPresetsEvent` и command/event oneof в `crates/desktop-ipc/proto/evohime.desktop.proto` после проверки свободных tags; сохранить major, replay/resync и bounded frame limits.
+- Proto: использовать фактический стиль текущего файла — typed command payload
+  в `CommandEnvelope` и один bounded typed event/projection в
+  `EventEnvelope`; generated Rust/TypeScript обновляются обычным
+  `check:protocol`, major/replay/resync/frame limits не меняются.
 - Bridge: связать `crates/evohime-core/src/ipc_bridge.rs`, `desktop/evohime-electron/src/shared/api.ts`, `desktop/evohime-electron/src/preload/index.ts` и `desktop/evohime-electron/src/main/shell-bridge.ts`; renderer не получает Core/storage authority.
-- UI: расширить `desktop/evohime-electron/src/renderer/src/WorkflowPanel.tsx`;
+- UI: расширить `desktop/evohime-electron/src/renderer/src/WorkflowPanel.tsx`
+  и существующий `workflow.getDefinition` path (detail сейчас не является
+  отдельным renderer route);
   показывать pinned version/schema drift, masked sensitive values,
   NeedsRebinding, temporary overrides и schedule snapshot status. Тесты —
   `desktop/evohime-electron/tests/invocation_presets.test.tsx` и protocol/typecheck gates.
@@ -54,6 +65,9 @@
 - `C11` — Temporary override. → отделить run-only overlay от сохранения preset.
 - `C12` — Schedule snapshot. → показывать зафиксированную revision/hash и drift после edit.
 - `C14` — Trigger base mapping. → отображать bounded mapping status; protected identities не редактируются event payload.
+- `C08`/`C12` — Scheduler snapshot. → показывать Core-projected preset
+  reference/revision/hash, drift и blocked outcome из automation↔workflow
+  adapter; renderer не реконструирует snapshot.
 
 ### Client safety and replay
 

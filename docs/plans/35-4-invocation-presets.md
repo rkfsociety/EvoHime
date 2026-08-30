@@ -51,6 +51,10 @@
 - Evidence отдельно подтверждает completed-run sanitizer, manual-create
   validation, migration compatible/incompatible outcomes, NeedsRebinding,
   temporary override isolation и schedule revision/hash snapshot.
+- Отдельным evidence должен быть automation↔workflow scheduler adapter:
+  schedule create/edit drift, immutable preset reference, обычный approval
+  path, restart и duplicate polling; текущие automation scheduler unit tests
+  без preset reference этот критерий не закрывают.
 - Rollback/disable и recovery procedure записаны; unknown side effect не объявляется success и не повторяется вслепую.
 - После свежих проверок обновить docs/architecture.md, docs/current-state.md, docs/development-plan.md и при необходимости docs/release-evidence.md.
 - После закрытия всего направления и переноса подтверждённого контракта удалить комплект `35-0` … `35-4`; отдельные stage-файлы до этого не удалять. Незавершённое направление оставить blocked с evidence.

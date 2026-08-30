@@ -150,6 +150,32 @@ InvocationPreset {
 контракта. Документ считается выполненным только вместе с тестами,
 `git diff --check` и обновлением канонической документации после реализации.
 
+## Evidence freeze для зависимых контуров
+
+На текущем checkout workflow runtime и automation scheduler — разные durable
+контуры. `workflow_store` хранит `workflow_runs`, а `automation_store` хранит
+свои definitions, schedules, runs, leases и snapshots; preset не может
+подменять один контур полями другого. Stage 2 обязан явно выбрать и описать
+адаптер между ними: для preset schedule в authoritative записи должны быть
+`preset_id`, `preset_revision` и `preset_content_hash` (либо эквивалентный
+resolved snapshot), а scheduler должен передавать их в обычный workflow runtime.
+Нельзя считать существующую automation schedule доказательством C08/C12 без
+этого связывающего контракта и теста после редактирования preset.
+
+`input_values`, `credential_bindings` и `execution_options` являются только
+allowlisted data. В них запрещены workflow graph/identity, capability/grant,
+approval policy, provider/action identity, executable/path/network routing и
+raw credential/secret fields; это проверяется Core, а не renderer. Completed-run
+sanitizer возвращает typed preview с `removed_fields`/`rejected_fields`, не
+делает молчаливое сохранение неизвестных полей и не принимает model output как
+доказательство безопасной очистки.
+
+Миграция между workflow versions — отдельный explicit operation: source и
+target definition/schema hashes, bounded allowlisted mapping, preview,
+совместимость и typed `NeedsMigration`/`IncompatibleSchema`; автоматическое
+модельное сопоставление и silent mutation запрещены. Hash canonicalization
+должна быть общей для storage, runtime, schedule и IPC fixtures.
+
 ## Связанный issue
 
 - [#15 Invocation Presets: version-pinned шаблоны запусков без копирования секретов](https://github.com/rkfsociety/EvoHime/issues/15)
@@ -164,3 +190,13 @@ InvocationPreset {
   optional trigger base configuration.
 - План 30 переведён из blocking в optional: его portable export не нужен для
   локального durable preset и по умолчанию исключает user-specific presets.
+
+## Результат ревью 2026-08-30 — итерация 1
+
+- Зафиксировано различие `workflow_store` и `automation_store`: schedule
+  обязан хранить immutable preset reference/snapshot и запускать обычный
+  workflow runtime, иначе C08/C12 не доказаны.
+- Добавлена allowlist/denylist для persisted payload и typed completed-run
+  sanitizer без silent drop неизвестных или authority-bearing полей.
+- Миграция определена как explicit Core operation с source/target hashes,
+  preview и typed incompatible outcome; model-generated mapping исключён.

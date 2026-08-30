@@ -1766,6 +1766,8 @@ message CommandEnvelope {
     IntegrationProviderSdkCommand integration_provider_sdk_action = 176;
     EventTriggerRuntimeCommand event_trigger_runtime_list = 177;
     EventTriggerRuntimeCommand event_trigger_runtime_action = 178;
+    InvocationPresetCommand invocation_preset_list = 179;
+    InvocationPresetCommand invocation_preset_action = 180;
   }
 }
 
@@ -1851,8 +1853,31 @@ message EventEnvelope {
   VisualWorkflowBuilderResult visual_workflow_builder = 33;
   ConversationalWorkflowComposerResult conversational_workflow_composer = 34;
   IntegrationProviderSdkEvent integration_provider_sdk = 35;
-  EventTriggerRuntimeEvent event_trigger_runtime = 36;
+    EventTriggerRuntimeEvent event_trigger_runtime = 36;
+    InvocationPresetEvent invocation_preset = 37;
   }
+}
+
+// Plan 35: bounded metadata-only invocation preset command/result surface.
+message InvocationPresetCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string operation = 4;
+  bytes payload = 5;
+  uint64 expected_revision = 6;
+  string idempotency_key = 7;
+}
+message InvocationPresetEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  string preset_id = 5;
+  uint64 revision = 6;
+  string content_hash = 7;
+  string error_code = 8;
+  bytes projection_json = 9;
 }
 
 // Plan 33: metadata-only Integration Provider SDK surface.

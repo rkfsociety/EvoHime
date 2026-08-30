@@ -1090,6 +1090,8 @@ export const RENDERER_COMMANDS = [
   'integrationProvider.command',
   'eventTriggerRuntime.list',
   'eventTriggerRuntime.command',
+  'invocationPreset.list',
+  'invocationPreset.command',
   'automation.listSchedules',
   'automation.saveSchedule',
   'automation.trigger',
@@ -1461,6 +1463,15 @@ export interface CommandPayloads {
     expectedVersion?: number
     idempotencyKey: string
   }
+  'invocationPreset.list': { requestId: string; ownerScope: string; limit?: number }
+  'invocationPreset.command': {
+    requestId: string
+    ownerScope: string
+    operation: string
+    payload?: string
+    expectedRevision?: number
+    idempotencyKey: string
+  }
   'automation.listSchedules': { ownerScope: string; limit?: number }
   'automation.saveSchedule': {
     scheduleId: string
@@ -1667,6 +1678,8 @@ export interface CommandResults {
   'integrationProvider.command': { accepted: boolean }
   'eventTriggerRuntime.list': { accepted: boolean }
   'eventTriggerRuntime.command': { accepted: boolean }
+  'invocationPreset.list': { accepted: boolean }
+  'invocationPreset.command': { accepted: boolean }
   'automation.listSchedules': { accepted: boolean }
   'automation.saveSchedule': { accepted: boolean }
   'automation.trigger': { accepted: boolean }

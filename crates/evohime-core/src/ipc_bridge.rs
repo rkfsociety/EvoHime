@@ -3827,6 +3827,16 @@ impl IpcBridge {
                     )
                     .await?;
                 }
+                Some(generated::command_envelope::Command::InvocationPresetList(request))
+                | Some(generated::command_envelope::Command::InvocationPresetAction(request)) => {
+                    let result = self.dispatch_invocation_preset(request).await;
+                    self.write_response(
+                        writer,
+                        "invocation_preset.result",
+                        serde_json::to_vec(&result)?,
+                    )
+                    .await?;
+                }
                 Some(generated::command_envelope::Command::ListAutomationSchedules(request)) => {
                     let result = self.dispatch_list_automation_schedules(request).await;
                     self.write_response(
@@ -10275,6 +10285,94 @@ impl IpcBridge {
                 "schema_version": 1, "request_id": request.request_id, "operation": operation,
                 "status": "unavailable", "error_code": "unsupported_operation"
             }),
+        }
+    }
+
+    async fn dispatch_invocation_preset(
+        &self,
+        request: generated::InvocationPresetCommand,
+    ) -> serde_json::Value {
+        if request.schema_version != 1
+            || request.request_id.is_empty()
+            || request.owner_scope.is_empty()
+        {
+            return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"invalid_request"});
+        }
+        let database = self.journal.database().lock().await;
+        let connection = database.connection();
+        match request.operation.as_str() {
+            "list" => {
+                let mut statement = match connection.prepare("SELECT id, revision, content_hash, state FROM invocation_presets WHERE owner_scope=?1 ORDER BY id, revision DESC LIMIT ?2") { Ok(statement) => statement, Err(_) => return serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"error","error_code":"storage_error"}) };
+                let limit = if request.expected_revision == 0 {
+                    50
+                } else {
+                    request.expected_revision.min(100)
+                };
+                let rows = statement.query_map(rusqlite::params![request.owner_scope, limit as i64], |row| Ok(serde_json::json!({"id":row.get::<_,String>(0)?,"revision":row.get::<_,i64>(1)? as u64,"content_hash":row.get::<_,String>(2)?,"state":row.get::<_,String>(3)?}))).and_then(|rows| rows.collect::<Result<Vec<_>, _>>());
+                return match rows {
+                    Ok(presets) => {
+                        serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"list","status":"ok","presets":presets,"error_code":""})
+                    }
+                    Err(_) => {
+                        serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"list","status":"error","presets":[],"error_code":"storage_error"})
+                    }
+                };
+            }
+            "create" | "save" => {
+                let mut preset: crate::invocation_presets::InvocationPreset =
+                    match serde_json::from_slice(&request.payload) {
+                        Ok(value) => value,
+                        Err(_) => {
+                            return serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"rejected","error_code":"invalid_payload"})
+                        }
+                    };
+                if preset.owner_scope != request.owner_scope {
+                    return serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"rejected","error_code":"owner_scope_mismatch"});
+                }
+                if let Err(error) = preset.validate() {
+                    return serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"rejected","error_code":error.to_string()});
+                }
+                preset.content_hash = preset.canonical_content_hash();
+                let content = serde_json::to_string(&preset).unwrap_or_default();
+                let state = serde_json::to_value(preset.state)
+                    .unwrap_or_default()
+                    .as_str()
+                    .unwrap_or("ready")
+                    .to_string();
+                match evohime_local_storage::invocation_presets_store::save_revision(
+                    connection,
+                    &preset.owner_scope,
+                    &preset.id,
+                    preset.revision,
+                    &content,
+                    &preset.content_hash,
+                    &state,
+                    crate::task_memory::now_millis() as i64,
+                ) {
+                    Ok(true) => {
+                        serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"saved","preset_id":preset.id,"revision":preset.revision,"content_hash":preset.content_hash,"error_code":""})
+                    }
+                    Ok(false) => {
+                        serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"conflict","preset_id":preset.id,"revision":preset.revision,"error_code":"duplicate_revision"})
+                    }
+                    Err(_) => {
+                        serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"error","error_code":"storage_error"})
+                    }
+                }
+            }
+            "sanitize" => match crate::invocation_presets::sanitize_completed_run(
+                &serde_json::from_slice(&request.payload).unwrap_or_default(),
+            ) {
+                Ok(preview) => {
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"sanitize","status":"preview","preview":preview,"error_code":""})
+                }
+                Err(error) => {
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"sanitize","status":"rejected","error_code":error.to_string()})
+                }
+            },
+            _ => {
+                serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"unavailable","error_code":"unsupported_operation"})
+            }
         }
     }
 

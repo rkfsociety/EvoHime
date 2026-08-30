@@ -23,6 +23,7 @@ pub mod execution_ledger;
 pub mod feedback_store;
 pub mod goal;
 pub mod integration_provider_store;
+pub mod invocation_presets_store;
 pub mod memory_store;
 pub mod model_limit_store;
 pub mod model_provenance;
@@ -530,6 +531,7 @@ impl LocalDatabase {
         // deliberately absent; the store is metadata-only.
         integration_provider_store::install_schema(&connection)?;
         event_trigger_runtime_store::install_schema(&connection)?;
+        invocation_presets_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }

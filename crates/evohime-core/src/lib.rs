@@ -960,6 +960,7 @@ pub mod export;
 pub mod goal;
 pub mod integration_provider_runtime;
 pub mod integration_provider_sdk;
+pub mod invocation_presets;
 #[cfg(windows)]
 mod listener_pipe;
 pub mod memory_api;

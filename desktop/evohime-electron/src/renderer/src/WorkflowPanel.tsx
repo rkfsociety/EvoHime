@@ -102,6 +102,7 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
   const started = latestPayload<{ run_id: string; error_code: string }>(events, 'workflow.started')
   const run = latestPayload<WorkflowRunProjection>(events, 'workflow.run')
   const eventList = latestPayload<WorkflowEventList>(events, 'workflow.events')
+  const presetResult = latestPayload<{ status?: string; presets?: { id: string; revision: number; content_hash: string; state: string }[] }>(events, 'invocation_preset.result')
 
   const templates: readonly WorkflowTemplateSummary[] = catalog?.templates ?? []
   const template = useMemo(
@@ -112,7 +113,8 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
   useEffect(() => {
     if (!api || !connected) return
     void api.invoke('workflow.listTemplates', {})
-  }, [api, connected])
+    if (workspace) void api.invoke('invocationPreset.list', { requestId: `preset-list:${workspace}`, ownerScope: workspace, limit: 50 })
+  }, [api, connected, workspace])
 
   // Идентификатор запуска приходит ответом ядра, а не придумывается панелью.
   useEffect(() => {
@@ -241,6 +243,61 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
             Запустить
           </button>
         </div>
+      ) : null}
+
+      <h4>Пресеты запусков</h4>
+      <p>
+        Пресет сохраняет только проверенные значения и ссылки на credentials. Версия workflow и
+        revision остаются зафиксированы ядром.
+      </p>
+      {presetResult?.presets?.length ? (
+        <ul className="workflow__presets">
+          {presetResult.presets.map((preset) => (
+            <li key={`${preset.id}:${preset.revision}`}>
+              <strong>{preset.id}</strong> · revision {preset.revision} · {preset.state}
+              <small> · {preset.content_hash}</small>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p role="status">Сохранённых пресетов нет.</p>
+      )}
+      {template && workspace ? (
+        <button
+          type="button"
+          disabled={!api || !connected}
+          onClick={() => {
+            const presetId = `${template.template_id}:${template.version}`
+            void api?.invoke('invocationPreset.command', {
+              requestId: `preset-create:${presetId}`,
+              ownerScope: workspace,
+              operation: 'create',
+              idempotencyKey: `preset-create:${presetId}`,
+              payload: JSON.stringify({
+                schema_version: 1,
+                id: presetId,
+                owner_scope: workspace,
+                name: template.display_name,
+                description: template.description,
+                workflow_id: template.template_id,
+                workflow_version: Number(template.version) || 1,
+                workflow_definition_hash: template.template_id,
+                input_schema_hash: template.template_id,
+                input_values: inputs,
+                credential_bindings: {},
+                execution_options: {},
+                created_from_run_id: null,
+                revision: 1,
+                created_at_ms: Date.now(),
+                updated_at_ms: Date.now(),
+                content_hash: '',
+                state: 'ready'
+              })
+            })
+          }}
+        >
+          Сохранить текущие входы как пресет
+        </button>
       ) : null}
 
       {notice ? (
