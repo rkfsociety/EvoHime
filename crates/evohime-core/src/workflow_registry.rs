@@ -528,6 +528,20 @@ impl WorkflowRegistry {
                 NodeType::Child { child } => {
                     self.validate_child(&node.id, child, parent, &mut errors)
                 }
+                NodeType::IntegrationAction { integration } => {
+                    if integration.provider_id != "fixture.echo"
+                        || integration.action_id != "echo"
+                        || integration.action_version != 1
+                    {
+                        errors.push(BindingError::UnknownTool {
+                            node_id: node.id.clone(),
+                            tool_name: format!(
+                                "{}:{}",
+                                integration.provider_id, integration.action_id
+                            ),
+                        });
+                    }
+                }
                 NodeType::Subgraph { graph_id } => {
                     let Some(subgraph) = self.subgraphs.get(graph_id) else {
                         errors.push(BindingError::UnknownSubgraph {

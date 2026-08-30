@@ -195,6 +195,14 @@ pub struct McpActionProfile {
     pub arguments: BTreeMap<String, String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IntegrationActionProfile {
+    pub provider_id: String,
+    pub action_id: String,
+    pub action_version: u32,
+    pub credential_slot: String,
+}
+
 /// Read-only контекстный провайдер: источник, свежесть, схема evidence и
 /// bounded размер результата.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -258,6 +266,9 @@ pub enum NodeType {
     McpTool {
         mcp: McpActionProfile,
     },
+    IntegrationAction {
+        integration: IntegrationActionProfile,
+    },
     ContextProvider {
         provider: ContextProviderProfile,
     },
@@ -276,6 +287,7 @@ impl NodeType {
             NodeType::Loop { .. } => "loop",
             NodeType::Child { .. } => "child",
             NodeType::McpTool { .. } => "mcp_tool",
+            NodeType::IntegrationAction { .. } => "integration_action",
             NodeType::ContextProvider { .. } => "context_provider",
         }
     }
@@ -286,7 +298,10 @@ impl NodeType {
     pub fn is_stateful(&self) -> bool {
         matches!(
             self,
-            NodeType::Tool { .. } | NodeType::McpTool { .. } | NodeType::Child { .. }
+            NodeType::Tool { .. }
+                | NodeType::McpTool { .. }
+                | NodeType::IntegrationAction { .. }
+                | NodeType::Child { .. }
         )
     }
 }
@@ -1149,6 +1164,32 @@ fn validate_action_profile(node: &WorkflowNode, errors: &mut Vec<ValidationError
                     false,
                     errors,
                 );
+            }
+        }
+        NodeType::IntegrationAction { integration } => {
+            check_identity(
+                &node.id,
+                "integration.provider_id",
+                &integration.provider_id,
+                errors,
+            );
+            check_identity(
+                &node.id,
+                "integration.action_id",
+                &integration.action_id,
+                errors,
+            );
+            check_identity(
+                &node.id,
+                "integration.credential_slot",
+                &integration.credential_slot,
+                errors,
+            );
+            if integration.action_version == 0 {
+                errors.push(ValidationError::EmptyField {
+                    node_id: node.id.clone(),
+                    field: "integration.action_version",
+                });
             }
         }
         NodeType::ContextProvider { provider } => {

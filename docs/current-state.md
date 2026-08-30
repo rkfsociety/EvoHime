@@ -433,3 +433,12 @@ typed generate/validate/edit/save/handoff/discard outcomes, additive IPC 174/eve
 общем Builder storage; raw prompt/output и credentials не входят в storage или
 projection. Stale handoff revision/hash rejection и Builder save/reload
 проверены focused tests; Composer не запускает workflow сам.
+
+План 33 реализован 30 августа 2026 года. Integration Provider SDK v1 добавляет
+bounded Core contract и validator, metadata-only SQLite schema v40,
+`fixture.echo`/`FixtureCredentialResolver`, version-pinned integration binding,
+authenticated IPC commands 175–176/event 35 и Settings → Integrations.
+GitHub/Google/Slack/Linear production adapters остаются typed `unavailable` до
+отдельных направлений; credentials, raw output и prompt не пересекают Core
+boundary. Проверены Rust contract/storage/runtime tests, protocol/typecheck,
+Electron regression (476 passed, 2 штатно skipped) и clippy.

@@ -1024,3 +1024,17 @@ secret или hidden reasoning. Authenticated IPC commands 166–168 дают bo
 list/get/action projection с optimistic version checks. Electron OperationsPanel
 только отображает состояние и отправляет явные действия; policy и effect
 остаются в Core.
+
+### Integration Provider SDK v1
+
+План 33 реализован как Core-owned metadata contract. Typed manifest/action/
+trigger/credential/binding/fixture types и bounded schema validator находятся в
+`crates/evohime-core/src/integration_provider_sdk.rs`; production external
+adapters не включены, а offline `fixture.echo` доступен через
+`integration_provider_runtime.rs`. Metadata хранится в schema v40 в
+`integration_provider_store.rs`; secret bytes, raw prompts и provider output не
+записываются. Workflow binding использует version-pinned `integration_action`,
+а неизвестные provider/action дают unresolved outcome. IPC остаётся
+authenticated/additive: commands 175–176 и event 35; Electron показывает
+metadata-only Integrations в `SettingsModal`. Unknown/unavailable outcomes
+fail closed и не повторяют внешний effect вслепую.

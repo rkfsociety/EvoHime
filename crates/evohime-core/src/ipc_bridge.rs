@@ -3803,6 +3803,20 @@ impl IpcBridge {
                     )
                     .await?;
                 }
+                Some(generated::command_envelope::Command::IntegrationProviderSdkCatalog(
+                    request,
+                ))
+                | Some(generated::command_envelope::Command::IntegrationProviderSdkAction(
+                    request,
+                )) => {
+                    let result = self.dispatch_integration_provider_sdk(request);
+                    self.write_response(
+                        writer,
+                        "integration_provider_sdk.result",
+                        serde_json::to_vec(&result)?,
+                    )
+                    .await?;
+                }
                 Some(generated::command_envelope::Command::ListAutomationSchedules(request)) => {
                     let result = self.dispatch_list_automation_schedules(request).await;
                     self.write_response(
@@ -10187,6 +10201,43 @@ impl IpcBridge {
         };
         transport::write_frame(writer, &event.encode_to_vec()).await?;
         Ok(())
+    }
+
+    fn dispatch_integration_provider_sdk(
+        &self,
+        request: generated::IntegrationProviderSdkCommand,
+    ) -> serde_json::Value {
+        let operation = request.operation.as_str();
+        if operation == "list_catalog" || operation == "get_provider" {
+            return serde_json::json!({
+                "schema_version": 1,
+                "request_id": request.request_id,
+                "status": "ok",
+                "operation": operation,
+                "providers": [crate::integration_provider_sdk::fixture_echo_manifest()],
+                "error_code": "",
+            });
+        }
+        if operation == "invoke_fixture" {
+            let input = serde_json::from_slice(&request.payload).unwrap_or(serde_json::Value::Null);
+            let result =
+                crate::integration_provider_runtime::invoke_fixture("fixture.echo", "echo", input);
+            return serde_json::json!({
+                "schema_version": 1,
+                "request_id": request.request_id,
+                "status": "ok",
+                "operation": operation,
+                "result": result,
+                "error_code": "",
+            });
+        }
+        serde_json::json!({
+            "schema_version": 1,
+            "request_id": request.request_id,
+            "status": "unavailable",
+            "operation": operation,
+            "error_code": "provider_adapter_unavailable",
+        })
     }
 
     async fn write_response<W: AsyncWrite + Unpin>(

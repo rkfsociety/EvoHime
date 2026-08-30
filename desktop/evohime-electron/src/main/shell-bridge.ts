@@ -1670,6 +1670,27 @@ function dispatch(
       return accepted(client.send({ conversationalWorkflowComposer: { schemaVersion: 1, requestId, ownerScope, draftId, operation, payload: Buffer.from(payloadJson, 'utf8'), expectedRevision, idempotencyKey } }))
     }
 
+    case 'integrationProvider.listCatalog': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      if (requestId === null || ownerScope === null) return failure('invalid-payload', 'Некорректный запрос каталога интеграций.')
+      return accepted(client.send({ integrationProviderSdkCatalog: { schemaVersion: 1, requestId, ownerScope, operation: 'list_catalog', payload: Buffer.alloc(0), expectedVersion: 0, idempotencyKey: requestId } }))
+    }
+
+    case 'integrationProvider.command': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const operation = asBoundedString(value['operation'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const payloadJson = value['payload'] === undefined ? '' : asBoundedString(value['payload'])
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asBoundedNumber(value['expectedVersion'], Number.MAX_SAFE_INTEGER)
+      if (requestId === null || ownerScope === null || operation === null || idempotencyKey === null || payloadJson === null || expectedVersion === null) return failure('invalid-payload', 'Некорректный запрос интеграции.')
+      if (payloadJson.length > 64 * 1024) return failure('invalid-payload', 'Payload интеграции слишком большой.')
+      return accepted(client.send({ integrationProviderSdkAction: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(payloadJson, 'utf8'), expectedVersion, idempotencyKey } }))
+    }
+
     case 'automation.listSchedules': {
       const value = asRecord(payload)
       const ownerScope = asBoundedString(value['ownerScope'])

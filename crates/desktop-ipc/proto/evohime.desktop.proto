@@ -1762,6 +1762,8 @@ message CommandEnvelope {
     RebindWorkflowPackage rebind_workflow_package = 172;
     VisualWorkflowBuilderCommand visual_workflow_builder = 173;
     ConversationalWorkflowComposerCommand conversational_workflow_composer = 174;
+    IntegrationProviderSdkCommand integration_provider_sdk_catalog = 175;
+    IntegrationProviderSdkCommand integration_provider_sdk_action = 176;
   }
 }
 
@@ -1846,7 +1848,28 @@ message EventEnvelope {
     WorkflowPackageResult workflow_package = 32;
   VisualWorkflowBuilderResult visual_workflow_builder = 33;
   ConversationalWorkflowComposerResult conversational_workflow_composer = 34;
+  IntegrationProviderSdkEvent integration_provider_sdk = 35;
   }
+}
+
+// Plan 33: metadata-only Integration Provider SDK surface.
+message IntegrationProviderSdkCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string operation = 4;
+  bytes payload = 5;
+  uint64 expected_version = 6;
+  string idempotency_key = 7;
+}
+message IntegrationProviderSdkEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  string error_code = 5;
+  bytes projection_json = 6;
+  bool truncated = 7;
 }
 
 // Plan 31: bounded metadata-only visual workflow builder surface.

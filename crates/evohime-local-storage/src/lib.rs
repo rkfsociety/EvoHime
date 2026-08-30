@@ -21,6 +21,7 @@ pub mod continuation_store;
 pub mod execution_ledger;
 pub mod feedback_store;
 pub mod goal;
+pub mod integration_provider_store;
 pub mod memory_store;
 pub mod model_limit_store;
 pub mod model_provenance;
@@ -40,7 +41,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 39;
+pub const SCHEMA_VERSION: u32 = 40;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -524,6 +525,9 @@ impl LocalDatabase {
         workflow_package_store::install_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         visual_workflow_builder_store::install_schema(&connection)?;
+        // Schema 40: Integration Provider SDK metadata. Secret material is
+        // deliberately absent; the store is metadata-only.
+        integration_provider_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }

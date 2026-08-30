@@ -1086,6 +1086,8 @@ export const RENDERER_COMMANDS = [
   'workflowPackage.rebind',
   'workflowBuilder.command',
   'workflowComposer.command',
+  'integrationProvider.listCatalog',
+  'integrationProvider.command',
   'automation.listSchedules',
   'automation.saveSchedule',
   'automation.trigger',
@@ -1439,6 +1441,15 @@ export interface CommandPayloads {
     expectedRevision?: number
     idempotencyKey: string
   }
+  'integrationProvider.listCatalog': { requestId: string; ownerScope: string }
+  'integrationProvider.command': {
+    requestId: string
+    ownerScope: string
+    operation: string
+    payload?: string
+    expectedVersion?: number
+    idempotencyKey: string
+  }
   'automation.listSchedules': { ownerScope: string; limit?: number }
   'automation.saveSchedule': {
     scheduleId: string
@@ -1641,6 +1652,8 @@ export interface CommandResults {
   'workflowPackage.rebind': { accepted: boolean }
   'workflowBuilder.command': { accepted: boolean }
   'workflowComposer.command': { accepted: boolean }
+  'integrationProvider.listCatalog': { accepted: boolean }
+  'integrationProvider.command': { accepted: boolean }
   'automation.listSchedules': { accepted: boolean }
   'automation.saveSchedule': { accepted: boolean }
   'automation.trigger': { accepted: boolean }

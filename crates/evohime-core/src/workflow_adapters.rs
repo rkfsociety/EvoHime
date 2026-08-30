@@ -352,6 +352,25 @@ impl NodeAdapter for CoreNodeAdapter {
                         .await?;
                     Ok(NodeSuccess::new(json!({ "out": output, "result": output })))
                 }
+                NodeType::IntegrationAction { integration } => {
+                    let input = merge_inputs(&invocation.inputs);
+                    let outcome = crate::integration_provider_runtime::invoke_fixture(
+                        &integration.provider_id,
+                        &integration.action_id,
+                        input,
+                    );
+                    match outcome {
+                        crate::integration_provider_runtime::ProviderOutcome::Success {
+                            result,
+                        } => Ok(NodeSuccess::new(json!({ "out": result, "result": result }))),
+                        crate::integration_provider_runtime::ProviderOutcome::Unavailable {
+                            reason,
+                        } => Err(NodeError::permanent("provider_adapter_unavailable", reason)),
+                        crate::integration_provider_runtime::ProviderOutcome::Unknown {
+                            effect_id,
+                        } => Err(NodeError::permanent("unknown_outcome", effect_id)),
+                    }
+                }
                 NodeType::ContextProvider { provider } => {
                     let Some(entry) = invocation.registry.provider(&provider.provider_id) else {
                         return Err(NodeError::permanent(
