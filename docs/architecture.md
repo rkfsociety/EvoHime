@@ -992,6 +992,24 @@ publish, owner-scoped single-use handoff, recovery и read-only live inspection
 обслуживаются Core; renderer не получает полномочий, credentials или raw
 runtime payload.
 
+### Conversational Workflow Composer v1
+
+Composer добавляет natural-language authoring поверх Builder v1. Контракт
+`composer-request/v1`/`composer-proposal/v1` находится в
+`crates/evohime-core/src/conversational_workflow_composer.rs`: Core принимает
+только bounded closed envelope, валидирует proposal и registry binding, а
+модель не получает tool/effect authority. Команда Composer аддитивна (IPC 174,
+event 34); Electron показывает только redacted proposal metadata, assumptions,
+risk и typed outcome.
+
+Proposal и unsaved session не являются отдельным durable workflow. При Save Core
+создаёт Builder draft с optimistic revision; provenance хранится в общей
+Builder storage атомарно и содержит только request/proposal/catalog hashes и
+model route/version. Raw prompt, raw model output, credentials и hidden
+reasoning не сохраняются. Handoff/publish повторно сверяет owner, revision и
+execution hash до consume; stale handoff отклоняется, а Composer никогда не
+запускает workflow effect автоматически.
+
 ### Continual Refinement v1
 
 План 29 закрыт 30 августа 2026 года. Core-контракт находится в

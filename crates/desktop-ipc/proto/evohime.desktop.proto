@@ -1761,6 +1761,7 @@ message CommandEnvelope {
     CommitWorkflowPackage commit_workflow_package = 171;
     RebindWorkflowPackage rebind_workflow_package = 172;
     VisualWorkflowBuilderCommand visual_workflow_builder = 173;
+    ConversationalWorkflowComposerCommand conversational_workflow_composer = 174;
   }
 }
 
@@ -1843,7 +1844,8 @@ message EventEnvelope {
     RefinementActionResult refinement_action = 30;
     RefinementListProjection refinement_list = 31;
     WorkflowPackageResult workflow_package = 32;
-    VisualWorkflowBuilderResult visual_workflow_builder = 33;
+  VisualWorkflowBuilderResult visual_workflow_builder = 33;
+  ConversationalWorkflowComposerResult conversational_workflow_composer = 34;
   }
 }
 
@@ -1869,6 +1871,31 @@ message VisualWorkflowBuilderResult {
   string handoff_handle = 8;
   string error_code = 9;
   bool truncated = 10;
+}
+
+// Plan 32: model proposal is a bounded JSON envelope parsed and validated by Core.
+message ConversationalWorkflowComposerCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string draft_id = 4;
+  string operation = 5;
+  bytes payload = 6;
+  uint64 expected_revision = 7;
+  string idempotency_key = 8;
+}
+message ConversationalWorkflowComposerResult {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string status = 3;
+  string draft_id = 4;
+  uint64 revision = 5;
+  string proposal_id = 6;
+  string execution_hash = 7;
+  string layout_hash = 8;
+  string error_code = 9;
+  bytes projection_json = 10;
+  bool truncated = 11;
 }
 
 message WorkflowPackageResult {

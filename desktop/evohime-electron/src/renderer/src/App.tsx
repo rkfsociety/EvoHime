@@ -29,6 +29,7 @@ import { ContinuationPanel } from './ContinuationPanel'
 import { AnalysisKernelPanel } from './AnalysisKernelPanel'
 import { WorkflowPackagePanel } from './WorkflowPackagePanel'
 import { VisualWorkflowBuilderPanel } from './VisualWorkflowBuilderPanel'
+import { ConversationalWorkflowComposerPanel } from './ConversationalWorkflowComposerPanel'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -300,6 +301,7 @@ export function App(): React.JSX.Element {
               {view === 'workflows' ? (
                 <>
                   <WorkflowPanel connection={connection} events={events} workspace={workspace} />
+                  <ConversationalWorkflowComposerPanel connection={connection} events={events} workspace={workspace} />
                   <VisualWorkflowBuilderPanel connection={connection} events={events} workspace={workspace} />
                 </>
               ) : null}

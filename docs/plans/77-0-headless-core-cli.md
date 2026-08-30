@@ -45,7 +45,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 - План 30.0 — Workflow Package: переносимый import/export без секретов и с rebinding зависимостей.
 - План 31.0 — Visual Workflow Builder: typed canvas, validation и live runtime inspection.
-- План 32.0 — Conversational Workflow Composer: создание и правка workflow из естественного языка.
+- Реализованный Conversational Workflow Composer v1 — bounded proposal и Core validation.
 - План 59.0 — Incremental Change Protocol: safe requirement-delta pipeline для существующих репозиториев.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 

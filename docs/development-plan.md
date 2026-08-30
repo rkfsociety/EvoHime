@@ -108,3 +108,10 @@ architecture/current-state. Core-owned authoring, registry validation,
 immutable publish, recovery, read-only inspection, bounded IPC handoff и
 redaction gates подтверждены focused и regression-тестами; комплект планов
 удалён после проверки ссылок и evidence.
+
+План 32 закрыт: Conversational Workflow Composer v1 перенесён в canonical
+architecture/current-state. Подтверждены strict proposal envelope/parser,
+Core-owned registry validation, bounded model gateway invocation, typed edits,
+Builder handoff/save, redacted provenance persistence, additive IPC 174/event 34
+и Electron metadata-only Composer surface. После финальной проверки комплект
+32-0 … 32-4 удалён.

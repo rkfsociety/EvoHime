@@ -424,3 +424,12 @@ draft/version/handoff schema, bounded Composer handoff, IPC 173/event 33,
 authoring, immutable publish, recovery и metadata-only live inspection.
 Проверены optimistic revision, single-use handoff, redaction и независимые
 execution/layout hashes; комплект планов удалён после финального regression.
+
+План 32 реализован 30 августа 2026 года: Conversational Workflow Composer v1
+добавляет strict `composer-request/v1`/`composer-proposal/v1` parser и Core-only
+validation/binding поверх Builder v1. Реализованы bounded model gateway path,
+typed generate/validate/edit/save/handoff/discard outcomes, additive IPC 174/event
+34 и Electron Composer panel. Provenance сохраняется только redacted hashes в
+общем Builder storage; raw prompt/output и credentials не входят в storage или
+projection. Stale handoff revision/hash rejection и Builder save/reload
+проверены focused tests; Composer не запускает workflow сам.

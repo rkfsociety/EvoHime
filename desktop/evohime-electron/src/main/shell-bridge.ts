@@ -1654,6 +1654,22 @@ function dispatch(
       return accepted(client.send({ visualWorkflowBuilder: { schemaVersion: 1, requestId, ownerScope, draftId, operation, payload: Buffer.from(payloadJson, 'utf8'), expectedRevision, idempotencyKey } }))
     }
 
+    case 'workflowComposer.command': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const draftId = asBoundedString(value['draftId'])
+      const operation = asBoundedString(value['operation'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const payloadJson = value['payload'] === undefined ? '' : asBoundedString(value['payload'])
+      const expectedRevision = value['expectedRevision'] === undefined ? 0 : asBoundedNumber(value['expectedRevision'], Number.MAX_SAFE_INTEGER)
+      if (requestId === null || ownerScope === null || draftId === null || operation === null || idempotencyKey === null || payloadJson === null || expectedRevision === null) {
+        return failure('invalid-payload', 'Некорректный запрос Composer.')
+      }
+      if (payloadJson.length > 512 * 1024) return failure('invalid-payload', 'Payload Composer слишком большой.')
+      return accepted(client.send({ conversationalWorkflowComposer: { schemaVersion: 1, requestId, ownerScope, draftId, operation, payload: Buffer.from(payloadJson, 'utf8'), expectedRevision, idempotencyKey } }))
+    }
+
     case 'automation.listSchedules': {
       const value = asRecord(payload)
       const ownerScope = asBoundedString(value['ownerScope'])

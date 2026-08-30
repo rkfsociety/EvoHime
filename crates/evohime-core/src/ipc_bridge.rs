@@ -3790,6 +3790,19 @@ impl IpcBridge {
                     )
                     .await?;
                 }
+                Some(generated::command_envelope::Command::ConversationalWorkflowComposer(
+                    request,
+                )) => {
+                    let result = self
+                        .dispatch_conversational_workflow_composer(request)
+                        .await;
+                    self.write_response(
+                        writer,
+                        "workflow_composer.result",
+                        serde_json::to_vec(&result)?,
+                    )
+                    .await?;
+                }
                 Some(generated::command_envelope::Command::ListAutomationSchedules(request)) => {
                     let result = self.dispatch_list_automation_schedules(request).await;
                     self.write_response(
@@ -5061,7 +5074,7 @@ impl IpcBridge {
                                     serde_json::to_vec(&definition.layout).unwrap_or_default();
                                 let execution_hash = definition.execution_hash();
                                 let layout_hash = definition.layout_hash();
-                                match evohime_local_storage::visual_workflow_builder_store::save_draft(database.connection(), evohime_local_storage::visual_workflow_builder_store::SaveDraft { draft_id: &request.draft_id, owner_scope: &request.owner_scope, expected_revision: revision, definition_json: &definition_json, layout_json: &layout_json, execution_hash: &execution_hash, layout_hash: &layout_hash, updated_at_ms: crate::task_memory::now_millis() as i64 }) {
+                                match evohime_local_storage::visual_workflow_builder_store::save_draft(database.connection(), evohime_local_storage::visual_workflow_builder_store::SaveDraft { draft_id: &request.draft_id, owner_scope: &request.owner_scope, expected_revision: revision, definition_json: &definition_json, layout_json: &layout_json, execution_hash: &execution_hash, layout_hash: &layout_hash, composer_provenance_json: None, updated_at_ms: crate::task_memory::now_millis() as i64 }) {
                                     Ok(Ok(next_revision)) => serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"edited","draft_id":request.draft_id,"revision":next_revision,"execution_hash":execution_hash,"layout_hash":layout_hash,"handoff_handle":"","error_code":"","truncated":false}),
                                     Ok(Err(code)) => serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"conflict","draft_id":request.draft_id,"revision":revision,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":code,"truncated":false}),
                                     Err(_) => serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"error","draft_id":request.draft_id,"revision":revision,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":"storage_error","truncated":false}),
@@ -5162,7 +5175,7 @@ impl IpcBridge {
                             let result =
                             evohime_local_storage::visual_workflow_builder_store::save_draft(
                                 database.connection(),
-                                evohime_local_storage::visual_workflow_builder_store::SaveDraft { draft_id: &request.draft_id, owner_scope: &request.owner_scope, expected_revision: request.expected_revision, definition_json: &graph_json, layout_json: &layout_json, execution_hash: &definition.execution_hash(), layout_hash: &definition.layout_hash(), updated_at_ms: crate::task_memory::now_millis() as i64 },
+                                evohime_local_storage::visual_workflow_builder_store::SaveDraft { draft_id: &request.draft_id, owner_scope: &request.owner_scope, expected_revision: request.expected_revision, definition_json: &graph_json, layout_json: &layout_json, execution_hash: &definition.execution_hash(), layout_hash: &definition.layout_hash(), composer_provenance_json: None, updated_at_ms: crate::task_memory::now_millis() as i64 },
                             );
                             return match result {
                                 Ok(Ok(revision)) => {
@@ -5201,6 +5214,335 @@ impl IpcBridge {
             "error_code": "builder_authoring_not_wired",
             "truncated": false,
         })
+    }
+
+    async fn dispatch_conversational_workflow_composer(
+        &self,
+        request: generated::ConversationalWorkflowComposerCommand,
+    ) -> serde_json::Value {
+        if request.idempotency_key.trim().is_empty() {
+            return serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"invalid","draft_id":request.draft_id,"revision":request.expected_revision,"proposal_id":"","execution_hash":"","layout_hash":"","error_code":"missing_idempotency_key","projection_json":[],"truncated":false});
+        }
+        let command_hash =
+            hex_encode(&[request.operation.as_bytes(), request.payload.as_ref()].concat());
+        match self
+            .journal
+            .record_deduplicated(
+                "workflow-composer",
+                &request.idempotency_key,
+                &command_hash,
+                &[],
+            )
+            .await
+        {
+            Ok(Some(bytes)) => {
+                if let Ok(value) = serde_json::from_slice(&bytes) {
+                    return value;
+                }
+            }
+            Err(_) => {
+                return serde_json::json!({
+                    "schema_version": 1,
+                    "request_id": request.request_id,
+                    "status": "conflict",
+                    "draft_id": request.draft_id,
+                    "revision": request.expected_revision,
+                    "proposal_id": "",
+                    "execution_hash": "",
+                    "layout_hash": "",
+                    "error_code": "idempotency_conflict",
+                    "projection_json": [],
+                    "truncated": false
+                });
+            }
+            Ok(None) => {}
+        }
+        let result = self
+            .dispatch_conversational_workflow_composer_inner(request.clone())
+            .await;
+        if let Ok(bytes) = serde_json::to_vec(&result) {
+            let _ = self
+                .journal
+                .record_deduplicated(
+                    "workflow-composer",
+                    &request.idempotency_key,
+                    &command_hash,
+                    &bytes,
+                )
+                .await;
+        }
+        result
+    }
+
+    async fn dispatch_conversational_workflow_composer_inner(
+        &self,
+        request: generated::ConversationalWorkflowComposerCommand,
+    ) -> serde_json::Value {
+        use crate::conversational_workflow_composer as composer;
+        let base = |status: &str, error: &str| {
+            serde_json::json!({
+                "schema_version": 1,
+                "request_id": request.request_id,
+                "status": status,
+                "draft_id": request.draft_id,
+                "revision": request.expected_revision,
+                "proposal_id": "",
+                "execution_hash": "",
+                "layout_hash": "",
+                "error_code": error,
+                "projection_json": [],
+                "truncated": false
+            })
+        };
+        if request.schema_version != 0 && request.schema_version != 1 {
+            return base("invalid", "unsupported_schema_version");
+        }
+        if request.owner_scope.trim().is_empty() || request.draft_id.trim().is_empty() {
+            return base("invalid", "invalid_scope");
+        }
+        match request.operation.as_str() {
+            "generate" => {
+                let Ok(request_hash) = composer::request_hash(&request.payload) else {
+                    return base("invalid", "request_too_large");
+                };
+                let Some(config) = self.gateway_config.clone() else {
+                    return base("unavailable", "model_unavailable");
+                };
+                let Ok(gateway) = evohime_model_gateway::ModelGateway::from_config(&config) else {
+                    return base("unavailable", "model_unavailable");
+                };
+                let prompt = String::from_utf8_lossy(&request.payload).into_owned();
+                let messages = vec![
+                    evohime_model_gateway::providers::ChatMessage::text(
+                        evohime_model_gateway::providers::ChatRole::System,
+                        "Return only JSON matching composer-proposal/v1 with schema_version, proposal_id, definition, assumptions. Never add tools, permissions, credentials or executable identities.",
+                    ),
+                    evohime_model_gateway::providers::ChatMessage::text(
+                        evohime_model_gateway::providers::ChatRole::User,
+                        prompt,
+                    ),
+                ];
+                let routing = evohime_model_gateway::RoutingRequest {
+                    required_capabilities: vec!["chat".into()],
+                    max_cost_micros_per_1k_tokens: None,
+                    max_latency_ms: Some(30_000),
+                    required_privacy: evohime_model_gateway::PrivacyClass::Internal,
+                    allow_fallback: true,
+                    preferred_route: Some(config.default_route.clone()),
+                    task_class: Some("workflow_composer".into()),
+                    offline: false,
+                    allow_cloud: true,
+                    estimated_input_tokens: (request.payload.len() / 4) as u32,
+                    quality_delta: 0.05,
+                };
+                let response = tokio::time::timeout(
+                    std::time::Duration::from_secs(30),
+                    gateway.chat_with_tools_with_policy_and_route(
+                        evohime_model_gateway::RoutingMode::Balanced,
+                        &routing,
+                        self.selected_model.get().as_deref(),
+                        &messages,
+                        &[],
+                    ),
+                )
+                .await;
+                let content = match response {
+                    Ok(Ok(result)) => result.result.content,
+                    Ok(Err(_)) => return base("unavailable", "model_unavailable"),
+                    Err(_) => return base("unavailable", "model_timeout"),
+                };
+                let Ok(proposal) = composer::parse_proposal(content.as_bytes()) else {
+                    return base("invalid", "malformed_proposal");
+                };
+                let projection = serde_json::json!({
+                    "proposal_id": proposal.proposal_id,
+                    "assumptions": proposal.assumptions,
+                    "definition": proposal.definition,
+                    "request_hash": request_hash,
+                    "requires_review": true,
+                    "risk": "review_required",
+                });
+                let mut result = base("proposal", "");
+                result["proposal_id"] = serde_json::json!(proposal.proposal_id);
+                result["execution_hash"] = serde_json::json!(proposal.definition.execution_hash());
+                result["layout_hash"] = serde_json::json!(proposal.definition.layout_hash());
+                result["projection_json"] =
+                    serde_json::to_vec(&projection).unwrap_or_default().into();
+                result
+            }
+            "validate" => {
+                let Ok(proposal) = composer::parse_proposal(&request.payload) else {
+                    return base("invalid", "malformed_proposal");
+                };
+                if self
+                    .validate_visual_workflow_definition(&proposal.definition)
+                    .is_err()
+                {
+                    return base("invalid", "binding_rejected");
+                }
+                let mut result = base("valid", "");
+                result["proposal_id"] = serde_json::json!(proposal.proposal_id);
+                result["execution_hash"] = serde_json::json!(proposal.definition.execution_hash());
+                result["layout_hash"] = serde_json::json!(proposal.definition.layout_hash());
+                result["projection_json"] = serde_json::to_vec(&serde_json::json!({"risk":"review_required","assumptions":proposal.assumptions})).unwrap_or_default().into();
+                result
+            }
+            "save" => {
+                let Ok(proposal) = composer::parse_proposal(&request.payload) else {
+                    return base("invalid", "malformed_proposal");
+                };
+                if self
+                    .validate_visual_workflow_definition(&proposal.definition)
+                    .is_err()
+                {
+                    return base("invalid", "binding_rejected");
+                }
+                let definition_json = serde_json::to_vec(&proposal.definition).unwrap_or_default();
+                let layout_json =
+                    serde_json::to_vec(&proposal.definition.layout).unwrap_or_default();
+                let execution_hash = proposal.definition.execution_hash();
+                let layout_hash = proposal.definition.layout_hash();
+                let database = self.journal.database().lock().await;
+                let provenance_json = serde_json::to_vec(&composer::ComposerProvenance {
+                    schema_version: composer::PROVENANCE_VERSION.into(),
+                    request_hash: composer::request_hash(&request.payload).unwrap_or_default(),
+                    proposal_hash: composer::canonical_proposal(&proposal)
+                        .ok()
+                        .map(|bytes| hex::encode(<sha2::Sha256 as sha2::Digest>::digest(bytes)))
+                        .unwrap_or_default(),
+                    catalog_hash: "core-workflow-registry-v1".into(),
+                    model_route: "core-model-gateway".into(),
+                    model_version: "bounded-v1".into(),
+                })
+                .ok();
+                match evohime_local_storage::visual_workflow_builder_store::save_draft(
+                    database.connection(),
+                    evohime_local_storage::visual_workflow_builder_store::SaveDraft {
+                        draft_id: &request.draft_id,
+                        owner_scope: &request.owner_scope,
+                        expected_revision: request.expected_revision,
+                        definition_json: &definition_json,
+                        layout_json: &layout_json,
+                        execution_hash: &execution_hash,
+                        layout_hash: &layout_hash,
+                        composer_provenance_json: provenance_json.as_deref(),
+                        updated_at_ms: crate::task_memory::now_millis() as i64,
+                    },
+                ) {
+                    Ok(Ok(revision)) => {
+                        let mut result = base("saved", "");
+                        result["proposal_id"] = serde_json::json!(proposal.proposal_id);
+                        result["revision"] = serde_json::json!(revision);
+                        result["execution_hash"] = serde_json::json!(execution_hash);
+                        result["layout_hash"] = serde_json::json!(layout_hash);
+                        result
+                    }
+                    Ok(Err(code)) => base("conflict", code),
+                    Err(_) => base("error", "storage_error"),
+                }
+            }
+            "edit" => {
+                let database = self.journal.database().lock().await;
+                let Ok(Some((revision, definition_json, _, _))) =
+                    evohime_local_storage::visual_workflow_builder_store::read_draft(
+                        database.connection(),
+                        &request.draft_id,
+                        &request.owner_scope,
+                    )
+                else {
+                    return base("error", "unknown_draft");
+                };
+                if revision != request.expected_revision {
+                    return base("conflict", "stale_revision");
+                }
+                let Ok(mut definition) = serde_json::from_slice::<
+                    crate::visual_workflow_builder::VisualWorkflowBuilderDefinition,
+                >(&definition_json) else {
+                    return base("error", "corrupt_draft");
+                };
+                let Ok(command) = serde_json::from_slice::<
+                    crate::visual_workflow_builder::DraftCommand,
+                >(&request.payload) else {
+                    return base("invalid", "invalid_edit");
+                };
+                if composer::apply_edit(&mut definition, &command).is_err()
+                    || self
+                        .validate_visual_workflow_definition(&definition)
+                        .is_err()
+                {
+                    return base("invalid", "binding_rejected");
+                }
+                let definition_json = serde_json::to_vec(&definition).unwrap_or_default();
+                let layout_json = serde_json::to_vec(&definition.layout).unwrap_or_default();
+                let execution_hash = definition.execution_hash();
+                let layout_hash = definition.layout_hash();
+                match evohime_local_storage::visual_workflow_builder_store::save_draft(
+                    database.connection(),
+                    evohime_local_storage::visual_workflow_builder_store::SaveDraft {
+                        draft_id: &request.draft_id,
+                        owner_scope: &request.owner_scope,
+                        expected_revision: revision,
+                        definition_json: &definition_json,
+                        layout_json: &layout_json,
+                        execution_hash: &execution_hash,
+                        layout_hash: &layout_hash,
+                        composer_provenance_json: None,
+                        updated_at_ms: crate::task_memory::now_millis() as i64,
+                    },
+                ) {
+                    Ok(Ok(next)) => {
+                        let mut result = base("edited", "");
+                        result["revision"] = serde_json::json!(next);
+                        result["execution_hash"] = serde_json::json!(execution_hash);
+                        result["layout_hash"] = serde_json::json!(layout_hash);
+                        result
+                    }
+                    Ok(Err(code)) => base("conflict", code),
+                    Err(_) => base("error", "storage_error"),
+                }
+            }
+            "handoff" => {
+                let database = self.journal.database().lock().await;
+                let Ok(Some((revision, _, execution_hash, layout_hash))) =
+                    evohime_local_storage::visual_workflow_builder_store::read_draft(
+                        database.connection(),
+                        &request.draft_id,
+                        &request.owner_scope,
+                    )
+                else {
+                    return base("error", "unknown_draft");
+                };
+                let handle = format!("composer-handoff:{}:{}", request.draft_id, revision);
+                let precondition = format!("{}:{}", revision, execution_hash);
+                let result = evohime_local_storage::visual_workflow_builder_store::issue_handoff(
+                    database.connection(),
+                    evohime_local_storage::visual_workflow_builder_store::Handoff {
+                        handle: &handle,
+                        draft_id: &request.draft_id,
+                        owner_scope: &request.owner_scope,
+                        revision,
+                        draft_hash: &execution_hash,
+                        precondition: &precondition,
+                        created_at_ms: crate::task_memory::now_millis() as i64,
+                    },
+                );
+                let mut value = base(
+                    if result.is_ok() { "handoff" } else { "error" },
+                    if result.is_ok() { "" } else { "storage_error" },
+                );
+                value["revision"] = serde_json::json!(revision);
+                value["execution_hash"] = serde_json::json!(execution_hash);
+                value["layout_hash"] = serde_json::json!(layout_hash);
+                value["projection_json"] = serde_json::to_vec(
+                    &serde_json::json!({"handoff_handle":handle,"save_precondition":precondition}),
+                )
+                .unwrap_or_default()
+                .into();
+                value
+            }
+            "discard" => base("discarded", ""),
+            _ => base("unavailable", "composer_operation_unavailable"),
+        }
     }
 
     fn validate_visual_workflow_definition(
