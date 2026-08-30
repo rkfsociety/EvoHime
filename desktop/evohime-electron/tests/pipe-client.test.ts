@@ -356,7 +356,7 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
 
     expect(state.protocol).toEqual({ major: 1, minor: 0 })
     expect(state.coreVersion).toBe('0.1.0-test')
-    expect(state.capabilities).toEqual(['goals', 'replay', 'resync', 'skills', 'task_checkpoint'])
+    expect(state.capabilities).toEqual(['goals', 'replay', 'resync', 'skills', 'task_checkpoint', 'workflow_builder'])
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(requestedResync).toBe(true)
   })

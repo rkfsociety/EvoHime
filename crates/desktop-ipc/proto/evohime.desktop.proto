@@ -1760,6 +1760,7 @@ message CommandEnvelope {
     ExportWorkflowPackage export_workflow_package = 170;
     CommitWorkflowPackage commit_workflow_package = 171;
     RebindWorkflowPackage rebind_workflow_package = 172;
+    VisualWorkflowBuilderCommand visual_workflow_builder = 173;
   }
 }
 
@@ -1842,7 +1843,32 @@ message EventEnvelope {
     RefinementActionResult refinement_action = 30;
     RefinementListProjection refinement_list = 31;
     WorkflowPackageResult workflow_package = 32;
+    VisualWorkflowBuilderResult visual_workflow_builder = 33;
   }
+}
+
+// Plan 31: bounded metadata-only visual workflow builder surface.
+message VisualWorkflowBuilderCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string draft_id = 4;
+  string operation = 5;
+  bytes payload = 6;
+  uint64 expected_revision = 7;
+  string idempotency_key = 8;
+}
+message VisualWorkflowBuilderResult {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string status = 3;
+  string draft_id = 4;
+  uint64 revision = 5;
+  string execution_hash = 6;
+  string layout_hash = 7;
+  string handoff_handle = 8;
+  string error_code = 9;
+  bool truncated = 10;
 }
 
 message WorkflowPackageResult {

@@ -31,6 +31,7 @@ pub mod retained_child_store;
 pub mod scratchpad_store;
 pub mod task_checkpoint;
 pub mod toolkit_store;
+pub mod visual_workflow_builder_store;
 pub mod workflow_package_store;
 pub mod workflow_store;
 
@@ -522,6 +523,7 @@ impl LocalDatabase {
         refinement_store::install_schema(&connection)?;
         workflow_package_store::install_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        visual_workflow_builder_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }

@@ -991,6 +991,7 @@ pub mod plan_review;
 pub mod task_checkpoint;
 pub mod telemetry;
 pub mod vision_contract;
+pub mod visual_workflow_builder;
 pub mod voice_command;
 pub mod workflow;
 pub mod workflow_adapters;

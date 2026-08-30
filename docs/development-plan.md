@@ -102,3 +102,9 @@ metadata-only SQLite ownership, canonical SHA-256, fail-closed redaction,
 credential-slot rebinding, atomic package-file write, explicit commit,
 authenticated IPC 169–172 и Electron Workflow Package panel. Комплект плана
 30 удалён после полного Rust/Electron regression-прогона и bundle gates.
+
+План 31 закрыт: Visual Workflow Builder v1 перенесён в canonical
+architecture/current-state. Core-owned authoring, registry validation,
+immutable publish, recovery, read-only inspection, bounded IPC handoff и
+redaction gates подтверждены focused и regression-тестами; комплект планов
+удалён после проверки ссылок и evidence.

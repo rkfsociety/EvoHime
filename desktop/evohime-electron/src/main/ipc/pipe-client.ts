@@ -58,7 +58,7 @@ type ICommandEnvelope = evohime.desktop.v1.ICommandEnvelope
  * (plan 0, stage 1).
  */
 
-export const CLIENT_CAPABILITIES = ['replay', 'resync', 'task_checkpoint', 'skills', 'goals'] as const
+export const CLIENT_CAPABILITIES = ['replay', 'resync', 'task_checkpoint', 'skills', 'goals', 'workflow_builder'] as const
 
 export const DEFAULT_CONNECT_TIMEOUT_MS = 5_000
 export const DEFAULT_HANDSHAKE_TIMEOUT_MS = 5_000

@@ -162,7 +162,6 @@ describe.runIf(coreExecutable !== null && process.platform === 'win32')('real Co
     target.on('core-event', (event) => events.push(event))
     target.start()
     await waitForState(target, 'connected', (state) => state.connection === 'connected')
-
     const awaitEvent = async (eventType: string): Promise<CoreEvent> => {
       const deadline = Date.now() + 30_000
       for (;;) {

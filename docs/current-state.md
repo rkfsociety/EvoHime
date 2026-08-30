@@ -418,3 +418,9 @@ Electron, а renderer получает только bounded package metadata/act
 Проверка плана 30: Core package tests, storage package-store test, `cargo check`,
 Electron protocol/typecheck и focused workflow tests прошли; полный workspace и
 полный Electron regression прогон выполнены перед публикацией.
+
+План 31 реализован: Core владеет typed graph/layout contract, additive
+draft/version/handoff schema, bounded Composer handoff, IPC 173/event 33,
+authoring, immutable publish, recovery и metadata-only live inspection.
+Проверены optimistic revision, single-use handoff, redaction и независимые
+execution/layout hashes; комплект планов удалён после финального regression.

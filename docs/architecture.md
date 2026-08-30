@@ -982,6 +982,16 @@ worker manifest и Core/supervisor fault smoke; raw values, credentials,
 transcripts и абсолютные пути в bundle не попадают. При сбое reset/stop,
 recovery fencing и optimistic revision не допускают blind retry.
 
+### Visual Workflow Builder v1 foundation
+
+Builder-контракт находится в `crates/evohime-core/src/visual_workflow_builder.rs`.
+Typed `workflow/v1` graph validation, независимые execution/layout hashes и
+additive draft/version/handoff schema остаются Core-owned; IPC 173/event 33 и
+Electron surface передают только bounded metadata. Authoring, immutable
+publish, owner-scoped single-use handoff, recovery и read-only live inspection
+обслуживаются Core; renderer не получает полномочий, credentials или raw
+runtime payload.
+
 ### Continual Refinement v1
 
 План 29 закрыт 30 августа 2026 года. Core-контракт находится в

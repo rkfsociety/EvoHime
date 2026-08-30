@@ -3781,6 +3781,15 @@ impl IpcBridge {
                     self.write_response(writer, "workflow.events", serde_json::to_vec(&result)?)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::VisualWorkflowBuilder(request)) => {
+                    let result = self.dispatch_visual_workflow_builder(request).await;
+                    self.write_response(
+                        writer,
+                        "workflow_builder.result",
+                        serde_json::to_vec(&result)?,
+                    )
+                    .await?;
+                }
                 Some(generated::command_envelope::Command::ListAutomationSchedules(request)) => {
                     let result = self.dispatch_list_automation_schedules(request).await;
                     self.write_response(
@@ -4978,6 +4987,233 @@ impl IpcBridge {
                 "error_code": error.to_string(),
             }),
         }
+    }
+
+    async fn dispatch_visual_workflow_builder(
+        &self,
+        request: generated::VisualWorkflowBuilderCommand,
+    ) -> serde_json::Value {
+        if request.operation == "catalog" {
+            let blocks = self.workflow_registry.blocks().map(|block| serde_json::json!({"block_id": block.block_id, "block_version": block.block_version, "display_name": block.display_name, "description": block.description, "action_kind": block.action_kind, "inputs": block.inputs, "outputs": block.outputs})).collect::<Vec<_>>();
+            return serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"catalog","draft_id":request.draft_id,"revision":0,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":"","truncated":false,"blocks":blocks});
+        }
+        if request.operation == "recover" {
+            let database = self.journal.database().lock().await;
+            return match evohime_local_storage::visual_workflow_builder_store::read_draft(
+                database.connection(),
+                &request.draft_id,
+                &request.owner_scope,
+            ) {
+                Ok(Some((revision, _definition, execution_hash, layout_hash))) => {
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"recovered","draft_id":request.draft_id,"revision":revision,"execution_hash":execution_hash,"layout_hash":layout_hash,"handoff_handle":"","error_code":"","truncated":false})
+                }
+                Ok(None) => {
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"missing","draft_id":request.draft_id,"revision":0,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":"unknown_draft","truncated":false})
+                }
+                Err(_) => {
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"corrupt","draft_id":request.draft_id,"revision":0,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":"storage_error","truncated":false})
+                }
+            };
+        }
+        if request.operation == "inspect" {
+            let run_id = String::from_utf8(request.payload.to_vec()).unwrap_or_default();
+            let workspace = self.journal.workflow_run_workspace(&run_id).await;
+            let runtime = self.workflow_runtime(&workspace);
+            return match runtime.projection(&run_id).await {
+                Ok(Some(projection)) => {
+                    let value = serde_json::to_value(projection).unwrap_or_default();
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"inspected","draft_id":request.draft_id,"revision":request.expected_revision,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":"","truncated":false,"projection":value})
+                }
+                Ok(None) => {
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"unknown","draft_id":request.draft_id,"revision":0,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":"unknown_run","truncated":false})
+                }
+                Err(_error) => {
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"error","draft_id":request.draft_id,"revision":0,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":"runtime_error","truncated":false})
+                }
+            };
+        }
+        if request.operation == "edit" {
+            let database = self.journal.database().lock().await;
+            let draft = evohime_local_storage::visual_workflow_builder_store::read_draft(
+                database.connection(),
+                &request.draft_id,
+                &request.owner_scope,
+            );
+            return match draft {
+                Ok(Some((revision, definition_json, _, _)))
+                    if revision == request.expected_revision =>
+                {
+                    let parsed = serde_json::from_slice::<
+                        crate::visual_workflow_builder::VisualWorkflowBuilderDefinition,
+                    >(&definition_json);
+                    let command = serde_json::from_slice::<
+                        crate::visual_workflow_builder::DraftCommand,
+                    >(&request.payload);
+                    match (parsed, command) {
+                        (Ok(mut definition), Ok(command)) => match command
+                            .apply(&mut definition)
+                            .and_then(|_| self.validate_visual_workflow_definition(&definition))
+                        {
+                            Ok(()) => {
+                                let definition_json =
+                                    serde_json::to_vec(&definition).unwrap_or_default();
+                                let layout_json =
+                                    serde_json::to_vec(&definition.layout).unwrap_or_default();
+                                let execution_hash = definition.execution_hash();
+                                let layout_hash = definition.layout_hash();
+                                match evohime_local_storage::visual_workflow_builder_store::save_draft(database.connection(), evohime_local_storage::visual_workflow_builder_store::SaveDraft { draft_id: &request.draft_id, owner_scope: &request.owner_scope, expected_revision: revision, definition_json: &definition_json, layout_json: &layout_json, execution_hash: &execution_hash, layout_hash: &layout_hash, updated_at_ms: crate::task_memory::now_millis() as i64 }) {
+                                    Ok(Ok(next_revision)) => serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"edited","draft_id":request.draft_id,"revision":next_revision,"execution_hash":execution_hash,"layout_hash":layout_hash,"handoff_handle":"","error_code":"","truncated":false}),
+                                    Ok(Err(code)) => serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"conflict","draft_id":request.draft_id,"revision":revision,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":code,"truncated":false}),
+                                    Err(_) => serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"error","draft_id":request.draft_id,"revision":revision,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":"storage_error","truncated":false}),
+                                }
+                            }
+                            Err(error) => {
+                                serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"invalid","draft_id":request.draft_id,"revision":revision,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":error.to_string(),"truncated":false})
+                            }
+                        },
+                        _ => {
+                            serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"invalid","draft_id":request.draft_id,"revision":revision,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":"invalid_command","truncated":false})
+                        }
+                    }
+                }
+                Ok(Some((revision, _, _, _))) => {
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"conflict","draft_id":request.draft_id,"revision":revision,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":"stale_revision","truncated":false})
+                }
+                Ok(None) => {
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"error","draft_id":request.draft_id,"revision":0,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":"unknown_draft","truncated":false})
+                }
+                Err(_) => {
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"error","draft_id":request.draft_id,"revision":0,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":"storage_error","truncated":false})
+                }
+            };
+        }
+        if request.operation == "issue_handoff" {
+            let database = self.journal.database().lock().await;
+            let draft = evohime_local_storage::visual_workflow_builder_store::read_draft(
+                database.connection(),
+                &request.draft_id,
+                &request.owner_scope,
+            );
+            return match draft {
+                Ok(Some((revision, _definition, execution_hash, _layout_hash))) => {
+                    let handle = format!("builder-handoff:{}:{}", request.draft_id, revision);
+                    let precondition = format!("{}:{}", revision, execution_hash);
+                    let result =
+                        evohime_local_storage::visual_workflow_builder_store::issue_handoff(
+                            database.connection(),
+                            evohime_local_storage::visual_workflow_builder_store::Handoff {
+                                handle: &handle,
+                                draft_id: &request.draft_id,
+                                owner_scope: &request.owner_scope,
+                                revision,
+                                draft_hash: &execution_hash,
+                                precondition: &precondition,
+                                created_at_ms: crate::task_memory::now_millis() as i64,
+                            },
+                        );
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":if result.is_ok(){"handoff_issued"}else{"error"},"draft_id":request.draft_id,"revision":revision,"execution_hash":execution_hash,"layout_hash":"","handoff_handle":if result.is_ok(){handle}else{String::new()},"error_code":if result.is_ok(){""}else{"storage_error"},"truncated":false})
+                }
+                Ok(None) => {
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"error","draft_id":request.draft_id,"revision":0,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":"unknown_draft","truncated":false})
+                }
+                Err(_) => {
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"error","draft_id":request.draft_id,"revision":0,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":"storage_error","truncated":false})
+                }
+            };
+        }
+        if request.operation == "publish" {
+            let handle = String::from_utf8(request.payload.to_vec()).unwrap_or_default();
+            let database = self.journal.database().lock().await;
+            let published =
+                evohime_local_storage::visual_workflow_builder_store::publish_from_handoff(
+                    database.connection(),
+                    &handle,
+                    &request.draft_id,
+                    &request.owner_scope,
+                    crate::task_memory::now_millis() as i64,
+                );
+            return match published {
+                Ok(Ok((revision, _definition, execution_hash, layout_hash))) => {
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"published","draft_id":request.draft_id,"revision":revision,"execution_hash":execution_hash,"layout_hash":layout_hash,"handoff_handle":handle,"error_code":"","truncated":false})
+                }
+                Ok(Err(code)) => {
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"conflict","draft_id":request.draft_id,"revision":request.expected_revision,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":code,"truncated":false})
+                }
+                Err(_) => {
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"error","draft_id":request.draft_id,"revision":request.expected_revision,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":"storage_error","truncated":false})
+                }
+            };
+        }
+        if request.operation == "validate" || request.operation == "save" {
+            match serde_json::from_slice::<
+                crate::visual_workflow_builder::VisualWorkflowBuilderDefinition,
+            >(&request.payload)
+            {
+                Ok(definition) => {
+                    match self.validate_visual_workflow_definition(&definition) {
+                        Ok(()) if request.operation == "validate" => {
+                            return serde_json::json!({ "schema_version": 1, "request_id": request.request_id, "status": "valid", "draft_id": request.draft_id, "revision": request.expected_revision, "execution_hash": definition.execution_hash(), "layout_hash": definition.layout_hash(), "handoff_handle": "", "error_code": "", "truncated": false })
+                        }
+                        Ok(()) if request.operation == "save" => {
+                            let database = self.journal.database().lock().await;
+                            let graph_json = serde_json::to_vec(&definition).unwrap_or_default();
+                            let layout_json =
+                                serde_json::to_vec(&definition.layout).unwrap_or_default();
+                            let result =
+                            evohime_local_storage::visual_workflow_builder_store::save_draft(
+                                database.connection(),
+                                evohime_local_storage::visual_workflow_builder_store::SaveDraft { draft_id: &request.draft_id, owner_scope: &request.owner_scope, expected_revision: request.expected_revision, definition_json: &graph_json, layout_json: &layout_json, execution_hash: &definition.execution_hash(), layout_hash: &definition.layout_hash(), updated_at_ms: crate::task_memory::now_millis() as i64 },
+                            );
+                            return match result {
+                                Ok(Ok(revision)) => {
+                                    serde_json::json!({ "schema_version": 1, "request_id": request.request_id, "status": "saved", "draft_id": request.draft_id, "revision": revision, "execution_hash": definition.execution_hash(), "layout_hash": definition.layout_hash(), "handoff_handle": "", "error_code": "", "truncated": false })
+                                }
+                                Ok(Err(code)) => {
+                                    serde_json::json!({ "schema_version": 1, "request_id": request.request_id, "status": "conflict", "draft_id": request.draft_id, "revision": request.expected_revision, "execution_hash": "", "layout_hash": "", "handoff_handle": "", "error_code": code, "truncated": false })
+                                }
+                                Err(_) => {
+                                    serde_json::json!({ "schema_version": 1, "request_id": request.request_id, "status": "error", "draft_id": request.draft_id, "revision": request.expected_revision, "execution_hash": "", "layout_hash": "", "handoff_handle": "", "error_code": "storage_error", "truncated": false })
+                                }
+                            };
+                        }
+                        Ok(()) => {
+                            return serde_json::json!({ "schema_version": 1, "request_id": request.request_id, "status": "valid", "draft_id": request.draft_id, "revision": request.expected_revision, "execution_hash": definition.execution_hash(), "layout_hash": definition.layout_hash(), "handoff_handle": "", "error_code": "", "truncated": false })
+                        }
+                        Err(error) => {
+                            return serde_json::json!({ "schema_version": 1, "request_id": request.request_id, "status": "invalid", "draft_id": request.draft_id, "revision": request.expected_revision, "execution_hash": "", "layout_hash": "", "handoff_handle": "", "error_code": error.to_string(), "truncated": false })
+                        }
+                    }
+                }
+                Err(_) => {
+                    return serde_json::json!({ "schema_version": 1, "request_id": request.request_id, "status": "invalid", "draft_id": request.draft_id, "revision": request.expected_revision, "execution_hash": "", "layout_hash": "", "handoff_handle": "", "error_code": "invalid_payload", "truncated": false })
+                }
+            }
+        }
+        serde_json::json!({
+            "schema_version": 1,
+            "request_id": request.request_id,
+            "status": "unavailable",
+            "draft_id": request.draft_id,
+            "revision": 0,
+            "execution_hash": "",
+            "layout_hash": "",
+            "handoff_handle": "",
+            "error_code": "builder_authoring_not_wired",
+            "truncated": false,
+        })
+    }
+
+    fn validate_visual_workflow_definition(
+        &self,
+        definition: &crate::visual_workflow_builder::VisualWorkflowBuilderDefinition,
+    ) -> Result<(), crate::visual_workflow_builder::BuilderError> {
+        definition.validate()?;
+        self.workflow_registry
+            .validate_bindings(
+                &definition.graph,
+                &crate::workflow_registry::ParentCapabilities::default().unrestricted_context(),
+            )
+            .map_err(|_| crate::visual_workflow_builder::BuilderError::RegistryRejected)
     }
 
     /// Список ожидающих карточек (этап 04.7).
@@ -10525,6 +10761,7 @@ fn core_info() -> generated::CoreInfo {
             "task_checkpoint".into(),
             "skills".into(),
             "goals".into(),
+            "workflow_builder".into(),
         ],
         feature_flags: vec!["authenticated-ipc".into()],
         max_frame_bytes: evohime_desktop_ipc::MAX_FRAME_BYTES as u32,
