@@ -1755,6 +1755,20 @@ function dispatch(
       return accepted(client.send({ benchmarkMatrixAction: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(payloadJson, 'utf8'), expectedVersion, idempotencyKey } }))
     }
 
+    case 'agentMiddleware.list':
+    case 'agentMiddleware.start':
+    case 'agentMiddleware.cancel': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const idempotencyKey = value['idempotencyKey'] === undefined ? '' : asBoundedString(value['idempotencyKey'])
+      const runId = value['runId'] === undefined ? '' : asBoundedString(value['runId'])
+      const operation = command.slice('agentMiddleware.'.length)
+      if (requestId === null || ownerScope === null || idempotencyKey === null || runId === null) return failure('invalid-payload', 'Некорректная команда middleware pipeline.')
+      const payloadJson = JSON.stringify({ runId })
+      return accepted(client.send({ agentMiddlewarePipelineAction: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(payloadJson, 'utf8'), expectedVersion: 0, idempotencyKey } }))
+    }
+
     case 'automation.listSchedules': {
       const value = asRecord(payload)
       const ownerScope = asBoundedString(value['ownerScope'])

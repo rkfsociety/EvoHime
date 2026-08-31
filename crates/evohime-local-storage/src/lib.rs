@@ -7,6 +7,7 @@ use std::{
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+pub mod agent_middleware_pipeline_store;
 pub mod ambient_store;
 pub mod analysis_kernel;
 pub mod artifact_store;
@@ -44,7 +45,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 42;
+pub const SCHEMA_VERSION: u32 = 43;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3505,6 +3506,10 @@ impl LocalDatabase {
         if current < 42 {
             benchmark_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 42;")?;
+        }
+        if current < 43 {
+            agent_middleware_pipeline_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 43;")?;
         }
         transaction.commit()?;
         Ok(())

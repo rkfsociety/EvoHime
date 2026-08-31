@@ -1774,6 +1774,8 @@ message CommandEnvelope {
     InvocationPresetCommand invocation_preset_action = 180;
     AgentBenchmarkMatrixCommand benchmark_matrix_list = 181;
     AgentBenchmarkMatrixCommand benchmark_matrix_action = 182;
+    AgentMiddlewarePipelineCommand agent_middleware_pipeline_list = 183;
+    AgentMiddlewarePipelineCommand agent_middleware_pipeline_action = 184;
   }
 }
 
@@ -1862,7 +1864,31 @@ message EventEnvelope {
     EventTriggerRuntimeEvent event_trigger_runtime = 36;
     InvocationPresetEvent invocation_preset = 37;
     AgentBenchmarkMatrixEvent benchmark_matrix = 38;
+    AgentMiddlewarePipelineEvent agent_middleware_pipeline = 39;
   }
+}
+
+// Plan 37: bounded metadata-only middleware pipeline surface. Raw prompts,
+// outputs, credentials and executable identities never cross this protocol.
+message AgentMiddlewarePipelineCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string operation = 4;
+  bytes payload = 5;
+  uint64 expected_version = 6;
+  string idempotency_key = 7;
+}
+message AgentMiddlewarePipelineEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  string run_id = 5;
+  uint64 revision = 6;
+  string contract_hash = 7;
+  string error_code = 8;
+  bytes projection_json = 9;
 }
 
 // Plan 36: bounded metadata-only benchmark matrix surface. Raw prompts,

@@ -940,6 +940,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 pub mod agent_benchmark_matrix;
+pub mod agent_middleware_pipeline;
 pub mod ambient;
 pub mod ambient_proactivity;
 pub mod analysis_kernel;

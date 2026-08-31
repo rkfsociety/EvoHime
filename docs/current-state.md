@@ -480,4 +480,19 @@ Electron добавляет вкладку «Бенчмарки» с Core-only l
 Electron protocol/typecheck, focused benchmark panel test и полный Electron
 regression 480 passed/2 skipped. Provider `real` без настроенного окружения
 честно возвращает `unavailable`; production data/network effects не входят в
-локальную deterministic проверку.
+  локальную deterministic проверку.
+
+План 37 реализован 31 августа 2026 года. Agent Middleware Pipeline v1 добавляет
+Core-owned typed contract с фазами `before/after_agent`, `before/after_model`,
+`wrap_model_call`, `before/after_tool`, deterministic ordering, immutable
+override, run-pinned contract/policy/capability snapshot и typed duplicate,
+blocked, stale/invalid и unknown-safe outcomes. Existing observability и
+`PolicyGate` переиспользуются без второй authority; middleware не расширяет
+capabilities и не исполняет imported code.
+
+SQLite schema обновлена до v43: сохраняются только definition/run metadata,
+не raw prompt/output или transient payloads. Authenticated IPC использует
+commands 183–184/event 39, Electron добавляет metadata-only Middleware panel.
+Проверены Core contract/recovery tests 7/7, storage idempotency 1/1, desktop
+IPC 35/35, protocol/typecheck и focused Electron panel 1/1; full regression
+evidence фиксируется в release-evidence для текущего commit.

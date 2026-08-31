@@ -1096,6 +1096,9 @@ export const RENDERER_COMMANDS = [
   'benchmarkMatrix.start',
   'benchmarkMatrix.cancel',
   'benchmarkMatrix.approveBaseline',
+  'agentMiddleware.list',
+  'agentMiddleware.start',
+  'agentMiddleware.cancel',
   'automation.listSchedules',
   'automation.saveSchedule',
   'automation.trigger',
@@ -1487,6 +1490,9 @@ export interface CommandPayloads {
   }
   'benchmarkMatrix.cancel': { requestId: string; ownerScope: string; runId: string; idempotencyKey: string }
   'benchmarkMatrix.approveBaseline': { requestId: string; ownerScope: string; runId: string; expectedVersion: number; idempotencyKey: string }
+  'agentMiddleware.list': { requestId: string; ownerScope: string }
+  'agentMiddleware.start': { requestId: string; ownerScope: string; runId: string; idempotencyKey: string }
+  'agentMiddleware.cancel': { requestId: string; ownerScope: string; runId: string; idempotencyKey: string }
   'automation.listSchedules': { ownerScope: string; limit?: number }
   'automation.saveSchedule': {
     scheduleId: string
@@ -1703,6 +1709,9 @@ export interface CommandResults {
   'benchmarkMatrix.start': { accepted: boolean }
   'benchmarkMatrix.cancel': { accepted: boolean }
   'benchmarkMatrix.approveBaseline': { accepted: boolean }
+  'agentMiddleware.list': { accepted: boolean }
+  'agentMiddleware.start': { accepted: boolean }
+  'agentMiddleware.cancel': { accepted: boolean }
   'automation.listSchedules': { accepted: boolean }
   'automation.saveSchedule': { accepted: boolean }
   'automation.trigger': { accepted: boolean }

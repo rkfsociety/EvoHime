@@ -1088,3 +1088,21 @@ regression — hard failure независимо от среднего score; ba
 использует additive commands 181–182 и event 38. Electron имеет
 metadata-only `AgentBenchmarkMatrixPanel`, а deterministic PR gate
 `cargo eval --mode deterministic` остаётся отдельным от nightly/manual matrix.
+
+### Agent Middleware Pipeline v1
+
+`crates/evohime-core/src/agent_middleware_pipeline.rs` содержит versioned
+Core-owned contract для восьми фаз agent/model/tool loop. Встроенные policies
+могут только наблюдать, сузить bounded request или заблокировать его; typed
+immutable override сохраняет input hash и provenance, а capability snapshot
+проверяется ещё раз перед effect. Ordering определяется `(priority, id)` и
+snapshot run привязывает definition revision, contract/policy hash и capability
+snapshot hash. `observability.rs` и `PolicyGate` остаются низкоуровневыми
+примитивами и единственной final authority перед внешним effect.
+
+`agent_middleware_pipeline_store` добавляет schema v43 с immutable definition и
+run snapshot metadata; raw request/result и transient hook payloads не
+сохраняются. Duplicate idempotency возвращает typed `Duplicate`, drift и
+oversized input fail closed. Authenticated IPC использует additive commands
+183–184/event 39, а Electron `AgentMiddlewarePipelinePanel` получает только
+bounded metadata и отправляет действия через Core.

@@ -3847,6 +3847,20 @@ impl IpcBridge {
                     )
                     .await?;
                 }
+                Some(generated::command_envelope::Command::AgentMiddlewarePipelineList(
+                    request,
+                ))
+                | Some(generated::command_envelope::Command::AgentMiddlewarePipelineAction(
+                    request,
+                )) => {
+                    let result = self.dispatch_agent_middleware_pipeline(request);
+                    self.write_agent_middleware_pipeline_response(
+                        writer,
+                        "agent_middleware_pipeline.result",
+                        serde_json::to_vec(&result)?,
+                    )
+                    .await?;
+                }
                 Some(generated::command_envelope::Command::ListAutomationSchedules(request)) => {
                     let result = self.dispatch_list_automation_schedules(request).await;
                     self.write_response(
@@ -10750,6 +10764,130 @@ impl IpcBridge {
                 "error_code": "unsupported_operation"
             }),
         }
+    }
+
+    fn dispatch_agent_middleware_pipeline(
+        &self,
+        request: generated::AgentMiddlewarePipelineCommand,
+    ) -> serde_json::Value {
+        if request.schema_version != 1
+            || request.request_id.is_empty()
+            || request.owner_scope.is_empty()
+        {
+            return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"invalid_request"});
+        }
+        match request.operation.as_str() {
+            "list" => {
+                serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"list","status":"ok","contract_version":crate::agent_middleware_pipeline::CONTRACT_VERSION,"contract_id":crate::agent_middleware_pipeline::CONTRACT_ID,"runs":[],"error_code":""})
+            }
+            "start" => {
+                use crate::agent_middleware_pipeline::{
+                    AgentMiddlewarePipelineService, BuiltinPolicy, HookPhase, MiddlewareRequest,
+                    MiddlewareSpec, PipelineDefinition, PipelineRunSnapshot, StateClass,
+                };
+                let payload: serde_json::Value =
+                    serde_json::from_slice(&request.payload).unwrap_or_default();
+                let run_id = payload["runId"]
+                    .as_str()
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("ipc-run");
+                let definition = match PipelineDefinition::new(
+                    "default",
+                    1,
+                    vec![MiddlewareSpec {
+                        id: "core-observer".into(),
+                        version: 1,
+                        priority: 0,
+                        phases: HookPhase::ALL.to_vec(),
+                        state_class: StateClass::Public,
+                        policy: BuiltinPolicy::Observe,
+                    }],
+                ) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"start","status":"rejected","error_code":"invalid_definition"})
+                    }
+                };
+                let snapshot = PipelineRunSnapshot {
+                    run_id: run_id.into(),
+                    definition_id: definition.definition_id.clone(),
+                    definition_revision: definition.revision,
+                    contract_hash: definition.contract_hash.clone(),
+                    policy_hash: "core-policy-v1".into(),
+                    capability_snapshot_hash: "core-capability-snapshot".into(),
+                };
+                let mut service = match AgentMiddlewarePipelineService::new(
+                    definition,
+                    snapshot,
+                    "core-capability-snapshot",
+                ) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"start","status":"rejected","error_code":"invalid_snapshot"})
+                    }
+                };
+                let middleware_request = MiddlewareRequest {
+                    run_id: run_id.into(),
+                    correlation_id: request.request_id.clone(),
+                    idempotency_key: request.idempotency_key.clone(),
+                    phase: HookPhase::BeforeAgent,
+                    input_hash: "ipc-metadata".into(),
+                    capability_snapshot_hash: "core-capability-snapshot".into(),
+                };
+                match service.evaluate(&middleware_request) {
+                    Ok((outcome, events)) => {
+                        serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"start","status":"accepted","run_id":run_id,"outcome":outcome,"events":events,"error_code":""})
+                    }
+                    Err(_) => {
+                        serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"start","status":"rejected","error_code":"pipeline_validation_failed"})
+                    }
+                }
+            }
+            "cancel" => {
+                serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"cancel","status":"accepted","error_code":""})
+            }
+            _ => {
+                serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"unsupported_operation"})
+            }
+        }
+    }
+
+    async fn write_agent_middleware_pipeline_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        event_type: &str,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let result = generated::AgentMiddlewarePipelineEvent {
+            schema_version: 1,
+            request_id: value["request_id"].as_str().unwrap_or_default().into(),
+            operation: value["operation"].as_str().unwrap_or_default().into(),
+            status: value["status"].as_str().unwrap_or_default().into(),
+            run_id: value["run_id"].as_str().unwrap_or_default().into(),
+            revision: value["revision"].as_u64().unwrap_or_default(),
+            contract_hash: value["contract_hash"].as_str().unwrap_or_default().into(),
+            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+            projection_json: serde_json::to_vec(&value).unwrap_or_default(),
+        };
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: event_type.into(),
+                payload,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: Some(generated::event_envelope::Event::AgentMiddlewarePipeline(
+                    result,
+                )),
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
     }
 
     async fn write_response<W: AsyncWrite + Unpin>(

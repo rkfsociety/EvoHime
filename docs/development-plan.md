@@ -138,4 +138,12 @@ suite, ModelProfile/AgentProfile matrix, repeated attempts, bounded statistics,
 baseline comparison, maintain/improve/explore sets, hard security failures,
 redacted JSON report, schema v42, authenticated IPC 181–182/event 38 и
 metadata-only Electron panel. Deterministic PR gate остаётся отдельным, а
-provider-unavailable не считается pass; комплект 36-0 … 36-4 удалён.
+  provider-unavailable не считается pass; комплект 36-0 … 36-4 удалён.
+
+План 37 закрыт: Agent Middleware Pipeline v1 перенесён в
+`architecture.md`, `current-state.md` и `release-evidence.md`. Подтверждены
+versioned typed hooks для agent/model/tool phases, deterministic run snapshot,
+immutable bounded overrides, Core-only capability authority, schema v43,
+recovery/idempotency semantics, authenticated IPC 183–184/event 39 и
+metadata-only Electron projection. Комплект `37-0` … `37-4` удалён после
+свежих focused и regression gates.
