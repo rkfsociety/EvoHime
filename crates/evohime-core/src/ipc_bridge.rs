@@ -337,6 +337,7 @@ pub struct IpcBridge {
     /// листенера кладёт карточку, панель её решает. Второй экземпляр означал
     /// бы карточку, которую некому принять.
     voice_commands: Arc<crate::voice_command::VoiceCommandRegistry>,
+    tool_simulation: Arc<tokio::sync::Mutex<crate::tool_simulation_runtime::ToolSimulationRuntime>>,
 }
 
 /// Проект, под которым живут принятые предложения. Речь у стола не
@@ -620,6 +621,9 @@ impl IpcBridge {
             workflow_approvals: Arc::new(crate::workflow_runtime::WorkflowApprovalRegistry::new()),
             voice_commands: Arc::new(crate::voice_command::VoiceCommandRegistry::new()),
             workflow_registry: Arc::new(crate::workflow_registry::WorkflowRegistry::bootstrap()),
+            tool_simulation: Arc::new(tokio::sync::Mutex::new(
+                crate::tool_simulation_runtime::ToolSimulationRuntime::default(),
+            )),
         }
     }
 
@@ -648,6 +652,9 @@ impl IpcBridge {
             workflow_approvals: Arc::new(crate::workflow_runtime::WorkflowApprovalRegistry::new()),
             voice_commands: Arc::new(crate::voice_command::VoiceCommandRegistry::new()),
             workflow_registry: Arc::new(crate::workflow_registry::WorkflowRegistry::bootstrap()),
+            tool_simulation: Arc::new(tokio::sync::Mutex::new(
+                crate::tool_simulation_runtime::ToolSimulationRuntime::default(),
+            )),
         }
     }
 
@@ -683,6 +690,9 @@ impl IpcBridge {
             workflow_approvals: Arc::new(crate::workflow_runtime::WorkflowApprovalRegistry::new()),
             voice_commands: Arc::new(crate::voice_command::VoiceCommandRegistry::new()),
             workflow_registry: Arc::new(crate::workflow_registry::WorkflowRegistry::bootstrap()),
+            tool_simulation: Arc::new(tokio::sync::Mutex::new(
+                crate::tool_simulation_runtime::ToolSimulationRuntime::default(),
+            )),
         }
     }
 
@@ -3893,6 +3903,14 @@ impl IpcBridge {
                 Some(generated::command_envelope::Command::ExecutionBackendRegistry(request)) => {
                     let result = self.dispatch_execution_backend_registry(request).await;
                     self.write_execution_backend_registry_response(
+                        writer,
+                        serde_json::to_vec(&result)?,
+                    )
+                    .await?;
+                }
+                Some(generated::command_envelope::Command::ToolSimulationRuntime(request)) => {
+                    let result = self.dispatch_tool_simulation_runtime(request).await;
+                    self.write_tool_simulation_runtime_response(
                         writer,
                         serde_json::to_vec(&result)?,
                     )
@@ -11313,6 +11331,89 @@ impl IpcBridge {
             _ => serde_json::json!({"status":"rejected","error_code":"unsupported_operation"}),
         };
         serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"registry_version":outcome["registry_version"].as_u64().unwrap_or(registry.version()),"projection_json":outcome,"error_code":outcome["error_code"].as_str().unwrap_or("")})
+    }
+
+    async fn dispatch_tool_simulation_runtime(
+        &self,
+        request: generated::ToolSimulationRuntimeCommand,
+    ) -> serde_json::Value {
+        if request.schema_version != crate::tool_simulation_runtime::CONTRACT_VERSION
+            || request.request_id.is_empty()
+            || request.owner_scope.is_empty()
+            || request.idempotency_key.is_empty()
+            || request.payload.len() > 64 * 1024
+        {
+            return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"invalid_request","projection_json":{"ephemeral":true,"raw_payload":false}});
+        }
+        let runtime = self.tool_simulation.lock().await;
+        match request.operation.as_str() {
+            "status" => serde_json::json!({
+                "schema_version": 1,
+                "request_id": request.request_id,
+                "operation": "status",
+                "status": "ok",
+                "mode": "dry_run",
+                "state": "ready",
+                "provenance": "synthetic_or_fixture",
+                "projection_json": {"contract_id": crate::tool_simulation_runtime::CONTRACT_ID, "contract_version": 1, "ephemeral": true, "fixture_count": runtime.fixture_count(), "completed_count": runtime.completed_count(), "real_fallback": false, "raw_payload": false},
+                "error_code": ""
+            }),
+            "run" => serde_json::json!({
+                "schema_version": 1,
+                "request_id": request.request_id,
+                "operation": "run",
+                "status": "unavailable",
+                "mode": "dry_run",
+                "state": "blocked",
+                "provenance": "synthetic_or_fixture",
+                "projection_json": {"ephemeral": true, "raw_payload": false, "real_fallback": false},
+                "error_code": "payload_not_admitted"
+            }),
+            _ => {
+                serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"unsupported_operation","projection_json":{"real_fallback":false}})
+            }
+        }
+    }
+
+    async fn write_tool_simulation_runtime_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let projection = serde_json::to_vec(&value["projection_json"])?;
+        let result = generated::ToolSimulationRuntimeEvent {
+            schema_version: 1,
+            request_id: value["request_id"].as_str().unwrap_or_default().into(),
+            operation: value["operation"].as_str().unwrap_or_default().into(),
+            status: value["status"].as_str().unwrap_or_default().into(),
+            mode: value["mode"].as_str().unwrap_or_default().into(),
+            state: value["state"].as_str().unwrap_or_default().into(),
+            provenance: value["provenance"].as_str().unwrap_or_default().into(),
+            run_id: value["run_id"].as_str().unwrap_or_default().into(),
+            correlation_id: value["correlation_id"].as_str().unwrap_or_default().into(),
+            contract_hash: value["contract_hash"].as_str().unwrap_or_default().into(),
+            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+            projection_json: projection,
+        };
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: "tool_simulation_runtime.result".into(),
+                payload,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: Some(generated::event_envelope::Event::ToolSimulationRuntime(
+                    result,
+                )),
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
     }
 
     async fn write_execution_backend_registry_response<W: AsyncWrite + Unpin>(

@@ -90,6 +90,9 @@ pub struct CoreNodeAdapter {
     task_id: uuid::Uuid,
     session_id: Option<uuid::Uuid>,
     child_executor: Arc<dyn ChildExecutor>,
+    simulation:
+        Option<Arc<tokio::sync::Mutex<crate::tool_simulation_runtime::ToolSimulationRuntime>>>,
+    simulation_mode: Option<crate::tool_simulation_runtime::ToolSimulationMode>,
 }
 
 impl CoreNodeAdapter {
@@ -112,11 +115,23 @@ impl CoreNodeAdapter {
             task_id: uuid::Uuid::new_v4(),
             session_id: None,
             child_executor: Arc::new(UnavailableChildExecutor),
+            simulation: None,
+            simulation_mode: None,
         }
     }
 
     pub fn with_tools(mut self, tools: Arc<ToolRegistry>) -> Self {
         self.tools = Some(tools);
+        self
+    }
+
+    pub fn with_simulation(
+        mut self,
+        runtime: Arc<tokio::sync::Mutex<crate::tool_simulation_runtime::ToolSimulationRuntime>>,
+        mode: crate::tool_simulation_runtime::ToolSimulationMode,
+    ) -> Self {
+        self.simulation = Some(runtime);
+        self.simulation_mode = Some(mode);
         self
     }
 
@@ -196,6 +211,28 @@ impl CoreNodeAdapter {
             evohime_receipts::capability::PolicyOutcome::Allowed,
         )
         .map_err(|decision| NodeError::permanent("policy_error", decision.reason_code))?;
+        if let (Some(runtime), Some(mode)) = (&self.simulation, self.simulation_mode) {
+            let request = crate::tool_simulation_runtime::SimulationRequest {
+                schema_version: crate::tool_simulation_runtime::CONTRACT_VERSION,
+                run_id: context.task_id.to_string(),
+                tool_id: tool_name.to_owned(),
+                mode,
+                input,
+                emulated_output: None,
+                correlation_id: format!("{}-{tool_name}", context.task_id),
+                idempotency_key: action_id.to_string(),
+                policy_hash: binding.snapshot_hash,
+                capability_granted: true,
+            };
+            let result = runtime
+                .lock()
+                .await
+                .simulate(request, None)
+                .map_err(|error| {
+                    NodeError::permanent(error.code(), "simulation result unavailable")
+                })?;
+            return Ok(result.output);
+        }
         match tools.execute(&context, tool_name, input).await {
             Ok(result) => {
                 let output = json!({
@@ -771,6 +808,51 @@ mod tests {
             .expect_err("no registry");
         assert_eq!(error.code, "tool_registry_unavailable");
         assert!(!error.retryable);
+    }
+
+    #[tokio::test]
+    async fn a_tool_node_uses_fixture_before_any_effect_adapter() {
+        let (adapter, _dir) = adapter();
+        let runtime = Arc::new(tokio::sync::Mutex::new(
+            crate::tool_simulation_runtime::ToolSimulationRuntime::default(),
+        ));
+        let input = json!({});
+        runtime
+            .lock()
+            .await
+            .register_fixture(crate::tool_simulation_runtime::FixtureDefinition {
+                schema_version: 1,
+                fixture_id: "fixture-workspace-read".into(),
+                tool_id: "workspace.read".into(),
+                input_hash: crate::tool_simulation_runtime::value_hash(&input).unwrap(),
+                output: json!({"simulated": true}),
+                output_schema_hash: None,
+            })
+            .unwrap();
+        let adapter = adapter
+            .with_tools(Arc::new(ToolRegistry::bootstrap()))
+            .with_simulation(
+                runtime.clone(),
+                crate::tool_simulation_runtime::ToolSimulationMode::DryRun,
+            );
+        let registry = WorkflowRegistry::empty();
+        let parent = ParentCapabilities::default();
+        let node = WorkflowNode::new(
+            "tool",
+            NodeType::Tool {
+                tool: ToolActionProfile {
+                    tool_name: "workspace.read".into(),
+                    arguments: BTreeMap::new(),
+                },
+            },
+            policy(),
+        );
+        let result = adapter
+            .execute(invocation(&node, &registry, &parent, BTreeMap::new()))
+            .await
+            .expect("fixture result");
+        assert_eq!(result.output["out"]["simulated"], json!(true));
+        assert_eq!(runtime.lock().await.completed_count(), 1);
     }
 
     #[tokio::test]

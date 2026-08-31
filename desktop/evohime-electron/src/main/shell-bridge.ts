@@ -1846,6 +1846,15 @@ function dispatch(
       return accepted(client.send({ executionBackendRegistry: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(JSON.stringify(json), 'utf8'), expectedVersion: Number(json['expected_version'] || 0), idempotencyKey } }))
     }
 
+    case 'toolSimulationRuntime.status': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (requestId === null || ownerScope === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректные параметры simulation runtime.')
+      return accepted(client.send({ toolSimulationRuntime: { schemaVersion: 1, requestId, ownerScope, operation: 'status', payload: Buffer.alloc(0), expectedVersion: 0, idempotencyKey } }))
+    }
+
     case 'automation.listSchedules': {
       const value = asRecord(payload)
       const ownerScope = asBoundedString(value['ownerScope'])

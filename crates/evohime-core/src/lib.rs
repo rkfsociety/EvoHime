@@ -997,6 +997,7 @@ pub mod prd;
 pub mod provider_resilience;
 pub mod retained_child;
 pub mod structured_response_contract;
+pub mod tool_simulation_runtime;
 pub use provider_resilience::{
     default_tool_specs, filter_readonly_tools, handle_provider_error, is_retriable_error,
     ProviderResilienceConfig,

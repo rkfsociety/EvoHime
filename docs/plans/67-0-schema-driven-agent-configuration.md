@@ -45,7 +45,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 44.0 — Tool Simulation Runtime: fixture/emulated dry-run без реальных side effects.
+- Tool Simulation Runtime v1 из `../architecture.md`.
 - План 47.0 — Skill Trust Pipeline: deterministic scanning, contextual review и quarantine перед активацией.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 

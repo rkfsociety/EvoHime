@@ -1219,3 +1219,27 @@ immutable `{backend_id, registry_version, handshake_hash, policy_hash}` snapshot
 Authenticated additive IPC использует command 189/event 44. Electron panel
 «Среды выполнения» является projection/action surface; prompt, output, secret
 material, executable identity и raw endpoint payload в renderer не передаются.
+
+## Tool Simulation Runtime v1 (план 44)
+
+`tool_simulation_runtime.rs` — Core-owned interception boundary для безопасного
+fixture/emulated dry-run. Explicit modes — `real`, `fixture`, `emulated` и
+`dry_run`; Real не перехватывается этим runtime, а simulation modes никогда не
+вызывают `ToolRegistry` effect adapter и не fallback-ятся в Real. Exact fixture
+matching использует schema v1, tool id и SHA-256 hash нормализованного JSON input.
+Fixture и Emulated output проходят bounded limits и optional Structured Response
+validation. Provenance типизирован как `fixture` или `synthetic`, поэтому
+synthetic evidence не является observed effect.
+
+Run, fixture и policy state process-local и исчезают после restart; SQLite
+schema остаётся v45 без новых таблиц. В журнал допускаются только bounded
+redacted metadata. Duplicate delivery idempotent, missing fixture и invalid
+schema fail closed. `CoreNodeAdapter::with_simulation` intercepts tool nodes
+после Core policy recheck и возвращает только fixture output; benchmark matrix
+использует `FixtureToolBenchmarkExecutor` только для `fixture:` references.
+
+Authenticated additive IPC использует command 190/event 45. Electron получает
+только metadata-only status с mode/state/provenance и счётчиками ephemeral
+runtime; raw fixture/input/output, prompts, credentials и executable identities
+не пересекают boundary. Панель всегда показывает, что simulation не
+подтверждает реальный эффект.

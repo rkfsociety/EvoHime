@@ -1112,6 +1112,7 @@ export const RENDERER_COMMANDS = [
   'executionBackendRegistry.setDefault',
   'executionBackendRegistry.disable',
   'executionBackendRegistry.snapshot',
+  'toolSimulationRuntime.status',
   'automation.listSchedules',
   'automation.saveSchedule',
   'automation.trigger',
@@ -1519,6 +1520,7 @@ export interface CommandPayloads {
   'executionBackendRegistry.setDefault': { requestId: string; ownerScope: string; idempotencyKey: string; expectedVersion: number; id: string }
   'executionBackendRegistry.disable': { requestId: string; ownerScope: string; idempotencyKey: string; expectedVersion: number; id: string }
   'executionBackendRegistry.snapshot': { requestId: string; ownerScope: string; idempotencyKey: string; backendId?: string }
+  'toolSimulationRuntime.status': { requestId: string; ownerScope: string; idempotencyKey: string }
   'automation.listSchedules': { ownerScope: string; limit?: number }
   'automation.saveSchedule': {
     scheduleId: string
@@ -1751,6 +1753,7 @@ export interface CommandResults {
   'executionBackendRegistry.setDefault': { accepted: boolean }
   'executionBackendRegistry.disable': { accepted: boolean }
   'executionBackendRegistry.snapshot': { accepted: boolean }
+  'toolSimulationRuntime.status': { accepted: boolean }
   'automation.listSchedules': { accepted: boolean }
   'automation.saveSchedule': { accepted: boolean }
   'automation.trigger': { accepted: boolean }

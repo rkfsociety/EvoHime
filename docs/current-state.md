@@ -570,3 +570,17 @@ required backend. Core возвращает profile metadata/hash, storage schem
 Authenticated IPC использует additive tags 187/42, Electron показывает
 metadata-only панель «Профили выполнения». Полные release counts и команды
 проверки зафиксированы в `release-evidence.md`.
+
+План 44 закрыт 31 августа 2026 года. Tool Simulation Runtime v1 реализует
+Core-owned modes `Real`/`Fixture`/`Emulated`/`DryRun`, exact schema-v1 fixture
+matching, Structured Response validation и synthetic/fixture provenance.
+Simulation перехватывает workflow tool nodes до effect adapter, имеет
+idempotent ephemeral state и fail-closed missing/invalid outcomes; после
+restart state не восстанавливается, SQLite schema остаётся v45.
+
+Benchmark Matrix получил `FixtureToolBenchmarkExecutor`, authenticated IPC
+расширен command 190/event 45, а Electron показывает metadata-only панель
+«Симуляция инструментов» с обязательным mode/provenance предупреждением.
+Real fallback, raw payload, prompts и credentials запрещены. Contract/recovery,
+workflow/benchmark, protocol/typecheck и diff-check evidence зафиксированы в
+`release-evidence.md`.

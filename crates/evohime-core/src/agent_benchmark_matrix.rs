@@ -31,6 +31,47 @@ pub trait BenchmarkExecutor {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DeterministicBenchmarkExecutor;
 
+/// Executor used by the simulation runtime. It consumes only a fixture
+/// reference and produces bounded synthetic metrics; it never reaches a
+/// provider or ToolRegistry.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct FixtureToolBenchmarkExecutor;
+
+impl BenchmarkExecutor for FixtureToolBenchmarkExecutor {
+    fn execute(
+        &self,
+        challenge: &BenchmarkChallenge,
+        _model: &ModelProfile,
+        _agent: &AgentProfile,
+        seed: u64,
+    ) -> AttemptResult {
+        let available = challenge.fixture_ref.starts_with("fixture:");
+        let digest = hex::encode(Sha256::digest(
+            format!("{}:{seed}", challenge.fixture_ref).as_bytes(),
+        ));
+        AttemptResult {
+            outcome: if available {
+                AttemptOutcome::Passed
+            } else {
+                AttemptOutcome::Unavailable
+            },
+            failure_class: (!available).then_some(FailureClass::Infrastructure),
+            security_violation: false,
+            latency_ms: 1,
+            steps: u32::from(available),
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            cost_micros: 0,
+            output_digest: if available {
+                digest.clone()
+            } else {
+                String::new()
+            },
+            tool_trace_digest: if available { digest } else { String::new() },
+        }
+    }
+}
+
 impl BenchmarkExecutor for DeterministicBenchmarkExecutor {
     fn execute(
         &self,
@@ -755,6 +796,29 @@ mod tests {
         assert_eq!(report.metrics["c:m:a"].attempts, 3);
         assert_eq!(report.metrics["c:m:a"].pass_rate_millis, 1000);
         assert_eq!(report.comparisons["c:m:a"].verdict, ComparisonVerdict::New);
+    }
+
+    #[test]
+    fn fixture_executor_is_available_only_for_fixture_refs() {
+        let mut benchmark = suite();
+        benchmark.challenges[0].fixture_ref = "fixture:echo-v1".into();
+        let report = run_matrix(
+            &benchmark,
+            &BenchmarkPolicy {
+                attempts: 1,
+                max_parallelism: 1,
+                seed: 9,
+                global_token_budget: None,
+                global_cost_budget_micros: None,
+                mode: BenchmarkMode::Deterministic,
+            },
+            "run",
+            "commit",
+            &FixtureToolBenchmarkExecutor,
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        assert_eq!(report.metrics["c:m:a"].pass_rate_millis, 1000);
     }
 
     #[test]

@@ -141,3 +141,23 @@ audit хранится по его собственному Core policy.
   `npm run check:protocol`, `npm run typecheck`; full Core regression 629 tests
   passed after the schema assertion update. Evidence contains no credentials,
   raw prompts/outputs or absolute paths.
+
+## Plan 44 — Tool Simulation Runtime v1 (2026-08-31)
+
+- Contract: schema v1, explicit Real/Fixture/Emulated/DryRun modes, deterministic
+  tool-id plus SHA-256 input fixture matching, bounded input/output, typed
+  synthetic/fixture provenance and Structured Response validation.
+- Runtime: Core interception occurs after policy recheck and before any
+  ToolRegistry effect adapter. Missing/stale/invalid fixtures fail closed;
+  simulation never falls back to Real. Workflow fixture path and
+  `FixtureToolBenchmarkExecutor` are provider-free and side-effect-free.
+- Recovery/storage: idempotent duplicate delivery is stable; run/fixture/policy
+  state is ephemeral and restart discards it. SQLite schema remains v45; no
+  migration or durable simulation payload is introduced.
+- IPC/UI: authenticated additive command 190/event 45; Electron receives only
+  bounded mode/state/provenance/count metadata. Raw fixture/input/output,
+  prompts, credentials and executable identities are absent; panel warning is
+  always visible.
+- Evidence: Core contract 2/2, recovery 1/1, workflow interception 1/1,
+  fixture benchmark 1/1, Electron panel 1/1, protocol check and typecheck pass;
+  full regression and final commands are recorded with the closing commit.

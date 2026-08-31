@@ -16,7 +16,7 @@
 ### Опциональные
 
 - План 36.0 — зависимость из обзора.
-- План 44.0 — зависимость из обзора.
+- Tool Simulation Runtime v1 из `../architecture.md`.
 - Model Resilience Policy v1 из `docs/architecture.md`.
 - План 71.0 — зависимость из обзора.
 - План 83.0 — зависимость из обзора.

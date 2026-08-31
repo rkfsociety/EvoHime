@@ -50,7 +50,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Блокирующие
 
 - План 36.0 — Agent Benchmark Matrix: многократные model/strategy evals и regression tracking.
-- План 44.0 — Tool Simulation Runtime: fixture/emulated dry-run без реальных side effects.
+- Tool Simulation Runtime v1 из `../architecture.md`.
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 
 ### Опциональные

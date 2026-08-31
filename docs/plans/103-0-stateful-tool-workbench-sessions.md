@@ -52,7 +52,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 38.0 — Adaptive Tool Catalog: dynamic selection и deferred tool schemas.
-- План 44.0 — Tool Simulation Runtime: fixture/emulated dry-run без реальных side effects.
+- Tool Simulation Runtime v1 из `../architecture.md`.
 - План 55.0 — Agentic Browser Session: sandboxed browser automation со stable refs и SSRF-защитой.
 - План 63.0 — Composable Termination Conditions: first-class stop policies for agent and team runs.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.

@@ -190,3 +190,11 @@ immutable run-affinity snapshot и fail-closed remote `transport_unavailable`.
 Authenticated IPC использует additive 189/event 44, Electron — metadata-only
 panel. Комплект 43-0 … 43-4 удалён после focused/full Rust, IPC, protocol,
 typecheck, Electron и diff-check проверок.
+
+План 44 закрыт: Tool Simulation Runtime v1 перенесён в canonical
+architecture/current-state/release-evidence. Подтверждены explicit
+Real/Fixture/Emulated/DryRun modes, deterministic schema-v1 fixture matching,
+Structured Response validation, no-real-dispatch workflow interception,
+fixture benchmark executor, ephemeral restart semantics и metadata-only
+authenticated IPC 190/event 45. Комплект 44-0 … 44-4 удалён после focused и
+regression-проверок.
