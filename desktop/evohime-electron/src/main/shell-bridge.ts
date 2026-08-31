@@ -1869,6 +1869,26 @@ function dispatch(
       return accepted(client.send(operation === 'list' || operation === 'status' ? { externalCodingAgentAdapterList: commandBody } : { externalCodingAgentAdapterAction: commandBody }))
     }
 
+    case 'agentRoleProfiles.list':
+    case 'agentRoleProfiles.get':
+    case 'agentRoleProfiles.create':
+    case 'agentRoleProfiles.revise':
+    case 'agentRoleProfiles.start':
+    case 'agentRoleProfiles.cancel': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId']); const ownerScope = asBoundedString(value['ownerScope']); const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (requestId === null || ownerScope === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректные параметры профиля роли.')
+      const operation = command.slice('agentRoleProfiles.'.length)
+      const json: Record<string, unknown> = {}
+      if (operation === 'get') { const profileId = asBoundedString(value['profileId']); if (profileId === null) return failure('invalid-payload', 'Не указан профиль роли.'); json.profile_id = profileId }
+      if (operation === 'create' || operation === 'revise') { const profile = value['profile']; if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return failure('invalid-payload', 'Некорректное описание профиля роли.'); Object.assign(json, profile); }
+      if (operation === 'revise') { const expectedRevision = asBoundedNumber(value['expectedRevision'], Number.MAX_SAFE_INTEGER); if (expectedRevision === null) return failure('invalid-payload', 'Некорректная ревизия профиля.'); }
+      if (operation === 'start') { const runId = asBoundedString(value['runId']); const profileId = asBoundedString(value['profileId']); const revision = asBoundedNumber(value['revision'], Number.MAX_SAFE_INTEGER); const requestedGrants = Array.isArray(value['requestedGrants']) ? value['requestedGrants'].filter((v): v is string => typeof v === 'string').slice(0, 32) : []; if (runId === null || profileId === null || revision === null) return failure('invalid-payload', 'Некорректный запуск профиля роли.'); Object.assign(json, { run_id: runId, profile_id: profileId, revision, requested_grants: requestedGrants }) }
+      if (operation === 'cancel') { const runId = asBoundedString(value['runId']); if (runId === null) return failure('invalid-payload', 'Не указан run профиля роли.'); json.run_id = runId }
+      const body = { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(JSON.stringify(json), 'utf8'), expectedRevision: operation === 'revise' ? Number(value['expectedRevision']) : 0, idempotencyKey }
+      return accepted(client.send(operation === 'list' || operation === 'get' ? { agentRoleProfilesList: body } : { agentRoleProfilesAction: body }))
+    }
+
     case 'automation.listSchedules': {
       const value = asRecord(payload)
       const ownerScope = asBoundedString(value['ownerScope'])

@@ -600,3 +600,17 @@ Authenticated IPC добавляет commands 191–192/event 46. Electron panel
 только bounded status и фактический `core_control_level`, без external frames,
 credentials и raw output. Проверены Rust compilation, protocol generation/check,
 TypeScript typecheck и focused Electron privacy test.
+
+План 46 закрыт 31 августа 2026 года. Agent Role Profiles v1 добавляет
+Core-owned bounded contract с objective/constraints/skills/tools/strategy,
+typed input/output contracts, budget defaults и `human`/`ai` execution mode.
+Requested grants вычисляются только как intersection parent grants, policy,
+registry и requested set; revision + canonical SHA-256 hash закрепляются на
+runtime instance. Catalog хранится metadata-only в SQLite schema v47 с
+immutable revisions и recovery после restart; transient instances не
+персистируются и unknown outcome не retry-ится вслепую.
+
+Authenticated IPC использует commands 193–194/event 47. Electron показывает
+metadata-only панель «Профили ролей»; raw prompts, credentials, executable code
+и hidden reasoning не передаются. Реализуемые операции — list/get/create/revise/
+start/cancel, stale/duplicate/cancel outcomes типизированы.

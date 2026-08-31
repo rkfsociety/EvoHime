@@ -8,6 +8,7 @@ use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 pub mod agent_middleware_pipeline_store;
+pub mod agent_role_profiles_store;
 pub mod ambient_store;
 pub mod analysis_kernel;
 pub mod artifact_store;
@@ -48,7 +49,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 46;
+pub const SCHEMA_VERSION: u32 = 47;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3525,6 +3526,10 @@ impl LocalDatabase {
         if current < 46 {
             external_coding_agent_adapter_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 46;")?;
+        }
+        if current < 47 {
+            agent_role_profiles_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 47;")?;
         }
         transaction.commit()?;
         Ok(())

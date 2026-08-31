@@ -1264,3 +1264,25 @@ Authenticated additive IPC использует commands 191–192/event 46. Ele
 получает только bounded metadata с `core_control_level`
 (`full`/`supervised_opaque`/`unavailable`); raw external frames не пересекают
 desktop boundary.
+
+## Agent Role Profiles v1 (план 46)
+
+`evohime-core::agent_role_profiles` определяет versioned bounded profile с
+objective, constraints, skills, tools, strategy, typed input/output contracts,
+budget defaults и режимом `human`/`ai`. Profile revision и SHA-256 canonical
+hash фиксируются в `ProfileSnapshot` на каждом runtime instance; stale revision,
+duplicate и unknown outcomes остаются typed non-success.
+
+Requested grants не являются authority. Перед effect Core вычисляет только
+`parent grants ∩ policy ∩ registry ∩ requested`; human mode сохраняет обычную
+approval boundary. Profile catalog хранится metadata-only в SQLite schema v47
+(`agent_role_profiles` и immutable revisions), migration v46→v47 транзакционна
+и использует общий backup-before-migrate path. Runtime instances и proposals
+не персистируются; при restart catalog восстанавливается, а transient run не
+повторяет side effect вслепую.
+
+Authenticated additive IPC использует commands 193–194/event 47. Electron
+показывает metadata-only «Профили ролей»: число профилей, Core state и
+revision/hash metadata; raw prompts, credentials, executable code и hidden
+reasoning не пересекают boundary. Profile operations ограничены `list/get/
+create/revise/start/cancel` и проверяются Core.

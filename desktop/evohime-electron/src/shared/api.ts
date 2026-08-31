@@ -1117,6 +1117,12 @@ export const RENDERER_COMMANDS = [
   'externalCodingAgentAdapter.status',
   'externalCodingAgentAdapter.start',
   'externalCodingAgentAdapter.cancel',
+  'agentRoleProfiles.list',
+  'agentRoleProfiles.get',
+  'agentRoleProfiles.create',
+  'agentRoleProfiles.revise',
+  'agentRoleProfiles.start',
+  'agentRoleProfiles.cancel',
   'automation.listSchedules',
   'automation.saveSchedule',
   'automation.trigger',
@@ -1529,6 +1535,12 @@ export interface CommandPayloads {
   'externalCodingAgentAdapter.status': { requestId: string; ownerScope: string; idempotencyKey: string }
   'externalCodingAgentAdapter.start': { requestId: string; ownerScope: string; idempotencyKey: string; runId: string; conversationId: string; executableRef: string }
   'externalCodingAgentAdapter.cancel': { requestId: string; ownerScope: string; idempotencyKey: string; runId: string }
+  'agentRoleProfiles.list': { requestId: string; ownerScope: string; idempotencyKey: string }
+  'agentRoleProfiles.get': { requestId: string; ownerScope: string; idempotencyKey: string; profileId: string }
+  'agentRoleProfiles.create': { requestId: string; ownerScope: string; idempotencyKey: string; profile: Record<string, unknown> }
+  'agentRoleProfiles.revise': { requestId: string; ownerScope: string; idempotencyKey: string; expectedRevision: number; profile: Record<string, unknown> }
+  'agentRoleProfiles.start': { requestId: string; ownerScope: string; idempotencyKey: string; runId: string; profileId: string; revision: number; requestedGrants: string[] }
+  'agentRoleProfiles.cancel': { requestId: string; ownerScope: string; idempotencyKey: string; runId: string }
   'automation.listSchedules': { ownerScope: string; limit?: number }
   'automation.saveSchedule': {
     scheduleId: string
@@ -1766,6 +1778,12 @@ export interface CommandResults {
   'externalCodingAgentAdapter.status': { accepted: boolean }
   'externalCodingAgentAdapter.start': { accepted: boolean }
   'externalCodingAgentAdapter.cancel': { accepted: boolean }
+  'agentRoleProfiles.list': { accepted: boolean }
+  'agentRoleProfiles.get': { accepted: boolean }
+  'agentRoleProfiles.create': { accepted: boolean }
+  'agentRoleProfiles.revise': { accepted: boolean }
+  'agentRoleProfiles.start': { accepted: boolean }
+  'agentRoleProfiles.cancel': { accepted: boolean }
   'automation.listSchedules': { accepted: boolean }
   'automation.saveSchedule': { accepted: boolean }
   'automation.trigger': { accepted: boolean }

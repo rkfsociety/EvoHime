@@ -1784,6 +1784,8 @@ message CommandEnvelope {
     ToolSimulationRuntimeCommand tool_simulation_runtime = 190;
     ExternalCodingAgentAdapterCommand external_coding_agent_adapter_list = 191;
     ExternalCodingAgentAdapterCommand external_coding_agent_adapter_action = 192;
+    AgentRoleProfilesCommand agent_role_profiles_list = 193;
+    AgentRoleProfilesCommand agent_role_profiles_action = 194;
   }
 }
 
@@ -1880,7 +1882,33 @@ message EventEnvelope {
     ExecutionBackendRegistryEvent execution_backend_registry = 44;
     ToolSimulationRuntimeEvent tool_simulation_runtime = 45;
     ExternalCodingAgentAdapterEvent external_coding_agent_adapter = 46;
+    AgentRoleProfilesEvent agent_role_profiles = 47;
   }
+}
+
+// Plan 46: bounded metadata-only Agent Role Profiles surface. Profile bodies
+// cross the authenticated boundary only after Core validation; prompts,
+// credentials, executable code and hidden reasoning never do.
+message AgentRoleProfilesCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string operation = 4;
+  bytes payload = 5;
+  uint64 expected_revision = 6;
+  string idempotency_key = 7;
+}
+message AgentRoleProfilesEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  string profile_id = 5;
+  uint64 revision = 6;
+  string content_hash = 7;
+  string state = 8;
+  string error_code = 9;
+  bytes projection_json = 10;
 }
 
 // Plan 40: metadata-only sensitive-data guardrail status/evaluation. Raw input,

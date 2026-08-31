@@ -206,3 +206,10 @@ snapshots, declared-slot credential boundary, schema v46, supervisor Job Object
 lifecycle, capability handshake, IPC 191–192/event 46 и metadata-only UI с
 `supervised_opaque`/`unavailable`. Комплект `45-0` … `45-4` удалён после
 свежих focused и regression gates.
+
+План 46 закрыт: Agent Role Profiles v1 перенесён в canonical
+`architecture.md`, `current-state.md` и `release-evidence.md`. Подтверждены
+versioned Core contract, typed input/output, human/AI mode, Core-side grants
+intersection, pinned revision/hash, SQLite schema v47, recovery semantics,
+authenticated IPC 193–194/event 47 и metadata-only Electron panel. Комплект
+`46-0` … `46-4` удалён после focused и regression gates.

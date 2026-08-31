@@ -340,6 +340,7 @@ pub struct IpcBridge {
     tool_simulation: Arc<tokio::sync::Mutex<crate::tool_simulation_runtime::ToolSimulationRuntime>>,
     external_agents:
         Arc<tokio::sync::Mutex<crate::external_coding_agent_adapter::ExternalAgentRegistry>>,
+    role_profiles: Arc<tokio::sync::Mutex<crate::agent_role_profiles::AgentRoleProfilesRegistry>>,
 }
 
 /// Проект, под которым живут принятые предложения. Речь у стола не
@@ -627,6 +628,7 @@ impl IpcBridge {
                 crate::tool_simulation_runtime::ToolSimulationRuntime::default(),
             )),
             external_agents: Arc::new(tokio::sync::Mutex::new(Default::default())),
+            role_profiles: Arc::new(tokio::sync::Mutex::new(Default::default())),
         }
     }
 
@@ -659,6 +661,7 @@ impl IpcBridge {
                 crate::tool_simulation_runtime::ToolSimulationRuntime::default(),
             )),
             external_agents: Arc::new(tokio::sync::Mutex::new(Default::default())),
+            role_profiles: Arc::new(tokio::sync::Mutex::new(Default::default())),
         }
     }
 
@@ -698,6 +701,7 @@ impl IpcBridge {
                 crate::tool_simulation_runtime::ToolSimulationRuntime::default(),
             )),
             external_agents: Arc::new(tokio::sync::Mutex::new(Default::default())),
+            role_profiles: Arc::new(tokio::sync::Mutex::new(Default::default())),
         }
     }
 
@@ -3933,6 +3937,12 @@ impl IpcBridge {
                         serde_json::to_vec(&result)?,
                     )
                     .await?;
+                }
+                Some(generated::command_envelope::Command::AgentRoleProfilesList(request))
+                | Some(generated::command_envelope::Command::AgentRoleProfilesAction(request)) => {
+                    let result = self.dispatch_agent_role_profiles(request).await;
+                    self.write_agent_role_profiles_response(writer, serde_json::to_vec(&result)?)
+                        .await?;
                 }
                 Some(generated::command_envelope::Command::ListAutomationSchedules(request)) => {
                     let result = self.dispatch_list_automation_schedules(request).await;
@@ -11427,6 +11437,199 @@ impl IpcBridge {
                 event: Some(generated::event_envelope::Event::ToolSimulationRuntime(
                     result,
                 )),
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn dispatch_agent_role_profiles(
+        &self,
+        request: generated::AgentRoleProfilesCommand,
+    ) -> serde_json::Value {
+        use crate::agent_role_profiles::{
+            canonical_hash, AgentRoleProfile, RoleProfileError, CONTRACT_VERSION,
+        };
+        if request.schema_version != CONTRACT_VERSION
+            || request.request_id.is_empty()
+            || request.owner_scope.is_empty()
+            || request.idempotency_key.is_empty()
+            || request.payload.len() > 64 * 1024
+        {
+            return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","state":"failed","error_code":"invalid_request","projection_json":{"raw_prompt":false,"credentials":false}});
+        }
+        let mut registry = self.role_profiles.lock().await;
+        if request.operation == "list" && registry.profiles.is_empty() {
+            if let Ok(database) = self.journal.database().try_lock() {
+                if let Ok(rows) = evohime_local_storage::agent_role_profiles_store::load_all_json(
+                    database.connection(),
+                ) {
+                    for row in rows {
+                        if let Ok(profile) = serde_json::from_slice::<
+                            crate::agent_role_profiles::AgentRoleProfile,
+                        >(&row)
+                        {
+                            registry.profiles.insert(profile.id.clone(), profile);
+                        }
+                    }
+                }
+            }
+        }
+        let mut status = "ok";
+        let mut error_code = String::new();
+        let mut profile_id = String::new();
+        let mut revision = 0_u64;
+        let mut state = "pinned";
+        let mut projection = serde_json::json!({"schema_version":1,"profile_count":registry.profiles.len(),"raw_prompt":false,"credentials":false,"executable_code":false});
+        let result: Result<(), RoleProfileError> = (|| match request.operation.as_str() {
+            "list" => Ok(()),
+            "get" => {
+                let payload: serde_json::Value =
+                    serde_json::from_slice(&request.payload).unwrap_or_default();
+                profile_id = payload
+                    .get("profile_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_owned();
+                if let Some(profile) = registry.profiles.get(&profile_id) {
+                    revision = profile.revision;
+                    projection = serde_json::json!({"schema_version":1,"profile_id":profile.id,"revision":profile.revision,"content_hash":canonical_hash(profile).unwrap_or_default(),"execution_mode":profile.execution_mode,"raw_prompt":false,"credentials":false});
+                    Ok(())
+                } else {
+                    Err(RoleProfileError::NotFound)
+                }
+            }
+            "create" | "revise" => {
+                let profile: AgentRoleProfile = serde_json::from_slice(&request.payload)
+                    .map_err(|_| RoleProfileError::Invalid("payload"))?;
+                profile_id = profile.id.clone();
+                revision = profile.revision;
+                let saved = if request.operation == "create" {
+                    registry.create(profile.clone(), &request.idempotency_key)?
+                } else {
+                    registry.revise(
+                        profile.clone(),
+                        request.expected_revision,
+                        &request.idempotency_key,
+                    )?
+                };
+                let hash = canonical_hash(&saved)?;
+                if let Ok(database) = self.journal.database().try_lock() {
+                    let json = serde_json::to_vec(&saved).unwrap_or_default();
+                    let _ = evohime_local_storage::agent_role_profiles_store::save_revision(
+                        database.connection(),
+                        &saved.id,
+                        saved.revision,
+                        &hash,
+                        &json,
+                        chrono::Utc::now().timestamp_millis(),
+                    );
+                }
+                projection = serde_json::json!({"schema_version":1,"profile_id":saved.id,"revision":saved.revision,"content_hash":hash,"execution_mode":saved.execution_mode,"raw_prompt":false,"credentials":false});
+                Ok(())
+            }
+            "start" => {
+                let payload: serde_json::Value = serde_json::from_slice(&request.payload)
+                    .map_err(|_| RoleProfileError::Invalid("payload"))?;
+                let run_id = payload
+                    .get("run_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_owned();
+                profile_id = payload
+                    .get("profile_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_owned();
+                revision = payload
+                    .get("revision")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or_default();
+                let grants = payload
+                    .get("requested_grants")
+                    .and_then(|v| v.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|v| v.as_str().map(str::to_owned))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let allowed = vec![
+                    "workspace.read".to_owned(),
+                    "test.execute".to_owned(),
+                    "review".to_owned(),
+                ];
+                let run = registry.start(
+                    run_id,
+                    &profile_id,
+                    revision,
+                    grants,
+                    &allowed,
+                    &allowed,
+                    &allowed,
+                )?;
+                state = "pinned";
+                projection = serde_json::json!({"schema_version":1,"profile_id":run.snapshot.profile_id,"revision":run.snapshot.revision,"content_hash":run.snapshot.content_hash,"run_id":run.run_id,"effective_grants":run.effective_grants,"state":run.state,"raw_prompt":false,"credentials":false});
+                Ok(())
+            }
+            "cancel" => {
+                let payload: serde_json::Value = serde_json::from_slice(&request.payload)
+                    .map_err(|_| RoleProfileError::Invalid("payload"))?;
+                let run_id = payload
+                    .get("run_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                let run = registry.cancel(run_id)?;
+                state = "cancelling";
+                profile_id = run.snapshot.profile_id;
+                revision = run.snapshot.revision;
+                projection = serde_json::json!({"schema_version":1,"run_id":run.run_id,"state":run.state,"profile_id":profile_id,"revision":revision,"raw_prompt":false,"credentials":false});
+                Ok(())
+            }
+            _ => Err(RoleProfileError::Invalid("unsupported_operation")),
+        })();
+        if let Err(error) = result {
+            status = "rejected";
+            error_code = error.to_string();
+            state = "failed";
+        }
+        serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":status,"profile_id":profile_id,"revision":revision,"state":state,"error_code":error_code,"projection_json":projection})
+    }
+
+    async fn write_agent_role_profiles_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let result = generated::AgentRoleProfilesEvent {
+            schema_version: 1,
+            request_id: value["request_id"].as_str().unwrap_or_default().into(),
+            operation: value["operation"].as_str().unwrap_or_default().into(),
+            status: value["status"].as_str().unwrap_or_default().into(),
+            profile_id: value["profile_id"].as_str().unwrap_or_default().into(),
+            revision: value["revision"].as_u64().unwrap_or_default(),
+            content_hash: value["projection_json"]["content_hash"]
+                .as_str()
+                .unwrap_or_default()
+                .into(),
+            state: value["state"].as_str().unwrap_or_default().into(),
+            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+            projection_json: serde_json::to_vec(&value["projection_json"])?,
+        };
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: "agent_role_profiles.result".into(),
+                payload,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: Some(generated::event_envelope::Event::AgentRoleProfiles(result)),
             }
             .encode_to_vec(),
         )

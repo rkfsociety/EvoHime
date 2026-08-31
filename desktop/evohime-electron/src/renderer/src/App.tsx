@@ -38,6 +38,7 @@ import { ExecutionPolicyProfilesPanel } from './ExecutionPolicyProfilesPanel'
 import { ModelResiliencePolicyPanel } from './ModelResiliencePolicyPanel'
 import { ExecutionBackendRegistryPanel } from './ExecutionBackendRegistryPanel'
 import { ToolSimulationRuntimePanel } from './ToolSimulationRuntimePanel'
+import { AgentRoleProfilesPanel } from './AgentRoleProfilesPanel'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -62,7 +63,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -91,6 +92,7 @@ const VIEWS: readonly ViewDescriptor[] = [
   { id: 'model-resilience', label: 'Надёжность модели', icon: '↯' },
   { id: 'execution-backends', label: 'Среды выполнения', icon: '⌘' },
   { id: 'tool-simulation', label: 'Симуляция инструментов', icon: '◇' },
+  { id: 'agent-role-profiles', label: 'Профили ролей', icon: '◎' },
 ]
 
 /** Not a nav row: reached through the gear next to the account. */
@@ -333,6 +335,7 @@ export function App(): React.JSX.Element {
               {view === 'model-resilience' ? <ModelResiliencePolicyPanel /> : null}
               {view === 'execution-backends' ? <ExecutionBackendRegistryPanel /> : null}
               {view === 'tool-simulation' ? <ToolSimulationRuntimePanel /> : null}
+              {view === 'agent-role-profiles' ? <AgentRoleProfilesPanel /> : null}
             </div>
           )}
         </div>

@@ -176,3 +176,21 @@ audit хранится по его собственному Core policy.
   prompts, outputs, credential values and paths are excluded.
 - Fresh checks: Rust focused/full checks, protocol check, TypeScript typecheck,
   focused adapter Vitest, `cargo fmt --all -- --check` and `git diff --check`.
+
+## Plan 46 — Agent Role Profiles v1 (2026-08-31)
+
+- Contract/runtime: bounded versioned profile with typed input/output
+  contracts, `human`/`ai` execution mode, canonical SHA-256 hash and runtime
+  snapshot pinned to profile revision. Effective grants are Core-side
+  `parent ∩ policy ∩ registry ∩ requested`; profile text is not authority.
+- Storage/recovery: additive SQLite schema v47 stores metadata-only current
+  profiles and immutable revisions; v46→v47 uses backup-before-migrate.
+  Runtime instances/proposals are transient; duplicate, stale, cancel and
+  unknown outcomes remain non-success and are not blindly retried.
+- IPC/UI: authenticated additive commands 193–194/event 47; Electron panel is
+  metadata-only and excludes raw prompts, credentials, executable code and
+  hidden reasoning.
+- Focused checks: Core contract/recovery tests 3/3, `cargo check -p
+  evohime-core -p evohime-local-storage -p evohime-desktop-ipc`, `npm run
+  check:protocol`, `npm run typecheck`, focused Vitest 1/1. Full regression,
+  clippy and Windows-only packaging gates remain required before release.
