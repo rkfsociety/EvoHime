@@ -104,6 +104,10 @@ jobs:
     needs: changes
     if: needs.changes.outputs.native == 'true'
     runs-on: windows-latest
+    # Большой workspace с all-targets-тестами может исчерпать pagefile
+    # windows-latest во время одновременной линковки нескольких test binaries.
+    env:
+      CARGO_BUILD_JOBS: 2
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
