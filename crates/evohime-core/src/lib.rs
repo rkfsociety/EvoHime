@@ -1,6 +1,7 @@
 pub struct CoreVersion;
 
 pub mod adaptive_tool_catalog;
+pub mod sensitive_data_guardrails;
 
 pub const AGENT_IDENTITY_PROMPT: &str =
     "Ты — Ева, AI-агент приложения EvoHime. Ева — короткое имя EvoHime; понимай обращения к тебе «Ева» и «EvoHime» как к одному агенту.";
@@ -290,6 +291,10 @@ fn append_audit_line(line: &str) {
 }
 
 pub(crate) fn write_model_trace(event: &str, fields: serde_json::Value) {
+    let policy = sensitive_data_guardrails::default_policy("local-trace");
+    let fields = sensitive_data_guardrails::redact_json(&policy, &fields)
+        .map(|(value, _)| value)
+        .unwrap_or_else(|_| serde_json::json!({"redaction_status":"blocked"}));
     let data_dir = std::env::var_os("EVOHIME_DATA_DIR")
         .map(PathBuf::from)
         .or_else(|| {
@@ -318,6 +323,17 @@ pub(crate) fn write_model_trace(event: &str, fields: serde_json::Value) {
             let _ = file.write_all(b"\n");
         }
     }
+}
+
+fn redact_boundary_text(
+    destination: &str,
+    value: &str,
+) -> Result<String, sensitive_data_guardrails::GuardrailError> {
+    sensitive_data_guardrails::redact_text(
+        &sensitive_data_guardrails::default_policy(destination),
+        value,
+    )
+    .map(|result| result.value)
 }
 
 fn write_observability_hook(
@@ -4434,6 +4450,15 @@ impl ModelAgent {
             ChatMessage::text(ChatRole::System, AGENT_IDENTITY_PROMPT),
             ChatMessage::text(ChatRole::User, prompt),
         ];
+        let provider_messages = messages
+            .iter()
+            .map(|message| {
+                let mut message = message.clone();
+                message.content = redact_boundary_text("model", &message.content)
+                    .map_err(|_| AgentRunError::Internal("sensitive_data_blocked".into()))?;
+                Ok(message)
+            })
+            .collect::<Result<Vec<_>, AgentRunError>>()?;
         let mut stream = self.gateway.stream_chat_with_policy(
             RoutingMode::Balanced,
             &RoutingRequest {
@@ -4449,24 +4474,42 @@ impl ModelAgent {
                 estimated_input_tokens: 0,
                 quality_delta: 0.05,
             },
-            &messages,
+            &provider_messages,
         )?;
         let mut final_message = String::new();
+        let mut redactor = sensitive_data_guardrails::StreamingRedactor::new(
+            sensitive_data_guardrails::default_policy("stream"),
+        );
         while let Some(item) = tokio::select! {
             _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
             item = stream.next() => item,
         } {
             match item? {
                 evohime_model_gateway::ChatStreamItem::Delta(content) => {
-                    final_message.push_str(&content);
-                    let _ = events.send(CoreEvent::AssistantDelta {
-                        task_id: task_id.clone(),
-                        content,
-                    });
+                    let result = redactor
+                        .push_chunk(&content)
+                        .map_err(|_| AgentRunError::Internal("sensitive_data_blocked".into()))?;
+                    if !result.value.is_empty() {
+                        final_message.push_str(&result.value);
+                        let _ = events.send(CoreEvent::AssistantDelta {
+                            task_id: task_id.clone(),
+                            content: result.value,
+                        });
+                    }
                 }
                 evohime_model_gateway::ChatStreamItem::Thinking(_)
                 | evohime_model_gateway::ChatStreamItem::Usage(_) => {}
             }
+        }
+        let result = redactor
+            .finish()
+            .map_err(|_| AgentRunError::Internal("sensitive_data_blocked".into()))?;
+        if !result.value.is_empty() {
+            final_message.push_str(&result.value);
+            let _ = events.send(CoreEvent::AssistantDelta {
+                task_id: task_id.clone(),
+                content: result.value,
+            });
         }
         let _ = events.send(CoreEvent::TaskCompleted {
             task_id,
@@ -7042,6 +7085,16 @@ impl ToolAgent {
                 None
             };
 
+            let provider_messages = messages
+                .iter()
+                .map(|message| {
+                    let mut message = message.clone();
+                    message.content = redact_boundary_text("model", &message.content)
+                        .map_err(|_| ProviderError::Http("sensitive_data_blocked".into()))?;
+                    Ok(message)
+                })
+                .collect::<Result<Vec<_>, ProviderError>>()
+                .map_err(AgentRunError::Provider)?;
             let result: Result<evohime_model_gateway::PolicyChatResult, ProviderError> =
                 match timeout(
                     timeout_duration,
@@ -7049,7 +7102,7 @@ impl ToolAgent {
                         RoutingMode::Balanced,
                         &routing_request,
                         self.selected_model.get().as_deref(),
-                        messages,
+                        &provider_messages,
                         specs,
                     ),
                 )
@@ -8014,6 +8067,16 @@ impl ToolAgent {
                 );
                 let mut input =
                     serde_json::from_str(&call.arguments).unwrap_or(serde_json::Value::Null);
+                let guardrail_blocked = match sensitive_data_guardrails::redact_json(
+                    &sensitive_data_guardrails::default_policy("tool"),
+                    &input,
+                ) {
+                    Ok((redacted, _)) => {
+                        input = redacted;
+                        false
+                    }
+                    Err(_) => true,
+                };
                 if call.name == "mcp.call" {
                     input = match resolve_model_mcp_input(&self.workflow_registry, input) {
                         Ok(value) => value,
@@ -8039,7 +8102,16 @@ impl ToolAgent {
                     && delivery_requirements.commit
                     && (!verification_test_passed
                         || (delivery_requirements.diff_check && !diff_check_passed));
-                let outcome = if let Some(miss) = loadout_miss {
+                let outcome = if guardrail_blocked {
+                    recovery::ToolOutcome {
+                        ok: false,
+                        kind: Some(recovery::ToolFailureKind::Denied(
+                            recovery::DenialSource::Policy,
+                        )),
+                        output: "tool input blocked by sensitive-data guardrail".into(),
+                        structured: serde_json::json!({"error_code":"sensitive_data_blocked"}),
+                    }
+                } else if let Some(miss) = loadout_miss {
                     write_model_trace(
                         "loadout.miss",
                         serde_json::json!({
@@ -8275,10 +8347,12 @@ impl ToolAgent {
                         Err(error) => recovery::ToolOutcome::from_error(error),
                     }
                 };
+                let guarded_output = redact_boundary_text("tool", &outcome.output)
+                    .unwrap_or_else(|_| "<sensitive_data_blocked>".into());
                 let _ = events.send(CoreEvent::ToolOutput {
                     task_id: task_id.clone(),
                     tool_name: call.name.clone(),
-                    output: outcome.output.clone(),
+                    output: guarded_output.clone(),
                 });
                 if let Some(journal) = &self.journal {
                     let _ = journal
@@ -8310,7 +8384,7 @@ impl ToolAgent {
                     serde_json::json!({
                         "task_id": task_id,
                         "tool_name": call.name,
-                        "output": outcome.output
+                        "output": guarded_output.clone()
                     }),
                 );
                 write_observability_hook(
@@ -8442,12 +8516,12 @@ impl ToolAgent {
                 // prompt-injection перед извлечением в scratchpad; текст внутри
                 // envelope не разбирается как policy.
                 let (wrapped_output, envelope) =
-                    evohime_context_budget::scratchpad::wrap_external_output(&outcome.output);
+                    evohime_context_budget::scratchpad::wrap_external_output(&guarded_output);
                 self.record_tool_finding(
                     &task_id,
                     &context_session_id,
                     &call.name,
-                    &outcome.output,
+                    &guarded_output,
                     outcome.ok,
                     &envelope,
                 )

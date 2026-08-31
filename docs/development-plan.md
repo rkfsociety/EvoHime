@@ -157,3 +157,10 @@ architecture/current-state/release-evidence. Подтверждены determinis
 contract hash и Core validation, capability-aware native/synthetic/auto
 strategy, bounded repair, ephemeral restart semantics, authenticated IPC
 185/40 и metadata-only Electron projection.
+
+План 40 закрыт: Sensitive Data Guardrails v1 перенесён в canonical
+`architecture.md`, `current-state.md` и `release-evidence.md`. Реализованы
+versioned Core detector/redactor, deterministic policy snapshot, recursive JSON,
+cross-chunk streaming, model/tool/stream/trace admission, fail-closed bounds,
+ephemeral restart semantics, authenticated IPC 186/41 и metadata-only Electron
+panel. Комплект `40-0` … `40-4` удалён после свежих focused и regression gates.

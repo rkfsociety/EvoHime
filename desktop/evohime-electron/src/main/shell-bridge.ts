@@ -1780,6 +1780,21 @@ function dispatch(
       return accepted(client.send({ structuredResponse: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.alloc(0), expectedVersion: 0, idempotencyKey } }))
     }
 
+    case 'sensitiveDataGuardrails.status':
+    case 'sensitiveDataGuardrails.evaluate': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const destination = value['destination'] === undefined ? 'provider' : asBoundedString(value['destination'])
+      const input = value['input'] === undefined ? '' : asBoundedString(value['input'])
+      if (requestId === null || ownerScope === null || idempotencyKey === null || destination === null || input === null || destination.length > 128 || input.length > 64 * 1024) return failure('invalid-payload', 'Некорректные параметры sensitive-data guardrails.')
+      const operation = command.slice('sensitiveDataGuardrails.'.length)
+      if (operation === 'evaluate' && input.length === 0) return failure('invalid-payload', 'Для evaluate нужен bounded input.')
+      const payloadJson = JSON.stringify({ destination, input })
+      return accepted(client.send({ sensitiveDataGuardrails: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(payloadJson, 'utf8'), idempotencyKey } }))
+    }
+
     case 'automation.listSchedules': {
       const value = asRecord(payload)
       const ownerScope = asBoundedString(value['ownerScope'])

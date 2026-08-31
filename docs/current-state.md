@@ -519,3 +519,16 @@ ephemeral recovery lifecycle без новых SQLite таблиц. Authenticate
 IPC использует tags 185/40; Electron показывает metadata-only projection.
 Unknown, unsupported, parse, validation и multiple outcomes остаются
 fail-closed; raw model output и credentials не пересекают desktop boundary.
+
+План 40 реализован 31 августа 2026 года. Sensitive Data Guardrails v1 добавляет
+Core-owned versioned detector/redactor с deterministic policy hash и actions
+redact/mask/hash/block. Recursive structured traversal ограничен depth 16 и
+512 nodes; streaming redactor использует bounded carry и ловит patterns между
+chunks. Admission подключён к model outbound messages, tool input/output,
+stream API и model trace; block/oversize остаются fail-closed, permissions,
+approval и effect ledger не ослабляются. Runtime state ephemeral, schema остаётся
+v43, raw payload и credentials не входят в IPC/UI projection.
+
+Authenticated IPC расширен additive tags 186/41 (`status`/`evaluate`), Electron
+показывает metadata-only панель «Защита данных». Финальные release counts и
+команды зафиксированы в `release-evidence.md`.

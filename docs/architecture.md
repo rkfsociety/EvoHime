@@ -1143,3 +1143,22 @@ Desktop IPC остаётся authenticated и additive: `StructuredResponseComma
 tag 185, `StructuredResponseEvent` — tag 40. Electron получает только
 bounded metadata projection через generic shell bridge; raw schema, prompt,
 output и repair text в renderer не передаются.
+
+## Sensitive Data Guardrails v1
+
+`sensitive_data_guardrails.rs` — Core-owned bounded detector/redactor на
+contract version 1. Правила имеют deterministic SHA-256 policy snapshot и
+precedence `block > hash > mask > redact`; detectors покрывают email,
+secret/bearer tokens и private keys. Structured JSON обходится рекурсивно с
+лимитами depth 16/nodes 512, stream держит bounded carry и обрабатывает
+совпадения между chunks. Unknown/oversized/malformed input fail closed.
+
+Admission применяется к provider model messages, tool input/output, streaming
+API и `model-trace.jsonl`. Local authoritative records отделены от redacted
+provider/renderer projection; tool permissions, approval и effect ledger не
+ослабляются. Policy и stream state process-local, schema v43 не изменяется.
+
+Authenticated additive IPC использует `SensitiveDataGuardrailsCommand` tag 186
+и `SensitiveDataGuardrailsEvent` tag 41 для bounded `status`/`evaluate`.
+Electron показывает только destination, policy hash, action/count/status;
+raw input/output, credentials и rule bodies в renderer не попадают.

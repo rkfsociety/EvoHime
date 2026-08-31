@@ -666,4 +666,34 @@ mod tests {
             Err(ReplayError::NonContiguous)
         );
     }
+
+    #[test]
+    fn sensitive_data_guardrails_additive_messages_round_trip() {
+        use prost::Message;
+        let command = generated::CommandEnvelope {
+            protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
+            request_id: "guardrail-request".into(),
+            client_id: "shell".into(),
+            core_instance_id: String::new(),
+            session_epoch: 0,
+            command: Some(
+                generated::command_envelope::Command::SensitiveDataGuardrails(
+                    generated::SensitiveDataGuardrailsCommand {
+                        schema_version: 1,
+                        request_id: "guardrail-request".into(),
+                        owner_scope: "test".into(),
+                        operation: "status".into(),
+                        payload: Vec::new(),
+                        idempotency_key: "once".into(),
+                    },
+                ),
+            ),
+        };
+        let decoded = generated::CommandEnvelope::decode(command.encode_to_vec().as_slice())
+            .expect("guardrail command decodes");
+        assert!(matches!(
+            decoded.command,
+            Some(generated::command_envelope::Command::SensitiveDataGuardrails(_))
+        ));
+    }
 }

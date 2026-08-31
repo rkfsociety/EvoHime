@@ -33,6 +33,7 @@ import { ConversationalWorkflowComposerPanel } from './ConversationalWorkflowCom
 import { AgentBenchmarkMatrixPanel } from './AgentBenchmarkMatrixPanel'
 import { AgentMiddlewarePipelinePanel } from './AgentMiddlewarePipelinePanel'
 import { StructuredResponseContractPanel } from './StructuredResponseContractPanel'
+import { SensitiveDataGuardrailsPanel } from './SensitiveDataGuardrailsPanel'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -57,7 +58,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -81,6 +82,7 @@ const VIEWS: readonly ViewDescriptor[] = [
   { id: 'benchmarks', label: 'Бенчмарки', icon: '▦' },
   { id: 'middleware', label: 'Middleware', icon: '◇' },
   { id: 'structured-response', label: 'Structured response', icon: '▤' },
+  { id: 'sensitive-data', label: 'Защита данных', icon: '⌁' },
 ]
 
 /** Not a nav row: reached through the gear next to the account. */
@@ -318,6 +320,7 @@ export function App(): React.JSX.Element {
               {view === 'benchmarks' ? <AgentBenchmarkMatrixPanel /> : null}
               {view === 'middleware' ? <AgentMiddlewarePipelinePanel /> : null}
               {view === 'structured-response' ? <StructuredResponseContractPanel /> : null}
+              {view === 'sensitive-data' ? <SensitiveDataGuardrailsPanel /> : null}
             </div>
           )}
         </div>

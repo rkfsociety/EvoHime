@@ -3866,6 +3866,14 @@ impl IpcBridge {
                     self.write_structured_response_response(writer, serde_json::to_vec(&result)?)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::SensitiveDataGuardrails(request)) => {
+                    let result = self.dispatch_sensitive_data_guardrails(request);
+                    self.write_sensitive_data_guardrails_response(
+                        writer,
+                        serde_json::to_vec(&result)?,
+                    )
+                    .await?;
+                }
                 Some(generated::command_envelope::Command::ListAutomationSchedules(request)) => {
                     let result = self.dispatch_list_automation_schedules(request).await;
                     self.write_response(
@@ -10879,6 +10887,101 @@ impl IpcBridge {
                 serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"unsupported","error_code":"unsupported_operation"})
             }
         }
+    }
+
+    fn dispatch_sensitive_data_guardrails(
+        &self,
+        request: generated::SensitiveDataGuardrailsCommand,
+    ) -> serde_json::Value {
+        if request.schema_version != crate::sensitive_data_guardrails::CONTRACT_VERSION
+            || request.request_id.is_empty()
+            || request.owner_scope.is_empty()
+            || request.idempotency_key.is_empty()
+            || request.payload.len() > crate::sensitive_data_guardrails::MAX_INPUT_BYTES
+        {
+            return serde_json::json!({"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"invalid_request"});
+        }
+        let payload: serde_json::Value = if request.payload.is_empty() {
+            serde_json::json!({})
+        } else {
+            match serde_json::from_slice(&request.payload) {
+                Ok(value) => value,
+                Err(_) => {
+                    return serde_json::json!({"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"invalid_payload"})
+                }
+            }
+        };
+        let destination = payload["destination"].as_str().unwrap_or("provider");
+        if destination.is_empty() || destination.len() > 128 {
+            return serde_json::json!({"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"invalid_destination"});
+        }
+        let snapshot = crate::sensitive_data_guardrails::default_policy(destination);
+        let metadata = if request.operation == "evaluate" {
+            let Some(input) = payload["input"].as_str() else {
+                return serde_json::json!({"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"input_required"});
+            };
+            match crate::sensitive_data_guardrails::redact_text(&snapshot, input) {
+                Ok(result) => result.metadata,
+                Err(crate::sensitive_data_guardrails::GuardrailError::Blocked(metadata)) => {
+                    metadata
+                }
+                Err(error) => {
+                    return serde_json::json!({"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":error.to_string()})
+                }
+            }
+        } else if request.operation == "status" {
+            crate::sensitive_data_guardrails::RedactionMetadata {
+                contract_version: 1,
+                policy_hash: snapshot.policy_hash.clone(),
+                destination: destination.into(),
+                action: None,
+                rule_ids: Vec::new(),
+                match_count: 0,
+                blocked: false,
+                output_bytes: 0,
+            }
+        } else {
+            return serde_json::json!({"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"unsupported_operation"});
+        };
+        serde_json::json!({"request_id":request.request_id,"operation":request.operation,"status":"ok","policy_hash":metadata.policy_hash,"destination":metadata.destination,"action":metadata.action.map(|action| format!("{action:?}").to_ascii_lowercase()),"match_count":metadata.match_count,"blocked":metadata.blocked,"error_code":""})
+    }
+
+    async fn write_sensitive_data_guardrails_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let result = generated::SensitiveDataGuardrailsEvent {
+            schema_version: 1,
+            request_id: value["request_id"].as_str().unwrap_or_default().into(),
+            operation: value["operation"].as_str().unwrap_or_default().into(),
+            status: value["status"].as_str().unwrap_or_default().into(),
+            policy_hash: value["policy_hash"].as_str().unwrap_or_default().into(),
+            destination: value["destination"].as_str().unwrap_or_default().into(),
+            action: value["action"].as_str().unwrap_or_default().into(),
+            match_count: value["match_count"].as_u64().unwrap_or_default() as u32,
+            blocked: value["blocked"].as_bool().unwrap_or(false),
+            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+        };
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: "sensitive_data_guardrails.result".into(),
+                payload,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: Some(generated::event_envelope::Event::SensitiveDataGuardrails(
+                    result,
+                )),
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
     }
 
     async fn write_structured_response_response<W: AsyncWrite + Unpin>(

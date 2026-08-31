@@ -1777,6 +1777,7 @@ message CommandEnvelope {
     AgentMiddlewarePipelineCommand agent_middleware_pipeline_list = 183;
     AgentMiddlewarePipelineCommand agent_middleware_pipeline_action = 184;
     StructuredResponseCommand structured_response = 185;
+    SensitiveDataGuardrailsCommand sensitive_data_guardrails = 186;
   }
 }
 
@@ -1867,7 +1868,31 @@ message EventEnvelope {
     AgentBenchmarkMatrixEvent benchmark_matrix = 38;
     AgentMiddlewarePipelineEvent agent_middleware_pipeline = 39;
     StructuredResponseEvent structured_response = 40;
+    SensitiveDataGuardrailsEvent sensitive_data_guardrails = 41;
   }
+}
+
+// Plan 40: metadata-only sensitive-data guardrail status/evaluation. Raw input,
+// output, credentials and rule bodies never cross this boundary.
+message SensitiveDataGuardrailsCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string operation = 4;
+  bytes payload = 5;
+  string idempotency_key = 6;
+}
+message SensitiveDataGuardrailsEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  string policy_hash = 5;
+  string destination = 6;
+  string action = 7;
+  uint32 match_count = 8;
+  bool blocked = 9;
+  string error_code = 10;
 }
 
 // Plan 37: bounded metadata-only middleware pipeline surface. Raw prompts,
