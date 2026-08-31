@@ -162,7 +162,7 @@ mod tests {
     use uuid::Uuid;
 
     #[tokio::test]
-    async fn process_run_echo_works() {
+    async fn process_run_direct_executable_works() {
         let ctx = ToolContext {
             workspace_root: std::env::temp_dir(),
             task_id: Uuid::nil(),
@@ -170,16 +170,18 @@ mod tests {
             progress_tx: None,
         };
 
-        let (command, args) = if cfg!(windows) {
-            ("cmd", vec!["/C", "echo", "hello", "world"])
+        let (command, args, expected_output) = if cfg!(windows) {
+            // `cmd` is intentionally rejected by the execution profile. Use a
+            // real executable so this test exercises direct process spawning.
+            ("git", vec!["--version"], "git version")
         } else {
-            ("echo", vec!["hello", "world"])
+            ("echo", vec!["hello", "world"], "hello")
         };
         let result = execute(&ctx, json!({"command": command, "args": args}))
             .await
             .expect("run");
 
-        assert!(result.output.contains("hello"));
+        assert!(result.output.contains(expected_output));
         assert_eq!(result.structured["resolved_profile"]["version"], 1);
         assert_eq!(
             result.structured["resolved_profile"]["backend"],
