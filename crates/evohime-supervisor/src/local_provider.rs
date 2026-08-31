@@ -312,6 +312,51 @@ pub struct LocalAdapterProcess {
     _job: JobObject,
 }
 
+/// Generic external-agent process. The executable reference is resolved by the
+/// supervisor from its allowlisted environment; Core never sends a shell line.
+#[cfg(windows)]
+pub struct ExternalAgentProcess {
+    child: Child,
+    _job: JobObject,
+}
+
+#[cfg(windows)]
+impl ExternalAgentProcess {
+    pub async fn spawn(executable_ref: &str, run_id: &str) -> Result<Self, LocalError> {
+        if executable_ref.trim().is_empty()
+            || executable_ref.len() > 96
+            || run_id.trim().is_empty()
+            || run_id.len() > 96
+        {
+            return Err(LocalError::InvalidRequest);
+        }
+        let key = format!(
+            "EVOHIME_EXTERNAL_AGENT_{}",
+            executable_ref.replace(['.', '-'], "_")
+        );
+        let executable = std::env::var_os(key).ok_or(LocalError::ModelNotFound)?;
+        let job = JobObject::create_with_limits(Some(1024 * 1024 * 1024), Some(50))
+            .map_err(|_| LocalError::ResourceLimitExceeded)?;
+        let mut child = Command::new(executable)
+            .arg("--evohime-protocol")
+            .arg("evohime.external-agent/v1")
+            .arg("--run-id")
+            .arg(run_id)
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|_| LocalError::ModelNotFound)?;
+        if job.assign(&child).is_err() {
+            let _ = child.start_kill();
+            return Err(LocalError::ResourceLimitExceeded);
+        }
+        Ok(Self { child, _job: job })
+    }
+    pub async fn stop(&mut self) {
+        let _ = self.child.start_kill();
+        let _ = self.child.wait().await;
+    }
+}
+
 #[cfg(windows)]
 impl LocalAdapterProcess {
     pub async fn spawn(model_id: &str, port: u16) -> Result<Self, LocalError> {

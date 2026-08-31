@@ -1855,6 +1855,20 @@ function dispatch(
       return accepted(client.send({ toolSimulationRuntime: { schemaVersion: 1, requestId, ownerScope, operation: 'status', payload: Buffer.alloc(0), expectedVersion: 0, idempotencyKey } }))
     }
 
+    case 'externalCodingAgentAdapter.list':
+    case 'externalCodingAgentAdapter.status':
+    case 'externalCodingAgentAdapter.start':
+    case 'externalCodingAgentAdapter.cancel': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId']); const ownerScope = asBoundedString(value['ownerScope']); const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (requestId === null || ownerScope === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректные параметры внешнего агента.')
+      const operation = command.slice('externalCodingAgentAdapter.'.length)
+      const json: Record<string, unknown> = {}
+      if (operation === 'start' || operation === 'cancel') { const runId = asBoundedString(value['runId']); const conversationId = operation === 'start' ? asBoundedString(value['conversationId']) : ''; const executableRef = operation === 'start' ? asBoundedString(value['executableRef']) : ''; if (runId === null || (operation === 'start' && (conversationId === null || executableRef === null))) return failure('invalid-payload', 'Некорректный run внешнего агента.'); Object.assign(json, { run_id: runId, conversation_id: conversationId, executable_ref: executableRef }) }
+      const commandBody = { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(JSON.stringify(json), 'utf8'), expectedVersion: 0, idempotencyKey }
+      return accepted(client.send(operation === 'list' || operation === 'status' ? { externalCodingAgentAdapterList: commandBody } : { externalCodingAgentAdapterAction: commandBody }))
+    }
+
     case 'automation.listSchedules': {
       const value = asRecord(payload)
       const ownerScope = asBoundedString(value['ownerScope'])

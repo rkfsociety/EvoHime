@@ -584,3 +584,19 @@ Benchmark Matrix получил `FixtureToolBenchmarkExecutor`, authenticated IP
 Real fallback, raw payload, prompts и credentials запрещены. Contract/recovery,
 workflow/benchmark, protocol/typecheck и diff-check evidence зафиксированы в
 `release-evidence.md`.
+
+План 45 закрыт 31 августа 2026 года. External Coding Agent Adapter v1 добавляет
+Core-owned bounded `evohime.external-agent/v1` framed protocol, validated preset
+contract, immutable conversation snapshots, declared credential-slot metadata и
+typed capability handshake. Durable metadata использует additive SQLite schema
+v46 (`external_agent_presets`, revisions, conversations/events); credential
+values, prompts, output, process handles и executable paths не персистируются.
+Core→supervisor передаёт только opaque validated run spec; supervisor запускает
+allowlisted executable без shell в отдельном Job Object и на cancel/timeout
+уничтожает дерево. Vendor adapters без mapping дают `unavailable`, unknown
+outcome не retry-ится.
+
+Authenticated IPC добавляет commands 191–192/event 46. Electron panel показывает
+только bounded status и фактический `core_control_level`, без external frames,
+credentials и raw output. Проверены Rust compilation, protocol generation/check,
+TypeScript typecheck и focused Electron privacy test.

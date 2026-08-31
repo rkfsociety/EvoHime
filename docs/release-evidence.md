@@ -161,3 +161,18 @@ audit хранится по его собственному Core policy.
 - Evidence: Core contract 2/2, recovery 1/1, workflow interception 1/1,
   fixture benchmark 1/1, Electron panel 1/1, protocol check and typecheck pass;
   full regression and final commands are recorded with the closing commit.
+
+## Plan 45 — External Coding Agent Adapter v1 (2026-08-31)
+
+- Contract: `evohime.external-agent/v1`, bounded newline-delimited frames,
+  manifest/capability handshake, immutable agent snapshot, declared credential
+  slots and typed unknown/unavailable outcomes.
+- Storage/runtime: additive SQLite schema v46 stores metadata-only presets,
+  revisions, conversations and idempotent events; Core sends opaque run specs,
+  supervisor resolves allowlisted executables without shell and assigns a
+  per-run Job Object. Unknown effects are never blind-retried.
+- IPC/UI: authenticated additive commands 191–192/event 46; Electron exposes
+  only bounded state, counts, protocol/hash and `core_control_level`; raw frames,
+  prompts, outputs, credential values and paths are excluded.
+- Fresh checks: Rust focused/full checks, protocol check, TypeScript typecheck,
+  focused adapter Vitest, `cargo fmt --all -- --check` and `git diff --check`.

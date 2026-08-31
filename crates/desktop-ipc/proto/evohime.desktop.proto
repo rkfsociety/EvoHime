@@ -1782,6 +1782,8 @@ message CommandEnvelope {
     ModelResiliencePolicyCommand model_resilience_policy = 188;
     ExecutionBackendRegistryCommand execution_backend_registry = 189;
     ToolSimulationRuntimeCommand tool_simulation_runtime = 190;
+    ExternalCodingAgentAdapterCommand external_coding_agent_adapter_list = 191;
+    ExternalCodingAgentAdapterCommand external_coding_agent_adapter_action = 192;
   }
 }
 
@@ -1877,6 +1879,7 @@ message EventEnvelope {
     ModelResiliencePolicyEvent model_resilience_policy = 43;
     ExecutionBackendRegistryEvent execution_backend_registry = 44;
     ToolSimulationRuntimeEvent tool_simulation_runtime = 45;
+    ExternalCodingAgentAdapterEvent external_coding_agent_adapter = 46;
   }
 }
 
@@ -1998,6 +2001,32 @@ message ToolSimulationRuntimeEvent {
   string run_id = 8;
   string correlation_id = 9;
   string contract_hash = 10;
+  string error_code = 11;
+  bytes projection_json = 12;
+}
+
+// Plan 45: metadata-only external coding-agent adapter projection. Raw
+// prompts, output, credentials and process paths never cross desktop IPC.
+message ExternalCodingAgentAdapterCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string operation = 4;
+  bytes payload = 5;
+  uint64 expected_version = 6;
+  string idempotency_key = 7;
+}
+message ExternalCodingAgentAdapterEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  string state = 5;
+  string conversation_id = 6;
+  string run_id = 7;
+  string protocol = 8;
+  string control_level = 9;
+  string snapshot_hash = 10;
   string error_code = 11;
   bytes projection_json = 12;
 }

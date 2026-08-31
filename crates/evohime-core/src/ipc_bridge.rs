@@ -338,6 +338,8 @@ pub struct IpcBridge {
     /// бы карточку, которую некому принять.
     voice_commands: Arc<crate::voice_command::VoiceCommandRegistry>,
     tool_simulation: Arc<tokio::sync::Mutex<crate::tool_simulation_runtime::ToolSimulationRuntime>>,
+    external_agents:
+        Arc<tokio::sync::Mutex<crate::external_coding_agent_adapter::ExternalAgentRegistry>>,
 }
 
 /// Проект, под которым живут принятые предложения. Речь у стола не
@@ -624,6 +626,7 @@ impl IpcBridge {
             tool_simulation: Arc::new(tokio::sync::Mutex::new(
                 crate::tool_simulation_runtime::ToolSimulationRuntime::default(),
             )),
+            external_agents: Arc::new(tokio::sync::Mutex::new(Default::default())),
         }
     }
 
@@ -655,6 +658,7 @@ impl IpcBridge {
             tool_simulation: Arc::new(tokio::sync::Mutex::new(
                 crate::tool_simulation_runtime::ToolSimulationRuntime::default(),
             )),
+            external_agents: Arc::new(tokio::sync::Mutex::new(Default::default())),
         }
     }
 
@@ -693,6 +697,7 @@ impl IpcBridge {
             tool_simulation: Arc::new(tokio::sync::Mutex::new(
                 crate::tool_simulation_runtime::ToolSimulationRuntime::default(),
             )),
+            external_agents: Arc::new(tokio::sync::Mutex::new(Default::default())),
         }
     }
 
@@ -3911,6 +3916,19 @@ impl IpcBridge {
                 Some(generated::command_envelope::Command::ToolSimulationRuntime(request)) => {
                     let result = self.dispatch_tool_simulation_runtime(request).await;
                     self.write_tool_simulation_runtime_response(
+                        writer,
+                        serde_json::to_vec(&result)?,
+                    )
+                    .await?;
+                }
+                Some(generated::command_envelope::Command::ExternalCodingAgentAdapterList(
+                    request,
+                ))
+                | Some(generated::command_envelope::Command::ExternalCodingAgentAdapterAction(
+                    request,
+                )) => {
+                    let result = self.dispatch_external_coding_agent_adapter(request).await;
+                    self.write_external_coding_agent_adapter_response(
                         writer,
                         serde_json::to_vec(&result)?,
                     )
@@ -11409,6 +11427,179 @@ impl IpcBridge {
                 event: Some(generated::event_envelope::Event::ToolSimulationRuntime(
                     result,
                 )),
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn dispatch_external_coding_agent_adapter(
+        &self,
+        request: generated::ExternalCodingAgentAdapterCommand,
+    ) -> serde_json::Value {
+        use crate::external_coding_agent_adapter::{AgentState, CONTRACT_ID, CONTRACT_VERSION};
+        if request.schema_version != CONTRACT_VERSION
+            || request.request_id.is_empty()
+            || request.owner_scope.is_empty()
+            || request.idempotency_key.is_empty()
+            || request.payload.len() > 64 * 1024
+        {
+            return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","state":"unavailable","error_code":"invalid_request","projection_json":{"raw_payload":false}});
+        }
+        let mut registry = self.external_agents.lock().await;
+        let mut projection = registry.status();
+        let mut state = AgentState::Registered;
+        let mut status = "ok";
+        let mut error_code = "";
+        match request.operation.as_str() {
+            "list" | "status" => {}
+            "start" => {
+                let payload: serde_json::Value = match serde_json::from_slice(&request.payload) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"start","status":"rejected","state":"unavailable","error_code":"invalid_payload","projection_json":{"raw_payload":false}});
+                    }
+                };
+                let run_id = payload.get("run_id").and_then(|v| v.as_str()).unwrap_or("");
+                let conversation_id = payload
+                    .get("conversation_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if run_id.is_empty() || conversation_id.is_empty() {
+                    status = "rejected";
+                    error_code = "invalid_run";
+                    state = AgentState::Unavailable;
+                } else if registry.runs.contains_key(run_id) {
+                    status = "duplicate";
+                    error_code = "duplicate_run";
+                    state = *registry.runs.get(run_id).unwrap_or(&AgentState::Unknown);
+                } else {
+                    let executable_ref = payload
+                        .get("executable_ref")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    #[cfg(windows)]
+                    let supervisor_result = crate::analysis_kernel::supervisor_command(
+                        serde_json::json!({"op":"external_agent_start","run_id":run_id,"executable_ref":executable_ref}),
+                    ).await;
+                    #[cfg(not(windows))]
+                    let supervisor_result: Result<serde_json::Value, String> =
+                        Err("unsupported_platform".into());
+                    if supervisor_result
+                        .as_ref()
+                        .ok()
+                        .and_then(|v| v.get("accepted"))
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                    {
+                        registry.runs.insert(run_id.to_owned(), AgentState::Running);
+                        state = AgentState::Running;
+                        status = "accepted";
+                    } else {
+                        registry
+                            .runs
+                            .insert(run_id.to_owned(), AgentState::Unavailable);
+                        status = "unavailable";
+                        error_code = "supervisor_unavailable";
+                        state = AgentState::Unavailable;
+                    }
+                }
+                projection = serde_json::json!({"contract_id":CONTRACT_ID,"contract_version":CONTRACT_VERSION,"conversation_id":conversation_id,"run_id":run_id,"core_control_level":"supervised_opaque","raw_payload":false});
+            }
+            "cancel" => {
+                let run_id = serde_json::from_slice::<serde_json::Value>(&request.payload)
+                    .ok()
+                    .and_then(|v| v.get("run_id").and_then(|v| v.as_str()).map(str::to_owned));
+                if let Some(id) = run_id {
+                    if registry.runs.insert(id, AgentState::Cancelling).is_none() {
+                        status = "not_found";
+                        error_code = "run_not_found";
+                    }
+                } else {
+                    status = "rejected";
+                    error_code = "invalid_payload";
+                }
+            }
+            _ => {
+                status = "rejected";
+                error_code = "unsupported_operation";
+                state = AgentState::Unavailable;
+            }
+        }
+        if request.operation == "start" || request.operation == "cancel" {
+            let run_id = projection["run_id"]
+                .as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| {
+                    serde_json::from_slice::<serde_json::Value>(&request.payload)
+                        .ok()
+                        .and_then(|v| v.get("run_id").and_then(|v| v.as_str()).map(str::to_owned))
+                        .unwrap_or_default()
+                });
+            let conversation_id = projection["conversation_id"]
+                .as_str()
+                .unwrap_or("")
+                .to_owned();
+            if !run_id.is_empty() && !conversation_id.is_empty() {
+                if let Ok(database) = self.journal.database().try_lock() {
+                    let _ =
+                        evohime_local_storage::external_coding_agent_adapter_store::record_event(
+                            database.connection(),
+                            &conversation_id,
+                            &run_id,
+                            serde_json::to_string(&state)
+                                .unwrap_or_default()
+                                .trim_matches('"'),
+                            status,
+                            &request.request_id,
+                            &request.idempotency_key,
+                            chrono::Utc::now().timestamp_millis(),
+                        );
+                }
+            }
+        }
+        serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":status,"state":state,"protocol":CONTRACT_ID,"control_level":"supervised_opaque","error_code":error_code,"projection_json":projection})
+    }
+
+    async fn write_external_coding_agent_adapter_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let projection = serde_json::to_vec(&value["projection_json"])?;
+        let result = generated::ExternalCodingAgentAdapterEvent {
+            schema_version: 1,
+            request_id: value["request_id"].as_str().unwrap_or_default().into(),
+            operation: value["operation"].as_str().unwrap_or_default().into(),
+            status: value["status"].as_str().unwrap_or_default().into(),
+            state: value["state"].as_str().unwrap_or_default().into(),
+            conversation_id: value["projection_json"]["conversation_id"]
+                .as_str()
+                .unwrap_or_default()
+                .into(),
+            run_id: value["projection_json"]["run_id"]
+                .as_str()
+                .unwrap_or_default()
+                .into(),
+            protocol: value["protocol"].as_str().unwrap_or_default().into(),
+            control_level: value["control_level"].as_str().unwrap_or_default().into(),
+            snapshot_hash: String::new(),
+            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+            projection_json: projection,
+        };
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: "external_coding_agent_adapter.result".into(),
+                payload,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: Some(generated::event_envelope::Event::ExternalCodingAgentAdapter(result)),
             }
             .encode_to_vec(),
         )

@@ -1113,6 +1113,10 @@ export const RENDERER_COMMANDS = [
   'executionBackendRegistry.disable',
   'executionBackendRegistry.snapshot',
   'toolSimulationRuntime.status',
+  'externalCodingAgentAdapter.list',
+  'externalCodingAgentAdapter.status',
+  'externalCodingAgentAdapter.start',
+  'externalCodingAgentAdapter.cancel',
   'automation.listSchedules',
   'automation.saveSchedule',
   'automation.trigger',
@@ -1521,6 +1525,10 @@ export interface CommandPayloads {
   'executionBackendRegistry.disable': { requestId: string; ownerScope: string; idempotencyKey: string; expectedVersion: number; id: string }
   'executionBackendRegistry.snapshot': { requestId: string; ownerScope: string; idempotencyKey: string; backendId?: string }
   'toolSimulationRuntime.status': { requestId: string; ownerScope: string; idempotencyKey: string }
+  'externalCodingAgentAdapter.list': { requestId: string; ownerScope: string; idempotencyKey: string }
+  'externalCodingAgentAdapter.status': { requestId: string; ownerScope: string; idempotencyKey: string }
+  'externalCodingAgentAdapter.start': { requestId: string; ownerScope: string; idempotencyKey: string; runId: string; conversationId: string; executableRef: string }
+  'externalCodingAgentAdapter.cancel': { requestId: string; ownerScope: string; idempotencyKey: string; runId: string }
   'automation.listSchedules': { ownerScope: string; limit?: number }
   'automation.saveSchedule': {
     scheduleId: string
@@ -1754,6 +1762,10 @@ export interface CommandResults {
   'executionBackendRegistry.disable': { accepted: boolean }
   'executionBackendRegistry.snapshot': { accepted: boolean }
   'toolSimulationRuntime.status': { accepted: boolean }
+  'externalCodingAgentAdapter.list': { accepted: boolean }
+  'externalCodingAgentAdapter.status': { accepted: boolean }
+  'externalCodingAgentAdapter.start': { accepted: boolean }
+  'externalCodingAgentAdapter.cancel': { accepted: boolean }
   'automation.listSchedules': { accepted: boolean }
   'automation.saveSchedule': { accepted: boolean }
   'automation.trigger': { accepted: boolean }

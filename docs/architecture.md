@@ -1243,3 +1243,24 @@ Authenticated additive IPC использует command 190/event 45. Electron �
 runtime; raw fixture/input/output, prompts, credentials и executable identities
 не пересекают boundary. Панель всегда показывает, что simulation не
 подтверждает реальный эффект.
+
+## External Coding Agent Adapter v1 (план 45)
+
+`evohime-core::external_coding_agent_adapter` определяет bounded protocol
+`evohime.external-agent/v1`: newline-delimited JSON frames `hello`, `hello_ack`,
+`run`, `event`, `result`, `cancel`. Core валидирует manifest, capability
+intersection, declared credential slots, timeout и immutable `AgentSnapshot`;
+raw prompts, outputs, credential values и executable paths не входят в desktop
+IPC.
+
+Preset/conversation/event metadata хранится additive в SQLite schema v46;
+process handles, streams и transient run state остаются ephemeral. Core
+передаёт supervisor только validated opaque run spec. Supervisor разрешает
+executable через allowlisted environment mapping, запускает без shell, назначает
+отдельный Windows Job Object и уничтожает дерево при cancel/timeout. Unknown
+outcome после restart не retry-ится вслепую.
+
+Authenticated additive IPC использует commands 191–192/event 46. Electron
+получает только bounded metadata с `core_control_level`
+(`full`/`supervised_opaque`/`unavailable`); raw external frames не пересекают
+desktop boundary.

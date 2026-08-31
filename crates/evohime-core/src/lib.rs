@@ -978,6 +978,7 @@ pub mod evals;
 pub mod event_trigger_runtime;
 pub mod execution_backend_registry;
 pub mod export;
+pub mod external_coding_agent_adapter;
 pub mod goal;
 pub mod integration_provider_runtime;
 pub mod integration_provider_sdk;

@@ -24,6 +24,7 @@ pub mod event_trigger_runtime_store;
 pub mod execution_backend_registry_store;
 pub mod execution_ledger;
 pub mod execution_policy_profiles_store;
+pub mod external_coding_agent_adapter_store;
 pub mod feedback_store;
 pub mod goal;
 pub mod integration_provider_store;
@@ -47,7 +48,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 45;
+pub const SCHEMA_VERSION: u32 = 46;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3520,6 +3521,10 @@ impl LocalDatabase {
         if current < 45 {
             execution_backend_registry_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 45;")?;
+        }
+        if current < 46 {
+            external_coding_agent_adapter_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 46;")?;
         }
         transaction.commit()?;
         Ok(())

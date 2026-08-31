@@ -198,3 +198,11 @@ Structured Response validation, no-real-dispatch workflow interception,
 fixture benchmark executor, ephemeral restart semantics и metadata-only
 authenticated IPC 190/event 45. Комплект 44-0 … 44-4 удалён после focused и
 regression-проверок.
+
+План 45 закрыт: External Coding Agent Adapter v1 перенесён в canonical
+`architecture.md`, `current-state.md` и `release-evidence.md`. Подтверждены
+framed typed protocol `evohime.external-agent/v1`, Core-owned preset/conversation
+snapshots, declared-slot credential boundary, schema v46, supervisor Job Object
+lifecycle, capability handshake, IPC 191–192/event 46 и metadata-only UI с
+`supervised_opaque`/`unavailable`. Комплект `45-0` … `45-4` удалён после
+свежих focused и regression gates.

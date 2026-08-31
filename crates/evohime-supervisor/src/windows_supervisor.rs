@@ -356,12 +356,15 @@ async fn run_supervisor_command_channel(
     logger: std::sync::Arc<SupervisorLogger>,
 ) -> io::Result<()> {
     use self::analysis_kernel_worker::{KernelWorkerLaunchSpec, KernelWorkerProcess};
-    use crate::local_provider::{LocalAdapterProcess, LocalProviderManager, ResourceLimits};
+    use crate::local_provider::{
+        ExternalAgentProcess, LocalAdapterProcess, LocalProviderManager, ResourceLimits,
+    };
     use std::collections::BTreeMap;
 
     let mut provider_manager = LocalProviderManager::default();
     let mut adapter_processes: BTreeMap<String, LocalAdapterProcess> = BTreeMap::new();
     let mut kernel_processes: BTreeMap<String, KernelWorkerProcess> = BTreeMap::new();
+    let mut external_processes: BTreeMap<String, ExternalAgentProcess> = BTreeMap::new();
     let mut verifier = evohime_desktop_ipc::session::HandshakeVerifier::new(
         context.launch_context.clone(),
         evohime_desktop_ipc::session::DEFAULT_NONCE_TTL_MS,
@@ -434,6 +437,44 @@ async fn run_supervisor_command_channel(
             .and_then(serde_json::Value::as_str)
             .unwrap_or("");
         let response = match op {
+            "external_agent_start" => {
+                let run_id = value.get("run_id").and_then(|v| v.as_str()).unwrap_or("");
+                let executable_ref = value
+                    .get("executable_ref")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if run_id.is_empty()
+                    || executable_ref.is_empty()
+                    || external_processes.contains_key(run_id)
+                {
+                    json!({"accepted":false,"reason":"invalid_request"})
+                } else {
+                    match ExternalAgentProcess::spawn(executable_ref, run_id).await {
+                        Ok(process) => {
+                            external_processes.insert(run_id.into(), process);
+                            let _ = logger.write(
+                                "supervisor.external_agent_started",
+                                json!({"run_id":run_id,"executable_ref":executable_ref}),
+                            );
+                            json!({"accepted":true,"run_id":run_id})
+                        }
+                        Err(error) => {
+                            json!({"accepted":false,"reason":format!("{error:?}").to_ascii_lowercase()})
+                        }
+                    }
+                }
+            }
+            "external_agent_cancel" => {
+                let run_id = value.get("run_id").and_then(|v| v.as_str()).unwrap_or("");
+                match external_processes.remove(run_id) {
+                    Some(mut process) => {
+                        process.stop().await;
+                        json!({"accepted":true,"run_id":run_id})
+                    }
+                    None => json!({"accepted":false,"reason":"run_not_found"}),
+                }
+            }
+            "external_agent_probe" => json!({"accepted":true,"processes":external_processes.len()}),
             "kernel_launch" => {
                 let kernel_id = value
                     .get("kernel_id")
