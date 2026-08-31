@@ -258,6 +258,9 @@ impl AgentRoleProfilesRegistry {
         self.profiles.insert(profile.id.clone(), profile.clone());
         Ok(profile)
     }
+    // Keep the capability sources explicit: each is an independent authority
+    // boundary and must not be folded into an already-combined grant set.
+    #[allow(clippy::too_many_arguments)]
     pub fn start(
         &mut self,
         run_id: String,
