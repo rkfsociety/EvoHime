@@ -15,8 +15,7 @@
 
 ### Опциональные
 
-- План 23.0 — зависимость из обзора.
-- План 29.0 — зависимость из обзора.
+- Continual Refinement и TaskCheckpoint consumers из overview.
 
 ## Реализация
 

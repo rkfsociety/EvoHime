@@ -16,11 +16,12 @@
 ### Блокирующие
 
 - План 58.0 — scope, requirements, non-goals и dependency map.
+- Existing TaskCheckpoint, ArtifactStore and workspace sandbox/path contracts.
 - Core capability/policy/approval, SQLite migration, event journal и authenticated IPC.
 
 ### Опциональные
 
-- План 57.0 — зависимость из обзора.
+- Plan Artifact and Revision-Safe Workspace Files integrations из overview.
 
 ## Реализация
 
@@ -41,8 +42,20 @@
 
 ### Поверхности и контракт
 
-- `crates/evohime-core/src/workspace_state_checkpoints.rs`: ввести `WorkspaceStateCheckpointsDefinition`, `WorkspaceStateCheckpointsPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
-- Storage: `crates/evohime-local-storage/src/workspace_state_checkpoints_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
+- `workspace_state_checkpoints.rs` defines metadata/create/compare/preflight/
+  restore contracts separate from TaskCheckpoint; `RestoreBoth` composes two
+  explicit operations and never conflates their state.
+- Snapshot bytes are content-addressed through ArtifactStore (or a documented
+  extension of its quota/sensitivity contract); new store contains bounded
+  manifest/ref metadata only and lives outside the workspace/user `.git`.
+- Snapshot inclusion/exclusion policy must skip VCS metadata, dependencies,
+  build caches and reparse escapes deterministically.
+- Manifest is immutable and captures git head/dirty baseline, tracked state,
+  before/after hashes, deletion/symlink metadata, sensitivity and source event;
+  backend choice (`ArtifactStore`/shadow/hybrid) does not change public API.
+- Retention is quota/age/LRU based only for unpinned checkpoints; pinned or
+  user-named checkpoints require explicit policy/action and corruption is
+  detected before compare/restore.
 - Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
 - Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/workspace_state_checkpoints_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
 

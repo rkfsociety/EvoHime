@@ -16,12 +16,14 @@
 ### Блокирующие
 
 - План 50.0 — scope, requirements, non-goals и dependency map.
+- Существующие `memory_domain`, `memory_api`, `memory_retrieval` и
+  `memory_store` contracts; stage обязан выбрать одно authoritative
+  `MemoryRecord` representation и migration path.
 - Core capability/policy/approval, SQLite migration, event journal и authenticated IPC.
 
 ### Опциональные
 
-- План 23.0 — зависимость из обзора.
-- План 29.0 — зависимость из обзора.
+- Continual Refinement и TaskCheckpoint consumers из overview.
 
 ## Реализация
 
@@ -42,8 +44,12 @@
 
 ### Поверхности и контракт
 
-- `crates/evohime-core/src/memory_governance.rs`: ввести `MemoryGovernanceDefinition`, `MemoryGovernancePolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
-- Storage: `crates/evohime-local-storage/src/memory_governance_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
+- Расширить `memory_domain.rs`, `memory_api.rs`, `memory_extraction.rs`,
+  `memory_retrieval.rs` и durable `memory_store.rs`; optional
+  `memory_governance.rs` содержит gate/policy, но не второй record/store.
+- Storage: additive fields/tables в существующем memory store с explicit
+  migration для старых records, backup-before-migrate и rollback без
+  частичной записи. Старые API не могут писать durable record в обход gate.
 - Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
 - Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/memory_governance_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
 

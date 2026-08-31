@@ -16,17 +16,23 @@
 ### Блокирующие
 
 - План 51.0 — scope, requirements, non-goals и dependency map.
+- Retained Child mailbox/store, Agent Role Profiles и Team SOP Protocols
+  roster/policy snapshots.
 - Core capability/policy/approval, SQLite migration, event journal и authenticated IPC.
 
 ### Опциональные
 
-- План 27.0 — зависимость из обзора.
-- План 47.0 — зависимость из обзора.
+- Artifact Handoff Registry для semantic deliverables; до него bounded inline
+  payload и существующие ArtifactStore refs.
 
 ## Реализация
 
 0. Сверить overview с live code/docs/tests/git log; если контракт уже существует, собрать evidence для закрытия, не создавая второй authority.
 1. Описать versioned fields, enums, transitions, scope, actor/provenance, idempotency, limits, sensitivity и compatibility. Для mutation определить optimistic version и stale outcome.
+   Зафиксировать полный envelope, machine-significant kind schemas,
+   addressing (`DirectRoleInstance`, `RoleSlot`, `ProtocolGroup`, `Parent`,
+   `TeamCoordinator`), subscription filters и delivery states
+   `Accepted/Queued/Delivered/Consumed/Expired/Rejected`.
 2. Реализовать Rust validators и canonical serde/JSON/Proto representation; unknown version, oversized input и authority-bearing unknown data дают typed error.
 3. Добавить durable store и additive migration с backup-before-migrate только если состояние переживает restart; ephemeral state закрепить отрицательным persistence test.
 4. Добавить deterministic fixtures: valid/invalid, duplicate, stale, redaction, limit и migration failure; выдать evidence-пакет этапу 2.
@@ -42,8 +48,12 @@
 
 ### Поверхности и контракт
 
-- `crates/evohime-core/src/causal_collaboration_bus.rs`: ввести `CausalCollaborationBusDefinition`, `CausalCollaborationBusPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
-- Storage: `crates/evohime-local-storage/src/causal_collaboration_bus_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
+- `causal_collaboration_bus.rs` вводит routing/subscription/causality policy
+  поверх `retained_child.rs`, `agent_role_profiles.rs` и
+  `team_sop_protocols.rs`; sender/roster всегда Core-derived.
+- Storage расширяет `retained_child_store.rs` либо использует общий message
+  substrate с доказанной atomic sequence/dedup semantics; отдельный
+  несовместимый mailbox store запрещён.
 - Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
 - Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/causal_collaboration_bus_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
 
@@ -52,6 +62,8 @@
 - `C04` — Есть causation/correlation/sequence metadata. → зафиксировать typed invariant, error code и deterministic fixture.
 - `C05` — Inbox bounded и имеет backpressure semantics. → задать bounded limits и typed overflow/limit errors.
 - `C07` — Layer переиспользует/расширяет child mailbox, а не дублирует его без причины. → зафиксировать typed invariant, error code и deterministic fixture.
+- Free-form prose допустим только как bounded human-readable field/`Notice`;
+  routing и workflow transition не зависят от его парсинга.
 
 ### Definition freeze
 

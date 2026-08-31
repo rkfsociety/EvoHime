@@ -16,13 +16,13 @@
 ### Блокирующие
 
 - План 59.0 — scope, requirements, non-goals и dependency map.
+- План 57 — accepted PlanArtifact contract.
+- План 58 — workspace checkpoint/baseline/restore contract.
 - Core capability/policy/approval, SQLite migration, event journal и authenticated IPC.
 
 ### Опциональные
 
-- План 57.0 — зависимость из обзора.
-- План 58.0 — зависимость из обзора.
-- План 38.0 — зависимость из обзора.
+- Adaptive Tool Catalog and Revision-Safe Workspace Files adapters из overview.
 
 ## Реализация
 
@@ -44,6 +44,9 @@
 ### Поверхности и контракт
 
 - `crates/evohime-core/src/incremental_change_protocol.rs`: ввести `IncrementalChangeProtocolDefinition`, `IncrementalChangeProtocolPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- `ChangePlan` references exact PlanArtifact revision/hash, WorkspaceCheckpoint
+  or repository baseline, dirty marker and per-item expected path scopes;
+  duplicating plan/checkpoint state is forbidden.
 - Storage: `crates/evohime-local-storage/src/incremental_change_protocol_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
 - Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
 - Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/incremental_change_protocol_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.

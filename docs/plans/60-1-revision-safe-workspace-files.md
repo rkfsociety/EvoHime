@@ -16,11 +16,13 @@
 ### Блокирующие
 
 - План 60.0 — scope, requirements, non-goals и dependency map.
+- Existing ArtifactStore, tool registry, sandbox/path canonicalization, event
+  journal and Sensitive Data Guardrails contracts.
 - Core capability/policy/approval, SQLite migration, event journal и authenticated IPC.
 
 ### Опциональные
 
-- План 40.0 — зависимость из обзора.
+- Incremental Change Protocol provenance adapter из overview.
 
 ## Реализация
 
@@ -41,8 +43,17 @@
 
 ### Поверхности и контракт
 
-- `crates/evohime-core/src/revision_safe_workspace_files.rs`: ввести `RevisionSafeWorkspaceFilesDefinition`, `RevisionSafeWorkspaceFilesPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
-- Storage: состояние этапа остаётся ephemeral; новую durable таблицу и migration не добавлять. Добавить negative persistence test, а диагностический результат передавать через существующий event/release evidence.
+- `revision_safe_workspace_files.rs` defines shared ref/read/mutation/batch
+  service; existing filesystem read/write/patch/advanced tools become adapters
+  to it. No registered mutating file tool may retain a legacy write path.
+- Persistence is explicit per namespace: upload/output bytes and metadata use
+  ArtifactStore; workspace refs are recalculated/invalidated at boundaries;
+  scratch is run-scoped ephemeral; mutation intent/result and partial/unknown
+  outcomes use the durable event/recovery journal. Add a table only if existing
+  owners cannot represent durable namespace metadata.
+- File identity uses canonical backend path internally but projects only
+  logical namespace/path + hash/revision. Reparse-point identity is rechecked
+  immediately before mutation.
 - Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
 - Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/revision_safe_workspace_files_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
 

@@ -35,7 +35,10 @@
 3. Runtime/recovery/fault-injection tests для cancel, stale, denial, restart и unknown outcome.
 4. IPC/adapter/renderer or CLI tests для auth, redaction, replay/resync и optimistic conflict.
 5. Security/eval tests по фактическим критериям направления: traversal, escalation, secret leakage и untrusted input.
-6. Проверить cargo fmt --all -- --check, релевантный cargo clippy -D warnings, npm run check:protocol, npm run typecheck, npm test и git diff --check.
+6. Redirect/DNS-rebinding/private-IP tests, stale element refs, isolated profile
+   cleanup, ArtifactStore upload/download and human-takeover race tests; prove
+   legacy raw CDP/CSS paths are not registered as bypasses.
+7. Проверить cargo fmt --all -- --check, релевантный cargo clippy -D warnings, npm run check:protocol, npm run typecheck, npm test и git diff --check.
 
 ## Release-evidence и закрытие
 

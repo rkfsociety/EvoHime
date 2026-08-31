@@ -58,6 +58,9 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 38.0 — Adaptive Tool Catalog: dynamic selection и deferred tool schemas.
+- План 60.0 — Revision-Safe Workspace Files унифицирует per-file refs и
+  mutation preconditions; до него protocol использует собственные repository
+  baseline/change-set fingerprints и запрещает stale apply.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue
@@ -122,3 +125,10 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ## Связанный issue
 
 - [#39 Incremental Change Protocol: safe requirement-delta pipeline для существующих репозиториев](https://github.com/rkfsociety/EvoHime/issues/39)
+
+## Результат ревью 2026-09-01
+
+- Подтверждён порядок после Plan Artifact и Workspace State Checkpoints;
+  blocking dependencies сохранены во всех stages.
+- Forward-связь с планом 60 оставлена опциональной: минимальный fingerprint/
+  stale-apply contract полностью определяется внутри плана 59.

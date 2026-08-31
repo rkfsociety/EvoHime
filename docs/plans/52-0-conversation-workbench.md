@@ -21,11 +21,12 @@ event-journal, provider и supervisor контракты не заменяютс
 immutable/versioned записи; для внешних эффектов сохранять unknown outcome, а
 не повторять side effect вслепую.
 
-Кандидатная точка интеграции: `crates/evohime-core/src/conversation_workbench.rs`,
-а также соответствующий storage store, `crates/desktop-ipc/proto/evohime.desktop.proto`,
-Electron main/preload bridge, bounded renderer projection и focused tests.
-Имена файлов проверяются по live checkout на этапе реализации и не являются
-заранее утверждённым API.
+Workbench — агрегирующая projection, а не новый runtime/store. Core-side refs
+строятся поверх `conversation_event_log.rs`, TaskCheckpoint и действующих tool
+events; Electron использует существующие `conversation-projection.ts`,
+`OperationsPanel.tsx`, `TracePanel.tsx`, `ContextUsage.tsx` и shell-owned
+presentation state. Новый `conversation_workbench.rs` допустим только как
+bounded projection composer, не как второй task/event database.
 
 ## Этапы направления
 
@@ -38,11 +39,15 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Блокирующие
 
-- План 23.0 — Task Checkpoint: структурированное состояние задачи для compaction и recovery.
+- реализованный Resumable Conversation Event Log v1 и TaskCheckpoint v1 из
+  `../architecture.md`/`../current-state.md`;
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 
 ### Опциональные
 
+- Agentic Browser Session (план 55) и Revision-Safe Workspace Files (план 60)
+  добавляют live Browser/Files/Diff capabilities; до них соответствующие tabs
+  показывают typed `unavailable`, не подменяя данные shell state.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue
@@ -121,3 +126,10 @@ Conversation
 ## Связанный issue
 
 - [#32 Conversation Workbench: единая поверхность Files, Diff, Tasks, Terminal, Browser и Usage](https://github.com/rkfsociety/EvoHime/issues/32)
+
+## Результат ревью 2026-09-01
+
+- Workbench закреплён как projection над conversation event log и существующими
+  панелями, без второго runtime/store.
+- Для будущих Browser и revision-safe Files/Diff tabs зафиксирован честный
+  capability-aware `unavailable` до планов 55 и 60.

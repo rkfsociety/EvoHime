@@ -16,16 +16,21 @@
 ### Блокирующие
 
 - План 55.0 — scope, requirements, non-goals и dependency map.
+- Existing `browser.session.*`, CDP session registry and SSRF implementation
+  as explicit migration baseline.
 - Core capability/policy/approval, SQLite migration, event journal и authenticated IPC.
 
 ### Опциональные
 
-- План 41.0 — зависимость из обзора.
+- Execution Policy Profiles adapter из overview.
 
 ## Реализация
 
 0. Сверить overview с live code/docs/tests/git log; если контракт уже существует, собрать evidence для закрытия, не создавая второй authority.
 1. Описать versioned fields, enums, transitions, scope, actor/provenance, idempotency, limits, sensitivity и compatibility. Для mutation определить optimistic version и stale outcome.
+   Define typed open/snapshot/click/fill/select/press/scroll/wait/history/
+   download/upload/close commands, per-action risk class and policy snapshot;
+   sensitive submit/upload/auth actions still pass the ordinary approval path.
 2. Реализовать Rust validators и canonical serde/JSON/Proto representation; unknown version, oversized input и authority-bearing unknown data дают typed error.
 3. Добавить durable store и additive migration с backup-before-migrate только если состояние переживает restart; ephemeral state закрепить отрицательным persistence test.
 4. Добавить deterministic fixtures: valid/invalid, duplicate, stale, redaction, limit и migration failure; выдать evidence-пакет этапу 2.
@@ -41,8 +46,15 @@
 
 ### Поверхности и контракт
 
-- `crates/evohime-core/src/agentic_browser_session.rs`: ввести `AgenticBrowserSessionDefinition`, `AgenticBrowserSessionPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
-- Storage: `crates/evohime-local-storage/src/agentic_browser_session_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
+- `agentic_browser_session.rs` определяет lifecycle/policy/ref contract, а
+  `tool-runtime/src/tools/browser_session.rs`, `cdp.rs` и `ssrf.rs` мигрируют
+  с raw CSS/env-CDP semantics. Parallel tool names/backend state запрещены.
+- Зафиксировать packaged backend choice, ownership и launch/cleanup contract:
+  isolated ephemeral profile обязателен, arbitrary user CDP endpoint не
+  является production default, внешний Node/Python runtime не требуется.
+- Session/page/element refs ephemeral; durable хранится только bounded
+  lifecycle/audit metadata. Screenshots/downloads идут в ArtifactStore, не
+  пишутся прямо в workspace.
 - Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
 - Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/agentic_browser_session_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
 
@@ -51,6 +63,8 @@
 - `C01` — Есть Core-owned BrowserSession lifecycle. → зафиксировать typed invariant, error code и deterministic fixture.
 - `C03` — Refs имеют page revision и stale protection. → зафиксировать fingerprint, preconditions и provenance-поля.
 - `C04` — Есть network/SSRF policy с private-address protection. → зафиксировать typed invariant, error code и deterministic fixture.
+- Redirect hops, post-resolution IP и DNS rebinding входят в тот же policy;
+  initial-URL-only проверка не закрывает критерий.
 
 ### Definition freeze
 

@@ -23,11 +23,13 @@ event-journal, provider и supervisor контракты не заменяютс
 immutable/versioned записи; для внешних эффектов сохранять unknown outcome, а
 не повторять side effect вслепую.
 
-Кандидатная точка интеграции: `crates/evohime-core/src/diagnostics_and_support_bundle.rs`,
-а также соответствующий storage store, `crates/desktop-ipc/proto/evohime.desktop.proto`,
-Electron main/preload bridge, bounded renderer projection и focused tests.
-Имена файлов проверяются по live checkout на этапе реализации и не являются
-заранее утверждённым API.
+Live checkout уже содержит `evohime-diagnostic-bundle-v1` в
+`desktop/evohime-electron/src/main/diagnostics/bundle.ts`, shell redaction и
+`shell.exportDiagnostics`. План развивает этот bundle до support-bundle v2:
+Core (`doctor.rs`, `observability.rs`, event/checkpoint APIs) владеет typed
+health/run snapshot, а Electron main остаётся доверенным локальным assembler
+для shell/update/supervisor logs, preview, ZIP и user-selected save. Второй
+независимый Core archive format или второй export authority не создаётся.
 
 ## Этапы направления
 
@@ -40,12 +42,14 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Блокирующие
 
-- План 25.0 — Persistent Goals: durable цели для долгих задач.
+- существующий diagnostic bundle v1, Core doctor/observability и Sensitive
+  Data Guardrails v1 из live code и канонической архитектуры;
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 
 ### Опциональные
 
-- UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
+- Goal/TaskCheckpoint summaries включаются только при наличии выбранного run;
+  их отсутствие не блокирует application-level health bundle.
 
 ## Короткая фиксация требований issue
 
@@ -55,7 +59,12 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Безопасность
 
-В issue нет отдельного раздела с этим именем; требования остаются в полном тексте issue.
+- section-level redaction выполняется владельцем секции, затем Electron main
+  делает финальный scan уже сериализованного набора файлов;
+- raw prompts, workspace files, tool payload, credentials и абсолютные пути не
+  входят по умолчанию;
+- export только локальный и user-initiated, без network upload или repair;
+- временный ZIP получает restrictive ACL и гарантированный cleanup.
 
 ## План реализации
 
@@ -101,3 +110,11 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ## Связанный issue
 
 - [#33 Diagnostics & Support Bundle: redacted health snapshot и воспроизводимый issue draft](https://github.com/rkfsociety/EvoHime/issues/33)
+
+## Результат ревью 2026-09-01
+
+- План переведён с greenfield Core bundle на расширение уже работающего
+  `evohime-diagnostic-bundle-v1`; разделены Core snapshot authority и
+  Electron-main archive/save responsibility.
+- Убрана ложная blocking-зависимость от Persistent Goals и добавлены реальные
+  redaction/final-scan/ACL границы issue #33.

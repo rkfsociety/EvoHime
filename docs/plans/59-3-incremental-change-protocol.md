@@ -15,9 +15,7 @@
 
 ### Опциональные
 
-- План 57.0 — зависимость из обзора.
-- План 58.0 — зависимость из обзора.
-- План 38.0 — зависимость из обзора.
+- Adaptive Tool Catalog and Revision-Safe Workspace Files adapters из overview.
 
 ## Реализация
 

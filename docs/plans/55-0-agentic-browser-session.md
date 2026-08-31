@@ -21,11 +21,12 @@ event-journal, provider и supervisor контракты не заменяютс
 immutable/versioned записи; для внешних эффектов сохранять unknown outcome, а
 не повторять side effect вслепую.
 
-Кандидатная точка интеграции: `crates/evohime-core/src/agentic_browser_session.rs`,
-а также соответствующий storage store, `crates/desktop-ipc/proto/evohime.desktop.proto`,
-Electron main/preload bridge, bounded renderer projection и focused tests.
-Имена файлов проверяются по live checkout на этапе реализации и не являются
-заранее утверждённым API.
+Live checkout уже содержит `tool-runtime/src/tools/browser_session.rs`,
+`cdp.rs`, `ssrf.rs` и зарегистрированные `browser.session.*` tools. План не
+создаёт параллельный browser stack: он заменяет env-supplied raw CDP/CSS
+selector contract на Core-owned lifecycle, page-revision-bound element refs,
+isolated packaged profile и policy-checked backend adapter. Existing one-shot
+browser tools остаются отдельной capability.
 
 ## Этапы направления
 
@@ -38,12 +39,14 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Блокирующие
 
-- Специфических межплановых blocking зависимостей нет; используется текущий Core/IPC фундамент проекта.
+- действующие ToolRegistry/permission/approval, `browser.session.*`, CDP и SSRF
+  contracts как migration baseline;
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 
 ### Опциональные
 
-- План 41.0 — Execution Policy Profiles: sandboxed shell/process runtime с Windows-first isolation.
+- Execution Policy Profiles v1 может задавать дополнительные backend limits;
+  без отдельного profile используются строгие browser defaults.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue
@@ -111,3 +114,10 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ## Связанный issue
 
 - [#35 Agentic Browser Session: sandboxed browser automation со stable refs и SSRF-защитой](https://github.com/rkfsociety/EvoHime/issues/35)
+
+## Результат ревью 2026-09-01
+
+- Учтена уже существующая CDP/browser-session реализация; план теперь является
+  её безопасной миграцией, а не вторым browser runtime.
+- На definition freeze вынесены redirect/DNS rebinding, stable refs, isolated
+  profile, ArtifactStore download/upload и human-takeover fencing.

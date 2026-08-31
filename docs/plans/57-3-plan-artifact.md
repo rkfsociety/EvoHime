@@ -15,8 +15,7 @@
 
 ### Опциональные
 
-- План 23.0 — зависимость из обзора.
-- План 40.0 — зависимость из обзора.
+- UI/diagnostics integration из overview.
 
 ## Реализация
 
@@ -35,9 +34,12 @@
 - Bridge: связать `crates/evohime-core/src/ipc_bridge.rs`, `desktop/evohime-electron/src/shared/api.ts`, `desktop/evohime-electron/src/preload/index.ts` и `desktop/evohime-electron/src/main/shell-bridge.ts`; renderer не получает Core/storage authority.
 - UI: создать `desktop/evohime-electron/src/renderer/src/PlanArtifactPanel.tsx` только как projection/action surface; тесты — `desktop/evohime-electron/tests/plan_artifact.test.tsx` и protocol/typecheck gates.
 
-### Acceptance-to-projection matrix
+### Projection contract
 
-- `C08` — IPC/UI показывают только bounded redacted projection и явные actions. → показывать только redacted projection и provenance без raw payload.
+- IPC/UI показывают bounded redacted plan, revision history, criteria,
+  execution snapshot, TaskCheckpoint progress and re-plan notices. Accept,
+  Execute and Replan are explicit Core-checked actions; projection itself is
+  never an acceptance/approval authority.
 
 ### Client safety and replay
 

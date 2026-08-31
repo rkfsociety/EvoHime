@@ -46,13 +46,16 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Блокирующие
 
-- План 45.0 — External Coding Agent Adapter: подключение Codex/Claude/Gemini-подобных executors через typed protocol.
+- реализованные Agent Role Profiles v1 и Team SOP Protocols v1 из
+  `../architecture.md`, задающие совместимый human role slot и roster snapshot;
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 
 ### Опциональные
 
-- Event Trigger Runtime v1 — реализованный контракт из `../architecture.md`.
-- План 35.0 — Invocation Presets: version-pinned шаблоны запусков без копирования секретов.
+- Event Trigger Runtime v1 и Invocation Presets v1 могут создавать work items;
+  без адаптеров базовый manual/workflow path остаётся доступен.
+- Causal Collaboration Bus (план 51) может доставлять team notifications; до
+  него используется существующий workflow/event projection.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue
@@ -116,3 +119,10 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ## Связанный issue
 
 - [#34 Human Work Items: пользователь как полноценный участник workflow/team, а не только approval](https://github.com/rkfsociety/EvoHime/issues/34)
+
+## Результат ревью 2026-09-01
+
+- Нерелевантная blocking-зависимость от External Coding Agent Adapter заменена
+  реальными role/TeamProtocol contracts, необходимыми для human role slot.
+- Event Trigger, presets и collaboration delivery оставлены опциональными с
+  работоспособным базовым workflow/inbox path.

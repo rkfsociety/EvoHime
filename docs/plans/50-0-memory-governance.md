@@ -21,11 +21,13 @@ event-journal, provider и supervisor контракты не заменяютс
 immutable/versioned записи; для внешних эффектов сохранять unknown outcome, а
 не повторять side effect вслепую.
 
-Кандидатная точка интеграции: `crates/evohime-core/src/memory_governance.rs`,
-а также соответствующий storage store, `crates/desktop-ipc/proto/evohime.desktop.proto`,
-Electron main/preload bridge, bounded renderer projection и focused tests.
-Имена файлов проверяются по live checkout на этапе реализации и не являются
-заранее утверждённым API.
+Memory Governance расширяет существующие `memory_domain.rs`, `memory_api.rs`,
+`memory_retrieval.rs`, `memory_extraction.rs` и
+`evohime-local-storage/src/memory_store.rs`. Отдельный
+`memory_governance.rs` допустим только как policy/gate слой над этими
+контрактами: второй `MemoryRecord`, параллельный store или обход действующих
+create/update/retrieval entrypoints запрещены. IPC, Electron bridge и inspector
+добавляются после унификации существующих in-memory и durable представлений.
 
 ## Этапы направления
 
@@ -38,12 +40,17 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Блокирующие
 
-- План 23.0 — Task Checkpoint: структурированное состояние задачи для compaction и recovery.
-- План 29.0 — Continual Refinement: evidence-backed улучшение памяти, skills и поведения.
+- реализованные Core memory API/domain/store/retrieval contracts и их
+  каноническое описание в `../architecture.md` и `../current-state.md`;
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 
 ### Опциональные
 
+- Continual Refinement v1 может использовать governed memory как evidence, но
+  без этой интеграции governance полностью работает, а refinement получает
+  typed `unavailable` для новых evidence projections.
+- TaskCheckpoint может ссылаться на governed memory refs после отдельной
+  интеграции; отсутствие этой связи не блокирует write/read governance.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue
@@ -105,3 +112,10 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ## Связанный issue
 
 - [#30 Memory Governance: typed memory, evidence gates, reinforcement и retention policy](https://github.com/rkfsociety/EvoHime/issues/30)
+
+## Результат ревью 2026-09-01
+
+- План сопоставлен с issue #30 и live memory path; устранён риск второго
+  `MemoryRecord`/store рядом с уже существующими memory domain/API/storage.
+- Continual Refinement и TaskCheckpoint переведены в опциональные consumers;
+  блокирующим основанием оставлен действующий memory contract.

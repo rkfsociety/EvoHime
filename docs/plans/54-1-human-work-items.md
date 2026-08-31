@@ -16,13 +16,14 @@
 ### Блокирующие
 
 - План 54.0 — scope, requirements, non-goals и dependency map.
+- Agent Role Profiles and Team SOP Protocols contracts for human-compatible
+  roster slots and Core-derived participant identity.
 - Core capability/policy/approval, SQLite migration, event journal и authenticated IPC.
 
 ### Опциональные
 
-- План 45.0 — зависимость из обзора.
-- Event Trigger Runtime v1 — реализованный контракт из `../architecture.md`.
-- План 35.0 — зависимость из обзора.
+- Structured Response Contract for machine-readable responses, plus Event
+  Trigger Runtime, Invocation Presets and Causal Collaboration Bus adapters из overview.
 
 ## Реализация
 
@@ -44,6 +45,12 @@
 ### Поверхности и контракт
 
 - `crates/evohime-core/src/human_work_items.rs`: ввести `HumanWorkItemsDefinition`, `HumanWorkItemsPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- Contract обязан различать `HumanWorkItem` и security approval на уровне
+  enum/type/storage/API; human response никогда не преобразуется в approval
+  result или capability grant.
+- Define states `Draft/WaitingForHuman/InProgress/Submitted/Accepted/
+  NeedsRevision/Cancelled/Expired`, blocking dependency edges, timeout policy
+  and typed `Start/SaveDraft/Submit/RequestContext/Return/Cancel` commands.
 - Storage: `crates/evohime-local-storage/src/human_work_items_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
 - Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
 - Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/human_work_items_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.

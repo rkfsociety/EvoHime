@@ -15,7 +15,7 @@
 
 ### Опциональные
 
-- План 57.0 — зависимость из обзора.
+- Plan Artifact and Revision-Safe Workspace Files integrations из overview.
 
 ## Реализация
 

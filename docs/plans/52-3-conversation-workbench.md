@@ -15,7 +15,7 @@
 
 ### Опциональные
 
-- План 23.0 — зависимость из обзора.
+- Agentic Browser Session и Revision-Safe Workspace Files capabilities из overview.
 
 ## Реализация
 
@@ -32,15 +32,22 @@
 
 - Proto: добавить additive `ConversationWorkbenchRequest`, `ConversationWorkbenchResponse`, `ConversationWorkbenchEvent` и command/event oneof в `crates/desktop-ipc/proto/evohime.desktop.proto` после проверки свободных tags; сохранить major, replay/resync и bounded frame limits.
 - Bridge: связать `crates/evohime-core/src/ipc_bridge.rs`, `desktop/evohime-electron/src/shared/api.ts`, `desktop/evohime-electron/src/preload/index.ts` и `desktop/evohime-electron/src/main/shell-bridge.ts`; renderer не получает Core/storage authority.
-- UI: создать `desktop/evohime-electron/src/renderer/src/ConversationWorkbenchPanel.tsx` только как projection/action surface; тесты — `desktop/evohime-electron/tests/conversation_workbench.test.tsx` и protocol/typecheck gates.
+- UI: собрать Workbench из существующих `OperationsPanel`, `TracePanel`,
+  `ContextUsage`, task/conversation projections и capability-specific views;
+  новый panel допустим как layout container, но не дублирует их state.
 
 ### Acceptance-to-projection matrix
 
 - `C01` — Есть единый Conversation Workbench рядом с chat. → дать bounded projection и явные Core-checked actions.
+- `C02` — Files/Diff/Tasks/Terminal/Browser/Usage представлены отдельными
+  capability-aware tabs. → render descriptor registry, lazy-mount heavy tabs
+  and keep unavailable tabs non-callable with an explicit reason.
 - `C04` — Tabs scoped к текущей conversation/workspace/backend snapshot. → дать bounded projection и явные Core-checked actions.
 - `C05` — Есть typed cross-links из conversation events в workbench resources. → дать bounded projection и явные Core-checked actions.
 - `C06` — Presentation state безопасно сохраняется per conversation. → дать bounded projection и явные Core-checked actions.
 - `C07` — Live updates используют общий event/projection механизм. → показывать состояние только из Core event/evidence, без локального вывода renderer.
+- Switching conversations clears/rekeys live subscriptions before painting the
+  next projection, preventing stale terminal/files/browser state flash.
 
 ### Client safety and replay
 

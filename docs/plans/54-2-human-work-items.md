@@ -11,13 +11,13 @@
 ### Блокирующие
 
 - План 54.1 — contract, validators, storage policy и errors.
+- Agent Role Profiles/TeamProtocol roster snapshot and durable human identity binding.
 - Existing workflow/child/provider/tool/memory boundaries, budgets, cancellation, audit и unknown-outcome semantics.
 
 ### Опциональные
 
-- План 45.0 — зависимость из обзора.
-- Event Trigger Runtime v1 — реализованный контракт из `../architecture.md`.
-- План 35.0 — зависимость из обзора.
+- Structured Response Contract, Event Trigger Runtime, Invocation Presets and
+  Causal Collaboration Bus adapters из overview.
 
 ## Реализация
 
@@ -36,6 +36,9 @@
 - На старте run загрузить exact contract/policy snapshot и проверить correlation, idempotency, budget, cancellation и capability grant непосредственно перед effect.
 - Для каждого внешнего/необратимого вызова записать before/after-dispatch evidence; unknown outcome переводить в reconciliation, без blind retry.
 - Тесты: `crates/evohime-core/tests/human_work_items_recovery.rs` — timeout/cancel, duplicate, stale version/lease, crash до/после dispatch, restart и optional-unavailable.
+- Human submission несёт authenticated shell actor, schema/revision и
+  idempotency key; forged agent-originated `human` response, late response к
+  expired/cancelled item и timeout auto-completion fail closed.
 
 ### Acceptance-to-runtime matrix
 

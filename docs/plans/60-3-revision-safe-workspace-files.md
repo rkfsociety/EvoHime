@@ -15,7 +15,7 @@
 
 ### Опциональные
 
-- План 40.0 — зависимость из обзора.
+- Incremental Change Protocol provenance adapter из overview.
 
 ## Реализация
 
@@ -37,6 +37,9 @@
 ### Acceptance-to-projection matrix
 
 - `C09` — Workbench/Artifact layers используют refs, а не обходят Core file semantics. → дать bounded projection и явные Core-checked actions.
+- IPC never returns unrestricted host absolute paths. Workbench Files/Diff,
+  browser downloads/screenshots and Artifact handoffs consume typed refs and
+  explicit import/apply actions instead of direct workspace writes.
 
 ### Client safety and replay
 

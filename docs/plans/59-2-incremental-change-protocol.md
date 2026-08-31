@@ -11,13 +11,12 @@
 ### Блокирующие
 
 - План 59.1 — contract, validators, storage policy и errors.
+- Plan Artifact and Workspace State Checkpoint runtime/recovery surfaces.
 - Existing workflow/child/provider/tool/memory boundaries, budgets, cancellation, audit и unknown-outcome semantics.
 
 ### Опциональные
 
-- План 57.0 — зависимость из обзора.
-- План 58.0 — зависимость из обзора.
-- План 38.0 — зависимость из обзора.
+- Adaptive Tool Catalog and Revision-Safe Workspace Files adapters из overview.
 
 ## Реализация
 
@@ -42,6 +41,10 @@
 - `C04` — Workspace drift проверяется до применения stale plan. → проверить exact revision/hash перед mutation и сохранить observed evidence.
 - `C07` — Checkpoint сохраняет incremental progress. → провести через typed outcome, timeout, cancellation и idempotency.
 - `C08` — После завершения обновляется change/code summary и artifact lineage. → проверить exact revision/hash перед mutation и сохранить observed evidence.
+- Before every item apply, recompute relevant baseline/path fingerprints;
+  conflicting drift forces re-read/replan. Parallel items require disjoint
+  canonical write scopes or an explicit reconciliation artifact, never
+  last-writer-wins.
 
 ### Recovery contract
 

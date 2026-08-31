@@ -11,11 +11,12 @@
 ### Блокирующие
 
 - План 58.1 — contract, validators, storage policy и errors.
+- ArtifactStore snapshot refs and TaskCheckpoint composition contract.
 - Existing workflow/child/provider/tool/memory boundaries, budgets, cancellation, audit и unknown-outcome semantics.
 
 ### Опциональные
 
-- План 57.0 — зависимость из обзора.
+- Plan Artifact and Revision-Safe Workspace Files integrations из overview.
 
 ## Реализация
 
@@ -42,6 +43,14 @@
 - `C04` — Есть независимые RestoreWorkspace/RestoreTask/RestoreBoth flows. → проверить exact revision/hash перед mutation и сохранить observed evidence.
 - `C06` — Snapshot storage content-addressed/bounded и sensitivity-aware. → журналировать переходы и восстановление через replay/reconciliation.
 - `C07` — Restore journaled и recoverable. → журналировать переходы и восстановление через replay/reconciliation.
+- Restore uses staged writes where supported; otherwise intent/result is
+  recorded per path and partial/unknown outcome is surfaced. Preflight compares
+  current fingerprints and requires explicit conflict disposition before any
+  overwrite; no `git reset --hard` or user-history mutation.
+- Capture boundaries cover before first mutation, after edit groups, before/
+  after potentially mutating commands, risky formatter/codegen, pause/
+  compaction/shutdown and explicit user request, with bounded debounce and
+  change detection rather than full snapshot per turn.
 
 ### Recovery contract
 

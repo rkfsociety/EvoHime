@@ -16,16 +16,20 @@
 ### Блокирующие
 
 - План 52.0 — scope, requirements, non-goals и dependency map.
+- Conversation Event Log v1 и TaskCheckpoint v1 projection contracts.
 - Core capability/policy/approval, SQLite migration, event journal и authenticated IPC.
 
 ### Опциональные
 
-- План 23.0 — зависимость из обзора.
+- Agentic Browser Session и Revision-Safe Workspace Files capabilities из overview.
 
 ## Реализация
 
 0. Сверить overview с live code/docs/tests/git log; если контракт уже существует, собрать evidence для закрытия, не создавая второй authority.
 1. Описать versioned fields, enums, transitions, scope, actor/provenance, idempotency, limits, sensitivity и compatibility. Для mutation определить optimistic version и stale outcome.
+   Ввести built-in `WorkbenchTabDescriptor` registry с required capabilities,
+   availability reason, persistence policy и badge source; workflow/skill не
+   может зарегистрировать executable tab.
 2. Реализовать Rust validators и canonical serde/JSON/Proto representation; unknown version, oversized input и authority-bearing unknown data дают typed error.
 3. Добавить durable store и additive migration с backup-before-migrate только если состояние переживает restart; ephemeral state закрепить отрицательным persistence test.
 4. Добавить deterministic fixtures: valid/invalid, duplicate, stale, redaction, limit и migration failure; выдать evidence-пакет этапу 2.
@@ -41,8 +45,12 @@
 
 ### Поверхности и контракт
 
-- `crates/evohime-core/src/conversation_workbench.rs`: ввести `ConversationWorkbenchDefinition`, `ConversationWorkbenchPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
-- Storage: `crates/evohime-local-storage/src/conversation_workbench_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
+- Core projection composer использует `conversation_event_log.rs`,
+  TaskCheckpoint и existing tool/event refs; новый workbench runtime или
+  task/event store не создаётся.
+- Core projection ephemeral. Только content-free presentation state (active
+  tab, split sizes, collapsed groups) хранится shell-side per conversation с
+  bounded schema/version; raw terminal/browser/file content не persists.
 - Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
 - Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/conversation_workbench_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
 
@@ -50,6 +58,9 @@
 
 - `C03` — Все authoritative операции проходят Core services. → зафиксировать typed invariant, error code и deterministic fixture.
 - `C08` — Sensitive data и unavailable capabilities корректно ограничены. → задать Core-owned authority/sensitivity policy и fail-closed validation.
+- Availability вычисляется по capability handshake/snapshot, а не по имени
+  backend; Files/Diff/Tasks/Terminal/Browser/Usage имеют отдельные typed source
+  contracts и честный `unavailable`.
 
 ### Definition freeze
 

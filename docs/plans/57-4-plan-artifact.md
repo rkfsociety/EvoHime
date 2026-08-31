@@ -19,14 +19,15 @@
 
 ## Матрица критериев
 
-- [ ] Есть versioned `PlanArtifact`/`PlanStep` contract с identity, revision, hash и provenance.
-- [ ] Acceptance criteria типизированы, имеют `evidence_kind`, а их status выводится из Core-owned evidence, не из `done=true` модели.
-- [ ] Переход `Plan -> Execute` выполняется только Core-командой до первого side effect.
-- [ ] Plan steps разрешают capabilities через Core registry и не несут raw executable identity как authority.
-- [ ] Accepted plan revision/hash immutable; material deviation требует revalidation или replan.
-- [ ] Execution/recovery сохраняют unknown outcome и не повторяют внешний effect вслепую.
-- [ ] Plan, criteria и evidence переживают restart в bounded durable state.
-- [ ] IPC/UI показывают только bounded redacted projection и явные actions.
+- [ ] Есть versioned PlanArtifact с immutable revisions.
+- [ ] Planning и Execution являются явными режимами/переходами.
+- [ ] Planning default не выполняет обычные mutating effects.
+- [ ] Plan содержит steps, assumptions, risks и acceptance criteria.
+- [ ] Core валидирует plan перед acceptance.
+- [ ] ExecutePlan фиксирует exact revision/hash и создаёт execution snapshot.
+- [ ] TaskCheckpoint отслеживает фактическое выполнение отдельно от plan.
+- [ ] Material deviations имеют явный re-plan path.
+- [ ] Plan acceptance не заменяет security approvals.
 
 ## Обязательная проверка
 

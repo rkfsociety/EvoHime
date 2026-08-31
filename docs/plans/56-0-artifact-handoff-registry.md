@@ -38,14 +38,16 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Блокирующие
 
-- План 23.0 — Task Checkpoint: структурированное состояние задачи для compaction и recovery.
-- План 27.0 — Retained Child Contexts: mailbox и повторное использование child agents.
+- существующие ArtifactStore, Retained Child Contexts, Agent Role Profiles и
+  Team SOP Protocols contracts из live code и `../architecture.md`;
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 
 ### Опциональные
 
-- План 30.0 — Workflow Package: переносимый import/export без секретов и с rebinding зависимостей.
-- План 36.0 — Agent Benchmark Matrix: многократные model/strategy evals и regression tracking.
+- Workflow Package и Agent Benchmark Matrix могут публиковать typed artifacts;
+  без adapters registry остаётся полностью работоспособным для child/team runs.
+- TaskCheckpoint может хранить bounded artifact refs; отсутствие этой
+  интеграции не блокирует registry lifecycle.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue
@@ -123,3 +125,10 @@ Rejected
 ## Связанный issue
 
 - [#36 Artifact Handoff Registry: typed deliverables, lineage и freshness для multi-agent работы](https://github.com/rkfsociety/EvoHime/issues/36)
+
+## Результат ревью 2026-09-01
+
+- Registry привязан к существующему ArtifactStore и реализованным role/team/
+  retained-child contracts; отдельный byte store запрещён.
+- Workflow Package, benchmark и TaskCheckpoint определены как consumers, а не
+  ложные prerequisites.

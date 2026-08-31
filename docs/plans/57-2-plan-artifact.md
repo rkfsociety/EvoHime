@@ -11,12 +11,12 @@
 ### Блокирующие
 
 - План 57.1 — contract, validators, storage policy и errors.
+- Legacy planning/review paths adapted to the single PlanArtifact authority.
 - Existing workflow/child/provider/tool/memory boundaries, budgets, cancellation, audit и unknown-outcome semantics.
 
 ### Опциональные
 
-- План 23.0 — зависимость из обзора.
-- План 40.0 — зависимость из обзора.
+- UI/diagnostics integration из overview.
 
 ## Реализация
 
@@ -38,9 +38,18 @@
 
 ### Acceptance-to-runtime matrix
 
-- `C01` — Есть versioned `PlanArtifact`/`PlanStep` contract с identity, revision, → проверить exact revision/hash перед mutation и сохранить observed evidence.
-- `C06` — Execution/recovery сохраняют unknown outcome и не повторяют внешний → журналировать переходы и восстановление через replay/reconciliation.
-- `C07` — Plan, criteria и evidence переживают restart в bounded durable state. → журналировать переходы и восстановление через replay/reconciliation.
+- `C02` — Planning и Execution являются явными режимами/переходами. → Core
+  state machine and explicit `ExecutePlan` command.
+- `C03` — Planning default не выполняет обычные mutating effects. → read-only
+  planning capability snapshot and mutation-denial fixtures.
+- `C06` — ExecutePlan фиксирует exact revision/hash и создаёт execution
+  snapshot. → atomic binding before first effect and stale-hash rejection.
+- `C07` — TaskCheckpoint отслеживает фактическое выполнение отдельно от plan.
+  → runtime progress/deviations/evidence reference immutable plan revision.
+- `C08` — Material deviations имеют явный re-plan path. → minor/material
+  classifier, pause and append-only new revision flow.
+- `C09` — Plan acceptance не заменяет security approvals. → re-run ordinary
+  policy/approval immediately before every effect.
 
 ### Recovery contract
 
@@ -49,8 +58,10 @@
 
 ## Критерии выхода
 
-- [ ] Переход `Plan -> Execute` выполняется только Core-командой до первого side effect.
-- [ ] Accepted plan revision/hash закреплён на run; material deviation даёт revalidation или replan.
+- [ ] Planning/Execution explicit and planning default read-only.
+- [ ] ExecutePlan pins exact revision/hash before the first side effect.
+- [ ] TaskCheckpoint progress remains separate from immutable plan state.
+- [ ] Material deviation pauses into re-plan; acceptance grants no approval.
 - [ ] Happy path выдаёт typed result только после Core validation.
 - [ ] Duplicate/stale/limit/cancel/restart/unavailable имеют отдельные outcomes.
 - [ ] Unknown external effect не повторяется автоматически.

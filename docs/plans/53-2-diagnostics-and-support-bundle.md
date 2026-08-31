@@ -11,11 +11,12 @@
 ### Блокирующие
 
 - План 53.1 — contract, validators, storage policy и errors.
+- Existing shell bundle assembler and Core health/run snapshot providers.
 - Existing workflow/child/provider/tool/memory boundaries, budgets, cancellation, audit и unknown-outcome semantics.
 
 ### Опциональные
 
-- План 25.0 — зависимость из обзора.
+- Goal/TaskCheckpoint selected-run summaries.
 
 ## Реализация
 
@@ -30,9 +31,13 @@
 
 ### Runtime vertical slice
 
-- Entrypoint: `crates/evohime-core/src/diagnostics_and_support_bundle.rs` + handler в `crates/evohime-core/src/lib.rs`; сервис `DiagnosticsAndSupportBundleService` должен выполнять `validate → policy → bounded operation → typed result/event`.
+- Core snapshot handler выполняет bounded health/run collection; Electron main
+  assembler получает только typed/redacted sections, добавляет shell-owned
+  sections, строит preview, issue draft и deterministic manifest.
 - На старте run загрузить exact contract/policy snapshot и проверить correlation, idempotency, budget, cancellation и capability grant непосредственно перед effect.
-- Для каждого внешнего/необратимого вызова записать before/after-dispatch evidence; unknown outcome переводить в reconciliation, без blind retry.
+- Перед user-selected save выполнить второй scan всего текстового archive;
+  unknown/blocked section перечислить в manifest. Temporary archive создаётся
+  с restrictive ACL и удаляется при cancel/failure; network запрещён тестом.
 - Тесты: `crates/evohime-core/tests/diagnostics_and_support_bundle_recovery.rs` — timeout/cancel, duplicate, stale version/lease, crash до/после dispatch, restart и optional-unavailable.
 
 ### Acceptance-to-runtime matrix

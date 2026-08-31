@@ -42,11 +42,17 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Блокирующие
 
-- План 57.0 — Plan Artifact: versioned planning contract и явный переход Plan → Execute.
+- реализованные TaskCheckpoint v1, ArtifactStore и workspace sandbox/path
+  contracts из live code и `../architecture.md`;
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 
 ### Опциональные
 
+- Plan Artifact (план 57) может связать checkpoint с accepted plan revision;
+  без него create/compare/restore работают по task/run provenance.
+- Revision-Safe Workspace Files (план 60) позже унифицирует file refs и
+  preconditions; до него план 58 обязан иметь собственный bounded preflight и
+  не может выполнять silent overwrite.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue
@@ -109,3 +115,10 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ## Связанный issue
 
 - [#38 Workspace State Checkpoints: безопасный rollback файлов отдельно от task history](https://github.com/rkfsociety/EvoHime/issues/38)
+
+## Результат ревью 2026-09-01
+
+- Убрана необоснованная blocking-зависимость от Plan Artifact; реальными
+  prerequisites являются TaskCheckpoint, ArtifactStore и workspace sandbox.
+- Зафиксирован самостоятельный restore preflight до последующей унификации с
+  revision-safe file contract плана 60.

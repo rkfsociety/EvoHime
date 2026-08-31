@@ -15,7 +15,7 @@
 
 ### Опциональные
 
-- План 25.0 — зависимость из обзора.
+- Goal/TaskCheckpoint selected-run summaries.
 
 ## Реализация
 
@@ -31,7 +31,9 @@
 ### Protocol and client surfaces
 
 - Proto: добавить additive `DiagnosticsAndSupportBundleRequest`, `DiagnosticsAndSupportBundleResponse`, `DiagnosticsAndSupportBundleEvent` и command/event oneof в `crates/desktop-ipc/proto/evohime.desktop.proto` после проверки свободных tags; сохранить major, replay/resync и bounded frame limits.
-- Bridge: связать `crates/evohime-core/src/ipc_bridge.rs`, `desktop/evohime-electron/src/shared/api.ts`, `desktop/evohime-electron/src/preload/index.ts` и `desktop/evohime-electron/src/main/shell-bridge.ts`; renderer не получает Core/storage authority.
+- Bridge: расширить существующий `shell.exportDiagnostics`: preview/request
+  проходит preload allowlist, Core snapshot приходит через authenticated IPC,
+  а native save/ZIP остаётся только в Electron main.
 - UI: создать `desktop/evohime-electron/src/renderer/src/DiagnosticsAndSupportBundlePanel.tsx` только как projection/action surface; тесты — `desktop/evohime-electron/tests/diagnostics_and_support_bundle.test.tsx` и protocol/typecheck gates.
 
 ### Acceptance-to-projection matrix

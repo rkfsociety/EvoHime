@@ -21,11 +21,13 @@ event-journal, provider и supervisor контракты не заменяютс
 immutable/versioned записи; для внешних эффектов сохранять unknown outcome, а
 не повторять side effect вслепую.
 
-Кандидатная точка интеграции: `crates/evohime-core/src/revision_safe_workspace_files.rs`,
-а также соответствующий storage store, `crates/desktop-ipc/proto/evohime.desktop.proto`,
-Electron main/preload bridge, bounded renderer projection и focused tests.
-Имена файлов проверяются по live checkout на этапе реализации и не являются
-заранее утверждённым API.
+План обязан стать общей mutation boundary для существующих
+`filesystem.read`, `filesystem.write`, `filesystem.patch`, advanced file tools
+и mediated external-agent writes. Сейчас read возвращает host path, write не
+имеет precondition, а patch допускает fuzzy context search; эти legacy paths
+должны мигрировать на один Core service, иначе новый contract не считается
+реализованным. ArtifactStore владеет upload/output bytes, sandbox — canonical
+path containment, event journal — mutation intent/outcome.
 
 ## Этапы направления
 
@@ -38,12 +40,14 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Блокирующие
 
-- Специфических межплановых blocking зависимостей нет; используется текущий Core/IPC фундамент проекта.
+- существующие ArtifactStore, tool registry, workspace sandbox/path
+  canonicalization, event journal и Sensitive Data Guardrails v1;
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 
 ### Опциональные
 
-- План 40.0 — Sensitive Data Guardrails: PII/secret detection и streaming redaction на model/tool boundaries.
+- Incremental Change Protocol (план 59) может передавать plan-item/change-set
+  provenance; без него file mutations сохраняют run/tool provenance.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue
@@ -120,3 +124,11 @@ scratch/     # run-scoped ephemeral working files
 ## Связанный issue
 
 - [#40 Revision-Safe Workspace Files: uploads/workspace/outputs namespaces и stale-write protection](https://github.com/rkfsociety/EvoHime/issues/40)
+
+## Результат ревью 2026-09-01
+
+- План привязан к фактическим legacy read/write/patch paths и требует их
+  миграции на единую boundary, включая отказ от default fuzzy patch apply.
+- Persistence разделена по owners: ArtifactStore для upload/output bytes,
+  event journal для mutation recovery, on-demand refs для workspace и
+  run-scoped cleanup для scratch.

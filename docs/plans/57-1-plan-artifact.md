@@ -4,7 +4,7 @@
 
 ## Цель
 
-Зафиксировать authoritative contract «Plan Artifact: versioned planning contract и явный переход Plan → Execute» и сделать его реализуемым: первичный выход — versioned `PlanArtifact`/`PlanStep` contract с типизированными acceptance criteria.
+Зафиксировать authoritative contract «Plan Artifact: versioned planning contract и явный переход Plan → Execute» и сделать его реализуемым: первичный выход — versioned `PlanArtifact`/`PlanStep` contract с immutable revisions, steps, assumptions, risks и типизированными acceptance criteria.
 
 ## Граница
 
@@ -16,12 +16,13 @@
 ### Блокирующие
 
 - План 57.0 — scope, requirements, non-goals и dependency map.
+- Existing `plan.rs`, `plan_context.rs`, `plan_review.rs`, TaskCheckpoint and
+  Sensitive Data Guardrails contracts.
 - Core capability/policy/approval, SQLite migration, event journal и authenticated IPC.
 
 ### Опциональные
 
-- План 23.0 — зависимость из обзора.
-- План 40.0 — зависимость из обзора.
+- UI/diagnostics integration из overview.
 
 ## Реализация
 
@@ -42,17 +43,22 @@
 
 ### Поверхности и контракт
 
-- `crates/evohime-core/src/plan_artifact.rs`: ввести `PlanArtifactDefinition`, `PlanArtifactPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
+- `plan_artifact.rs` becomes the versioned aggregate; legacy `TaskPlanSpec`,
+  plan context and review inputs receive explicit adapters and cannot maintain
+  a second mutable acceptance/execution status.
 - Storage: `crates/evohime-local-storage/src/plan_artifact_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
 - Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
 - Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/plan_artifact_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
 
 ### Acceptance-to-contract matrix
 
-- `C02` — Acceptance criteria типизированы, имеют `evidence_kind`, а их status → зафиксировать typed invariant, error code и deterministic fixture.
-- `C03` — Переход `Plan -> Execute` выполняется только Core-командой до первого → зафиксировать typed invariant, error code и deterministic fixture.
-- `C04` — Plan steps разрешают capabilities через Core registry и не несут raw → ввести versioned Rust-типы, enum-состояния и canonical serialization.
-- `C05` — Accepted plan revision/hash immutable; material deviation требует → зафиксировать fingerprint, preconditions и provenance-поля.
+- `C01` — Есть versioned PlanArtifact с immutable revisions. → identity,
+  canonical hash, append-only revisions and stale optimistic preconditions.
+- `C04` — Plan содержит steps, assumptions, risks и acceptance criteria. →
+  bounded typed fields, dependency validation and evidence-kind contract.
+- `C05` — Core валидирует plan перед acceptance. → schema, registry,
+  dependency, risk/capability and sensitivity validators; model-supplied
+  `done/accepted` never changes authoritative status.
 
 ### Definition freeze
 
@@ -61,10 +67,9 @@
 
 ## Критерии выхода
 
-- [ ] Есть versioned `PlanArtifact`/`PlanStep` contract с identity, revision,
-  hash и provenance.
-- [ ] Acceptance criteria типизированы, имеют `evidence_kind`, а их status
-  выводится из Core-owned evidence.
+- [ ] Есть versioned PlanArtifact с immutable revisions.
+- [ ] Plan содержит steps, assumptions, risks и typed acceptance criteria.
+- [ ] Core validation precedes acceptance.
 - [ ] Contract не расширяет capabilities и не переносит authority за пределы Core.
 - [ ] Storage/ephemeral decision и rollback доказаны тестом.
 

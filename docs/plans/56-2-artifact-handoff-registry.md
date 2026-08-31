@@ -11,14 +11,12 @@
 ### Блокирующие
 
 - План 56.1 — contract, validators, storage policy и errors.
+- ArtifactStore read/projection policy and pinned team/role identity snapshots.
 - Existing workflow/child/provider/tool/memory boundaries, budgets, cancellation, audit и unknown-outcome semantics.
 
 ### Опциональные
 
-- План 23.0 — зависимость из обзора.
-- План 27.0 — зависимость из обзора.
-- План 30.0 — зависимость из обзора.
-- План 36.0 — зависимость из обзора.
+- Workflow Package, Benchmark Matrix and TaskCheckpoint consumers из overview.
 
 ## Реализация
 
@@ -44,6 +42,12 @@
 - `C02` — Есть versioned artifact contracts/types. → проверить exact revision/hash перед mutation и сохранить observed evidence.
 - `C04` — Handoffs typed и имеют producer/consumer identity. → провести через typed outcome, timeout, cancellation и idempotency.
 - `C06` — Artifact freshness может зависеть от workspace/parent fingerprints. → проверить exact revision/hash перед mutation и сохранить observed evidence.
+- Acceptance never follows from producer `done`; consumer/reviewer policy and
+  exact artifact revision decide it. Parent/workspace drift marks stale without
+  mutating historical revisions.
+- Freshness invalidation is selective by bounded source paths and parent
+  artifact revisions; a changed unrelated file does not stale the entire
+  registry, while unknown scope yields honest `PossiblyStale`.
 
 ### Recovery contract
 

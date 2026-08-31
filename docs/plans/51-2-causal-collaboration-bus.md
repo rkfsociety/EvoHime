@@ -11,12 +11,12 @@
 ### Блокирующие
 
 - План 51.1 — contract, validators, storage policy и errors.
+- Retained-child delivery/consume markers и pinned TeamProtocol roster.
 - Existing workflow/child/provider/tool/memory boundaries, budgets, cancellation, audit и unknown-outcome semantics.
 
 ### Опциональные
 
-- План 27.0 — зависимость из обзора.
-- План 47.0 — зависимость из обзора.
+- Artifact Handoff Registry integration из overview.
 
 ## Реализация
 
@@ -35,6 +35,9 @@
 - На старте run загрузить exact contract/policy snapshot и проверить correlation, idempotency, budget, cancellation и capability grant непосредственно перед effect.
 - Для каждого внешнего/необратимого вызова записать before/after-dispatch evidence; unknown outcome переводить в reconciliation, без blind retry.
 - Тесты: `crates/evohime-core/tests/causal_collaboration_bus_recovery.rs` — timeout/cancel, duplicate, stale version/lease, crash до/после dispatch, restart и optional-unavailable.
+- Runtime обязан различать transport delivery и model consumption, запрещать
+  cross-team/expired destinations и coalesce только явно разрешённые
+  progress kinds; formal/approval-like messages не coalesce-ятся.
 
 ### Acceptance-to-runtime matrix
 

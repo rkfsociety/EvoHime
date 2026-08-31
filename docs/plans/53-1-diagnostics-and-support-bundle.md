@@ -16,11 +16,13 @@
 ### Блокирующие
 
 - План 53.0 — scope, requirements, non-goals и dependency map.
+- Existing shell diagnostic bundle v1/redactor, Core doctor/observability и
+  Sensitive Data Guardrails.
 - Core capability/policy/approval, SQLite migration, event journal и authenticated IPC.
 
 ### Опциональные
 
-- План 25.0 — зависимость из обзора.
+- Goal/TaskCheckpoint selected-run summaries.
 
 ## Реализация
 
@@ -41,8 +43,12 @@
 
 ### Поверхности и контракт
 
-- `crates/evohime-core/src/diagnostics_and_support_bundle.rs`: ввести `DiagnosticsAndSupportBundleDefinition`, `DiagnosticsAndSupportBundlePolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
-- Storage: состояние этапа остаётся ephemeral; новую durable таблицу и migration не добавлять. Добавить negative persistence test, а диагностический результат передавать через существующий event/release evidence.
+- Core typed snapshot развивает `doctor.rs`/`observability.rs`; Electron main
+  развивает `diagnostics/bundle.ts` и `diagnostics/redact.ts` до versioned
+  manifest/sections/redaction report. Archive assembler не переносится в
+  renderer и не дублируется в Core.
+- Snapshot остаётся ephemeral. Durable только minimal crash marker через
+  существующий recovery owner; новый diagnostics history store не создаётся.
 - Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
 - Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/diagnostics_and_support_bundle_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
 
@@ -56,7 +62,9 @@
 ### Definition freeze
 
 - До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Diagnostics & Support Bundle: redacted health snapshot и воспроизводимый issue draft».
-- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+- Evidence stage 1: focused Core doctor/observability, desktop IPC и Electron
+  diagnostic bundle/redaction tests; migration suite требуется только если
+  изменяется существующий crash-marker schema.
 
 ## Критерии выхода
 

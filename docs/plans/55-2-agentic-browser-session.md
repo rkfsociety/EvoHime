@@ -11,11 +11,13 @@
 ### Блокирующие
 
 - План 55.1 — contract, validators, storage policy и errors.
+- Existing browser-session tools are migrated atomically or disabled; no
+  legacy selector/CDP bypass remains registered.
 - Existing workflow/child/provider/tool/memory boundaries, budgets, cancellation, audit и unknown-outcome semantics.
 
 ### Опциональные
 
-- План 41.0 — зависимость из обзора.
+- Execution Policy Profiles adapter из overview.
 
 ## Реализация
 
@@ -30,7 +32,9 @@
 
 ### Runtime vertical slice
 
-- Entrypoint: `crates/evohime-core/src/agentic_browser_session.rs` + handler в `crates/evohime-core/src/lib.rs`; сервис `AgenticBrowserSessionService` должен выполнять `validate → policy → bounded operation → typed result/event`.
+- Core service owns lifecycle/ref/policy state; packaged browser adapter owns
+  engine mechanics only and accepts bounded typed commands, never raw CDP from
+  model/renderer.
 - На старте run загрузить exact contract/policy snapshot и проверить correlation, idempotency, budget, cancellation и capability grant непосредственно перед effect.
 - Для каждого внешнего/необратимого вызова записать before/after-dispatch evidence; unknown outcome переводить в reconciliation, без blind retry.
 - Тесты: `crates/evohime-core/tests/agentic_browser_session_recovery.rs` — timeout/cancel, duplicate, stale version/lease, crash до/после dispatch, restart и optional-unavailable.
@@ -40,6 +44,10 @@
 - `C02` — Модель работает через typed browser tools и stable element refs. → провести через typed outcome, timeout, cancellation и idempotency.
 - `C05` — Default browser profile isolated/ephemeral. → разрешить Core snapshot, проверить capability/locality и закрепить его на run.
 - `C06` — Upload/download проходят Artifact/Core boundaries. → проверить exact revision/hash перед mutation и сохранить observed evidence.
+- Navigation validates every redirect and resolved destination. Page revision
+  changes invalidate element refs; click/type require exact session/page/ref
+  preconditions. Human takeover acquires an exclusive lease and fences agent
+  actions until explicit release.
 
 ### Recovery contract
 

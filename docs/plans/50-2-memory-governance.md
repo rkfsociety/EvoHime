@@ -11,12 +11,13 @@
 ### Блокирующие
 
 - План 50.1 — contract, validators, storage policy и errors.
+- Все существующие durable memory create/update/extraction paths подключены к
+  единому gate; прямой legacy INSERT запрещён.
 - Existing workflow/child/provider/tool/memory boundaries, budgets, cancellation, audit и unknown-outcome semantics.
 
 ### Опциональные
 
-- План 23.0 — зависимость из обзора.
-- План 29.0 — зависимость из обзора.
+- Continual Refinement и TaskCheckpoint consumers из overview.
 
 ## Реализация
 
@@ -35,6 +36,9 @@
 - На старте run загрузить exact contract/policy snapshot и проверить correlation, idempotency, budget, cancellation и capability grant непосредственно перед effect.
 - Для каждого внешнего/необратимого вызова записать before/after-dispatch evidence; unknown outcome переводить в reconciliation, без blind retry.
 - Тесты: `crates/evohime-core/tests/memory_governance_recovery.rs` — timeout/cancel, duplicate, stale version/lease, crash до/после dispatch, restart и optional-unavailable.
+- Реализовать versioned shadow mode: decision/disagreement metrics bounded и
+  redacted, legacy write не блокируется только при явно pinned shadow policy;
+  enforcement rollout требует отдельного policy revision.
 
 ### Acceptance-to-runtime matrix
 

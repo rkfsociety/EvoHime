@@ -21,11 +21,12 @@ event-journal, provider и supervisor контракты не заменяютс
 immutable/versioned записи; для внешних эффектов сохранять unknown outcome, а
 не повторять side effect вслепую.
 
-Кандидатная точка интеграции: `crates/evohime-core/src/causal_collaboration_bus.rs`,
-а также соответствующий storage store, `crates/desktop-ipc/proto/evohime.desktop.proto`,
-Electron main/preload bridge, bounded renderer projection и focused tests.
-Имена файлов проверяются по live checkout на этапе реализации и не являются
-заранее утверждённым API.
+Кандидатный policy/routing слой —
+`crates/evohime-core/src/causal_collaboration_bus.rs`, но transport и storage
+обязаны расширять `retained_child.rs`/`retained_child_store.rs`, а roster и
+разрешённые routes — использовать `agent_role_profiles.rs` и
+`team_sop_protocols.rs` с их durable stores. Второй mailbox, параллельный
+roster или model-supplied sender identity запрещены.
 
 ## Этапы направления
 
@@ -38,12 +39,14 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Блокирующие
 
-- План 27.0 — Retained Child Contexts: mailbox и повторное использование child agents.
+- реализованные Retained Child Contexts, Agent Role Profiles и Team SOP
+  Protocols contracts из `../architecture.md`;
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 
 ### Опциональные
 
-- План 47.0 — Skill Trust Pipeline: deterministic scanning, contextual review и quarantine перед активацией.
+- Artifact Handoff Registry (план 56) для крупных typed deliverables; до него
+  bus передаёт только bounded inline payload и существующие ArtifactStore refs.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue
@@ -109,3 +112,11 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ## Связанный issue
 
 - [#31 Causal Collaboration Bus: typed pub/sub для team agents поверх child mailbox](https://github.com/rkfsociety/EvoHime/issues/31)
+
+## Результат ревью 2026-09-01
+
+- Dependency map привязан к реализованным retained-child, role-profile и
+  TeamProtocol surfaces; нерелевантная зависимость от Skill Trust Pipeline
+  удалена.
+- Зафиксировано переиспользование mailbox/store и bounded degradation до
+  появления semantic Artifact Handoff Registry.

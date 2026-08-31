@@ -11,11 +11,12 @@
 ### Блокирующие
 
 - План 52.1 — contract, validators, storage policy и errors.
+- Conversation Event Log replay cursor и TaskCheckpoint refs.
 - Existing workflow/child/provider/tool/memory boundaries, budgets, cancellation, audit и unknown-outcome semantics.
 
 ### Опциональные
 
-- План 23.0 — зависимость из обзора.
+- Agentic Browser Session и Revision-Safe Workspace Files capabilities из overview.
 
 ## Реализация
 
@@ -32,12 +33,18 @@
 
 - Entrypoint: `crates/evohime-core/src/conversation_workbench.rs` + handler в `crates/evohime-core/src/lib.rs`; сервис `ConversationWorkbenchService` должен выполнять `validate → policy → bounded operation → typed result/event`.
 - На старте run загрузить exact contract/policy snapshot и проверить correlation, idempotency, budget, cancellation и capability grant непосредственно перед effect.
-- Для каждого внешнего/необратимого вызова записать before/after-dispatch evidence; unknown outcome переводить в reconciliation, без blind retry.
+- Workbench сам не dispatch-ит effects: user actions маршрутизируются в
+  существующий authoritative service каждой capability. Unavailable tab не
+  заменяется shell-derived guess; cross-links валидируются по conversation,
+  workspace и backend snapshot.
 - Тесты: `crates/evohime-core/tests/conversation_workbench_recovery.rs` — timeout/cancel, duplicate, stale version/lease, crash до/после dispatch, restart и optional-unavailable.
 
 ### Acceptance-to-runtime matrix
 
-- `C02` — Files/Diff/Tasks/Terminal/Browser/Usage представлены отдельными capability-aware tabs. → проверить exact revision/hash перед mutation и сохранить observed evidence.
+- `C02` — Files/Diff/Tasks/Terminal/Browser/Usage представлены отдельными
+  capability-aware tabs. → resolve each descriptor against the pinned
+  conversation/workspace/backend capability snapshot and return typed
+  availability/reason without dispatching an effect.
 
 ### Recovery contract
 

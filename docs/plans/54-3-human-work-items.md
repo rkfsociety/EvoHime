@@ -15,9 +15,8 @@
 
 ### Опциональные
 
-- План 45.0 — зависимость из обзора.
-- Event Trigger Runtime v1 — реализованный контракт из `../architecture.md`.
-- План 35.0 — зависимость из обзора.
+- Structured Response Contract, Event Trigger Runtime, Invocation Presets and
+  Causal Collaboration Bus adapters из overview.
 
 ## Реализация
 

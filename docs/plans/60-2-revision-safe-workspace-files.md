@@ -11,11 +11,12 @@
 ### Блокирующие
 
 - План 60.1 — contract, validators, storage policy и errors.
+- All registered filesystem mutation tools routed through the shared service.
 - Existing workflow/child/provider/tool/memory boundaries, budgets, cancellation, audit и unknown-outcome semantics.
 
 ### Опциональные
 
-- План 40.0 — зависимость из обзора.
+- Incremental Change Protocol provenance adapter из overview.
 
 ## Реализация
 
@@ -43,6 +44,12 @@
 - `C05` — Uploads immutable по умолчанию, scratch run-scoped. → провести через typed outcome, timeout, cancellation и idempotency.
 - `C06` — После изменений создаётся observed WorkspaceChangeSet. → проверить exact revision/hash перед mutation и сохранить observed evidence.
 - `C07` — External edits инвалидируют stale refs. → проверить exact revision/hash перед mutation и сохранить observed evidence.
+- `filesystem.patch` requires exact base hash and hunk applicability; current
+  fuzzy global context fallback is removed from default semantics. Full write,
+  move and delete require expected-exists/hash/revision preconditions.
+- Shell/build/external-agent writes that cannot be mediated are classified as
+  external drift; Core must not claim per-operation guarantees for them and
+  invalidates affected refs before the next mediated mutation.
 
 ### Recovery contract
 

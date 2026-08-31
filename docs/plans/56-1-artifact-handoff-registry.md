@@ -16,14 +16,13 @@
 ### Блокирующие
 
 - План 56.0 — scope, requirements, non-goals и dependency map.
+- Existing ArtifactStore, Retained Child Contexts, Agent Role Profiles and
+  Team SOP Protocols contracts.
 - Core capability/policy/approval, SQLite migration, event journal и authenticated IPC.
 
 ### Опциональные
 
-- План 23.0 — зависимость из обзора.
-- План 27.0 — зависимость из обзора.
-- План 30.0 — зависимость из обзора.
-- План 36.0 — зависимость из обзора.
+- Workflow Package, Benchmark Matrix and TaskCheckpoint consumers из overview.
 
 ## Реализация
 
@@ -44,8 +43,13 @@
 
 ### Поверхности и контракт
 
-- `crates/evohime-core/src/artifact_handoff_registry.rs`: ввести `ArtifactHandoffRegistryDefinition`, `ArtifactHandoffRegistryPolicy`, typed state/event/error types и public validation entrypoint; зарегистрировать модуль в `crates/evohime-core/src/lib.rs`.
-- Storage: `crates/evohime-local-storage/src/artifact_handoff_registry_store.rs` и существующий `LocalDatabase` migration path; migration additive, backup-before-migrate, rollback без частичной записи, а для ephemeral state добавить negative persistence test.
+- `artifact_handoff_registry.rs` хранит semantic contract/lifecycle/lineage;
+  content bytes и sensitivity остаются в существующем ArtifactStore.
+- Новый store содержит только immutable ProjectArtifact revisions, typed
+  handoffs, acceptance and lineage edges. Artifact content hash/ref обязан
+  разрешаться через ArtifactStore; duplicate blob table запрещена.
+- Lineage graph validates scope, existing refs and acyclicity transactionally;
+  producer/consumer identities resolve from pinned role/team runtime context.
 - Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
 - Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/artifact_handoff_registry_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
 

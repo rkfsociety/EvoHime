@@ -15,7 +15,7 @@
 
 ### Опциональные
 
-- План 41.0 — зависимость из обзора.
+- Execution Policy Profiles adapter из overview.
 
 ## Реализация
 
@@ -38,6 +38,8 @@
 
 - `C07` — Workbench может показывать безопасную live projection. → дать bounded projection и явные Core-checked actions.
 - `C08` — Human takeover поддерживается без гонки с agent actions. → дать bounded projection и явные Core-checked actions.
+- UI никогда не получает CDP endpoint, cookies, raw DOM or profile path;
+  takeover actions carry lease/session/page revision and stale state is visible.
 
 ### Client safety and replay
 

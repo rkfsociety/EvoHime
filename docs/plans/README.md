@@ -6,8 +6,8 @@
 [`../architecture.md`](../architecture.md), а подтверждённое состояние — в
 [`../current-state.md`](../current-state.md).
 
-Планы 01–25 и 33–38 завершены и удалены после реализации. Для каждого незавершённого
-направления 26–32 и 46–115 существует обзорный файл `NN-0-slug.md` и четыре самостоятельных файла
+Планы 01–49 завершены и удалены после реализации. Для каждого незавершённого
+направления 50–115 существует обзорный файл `NN-0-slug.md` и четыре самостоятельных файла
 этапов `NN-1-slug.md` … `NN-4-slug.md`. Обзор фиксирует scope, контракт,
 зависимости, ограничения и исходные критерии; этапы содержат исполнимую
 декомпозицию, выходные артефакты, recovery и evidence gates. Следующее новое
@@ -97,6 +97,25 @@ Stage-файлы не удаляются по отдельности: после
   реализацией). Необоснованная ссылка на headless client убрана из обязательной
   границы этапа 26.3.
 
+## Результат ревью планов 50–60 2026-09-01
+
+- Полностью проверены 11 направлений и 55 файлов `50-0` … `60-4` против issues
+  #30–#40, live code, `architecture.md`, `current-state.md` и соседних планов.
+- Greenfield-шаблоны привязаны к существующим owners: memory API/store,
+  retained-child/TeamProtocol, conversation event log, diagnostic bundle v1,
+  browser-session/CDP/SSRF, ArtifactStore, planning contracts, TaskCheckpoint,
+  workspace sandbox и filesystem tools.
+- Устранены ложные blocking/optional dependencies: stage-файлы сохраняют
+  реальные prerequisites, а более поздние integrations имеют явную typed
+  degradation без forward blocking cycles.
+- Для планов 55 и 60 зафиксирована обязательная миграция legacy runtime paths:
+  raw CDP/CSS selector и initial-URL-only SSRF не обходят BrowserSession
+  contract; filesystem read/write/patch не обходят revision-safe service,
+  default fuzzy patch apply запрещён.
+- Исправлены обрезанные criteria в `57-1`/`57-2`; для всех направлений
+  сохранены полные issue acceptance matrices и отдельные evidence/recovery
+  gates.
+
 ## Источники истины
 
 - [`../current-state.md`](../current-state.md) — что подтверждённо реализовано
@@ -125,7 +144,7 @@ Continual Refinement; все четыре направления закрыты 
 `NN-0`, затем четыре stage-файла; межплановые блокирующие зависимости и
 опциональная деградация явно перечислены внутри соответствующих файлов.
 Направления 33–44 закрыты и исключены из списка незавершённых планов.
-Направление 45 (issue #25, External Coding Agent Adapter) закрыто 31 августа
-2026 года; контракт и evidence перенесены в канонические документы.
+Направления 45–49 закрыты; их contracts и evidence перенесены в канонические
+документы. Текущий незавершённый диапазон начинается с плана 50.
 Направление 44 (issue #24, Tool Simulation Runtime) закрыто 31 августа 2026
 года; его контракт и evidence перенесены в канонические документы.

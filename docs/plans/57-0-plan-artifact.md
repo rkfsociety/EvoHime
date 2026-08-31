@@ -21,11 +21,11 @@ event-journal, provider и supervisor контракты не заменяютс
 immutable/versioned записи; для внешних эффектов сохранять unknown outcome, а
 не повторять side effect вслепую.
 
-Кандидатная точка интеграции: `crates/evohime-core/src/plan_artifact.rs`,
-а также соответствующий storage store, `crates/desktop-ipc/proto/evohime.desktop.proto`,
-Electron main/preload bridge, bounded renderer projection и focused tests.
-Имена файлов проверяются по live checkout на этапе реализации и не являются
-заранее утверждённым API.
+Plan Artifact обязан консолидировать существующие `plan.rs`,
+`plan_context.rs`, `plan_review.rs`, TaskCheckpoint и plan-related event
+projection. Новый `plan_artifact.rs` допустим как authoritative versioned
+aggregate, но старые `TaskPlanSpec`/review paths должны либо адаптироваться к
+нему, либо остаться явно read-only inputs; второй mutable plan status запрещён.
 
 ## Этапы направления
 
@@ -38,12 +38,12 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Блокирующие
 
-- План 23.0 — Task Checkpoint: структурированное состояние задачи для compaction и recovery.
+- реализованные TaskCheckpoint v1, capability registry, event journal и
+  Sensitive Data Guardrails v1 из канонической архитектуры;
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 
 ### Опциональные
 
-- План 40.0 — Sensitive Data Guardrails: PII/secret detection и streaming redaction на model/tool boundaries.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue
@@ -83,8 +83,8 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ## Критерии готовности из issue
 
-Критерии должны быть отдельной структурой и подтверждаться независимо от
-свободного текста модели:
+Acceptance criteria внутри plan должны быть отдельной структурой и
+подтверждаться независимо от свободного текста модели:
 
 ```text
 AcceptanceCriterion {
@@ -112,22 +112,17 @@ ManualCheck
 
 Модель не может просто написать `done=true` и считать criterion выполненным.
 
-Критерии направления:
+Критерии направления из issue #37:
 
-- [ ] Есть versioned `PlanArtifact`/`PlanStep` contract с identity, revision,
-  hash и provenance.
-- [ ] Acceptance criteria типизированы, имеют `evidence_kind`, а их status
-  выводится из Core-owned evidence, не из `done=true` модели.
-- [ ] Переход `Plan -> Execute` выполняется только Core-командой до первого
-  side effect.
-- [ ] Plan steps разрешают capabilities через Core registry и не несут raw
-  executable identity как authority.
-- [ ] Accepted plan revision/hash immutable; material deviation требует
-  revalidation или replan.
-- [ ] Execution/recovery сохраняют unknown outcome и не повторяют внешний
-  effect вслепую.
-- [ ] Plan, criteria и evidence переживают restart в bounded durable state.
-- [ ] IPC/UI показывают только bounded redacted projection и явные actions.
+- [ ] Есть versioned PlanArtifact с immutable revisions.
+- [ ] Planning и Execution являются явными режимами/переходами.
+- [ ] Planning default не выполняет обычные mutating effects.
+- [ ] Plan содержит steps, assumptions, risks и acceptance criteria.
+- [ ] Core валидирует plan перед acceptance.
+- [ ] ExecutePlan фиксирует exact revision/hash и создаёт execution snapshot.
+- [ ] TaskCheckpoint отслеживает фактическое выполнение отдельно от plan.
+- [ ] Material deviations имеют явный re-plan path.
+- [ ] Plan acceptance не заменяет security approvals.
 
 ## Ограничения и non-goals
 
@@ -148,3 +143,10 @@ ManualCheck
 ## Связанный issue
 
 - [#37 Plan Artifact: versioned planning contract и явный переход Plan → Execute](https://github.com/rkfsociety/EvoHime/issues/37)
+
+## Результат ревью 2026-09-01
+
+- План сопоставлен с действующими plan/review/TaskCheckpoint surfaces; добавлен
+  обязательный migration/coexistence contract без второго mutable plan state.
+- Sensitive Data Guardrails переведены из опциональной ссылки в обязательную
+  каноническую boundary для plan/evidence projection.
