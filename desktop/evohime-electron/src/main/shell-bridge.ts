@@ -1814,6 +1814,38 @@ function dispatch(
       return accepted(client.send({ modelResiliencePolicy: { schemaVersion: 1, requestId, ownerScope, operation: 'status', expectedVersion: 0, idempotencyKey } }))
     }
 
+    case 'executionBackendRegistry.list':
+    case 'executionBackendRegistry.register':
+    case 'executionBackendRegistry.handshake': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (requestId === null || ownerScope === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректные параметры реестра backend.')
+      const operationName = command.slice('executionBackendRegistry.'.length)
+      const operation = operationName === 'setDefault' ? 'set_default' : operationName
+      const json: Record<string, unknown> = {}
+      if (operation === 'register') {
+        const id = asBoundedString(value['id']); const kind = asBoundedString(value['kind']); const endpoint = value['endpoint'] === undefined ? '' : asBoundedString(value['endpoint']); const authRef = value['authRef'] === undefined ? '' : asBoundedString(value['authRef']); const capabilities = Array.isArray(value['capabilities']) ? value['capabilities'].filter((v): v is string => typeof v === 'string').slice(0, 64) : []
+        const expectedVersion = asBoundedNumber(value['expectedVersion'], Number.MAX_SAFE_INTEGER)
+        if (id === null || kind === null || endpoint === null || authRef === null || expectedVersion === null || (kind !== 'local' && kind !== 'remote')) return failure('invalid-payload', 'Некорректное описание backend.')
+        Object.assign(json, { id, kind, endpoint, auth_ref: authRef, capabilities, expected_version: expectedVersion })
+      } else if (operation === 'handshake') {
+        const backendId = asBoundedString(value['backendId']); const protocolMajor = asBoundedNumber(value['protocolMajor'], 100); const protocolMinor = asBoundedNumber(value['protocolMinor'], 100); const capabilityHash = value['capabilityHash'] === undefined ? '' : asBoundedString(value['capabilityHash']); const capabilities = Array.isArray(value['capabilities']) ? value['capabilities'].filter((v): v is string => typeof v === 'string').slice(0, 64) : []
+        if (backendId === null || protocolMajor === null || protocolMinor === null || capabilityHash === null) return failure('invalid-payload', 'Некорректный handshake backend.')
+        Object.assign(json, { backend_id: backendId, protocol_major: protocolMajor, protocol_minor: protocolMinor, capability_hash: capabilityHash, capabilities })
+      } else if (operation === 'remove' || operation === 'set_default' || operation === 'disable') {
+        const id = asBoundedString(value['id']); const expectedVersion = value['expectedVersion'] === undefined ? 0 : asBoundedNumber(value['expectedVersion'], Number.MAX_SAFE_INTEGER)
+        if (id === null || expectedVersion === null) return failure('invalid-payload', 'Некорректная mutation реестра backend.')
+        Object.assign(json, { id, expected_version: expectedVersion })
+      } else if (operation === 'snapshot') {
+        const backendId = value['backendId'] === undefined ? '' : asBoundedString(value['backendId'])
+        if (backendId === null) return failure('invalid-payload', 'Некорректный snapshot backend.')
+        Object.assign(json, { backend_id: backendId })
+      }
+      return accepted(client.send({ executionBackendRegistry: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(JSON.stringify(json), 'utf8'), expectedVersion: Number(json['expected_version'] || 0), idempotencyKey } }))
+    }
+
     case 'automation.listSchedules': {
       const value = asRecord(payload)
       const ownerScope = asBoundedString(value['ownerScope'])

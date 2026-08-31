@@ -1780,6 +1780,7 @@ message CommandEnvelope {
     SensitiveDataGuardrailsCommand sensitive_data_guardrails = 186;
     ExecutionPolicyProfilesCommand execution_policy_profiles = 187;
     ModelResiliencePolicyCommand model_resilience_policy = 188;
+    ExecutionBackendRegistryCommand execution_backend_registry = 189;
   }
 }
 
@@ -1873,6 +1874,7 @@ message EventEnvelope {
     SensitiveDataGuardrailsEvent sensitive_data_guardrails = 41;
     ExecutionPolicyProfilesEvent execution_policy_profiles = 42;
     ModelResiliencePolicyEvent model_resilience_policy = 43;
+    ExecutionBackendRegistryEvent execution_backend_registry = 44;
   }
 }
 
@@ -1949,6 +1951,27 @@ message ModelResiliencePolicyEvent {
   string terminal_outcome = 10;
   string error_code = 11;
   bytes projection_json = 12;
+}
+
+// Plan 43: bounded metadata-only execution backend registry. Endpoint,
+// credentials, prompts, outputs and executable identities never cross IPC.
+message ExecutionBackendRegistryCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string operation = 4;
+  bytes payload = 5;
+  uint64 expected_version = 6;
+  string idempotency_key = 7;
+}
+message ExecutionBackendRegistryEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  uint64 registry_version = 5;
+  bytes projection_json = 6;
+  string error_code = 7;
 }
 
 // Plan 37: bounded metadata-only middleware pipeline surface. Raw prompts,

@@ -125,3 +125,19 @@ audit хранится по его собственному Core policy.
 - Safety: schema remains v44; IPC is authenticated additive 188/event 43;
   policy projection is metadata-only and provenance recovery forbids blind retry
   after dispatch unknown outcome.
+
+## Plan 43 — Execution Backend Registry v1 (2026-08-31)
+
+- Contract: `evohime-core::execution_backend_registry`, version 1; bounded
+  lowercase backend ids, canonical HTTPS remote endpoints, typed health/failure
+  states, Core-policy capability intersection and immutable run snapshot.
+- Storage: additive SQLite schema v45 with metadata-only backend/default/event
+  tables; credentials are refs only and remote transport is not installed.
+- IPC/UI: authenticated additive command 189/event 44; Electron projection is
+  metadata-only. Remote handshake is explicitly `transport_unavailable`; no
+  automatic failover or blind retry.
+- Focused checks: Core 3/3 registry tests, storage 1/1 focused and 226/226
+  storage regression, desktop IPC 36/36, Electron focused panel 1/1,
+  `npm run check:protocol`, `npm run typecheck`; full Core regression 629 tests
+  passed after the schema assertion update. Evidence contains no credentials,
+  raw prompts/outputs or absolute paths.

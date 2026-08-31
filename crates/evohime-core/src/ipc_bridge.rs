@@ -3890,6 +3890,14 @@ impl IpcBridge {
                     )
                     .await?;
                 }
+                Some(generated::command_envelope::Command::ExecutionBackendRegistry(request)) => {
+                    let result = self.dispatch_execution_backend_registry(request).await;
+                    self.write_execution_backend_registry_response(
+                        writer,
+                        serde_json::to_vec(&result)?,
+                    )
+                    .await?;
+                }
                 Some(generated::command_envelope::Command::ListAutomationSchedules(request)) => {
                     let result = self.dispatch_list_automation_schedules(request).await;
                     self.write_response(
@@ -11092,6 +11100,257 @@ impl IpcBridge {
             "error_code": "",
             "projection_json": {"schema_version": 1, "ephemeral": true, "raw_payload": false, "credentials": false}
         })
+    }
+
+    async fn dispatch_execution_backend_registry(
+        &self,
+        request: generated::ExecutionBackendRegistryCommand,
+    ) -> serde_json::Value {
+        use crate::execution_backend_registry::{
+            BackendDefinition, BackendKind, HealthState, Registry,
+        };
+        if request.schema_version != 1
+            || request.request_id.is_empty()
+            || request.owner_scope.is_empty()
+            || request.idempotency_key.is_empty()
+            || request.payload.len() > 64 * 1024
+        {
+            return serde_json::json!({"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"invalid_request"});
+        }
+        let payload: serde_json::Value = if request.payload.is_empty() {
+            serde_json::json!({})
+        } else {
+            match serde_json::from_slice(&request.payload) {
+                Ok(v) => v,
+                Err(_) => {
+                    return serde_json::json!({"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"invalid_payload"})
+                }
+            }
+        };
+        let database = self.journal.database().lock().await;
+        let rows = match evohime_local_storage::execution_backend_registry_store::list(
+            database.connection(),
+        ) {
+            Ok(v) => v,
+            Err(_) => {
+                return serde_json::json!({"request_id":request.request_id,"operation":request.operation,"status":"unavailable","error_code":"storage_unavailable"})
+            }
+        };
+        let mut registry = Registry::default();
+        for (id, kind, endpoint, auth_ref, capabilities_json, version, health) in
+            rows.into_iter().filter(|row| row.0 != "local.core")
+        {
+            let capabilities = serde_json::from_str(&capabilities_json).unwrap_or_default();
+            let _ = registry.register(
+                BackendDefinition {
+                    id,
+                    kind: if kind == "remote" {
+                        BackendKind::Remote
+                    } else {
+                        BackendKind::Local
+                    },
+                    endpoint,
+                    auth_ref,
+                    enabled: health != "disabled",
+                    capabilities,
+                    version: version as u64,
+                    health: if health == "disabled" {
+                        HealthState::Disabled
+                    } else {
+                        HealthState::Registered
+                    },
+                    health_failure: None,
+                },
+                registry.version(),
+            );
+        }
+        if let Ok(Some(default_id)) =
+            evohime_local_storage::execution_backend_registry_store::default_id(
+                database.connection(),
+            )
+        {
+            let _ = registry.set_default(&default_id, registry.version());
+        }
+        let outcome = match request.operation.as_str() {
+            "list" => {
+                serde_json::json!({"status":"ok","registry_version":registry.version(),"default_backend_id":registry.default_id(),"backends":registry.entries().map(|b| serde_json::json!({"id":b.id,"kind":b.kind,"enabled":b.enabled,"health":b.health,"capability_count":b.capabilities.len(),"has_auth_ref":b.auth_ref.is_some()})).collect::<Vec<_>>()})
+            }
+            "register" => {
+                let id = payload["id"].as_str().unwrap_or_default().to_owned();
+                let kind = if payload["kind"].as_str() == Some("remote") {
+                    BackendKind::Remote
+                } else {
+                    BackendKind::Local
+                };
+                let capabilities: Vec<String> = payload["capabilities"]
+                    .as_array()
+                    .map(|v| {
+                        v.iter()
+                            .filter_map(|x| x.as_str().map(str::to_owned))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let backend = BackendDefinition {
+                    id,
+                    kind,
+                    endpoint: payload["endpoint"].as_str().map(str::to_owned),
+                    auth_ref: payload["auth_ref"].as_str().map(str::to_owned),
+                    enabled: true,
+                    capabilities,
+                    version: 0,
+                    health: HealthState::Registered,
+                    health_failure: None,
+                };
+                match registry.register(backend.clone(), request.expected_version.max(1)) {
+                    Ok(()) => {
+                        let kind_s = if matches!(backend.kind, BackendKind::Remote) {
+                            "remote"
+                        } else {
+                            "local"
+                        };
+                        let caps = serde_json::to_string(&backend.capabilities)
+                            .unwrap_or_else(|_| "[]".into());
+                        let _ = evohime_local_storage::execution_backend_registry_store::upsert(
+                            database.connection(),
+                            &backend.id,
+                            kind_s,
+                            backend.endpoint.as_deref(),
+                            backend.auth_ref.as_deref(),
+                            &caps,
+                            registry.version(),
+                            "registered",
+                            crate::task_memory::now_millis() as i64,
+                        );
+                        serde_json::json!({"status":"ok","registry_version":registry.version()})
+                    }
+                    Err(e) => serde_json::json!({"status":"rejected","error_code":e.to_string()}),
+                }
+            }
+            "handshake" => {
+                let id = payload["backend_id"].as_str().unwrap_or_default();
+                let hs = crate::execution_backend_registry::CapabilityHandshake {
+                    protocol_major: payload["protocol_major"].as_u64().unwrap_or_default() as u32,
+                    protocol_minor: payload["protocol_minor"].as_u64().unwrap_or_default() as u32,
+                    backend_id: id.into(),
+                    capabilities: payload["capabilities"]
+                        .as_array()
+                        .map(|v| {
+                            v.iter()
+                                .filter_map(|x| x.as_str().map(str::to_owned))
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    capability_hash: payload["capability_hash"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .into(),
+                };
+                match registry.handshake(
+                    id,
+                    hs,
+                    &["agent.execute".into(), "workflow.execute".into()],
+                ) {
+                    Ok(snapshot) => serde_json::json!({"status":"ok","snapshot":snapshot}),
+                    Err(e) => {
+                        serde_json::json!({"status":"unavailable","error_code":e.to_string()})
+                    }
+                }
+            }
+            "remove" => {
+                let id = payload["id"].as_str().unwrap_or_default();
+                if id.is_empty() || id == "local.core" {
+                    serde_json::json!({"status":"rejected","error_code":"local_backend_required"})
+                } else if registry.remove(id, registry.version()).is_err() {
+                    serde_json::json!({"status":"not_found","error_code":"not_found"})
+                } else {
+                    let _ = evohime_local_storage::execution_backend_registry_store::remove(
+                        database.connection(),
+                        id,
+                    );
+                    serde_json::json!({"status":"ok","registry_version":registry.version()})
+                }
+            }
+            "set_default" => {
+                let id = payload["id"].as_str().unwrap_or_default();
+                match registry.set_default(id, registry.version()) {
+                    Ok(()) => {
+                        let _ =
+                            evohime_local_storage::execution_backend_registry_store::set_default(
+                                database.connection(),
+                                id,
+                            );
+                        serde_json::json!({"status":"ok","registry_version":registry.version(),"default_backend_id":id})
+                    }
+                    Err(e) => serde_json::json!({"status":"rejected","error_code":e.to_string()}),
+                }
+            }
+            "disable" => {
+                let id = payload["id"].as_str().unwrap_or_default();
+                if id == "local.core" {
+                    serde_json::json!({"status":"rejected","error_code":"local_backend_required"})
+                } else if evohime_local_storage::execution_backend_registry_store::set_enabled(
+                    database.connection(),
+                    id,
+                    false,
+                )
+                .unwrap_or(false)
+                {
+                    serde_json::json!({"status":"ok","registry_version":registry.version()})
+                } else {
+                    serde_json::json!({"status":"not_found","error_code":"not_found"})
+                }
+            }
+            "snapshot" => {
+                let id = payload["backend_id"]
+                    .as_str()
+                    .unwrap_or(registry.default_id());
+                if registry.entries().any(|b| b.id == id) {
+                    serde_json::json!({"status":"ok","snapshot":{"backend_id":id,"registry_version":registry.version(),"handshake_hash":"pending","policy_hash":"core-policy-v1"}})
+                } else {
+                    serde_json::json!({"status":"not_found","error_code":"not_found"})
+                }
+            }
+            _ => serde_json::json!({"status":"rejected","error_code":"unsupported_operation"}),
+        };
+        serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"registry_version":outcome["registry_version"].as_u64().unwrap_or(registry.version()),"projection_json":outcome,"error_code":outcome["error_code"].as_str().unwrap_or("")})
+    }
+
+    async fn write_execution_backend_registry_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let result = generated::ExecutionBackendRegistryEvent {
+            schema_version: 1,
+            request_id: value["request_id"].as_str().unwrap_or_default().into(),
+            operation: value["operation"].as_str().unwrap_or_default().into(),
+            status: value["projection_json"]["status"]
+                .as_str()
+                .unwrap_or(value["status"].as_str().unwrap_or("rejected"))
+                .into(),
+            registry_version: value["registry_version"].as_u64().unwrap_or_default(),
+            projection_json: serde_json::to_vec(&value["projection_json"])?,
+            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+        };
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: "execution_backend_registry.result".into(),
+                payload,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: Some(generated::event_envelope::Event::ExecutionBackendRegistry(
+                    result,
+                )),
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
     }
 
     async fn write_model_resilience_policy_response<W: AsyncWrite + Unpin>(

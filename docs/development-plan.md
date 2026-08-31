@@ -181,3 +181,12 @@ privacy и residency, cancellation и provenance-safe recovery без blind retr
 Policy state ephemeral, schema остаётся v44; authenticated IPC использует
 188/event 43, Electron показывает metadata-only panel. Комплект 42-0 … 42-4
 удалён после свежих focused и regression gates.
+
+План 43 закрыт: Execution Backend Registry v1 перенесён в canonical
+`architecture.md`, `current-state.md` и `release-evidence.md`. Реализованы
+Core-owned durable registry, schema v45, typed local/remote handshake и health
+failures, Core-policy capability intersection, optimistic/idempotent mutation,
+immutable run-affinity snapshot и fail-closed remote `transport_unavailable`.
+Authenticated IPC использует additive 189/event 44, Electron — metadata-only
+panel. Комплект 43-0 … 43-4 удалён после focused/full Rust, IPC, protocol,
+typecheck, Electron и diff-check проверок.

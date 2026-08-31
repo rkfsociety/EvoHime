@@ -1105,6 +1105,13 @@ export const RENDERER_COMMANDS = [
   'sensitiveDataGuardrails.evaluate',
   'executionPolicyProfiles.status',
   'modelResiliencePolicy.status',
+  'executionBackendRegistry.list',
+  'executionBackendRegistry.register',
+  'executionBackendRegistry.handshake',
+  'executionBackendRegistry.remove',
+  'executionBackendRegistry.setDefault',
+  'executionBackendRegistry.disable',
+  'executionBackendRegistry.snapshot',
   'automation.listSchedules',
   'automation.saveSchedule',
   'automation.trigger',
@@ -1505,6 +1512,13 @@ export interface CommandPayloads {
   'sensitiveDataGuardrails.evaluate': { requestId: string; ownerScope: string; idempotencyKey: string; input: string; destination?: string }
   'executionPolicyProfiles.status': { requestId: string; ownerScope: string; idempotencyKey: string; profileId?: string }
   'modelResiliencePolicy.status': { requestId: string; ownerScope: string; idempotencyKey: string }
+  'executionBackendRegistry.list': { requestId: string; ownerScope: string; idempotencyKey: string }
+  'executionBackendRegistry.register': { requestId: string; ownerScope: string; idempotencyKey: string; expectedVersion: number; id: string; kind: 'local' | 'remote'; endpoint?: string; authRef?: string; capabilities: string[] }
+  'executionBackendRegistry.handshake': { requestId: string; ownerScope: string; idempotencyKey: string; backendId: string; protocolMajor: number; protocolMinor: number; capabilityHash?: string; capabilities: string[] }
+  'executionBackendRegistry.remove': { requestId: string; ownerScope: string; idempotencyKey: string; expectedVersion: number; id: string }
+  'executionBackendRegistry.setDefault': { requestId: string; ownerScope: string; idempotencyKey: string; expectedVersion: number; id: string }
+  'executionBackendRegistry.disable': { requestId: string; ownerScope: string; idempotencyKey: string; expectedVersion: number; id: string }
+  'executionBackendRegistry.snapshot': { requestId: string; ownerScope: string; idempotencyKey: string; backendId?: string }
   'automation.listSchedules': { ownerScope: string; limit?: number }
   'automation.saveSchedule': {
     scheduleId: string
@@ -1730,6 +1744,13 @@ export interface CommandResults {
   'sensitiveDataGuardrails.evaluate': { accepted: boolean }
   'executionPolicyProfiles.status': { accepted: boolean }
   'modelResiliencePolicy.status': { accepted: boolean }
+  'executionBackendRegistry.list': { accepted: boolean }
+  'executionBackendRegistry.register': { accepted: boolean }
+  'executionBackendRegistry.handshake': { accepted: boolean }
+  'executionBackendRegistry.remove': { accepted: boolean }
+  'executionBackendRegistry.setDefault': { accepted: boolean }
+  'executionBackendRegistry.disable': { accepted: boolean }
+  'executionBackendRegistry.snapshot': { accepted: boolean }
   'automation.listSchedules': { accepted: boolean }
   'automation.saveSchedule': { accepted: boolean }
   'automation.trigger': { accepted: boolean }

@@ -149,6 +149,21 @@ Core и supervisor — внутренние компоненты установ�
   raw prompt/output, credentials и provider-specific payload не пересекают
   boundary.
 
+### Execution Backend Registry v1
+
+План 43 закрыт 31 августа 2026 года. Core реализует versioned registry с
+обязательным `local.core` и metadata-only remote registrations, bounded endpoint
+и capability validation, typed health/failure states, Core-policy intersection
+и immutable run snapshot contract. Remote executor/network transport намеренно
+не включён и даёт `transport_unavailable`; automatic failover side-effecting
+runs запрещён.
+
+Durable metadata и default backend хранятся additive schema v45; credentials
+сохраняются только как refs. Authenticated IPC использует command 189/event 44,
+Electron panel показывает bounded backend metadata. Проверены invalid endpoint,
+stale mutation, local snapshot, remote unavailable, storage idempotency,
+protocol/typecheck и metadata-only renderer projection.
+
 - В `crates/model-gateway` существуют bounded `RouteCandidate`, детерминированный
   selector и runtime-режимы `LocalFirst`/`Offline`; provider contract также
   содержит типы capability metadata, policy snapshot, health overlay, retry и

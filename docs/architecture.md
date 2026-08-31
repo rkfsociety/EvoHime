@@ -1193,3 +1193,29 @@ Authenticated additive IPC — command tag 187/event tag 42. Electron получ
 только profile id/version/hash, backend, policies и bounds через metadata-only
 панель; raw command, environment, credentials и process output не пересекают
 boundary.
+
+## Execution Backend Registry v1 (план 43)
+
+`evohime-core::execution_backend_registry` — Core-owned registry execution
+окружений. Встроенный `local.core` является безопасным default; remote-записи
+содержат только canonical HTTPS endpoint и credential reference. Реального
+remote transport или запуска внешнего процесса этот контракт не добавляет:
+remote handshake возвращает typed `transport_unavailable`.
+
+Контракт version 1 ограничивает 64 backend и 64 capability ids, валидирует
+lowercase ids и запрещает userinfo/query/fragment/private или loopback endpoint.
+Lifecycle health — `registered/probing/healthy/degraded/unavailable/disabled`,
+ошибки типизированы (`invalid_endpoint`, `incompatible_contract`,
+`capability_denied`, `transport_unavailable` и др.). Advertised capabilities
+пересекаются с Core policy и не могут расширить grants.
+
+Metadata хранится в SQLite schema v45 (`execution_backends` и bounded event/meta
+tables) через additive backup-before-migrate path. Mutations используют
+optimistic version и idempotency envelope; UI получает только bounded list,
+health, capability count и наличие auth ref. Active run affinity фиксируется
+immutable `{backend_id, registry_version, handshake_hash, policy_hash}` snapshot
+и не меняется при смене default. Unknown external outcome не retry/failover.
+
+Authenticated additive IPC использует command 189/event 44. Electron panel
+«Среды выполнения» является projection/action surface; prompt, output, secret
+material, executable identity и raw endpoint payload в renderer не передаются.
