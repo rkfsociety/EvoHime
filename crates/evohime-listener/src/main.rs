@@ -331,21 +331,6 @@ fn device_selection_changed(current: &str, requested: &str) -> bool {
     current != requested
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn policy_device_change_is_detected_for_capture_restart() {
-        assert!(super::device_selection_changed(
-            "fifine-Microphone",
-            "Headset-Mic-2"
-        ));
-        assert!(!super::device_selection_changed(
-            "fifine-Microphone",
-            "fifine-Microphone"
-        ));
-    }
-}
-
 /// Перечисляет устройства заново и отправляет снимок в Core.
 #[cfg(windows)]
 async fn publish_devices(
@@ -606,4 +591,19 @@ fn log_error(error: &str) {
         .and_then(|mut file| {
             std::io::Write::write_all(&mut file, format!("{}\n", line).as_bytes())
         });
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn policy_device_change_is_detected_for_capture_restart() {
+        assert!(super::device_selection_changed(
+            "fifine-Microphone",
+            "Headset-Mic-2"
+        ));
+        assert!(!super::device_selection_changed(
+            "fifine-Microphone",
+            "fifine-Microphone"
+        ));
+    }
 }
