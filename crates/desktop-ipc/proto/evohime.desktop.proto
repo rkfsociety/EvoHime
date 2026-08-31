@@ -1789,6 +1789,8 @@ message CommandEnvelope {
     ExternalCodingAgentAdapterCommand external_coding_agent_adapter_action = 192;
     AgentRoleProfilesCommand agent_role_profiles_list = 193;
     AgentRoleProfilesCommand agent_role_profiles_action = 194;
+    TeamSopProtocolsCommand team_sop_protocols_list = 195;
+    TeamSopProtocolsCommand team_sop_protocols_action = 196;
   }
 }
 
@@ -1886,6 +1888,7 @@ message EventEnvelope {
     ToolSimulationRuntimeEvent tool_simulation_runtime = 45;
     ExternalCodingAgentAdapterEvent external_coding_agent_adapter = 46;
     AgentRoleProfilesEvent agent_role_profiles = 47;
+    TeamSopProtocolsEvent team_sop_protocols = 48;
   }
 }
 
@@ -1912,6 +1915,28 @@ message AgentRoleProfilesEvent {
   string state = 8;
   string error_code = 9;
   bytes projection_json = 10;
+}
+
+// Plan 48: bounded metadata-only Team SOP protocol/session surface.
+message TeamSopProtocolsCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string operation = 4;
+  bytes payload = 5;
+  uint64 expected_version = 6;
+  string idempotency_key = 7;
+}
+message TeamSopProtocolsEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  string session_id = 5;
+  uint64 version = 6;
+  string state = 7;
+  string error_code = 8;
+  bytes projection_json = 9;
 }
 
 // Plan 40: metadata-only sensitive-data guardrail status/evaluation. Raw input,

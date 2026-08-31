@@ -341,6 +341,7 @@ pub struct IpcBridge {
     external_agents:
         Arc<tokio::sync::Mutex<crate::external_coding_agent_adapter::ExternalAgentRegistry>>,
     role_profiles: Arc<tokio::sync::Mutex<crate::agent_role_profiles::AgentRoleProfilesRegistry>>,
+    team_sop: Arc<tokio::sync::Mutex<crate::team_sop_protocols::TeamSopRegistry>>,
 }
 
 /// Проект, под которым живут принятые предложения. Речь у стола не
@@ -629,6 +630,7 @@ impl IpcBridge {
             )),
             external_agents: Arc::new(tokio::sync::Mutex::new(Default::default())),
             role_profiles: Arc::new(tokio::sync::Mutex::new(Default::default())),
+            team_sop: Arc::new(tokio::sync::Mutex::new(Default::default())),
         }
     }
 
@@ -662,6 +664,7 @@ impl IpcBridge {
             )),
             external_agents: Arc::new(tokio::sync::Mutex::new(Default::default())),
             role_profiles: Arc::new(tokio::sync::Mutex::new(Default::default())),
+            team_sop: Arc::new(tokio::sync::Mutex::new(Default::default())),
         }
     }
 
@@ -702,6 +705,7 @@ impl IpcBridge {
             )),
             external_agents: Arc::new(tokio::sync::Mutex::new(Default::default())),
             role_profiles: Arc::new(tokio::sync::Mutex::new(Default::default())),
+            team_sop: Arc::new(tokio::sync::Mutex::new(Default::default())),
         }
     }
 
@@ -3952,6 +3956,12 @@ impl IpcBridge {
                         serde_json::to_vec(&result)?,
                     )
                     .await?;
+                }
+                Some(generated::command_envelope::Command::TeamSopProtocolsList(request))
+                | Some(generated::command_envelope::Command::TeamSopProtocolsAction(request)) => {
+                    let result = self.dispatch_team_sop_protocols(request).await;
+                    self.write_team_sop_protocols_response(writer, serde_json::to_vec(&result)?)
+                        .await?;
                 }
                 Some(generated::command_envelope::Command::SaveAutomationSchedule(request)) => {
                     let result = self.dispatch_save_automation_schedule(request).await;
@@ -11630,6 +11640,164 @@ impl IpcBridge {
                 core_instance_id: self.core_instance_id.clone(),
                 session_epoch: self.session_epoch,
                 event: Some(generated::event_envelope::Event::AgentRoleProfiles(result)),
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn dispatch_team_sop_protocols(
+        &self,
+        request: generated::TeamSopProtocolsCommand,
+    ) -> serde_json::Value {
+        use crate::team_sop_protocols::{TeamProtocol, TeamSopError, CONTRACT_VERSION};
+        if request.schema_version != CONTRACT_VERSION
+            || request.request_id.is_empty()
+            || request.owner_scope.is_empty()
+            || request.idempotency_key.is_empty()
+            || request.payload.len() > 64 * 1024
+        {
+            return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","state":"unknown","error_code":"invalid_request","projection_json":{"raw_payload":false}});
+        }
+        let mut registry = self.team_sop.lock().await;
+        let mut session_id = String::new();
+        let mut state = "pinned".to_owned();
+        let mut version = 0_u64;
+        let mut projection = serde_json::json!({"schema_version":1,"protocol_count":registry.protocols.len(),"session_count":registry.sessions.len(),"raw_payload":false,"credentials":false});
+        let result: Result<(), TeamSopError> = (|| match request.operation.as_str() {
+            "list" => Ok(()),
+            "create" | "revise" => {
+                let payload: TeamProtocol = serde_json::from_slice(&request.payload)
+                    .map_err(|_| TeamSopError::Invalid("payload"))?;
+                let saved = if request.operation == "create" {
+                    registry.create(payload, &request.idempotency_key)?
+                } else {
+                    registry.revise(payload, request.expected_version, &request.idempotency_key)?
+                };
+                let hash = saved.content_hash.clone();
+                if let Ok(database) = self.journal.database().try_lock() {
+                    let json = serde_json::to_vec(&saved).unwrap_or_default();
+                    let _ = evohime_local_storage::team_sop_protocols_store::save_protocol(
+                        database.connection(),
+                        &saved.id,
+                        saved.version,
+                        &hash,
+                        &json,
+                        chrono::Utc::now().timestamp_millis(),
+                    );
+                }
+                projection = serde_json::json!({"schema_version":1,"protocol_id":saved.id,"protocol_version":saved.version,"content_hash":hash,"participant_count":saved.participants.len(),"phase_count":saved.phases.len(),"handoff_count":saved.handoffs.len(),"raw_payload":false});
+                Ok(())
+            }
+            "start" => {
+                let p: serde_json::Value = serde_json::from_slice(&request.payload)
+                    .map_err(|_| TeamSopError::Invalid("payload"))?;
+                session_id = p["session_id"].as_str().unwrap_or_default().to_owned();
+                let protocol_id = p["protocol_id"].as_str().unwrap_or_default();
+                let protocol_version = p["protocol_version"].as_u64().unwrap_or_default();
+                let s = registry.start(
+                    session_id.clone(),
+                    protocol_id,
+                    protocol_version,
+                    p["workflow_run_id"].as_str().map(str::to_owned),
+                )?;
+                version = s.version;
+                state = format!("{:?}", s.status).to_lowercase();
+                projection = serde_json::json!({"schema_version":1,"session_id":s.id,"protocol_id":s.snapshot.protocol_id,"protocol_version":s.snapshot.version,"content_hash":s.snapshot.content_hash,"current_phase":s.current_phase,"completed_phase_count":s.completed_phases.len(),"review_iterations":s.review_iterations,"state":state,"version":s.version,"raw_payload":false});
+                Ok(())
+            }
+            "advance" => {
+                let p: serde_json::Value = serde_json::from_slice(&request.payload)
+                    .map_err(|_| TeamSopError::Invalid("payload"))?;
+                session_id = p["session_id"].as_str().unwrap_or_default().to_owned();
+                let s = registry.advance(&session_id, request.expected_version)?;
+                version = s.version;
+                state = format!("{:?}", s.status).to_lowercase();
+                projection = serde_json::json!({"schema_version":1,"session_id":s.id,"protocol_id":s.snapshot.protocol_id,"protocol_version":s.snapshot.version,"content_hash":s.snapshot.content_hash,"current_phase":s.current_phase,"completed_phase_count":s.completed_phases.len(),"review_iterations":s.review_iterations,"state":state,"version":s.version,"raw_payload":false});
+                Ok(())
+            }
+            "cancel" => {
+                let p: serde_json::Value = serde_json::from_slice(&request.payload)
+                    .map_err(|_| TeamSopError::Invalid("payload"))?;
+                session_id = p["session_id"].as_str().unwrap_or_default().to_owned();
+                let s = registry.cancel(&session_id)?;
+                version = s.version;
+                state = "cancelled".into();
+                projection = serde_json::json!({"schema_version":1,"session_id":s.id,"state":state,"version":s.version,"raw_payload":false});
+                Ok(())
+            }
+            "review" | "revise_session" => {
+                let p: serde_json::Value = serde_json::from_slice(&request.payload)
+                    .map_err(|_| TeamSopError::Invalid("payload"))?;
+                session_id = p["session_id"].as_str().unwrap_or_default().to_owned();
+                let s = registry.review(
+                    &session_id,
+                    request.expected_version,
+                    request.operation == "revise_session",
+                )?;
+                version = s.version;
+                state = format!("{:?}", s.status);
+                projection = serde_json::json!({"schema_version":1,"session_id":s.id,"current_phase":s.current_phase,"review_iterations":s.review_iterations,"state":state,"version":s.version,"raw_payload":false});
+                Ok(())
+            }
+            _ => Err(TeamSopError::Invalid("unsupported_operation")),
+        })();
+        let (status, error_code) = match result {
+            Ok(()) => ("ok".to_owned(), String::new()),
+            Err(e) => ("rejected".to_owned(), e.to_string()),
+        };
+        if status == "ok" && !session_id.is_empty() {
+            if let Some(session) = registry.sessions.get(&session_id) {
+                if let Ok(database) = self.journal.database().try_lock() {
+                    let snapshot = serde_json::to_vec(&session.snapshot).unwrap_or_default();
+                    let state = format!("{:?}", session.status).to_lowercase();
+                    let _ = evohime_local_storage::team_sop_protocols_store::save_session(
+                        database.connection(),
+                        &session.id,
+                        &session.snapshot.protocol_id,
+                        session.snapshot.version,
+                        &session.snapshot.content_hash,
+                        &snapshot,
+                        &state,
+                        &session.current_phase,
+                        session.version,
+                        chrono::Utc::now().timestamp_millis(),
+                    );
+                }
+            }
+        }
+        serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":status,"session_id":session_id,"version":version,"state":state,"error_code":error_code,"projection_json":projection})
+    }
+
+    async fn write_team_sop_protocols_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let result = generated::TeamSopProtocolsEvent {
+            schema_version: 1,
+            request_id: value["request_id"].as_str().unwrap_or_default().into(),
+            operation: value["operation"].as_str().unwrap_or_default().into(),
+            status: value["status"].as_str().unwrap_or_default().into(),
+            session_id: value["session_id"].as_str().unwrap_or_default().into(),
+            version: value["version"].as_u64().unwrap_or_default(),
+            state: value["state"].as_str().unwrap_or_default().into(),
+            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+            projection_json: serde_json::to_vec(&value["projection_json"])?,
+        };
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: "team_sop_protocols.result".into(),
+                payload,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: Some(generated::event_envelope::Event::TeamSopProtocols(result)),
             }
             .encode_to_vec(),
         )

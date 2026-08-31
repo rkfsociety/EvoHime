@@ -1889,6 +1889,26 @@ function dispatch(
       return accepted(client.send(operation === 'list' || operation === 'get' ? { agentRoleProfilesList: body } : { agentRoleProfilesAction: body }))
     }
 
+    case 'teamSopProtocols.list':
+    case 'teamSopProtocols.create':
+    case 'teamSopProtocols.revise':
+    case 'teamSopProtocols.start':
+    case 'teamSopProtocols.advance':
+    case 'teamSopProtocols.reviewSession':
+    case 'teamSopProtocols.reviseSession':
+    case 'teamSopProtocols.cancel': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId']); const ownerScope = asBoundedString(value['ownerScope']); const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (requestId === null || ownerScope === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректные параметры Team SOP.')
+      const rawOperation = command.slice('teamSopProtocols.'.length); const operation = rawOperation === 'reviewSession' ? 'review' : rawOperation === 'reviseSession' ? 'revise_session' : rawOperation; const json: Record<string, unknown> = {}
+      if (rawOperation === 'create' || rawOperation === 'revise') { const protocol=value['protocol']; if (!protocol || typeof protocol !== 'object' || Array.isArray(protocol)) return failure('invalid-payload','Некорректный Team Protocol.'); Object.assign(json,protocol) }
+      if (operation === 'start') { const sessionId=asBoundedString(value['sessionId']); const protocolId=asBoundedString(value['protocolId']); const protocolVersion=asBoundedNumber(value['protocolVersion'],Number.MAX_SAFE_INTEGER); if(sessionId===null||protocolId===null||protocolVersion===null)return failure('invalid-payload','Некорректный запуск Team Session.'); Object.assign(json,{session_id:sessionId,protocol_id:protocolId,protocol_version:protocolVersion,workflow_run_id:asBoundedString(value['workflowRunId'])}) }
+      if (operation === 'advance' || operation === 'cancel') { const sessionId=asBoundedString(value['sessionId']); if(sessionId===null)return failure('invalid-payload','Не указана Team Session.'); json.session_id=sessionId }
+      const expectedVersion=operation==='revise'||operation==='revise_session'||operation==='advance'||operation==='review'?asBoundedNumber(value['expectedVersion'],Number.MAX_SAFE_INTEGER):0; if(expectedVersion===null)return failure('invalid-payload','Некорректная версия Team SOP.')
+      const body={schemaVersion:1,requestId,ownerScope,operation,payload:Buffer.from(JSON.stringify(json),'utf8'),expectedVersion,idempotencyKey}
+      return accepted(client.send(operation==='list'?{teamSopProtocolsList:body}:{teamSopProtocolsAction:body}))
+    }
+
     case 'automation.listSchedules': {
       const value = asRecord(payload)
       const ownerScope = asBoundedString(value['ownerScope'])

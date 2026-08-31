@@ -625,3 +625,9 @@ Authenticated IPC использует commands 193–194/event 47. Electron п�
 metadata-only панель «Профили ролей»; raw prompts, credentials, executable code
 и hidden reasoning не передаются. Реализуемые операции — list/get/create/revise/
 start/cancel, stale/duplicate/cancel outcomes типизированы.
+# План 48 — Team SOP Protocols v1
+
+Реализован 31 августа 2026 года: Core contract/runtime, schema v49,
+immutable session snapshots, authenticated IPC 195–196/event 48 и
+metadata-only Electron panel. Focused evidence: Core 2/2, storage 1/1,
+Electron 1/1, protocol/typecheck, fmt и diff-check.

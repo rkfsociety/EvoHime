@@ -203,3 +203,12 @@ metadata-only IPC projection и SQLite schema 48. Focused evidence: `skill_trust
 4/4, `skill_registry` 4/4, `skill_trust_pipeline_store` 1/1, protocol check и
 SkillCatalogPanel regression. Полные release gates выполняются ниже отдельными
 командами и не заменяются этим focused набором.
+# Plan 48 — Team SOP Protocols v1 (2026-08-31)
+
+- Core v1 validates bounded role refs, phases, handoffs, review loop and
+  completion evidence; TeamSession pins canonical protocol hash.
+- SQLite schema v49 stores metadata-only definitions/revisions/sessions.
+- Authenticated IPC 195–196/event 48 and Electron metadata-only UI are additive;
+  grants remain Core-owned and unknown effects are never blindly retried.
+- Focused evidence: Core 2/2, storage 1/1, Electron 1/1, protocol/typecheck,
+  fmt and diff-check.

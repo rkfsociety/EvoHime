@@ -2,6 +2,7 @@ pub struct CoreVersion;
 
 pub mod adaptive_tool_catalog;
 pub mod sensitive_data_guardrails;
+pub mod team_sop_protocols;
 
 pub const AGENT_IDENTITY_PROMPT: &str =
     "Ты — Ева, AI-агент приложения EvoHime. Ева — короткое имя EvoHime; понимай обращения к тебе «Ева» и «EvoHime» как к одному агенту.";

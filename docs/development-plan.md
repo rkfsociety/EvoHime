@@ -219,3 +219,6 @@ authenticated IPC 193–194/event 47 и metadata-only Electron panel. Компл
 offline deterministic scan, hash-bound trust gate, fail-closed contextual
 review contract, metadata-only IPC/UI projection и schema 48. Комплект
 `47-0` … `47-4` удалён после focused и regression gates.
+# План 48 закрыт: Team SOP Protocols v1 перенесён в canonical
+`architecture.md`, `current-state.md` и `release-evidence.md`; комплект
+`48-0` … `48-4` удалён после свежих focused и regression gates.

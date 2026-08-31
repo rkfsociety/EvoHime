@@ -1126,6 +1126,14 @@ export const RENDERER_COMMANDS = [
   'agentRoleProfiles.revise',
   'agentRoleProfiles.start',
   'agentRoleProfiles.cancel',
+  'teamSopProtocols.list',
+  'teamSopProtocols.create',
+  'teamSopProtocols.revise',
+  'teamSopProtocols.start',
+  'teamSopProtocols.advance',
+  'teamSopProtocols.reviewSession',
+  'teamSopProtocols.reviseSession',
+  'teamSopProtocols.cancel',
   'automation.listSchedules',
   'automation.saveSchedule',
   'automation.trigger',
@@ -1544,6 +1552,14 @@ export interface CommandPayloads {
   'agentRoleProfiles.revise': { requestId: string; ownerScope: string; idempotencyKey: string; expectedRevision: number; profile: Record<string, unknown> }
   'agentRoleProfiles.start': { requestId: string; ownerScope: string; idempotencyKey: string; runId: string; profileId: string; revision: number; requestedGrants: string[] }
   'agentRoleProfiles.cancel': { requestId: string; ownerScope: string; idempotencyKey: string; runId: string }
+  'teamSopProtocols.list': { requestId: string; ownerScope: string; idempotencyKey: string }
+  'teamSopProtocols.create': { requestId: string; ownerScope: string; idempotencyKey: string; protocol: Record<string, unknown> }
+  'teamSopProtocols.revise': { requestId: string; ownerScope: string; idempotencyKey: string; expectedVersion: number; protocol: Record<string, unknown> }
+  'teamSopProtocols.start': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; protocolId: string; protocolVersion: number; workflowRunId?: string }
+  'teamSopProtocols.advance': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; expectedVersion: number }
+  'teamSopProtocols.reviewSession': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; expectedVersion: number }
+  'teamSopProtocols.reviseSession': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; expectedVersion: number }
+  'teamSopProtocols.cancel': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string }
   'automation.listSchedules': { ownerScope: string; limit?: number }
   'automation.saveSchedule': {
     scheduleId: string
@@ -1787,6 +1803,14 @@ export interface CommandResults {
   'agentRoleProfiles.revise': { accepted: boolean }
   'agentRoleProfiles.start': { accepted: boolean }
   'agentRoleProfiles.cancel': { accepted: boolean }
+  'teamSopProtocols.list': { accepted: boolean }
+  'teamSopProtocols.create': { accepted: boolean }
+  'teamSopProtocols.revise': { accepted: boolean }
+  'teamSopProtocols.start': { accepted: boolean }
+  'teamSopProtocols.advance': { accepted: boolean }
+  'teamSopProtocols.reviewSession': { accepted: boolean }
+  'teamSopProtocols.reviseSession': { accepted: boolean }
+  'teamSopProtocols.cancel': { accepted: boolean }
   'automation.listSchedules': { accepted: boolean }
   'automation.saveSchedule': { accepted: boolean }
   'automation.trigger': { accepted: boolean }

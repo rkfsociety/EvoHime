@@ -47,7 +47,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 48.0 — Team SOP Protocols: versioned multi-agent playbooks и формальные handoff правила.
+- Канонический Team SOP Protocols v1 из `docs/architecture.md` и `docs/current-state.md`.
 - План 66.0 — Typed Agent Handoff Contract: explicit transfer of task ownership and context.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 

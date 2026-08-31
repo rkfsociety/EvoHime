@@ -1296,3 +1296,10 @@ Authenticated additive IPC использует commands 193–194/event 47. Ele
 revision/hash metadata; raw prompts, credentials, executable code и hidden
 reasoning не пересекают boundary. Profile operations ограничены `list/get/
 create/revise/start/cancel` и проверяются Core.
+# Team SOP Protocols v1 (plan 48)
+
+`evohime-core::team_sop_protocols` provides bounded versioned TeamProtocol
+contracts with Agent Role Profile refs, phases, handoffs, review policies and
+immutable TeamSession snapshots. Schema v49 and authenticated IPC commands
+195–196/event 48 are additive; Electron receives metadata-only projections.
+The boundary excludes prompts, transcripts, credentials and executable tools.
