@@ -3874,6 +3874,14 @@ impl IpcBridge {
                     )
                     .await?;
                 }
+                Some(generated::command_envelope::Command::ExecutionPolicyProfiles(request)) => {
+                    let result = self.dispatch_execution_policy_profiles(request);
+                    self.write_execution_policy_profiles_response(
+                        writer,
+                        serde_json::to_vec(&result)?,
+                    )
+                    .await?;
+                }
                 Some(generated::command_envelope::Command::ListAutomationSchedules(request)) => {
                     let result = self.dispatch_list_automation_schedules(request).await;
                     self.write_response(
@@ -10975,6 +10983,115 @@ impl IpcBridge {
                 core_instance_id: self.core_instance_id.clone(),
                 session_epoch: self.session_epoch,
                 event: Some(generated::event_envelope::Event::SensitiveDataGuardrails(
+                    result,
+                )),
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
+    }
+
+    fn dispatch_execution_policy_profiles(
+        &self,
+        request: generated::ExecutionPolicyProfilesCommand,
+    ) -> serde_json::Value {
+        if request.schema_version
+            != evohime_tool_runtime::execution_policy_profiles::CONTRACT_VERSION
+            || request.request_id.is_empty()
+            || request.owner_scope.is_empty()
+            || request.idempotency_key.is_empty()
+            || request.operation.is_empty()
+        {
+            return serde_json::json!({
+                "request_id": request.request_id,
+                "operation": request.operation,
+                "status": "rejected",
+                "error_code": "invalid_request"
+            });
+        }
+        let resolved = match evohime_tool_runtime::ExecutionPolicyProfile::resolve("shell.execute")
+        {
+            Ok(value) => value,
+            Err(error) => {
+                return serde_json::json!({
+                    "request_id": request.request_id,
+                    "operation": request.operation,
+                    "status": "unavailable",
+                    "error_code": error.to_string()
+                })
+            }
+        };
+        if request.operation != "list"
+            && request.operation != "status"
+            && request.operation != "resolve"
+        {
+            return serde_json::json!({
+                "request_id": request.request_id,
+                "operation": request.operation,
+                "status": "unsupported",
+                "error_code": "unsupported_operation"
+            });
+        }
+        if !request.profile_id.is_empty() && request.profile_id != resolved.profile.profile_id {
+            return serde_json::json!({
+                "request_id": request.request_id,
+                "operation": request.operation,
+                "status": "not_found",
+                "error_code": "profile_not_found"
+            });
+        }
+        serde_json::json!({
+            "request_id": request.request_id,
+            "operation": request.operation,
+            "status": "ok",
+            "profile_id": resolved.profile.profile_id,
+            "version": resolved.profile.version,
+            "profile_hash": resolved.profile_hash,
+            "backend": resolved.backend,
+            "network_policy": "deny",
+            "environment_policy": "scrubbed_allowlist",
+            "timeout_ms": resolved.profile.timeout_ms,
+            "max_output_bytes": resolved.profile.max_output_bytes,
+            "error_code": ""
+        })
+    }
+
+    async fn write_execution_policy_profiles_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let result = generated::ExecutionPolicyProfilesEvent {
+            schema_version: 1,
+            request_id: value["request_id"].as_str().unwrap_or_default().into(),
+            operation: value["operation"].as_str().unwrap_or_default().into(),
+            status: value["status"].as_str().unwrap_or_default().into(),
+            profile_id: value["profile_id"].as_str().unwrap_or_default().into(),
+            version: value["version"].as_u64().unwrap_or_default(),
+            profile_hash: value["profile_hash"].as_str().unwrap_or_default().into(),
+            backend: value["backend"].as_str().unwrap_or_default().into(),
+            network_policy: value["network_policy"].as_str().unwrap_or_default().into(),
+            environment_policy: value["environment_policy"]
+                .as_str()
+                .unwrap_or_default()
+                .into(),
+            timeout_ms: value["timeout_ms"].as_u64().unwrap_or_default(),
+            max_output_bytes: value["max_output_bytes"].as_u64().unwrap_or_default(),
+            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+        };
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: "execution_policy_profiles.result".into(),
+                payload,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: Some(generated::event_envelope::Event::ExecutionPolicyProfiles(
                     result,
                 )),
             }

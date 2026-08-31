@@ -34,6 +34,7 @@ import { AgentBenchmarkMatrixPanel } from './AgentBenchmarkMatrixPanel'
 import { AgentMiddlewarePipelinePanel } from './AgentMiddlewarePipelinePanel'
 import { StructuredResponseContractPanel } from './StructuredResponseContractPanel'
 import { SensitiveDataGuardrailsPanel } from './SensitiveDataGuardrailsPanel'
+import { ExecutionPolicyProfilesPanel } from './ExecutionPolicyProfilesPanel'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -58,7 +59,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -83,6 +84,7 @@ const VIEWS: readonly ViewDescriptor[] = [
   { id: 'middleware', label: 'Middleware', icon: '◇' },
   { id: 'structured-response', label: 'Structured response', icon: '▤' },
   { id: 'sensitive-data', label: 'Защита данных', icon: '⌁' },
+  { id: 'execution-policy', label: 'Профили выполнения', icon: '▣' },
 ]
 
 /** Not a nav row: reached through the gear next to the account. */
@@ -321,6 +323,7 @@ export function App(): React.JSX.Element {
               {view === 'middleware' ? <AgentMiddlewarePipelinePanel /> : null}
               {view === 'structured-response' ? <StructuredResponseContractPanel /> : null}
               {view === 'sensitive-data' ? <SensitiveDataGuardrailsPanel /> : null}
+              {view === 'execution-policy' ? <ExecutionPolicyProfilesPanel /> : null}
             </div>
           )}
         </div>

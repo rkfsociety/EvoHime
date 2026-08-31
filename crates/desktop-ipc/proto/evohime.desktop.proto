@@ -1778,6 +1778,7 @@ message CommandEnvelope {
     AgentMiddlewarePipelineCommand agent_middleware_pipeline_action = 184;
     StructuredResponseCommand structured_response = 185;
     SensitiveDataGuardrailsCommand sensitive_data_guardrails = 186;
+    ExecutionPolicyProfilesCommand execution_policy_profiles = 187;
   }
 }
 
@@ -1869,6 +1870,7 @@ message EventEnvelope {
     AgentMiddlewarePipelineEvent agent_middleware_pipeline = 39;
     StructuredResponseEvent structured_response = 40;
     SensitiveDataGuardrailsEvent sensitive_data_guardrails = 41;
+    ExecutionPolicyProfilesEvent execution_policy_profiles = 42;
   }
 }
 
@@ -1893,6 +1895,33 @@ message SensitiveDataGuardrailsEvent {
   uint32 match_count = 8;
   bool blocked = 9;
   string error_code = 10;
+}
+
+// Plan 41: bounded metadata-only execution policy projection. Command text,
+// environment values, credentials and process output never cross this surface.
+message ExecutionPolicyProfilesCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string operation = 4;
+  string profile_id = 5;
+  uint64 expected_version = 6;
+  string idempotency_key = 7;
+}
+message ExecutionPolicyProfilesEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  string profile_id = 5;
+  uint64 version = 6;
+  string profile_hash = 7;
+  string backend = 8;
+  string network_policy = 9;
+  string environment_policy = 10;
+  uint64 timeout_ms = 11;
+  uint64 max_output_bytes = 12;
+  string error_code = 13;
 }
 
 // Plan 37: bounded metadata-only middleware pipeline surface. Raw prompts,

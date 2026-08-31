@@ -1,6 +1,7 @@
 pub mod action;
 pub mod app_catalog;
 mod cdp;
+pub mod execution_policy_profiles;
 pub mod manifest;
 pub mod network_capability;
 mod registry;
@@ -14,6 +15,9 @@ mod tools;
 
 pub use action::{ActionConsole, ActionRequest, ActionStatus};
 pub use app_catalog::{AppCatalog, AppEntry, Resolution as AppResolution, CATALOG_FILE_NAME};
+pub use execution_policy_profiles::{
+    ExecutionPolicyError, ExecutionPolicyProfile, ResolvedExecutionProfile,
+};
 pub use manifest::{
     builtin_input_schema, ApprovalMode, ManifestError, SideEffectClass, ToolManifest, ToolOrigin,
     MANIFEST_KIND,

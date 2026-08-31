@@ -931,6 +931,7 @@ dependencies = [
  "base64",
  "evohime-permissions",
  "futures-util",
+ "hex",
  "jsonschema",
  "reqwest",
  "scraper",

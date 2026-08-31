@@ -1103,6 +1103,7 @@ export const RENDERER_COMMANDS = [
   'structuredResponse.cancel',
   'sensitiveDataGuardrails.status',
   'sensitiveDataGuardrails.evaluate',
+  'executionPolicyProfiles.status',
   'automation.listSchedules',
   'automation.saveSchedule',
   'automation.trigger',
@@ -1501,6 +1502,7 @@ export interface CommandPayloads {
   'structuredResponse.cancel': { requestId: string; ownerScope: string; idempotencyKey: string }
   'sensitiveDataGuardrails.status': { requestId: string; ownerScope: string; idempotencyKey: string; destination?: string }
   'sensitiveDataGuardrails.evaluate': { requestId: string; ownerScope: string; idempotencyKey: string; input: string; destination?: string }
+  'executionPolicyProfiles.status': { requestId: string; ownerScope: string; idempotencyKey: string; profileId?: string }
   'automation.listSchedules': { ownerScope: string; limit?: number }
   'automation.saveSchedule': {
     scheduleId: string
@@ -1724,6 +1726,7 @@ export interface CommandResults {
   'structuredResponse.cancel': { accepted: boolean }
   'sensitiveDataGuardrails.status': { accepted: boolean }
   'sensitiveDataGuardrails.evaluate': { accepted: boolean }
+  'executionPolicyProfiles.status': { accepted: boolean }
   'automation.listSchedules': { accepted: boolean }
   'automation.saveSchedule': { accepted: boolean }
   'automation.trigger': { accepted: boolean }

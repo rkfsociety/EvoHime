@@ -1795,6 +1795,16 @@ function dispatch(
       return accepted(client.send({ sensitiveDataGuardrails: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(payloadJson, 'utf8'), idempotencyKey } }))
     }
 
+    case 'executionPolicyProfiles.status': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const profileId = value['profileId'] === undefined ? '' : asBoundedString(value['profileId'])
+      if (requestId === null || ownerScope === null || idempotencyKey === null || profileId === null) return failure('invalid-payload', 'Некорректные параметры execution policy profile.')
+      return accepted(client.send({ executionPolicyProfiles: { schemaVersion: 1, requestId, operation: 'status', profileId, expectedVersion: 0, idempotencyKey } }))
+    }
+
     case 'automation.listSchedules': {
       const value = asRecord(payload)
       const ownerScope = asBoundedString(value['ownerScope'])

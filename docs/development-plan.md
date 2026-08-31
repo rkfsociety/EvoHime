@@ -164,3 +164,11 @@ versioned Core detector/redactor, deterministic policy snapshot, recursive JSON,
 cross-chunk streaming, model/tool/stream/trace admission, fail-closed bounds,
 ephemeral restart semantics, authenticated IPC 186/41 и metadata-only Electron
 panel. Комплект `40-0` … `40-4` удалён после свежих focused и regression gates.
+
+План 41 закрыт: Execution Policy Profiles v1 перенесён в canonical
+`architecture.md`, `current-state.md` и `release-evidence.md`. Реализованы
+общий ToolRegistry resolver для `shell.execute`/`process.run`, deny-by-default
+environment, bounded process I/O/timeout, Windows Job Object tree cleanup,
+storage schema v44, authenticated IPC 187/42 и metadata-only Electron panel.
+Комплект `41-0` … `41-4` удалён после focused contract/storage/Core/Electron и
+protocol/typecheck проверок.

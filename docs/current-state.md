@@ -532,3 +532,15 @@ v43, raw payload и credentials не входят в IPC/UI projection.
 Authenticated IPC расширен additive tags 186/41 (`status`/`evaluate`), Electron
 показывает metadata-only панель «Защита данных». Финальные release counts и
 команды зафиксированы в `release-evidence.md`.
+
+План 41 закрыт 31 августа 2026 года. Execution Policy Profiles v1 подключён
+к `shell.execute` и `process.run` через общий ToolRegistry resolver:
+deny-by-default environment, canonical workspace sandbox, bounded timeout и
+stdout/stderr, а на Windows — Job Object cleanup всего дерева с fail-closed
+required backend. Core возвращает profile metadata/hash, storage schema v44
+сохраняет только validated catalog; process handles/output/leases не
+персистируются.
+
+Authenticated IPC использует additive tags 187/42, Electron показывает
+metadata-only панель «Профили выполнения». Полные release counts и команды
+проверки зафиксированы в `release-evidence.md`.

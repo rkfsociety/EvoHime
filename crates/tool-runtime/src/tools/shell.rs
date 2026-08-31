@@ -1,3 +1,4 @@
+use crate::execution_policy_profiles::{apply_environment, ExecutionPolicyProfile, ProcessGuard};
 use crate::{ToolContext, ToolError, ToolResult};
 use evohime_permissions::Permission;
 use serde::Deserialize;
@@ -40,6 +41,11 @@ pub async fn execute(
         resolve_invocation_from_input(&input).ok_or_else(|| ToolError::InvalidInput {
             tool: NAME.into(),
             message: "program or command is required".into(),
+        })?;
+    let resolved =
+        ExecutionPolicyProfile::resolve(NAME).map_err(|error| ToolError::InvalidInput {
+            tool: NAME.into(),
+            message: error.to_string(),
         })?;
     if program.is_empty()
         || program.contains(['/', '\\'])
@@ -100,16 +106,13 @@ pub async fn execute(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    crate::shell_env::apply_scrubbed_env(&mut command);
+    apply_environment(&mut command);
     let mut child = command
         .spawn()
         .map_err(|e| ToolError::Execution(format!("spawn failed: {e}")))?;
-    let duration = Duration::from_millis(
-        input
-            .timeout_ms
-            .unwrap_or(TIMEOUT.as_millis() as u64)
-            .min(TIMEOUT.as_millis() as u64),
-    );
+    let _process_guard = ProcessGuard::attach(&child, &resolved)
+        .map_err(|e| ToolError::Execution(format!("execution backend unavailable: {e}")))?;
+    let duration = resolved.timeout(input.timeout_ms);
 
     let stdout = child
         .stdout
@@ -137,6 +140,7 @@ pub async fn execute(
                 .map_err(|e| ToolError::Execution(format!("process failed: {e}")))?
         }
     };
+    drop(_process_guard);
 
     let stdout_text = stdout_task
         .await
@@ -145,8 +149,14 @@ pub async fn execute(
         .await
         .map_err(|e| ToolError::Execution(format!("stderr join: {e}")))?;
 
-    let stdout = stdout_text.chars().take(MAX_OUTPUT).collect::<String>();
-    let stderr = stderr_text.chars().take(MAX_OUTPUT).collect::<String>();
+    let stdout = stdout_text
+        .chars()
+        .take(resolved.profile.max_output_bytes)
+        .collect::<String>();
+    let stderr = stderr_text
+        .chars()
+        .take(resolved.profile.max_output_bytes)
+        .collect::<String>();
     let exit_code = status.code();
     let output = format!(
         "program: {}\ncwd: {}\nexit_code: {}\nstdout:\n{}\nstderr:\n{}",
@@ -176,7 +186,13 @@ pub async fn execute(
             "stderr": stderr,
             "exit_code": exit_code,
             "timed_out": false,
-            "ok": ok
+            "ok": ok,
+            "resolved_profile": {
+                "profile_id": resolved.profile.profile_id,
+                "version": resolved.profile.version,
+                "hash": resolved.profile_hash,
+                "backend": resolved.backend
+            }
         }),
     })
 }
@@ -317,6 +333,11 @@ mod tests {
         assert!(deltas.iter().any(|p| p.stream == "stdout"));
         assert!(
             result.output.contains("git version") || result.structured["stdout"].as_str().is_some()
+        );
+        assert_eq!(result.structured["resolved_profile"]["version"], 1);
+        assert_eq!(
+            result.structured["resolved_profile"]["profile_id"],
+            "restricted-process-v1"
         );
     }
 

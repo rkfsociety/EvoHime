@@ -1162,3 +1162,23 @@ Authenticated additive IPC использует `SensitiveDataGuardrailsCommand`
 и `SensitiveDataGuardrailsEvent` tag 41 для bounded `status`/`evaluate`.
 Electron показывает только destination, policy hash, action/count/status;
 raw input/output, credentials и rule bodies в renderer не попадают.
+
+## Execution Policy Profiles v1
+
+`evohime-tool-runtime::execution_policy_profiles` — единственный resolver для
+зарегистрированных `shell.execute` и `process.run`. Versioned profile содержит
+explicit network/environment policy, bounded timeout/output, mandatory process
+tree cleanup и backend requirement; command text и user `env` не выбирают
+policy. Environment наследуется только через scrubbed allow-list.
+
+На Windows restricted backend использует Job Object с `KILL_ON_JOB_CLOSE`;
+timeout/cancel/drop очищает дерево. Required backend failure происходит до
+dispatch success. На других системах разрешён только portable bounded режим
+без заявления OS-level sandbox guarantee. Canonical JSON profile hash и
+storage schema v44 хранят validated catalog, version/hash/json; handles,
+output, leases и cancellation state ephemeral.
+
+Authenticated additive IPC — command tag 187/event tag 42. Electron получает
+только profile id/version/hash, backend, policies и bounds через metadata-only
+панель; raw command, environment, credentials и process output не пересекают
+boundary.
