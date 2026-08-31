@@ -172,3 +172,12 @@ environment, bounded process I/O/timeout, Windows Job Object tree cleanup,
 storage schema v44, authenticated IPC 187/42 и metadata-only Electron panel.
 Комплект `41-0` … `41-4` удалён после focused contract/storage/Core/Electron и
 protocol/typecheck проверок.
+
+План 42 закрыт: Model Resilience Policy v1 перенесён в canonical
+`architecture.md`, `current-state.md` и `release-evidence.md`. Реализованы
+Core-owned versioned policy/hash, normalized failure classes, bounded
+retry/fallback budgets, allowlisted profile compatibility по capability,
+privacy и residency, cancellation и provenance-safe recovery без blind retry.
+Policy state ephemeral, schema остаётся v44; authenticated IPC использует
+188/event 43, Electron показывает metadata-only panel. Комплект 42-0 … 42-4
+удалён после свежих focused и regression gates.

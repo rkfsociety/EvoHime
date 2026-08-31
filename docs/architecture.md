@@ -314,6 +314,17 @@ supervisor/Core restart → `{ summary, restarted }`.
 
 ## Model gateway и routing
 
+Model Resilience Policy v1 — отдельный Core-owned слой после выбора primary
+route. Он закрепляет policy snapshot/hash, bounded retry/fallback budgets,
+нормализованные классы ошибок, compatibility по capability/privacy/data
+residency и cancellation. Fallback принимает только заранее разрешённые
+`ModelProfileRef`; provider payload пересобирается внутри gateway adapter и
+credentials между providers не переносятся. Policy/run overlay ephemeral,
+поэтому после restart внешний вызов не повторяется: существующий model
+provenance ledger переводит dispatch в `interrupted` или `unknown_outcome`.
+IPC 188/event 43 отдаёт только bounded metadata; renderer не получает prompt,
+output или provider payload.
+
 Core является владельцем model gateway и принимает routing-решения после
 проверки privacy, offline, approval/tool policy, capability, health, evaluation
 gate и budget. User preference передаётся только как hint внутри разрешённого

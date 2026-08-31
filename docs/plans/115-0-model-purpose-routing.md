@@ -57,7 +57,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Блокирующие
 
 - Structured Response Contract v1 (см. `docs/architecture.md`)
-- План 42.0 — Model Resilience Policy: retry, fallback и provider-safe request adaptation.
+- Model Resilience Policy v1 из `docs/architecture.md`.
 - План 67.0 — Schema-Driven Agent Configuration: Core-owned schemas для agent/conversation settings.
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 

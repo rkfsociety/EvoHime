@@ -3882,6 +3882,14 @@ impl IpcBridge {
                     )
                     .await?;
                 }
+                Some(generated::command_envelope::Command::ModelResiliencePolicy(request)) => {
+                    let result = self.dispatch_model_resilience_policy(request);
+                    self.write_model_resilience_policy_response(
+                        writer,
+                        serde_json::to_vec(&result)?,
+                    )
+                    .await?;
+                }
                 Some(generated::command_envelope::Command::ListAutomationSchedules(request)) => {
                     let result = self.dispatch_list_automation_schedules(request).await;
                     self.write_response(
@@ -11055,6 +11063,79 @@ impl IpcBridge {
             "max_output_bytes": resolved.profile.max_output_bytes,
             "error_code": ""
         })
+    }
+
+    fn dispatch_model_resilience_policy(
+        &self,
+        request: generated::ModelResiliencePolicyCommand,
+    ) -> serde_json::Value {
+        if request.schema_version != crate::model_resilience_policy::CONTRACT_VERSION
+            || request.request_id.is_empty()
+            || request.owner_scope.is_empty()
+            || request.idempotency_key.is_empty()
+            || request.operation != "status"
+        {
+            return serde_json::json!({"request_id": request.request_id, "operation": request.operation, "status": "rejected", "error_code": "invalid_request"});
+        }
+        let policy = crate::model_resilience_policy::builtin_policy();
+        let hash = policy.canonical_hash().unwrap_or_default();
+        serde_json::json!({
+            "request_id": request.request_id,
+            "operation": "status",
+            "status": "ok",
+            "policy_id": crate::model_resilience_policy::CONTRACT_ID,
+            "policy_hash": hash,
+            "attempts": policy.rules.max_attempts,
+            "retries": policy.rules.max_attempts.saturating_sub(1),
+            "fallbacks": if policy.rules.allow_fallback { policy.rules.max_fallbacks } else { 0 },
+            "terminal_outcome": "unknown_outcome_is_not_retried",
+            "error_code": "",
+            "projection_json": {"schema_version": 1, "ephemeral": true, "raw_payload": false, "credentials": false}
+        })
+    }
+
+    async fn write_model_resilience_policy_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let projection = serde_json::to_vec(&value["projection_json"])?;
+        let result = generated::ModelResiliencePolicyEvent {
+            schema_version: 1,
+            request_id: value["request_id"].as_str().unwrap_or_default().into(),
+            operation: value["operation"].as_str().unwrap_or_default().into(),
+            status: value["status"].as_str().unwrap_or_default().into(),
+            policy_id: value["policy_id"].as_str().unwrap_or_default().into(),
+            policy_hash: value["policy_hash"].as_str().unwrap_or_default().into(),
+            attempts: value["attempts"].as_u64().unwrap_or_default() as u32,
+            retries: value["retries"].as_u64().unwrap_or_default() as u32,
+            fallbacks: value["fallbacks"].as_u64().unwrap_or_default() as u32,
+            terminal_outcome: value["terminal_outcome"]
+                .as_str()
+                .unwrap_or_default()
+                .into(),
+            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+            projection_json: projection,
+        };
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: "model_resilience_policy.result".into(),
+                payload,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: Some(generated::event_envelope::Event::ModelResiliencePolicy(
+                    result,
+                )),
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
     }
 
     async fn write_execution_policy_profiles_response<W: AsyncWrite + Unpin>(

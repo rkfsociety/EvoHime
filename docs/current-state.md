@@ -138,6 +138,17 @@ Core и supervisor — внутренние компоненты установ�
 
 ### Model gateway и routing
 
+- План 42 реализован 31 августа 2026 года: Core-owned `model-resilience-policy-v1`
+  добавляет versioned rules, canonical hash, allowlisted profile refs,
+  capability/privacy/residency compatibility, bounded retry/fallback metadata,
+  normalized provider errors, cancellation и fail-closed unknown outcome.
+  Existing gateway routing/retry/provenance остаются единственными authority;
+  новая policy state ephemeral, storage schema остаётся v44.
+- Authenticated additive IPC использует command 188/event 43. Electron panel
+  «Надёжность модели» показывает только policy hash, budgets и terminal rule;
+  raw prompt/output, credentials и provider-specific payload не пересекают
+  boundary.
+
 - В `crates/model-gateway` существуют bounded `RouteCandidate`, детерминированный
   selector и runtime-режимы `LocalFirst`/`Offline`; provider contract также
   содержит типы capability metadata, policy snapshot, health overlay, retry и

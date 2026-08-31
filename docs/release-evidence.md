@@ -76,6 +76,7 @@ Code signing не входит в текущий release scope; manifest/hash о
 | Adaptive Tool Catalog v1 (implemented, plan 38 closed 2026-08-31) | derived Core catalog from `ToolRegistry` manifests; default 8/hard 32; deterministic and optional semantic/model id validation; process-local cache key includes revision/registry/policy/grant/query/selector/limit | permission preflight is authoritative; unknown/duplicate model ids fail closed; empty/no-match uses deterministic top-ranked fallback; no legacy schema widening; no new SQLite state | withhold catalog projection by returning no authorized loadout; cache disappears on restart; keep existing `model.context` event and journal diagnostics bounded/redacted | Core 613/613, adaptive focused 4/4, Electron focused 1/1 and full 481/483 (2 source-update skipped), protocol/typecheck, fmt/check and diff-check; evidence redacted |
 | Sensitive Data Guardrails v1 (implemented, plan 40 closed 2026-08-31) | Core contract v1, deterministic policy hash, bounded redact/mask/hash/block, recursive JSON, cross-chunk streaming, model/tool/stream/trace admission; ephemeral state and no schema migration | precedence and bounds fail closed; private key block, structured traversal, provider/tool redaction and restart discard are covered; permissions/approval/effect ledger remain authoritative | withhold additive `sensitive_data_guardrails`; existing trace remains metadata-only; no blind retry or external DLP dependency | Core 621/621 + recovery 3/3, local storage 224/224, desktop IPC 36/36, Electron 484/486 (2 source-update skipped), protocol/typecheck, fmt/clippy and diff-check; evidence redacted |
 | Execution Policy Profiles v1 (implemented, plan 41 closed 2026-08-31) | versioned shared ToolRegistry resolver for `shell.execute`/`process.run`, schema v44 catalog, canonical profile hash, bounded timeout/output, deny-by-default environment, Windows Job Object backend, authenticated IPC 187/event 42 | profile/backend cannot be selected by command text; user env is rejected; required backend fails before dispatch; workspace is canonicalized; handles/output/leases are ephemeral; unknown/unavailable are non-success | withhold profile status/projection on invalid or unavailable backend; preserve existing permission/approval/effect ledger; no blind retry after cancellation/unknown; no credentials/raw output in IPC | runtime profile 2/2, storage catalog 1/1, Core/IPC compile, protocol check/typecheck, Electron focused panel 1/1, fmt/check and diff-check; Windows Job Object smoke is required on Windows release agents; evidence redacted |
+| Model Resilience Policy v1 (implemented, plan 42 closed 2026-08-31) | Core contract/hash, normalized failure taxonomy, bounded retry/fallback budgets, allowlisted profile compatibility, ephemeral run overlay, authenticated IPC 188/event 43 | profile fallback rechecks capability/privacy/residency; provider payload stays in adapter; cancellation and dispatch unknown are non-success; schema remains v44; no raw prompt/output/credentials in projection | withhold resilience projection on invalid policy; provenance recovery remains authoritative; restart never blind-retries an external effect; existing routing/gateway authority is reused | Core contract 7/7, Core/IPC check, Electron focused panel 1/1, protocol/typecheck; full regression evidence and exact commands recorded at release; evidence redacted |
 
 Rollback не обещает откат уже совершённых внешних side effects: такие effects
 идут через existing receipts/reconciliation и требуют typed unknown outcome.
@@ -111,3 +112,16 @@ audit хранится по его собственному Core policy.
 - Fresh checks: model-gateway structured-response unit test, Core lifecycle
   unit test, `npm run check:protocol`, `npm run typecheck`, focused Vitest,
   `cargo fmt --all -- --check`, and `git diff --check`.
+
+## Plan 42 — Model Resilience Policy v1 (2026-08-31)
+
+- Contract/runtime: `cargo test -p evohime-core model_resilience_policy
+  --no-fail-fast`; `cargo test -p evohime-core --test
+  model_resilience_policy_contract --no-fail-fast` — 7/7.
+- Regression: `cargo test -p evohime-core -p evohime-local-storage
+  -p evohime-desktop-ipc --no-fail-fast` — Core 626, storage 225, IPC 36.
+- Electron: `npm run check:protocol`, `npm run typecheck`, `npm test` — 486
+  passed, 2 штатно skipped; `npm run build`; `npm run check:bundle`.
+- Safety: schema remains v44; IPC is authenticated additive 188/event 43;
+  policy projection is metadata-only and provenance recovery forbids blind retry
+  after dispatch unknown outcome.

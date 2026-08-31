@@ -1805,6 +1805,15 @@ function dispatch(
       return accepted(client.send({ executionPolicyProfiles: { schemaVersion: 1, requestId, operation: 'status', profileId, expectedVersion: 0, idempotencyKey } }))
     }
 
+    case 'modelResiliencePolicy.status': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (requestId === null || ownerScope === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректные параметры model resilience policy.')
+      return accepted(client.send({ modelResiliencePolicy: { schemaVersion: 1, requestId, ownerScope, operation: 'status', expectedVersion: 0, idempotencyKey } }))
+    }
+
     case 'automation.listSchedules': {
       const value = asRecord(payload)
       const ownerScope = asBoundedString(value['ownerScope'])

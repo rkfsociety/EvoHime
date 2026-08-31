@@ -55,7 +55,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 42.0 — Model Resilience Policy: retry, fallback и provider-safe request adaptation.
+- Model Resilience Policy v1 из `docs/architecture.md`.
 - План 71.0 — Workflow Optimization Lab: offline search и benchmark-driven улучшение agent workflows.
 - План 83.0 — Reasoning Operator Library: typed Generate/Review/Revise/Ensemble primitives для agent workflows.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.

@@ -987,6 +987,7 @@ pub mod memory_api;
 pub mod memory_domain;
 pub mod memory_extraction;
 pub mod memory_retrieval;
+pub mod model_resilience_policy;
 pub mod observability;
 pub mod permission_rules;
 pub mod plan;
@@ -6966,6 +6967,10 @@ impl ToolAgent {
         task_class: Option<&str>,
         estimated_input_tokens: u32,
     ) -> Result<ProvenancedModelResult, AgentRunError> {
+        let resilience_policy = model_resilience_policy::builtin_policy();
+        let resilience_hash = resilience_policy
+            .canonical_hash()
+            .map_err(|error| AgentRunError::Internal(error.to_string()))?;
         let timeout_duration = Duration::from_secs(config.model_timeout_secs);
         let mut last_error: Option<String> = None;
         let logical_request_id = format!("{task_id}:{}", ledger.model_call_id);
@@ -6991,6 +6996,8 @@ impl ToolAgent {
                     "task_id": task_id,
                     "attempt": attempt + 1,
                     "timeout_secs": config.model_timeout_secs,
+                    "resilience_policy": model_resilience_policy::CONTRACT_ID,
+                    "resilience_policy_hash": resilience_hash.clone(),
                 }),
             );
 
@@ -7118,6 +7125,10 @@ impl ToolAgent {
 
             match result {
                 Err(error) => {
+                    let failure = model_resilience_policy::normalize_provider_error(&error);
+                    let policy_metadata = resilience_policy
+                        .next_attempt(attempt, failure, false, false)
+                        .ok();
                     if let (Some(journal), Some(request_id)) =
                         (&self.journal, request_id.as_deref())
                     {
@@ -7140,7 +7151,7 @@ impl ToolAgent {
                             .await;
                     }
                     last_error = Some(format!("{}", error));
-                    if !is_retriable_error(&error) {
+                    if !failure.opens_circuit() && !failure.triggers_cooldown() {
                         write_model_trace(
                             "provider.error_terminal",
                             serde_json::json!({
@@ -7155,6 +7166,8 @@ impl ToolAgent {
                         serde_json::json!({
                             "task_id": task_id,
                             "error": error.to_string(),
+                            "failure_class": format!("{failure:?}"),
+                            "policy_outcome": policy_metadata.as_ref().map(|value| format!("{:?}", value.outcome)),
                             "attempt": attempt + 1,
                             "will_retry": attempt < config.retry_max,
                         }),

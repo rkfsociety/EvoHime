@@ -1779,6 +1779,7 @@ message CommandEnvelope {
     StructuredResponseCommand structured_response = 185;
     SensitiveDataGuardrailsCommand sensitive_data_guardrails = 186;
     ExecutionPolicyProfilesCommand execution_policy_profiles = 187;
+    ModelResiliencePolicyCommand model_resilience_policy = 188;
   }
 }
 
@@ -1871,6 +1872,7 @@ message EventEnvelope {
     StructuredResponseEvent structured_response = 40;
     SensitiveDataGuardrailsEvent sensitive_data_guardrails = 41;
     ExecutionPolicyProfilesEvent execution_policy_profiles = 42;
+    ModelResiliencePolicyEvent model_resilience_policy = 43;
   }
 }
 
@@ -1922,6 +1924,31 @@ message ExecutionPolicyProfilesEvent {
   uint64 timeout_ms = 11;
   uint64 max_output_bytes = 12;
   string error_code = 13;
+}
+
+// Plan 42: bounded metadata-only model retry/fallback projection. Raw
+// prompts/outputs, credentials and provider-specific payloads never cross IPC.
+message ModelResiliencePolicyCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string operation = 4;
+  uint64 expected_version = 5;
+  string idempotency_key = 6;
+}
+message ModelResiliencePolicyEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  string policy_id = 5;
+  string policy_hash = 6;
+  uint32 attempts = 7;
+  uint32 retries = 8;
+  uint32 fallbacks = 9;
+  string terminal_outcome = 10;
+  string error_code = 11;
+  bytes projection_json = 12;
 }
 
 // Plan 37: bounded metadata-only middleware pipeline surface. Raw prompts,
