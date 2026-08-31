@@ -636,7 +636,10 @@ mod tests {
 
     #[test]
     fn security_regression_is_hard_failure() {
-        let current = Metrics { security_failures: 1, ..Metrics::default() };
+        let current = Metrics {
+            security_failures: 1,
+            ..Metrics::default()
+        };
         let comparison = compare_metrics(
             &current,
             None,

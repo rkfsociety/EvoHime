@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-29. Планы 01–25 завершены и
+Обновлено: 2026-08-31. Планы 01–25 завершены и
 удалены из каталога временных планов. План 19.0 добавил только пользовательский
 self-repair/self-update цикл; автоматического ремонта, push или перезапуска нет.
 Code signing явно исключён из текущего release scope.
@@ -496,3 +496,19 @@ commands 183–184/event 39, Electron добавляет metadata-only Middlewar
 Проверены Core contract/recovery tests 7/7, storage idempotency 1/1, desktop
 IPC 35/35, protocol/typecheck и focused Electron panel 1/1; full regression
 evidence фиксируется в release-evidence для текущего commit.
+### Adaptive Tool Catalog v1
+
+План 38 реализован 31 августа 2026 года. Core строит bounded catalog из
+`ToolRegistry` manifests, сначала отбрасывая инструменты, которые не проходят
+Core permission preflight. Deterministic token selector выбирает максимум 8
+tools (hard limit 32), а model/semantic output принимается только после
+allowlist validation; unknown/duplicate ids fail closed. Empty/no-match query
+использует deterministic top-ranked fallback и не расширяет authority.
+
+Catalog и selection cache derived и process-local: новой SQLite schema/migration
+нет, после рестарта они строятся заново. Cache key включает catalog, registry,
+policy, grant, query, selector и limit hashes; diagnostics bounded и redacted
+входят в `model-trace.jsonl`. `ToolSpec` содержит full input schema только для
+выбранных разрешённых tools и их manifest hash. Electron `AdaptiveToolCatalog`
+panel показывает только список из authenticated `model.context`; raw prompts,
+schemas, credentials и selector output в renderer не передаются.

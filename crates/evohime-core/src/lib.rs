@@ -1,5 +1,7 @@
 pub struct CoreVersion;
 
+pub mod adaptive_tool_catalog;
+
 pub const AGENT_IDENTITY_PROMPT: &str =
     "Ты — Ева, AI-агент приложения EvoHime. Ева — короткое имя EvoHime; понимай обращения к тебе «Ева» и «EvoHime» как к одному агенту.";
 
@@ -908,7 +910,7 @@ use std::{
     io::Write,
     path::PathBuf,
     sync::{Arc, Mutex as StdMutex},
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 use base64::Engine;
@@ -7181,6 +7183,7 @@ impl ToolAgent {
         preferred_route: Option<String>,
     ) -> Result<String, AgentRunError> {
         let task_id = task_id.into();
+        let prompt = prompt.into();
         let task_uuid = uuid::Uuid::parse_str(&task_id).unwrap_or_else(|_| uuid::Uuid::new_v4());
         let context = ToolContext {
             workspace_root: workspace_root.into(),
@@ -7189,37 +7192,72 @@ impl ToolAgent {
             progress_tx: None,
         };
         let resilience_config = ProviderResilienceConfig::default();
-        let mut specs = self
-            .tools
-            .list()
+        let mut authorized_manifests = Vec::new();
+        for tool in self.tools.list() {
+            if matches!(
+                self.tools
+                    .preflight(&context, tool.name, &serde_json::json!({}))
+                    .await,
+                Ok(evohime_tool_runtime::ToolPreflightDecision::Allowed { .. })
+            ) {
+                if let Some(manifest) = self.tools.manifest_for(tool.name) {
+                    authorized_manifests.push(manifest);
+                }
+            }
+        }
+        let projection = adaptive_tool_catalog::build_projection(
+            &authorized_manifests,
+            "runtime-policy",
+            "task-grant",
+        )
+        .map_err(|error| AgentRunError::Internal(error.to_string()))?;
+        let selection_started = Instant::now();
+        let selection = adaptive_tool_catalog::select_deterministic(
+            &projection,
+            &prompt,
+            adaptive_tool_catalog::DEFAULT_MAX_TOOLS,
+        )
+        .map_err(|error| AgentRunError::Internal(error.to_string()))?;
+        let selected = selection
+            .selected_ids
+            .iter()
+            .filter_map(|id| self.tools.manifest_for(id))
+            .collect::<Vec<_>>();
+        let mut specs = selected
             .into_iter()
-            .map(|tool| {
-                let name = tool.name.to_string();
+            .map(|manifest| {
+                let name = manifest.tool_id.clone();
                 let mut spec = ToolSpec::function(
                     name,
-                    tool.description,
-                    evohime_tool_runtime::builtin_input_schema(tool.name),
+                    manifest.description.clone(),
+                    manifest.input_schema.clone(),
                 );
-                spec.function.manifest_hash = self
-                    .tools
-                    .manifest_for(tool.name)
-                    .and_then(|manifest| manifest.canonical_hash().ok());
+                spec.function.manifest_hash = Some(manifest.canonical_hash().unwrap_or_default());
                 spec
             })
             .collect::<Vec<_>>();
 
-        // Graceful degradation: if no specs available, use defaults
-        if specs.is_empty() {
-            write_model_trace(
-                "provider.fallback_specs",
-                serde_json::json!({
-                    "task_id": task_id,
-                    "reason": "no tool specs available",
-                    "using": "default_tool_specs"
-                }),
-            );
-            specs = default_tool_specs();
-        }
+        write_model_trace(
+            "adaptive_tool_catalog.selection",
+            serde_json::json!({
+                "task_id": task_id,
+                "revision": projection.revision,
+                "candidate_count": selection.candidate_count,
+                "selector_cost_units": selection.candidate_count,
+                "selector_elapsed_ms": selection_started.elapsed().as_millis().min(u64::MAX as u128),
+                "selected_count": selection.selected_ids.len(),
+                "selected_ids": selection.selected_ids,
+                "selector": selection.selector,
+                "fallback": selection.fallback,
+                "cache_key": selection.cache_key,
+                "registry_hash": projection.registry_hash,
+                "policy_hash": projection.policy_hash,
+                "grant_hash": projection.grant_hash
+            }),
+        );
+
+        // Fail closed: an empty authorized snapshot stays empty. Never replace
+        // it with a legacy/default schema set, which could widen authority.
         let tool_names = specs
             .iter()
             .map(|spec| spec.function.name.clone())

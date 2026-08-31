@@ -1106,3 +1106,20 @@ run snapshot metadata; raw request/result и transient hook payloads не
 oversized input fail closed. Authenticated IPC использует additive commands
 183–184/event 39, а Electron `AgentMiddlewarePipelinePanel` получает только
 bounded metadata и отправляет действия через Core.
+## Adaptive Tool Catalog v1 (план 38)
+
+Adaptive selection — это Core-owned narrowing layer между `ToolRegistry` и
+`ToolAgent`. Registry manifests и permission preflight формируют authoritative
+snapshot; selector не может добавить capability, а перед моделью остаются
+только schemas выбранных ids. Deterministic selector ранжирует bounded compact
+metadata по нормализованным токенам; optional semantic/model selector возвращает
+только stable ids и проходит ту же Core allowlist validation.
+
+Catalog projection ограничен 32 tools (default 8), описанием 256 Unicode
+символов и input schema 64 KiB. Empty/invalid/unavailable selection применяет
+явный deterministic fallback. Cache живёт только в Core process, ключ включает
+revision/registry/policy/grant/query/selector/limit и инвалидируется при любом
+изменении этих входов или рестарте. Durable storage не добавляется; в журнал
+попадает лишь bounded redacted selection metadata. Existing authenticated
+`model.context` event — единственная client projection; Electron panel не имеет
+доступа к Core, storage или full schemas.

@@ -147,3 +147,7 @@ immutable bounded overrides, Core-only capability authority, schema v43,
 recovery/idempotency semantics, authenticated IPC 183–184/event 39 и
 metadata-only Electron projection. Комплект `37-0` … `37-4` удалён после
 свежих focused и regression gates.
+План 38 закрыт: Adaptive Tool Catalog v1 реализует Core-owned bounded selection
+между `ToolRegistry` и `ToolAgent`; критерии, cache invalidation, fallback,
+semantic/model allowlist и metadata-only Electron projection подтверждены
+focused Core/Electron tests и свежими protocol/typecheck gates.
