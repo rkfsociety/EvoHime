@@ -131,3 +131,11 @@ immutable preset revision/hash/workspace snapshot в automation scheduler,
 metadata-only Electron WorkflowPanel. Drift, rebinding, stale revision,
 duplicate slot и unknown outcome остаются fail-closed; комплект 35-0 … 35-4
 удалён после полного regression-прогона.
+
+План 36 закрыт: Agent Benchmark Matrix v1 перенесён в canonical
+architecture/current-state/release-evidence. Подтверждены versioned synthetic
+suite, ModelProfile/AgentProfile matrix, repeated attempts, bounded statistics,
+baseline comparison, maintain/improve/explore sets, hard security failures,
+redacted JSON report, schema v42, authenticated IPC 181–182/event 38 и
+metadata-only Electron panel. Deterministic PR gate остаётся отдельным, а
+provider-unavailable не считается pass; комплект 36-0 … 36-4 удалён.

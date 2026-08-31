@@ -3837,6 +3837,16 @@ impl IpcBridge {
                     )
                     .await?;
                 }
+                Some(generated::command_envelope::Command::BenchmarkMatrixList(request))
+                | Some(generated::command_envelope::Command::BenchmarkMatrixAction(request)) => {
+                    let result = self.dispatch_benchmark_matrix(request);
+                    self.write_response(
+                        writer,
+                        "benchmark_matrix.result",
+                        serde_json::to_vec(&result)?,
+                    )
+                    .await?;
+                }
                 Some(generated::command_envelope::Command::ListAutomationSchedules(request)) => {
                     let result = self.dispatch_list_automation_schedules(request).await;
                     self.write_response(
@@ -10696,6 +10706,49 @@ impl IpcBridge {
             _ => {
                 serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"unavailable","error_code":"unsupported_operation"})
             }
+        }
+    }
+
+    fn dispatch_benchmark_matrix(
+        &self,
+        request: generated::AgentBenchmarkMatrixCommand,
+    ) -> serde_json::Value {
+        if request.schema_version != 1
+            || request.request_id.is_empty()
+            || request.owner_scope.is_empty()
+            || request.idempotency_key.is_empty()
+        {
+            return serde_json::json!({
+                "schema_version": 1,
+                "request_id": request.request_id,
+                "operation": request.operation,
+                "status": "rejected",
+                "error_code": "invalid_request"
+            });
+        }
+        match request.operation.as_str() {
+            "list" => serde_json::json!({
+                "schema_version": 1,
+                "request_id": request.request_id,
+                "operation": "list",
+                "status": "ok",
+                "runs": [],
+                "error_code": ""
+            }),
+            "start" | "cancel" | "approveBaseline" => serde_json::json!({
+                "schema_version": 1,
+                "request_id": request.request_id,
+                "operation": request.operation,
+                "status": "unavailable",
+                "error_code": "benchmark_runtime_not_configured"
+            }),
+            _ => serde_json::json!({
+                "schema_version": 1,
+                "request_id": request.request_id,
+                "operation": request.operation,
+                "status": "rejected",
+                "error_code": "unsupported_operation"
+            }),
         }
     }
 

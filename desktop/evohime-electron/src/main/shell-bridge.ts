@@ -1737,6 +1737,24 @@ function dispatch(
       return accepted(client.send({ invocationPresetAction: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(payloadJson, 'utf8'), expectedRevision, idempotencyKey } }))
     }
 
+    case 'benchmarkMatrix.list':
+    case 'benchmarkMatrix.start':
+    case 'benchmarkMatrix.cancel':
+    case 'benchmarkMatrix.approveBaseline': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const operation = command.slice('benchmarkMatrix.'.length)
+      const suiteId = value['suiteId'] === undefined ? '' : asBoundedString(value['suiteId'])
+      const runId = value['runId'] === undefined ? '' : asBoundedString(value['runId'])
+      const attempts = value['attempts'] === undefined ? 3 : asBoundedNumber(value['attempts'], 32)
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asBoundedNumber(value['expectedVersion'], Number.MAX_SAFE_INTEGER)
+      if (requestId === null || ownerScope === null || idempotencyKey === null || suiteId === null || runId === null || attempts === null || expectedVersion === null) return failure('invalid-payload', 'Некорректная команда benchmark matrix.')
+      const payloadJson = JSON.stringify({ suiteId, runId, attempts, mode: value['mode'] === 'real' ? 'real' : 'deterministic' })
+      return accepted(client.send({ benchmarkMatrixAction: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(payloadJson, 'utf8'), expectedVersion, idempotencyKey } }))
+    }
+
     case 'automation.listSchedules': {
       const value = asRecord(payload)
       const ownerScope = asBoundedString(value['ownerScope'])

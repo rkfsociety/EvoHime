@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     process::ExitCode,
@@ -9,6 +10,11 @@ use std::{
 };
 use thiserror::Error;
 use walkdir::WalkDir;
+
+use evohime_core::agent_benchmark_matrix::{
+    run_matrix, BenchmarkMode, BenchmarkPolicy, BenchmarkSuite, DeterministicBenchmarkExecutor,
+    UnavailableBenchmarkExecutor,
+};
 
 const SCHEMA_VERSION: &str = "1.0";
 const MAX_CASE_BYTES: usize = 256 * 1024;
@@ -93,6 +99,9 @@ fn main() -> ExitCode {
 }
 
 fn run(args: Vec<String>) -> Result<(), EvalError> {
+    if args.first().is_some_and(|arg| arg == "benchmark") {
+        return run_benchmark_command(&args[1..]);
+    }
     let mut fixture_root = PathBuf::from("tests/evals/fixtures");
     let mut selected_case = None;
     let mut mode = "deterministic".to_string();
@@ -190,6 +199,111 @@ fn run(args: Vec<String>) -> Result<(), EvalError> {
     } else {
         Ok(())
     }
+}
+
+fn run_benchmark_command(args: &[String]) -> Result<(), EvalError> {
+    let mut suite_path = PathBuf::from("tests/evals/benchmarks/core.json");
+    let mut attempts: u16 = 3;
+    let mut mode = BenchmarkMode::Deterministic;
+    let mut output = None;
+    let mut run_id = format!("local-{}", std::process::id());
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--suite" => {
+                suite_path = PathBuf::from(
+                    args.get(index + 1)
+                        .ok_or_else(|| EvalError::Args("--suite требует путь".into()))?,
+                );
+                index += 1;
+            }
+            "--attempts" => {
+                attempts = args
+                    .get(index + 1)
+                    .ok_or_else(|| EvalError::Args("--attempts требует число".into()))?
+                    .parse()
+                    .map_err(|_| EvalError::Args("--attempts: неверное число".into()))?;
+                index += 1;
+            }
+            "--mode" => {
+                mode = match args.get(index + 1).map(String::as_str) {
+                    Some("deterministic") => BenchmarkMode::Deterministic,
+                    Some("real") => BenchmarkMode::Real,
+                    _ => {
+                        return Err(EvalError::Args(
+                            "--mode должен быть deterministic или real".into(),
+                        ))
+                    }
+                };
+                index += 1;
+            }
+            "--output" => {
+                output =
+                    Some(PathBuf::from(args.get(index + 1).ok_or_else(|| {
+                        EvalError::Args("--output требует путь".into())
+                    })?));
+                index += 1;
+            }
+            "--run-id" => {
+                run_id = args
+                    .get(index + 1)
+                    .ok_or_else(|| EvalError::Args("--run-id требует значение".into()))?
+                    .clone();
+                index += 1;
+            }
+            "--help" => {
+                println!("cargo eval benchmark --suite <json> --attempts <n> --mode {{deterministic|real}} --output <json>");
+                return Ok(());
+            }
+            value => {
+                return Err(EvalError::Args(format!(
+                    "неизвестный аргумент benchmark {value}"
+                )))
+            }
+        }
+        index += 1;
+    }
+    let bytes = fs::read(&suite_path)
+        .map_err(|e| EvalError::Io(suite_path.display().to_string(), e.to_string()))?;
+    if bytes.len() > MAX_CASE_BYTES {
+        return Err(EvalError::Args("suite превышает 256 KiB".into()));
+    }
+    let suite: BenchmarkSuite =
+        serde_json::from_slice(&bytes).map_err(|e| EvalError::Args(format!("suite JSON: {e}")))?;
+    let policy = BenchmarkPolicy {
+        attempts,
+        max_parallelism: 4,
+        seed: 0,
+        global_token_budget: None,
+        global_cost_budget_micros: None,
+        mode,
+    };
+    let report = match mode {
+        BenchmarkMode::Deterministic => run_matrix(
+            &suite,
+            &policy,
+            &run_id,
+            option_env!("GITHUB_SHA").unwrap_or("local"),
+            &DeterministicBenchmarkExecutor,
+            &BTreeMap::new(),
+        ),
+        BenchmarkMode::Real => run_matrix(
+            &suite,
+            &policy,
+            &run_id,
+            option_env!("GITHUB_SHA").unwrap_or("local"),
+            &UnavailableBenchmarkExecutor,
+            &BTreeMap::new(),
+        ),
+    }
+    .map_err(|e| EvalError::Args(format!("benchmark contract: {e}")))?;
+    let json = serde_json::to_string(&report).map_err(|e| EvalError::Args(e.to_string()))?;
+    if let Some(path) = output {
+        fs::write(&path, format!("{json}\n"))
+            .map_err(|e| EvalError::Io(path.display().to_string(), e.to_string()))?;
+    }
+    println!("{json}");
+    Ok(())
 }
 
 fn load_fixture(path: &Path) -> Result<Fixture, EvalError> {

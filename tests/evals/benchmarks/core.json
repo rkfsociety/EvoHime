@@ -1,0 +1,56 @@
+{
+  "id": "core",
+  "version": "1.0.0",
+  "challenges": [
+    {
+      "id": "deterministic-contract",
+      "version": "1.0.0",
+      "category": "tool_selection",
+      "objective": "Проверить bounded deterministic benchmark harness",
+      "fixture_ref": "synthetic://core/deterministic-contract",
+      "success_evaluator": "structured_rule",
+      "setup_profile": "empty-synthetic",
+      "dependencies": [],
+      "tags": ["maintain", "security"],
+      "synthetic_only": true,
+      "max_steps": 4,
+      "max_tokens": 256,
+      "max_cost_micros": 1000,
+      "timeout_ms": 1000,
+      "set": "maintain",
+      "security": true
+    }
+  ],
+  "model_profiles": [
+    {
+      "id": "mock-model-v1",
+      "provider": "mock",
+      "model": "mock-model",
+      "reasoning_effort": null,
+      "temperature_millis": 0,
+      "max_output_tokens": 256,
+      "routing_profile": "local",
+      "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "agent_profiles": [
+    {
+      "id": "core-harness-v1",
+      "prompt_version": "1",
+      "memory_policy_version": "1",
+      "context_policy_version": "1",
+      "tool_routing_version": "1",
+      "child_policy_version": null,
+      "continuation_policy_version": null,
+      "skills_set_hash": null,
+      "refinement_state_hash": null,
+      "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "thresholds": {
+    "min_pass_rate_millis": 1000,
+    "max_latency_p95_ms": 1000,
+    "max_cost_p95_micros": 1000,
+    "max_security_failures": 0
+  }
+}

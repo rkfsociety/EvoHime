@@ -465,3 +465,19 @@ schedule хранит preset revision/hash/workspace snapshot, проверяе�
 WorkflowPanel показывает только metadata projection. Комплект планов 35-0 …
 35-4 удалён после Core 600, storage 222, desktop IPC 35 и Electron regression
 478 passed/2 skipped, protocol/typecheck, fmt, clippy и diff-check.
+
+План 36 реализован 31 августа 2026 года. Agent Benchmark Matrix v1 добавляет
+Core contract `agent_benchmark_matrix`, bounded deterministic/unavailable
+executors, агрегирование multiple attempts с pass-rate и P50/P95/P99,
+baseline/regression verdicts и hard security failures. Metadata-only SQLite
+schema обновлена до v42 (`benchmark_store`), suite fixture находится в
+`tests/evals/benchmarks/core.json`; существующий static/deterministic eval gate
+не изменён. Authenticated IPC использует additive commands 181–182/event 38,
+Electron добавляет вкладку «Бенчмарки» с Core-only list/start actions.
+
+Проверено: Core benchmark tests 3/3, local-storage benchmark store 1/1,
+`cargo eval benchmark` с 3 attempts создал redacted JSON report, Core check,
+Electron protocol/typecheck, focused benchmark panel test и полный Electron
+regression 480 passed/2 skipped. Provider `real` без настроенного окружения
+честно возвращает `unavailable`; production data/network effects не входят в
+локальную deterministic проверку.

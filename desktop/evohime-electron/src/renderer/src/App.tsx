@@ -30,6 +30,7 @@ import { AnalysisKernelPanel } from './AnalysisKernelPanel'
 import { WorkflowPackagePanel } from './WorkflowPackagePanel'
 import { VisualWorkflowBuilderPanel } from './VisualWorkflowBuilderPanel'
 import { ConversationalWorkflowComposerPanel } from './ConversationalWorkflowComposerPanel'
+import { AgentBenchmarkMatrixPanel } from './AgentBenchmarkMatrixPanel'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -54,7 +55,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -75,6 +76,7 @@ const VIEWS: readonly ViewDescriptor[] = [
   { id: 'continuations', label: 'Продолжения', icon: '↻' },
   { id: 'kernels', label: 'Анализ', icon: '⌘' },
   { id: 'listening', label: 'Слух', icon: '🎙' },
+  { id: 'benchmarks', label: 'Бенчмарки', icon: '▦' },
 ]
 
 /** Not a nav row: reached through the gear next to the account. */
@@ -309,6 +311,7 @@ export function App(): React.JSX.Element {
               {view === 'continuations' ? <ContinuationPanel connection={connection} events={events} /> : null}
               {view === 'kernels' ? <AnalysisKernelPanel connection={connection} events={events} /> : null}
               {view === 'listening' ? <ListeningPanel connection={connection} events={events} /> : null}
+              {view === 'benchmarks' ? <AgentBenchmarkMatrixPanel /> : null}
             </div>
           )}
         </div>

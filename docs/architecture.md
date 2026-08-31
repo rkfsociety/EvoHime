@@ -1067,3 +1067,24 @@ preset. Automation schedule хранит immutable preset revision/hash/workspac
 snapshot; due slot проверяет drift/rebinding и передаёт inputs в обычный
 WorkflowRuntime. Migration — explicit Core operation с bounded mapping,
 preview и новой immutable revision; temporary overrides не изменяют storage.
+
+### Agent Benchmark Matrix v1
+
+Benchmark Matrix находится в `crates/evohime-core/src/agent_benchmark_matrix.rs`
+и является Core-owned metadata-only контуром для versioned synthetic
+challenges, ModelProfile × AgentProfile matrix и повторных attempts. Встроенный
+`BenchmarkExecutor` разделяет воспроизводимый deterministic executor и явно
+включаемый provider/nightly режим; при отсутствии provider результат остаётся
+typed `unavailable`. На каждую комбинацию считаются pass-rate, timeout/failure
+classes и P50/P95/P99 latency/cost. Unknown, skipped и unavailable не считаются
+успешными и не продвигают baseline.
+
+`benchmark_store` добавляет schema v42 с immutable suite/run/attempt/baseline
+metadata и idempotent keys. В report входят contract/suite/profile hashes,
+bounded metrics, comparison verdict и `redacted` status; raw prompt/output,
+credentials, transcripts, absolute paths и production data запрещены. Security
+regression — hard failure независимо от среднего score; baseline меняется
+только отдельным Core-approved optimistic-version action. Authenticated IPC
+использует additive commands 181–182 и event 38. Electron имеет
+metadata-only `AgentBenchmarkMatrixPanel`, а deterministic PR gate
+`cargo eval --mode deterministic` остаётся отдельным от nightly/manual matrix.

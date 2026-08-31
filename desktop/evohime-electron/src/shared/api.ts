@@ -1092,6 +1092,10 @@ export const RENDERER_COMMANDS = [
   'eventTriggerRuntime.command',
   'invocationPreset.list',
   'invocationPreset.command',
+  'benchmarkMatrix.list',
+  'benchmarkMatrix.start',
+  'benchmarkMatrix.cancel',
+  'benchmarkMatrix.approveBaseline',
   'automation.listSchedules',
   'automation.saveSchedule',
   'automation.trigger',
@@ -1472,6 +1476,17 @@ export interface CommandPayloads {
     expectedRevision?: number
     idempotencyKey: string
   }
+  'benchmarkMatrix.list': { requestId: string; ownerScope: string; limit?: number }
+  'benchmarkMatrix.start': {
+    requestId: string
+    ownerScope: string
+    suiteId: string
+    mode?: 'deterministic' | 'real'
+    attempts?: number
+    idempotencyKey: string
+  }
+  'benchmarkMatrix.cancel': { requestId: string; ownerScope: string; runId: string; idempotencyKey: string }
+  'benchmarkMatrix.approveBaseline': { requestId: string; ownerScope: string; runId: string; expectedVersion: number; idempotencyKey: string }
   'automation.listSchedules': { ownerScope: string; limit?: number }
   'automation.saveSchedule': {
     scheduleId: string
@@ -1684,6 +1699,10 @@ export interface CommandResults {
   'eventTriggerRuntime.command': { accepted: boolean }
   'invocationPreset.list': { accepted: boolean }
   'invocationPreset.command': { accepted: boolean }
+  'benchmarkMatrix.list': { accepted: boolean }
+  'benchmarkMatrix.start': { accepted: boolean }
+  'benchmarkMatrix.cancel': { accepted: boolean }
+  'benchmarkMatrix.approveBaseline': { accepted: boolean }
   'automation.listSchedules': { accepted: boolean }
   'automation.saveSchedule': { accepted: boolean }
   'automation.trigger': { accepted: boolean }
