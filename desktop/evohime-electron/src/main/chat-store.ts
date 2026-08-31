@@ -88,13 +88,18 @@ export class ChatStore {
   }
 
   /** Records a prompt and the task it started, naming the chat on first use. */
-  appendPrompt(chatId: string, taskId: string, prompt: string): ChatRecord | null {
+  appendPrompt(chatId: string, taskId: string, prompt: string, clientMessageId?: string): ChatRecord | null {
     const text = prompt.trim().slice(0, MAX_PROMPT_CHARS)
     if (text.length === 0) return null
     const current = this.read().chats
     const chat = current.find((item) => item.id === chatId)
     if (!chat) return null
-    const message: ChatMessage = { taskId, prompt: text, atMs: this.now() }
+    const message: ChatMessage = {
+      taskId,
+      clientMessageId: clientMessageId?.slice(0, 128) || taskId,
+      prompt: text,
+      atMs: this.now()
+    }
     const next: ChatRecord = {
       ...chat,
       title: chat.messages.length === 0 ? titleFromPrompt(text) : chat.title,
@@ -177,6 +182,10 @@ function parseChat(value: unknown): ChatRecord | null {
     if (prompt.length === 0 || taskId.length === 0) continue
     messages.push({
       taskId,
+      clientMessageId:
+        typeof message['clientMessageId'] === 'string' && message['clientMessageId'].length > 0
+          ? message['clientMessageId'].slice(0, 128)
+          : taskId,
       prompt: prompt.slice(0, MAX_PROMPT_CHARS),
       atMs: numeric(message['atMs'])
     })

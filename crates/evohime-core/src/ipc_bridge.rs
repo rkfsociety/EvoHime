@@ -98,6 +98,35 @@ fn decode_typed_execution_event(payload: &[u8]) -> Option<generated::ExecutionEv
     })
 }
 
+fn conversation_event_projection(
+    event: crate::conversation_event_log::RendererConversationEvent,
+) -> generated::ConversationEventProjection {
+    generated::ConversationEventProjection {
+        schema_version: event.schema_version,
+        conversation_id: event.conversation_id,
+        event_id: event.event_id,
+        sequence: event.sequence,
+        timestamp_ms: event.timestamp_ms,
+        kind: event.kind,
+        category: event.category,
+        payload_json: event.payload_json,
+        correlation_id: event.correlation_id,
+        causation_id: event.causation_id,
+        task_id: event.task_id,
+        run_id: event.run_id,
+        turn_id: event.turn_id,
+        client_message_id: event.client_message_id,
+        persistence_class: event.persistence_class,
+        sensitivity: event.sensitivity,
+    }
+}
+
+fn decode_conversation_event(payload: &[u8]) -> Option<generated::ConversationEventProjection> {
+    serde_json::from_slice::<crate::conversation_event_log::RendererConversationEvent>(payload)
+        .ok()
+        .map(conversation_event_projection)
+}
+
 /// Bounded set of `ReplayGap.reason` values (план 08-3). The retention case
 /// is the pre-existing condition (`journal.replay_bounded` reports a gap);
 /// `stale_generation` is new — the client's `CommandEnvelope` names a
@@ -287,6 +316,9 @@ pub struct ModelConfigSnapshot {
     pub configured: bool,
 }
 
+type ConversationSubscription =
+    Arc<tokio::sync::Mutex<Option<(String, std::collections::BTreeSet<String>)>>>;
+
 pub struct IpcBridge {
     journal: EventJournal,
     receipt_keys: Arc<ReceiptKeyManager>,
@@ -342,6 +374,7 @@ pub struct IpcBridge {
         Arc<tokio::sync::Mutex<crate::external_coding_agent_adapter::ExternalAgentRegistry>>,
     role_profiles: Arc<tokio::sync::Mutex<crate::agent_role_profiles::AgentRoleProfilesRegistry>>,
     team_sop: Arc<tokio::sync::Mutex<crate::team_sop_protocols::TeamSopRegistry>>,
+    conversation_subscription: ConversationSubscription,
 }
 
 /// Проект, под которым живут принятые предложения. Речь у стола не
@@ -630,6 +663,7 @@ impl IpcBridge {
             )),
             external_agents: Arc::new(tokio::sync::Mutex::new(Default::default())),
             role_profiles: Arc::new(tokio::sync::Mutex::new(Default::default())),
+            conversation_subscription: Arc::new(tokio::sync::Mutex::new(None)),
             team_sop: Arc::new(tokio::sync::Mutex::new(Default::default())),
         }
     }
@@ -664,6 +698,7 @@ impl IpcBridge {
             )),
             external_agents: Arc::new(tokio::sync::Mutex::new(Default::default())),
             role_profiles: Arc::new(tokio::sync::Mutex::new(Default::default())),
+            conversation_subscription: Arc::new(tokio::sync::Mutex::new(None)),
             team_sop: Arc::new(tokio::sync::Mutex::new(Default::default())),
         }
     }
@@ -705,6 +740,7 @@ impl IpcBridge {
             )),
             external_agents: Arc::new(tokio::sync::Mutex::new(Default::default())),
             role_profiles: Arc::new(tokio::sync::Mutex::new(Default::default())),
+            conversation_subscription: Arc::new(tokio::sync::Mutex::new(None)),
             team_sop: Arc::new(tokio::sync::Mutex::new(Default::default())),
         }
     }
@@ -809,6 +845,18 @@ impl IpcBridge {
         let mut last_sequence = after_sequence;
         for record in batch.events {
             last_sequence = record.sequence_id as u64;
+            let task_is_conversation_bound = if record.task_id.is_empty() {
+                false
+            } else {
+                let database = self.journal.database().lock().await;
+                match evohime_local_storage::conversation_event_log_store::task_binding(
+                    database.connection(),
+                    &record.task_id,
+                ) {
+                    Ok(binding) => binding.is_some(),
+                    Err(_) => true,
+                }
+            };
             // Typed ledger rows (план 08-1/08-2) carry ExecutionEventV1 JSON
             // in payload; project it additively into the oneof without
             // touching the generic event_type/payload backward-compat path.
@@ -817,16 +865,55 @@ impl IpcBridge {
                 .starts_with("ledger.")
                 .then(|| decode_typed_execution_event(&record.payload))
                 .flatten();
+            let typed_event = if record.event_type == "conversation.event" {
+                let subscription = self.conversation_subscription.lock().await.clone();
+                decode_conversation_event(&record.payload).and_then(|conversation| {
+                    let allowed = subscription
+                        .as_ref()
+                        .is_some_and(|(conversation_id, kinds)| {
+                            conversation_id == &conversation.conversation_id
+                                && (kinds.is_empty() || kinds.contains(&conversation.kind))
+                        });
+                    allowed.then(|| {
+                        generated::event_envelope::Event::ConversationEventLog(
+                            generated::ConversationEventLogEvent {
+                                schema_version: crate::conversation_event_log::CONTRACT_VERSION,
+                                operation: "live".into(),
+                                conversation_id: conversation.conversation_id.clone(),
+                                oldest_sequence: conversation.sequence,
+                                newest_sequence: conversation.sequence,
+                                has_older: false,
+                                has_newer: false,
+                                earliest_available_sequence: 0,
+                                error_code: String::new(),
+                                events: vec![conversation],
+                            },
+                        )
+                    })
+                })
+            } else {
+                execution_event
+                    .map(|event| generated::event_envelope::Event::ExecutionEvent(Box::new(event)))
+            };
+            if record.event_type == "conversation.event" && typed_event.is_none() {
+                continue;
+            }
+            let payload = if task_is_conversation_bound {
+                serde_json::to_vec(
+                    &serde_json::json!({"redacted": true, "conversation_projection": true}),
+                )?
+            } else {
+                record.payload
+            };
             let event = generated::EventEnvelope {
                 protocol: Some(protocol()),
                 sequence_id: record.sequence_id as u64,
                 task_id: record.task_id,
                 event_type: record.event_type,
-                payload: record.payload,
+                payload,
                 core_instance_id: self.core_instance_id.clone(),
                 session_epoch: self.session_epoch,
-                event: execution_event
-                    .map(|event| generated::event_envelope::Event::ExecutionEvent(Box::new(event))),
+                event: typed_event,
             };
             transport::write_frame(writer, &event.encode_to_vec()).await?;
         }
@@ -2703,23 +2790,126 @@ impl IpcBridge {
                         .await?;
                 }
                 Some(generated::command_envelope::Command::StartTask(start)) => {
-                    if let Some(coordinator) = &self.coordinator {
-                        coordinator
-                            .dispatch(CoreCommand::StartTask {
-                                task_id: start.task_id,
-                                prompt: start.prompt,
-                                workspace_root: (!start.workspace_path.is_empty())
-                                    .then(|| std::path::PathBuf::from(start.workspace_path)),
-                                preferred_route_hint: match start.preferred_route_hint.as_str() {
-                                    "local" | "cloud" => Some(start.preferred_route_hint),
-                                    "codex_cli" if start.execution_kind == "coding" => {
-                                        Some("codex_cli".into())
-                                    }
-                                    _ => None,
-                                },
-                            })
+                    let has_conversation = !start.conversation_id.is_empty();
+                    let has_client_message = !start.client_message_id.is_empty();
+                    if has_conversation != has_client_message {
+                        self.write_conversation_event_log_response(
+                            writer,
+                            conversation_event_log_error(
+                                "accept",
+                                &start.conversation_id,
+                                "invalid_argument",
+                            ),
+                        )
+                        .await?;
+                        return Ok(());
+                    }
+                    let mut should_dispatch = true;
+                    if has_conversation {
+                        let workspace_id =
+                            crate::task_memory::project_scope_id(&start.workspace_path);
+                        let accepted = self
+                            .journal
+                            .accept_conversation_message(
+                                &start.conversation_id,
+                                &workspace_id,
+                                &start.task_id,
+                                &start.client_message_id,
+                                &start.prompt,
+                            )
+                            .await;
+                        let (acceptance, sequence) = match accepted {
+                            Ok(value) => value,
+                            Err(StorageError::ConversationEventLog(
+                                evohime_local_storage::conversation_event_log_store::ConversationStoreError::IdempotencyConflict,
+                            )) => {
+                                self.write_conversation_event_log_response(
+                                    writer,
+                                    conversation_event_log_error(
+                                        "accept",
+                                        &start.conversation_id,
+                                        "idempotency_conflict",
+                                    ),
+                                )
+                                .await?;
+                                return Ok(());
+                            }
+                            Err(error) => {
+                                self.write_conversation_event_log_response(
+                                    writer,
+                                    conversation_event_log_error(
+                                        "accept",
+                                        &start.conversation_id,
+                                        &conversation_accept_error_code(&error),
+                                    ),
+                                )
+                                .await?;
+                                return Ok(());
+                            }
+                        };
+                        if let Some(coordinator) = &self.coordinator {
+                            coordinator.notify_journalled(sequence.max(0) as u64);
+                        }
+                        should_dispatch = self
+                            .journal
+                            .claim_conversation_dispatch(
+                                &start.conversation_id,
+                                &start.client_message_id,
+                            )
                             .await
-                            .map_err(|error| FrameError::Io(error.to_string()))?;
+                            .unwrap_or(false);
+                        if !should_dispatch && acceptance.dispatch_state == "dispatching" {
+                            self.write_conversation_event_log_response(
+                                writer,
+                                conversation_event_log_error(
+                                    "accept",
+                                    &start.conversation_id,
+                                    "dispatch_unknown",
+                                ),
+                            )
+                            .await?;
+                            return Ok(());
+                        }
+                    }
+                    if should_dispatch {
+                        if let Some(coordinator) = &self.coordinator {
+                            let dispatched = coordinator
+                                .dispatch(CoreCommand::StartTask {
+                                    task_id: start.task_id,
+                                    prompt: start.prompt,
+                                    workspace_root: (!start.workspace_path.is_empty())
+                                        .then(|| std::path::PathBuf::from(start.workspace_path)),
+                                    preferred_route_hint: match start.preferred_route_hint.as_str()
+                                    {
+                                        "local" | "cloud" => Some(start.preferred_route_hint),
+                                        "codex_cli" if start.execution_kind == "coding" => {
+                                            Some("codex_cli".into())
+                                        }
+                                        _ => None,
+                                    },
+                                })
+                                .await;
+                            if has_conversation {
+                                self.journal
+                                    .finish_conversation_dispatch(
+                                        &start.conversation_id,
+                                        &start.client_message_id,
+                                        dispatched.is_ok(),
+                                    )
+                                    .await
+                                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                            }
+                            dispatched.map_err(|error| FrameError::Io(error.to_string()))?;
+                        } else if has_conversation {
+                            self.journal
+                                .finish_conversation_dispatch(
+                                    &start.conversation_id,
+                                    &start.client_message_id,
+                                    false,
+                                )
+                                .await
+                                .map_err(|error| FrameError::Io(error.to_string()))?;
+                        }
                     }
                 }
                 Some(generated::command_envelope::Command::GetTaskCheckpoint(request)) => {
@@ -3961,6 +4151,22 @@ impl IpcBridge {
                 | Some(generated::command_envelope::Command::TeamSopProtocolsAction(request)) => {
                     let result = self.dispatch_team_sop_protocols(request).await;
                     self.write_team_sop_protocols_response(writer, serde_json::to_vec(&result)?)
+                        .await?;
+                }
+                Some(generated::command_envelope::Command::GetConversationEvents(request)) => {
+                    let result = self
+                        .dispatch_conversation_event_log(request, "history")
+                        .await;
+                    self.write_conversation_event_log_response(writer, result)
+                        .await?;
+                }
+                Some(generated::command_envelope::Command::SubscribeConversationEvents(
+                    request,
+                )) => {
+                    let result = self
+                        .dispatch_conversation_event_log(request, "subscribed")
+                        .await;
+                    self.write_conversation_event_log_response(writer, result)
                         .await?;
                 }
                 Some(generated::command_envelope::Command::SaveAutomationSchedule(request)) => {
@@ -11647,6 +11853,131 @@ impl IpcBridge {
         Ok(())
     }
 
+    async fn dispatch_conversation_event_log(
+        &self,
+        request: generated::ConversationEventLogRequest,
+        operation: &str,
+    ) -> generated::ConversationEventLogEvent {
+        let limit = if request.limit == 0 {
+            100
+        } else {
+            request.limit as usize
+        };
+        if request.schema_version != crate::conversation_event_log::CONTRACT_VERSION {
+            return conversation_event_log_error(
+                operation,
+                &request.conversation_id,
+                "event_schema_unsupported",
+            );
+        }
+        if operation == "subscribed" {
+            *self.conversation_subscription.lock().await = Some((
+                request.conversation_id.clone(),
+                request.kinds_filter.iter().cloned().collect(),
+            ));
+        }
+        let invalid = request.conversation_id.is_empty()
+            || request.conversation_id.len() > 128
+            || limit > evohime_local_storage::conversation_event_log_store::MAX_PAGE_EVENTS
+            || request.kinds_filter.len() > 16
+            || request
+                .kinds_filter
+                .iter()
+                .any(|kind| kind.is_empty() || kind.len() > 96)
+            || (request.use_before_sequence && request.use_after_sequence)
+            || (request.use_before_sequence && request.before_sequence == 0);
+        if invalid {
+            return conversation_event_log_error(
+                operation,
+                &request.conversation_id,
+                "invalid_argument",
+            );
+        }
+        let page = if request.use_before_sequence {
+            self.journal
+                .conversation_history_before(
+                    &request.conversation_id,
+                    request.before_sequence,
+                    limit,
+                )
+                .await
+        } else if request.use_after_sequence {
+            self.journal
+                .conversation_history_after(&request.conversation_id, request.after_sequence, limit)
+                .await
+        } else {
+            self.journal
+                .conversation_history_before(&request.conversation_id, u64::MAX, limit)
+                .await
+        };
+        let page = match page {
+            Ok(page) => page,
+            Err(StorageError::ConversationEventLog(
+                evohime_local_storage::conversation_event_log_store::ConversationStoreError::CursorExpired {
+                    earliest_available_sequence,
+                },
+            )) => return conversation_event_log_error_with_earliest(
+                operation,
+                &request.conversation_id,
+                "cursor_expired",
+                earliest_available_sequence,
+            ),
+            Err(StorageError::ConversationEventLog(
+                evohime_local_storage::conversation_event_log_store::ConversationStoreError::ConversationNotFound,
+            )) => return conversation_event_log_error(operation, &request.conversation_id, "conversation_not_found"),
+            Err(_) => return conversation_event_log_error(operation, &request.conversation_id, "history_unavailable"),
+        };
+        let filters = request
+            .kinds_filter
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>();
+        let events = page
+            .events
+            .into_iter()
+            .filter_map(|event| {
+                if !filters.is_empty() && !filters.contains(&event.kind) {
+                    return None;
+                }
+                crate::conversation_event_log::renderer_event(&event)
+                    .ok()
+                    .map(conversation_event_projection)
+            })
+            .collect::<Vec<_>>();
+        generated::ConversationEventLogEvent {
+            schema_version: crate::conversation_event_log::CONTRACT_VERSION,
+            operation: operation.into(),
+            conversation_id: request.conversation_id,
+            oldest_sequence: page.oldest_sequence.unwrap_or(0),
+            newest_sequence: page.newest_sequence.unwrap_or(0),
+            has_older: page.has_older,
+            has_newer: page.has_newer,
+            earliest_available_sequence: page.earliest_available_sequence,
+            error_code: String::new(),
+            events,
+        }
+    }
+
+    async fn write_conversation_event_log_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        result: generated::ConversationEventLogEvent,
+    ) -> Result<(), IpcBridgeError> {
+        let event = generated::EventEnvelope {
+            protocol: Some(protocol()),
+            sequence_id: 0,
+            task_id: String::new(),
+            event_type: format!("conversation.{}", result.operation),
+            payload: Vec::new(),
+            core_instance_id: self.core_instance_id.clone(),
+            session_epoch: self.session_epoch,
+            event: Some(generated::event_envelope::Event::ConversationEventLog(
+                result,
+            )),
+        };
+        transport::write_frame(writer, &event.encode_to_vec()).await?;
+        Ok(())
+    }
+
     async fn dispatch_team_sop_protocols(
         &self,
         request: generated::TeamSopProtocolsCommand,
@@ -12848,6 +13179,51 @@ fn checkpoint_status_text(status: crate::task_checkpoint::CheckpointStatus) -> S
         .unwrap_or_else(|_| "unknown".into())
         .trim_matches('"')
         .to_owned()
+}
+
+fn conversation_event_log_error(
+    operation: &str,
+    conversation_id: &str,
+    error_code: &str,
+) -> generated::ConversationEventLogEvent {
+    generated::ConversationEventLogEvent {
+        schema_version: crate::conversation_event_log::CONTRACT_VERSION,
+        operation: operation.into(),
+        conversation_id: conversation_id.chars().take(128).collect(),
+        events: Vec::new(),
+        oldest_sequence: 0,
+        newest_sequence: 0,
+        has_older: false,
+        has_newer: false,
+        earliest_available_sequence: 0,
+        error_code: error_code.into(),
+    }
+}
+
+fn conversation_accept_error_code(error: &StorageError) -> String {
+    match error {
+        StorageError::ConversationEventLog(
+            evohime_local_storage::conversation_event_log_store::ConversationStoreError::InvalidInput,
+        )
+        | StorageError::InvalidInput(_) => "invalid_argument",
+        StorageError::ConversationEventLog(
+            evohime_local_storage::conversation_event_log_store::ConversationStoreError::IdempotencyConflict,
+        ) => "idempotency_conflict",
+        _ => "storage_unavailable",
+    }
+    .into()
+}
+
+fn conversation_event_log_error_with_earliest(
+    operation: &str,
+    conversation_id: &str,
+    error_code: &str,
+    earliest_available_sequence: u64,
+) -> generated::ConversationEventLogEvent {
+    generated::ConversationEventLogEvent {
+        earliest_available_sequence,
+        ..conversation_event_log_error(operation, conversation_id, error_code)
+    }
 }
 
 fn checkpoint_disposition_text(disposition: crate::task_checkpoint::RecoveryDisposition) -> String {
@@ -14800,6 +15176,149 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(root);
         let _ = std::fs::remove_file(journal_path);
+    }
+
+    #[tokio::test]
+    async fn conversation_event_log_ipc_pages_and_live_events_are_typed_and_redacted() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let path = directory.path().join("conversation-ipc.db");
+        let journal = EventJournal::open(&path).expect("journal opens");
+        journal
+            .accept_conversation_message(
+                "conversation-1",
+                "workspace-1",
+                "task-1",
+                "client-1",
+                "token sk-12345678901234567890",
+            )
+            .await
+            .expect("message accepts");
+        let bridge = IpcBridge::new(journal);
+        let page = bridge
+            .dispatch_conversation_event_log(
+                generated::ConversationEventLogRequest {
+                    schema_version: 1,
+                    conversation_id: "conversation-1".into(),
+                    before_sequence: 0,
+                    after_sequence: 0,
+                    use_before_sequence: false,
+                    use_after_sequence: true,
+                    limit: 20,
+                    kinds_filter: Vec::new(),
+                },
+                "subscribed",
+            )
+            .await;
+        assert!(page.error_code.is_empty());
+        assert_eq!(page.events.len(), 1);
+        assert_eq!(page.events[0].sequence, 1);
+        assert_eq!(page.events[0].client_message_id, "client-1");
+        assert!(!String::from_utf8_lossy(&page.events[0].payload_json)
+            .contains("sk-12345678901234567890"));
+
+        let (mut client, mut server) = duplex(64 * 1024);
+        bridge
+            .push_journal_tail(&mut server, 0)
+            .await
+            .expect("live tail writes");
+        let frame = transport::read_frame(&mut client)
+            .await
+            .expect("live frame reads");
+        let envelope =
+            generated::EventEnvelope::decode(frame.as_slice()).expect("live frame decodes");
+        let Some(generated::event_envelope::Event::ConversationEventLog(live)) = envelope.event
+        else {
+            panic!("typed conversation event missing");
+        };
+        assert_eq!(live.operation, "live");
+        assert_eq!(live.events[0].event_id, page.events[0].event_id);
+    }
+
+    #[tokio::test]
+    async fn start_task_retry_is_idempotent_and_conflict_returns_typed_non_success() {
+        let path = std::env::temp_dir().join(format!(
+            "evohime-ipc-conversation-start-{}-{}.db",
+            std::process::id(),
+            uuid::Uuid::now_v7()
+        ));
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (coordinator, mut events) =
+            TaskCoordinator::new_with_journal(16, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal, coordinator);
+        let (mut client, server) = duplex(64 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        let command = |request_id: &str, prompt: &str| generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: request_id.into(),
+            client_id: "client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 0,
+            command: Some(generated::command_envelope::Command::StartTask(
+                generated::StartTask {
+                    task_id: "task-conversation".into(),
+                    prompt: prompt.into(),
+                    workspace_path: ".".into(),
+                    preferred_route_hint: "cloud".into(),
+                    execution_kind: "dialogue".into(),
+                    conversation_id: "conversation-1".into(),
+                    client_message_id: "client-message-1".into(),
+                },
+            )),
+        };
+
+        transport::write_frame(&mut client, &command("start-1", "same").encode_to_vec())
+            .await
+            .expect("first command writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("first command serves");
+        assert!(matches!(
+            events.recv().await,
+            Ok(CoreEvent::TaskStarted { .. })
+        ));
+
+        transport::write_frame(&mut client, &command("start-retry", "same").encode_to_vec())
+            .await
+            .expect("retry writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("retry serves");
+
+        transport::write_frame(
+            &mut client,
+            &command("start-conflict", "different").encode_to_vec(),
+        )
+        .await
+        .expect("conflict writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("conflict serves");
+        let frame = transport::read_frame(&mut client)
+            .await
+            .expect("typed rejection reads");
+        let envelope =
+            generated::EventEnvelope::decode(frame.as_slice()).expect("rejection decodes");
+        let Some(generated::event_envelope::Event::ConversationEventLog(result)) = envelope.event
+        else {
+            panic!("conversation rejection missing");
+        };
+        assert_eq!(result.operation, "accept");
+        assert_eq!(result.error_code, "idempotency_conflict");
+
+        let mut duplicate_started = false;
+        while let Ok(Ok(event)) =
+            tokio::time::timeout(std::time::Duration::from_millis(50), events.recv()).await
+        {
+            duplicate_started |= matches!(event, CoreEvent::TaskStarted { .. });
+        }
+        assert!(
+            !duplicate_started,
+            "retry or conflict dispatched a second task"
+        );
+        let _ = std::fs::remove_file(path);
     }
 
     #[tokio::test]

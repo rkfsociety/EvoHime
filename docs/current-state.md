@@ -631,3 +631,20 @@ start/cancel, stale/duplicate/cancel outcomes типизированы.
 immutable session snapshots, authenticated IPC 195–196/event 48 и
 metadata-only Electron panel. Focused evidence: Core 2/2, storage 1/1,
 Electron 1/1, protocol/typecheck, fmt и diff-check.
+
+# План 49 — Resumable Conversation Event Log v1
+
+Реализован 31 августа 2026 года. Core-owned conversation history использует
+SQLite schema v50, отдельную per-conversation sequence, transactional message
+acceptance/task binding и stable `client_message_id` dedup. Cursor history
+работает в обе стороны, resume подписки начинается строго после
+`after_sequence`, retained boundary возвращает typed `cursor_expired`.
+
+Core строит redacted message/status/tool/command/file/browser/approval/task/
+goal/child/usage/artifact/backend/recovery/error projections из одного log;
+stream delta отделён от durable finalized/failed. Authenticated IPC additive:
+commands 197–198/event 49 и поля StartTask 6–7. Electron `TaskTimeline`
+использует чистую conversation projection с gap/conflict/duplicate detection,
+optimistic reconciliation, retry тем же id и compatibility fallback на
+глобальные Core events. Authoritative payload, raw credentials и child details
+renderer не получает.

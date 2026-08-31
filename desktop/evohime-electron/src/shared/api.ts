@@ -336,6 +336,8 @@ export interface ContinuationActionResult {
 
 export interface CoreEvent {
   readonly sequenceId: number
+  readonly coreInstanceId?: string
+  readonly sessionEpoch?: number
   readonly taskId: string
   readonly eventType: string
   /** Redacted UTF-8 payload as produced by Core; never a secret value. */
@@ -362,6 +364,40 @@ export interface CoreEvent {
   readonly refinement?: RefinementProjection | null
   readonly refinementList?: { readonly candidates: readonly RefinementProjection[]; readonly truncated: boolean; readonly errorCode: string } | null
   readonly refinementAction?: RefinementActionResult | null
+  /** Typed page/live projection from the Core-owned conversation log. */
+  readonly conversationEventLog?: ConversationEventLogPage | null
+}
+
+export interface ConversationEventProjection {
+  readonly schemaVersion: number
+  readonly conversationId: string
+  readonly eventId: string
+  readonly sequence: number
+  readonly timestampMs: number
+  readonly kind: string
+  readonly category: string
+  readonly payload: unknown
+  readonly correlationId: string
+  readonly causationId: string
+  readonly taskId: string
+  readonly runId: string
+  readonly turnId: string
+  readonly clientMessageId: string
+  readonly persistenceClass: string
+  readonly sensitivity: string
+}
+
+export interface ConversationEventLogPage {
+  readonly schemaVersion: number
+  readonly operation: 'history' | 'subscribed' | 'live' | string
+  readonly conversationId: string
+  readonly events: readonly ConversationEventProjection[]
+  readonly oldestSequence: number
+  readonly newestSequence: number
+  readonly hasOlder: boolean
+  readonly hasNewer: boolean
+  readonly earliestAvailableSequence: number
+  readonly errorCode: string
 }
 
 export type ShellEvent =
@@ -513,6 +549,7 @@ export interface RepositorySummary {
 /** One prompt the user sent from a chat, and the task it started. */
 export interface ChatMessage {
   readonly taskId: string
+  readonly clientMessageId?: string
   readonly prompt: string
   readonly atMs: number
 }
@@ -941,6 +978,8 @@ export const RENDERER_COMMANDS = [
   'workspace.select',
   'workspace.forget',
   'core.startTask',
+  'core.getConversationEvents',
+  'core.subscribeConversationEvents',
   'core.getTaskCheckpoint',
   'core.resolveTaskCheckpoint',
   'core.createAnalysisKernel',
@@ -1172,7 +1211,9 @@ export interface CommandPayloads {
   'workspace.pick': Record<string, never>
   'workspace.select': { path: string }
   'workspace.forget': { path: string }
-  'core.startTask': { taskId: string; prompt: string; workspacePath: string; preferredRouteHint?: 'local' | 'cloud' | 'codex_cli' | null; executionKind?: 'dialogue' | 'coding' }
+  'core.startTask': { taskId: string; prompt: string; workspacePath: string; conversationId?: string; clientMessageId?: string; preferredRouteHint?: 'local' | 'cloud' | 'codex_cli' | null; executionKind?: 'dialogue' | 'coding' }
+  'core.getConversationEvents': { conversationId: string; beforeSequence?: number; afterSequence?: number; limit?: number; kindsFilter?: readonly string[] }
+  'core.subscribeConversationEvents': { conversationId: string; afterSequence: number; limit?: number; kindsFilter?: readonly string[] }
   'core.getTaskCheckpoint': { taskId: string; workspacePath: string; maxReplayEvents?: number }
   'core.resolveTaskCheckpoint': {
     taskId: string
@@ -1350,7 +1391,7 @@ export interface CommandPayloads {
   'chat.list': { workspacePath: string }
   'chat.create': { workspacePath: string }
   'chat.open': { chatId: string }
-  'chat.appendPrompt': { chatId: string; taskId: string; prompt: string }
+  'chat.appendPrompt': { chatId: string; taskId: string; clientMessageId?: string; prompt: string }
   'chat.remove': { chatId: string }
   /** `directory` — папка, открытая в диалоге; пустая строка = выбор системы. */
   'review.pickPlan': { directory?: string }
@@ -1603,6 +1644,8 @@ export interface CommandResults {
   'workspace.select': WorkspaceSelection
   'workspace.forget': WorkspaceSelection
   'core.startTask': { accepted: boolean }
+  'core.getConversationEvents': { accepted: boolean }
+  'core.subscribeConversationEvents': { accepted: boolean }
   'core.getTaskCheckpoint': { accepted: boolean }
   'core.resolveTaskCheckpoint': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }

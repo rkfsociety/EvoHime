@@ -222,3 +222,11 @@ review contract, metadata-only IPC/UI projection и schema 48. Комплект
 # План 48 закрыт: Team SOP Protocols v1 перенесён в canonical
 `architecture.md`, `current-state.md` и `release-evidence.md`; комплект
 `48-0` … `48-4` удалён после свежих focused и regression gates.
+
+# План 49 закрыт: Resumable Conversation Event Log v1 перенесён в canonical
+`architecture.md`, `current-state.md` и `release-evidence.md`. Реализованы
+Core-owned schema v50 и per-conversation cursor, transactional stable-message
+dedup, redacted unified projections, before/after history, resume/live IPC
+197–198/event 49 и Electron reconciliation с gap/conflict/retry states.
+Комплект `49-0` … `49-4` удалён после свежих Rust/Electron regression,
+protocol/typecheck, clippy, formatting и diff-check gates.

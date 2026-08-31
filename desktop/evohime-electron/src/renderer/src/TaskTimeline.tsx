@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { ChatProviderMode, ChatRecord, ConnectionState, CoreEvent } from '@shared/api'
+import type { ChatMessage, ChatProviderMode, ChatRecord, ConnectionState, CoreEvent } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { ModelPicker } from './ModelPicker'
@@ -15,6 +15,16 @@ import { ContextUsage } from './ContextUsage'
 import { RoutingStatus } from './RoutingStatus'
 import { ChatProviderPicker } from './ChatProviderPicker'
 import { TaskCheckpointPanel } from './TaskCheckpointPanel'
+import {
+  addOptimisticMessage,
+  applyConversationEvents,
+  conversationEventsToCoreEvents,
+  createConversationProjection,
+  markOptimisticFailed,
+  markOptimisticRetry,
+  resumeAtRetainedBoundary,
+  type ConversationProjectionState
+} from './conversation-projection'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 const MAX_RENDERED_ITEMS = 80
@@ -68,6 +78,7 @@ export function TaskTimeline({
       : 'literouter'
   })
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+  const [conversationLog, setConversationLog] = useState<ConversationProjectionState | null>(null)
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const entryTimes = useRef(new Map<string, number>())
@@ -81,6 +92,11 @@ export function TaskTimeline({
     setSentPrompt(null)
     setSentPromptAtMs(null)
     setCommandError(null)
+    setConversationLog((current) => chatId === null
+      ? null
+      : current?.conversationId === chatId
+        ? current
+        : createConversationProjection(chatId))
 
     if (!api || chatId === null) {
       return
@@ -92,11 +108,83 @@ export function TaskTimeline({
       // let an older response restore a previously selected chat.
       if (!cancelled && outcome.ok) setChat(outcome.value)
     })
+    void api.invoke('core.getConversationEvents', {
+      conversationId: chatId,
+      limit: 200
+    })
 
     return () => {
       cancelled = true
     }
   }, [api, chatId])
+
+  useEffect(() => {
+    if (chatId === null) return
+    const pageEnvelopes = events.filter((event) => event.conversationEventLog != null && event.conversationEventLog.conversationId === chatId)
+    const newest = pageEnvelopes[0]
+    const cacheKey = newest
+      ? `${newest.coreInstanceId ?? 'legacy'}:${newest.sessionEpoch ?? 0}:${newest.conversationEventLog?.schemaVersion ?? 0}`
+      : ''
+    const pages = pageEnvelopes
+      .filter((event) => `${event.coreInstanceId ?? 'legacy'}:${event.sessionEpoch ?? 0}:${event.conversationEventLog?.schemaVersion ?? 0}` === cacheKey)
+      .map((event) => event.conversationEventLog!)
+      .reverse()
+    if (pages.length === 0) return
+    let resumeAfter: number | null = null
+    setConversationLog((current) => {
+      let next = current !== null && current.conversationId === chatId && current.cacheKey === cacheKey
+        ? current : createConversationProjection(chatId, cacheKey)
+      for (const page of pages) {
+        if (page.errorCode === 'cursor_expired') {
+          next = { ...next, sync: { state: 'cursor-expired', earliestAvailableSequence: page.earliestAvailableSequence } }
+          continue
+        }
+        if (page.errorCode === 'idempotency_conflict') {
+          next = { ...next, sync: { state: 'conflict', sequence: next.lastSequence + 1 } }
+          continue
+        }
+        if (page.errorCode.length > 0) {
+          next = { ...next, optimistic: next.optimistic.map((message) => ({ ...message, status: 'failed' as const })) }
+          continue
+        }
+        if (next.sync.state === 'cursor-expired' && page.events[0]?.sequence === page.earliestAvailableSequence) {
+          next = resumeAtRetainedBoundary(next, page.earliestAvailableSequence)
+        }
+        if (next.lastSequence === 0 && page.oldestSequence > 1) {
+          next = resumeAtRetainedBoundary(next, page.oldestSequence)
+        }
+        const previousSequence = next.lastSequence
+        next = applyConversationEvents(next, page.events)
+        if (next.sync.state === 'complete' && next.lastSequence > previousSequence) {
+          resumeAfter = next.lastSequence
+        }
+      }
+      if (resumeAfter === null) resumeAfter = next.lastSequence
+      return next
+    })
+    if (resumeAfter !== null) {
+      void api?.invoke('core.subscribeConversationEvents', {
+        conversationId: chatId,
+        afterSequence: resumeAfter,
+        limit: 200
+      })
+    }
+  }, [api, chatId, events])
+
+  useEffect(() => {
+    if (!api || chatId === null || !conversationLog) return
+    const afterSequence = conversationLog.sync.state === 'gap'
+      ? conversationLog.lastSequence
+      : conversationLog.sync.state === 'cursor-expired'
+        ? Math.max(0, conversationLog.sync.earliestAvailableSequence - 1)
+        : null
+    if (afterSequence === null) return
+    void api.invoke('core.getConversationEvents', {
+      conversationId: chatId,
+      afterSequence,
+      limit: 200
+    })
+  }, [api, chatId, conversationLog])
 
   useLayoutEffect(() => {
     const textarea = promptRef.current
@@ -114,10 +202,15 @@ export function TaskTimeline({
   const taskEvents = useMemo(() => {
     const known = new Set(chat?.taskIds ?? [])
     if (taskId) known.add(taskId)
+    if (conversationLog?.events.length) {
+      return [...conversationEventsToCoreEvents(conversationLog.events)]
+        .reverse()
+        .slice(0, MAX_RENDERED_ITEMS)
+    }
     return events
       .filter((event) => event.taskId.length > 0 && known.has(event.taskId))
       .slice(0, MAX_RENDERED_ITEMS)
-  }, [chat?.taskIds, events, taskId])
+  }, [chat?.taskIds, conversationLog?.events, events, taskId])
 
   const { entries, approval, finished } = useMemo(
     () => buildTranscript(taskEvents),
@@ -125,7 +218,26 @@ export function TaskTimeline({
   )
 
   const conversation = useMemo(() => {
-    const messages = [...(chat?.messages ?? [])]
+    const authoritativeMessages = (conversationLog?.events ?? [])
+      .filter((event) => event.kind === 'user_message_accepted')
+      .map((event): ChatMessage => ({
+        taskId: event.taskId,
+        clientMessageId: event.clientMessageId,
+        prompt: payloadText(event.payload, 'content'),
+        atMs: event.timestampMs
+      }))
+      .filter((message) => message.prompt.length > 0)
+    const messages = [...(authoritativeMessages.length > 0 ? authoritativeMessages : chat?.messages ?? [])]
+    for (const optimistic of conversationLog?.optimistic ?? []) {
+      if (!messages.some((message) => message.clientMessageId === optimistic.clientMessageId)) {
+        messages.push({
+          taskId: optimistic.taskId,
+          clientMessageId: optimistic.clientMessageId,
+          prompt: optimistic.content,
+          atMs: Date.now()
+        })
+      }
+    }
     if (sentPrompt !== null && taskId !== null && !messages.some((message) => message.taskId === taskId)) {
       messages.push({ taskId, prompt: sentPrompt, atMs: sentPromptAtMs ?? Date.now() })
     }
@@ -140,9 +252,33 @@ export function TaskTimeline({
     }
     return messages.map((message) => ({
       message,
+      delivery: conversationLog?.optimistic.find(
+        (item) => item.clientMessageId === message.clientMessageId
+      ) ?? null,
       transcript: buildTranscript(eventsByTask.get(message.taskId) ?? [])
     }))
-  }, [chat?.messages, sentPrompt, sentPromptAtMs, taskId, taskEvents])
+  }, [chat?.messages, conversationLog?.events, conversationLog?.optimistic, sentPrompt, sentPromptAtMs, taskId, taskEvents])
+
+  const retryMessage = useCallback(async (clientMessageId: string) => {
+    if (!api || !workspace || !conversationLog) return
+    const message = conversationLog.optimistic.find((item) => item.clientMessageId === clientMessageId)
+    if (!message) return
+    setConversationLog((current) => current ? markOptimisticRetry(current, clientMessageId) : current)
+    setCommandError(null)
+    const outcome = await api.invoke('core.startTask', {
+      taskId: message.taskId,
+      prompt: message.content,
+      workspacePath: workspace,
+      conversationId: conversationLog.conversationId,
+      clientMessageId,
+      preferredRouteHint: providerMode === 'codex_cli' ? 'codex_cli' : 'cloud',
+      executionKind: providerMode === 'codex_cli' ? 'coding' : 'dialogue'
+    })
+    if (!outcome.ok) {
+      setConversationLog((current) => current ? markOptimisticFailed(current, clientMessageId) : current)
+      setCommandError(outcome.message)
+    }
+  }, [api, conversationLog, providerMode, workspace])
 
   useEffect(() => {
     // scrollIntoView отсутствует в jsdom, поэтому вызов защищён проверкой.
@@ -155,6 +291,7 @@ export function TaskTimeline({
   const start = useCallback(async () => {
     if (!api || !workspace || prompt.trim().length === 0) return
     const nextTaskId = makeTaskId()
+    const clientMessageId = globalThis.crypto.randomUUID()
     const text = prompt.trim()
     setBusy(true)
     setCommandError(null)
@@ -174,15 +311,23 @@ export function TaskTimeline({
       onChatOpened(targetChatId)
     }
 
+    setConversationLog((current) => addOptimisticMessage(
+      current?.conversationId === targetChatId ? current : createConversationProjection(targetChatId),
+      { clientMessageId, taskId: nextTaskId, content: text, status: 'sending' }
+    ))
+
     const outcome = await api.invoke('core.startTask', {
       taskId: nextTaskId,
       prompt: text,
       workspacePath: workspace,
+      conversationId: targetChatId,
+      clientMessageId,
       preferredRouteHint: providerMode === 'codex_cli' ? 'codex_cli' : 'cloud',
       executionKind: providerMode === 'codex_cli' ? 'coding' : 'dialogue'
     })
     setBusy(false)
     if (!outcome.ok) {
+      setConversationLog((current) => current ? markOptimisticFailed(current, clientMessageId) : current)
       setCommandError(outcome.message)
       return
     }
@@ -193,6 +338,7 @@ export function TaskTimeline({
     const stored = await api.invoke('chat.appendPrompt', {
       chatId: targetChatId,
       taskId: nextTaskId,
+      clientMessageId,
       prompt: text
     })
     if (stored.ok && stored.value) setChat(stored.value)
@@ -227,11 +373,10 @@ export function TaskTimeline({
   const connected = CONNECTED_STATES.includes(connection)
   const canStart = connected && workspace !== null && prompt.trim().length > 0 && !busy
   const running = taskId !== null && !finished
-  const history = chat?.messages ?? []
   const checkpointTaskId = taskId ?? [...(chat?.taskIds ?? [])].reverse()[0] ?? null
   // Запрос разрешения может прийти раньше любой другой записи ленты.
   const empty =
-    entries.length === 0 && sentPrompt === null && approval === null && history.length === 0
+    entries.length === 0 && sentPrompt === null && approval === null && conversation.length === 0
 
   return (
     <section className="chat" aria-label="Ход задачи">
@@ -248,6 +393,15 @@ export function TaskTimeline({
         workspace={workspace}
       />
       <RoutingStatus events={taskEvents} connection={connection} />
+      {conversationLog?.sync.state === 'gap' ? (
+        <p role="alert" className="shell__reason">История неполна, восстанавливаю пропущенные события…</p>
+      ) : null}
+      {conversationLog?.sync.state === 'conflict' ? (
+        <p role="alert" className="shell__reason">Обнаружен конфликт последовательности истории.</p>
+      ) : null}
+      {conversationLog?.sync.state === 'cursor-expired' ? (
+        <p role="alert" className="shell__reason">Старая часть истории свёрнута; загружаю доступный диапазон…</p>
+      ) : null}
       <div className="chat__scroll">
         {empty ? (
           <HomeScreen
@@ -259,11 +413,22 @@ export function TaskTimeline({
           />
         ) : (
           <ol className="chat__stream">
-            {conversation.flatMap(({ message, transcript }) => {
+            {conversation.flatMap(({ message, transcript, delivery }) => {
               const messageId = `user-${message.taskId}-${message.atMs}`
               return [
                 <li key={messageId} className="message message--user">
                   <div className="message__bubble">{message.prompt}</div>
+                  {delivery ? (
+                    <small className="message__delivery" role="status">
+                      {delivery.status === 'sending' ? 'Отправляется…' : null}
+                      {delivery.status === 'retry' ? 'Повторная отправка…' : null}
+                      {delivery.status === 'failed' ? (
+                        <button type="button" onClick={() => void retryMessage(delivery.clientMessageId)}>
+                          Повторить отправку
+                        </button>
+                      ) : null}
+                    </small>
+                  ) : null}
                   <MessageActions
                     id={messageId}
                     text={message.prompt}
@@ -426,6 +591,12 @@ function messageTime(times: React.MutableRefObject<Map<string, number>>, id: str
   const now = Date.now()
   times.current.set(id, now)
   return now
+}
+
+function payloadText(payload: unknown, key: string): string {
+  if (typeof payload !== 'object' || payload === null) return ''
+  const value = (payload as Record<string, unknown>)[key]
+  return typeof value === 'string' ? value : ''
 }
 
 interface MessageActionsProps {

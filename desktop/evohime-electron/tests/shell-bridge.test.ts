@@ -330,6 +330,46 @@ describe('renderer command surface', () => {
     ])
   })
 
+  it('forwards stable conversation ids and bounded cursor subscriptions', () => {
+    expect(invoke('core.startTask', {
+      taskId: 'task-conversation',
+      prompt: 'продолжай',
+      workspacePath: 'C:\\work',
+      conversationId: 'conversation-1',
+      clientMessageId: 'client-1'
+    })).toEqual({ ok: true, value: { accepted: true } })
+    expect(sent.at(-1)).toEqual({
+      startTask: {
+        taskId: 'task-conversation',
+        prompt: 'продолжай',
+        workspacePath: 'C:\\work',
+        preferredRouteHint: '',
+        executionKind: 'dialogue',
+        conversationId: 'conversation-1',
+        clientMessageId: 'client-1'
+      }
+    })
+
+    expect(invoke('core.subscribeConversationEvents', {
+      conversationId: 'conversation-1',
+      afterSequence: 7,
+      limit: 50,
+      kindsFilter: ['user_message_accepted']
+    })).toEqual({ ok: true, value: { accepted: true } })
+    expect(sent.at(-1)).toEqual({
+      subscribeConversationEvents: {
+        schemaVersion: 1,
+        conversationId: 'conversation-1',
+        beforeSequence: 0,
+        afterSequence: 7,
+        useBeforeSequence: false,
+        useAfterSequence: true,
+        limit: 50,
+        kindsFilter: ['user_message_accepted']
+      }
+    })
+  })
+
   it('forwards bounded TaskCheckpoint reads and explicit actions', () => {
     expect(invoke('core.getTaskCheckpoint', {
       taskId: 'task-1',

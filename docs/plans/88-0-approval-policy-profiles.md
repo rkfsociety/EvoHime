@@ -45,7 +45,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 36.0 — Agent Benchmark Matrix: многократные model/strategy evals и regression tracking.
-- План 49.0 — Resumable Conversation Event Log: cursor-based history, live sync и reconnect без дублей.
+- Реализованный Resumable Conversation Event Log v1 — канонический контракт в `docs/architecture.md`.
 - План 68.0 — Experience Replay Library: episodic trajectories, success/failure retrieval и context injection.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 

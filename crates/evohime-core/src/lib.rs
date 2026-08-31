@@ -974,6 +974,7 @@ pub mod child_runtime;
 pub mod child_workflow;
 pub mod context_budget;
 pub mod continuation;
+pub mod conversation_event_log;
 pub mod conversational_workflow_composer;
 pub mod doctor;
 pub mod evals;
@@ -2529,6 +2530,172 @@ impl EventJournal {
         Ok(removed)
     }
 
+    /// Atomically accepts one outgoing message into the Core-owned
+    /// conversation log before the task is dispatched. A retry with the same
+    /// client id returns the original event and task binding; conflicting
+    /// content fails closed.
+    pub async fn accept_conversation_message(
+        &self,
+        conversation_id: &str,
+        workspace_id: &str,
+        task_id: &str,
+        client_message_id: &str,
+        content: &str,
+    ) -> Result<
+        (
+            evohime_local_storage::conversation_event_log_store::MessageAcceptance,
+            i64,
+        ),
+        StorageError,
+    > {
+        use sha2::{Digest, Sha256};
+
+        let draft = crate::conversation_event_log::user_message_draft(content)
+            .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
+        let content_hash = hex::encode(Sha256::digest(content.as_bytes()));
+        let database = self.database.lock().await;
+        let acceptance = evohime_local_storage::conversation_event_log_store::accept_message(
+            database.connection(),
+            conversation_id,
+            workspace_id,
+            task_id,
+            client_message_id,
+            &draft.authoritative_payload,
+            &draft.renderer_payload,
+            &content_hash,
+            task_memory::now_millis() as i64,
+        )?;
+        let renderer = crate::conversation_event_log::renderer_event(&acceptance.event)
+            .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
+        let delivery_sequence = database.append_event(
+            task_id,
+            "conversation.event",
+            &serde_json::to_vec(&renderer)?,
+        )?;
+        Ok((acceptance, delivery_sequence))
+    }
+
+    pub async fn conversation_history_after(
+        &self,
+        conversation_id: &str,
+        after_sequence: u64,
+        limit: usize,
+    ) -> Result<
+        evohime_local_storage::conversation_event_log_store::ConversationEventPage,
+        StorageError,
+    > {
+        let database = self.database.lock().await;
+        Ok(
+            evohime_local_storage::conversation_event_log_store::history_after(
+                database.connection(),
+                conversation_id,
+                after_sequence,
+                limit,
+            )?,
+        )
+    }
+
+    pub async fn record_conversation_usage(
+        &self,
+        task_id: &str,
+        payload: serde_json::Value,
+    ) -> Result<(), StorageError> {
+        let bytes = serde_json::to_vec(&payload)?;
+        let drafts = crate::conversation_event_log::project_core_event("model.usage", &bytes)
+            .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
+        let database = self.database.lock().await;
+        let Some((conversation_id, client_message_id, workspace_id)) =
+            evohime_local_storage::conversation_event_log_store::task_binding(
+                database.connection(),
+                task_id,
+            )?
+        else {
+            return Ok(());
+        };
+        for draft in drafts {
+            let stored = evohime_local_storage::conversation_event_log_store::append_event(
+                database.connection(),
+                evohime_local_storage::conversation_event_log_store::NewConversationEvent {
+                    conversation_id: &conversation_id,
+                    workspace_id: &workspace_id,
+                    kind: &draft.kind,
+                    category: &draft.category,
+                    authoritative_payload: &draft.authoritative_payload,
+                    renderer_payload: &draft.renderer_payload,
+                    correlation_id: Some(&client_message_id),
+                    causation_id: None,
+                    task_id: Some(task_id),
+                    run_id: None,
+                    turn_id: Some(task_id),
+                    client_message_id: None,
+                    persistence_class: &draft.persistence_class,
+                    sensitivity: &draft.sensitivity,
+                    timestamp_ms: task_memory::now_millis() as i64,
+                },
+            )?;
+            let renderer = crate::conversation_event_log::renderer_event(&stored)
+                .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
+            database.append_event(
+                task_id,
+                "conversation.event",
+                &serde_json::to_vec(&renderer)?,
+            )?;
+        }
+        Ok(())
+    }
+
+    pub async fn claim_conversation_dispatch(
+        &self,
+        conversation_id: &str,
+        client_message_id: &str,
+    ) -> Result<bool, StorageError> {
+        let database = self.database.lock().await;
+        Ok(
+            evohime_local_storage::conversation_event_log_store::claim_message_dispatch(
+                database.connection(),
+                conversation_id,
+                client_message_id,
+            )?,
+        )
+    }
+
+    pub async fn finish_conversation_dispatch(
+        &self,
+        conversation_id: &str,
+        client_message_id: &str,
+        dispatched: bool,
+    ) -> Result<(), StorageError> {
+        let database = self.database.lock().await;
+        Ok(
+            evohime_local_storage::conversation_event_log_store::finish_message_dispatch(
+                database.connection(),
+                conversation_id,
+                client_message_id,
+                dispatched,
+            )?,
+        )
+    }
+
+    pub async fn conversation_history_before(
+        &self,
+        conversation_id: &str,
+        before_sequence: u64,
+        limit: usize,
+    ) -> Result<
+        evohime_local_storage::conversation_event_log_store::ConversationEventPage,
+        StorageError,
+    > {
+        let database = self.database.lock().await;
+        Ok(
+            evohime_local_storage::conversation_event_log_store::history_before(
+                database.connection(),
+                conversation_id,
+                before_sequence,
+                limit,
+            )?,
+        )
+    }
+
     /// Запрос `summarize now` на текущую сборку контекста задачи.
     pub async fn request_context_summarize(&self, task_id: &str) -> Result<(), StorageError> {
         let database = self.database.lock().await;
@@ -2675,8 +2842,57 @@ impl EventJournal {
             }
             _ => serde_json::to_vec(event).expect("core events serialize"),
         };
+        // Conversation projection is additive and must not break the existing
+        // bounded global journal. If a legacy event is too large or malformed,
+        // keep its payload out of the conversation log and record only a
+        // non-authoritative metadata marker for the bound conversation.
+        let projected = crate::conversation_event_log::project_core_event(event_type, &payload)
+            .or_else(|_| {
+                crate::conversation_event_log::project_core_event(
+                    "conversation.projection_failed",
+                    br#"{}"#,
+                )
+            })
+            .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
         let database = self.database.lock().await;
-        database.append_event(task_id, event_type, &payload)
+        let mut last_sequence = database.append_event(task_id, event_type, &payload)?;
+        if let Some((conversation_id, client_message_id, workspace_id)) =
+            evohime_local_storage::conversation_event_log_store::task_binding(
+                database.connection(),
+                task_id,
+            )?
+        {
+            for draft in projected {
+                let stored = evohime_local_storage::conversation_event_log_store::append_event(
+                    database.connection(),
+                    evohime_local_storage::conversation_event_log_store::NewConversationEvent {
+                        conversation_id: &conversation_id,
+                        workspace_id: &workspace_id,
+                        kind: &draft.kind,
+                        category: &draft.category,
+                        authoritative_payload: &draft.authoritative_payload,
+                        renderer_payload: &draft.renderer_payload,
+                        correlation_id: Some(&client_message_id),
+                        causation_id: Some(&client_message_id),
+                        task_id: Some(task_id),
+                        run_id: Some(task_id),
+                        turn_id: Some(task_id),
+                        client_message_id: Some(&client_message_id),
+                        persistence_class: &draft.persistence_class,
+                        sensitivity: &draft.sensitivity,
+                        timestamp_ms: task_memory::now_millis() as i64,
+                    },
+                )?;
+                let renderer = crate::conversation_event_log::renderer_event(&stored)
+                    .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
+                last_sequence = database.append_event(
+                    task_id,
+                    "conversation.event",
+                    &serde_json::to_vec(&renderer)?,
+                )?;
+            }
+        }
+        Ok(last_sequence)
     }
 
     // Аргументы повторяют колонки строки метрики инструмента в SQLite.
@@ -6955,6 +7171,19 @@ impl ToolAgent {
                 estimator_drift: drift.relative,
                 recorded_at: task_memory::now_millis() as i64,
             })
+            .await;
+        let _ = journal
+            .record_conversation_usage(
+                &ledger.task_id,
+                serde_json::json!({
+                    "task_id": ledger.task_id,
+                    "model": ledger.model,
+                    "source": ledger.profile_version,
+                    "purpose": ledger.profile_version,
+                    "input_tokens": actual_prompt_tokens,
+                    "output_tokens": actual_completion_tokens
+                }),
+            )
             .await;
     }
 

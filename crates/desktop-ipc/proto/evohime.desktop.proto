@@ -421,6 +421,10 @@ message StartTask {
   string preferred_route_hint = 4;
   // Explicit task intent. Empty/unknown values remain dialogue for compatibility.
   string execution_kind = 5;
+  // Optional additive binding to the Core-owned conversation event log.
+  string conversation_id = 6;
+  // Stable client identity for optimistic reconciliation and idempotent retry.
+  string client_message_id = 7;
 }
 
 // Bounded read-only workspace browsing for the native Files surface.
@@ -1791,6 +1795,8 @@ message CommandEnvelope {
     AgentRoleProfilesCommand agent_role_profiles_action = 194;
     TeamSopProtocolsCommand team_sop_protocols_list = 195;
     TeamSopProtocolsCommand team_sop_protocols_action = 196;
+    ConversationEventLogRequest get_conversation_events = 197;
+    ConversationEventLogRequest subscribe_conversation_events = 198;
   }
 }
 
@@ -1889,6 +1895,7 @@ message EventEnvelope {
     ExternalCodingAgentAdapterEvent external_coding_agent_adapter = 46;
     AgentRoleProfilesEvent agent_role_profiles = 47;
     TeamSopProtocolsEvent team_sop_protocols = 48;
+    ConversationEventLogEvent conversation_event_log = 49;
   }
 }
 
@@ -1937,6 +1944,49 @@ message TeamSopProtocolsEvent {
   string state = 7;
   string error_code = 8;
   bytes projection_json = 9;
+}
+
+// Plan 49: bounded renderer projection of the Core-owned conversation log.
+// Authoritative payload, credentials and hidden reasoning are absent.
+message ConversationEventLogRequest {
+  uint32 schema_version = 1;
+  string conversation_id = 2;
+  uint64 before_sequence = 3;
+  uint64 after_sequence = 4;
+  bool use_before_sequence = 5;
+  bool use_after_sequence = 6;
+  uint32 limit = 7;
+  repeated string kinds_filter = 8;
+}
+message ConversationEventProjection {
+  uint32 schema_version = 1;
+  string conversation_id = 2;
+  string event_id = 3;
+  uint64 sequence = 4;
+  int64 timestamp_ms = 5;
+  string kind = 6;
+  string category = 7;
+  bytes payload_json = 8;
+  string correlation_id = 9;
+  string causation_id = 10;
+  string task_id = 11;
+  string run_id = 12;
+  string turn_id = 13;
+  string client_message_id = 14;
+  string persistence_class = 15;
+  string sensitivity = 16;
+}
+message ConversationEventLogEvent {
+  uint32 schema_version = 1;
+  string operation = 2;
+  string conversation_id = 3;
+  repeated ConversationEventProjection events = 4;
+  uint64 oldest_sequence = 5;
+  uint64 newest_sequence = 6;
+  bool has_older = 7;
+  bool has_newer = 8;
+  uint64 earliest_available_sequence = 9;
+  string error_code = 10;
 }
 
 // Plan 40: metadata-only sensitive-data guardrail status/evaluation. Raw input,

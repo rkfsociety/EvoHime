@@ -49,7 +49,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Блокирующие
 
-- План 49.0 — Resumable Conversation Event Log: cursor-based history, live sync и reconnect без дублей.
+- Реализованный Resumable Conversation Event Log v1 — канонический контракт в `docs/architecture.md`.
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 
 ### Опциональные

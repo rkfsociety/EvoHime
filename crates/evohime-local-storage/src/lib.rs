@@ -21,6 +21,7 @@ pub mod child_store;
 pub mod context_command_store;
 pub mod context_ledger_store;
 pub mod continuation_store;
+pub mod conversation_event_log_store;
 pub mod event_trigger_runtime_store;
 pub mod execution_backend_registry_store;
 pub mod execution_ledger;
@@ -51,7 +52,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 49;
+pub const SCHEMA_VERSION: u32 = 50;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -104,6 +105,8 @@ pub enum StorageError {
     Context(String),
     #[error("task checkpoint contract violation: {0}")]
     TaskCheckpoint(#[from] task_checkpoint::TaskCheckpointError),
+    #[error("conversation event log contract violation: {0}")]
+    ConversationEventLog(#[from] conversation_event_log_store::ConversationStoreError),
     #[error("analysis kernel contract violation: {0}")]
     AnalysisKernel(#[from] analysis_kernel::AnalysisKernelError),
     #[error("goal contract violation: {0}")]
@@ -542,6 +545,8 @@ impl LocalDatabase {
         invocation_presets_store::install_schema(&connection)?;
         benchmark_store::install_schema(&connection)?;
         skill_trust_pipeline_store::install_schema(&connection)?;
+        team_sop_protocols_store::install_schema(&connection)?;
+        conversation_event_log_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
@@ -3537,8 +3542,14 @@ impl LocalDatabase {
         if current < 48 {
             skill_trust_pipeline_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 48;")?;
+        }
+        if current < 49 {
             team_sop_protocols_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 49;")?;
+        }
+        if current < 50 {
+            conversation_event_log_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 50;")?;
         }
         transaction.commit()?;
         Ok(())

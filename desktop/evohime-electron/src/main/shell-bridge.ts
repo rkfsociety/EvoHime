@@ -197,16 +197,50 @@ function dispatch(
       const taskId = asGoalToken(value['taskId'])
       const prompt = asBoundedString(value['prompt'])
       const workspacePath = asBoundedString(value['workspacePath'])
+      const conversationId = value['conversationId'] === undefined ? '' : asGoalToken(value['conversationId'])
+      const clientMessageId = value['clientMessageId'] === undefined ? '' : asGoalToken(value['clientMessageId'])
       const preferredRouteHint = value['preferredRouteHint'] === undefined || value['preferredRouteHint'] === null
         ? null
         : value['preferredRouteHint'] === 'local' || value['preferredRouteHint'] === 'cloud' || value['preferredRouteHint'] === 'codex_cli' ? value['preferredRouteHint'] : undefined
       const executionKind = value['executionKind'] === undefined ? 'dialogue'
         : value['executionKind'] === 'dialogue' || value['executionKind'] === 'coding' ? value['executionKind'] : undefined
-      if (taskId === null || prompt === null || workspacePath === null || preferredRouteHint === undefined || executionKind === undefined) {
+      if (taskId === null || prompt === null || workspacePath === null || conversationId === null || clientMessageId === null || (conversationId.length === 0) !== (clientMessageId.length === 0) || preferredRouteHint === undefined || executionKind === undefined) {
         return failure('invalid-payload', 'Некорректные параметры задачи.')
       }
       log('info', 'shell.command_forwarded', { command })
-      return accepted(client.send({ startTask: { taskId, prompt, workspacePath, preferredRouteHint: preferredRouteHint ?? '', executionKind } }))
+      const startTask = { taskId, prompt, workspacePath, preferredRouteHint: preferredRouteHint ?? '', executionKind }
+      return accepted(client.send({ startTask: conversationId.length > 0
+        ? { ...startTask, conversationId, clientMessageId }
+        : startTask }))
+    }
+
+    case 'core.getConversationEvents':
+    case 'core.subscribeConversationEvents': {
+      const value = asRecord(payload)
+      const conversationId = asGoalToken(value['conversationId'])
+      const beforeSequence = value['beforeSequence'] === undefined ? null : asNonNegativeInteger(value['beforeSequence'])
+      const afterSequence = value['afterSequence'] === undefined ? null : asNonNegativeInteger(value['afterSequence'])
+      const limit = value['limit'] === undefined ? 100 : asBoundedNumber(value['limit'], 200)
+      const kindsFilter = asBoundedStringArray(value['kindsFilter'] ?? [])
+      if (conversationId === null || beforeSequence === null && value['beforeSequence'] !== undefined || afterSequence === null && value['afterSequence'] !== undefined || limit === null || limit < 1 || kindsFilter === null || kindsFilter.length > 16 || (beforeSequence !== null && afterSequence !== null)) {
+        return failure('invalid-payload', 'Некорректный cursor conversation history.')
+      }
+      if (command === 'core.subscribeConversationEvents' && afterSequence === null) {
+        return failure('invalid-payload', 'Для подписки нужен afterSequence.')
+      }
+      const request = {
+        schemaVersion: 1,
+        conversationId,
+        beforeSequence: beforeSequence ?? 0,
+        afterSequence: afterSequence ?? 0,
+        useBeforeSequence: beforeSequence !== null,
+        useAfterSequence: afterSequence !== null,
+        limit,
+        kindsFilter
+      }
+      return accepted(client.send(command === 'core.getConversationEvents'
+        ? { getConversationEvents: request }
+        : { subscribeConversationEvents: request }))
     }
 
     case 'core.getTaskCheckpoint': {
@@ -1038,11 +1072,12 @@ function dispatch(
       const value = asRecord(payload)
       const chatId = asBoundedString(value['chatId'])
       const taskId = asBoundedString(value['taskId'])
+      const clientMessageId = value['clientMessageId'] === undefined ? taskId : asGoalToken(value['clientMessageId'])
       const prompt = asBoundedString(value['prompt'])
-      if (chatId === null || taskId === null || prompt === null) {
+      if (chatId === null || taskId === null || clientMessageId === null || prompt === null) {
         return failure('invalid-payload', 'Некорректное сообщение чата.')
       }
-      return { ok: true, value: chats.appendPrompt(chatId, taskId, prompt) }
+      return { ok: true, value: chats.appendPrompt(chatId, taskId, prompt, clientMessageId) }
     }
 
     case 'chat.remove': {

@@ -1296,6 +1296,45 @@ Authenticated additive IPC использует commands 193–194/event 47. Ele
 revision/hash metadata; raw prompts, credentials, executable code и hidden
 reasoning не пересекают boundary. Profile operations ограничены `list/get/
 create/revise/start/cancel` и проверяются Core.
+
+## Resumable Conversation Event Log v1 (план 49)
+
+История диалога принадлежит Rust Core и хранится в SQLite schema v50 отдельно
+от глобального transport/audit-журнала. `conversation_id` имеет собственный
+монотонный `sequence`; envelope v1 содержит UUID события, kind/category,
+correlation/causation/task/run/turn refs, persistence class и sensitivity.
+Authoritative payload остаётся в Core, а renderer получает только bounded
+64 KiB projection после Sensitive Data Guardrails. Timestamp не используется
+как cursor.
+
+`StartTask` принимает additive `conversation_id` и стабильный
+`client_message_id`. Core одной транзакцией записывает
+`user_message_accepted`, task binding и SHA-256 content hash до dispatch.
+Повтор того же id/hash возвращает прежнее принятие и не запускает вторую
+задачу; повтор с другим content hash даёт typed `idempotency_conflict`.
+Task/model/tool/approval/child/workflow/storage события проецируются в общий
+conversation log. Streaming delta имеет `transient_stream`, а завершение или
+ошибка создают отдельное durable finalized/failed событие. Tool projection
+различает command/file/browser/tool, child payload ограничен summary-полями,
+usage содержит purpose/source для раздельной агрегации.
+
+History API поддерживает mutually exclusive before/after cursor, limit 1…200,
+bounded kind filter, `has_older`/`has_newer` и retention metadata. Логическая
+compaction фиксирует snapshot ref/hash и сдвигает earliest available sequence;
+старый cursor получает `cursor_expired`, а audit-строки физически не удаляются.
+Authenticated IPC использует commands 197–198 и event 49 без изменения major.
+Subscribe сначала возвращает catch-up page после `after_sequence`; дальнейшие
+typed live events идут существующим journal tail и дедуплицируются по event id.
+
+Electron main/preload только валидирует и маршрутизирует contract. Чистая
+`conversation-projection` обнаруживает gap/conflict, игнорирует exact duplicate,
+reconciliate-ит optimistic bubble только по `client_message_id`, агрегирует
+usage и batch-ит delta исключительно для отображения. `TaskTimeline` сначала
+показывает bounded `chats.json` presentation cache, затем заменяет его Core
+history, продолжает cursor catch-up и показывает sending/retry/failed. При
+переключении conversation projection сбрасывается; global Core events остаются
+compatibility fallback. Renderer не читает SQLite, не решает recovery и не
+запускает effect.
 # Team SOP Protocols v1 (plan 48)
 
 `evohime-core::team_sop_protocols` provides bounded versioned TeamProtocol

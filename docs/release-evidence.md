@@ -212,3 +212,24 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   grants remain Core-owned and unknown effects are never blindly retried.
 - Focused evidence: Core 2/2, storage 1/1, Electron 1/1, protocol/typecheck,
   fmt and diff-check.
+
+## План 49 — Resumable Conversation Event Log v1 (2026-08-31)
+
+- Contract/storage: envelope v1, 64 KiB payload and 200-event page bounds,
+  SQLite schema v50, transactional user-message acceptance, per-conversation
+  sequence, stable client id/hash dedup, before/after cursors and logical
+  compaction retention metadata.
+- Runtime/security: Core projects existing activity into one redacted log;
+  authoritative payload never crosses desktop IPC, streaming remains transient,
+  finalized/failed is durable, child projection is summary-only and retry never
+  repeats a task or unknown effect.
+- IPC/UI: authenticated additive commands 197–198/event 49 and StartTask fields
+  6–7; Electron detects gaps/conflicts/duplicates, reconciles only by client id,
+  resumes after the last sequence and exposes sending/retry/failed state.
+- Evidence: storage conversation tests 7/7, Core conversation tests 6/6,
+  idempotent StartTask IPC 1/1; full Rust — Core 654 unit + 28 integration,
+  local storage 236, desktop IPC 36; Electron 499 passed / 2 source-update
+  tests штатно skipped. `check:protocol`, typecheck, production build, bundle
+  security check, `cargo fmt --check`, strict Clippy и `git diff --check`
+  прошли. Evidence не содержит raw transcript, credentials, PII или absolute
+  runtime paths.

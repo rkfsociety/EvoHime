@@ -192,6 +192,42 @@ function taskCheckpointFrame(sequenceId: number): Uint8Array {
   )
 }
 
+function conversationEventFrame(
+  sequenceId: number,
+  eventIds: readonly string[] = ['conversation-event-1']
+): Uint8Array {
+  return encodeFrame(
+    EventEnvelope.encode({
+      protocol: { major: 1, minor: 0 },
+      sequenceId,
+      taskId: 'task-1',
+      eventType: 'conversation.event',
+      coreInstanceId: CORE_INSTANCE,
+      sessionEpoch: SESSION_EPOCH,
+      conversationEventLog: {
+        schemaVersion: 1,
+        operation: 'live',
+        conversationId: 'conversation-1',
+        events: eventIds.map((eventId, index) => ({
+          schemaVersion: 1,
+          conversationId: 'conversation-1',
+          eventId,
+          sequence: index + 1,
+          timestampMs: 1_700_000_000_000,
+          kind: 'user_message_accepted',
+          category: 'message',
+          taskId: 'task-1',
+          clientMessageId: 'client-message-1',
+          persistenceClass: 'durable',
+          sensitivity: 'redacted',
+          payloadJson: new TextEncoder().encode(JSON.stringify({ content: '[REDACTED]' }))
+        })),
+        newestSequence: eventIds.length
+      }
+    }).finish()
+  )
+}
+
 function skillCatalogFrame(sequenceId: number): Uint8Array {
   return encodeFrame(
     EventEnvelope.encode({
@@ -359,7 +395,7 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
 
     expect(state.protocol).toEqual({ major: 1, minor: 0 })
     expect(state.coreVersion).toBe('0.1.0-test')
-    expect(state.capabilities).toEqual(['goals', 'replay', 'resync', 'skills', 'task_checkpoint', 'workflow_builder'])
+    expect(state.capabilities).toEqual(['conversation_event_log', 'goals', 'replay', 'resync', 'skills', 'task_checkpoint', 'workflow_builder'])
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(requestedResync).toBe(true)
   })
@@ -416,6 +452,40 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
     expect(event.taskCheckpoint?.recoveryDisposition).toBe('blocked')
     expect(event.taskCheckpoint?.refs[0]).toMatchObject({ kind: 'policy_snapshot', id: 'policy-v1' })
     expect(event.taskCheckpointAction).toBeNull()
+  })
+
+  it('preserves unseen events when conversation history pages overlap', async () => {
+    const pipeName = uniquePipeName()
+    server = await startStubCore(pipeName, {
+      onCommand: (command) => command.handshake
+        ? [
+            readyFrame(),
+            conversationEventFrame(1),
+            conversationEventFrame(2, ['conversation-event-1', 'conversation-event-2'])
+          ]
+        : []
+    })
+
+    const target = createClient(pipeName)
+    const received: CoreEvent[] = []
+    target.on('core-event', (event) => {
+      if (event.conversationEventLog?.events[0]?.eventId === 'conversation-event-1') received.push(event)
+    })
+    target.start()
+    await waitForState(target, (state) => state.connection === 'connected')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(received).toHaveLength(2)
+    expect(received[0]?.payload).toBe('')
+    expect(received[0]?.conversationEventLog?.events[0]).toMatchObject({
+      conversationId: 'conversation-1',
+      clientMessageId: 'client-message-1',
+      payload: { content: '[REDACTED]' }
+    })
+    expect(received[1]?.conversationEventLog?.events.map((event) => event.eventId)).toEqual([
+      'conversation-event-1',
+      'conversation-event-2'
+    ])
   })
 
   it('projects typed Agent Skills metadata and keeps the generic payload empty', async () => {

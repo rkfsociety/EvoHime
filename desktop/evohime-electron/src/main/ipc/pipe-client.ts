@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto'
 
 import type {
   ConnectionState,
+  ConversationEventLogPage,
+  ConversationEventProjection,
   ContinuationActionResult,
   ContinuationProjection,
   AnalysisKernelProjection,
@@ -58,7 +60,7 @@ type ICommandEnvelope = evohime.desktop.v1.ICommandEnvelope
  * (plan 0, stage 1).
  */
 
-export const CLIENT_CAPABILITIES = ['replay', 'resync', 'task_checkpoint', 'skills', 'goals', 'workflow_builder'] as const
+export const CLIENT_CAPABILITIES = ['conversation_event_log', 'replay', 'resync', 'task_checkpoint', 'skills', 'goals', 'workflow_builder'] as const
 
 export const DEFAULT_CONNECT_TIMEOUT_MS = 5_000
 export const DEFAULT_HANDSHAKE_TIMEOUT_MS = 5_000
@@ -445,6 +447,9 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
    * above are what guards them.
    */
   private shouldEmit(event: evohime.desktop.v1.EventEnvelope): boolean {
+    // Conversation pages may overlap by design. Suppressing an entire page by
+    // its first event id would also drop unseen later events; the renderer
+    // reducer de-duplicates each conversation event individually.
     const eventId = event.executionEvent?.eventId
     if (!eventId) {
       return true
@@ -537,6 +542,8 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
   private emitCoreEvent(event: evohime.desktop.v1.EventEnvelope): void {
     this.emit('core-event', {
       sequenceId: Number(event.sequenceId ?? 0),
+      coreInstanceId: event.coreInstanceId ?? '',
+      sessionEpoch: Number(event.sessionEpoch ?? 0),
       taskId: event.taskId ?? '',
       eventType: event.eventType ?? '',
       payload: decodePayload(event.payload),
@@ -556,6 +563,7 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       , refinement: decodeRefinement(event.refinement)
       , refinementList: decodeRefinementList(event.refinementList)
       , refinementAction: decodeRefinementAction(event.refinementAction)
+      , conversationEventLog: decodeConversationEventLog(event.conversationEventLog)
     })
   }
 
@@ -670,6 +678,56 @@ function decodePayload(payload: Uint8Array | null | undefined): string {
     return ''
   }
   return Buffer.from(payload).toString('utf8')
+}
+
+function decodeConversationEventLog(
+  projected: evohime.desktop.v1.IConversationEventLogEvent | null | undefined
+): ConversationEventLogPage | null {
+  if (!projected) return null
+  return {
+    schemaVersion: Number(projected.schemaVersion ?? 0),
+    operation: projected.operation ?? '',
+    conversationId: projected.conversationId ?? '',
+    events: (projected.events ?? []).map(decodeConversationEvent),
+    oldestSequence: Number(projected.oldestSequence ?? 0),
+    newestSequence: Number(projected.newestSequence ?? 0),
+    hasOlder: Boolean(projected.hasOlder),
+    hasNewer: Boolean(projected.hasNewer),
+    earliestAvailableSequence: Number(projected.earliestAvailableSequence ?? 0),
+    errorCode: projected.errorCode ?? ''
+  }
+}
+
+function decodeConversationEvent(
+  projected: evohime.desktop.v1.IConversationEventProjection
+): ConversationEventProjection {
+  const raw = decodePayload(projected.payloadJson)
+  let payload: unknown = null
+  if (raw.length > 0) {
+    try {
+      payload = JSON.parse(raw) as unknown
+    } catch {
+      payload = { redacted: true, reason: 'malformed_renderer_projection' }
+    }
+  }
+  return {
+    schemaVersion: Number(projected.schemaVersion ?? 0),
+    conversationId: projected.conversationId ?? '',
+    eventId: projected.eventId ?? '',
+    sequence: Number(projected.sequence ?? 0),
+    timestampMs: Number(projected.timestampMs ?? 0),
+    kind: projected.kind ?? '',
+    category: projected.category ?? '',
+    payload,
+    correlationId: projected.correlationId ?? '',
+    causationId: projected.causationId ?? '',
+    taskId: projected.taskId ?? '',
+    runId: projected.runId ?? '',
+    turnId: projected.turnId ?? '',
+    clientMessageId: projected.clientMessageId ?? '',
+    persistenceClass: projected.persistenceClass ?? '',
+    sensitivity: projected.sensitivity ?? ''
+  }
 }
 
 /**
