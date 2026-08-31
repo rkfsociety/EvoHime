@@ -830,6 +830,16 @@ grant; требование вне него возвращает `capability_esc
 тело skill: cache живёт только в процессе Core, а durable trace содержит лишь
 skill id, version, hash и source reference.
 
+Skill Trust Pipeline v1 находится между discovery и enable. Offline scanner
+`skill-scanner-v1` выдаёт стабильные finding codes, severity и только masked
+SHA-256 fingerprints. Trust record keyed by `skill_id + content_hash +
+scanner_version + review_policy_version`; изменение package или policy не
+наследует старое решение. `SkillRegistry::load`, `load_reference` и
+permission selection отклоняют всё, кроме `trusted`/`enabled`, через
+Core-owned gate. Contextual review — optional read-only typed report; malformed
+или unavailable report не повышает доверие. Metadata records и audit хранятся
+в SQLite schema 48, raw body/secrets/credentials не сохраняются.
+
 В `desktop-ipc-v1` добавлены additive commands `ListSkills`, `LoadSkill` и
 `LoadSkillReference` (tags 139–141), а typed projections
 `SkillCatalogProjection`, `SkillContentResult` и `SkillReferenceResult` имеют

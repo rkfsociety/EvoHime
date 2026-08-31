@@ -23,6 +23,9 @@ const catalog: SkillCatalog = {
     disableModelInvocation: true,
     referenceCount: 0,
     validationStatus: 'valid',
+    trustDecision: 'trusted',
+    riskClass: 'low',
+    findingsCount: 0,
     validationErrorCode: '',
     warnings: []
   }],

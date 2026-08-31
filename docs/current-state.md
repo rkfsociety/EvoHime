@@ -77,6 +77,17 @@ Core и supervisor — внутренние компоненты установ�
   `LoadSkill`, `LoadSkillReference` (139–141) и projections oneof 17–19 не
   переносят тело в generic payload и не записывают его в journal; Electron
   `SkillCatalogPanel` открывает полный документ только после явного действия;
+- Skill Trust Pipeline v1 (план 47) реализован поверх registry: offline
+  deterministic scanner `skill-scanner-v1` выдаёт стабильные finding codes,
+  severity и только SHA-256 fingerprints; trust decision привязан к полному
+  content hash и policy/scanner versions. `load`, `load_reference` и
+  `effective_permissions` Core-gate-ят только `trusted`/`enabled`, поэтому
+  quarantined, review_required, hash mismatch и malformed package не попадают
+  в execution selection. Metadata-only projection показывает trust, risk и
+  bounded finding count; raw secrets/paths/snippets не сохраняются. Durable
+  metadata store `skill_trust_records`/`skill_trust_audit` добавлен миграцией
+  schema 48. Contextual review — optional read-only typed adapter и при
+  unavailable/malformed результате fail-closed;
 - TaskCheckpoint v1: bounded canonical contract с разделением Core-derived и
   model-proposed данных, SHA-256 content hash, immutable parent chain,
   idempotent insert, workspace/event-sequence/state-transition checks, typed

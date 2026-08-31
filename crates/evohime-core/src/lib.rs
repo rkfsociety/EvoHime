@@ -1015,6 +1015,7 @@ pub mod research_pipeline;
 pub mod research_search;
 pub mod scope;
 pub mod skill_registry;
+pub mod skill_trust_pipeline;
 pub mod task_memory;
 pub use task_memory::project_scope_id;
 pub mod plan_context;

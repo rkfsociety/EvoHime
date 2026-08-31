@@ -99,6 +99,9 @@ export interface SkillMetadata {
   readonly validationStatus: string
   readonly validationErrorCode: string
   readonly warnings: readonly string[]
+  readonly trustDecision?: string
+  readonly riskClass?: string
+  readonly findingsCount?: number
 }
 
 export interface SkillDiagnostic {

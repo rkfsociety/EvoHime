@@ -194,3 +194,12 @@ audit хранится по его собственному Core policy.
   evohime-core -p evohime-local-storage -p evohime-desktop-ipc`, `npm run
   check:protocol`, `npm run typecheck`, focused Vitest 1/1. Full regression,
   clippy and Windows-only packaging gates remain required before release.
+## План 47 — Skill Trust Pipeline v1
+
+Подтверждено в текущем checkout: offline deterministic scanner и stable
+finding codes, redacted fingerprints, hash/version-bound decisions, Core gate
+для load/reference/capability selection, optional fail-closed review contract,
+metadata-only IPC projection и SQLite schema 48. Focused evidence: `skill_trust_pipeline`
+4/4, `skill_registry` 4/4, `skill_trust_pipeline_store` 1/1, protocol check и
+SkillCatalogPanel regression. Полные release gates выполняются ниже отдельными
+командами и не заменяются этим focused набором.

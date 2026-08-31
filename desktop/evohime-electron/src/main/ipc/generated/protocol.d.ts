@@ -3315,6 +3315,15 @@ export namespace evohime {
                 /** SkillMetadataProjection warnings. */
                 warnings: string[];
 
+                /** SkillMetadataProjection trustDecision. */
+                trustDecision: string;
+
+                /** SkillMetadataProjection riskClass. */
+                riskClass: string;
+
+                /** SkillMetadataProjection findingsCount. */
+                findingsCount: number;
+
                 /**
                  * Encodes the specified SkillMetadataProjection message. Does not implicitly {@link evohime.desktop.v1.SkillMetadataProjection.verify|verify} messages.
                  * @param message SkillMetadataProjection message or plain object to encode
@@ -3393,6 +3402,15 @@ export namespace evohime {
 
                     /** SkillMetadataProjection warnings */
                     warnings?: (string[]|null);
+
+                    /** SkillMetadataProjection trustDecision */
+                    trustDecision?: (string|null);
+
+                    /** SkillMetadataProjection riskClass */
+                    riskClass?: (string|null);
+
+                    /** SkillMetadataProjection findingsCount */
+                    findingsCount?: (number|null);
 
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];

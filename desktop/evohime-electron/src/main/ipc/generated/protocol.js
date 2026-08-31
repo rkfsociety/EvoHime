@@ -7503,6 +7503,9 @@ export const evohime = $root.evohime = (() => {
                  * @property {string|null} [validationStatus] SkillMetadataProjection validationStatus
                  * @property {string|null} [validationErrorCode] SkillMetadataProjection validationErrorCode
                  * @property {Array.<string>|null} [warnings] SkillMetadataProjection warnings
+                 * @property {string|null} [trustDecision] SkillMetadataProjection trustDecision
+                 * @property {string|null} [riskClass] SkillMetadataProjection riskClass
+                 * @property {number|null} [findingsCount] SkillMetadataProjection findingsCount
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -7666,6 +7669,30 @@ export const evohime = $root.evohime = (() => {
                 SkillMetadataProjection.prototype.warnings = $util.emptyArray;
 
                 /**
+                 * SkillMetadataProjection trustDecision.
+                 * @member {string} trustDecision
+                 * @memberof evohime.desktop.v1.SkillMetadataProjection
+                 * @instance
+                 */
+                SkillMetadataProjection.prototype.trustDecision = "";
+
+                /**
+                 * SkillMetadataProjection riskClass.
+                 * @member {string} riskClass
+                 * @memberof evohime.desktop.v1.SkillMetadataProjection
+                 * @instance
+                 */
+                SkillMetadataProjection.prototype.riskClass = "";
+
+                /**
+                 * SkillMetadataProjection findingsCount.
+                 * @member {number} findingsCount
+                 * @memberof evohime.desktop.v1.SkillMetadataProjection
+                 * @instance
+                 */
+                SkillMetadataProjection.prototype.findingsCount = 0;
+
+                /**
                  * Encodes the specified SkillMetadataProjection message. Does not implicitly {@link evohime.desktop.v1.SkillMetadataProjection.verify|verify} messages.
                  * @function encode
                  * @memberof evohime.desktop.v1.SkillMetadataProjection
@@ -7716,6 +7743,12 @@ export const evohime = $root.evohime = (() => {
                     if (message.warnings != null && message.warnings.length)
                         for (let i = 0; i < message.warnings.length; ++i)
                             writer.uint32(/* id 16, wireType 2 =*/130).string(message.warnings[i]);
+                    if (message.trustDecision != null && $Object.hasOwnProperty.call(message, "trustDecision") && message.trustDecision !== "")
+                        writer.uint32(/* id 17, wireType 2 =*/138).string(message.trustDecision);
+                    if (message.riskClass != null && $Object.hasOwnProperty.call(message, "riskClass") && message.riskClass !== "")
+                        writer.uint32(/* id 18, wireType 2 =*/146).string(message.riskClass);
+                    if (message.findingsCount != null && $Object.hasOwnProperty.call(message, "findingsCount") && message.findingsCount !== 0)
+                        writer.uint32(/* id 19, wireType 0 =*/152).uint32(message.findingsCount);
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -7889,6 +7922,33 @@ export const evohime = $root.evohime = (() => {
                                 if (!(message.warnings && message.warnings.length))
                                     message.warnings = [];
                                 message.warnings.push(reader.stringVerify());
+                                continue;
+                            }
+                        case 17: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.trustDecision = value;
+                                else
+                                    delete message.trustDecision;
+                                continue;
+                            }
+                        case 18: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.riskClass = value;
+                                else
+                                    delete message.riskClass;
+                                continue;
+                            }
+                        case 19: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.uint32())
+                                    message.findingsCount = value;
+                                else
+                                    delete message.findingsCount;
                                 continue;
                             }
                         }

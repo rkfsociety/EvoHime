@@ -213,3 +213,9 @@ versioned Core contract, typed input/output, human/AI mode, Core-side grants
 intersection, pinned revision/hash, SQLite schema v47, recovery semantics,
 authenticated IPC 193–194/event 47 и metadata-only Electron panel. Комплект
 `46-0` … `46-4` удалён после focused и regression gates.
+
+План 47 закрыт: Skill Trust Pipeline v1 перенесён в canonical
+`architecture.md`, `current-state.md` и `release-evidence.md`. Подтверждены
+offline deterministic scan, hash-bound trust gate, fail-closed contextual
+review contract, metadata-only IPC/UI projection и schema 48. Комплект
+`47-0` … `47-4` удалён после focused и regression gates.

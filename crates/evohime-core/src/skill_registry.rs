@@ -77,6 +77,9 @@ pub struct SkillMetadataV1 {
     pub validation_status: SkillValidationStatus,
     pub validation_error_code: Option<String>,
     pub warnings: Vec<String>,
+    pub trust_decision: String,
+    pub risk_class: String,
+    pub findings_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -161,6 +164,8 @@ pub enum SkillRegistryError {
     InvalidEncoding,
     #[error("skill content contains a secret-shaped value")]
     SensitiveContent,
+    #[error("skill trust gate rejected package: {0}")]
+    TrustRejected(String),
     #[error("skill changed during load")]
     StaleContent,
     #[error("skill reference was not found: {0}")]
@@ -182,6 +187,7 @@ impl SkillRegistryError {
             Self::TooLarge(_) => "too_large",
             Self::InvalidEncoding => "invalid_encoding",
             Self::SensitiveContent => "sensitive_content",
+            Self::TrustRejected(_) => "trust_rejected",
             Self::StaleContent => "stale_content",
             Self::ReferenceNotFound(_) => "reference_not_found",
             Self::CapabilityEscalation(_) => "capability_escalation",
@@ -319,13 +325,22 @@ impl SkillRegistry {
         if parsed.metadata.skill_id != package.metadata.skill_id {
             return Err(SkillRegistryError::StaleContent);
         }
+        if contains_secret_shape(&parsed.body) {
+            return Err(SkillRegistryError::SensitiveContent);
+        }
+        let trust = crate::skill_trust_pipeline::scan_package(
+            &package.metadata.skill_id,
+            &package.package_dir,
+            &hash,
+        )
+        .map_err(|error| SkillRegistryError::TrustRejected(error.to_string()))?;
+        trust
+            .can_execute(&hash)
+            .map_err(|error| SkillRegistryError::TrustRejected(error.to_string()))?;
         if let Some(cached) = self.cache.get(skill_id) {
             if cached.hash == hash {
                 return Ok(self.loaded(package.metadata, cached.content.clone(), true));
             }
-        }
-        if contains_secret_shape(&parsed.body) {
-            return Err(SkillRegistryError::SensitiveContent);
         }
         self.cache.insert(
             skill_id.to_owned(),
@@ -343,6 +358,16 @@ impl SkillRegistry {
         name: &str,
     ) -> Result<LoadedSkillReference, SkillRegistryError> {
         let package = self.selected_package(skill_id)?;
+        let hash = hash_bytes(&read_bounded(&package.skill_file, MAX_SKILL_BYTES)?);
+        let trust = crate::skill_trust_pipeline::scan_package(
+            &package.metadata.skill_id,
+            &package.package_dir,
+            &hash,
+        )
+        .map_err(|error| SkillRegistryError::TrustRejected(error.to_string()))?;
+        trust
+            .can_execute(&hash)
+            .map_err(|error| SkillRegistryError::TrustRejected(error.to_string()))?;
         validate_relative_reference(name)?;
         let path = package.package_dir.join(name);
         if !path.starts_with(package.package_dir.join("references")) {
@@ -373,6 +398,16 @@ impl SkillRegistry {
         parent_capabilities: &BTreeSet<String>,
     ) -> Result<SkillPermissions, SkillRegistryError> {
         let package = self.selected_package(skill_id)?;
+        let hash = hash_bytes(&read_bounded(&package.skill_file, MAX_SKILL_BYTES)?);
+        let trust = crate::skill_trust_pipeline::scan_package(
+            &package.metadata.skill_id,
+            &package.package_dir,
+            &hash,
+        )
+        .map_err(|error| SkillRegistryError::TrustRejected(error.to_string()))?;
+        trust
+            .can_execute(&hash)
+            .map_err(|error| SkillRegistryError::TrustRejected(error.to_string()))?;
         let missing = package
             .metadata
             .required_capabilities
@@ -542,8 +577,19 @@ fn parse_file(
         .to_path_buf();
     let reference_count = count_references(&package_dir);
     let mut metadata = parsed.metadata;
-    metadata.content_hash = hash;
+    metadata.content_hash = hash.clone();
     metadata.reference_count = reference_count;
+    let trust = crate::skill_trust_pipeline::scan_package(&metadata.skill_id, &package_dir, &hash)
+        .map_err(|error| SkillRegistryError::TrustRejected(error.to_string()))?;
+    metadata.trust_decision = serde_json::to_string(&trust.decision)
+        .unwrap_or_else(|_| "quarantined".into())
+        .trim_matches('"')
+        .into();
+    metadata.risk_class = serde_json::to_string(&trust.risk_class)
+        .unwrap_or_else(|_| "blocked".into())
+        .trim_matches('"')
+        .into();
+    metadata.findings_count = trust.findings.len();
     Ok(SkillPackage {
         metadata,
         package_dir,
@@ -680,6 +726,9 @@ fn parse_document(
             validation_status: SkillValidationStatus::Valid,
             validation_error_code: None,
             warnings,
+            trust_decision: "trusted".into(),
+            risk_class: "low".into(),
+            findings_count: 0,
         },
         body,
     })
@@ -709,6 +758,9 @@ fn invalid_metadata(
         validation_status: SkillValidationStatus::Invalid,
         validation_error_code: Some(error.code().into()),
         warnings: Vec::new(),
+        trust_decision: "rejected".into(),
+        risk_class: "blocked".into(),
+        findings_count: 0,
     }
 }
 

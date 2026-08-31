@@ -68,11 +68,12 @@ export function SkillCatalogPanel({ workspace, connection, events }: SkillCatalo
             </div>
             <p>{skill.description || `Ошибка: ${skill.validationErrorCode || 'invalid_skill'}`}</p>
             <small>{skill.sourceKind} · {skill.scope} · {skill.contentHash.slice(0, 12)}…</small>
+            <small>Trust: {skill.trustDecision ?? 'scanning'} · риск: {skill.riskClass ?? 'blocked'} · findings: {skill.findingsCount ?? 0}</small>
             {skill.allowedTools.length > 0 ? <small>Tools: {skill.allowedTools.join(', ')}</small> : null}
             <button
               type="button"
               onClick={() => requestSkill(skill.skillId)}
-              disabled={skill.validationStatus !== 'valid' || !CONNECTED_STATES.includes(connection)}
+              disabled={skill.validationStatus !== 'valid' || !['trusted', 'enabled'].includes(skill.trustDecision ?? 'scanning') || !CONNECTED_STATES.includes(connection)}
             >
               Загрузить skill явно
             </button>

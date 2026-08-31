@@ -38,6 +38,7 @@ pub mod refinement_store;
 pub mod research_store;
 pub mod retained_child_store;
 pub mod scratchpad_store;
+pub mod skill_trust_pipeline_store;
 pub mod task_checkpoint;
 pub mod toolkit_store;
 pub mod visual_workflow_builder_store;
@@ -49,7 +50,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 47;
+pub const SCHEMA_VERSION: u32 = 48;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -539,6 +540,7 @@ impl LocalDatabase {
         event_trigger_runtime_store::install_schema(&connection)?;
         invocation_presets_store::install_schema(&connection)?;
         benchmark_store::install_schema(&connection)?;
+        skill_trust_pipeline_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
@@ -3530,6 +3532,10 @@ impl LocalDatabase {
         if current < 47 {
             agent_role_profiles_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 47;")?;
+        }
+        if current < 48 {
+            skill_trust_pipeline_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 48;")?;
         }
         transaction.commit()?;
         Ok(())

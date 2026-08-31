@@ -12183,6 +12183,9 @@ fn skill_metadata_projection(
             .take(16)
             .map(|warning| bounded_skill_field(&warning))
             .collect(),
+        trust_decision: bounded_skill_field(&metadata.trust_decision),
+        risk_class: bounded_skill_field(&metadata.risk_class),
+        findings_count: metadata.findings_count.min(u32::MAX as usize) as u32,
     }
 }
 

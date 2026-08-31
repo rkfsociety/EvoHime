@@ -217,6 +217,9 @@ function skillCatalogFrame(sequenceId: number): Uint8Array {
           disableModelInvocation: true,
           referenceCount: 1,
           validationStatus: 'valid',
+          trustDecision: 'trusted',
+          riskClass: 'low',
+          findingsCount: 0,
           validationErrorCode: '',
           warnings: []
         }],

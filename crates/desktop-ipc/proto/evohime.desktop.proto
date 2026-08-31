@@ -320,6 +320,9 @@ message SkillMetadataProjection {
   string validation_status = 14;
   string validation_error_code = 15;
   repeated string warnings = 16;
+  string trust_decision = 17;
+  string risk_class = 18;
+  uint32 findings_count = 19;
 }
 
 message SkillDiagnosticProjection {

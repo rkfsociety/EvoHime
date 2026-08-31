@@ -872,7 +872,10 @@ function decodeSkillMetadata(projected: evohime.desktop.v1.ISkillMetadataProject
     referenceCount: Number(projected.referenceCount ?? 0),
     validationStatus: projected.validationStatus ?? '',
     validationErrorCode: projected.validationErrorCode ?? '',
-    warnings: [...(projected.warnings ?? [])]
+    warnings: [...(projected.warnings ?? [])],
+    trustDecision: projected.trustDecision ?? 'scanning',
+    riskClass: projected.riskClass ?? 'blocked',
+    findingsCount: Number(projected.findingsCount ?? 0)
   }
 }
 
