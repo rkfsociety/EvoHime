@@ -107,6 +107,10 @@ impl ModelProvider for OpenAIResponsesProvider {
         &self.config.base_url
     }
 
+    fn supports_structured_output(&self) -> bool {
+        true
+    }
+
     fn stream_chat(&self, messages: &[ChatMessage]) -> TokenStream {
         self.stream_chat_with_model(&self.config.model, messages)
     }
@@ -182,7 +186,7 @@ fn response_input(message: &ChatMessage) -> Value {
 }
 
 fn response_tool(tool: &ToolSpec) -> Value {
-    json!({ "type": "function", "name": tool.function.name, "description": tool.function.description, "parameters": tool.function.parameters, "strict": false })
+    json!({ "type": "function", "name": tool.function.name, "description": tool.function.description, "parameters": tool.function.parameters, "strict": tool.function.strict.unwrap_or(false) })
 }
 
 fn parse_stream_event(line: &str) -> Option<Result<ChatStreamItem, ProviderError>> {

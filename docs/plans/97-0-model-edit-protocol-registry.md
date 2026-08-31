@@ -42,7 +42,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Блокирующие
 
-- План 39.0 — Structured Response Contract: schema-first ответы модели с provider/tool fallback.
+- Structured Response Contract v1 (см. `docs/architecture.md`)
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 
 ### Опциональные

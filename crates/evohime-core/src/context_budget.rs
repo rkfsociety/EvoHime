@@ -917,6 +917,7 @@ mod tests {
                 name: name.to_string(),
                 description: format!("описание {name}"),
                 parameters: serde_json::json!({"type": "object", "properties": {}}),
+                strict: None,
                 manifest_hash: None,
             },
         }

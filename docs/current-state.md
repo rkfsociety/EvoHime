@@ -512,3 +512,10 @@ policy, grant, query, selector и limit hashes; diagnostics bounded и redacted
 выбранных разрешённых tools и их manifest hash. Electron `AdaptiveToolCatalog`
 panel показывает только список из authenticated `model.context`; raw prompts,
 schemas, credentials и selector output в renderer не передаются.
+План 39 реализован 31 августа 2026 года. Structured Response Contract v1
+добавляет Core-owned contract/hash/validation, capability-aware Auto,
+provider-native и synthetic output-tool strategies с bounded repair, а также
+ephemeral recovery lifecycle без новых SQLite таблиц. Authenticated additive
+IPC использует tags 185/40; Electron показывает metadata-only projection.
+Unknown, unsupported, parse, validation и multiple outcomes остаются
+fail-closed; raw model output и credentials не пересекают desktop boundary.

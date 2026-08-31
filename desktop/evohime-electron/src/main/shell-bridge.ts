@@ -1769,6 +1769,17 @@ function dispatch(
       return accepted(client.send({ agentMiddlewarePipelineAction: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(payloadJson, 'utf8'), expectedVersion: 0, idempotencyKey } }))
     }
 
+    case 'structuredResponse.list':
+    case 'structuredResponse.cancel': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (requestId === null || ownerScope === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректная команда structured response.')
+      const operation = command.slice('structuredResponse.'.length)
+      return accepted(client.send({ structuredResponse: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.alloc(0), expectedVersion: 0, idempotencyKey } }))
+    }
+
     case 'automation.listSchedules': {
       const value = asRecord(payload)
       const ownerScope = asBoundedString(value['ownerScope'])

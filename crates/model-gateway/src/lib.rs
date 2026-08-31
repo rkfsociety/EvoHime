@@ -6,6 +6,7 @@ pub mod routing_catalog;
 pub mod routing_policy;
 pub mod routing_runtime;
 pub mod routing_trace;
+pub mod structured_response;
 pub mod tools;
 
 pub use crate::config::{ModelGatewayConfig, ModelRouteConfig};
@@ -26,6 +27,10 @@ pub use crate::routing_policy::{PrivacyClass, RouteCandidate, RoutingRequest};
 pub use crate::routing_runtime::{RoutingMode, RoutingRuntime, RuntimeError, RuntimeLimits};
 pub use crate::routing_trace::{
     HealthState, PrivacyLabel, RoutingTrace, SafeNextAction, TerminalStatus, TraceCandidate,
+};
+pub use crate::structured_response::{
+    ResponseContract, ResponseError, ResponseResult, ResponseStrategy,
+    STRUCTURED_RESPONSE_SCHEMA_VERSION,
 };
 pub use crate::tools::{
     ChatResult, ChatStreamItem, FunctionSpec, LlmUsage, NativeToolCall, ToolSpec,
@@ -332,6 +337,10 @@ impl ModelGateway {
 
     pub fn route_provider_kind(&self, route: &str) -> Result<ProviderKind, ProviderError> {
         Ok(self.provider_for_route(route)?.kind())
+    }
+
+    pub fn route_supports_structured_output(&self, route: &str) -> Result<bool, ProviderError> {
+        Ok(self.provider_for_route(route)?.supports_structured_output())
     }
 
     pub fn model_name(&self) -> &str {

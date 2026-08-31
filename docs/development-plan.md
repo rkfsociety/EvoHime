@@ -151,3 +151,9 @@ metadata-only Electron projection. Комплект `37-0` … `37-4` удалё
 между `ToolRegistry` и `ToolAgent`; критерии, cache invalidation, fallback,
 semantic/model allowlist и metadata-only Electron projection подтверждены
 focused Core/Electron tests и свежими protocol/typecheck gates.
+
+План 39 закрыт: Structured Response Contract v1 перенесён в canonical
+architecture/current-state/release-evidence. Подтверждены deterministic
+contract hash и Core validation, capability-aware native/synthetic/auto
+strategy, bounded repair, ephemeral restart semantics, authenticated IPC
+185/40 и metadata-only Electron projection.

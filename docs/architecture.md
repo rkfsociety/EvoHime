@@ -1123,3 +1123,23 @@ revision/registry/policy/grant/query/selector/limit и инвалидирует�
 попадает лишь bounded redacted selection metadata. Existing authenticated
 `model.context` event — единственная client projection; Electron panel не имеет
 доступа к Core, storage или full schemas.
+## Structured Response Contract v1
+
+Model Gateway предоставляет Core-owned schema-first structured response path.
+`ResponseContract` содержит contract id, revision, JSON object schema, strategy
+(`auto`, `provider_native`, `synthetic_tool`) и deterministic SHA-256 hash.
+Размер schema ограничен 64 KiB; результат проходит локальную Core validation
+по root type, required и property types. `Auto` выбирает native только для
+маршрутов с capability descriptor, иначе использует synthetic output-tool.
+Output-tool не является capability, не попадает в ToolRegistry и не выполняет
+side effects. Общий лимит — 3 model attempts (не более 2 repair retries).
+
+Lifecycle snapshot, policy hash, attempts и unknown-after-restart состояние
+ephemeral; новые SQLite tables/migrations не добавляются. Provenance хранит
+только redacted contract hash, strategy, provider capability и typed outcome.
+Незавершённый provider request после restart не повторяется автоматически.
+
+Desktop IPC остаётся authenticated и additive: `StructuredResponseCommand` —
+tag 185, `StructuredResponseEvent` — tag 40. Electron получает только
+bounded metadata projection через generic shell bridge; raw schema, prompt,
+output и repair text в renderer не передаются.

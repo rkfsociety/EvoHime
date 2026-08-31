@@ -142,6 +142,10 @@ pub trait ModelProvider: Send + Sync {
     fn model_name(&self) -> &str;
     fn base_url(&self) -> &str;
 
+    fn supports_structured_output(&self) -> bool {
+        false
+    }
+
     fn stream_chat(&self, messages: &[ChatMessage]) -> TokenStream;
 
     fn stream_chat_with_model(&self, model: &str, messages: &[ChatMessage]) -> TokenStream {

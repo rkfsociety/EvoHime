@@ -1099,6 +1099,8 @@ export const RENDERER_COMMANDS = [
   'agentMiddleware.list',
   'agentMiddleware.start',
   'agentMiddleware.cancel',
+  'structuredResponse.list',
+  'structuredResponse.cancel',
   'automation.listSchedules',
   'automation.saveSchedule',
   'automation.trigger',
@@ -1493,6 +1495,8 @@ export interface CommandPayloads {
   'agentMiddleware.list': { requestId: string; ownerScope: string }
   'agentMiddleware.start': { requestId: string; ownerScope: string; runId: string; idempotencyKey: string }
   'agentMiddleware.cancel': { requestId: string; ownerScope: string; runId: string; idempotencyKey: string }
+  'structuredResponse.list': { requestId: string; ownerScope: string; idempotencyKey: string }
+  'structuredResponse.cancel': { requestId: string; ownerScope: string; idempotencyKey: string }
   'automation.listSchedules': { ownerScope: string; limit?: number }
   'automation.saveSchedule': {
     scheduleId: string
@@ -1712,6 +1716,8 @@ export interface CommandResults {
   'agentMiddleware.list': { accepted: boolean }
   'agentMiddleware.start': { accepted: boolean }
   'agentMiddleware.cancel': { accepted: boolean }
+  'structuredResponse.list': { accepted: boolean }
+  'structuredResponse.cancel': { accepted: boolean }
   'automation.listSchedules': { accepted: boolean }
   'automation.saveSchedule': { accepted: boolean }
   'automation.trigger': { accepted: boolean }

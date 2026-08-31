@@ -97,3 +97,15 @@ audit хранится по его собственному Core policy.
   запускает focused backup/restore и redaction tests и запрещённые markers;
 - license/attribution inventory ведётся в [`licenses/README.md`](licenses/README.md)
   и обновляется в том же коммите, что и новый distributed artifact.
+## Plan 39 — Structured Response Contract v1 (2026-08-31)
+
+- Contract: `evohime-model-gateway::structured_response`, schema v1, bounded
+  64 KiB schema and 3 total attempts / 2 repair retries.
+- Safety: local Core validation; synthetic output tool is non-capability and
+  never reaches ToolRegistry; provenance is redacted; restart does not blind
+  retry an unfinished provider request; no SQLite migration.
+- IPC/UI: additive authenticated command tag 185 and event tag 40;
+  Electron metadata-only panel and bridge.
+- Fresh checks: model-gateway structured-response unit test, Core lifecycle
+  unit test, `npm run check:protocol`, `npm run typecheck`, focused Vitest,
+  `cargo fmt --all -- --check`, and `git diff --check`.
