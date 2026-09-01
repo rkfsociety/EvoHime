@@ -47,6 +47,7 @@ pub mod retained_child_store;
 pub mod scratchpad_store;
 pub mod skill_trust_pipeline_store;
 pub mod task_checkpoint;
+pub mod task_worktree_isolation_store;
 pub mod team_sop_protocols_store;
 pub mod toolkit_store;
 pub mod visual_workflow_builder_store;
@@ -59,7 +60,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 58;
+pub const SCHEMA_VERSION: u32 = 59;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3599,6 +3600,10 @@ impl LocalDatabase {
         if current < 58 {
             incremental_change_protocol_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 58;")?;
+        }
+        if current < 59 {
+            task_worktree_isolation_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 59;")?;
         }
         transaction.commit()?;
         Ok(())

@@ -2444,6 +2444,18 @@ impl IpcBridge {
                     self.write_response(writer, "revision_safe_workspace_files.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::TaskWorktreeIsolation(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "get".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_task_worktree_isolation(operation, request)
+                        .await?;
+                    self.write_response(writer, "task_worktree_isolation.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -6726,6 +6738,37 @@ impl IpcBridge {
             })
             .await
             .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_task_worktree_isolation(
+        &self,
+        operation: String,
+        request: generated::TaskWorktreeIsolationCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::TaskWorktreeIsolation {
+                operation,
+                project_id: request.owner_scope,
+                task_id: request.task_id,
+                worktree_id: request.worktree_id,
+                branch: request.branch,
+                base_commit: request.base_commit,
+                expected_version: request.expected_version,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
         response
             .await
             .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?

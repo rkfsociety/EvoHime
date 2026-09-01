@@ -356,6 +356,15 @@ function dispatch(
       return accepted(client.send({ revisionSafeWorkspaceFiles: { schemaVersion: 1, requestId: randomUUID(), ownerScope: projectId, operation, logicalPath, content: Buffer.from(content, 'utf8'), expectedHash, idempotencyKey } }))
     }
 
+    case 'core.taskWorktreeIsolation': {
+      const value = asRecord(payload)
+      const operation = ['create', 'ready', 'integrating', 'cleanup_pending'].includes(String(value['operation'])) ? String(value['operation']) : null
+      const projectId = asBoundedString(value['projectId']); const taskId = asBoundedString(value['taskId']); const worktreeId = asBoundedString(value['worktreeId']); const branch = asBoundedString(value['branch']); const baseCommit = asBoundedString(value['baseCommit']); const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion'])
+      if (operation === null || projectId === null || taskId === null || worktreeId === null || branch === null || baseCommit === null || idempotencyKey === null || expectedVersion === null || branch.length > 128 || baseCommit.length > 128) return failure('invalid-payload', 'Некорректная операция worktree.')
+      return accepted(client.send({ taskWorktreeIsolation: { schemaVersion: 1, requestId: randomUUID(), ownerScope: projectId, operation, taskId, worktreeId, branch, baseCommit, expectedVersion, idempotencyKey } }))
+    }
+
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)
       const taskId = asBoundedString(value['taskId'])

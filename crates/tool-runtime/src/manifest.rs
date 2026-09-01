@@ -30,6 +30,18 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             serde_json::json!({"path":string("Logical namespace/path"),"recursive":{"type":"boolean"},"expected_hash":string("SHA-256 hash of the file before deletion")}),
             &["path"],
         ),
+        "git.worktree.create" => object(
+            serde_json::json!({"worktree_id":string("Core-generated task worktree identity"),"base_commit":string("Validated Git commit/ref")}),
+            &["worktree_id", "base_commit"],
+        ),
+        "git.worktree.remove" => object(
+            serde_json::json!({"worktree_id":string("Core-generated task worktree identity")}),
+            &["worktree_id"],
+        ),
+        "git.worktree.preflight" => object(
+            serde_json::json!({"worktree_id":string("Core-generated task worktree identity"),"base_commit":string("Pinned base commit")}),
+            &["worktree_id", "base_commit"],
+        ),
         "filesystem.move" | "filesystem.copy" => object(
             serde_json::json!({"from":string("Logical namespace/path"),"to":string("Logical namespace/path"),"recursive":{"type":"boolean"},"expected_hash":string("SHA-256 hash of the source file")}),
             &["from", "to"],

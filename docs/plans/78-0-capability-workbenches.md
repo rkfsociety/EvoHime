@@ -57,7 +57,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 58.0 — Workspace State Checkpoints: безопасный rollback файлов отдельно от task history.
-- План 61.0 — Task Worktree Isolation: отдельные Git worktrees для параллельных agent/child задач.
+- Task Worktree Isolation v1 — отдельные Git worktrees для параллельных agent/child задач; контракт перенесён в канонические документы.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

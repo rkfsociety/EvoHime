@@ -9,6 +9,7 @@ pub mod filesystem;
 pub mod filesystem_advanced;
 pub mod git;
 pub mod git_advanced;
+pub mod git_worktree;
 pub mod http;
 pub mod list;
 pub mod logs;

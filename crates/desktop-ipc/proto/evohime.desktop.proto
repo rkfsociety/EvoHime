@@ -1862,6 +1862,7 @@ message CommandEnvelope {
     WorkspaceStateCheckpointCommand workspace_state_checkpoint = 209;
     IncrementalChangeProtocolCommand incremental_change_protocol = 210;
     RevisionSafeWorkspaceFilesCommand revision_safe_workspace_files = 211;
+    TaskWorktreeIsolationCommand task_worktree_isolation = 212;
   }
 }
 
@@ -1970,6 +1971,7 @@ message EventEnvelope {
     WorkspaceStateCheckpointEvent workspace_state_checkpoint = 56;
     IncrementalChangeProtocolEvent incremental_change_protocol = 57;
     RevisionSafeWorkspaceFilesEvent revision_safe_workspace_files = 58;
+    TaskWorktreeIsolationEvent task_worktree_isolation = 59;
   }
 }
 
@@ -2085,6 +2087,30 @@ message RevisionSafeWorkspaceFilesCommand {
 }
 
 message RevisionSafeWorkspaceFilesEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  string error_code = 5;
+  bytes projection_json = 6;
+  bool truncated = 7;
+}
+
+// Plan 61: bounded Core-owned worktree lifecycle and integration projection.
+message TaskWorktreeIsolationCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string operation = 4;
+  string worktree_id = 5;
+  string branch = 6;
+  string base_commit = 7;
+  uint64 expected_version = 8;
+  string idempotency_key = 9;
+  string task_id = 10;
+}
+
+message TaskWorktreeIsolationEvent {
   uint32 schema_version = 1;
   string request_id = 2;
   string operation = 3;

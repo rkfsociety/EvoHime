@@ -1533,3 +1533,15 @@ Existing-file mutations требуют expected hash; fuzzy patch fallback уд�
 uploads immutable. Внешнее изменение обнаруживается при следующей mediated
 operation и даёт stale outcome. UI surface показывает только bounded ref/preview
 по project scope; мутации остаются в approval-пути Core tools.
+
+## Task Worktree Isolation v1 (план 61)
+
+Task worktree registry хранит Core-owned binding `task_id → worktree_id` с
+versioned lifecycle `planned → ready → integrating → cleanup_pending` и
+idempotency fence в SQLite schema v59. Approved tool `git.worktree.create`
+создаёт bounded detached worktree только внутри repository workspace; ref
+injection, arbitrary destination, merge, force/reset и push запрещены. Cleanup
+не удаляет dirty worktree. При старте задачи Core использует binding только
+после проверки `ready` и фактического существования root, поэтому checkpoint
+и filesystem semantics применяются к конкретному worktree backend, а не к
+primary checkout.

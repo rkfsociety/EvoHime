@@ -303,3 +303,8 @@ regression, protocol/typecheck, format и diff-check gates.
 года. Реализованы typed namespaces, hash-based stale protection, immutable
 uploads, run-scoped scratch, unified filesystem tool boundary и metadata-only
 IPC/UI projection; комплект плана удалён после свежих проверок.
+
+План 61 (issue #41, Task Worktree Isolation) закрыт 1 сентября 2026 года.
+Подтверждены durable registry, task pinning к ready worktree root, approved
+detached worktree tool, lifecycle version fencing, safe cleanup и additive
+IPC/UI projection; комплект плана удалён после проверок.

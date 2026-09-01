@@ -398,6 +398,24 @@ impl ToolRegistry {
             timeout: tools::filesystem_advanced::DELETE_TIMEOUT,
         });
         registry.register(ToolDefinition {
+            name: tools::git_worktree::CREATE_NAME,
+            description: tools::git_worktree::CREATE_DESCRIPTION,
+            permissions: tools::git_worktree::CREATE_PERMISSIONS,
+            timeout: tools::git_worktree::CREATE_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::git_worktree::REMOVE_NAME,
+            description: tools::git_worktree::REMOVE_DESCRIPTION,
+            permissions: tools::git_worktree::REMOVE_PERMISSIONS,
+            timeout: tools::git_worktree::REMOVE_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::git_worktree::PREFLIGHT_NAME,
+            description: tools::git_worktree::PREFLIGHT_DESCRIPTION,
+            permissions: tools::git_worktree::PREFLIGHT_PERMISSIONS,
+            timeout: tools::git_worktree::PREFLIGHT_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
             name: tools::filesystem_advanced::MOVE_NAME,
             description: tools::filesystem_advanced::MOVE_DESCRIPTION,
             permissions: tools::filesystem_advanced::MOVE_PERMISSIONS,
@@ -730,6 +748,11 @@ impl ToolRegistry {
                 tools::filesystem_advanced::DELETE_NAME => {
                     tools::filesystem_advanced::delete(ctx, input).await
                 }
+                tools::git_worktree::CREATE_NAME => tools::git_worktree::create(ctx, input).await,
+                tools::git_worktree::REMOVE_NAME => tools::git_worktree::remove(ctx, input).await,
+                tools::git_worktree::PREFLIGHT_NAME => {
+                    tools::git_worktree::preflight(ctx, input).await
+                }
                 tools::filesystem_advanced::MOVE_NAME => {
                     tools::filesystem_advanced::move_file(ctx, input).await
                 }
@@ -871,6 +894,11 @@ impl ToolRegistry {
                 // Advanced Filesystem Operations
                 tools::filesystem_advanced::DELETE_NAME => {
                     tools::filesystem_advanced::delete(ctx, input).await
+                }
+                tools::git_worktree::CREATE_NAME => tools::git_worktree::create(ctx, input).await,
+                tools::git_worktree::REMOVE_NAME => tools::git_worktree::remove(ctx, input).await,
+                tools::git_worktree::PREFLIGHT_NAME => {
+                    tools::git_worktree::preflight(ctx, input).await
                 }
                 tools::filesystem_advanced::MOVE_NAME => {
                     tools::filesystem_advanced::move_file(ctx, input).await
@@ -1246,7 +1274,7 @@ mod tests {
     fn bootstrap_registers_filesystem_read() {
         let registry = ToolRegistry::bootstrap();
         let tools = registry.list();
-        assert_eq!(tools.len(), 54);
+        assert_eq!(tools.len(), 57);
         for name in [
             "agent.run",
             "app.list",

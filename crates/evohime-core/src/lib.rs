@@ -1030,6 +1030,7 @@ pub mod scope;
 pub mod skill_registry;
 pub mod skill_trust_pipeline;
 pub mod task_memory;
+pub mod task_worktree_isolation;
 pub use task_memory::project_scope_id;
 pub mod plan_context;
 pub mod plan_review;
@@ -1179,6 +1180,17 @@ pub enum CoreCommand {
         logical_path: String,
         content: Vec<u8>,
         expected_hash: String,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    TaskWorktreeIsolation {
+        operation: String,
+        project_id: String,
+        task_id: String,
+        worktree_id: String,
+        branch: String,
+        base_commit: String,
+        expected_version: u64,
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
@@ -9494,8 +9506,22 @@ impl TaskCoordinator {
                 let events = state_guard.events.clone();
                 let executor = state_guard.executor.clone();
                 let journal = state_guard.journal.clone();
-                let workspace_root =
+                let mut workspace_root =
                     workspace_root.unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+                if let Some(journal) = &state_guard.journal {
+                    let database = journal.database().lock().await;
+                    if let Ok(Some(binding)) =
+                        evohime_local_storage::task_worktree_isolation_store::get_ready_for_task(
+                            database.connection(),
+                            &task_id,
+                        )
+                    {
+                        let candidate = workspace_root.join(&binding.root_ref);
+                        if candidate.is_dir() {
+                            workspace_root = candidate;
+                        }
+                    }
+                }
                 if let Some(journal) = &state_guard.journal {
                     let database = journal.database().lock().await;
                     let _ = evohime_local_storage::continuation_store::attach_task_context(
@@ -10609,6 +10635,40 @@ impl TaskCoordinator {
                         _ => return Err("unsupported revision-safe workspace files operation".to_string()),
                     };
                     serde_json::to_vec(&value).map_err(|e| e.to_string())
+                }.await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::TaskWorktreeIsolation {
+                operation,
+                project_id,
+                task_id,
+                worktree_id,
+                branch,
+                base_commit,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let project = journal.get_project(&project_id).await.map_err(|e| e.to_string())?.ok_or_else(|| "project not found".to_string())?;
+                    if branch.is_empty() || branch.len() > task_worktree_isolation::MAX_BRANCH_BYTES || branch.starts_with('-') || branch.contains("..") || branch.contains(' ') { return Err("invalid worktree branch".to_string()); }
+                    if !matches!(operation.as_str(), "ready" | "integrating" | "cleanup_pending") { return Err("unsupported worktree transition".to_string()); }
+                    let connection = journal.database().lock().await;
+                    if operation == "create" {
+                        let record = evohime_local_storage::task_worktree_isolation_store::TaskWorktreeRecord { worktree_id: worktree_id.clone(), task_id, repository_scope: project.id, branch, root_ref: format!(".evohime/worktrees/{worktree_id}"), base_commit, state: "planned".into(), version: 1, idempotency_key, updated_at_ms: crate::task_memory::now_millis() as i64 };
+                        evohime_local_storage::task_worktree_isolation_store::create(connection.connection(), &record).map_err(|e| e.to_string())?;
+                        return serde_json::to_vec(&record).map_err(|e| e.to_string());
+                    }
+                    let current = evohime_local_storage::task_worktree_isolation_store::get(connection.connection(), &worktree_id).map_err(|e| e.to_string())?.ok_or_else(|| "worktree not found".to_string())?;
+                    if operation == "ready" && !std::path::PathBuf::from(&project.workspace_path).join(&current.root_ref).is_dir() {
+                        return Err("worktree root is not present; create it through the approved git.worktree.create tool".to_string());
+                    }
+                    let ok = evohime_local_storage::task_worktree_isolation_store::transition(connection.connection(), &worktree_id, expected_version, &operation, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                    if !ok { return Err("stale or unknown worktree transition".to_string()); }
+                    let record = evohime_local_storage::task_worktree_isolation_store::get(connection.connection(), &worktree_id).map_err(|e| e.to_string())?.ok_or_else(|| "worktree not found".to_string())?;
+                    serde_json::to_vec(&record).map_err(|e| e.to_string())
                 }.await;
                 let _ = reply.send(result);
             }

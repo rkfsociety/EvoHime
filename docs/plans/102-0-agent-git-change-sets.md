@@ -39,7 +39,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Блокирующие
 
 - План 60.0 — Revision-Safe Workspace Files: uploads/workspace/outputs namespaces и stale-write protection.
-- План 61.0 — Task Worktree Isolation: отдельные Git worktrees для параллельных agent/child задач.
+- Task Worktree Isolation v1 — отдельные Git worktrees для параллельных agent/child задач; контракт перенесён в канонические документы.
 - План 78.0 — Capability Workbenches: lifecycle-scoped tool groups with shared state and resources.
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 

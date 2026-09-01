@@ -801,3 +801,10 @@ context, advanced file adapters и additive authenticated IPC/UI projection
 проверены Rust 677 тестами, tool-runtime tests, Electron suite 498 тестами,
 protocol/typecheck, clippy и diff-check. Raw absolute paths новая surface не
 выдаёт; IPC mutations остаются только в Core approval path.
+
+План 61 закрыт 1 сентября 2026 года: Task Worktree Isolation v1 добавляет
+durable registry в schema v59, optimistic lifecycle transitions, task-to-root
+pinning и approved detached Git worktree create/remove tools. Dirty cleanup,
+ref injection, duplicate/stale registry transitions и реальный временный Git
+worktree проверены focused tests; authenticated IPC и Electron projection
+передают только metadata, без host-path authority.
