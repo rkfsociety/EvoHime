@@ -2420,6 +2420,18 @@ impl IpcBridge {
                     self.write_response(writer, "workspace_state_checkpoint.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::IncrementalChangeProtocol(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "status".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_incremental_change_protocol(operation, request)
+                        .await?;
+                    self.write_response(writer, "incremental_change_protocol.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -6639,6 +6651,35 @@ impl IpcBridge {
                 checkpoint_id: (!request.checkpoint_id.is_empty()).then_some(request.checkpoint_id),
                 payload: request.payload,
                 expected_version: request.expected_version,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_incremental_change_protocol(
+        &self,
+        operation: String,
+        request: generated::IncrementalChangeProtocolCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::IncrementalChangeProtocol {
+                operation,
+                run_id: request.run_id,
+                payload: request.payload,
+                expected_version: request.expected_version,
+                observed_fingerprint: request.observed_fingerprint,
                 idempotency_key: request.idempotency_key,
                 reply,
             })

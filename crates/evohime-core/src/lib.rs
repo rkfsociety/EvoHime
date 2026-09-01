@@ -952,7 +952,7 @@ use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use futures_util::future::BoxFuture;
 use futures_util::StreamExt;
 use rusqlite::OptionalExtension;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
@@ -989,6 +989,7 @@ pub mod export;
 pub mod external_coding_agent_adapter;
 pub mod goal;
 pub mod human_work_items;
+pub mod incremental_change_protocol;
 pub mod integration_provider_runtime;
 pub mod integration_provider_sdk;
 pub mod invocation_presets;
@@ -1160,6 +1161,15 @@ pub enum CoreCommand {
         checkpoint_id: Option<String>,
         payload: Vec<u8>,
         expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    IncrementalChangeProtocol {
+        operation: String,
+        run_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        observed_fingerprint: String,
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
@@ -10527,6 +10537,37 @@ impl TaskCoordinator {
                         }
                         _ => Err("unsupported workspace checkpoint operation".to_string()),
                     }
+                }.await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::IncrementalChangeProtocol {
+                operation,
+                run_id,
+                payload,
+                expected_version,
+                observed_fingerprint,
+                idempotency_key,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let runtime = crate::incremental_change_protocol::Runtime::new(journal);
+                    let now = crate::task_memory::now_millis() as i64;
+                    let value = match operation.as_str() {
+                        "create" => {
+                            #[derive(Deserialize)]
+                            struct Request { delta: crate::incremental_change_protocol::RequirementDelta, impact: crate::incremental_change_protocol::ImpactAnalysis, plan: crate::incremental_change_protocol::ChangePlan }
+                            let request: Request = serde_json::from_slice(&payload).map_err(|e| e.to_string())?;
+                            runtime.create(&run_id, &idempotency_key, &request.delta, &request.impact, &request.plan, now).await.map_err(|e| e.to_string())?
+                        }
+                        "apply" | "cancel" | "unknown" => {
+                            let next = match operation.as_str() { "apply" => crate::incremental_change_protocol::State::Applied, "cancel" => crate::incremental_change_protocol::State::Cancelled, _ => crate::incremental_change_protocol::State::UnknownReconciliationRequired };
+                            runtime.transition(&run_id, expected_version, next, &observed_fingerprint, now).await.map_err(|e| e.to_string())?
+                        }
+                        _ => return Err("unsupported incremental change operation".to_string()),
+                    };
+                    serde_json::to_vec(&value).map_err(|e| e.to_string())
                 }.await;
                 let _ = reply.send(result);
             }

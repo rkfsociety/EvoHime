@@ -1860,6 +1860,7 @@ message CommandEnvelope {
     PlanArtifactCommand plan_artifact_read = 207;
     PlanArtifactCommand plan_artifact_action = 208;
     WorkspaceStateCheckpointCommand workspace_state_checkpoint = 209;
+    IncrementalChangeProtocolCommand incremental_change_protocol = 210;
   }
 }
 
@@ -1966,6 +1967,7 @@ message EventEnvelope {
     ArtifactHandoffRegistryEvent artifact_handoff_registry = 54;
     PlanArtifactEvent plan_artifact = 55;
     WorkspaceStateCheckpointEvent workspace_state_checkpoint = 56;
+    IncrementalChangeProtocolEvent incremental_change_protocol = 57;
   }
 }
 
@@ -2045,6 +2047,27 @@ message WorkspaceStateCheckpointEvent {
   string error_code = 7;
   bytes projection_json = 8;
   bool truncated = 9;
+}
+
+// Plan 59: bounded metadata-only incremental change protocol.
+message IncrementalChangeProtocolCommand {
+  uint32 schema_version = 1;
+  string operation = 2;
+  string run_id = 3;
+  bytes payload = 4;
+  uint64 expected_version = 5;
+  string observed_fingerprint = 6;
+  string idempotency_key = 7;
+}
+message IncrementalChangeProtocolEvent {
+  uint32 schema_version = 1;
+  string operation = 2;
+  string run_id = 3;
+  string state = 4;
+  uint64 version = 5;
+  string error_code = 6;
+  bytes projection_json = 7;
+  bool redacted = 8;
 }
 
 // Plan 46: bounded metadata-only Agent Role Profiles surface. Profile bodies

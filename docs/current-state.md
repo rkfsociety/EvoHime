@@ -784,3 +784,12 @@ Electron `ArtifactHandoffRegistryPanel` показывают только metada
 renderer не получает bytes, raw prompts, outputs, credentials или authority.
 Операции list/get/publish/handoff/accept/revise/mark-stale fail closed при
 invalid scope/ref и не создают capabilities или внешних effects.
+## Incremental Change Protocol v1 (план 59, реализован 2026-09-01)
+
+Добавлен Core-owned bounded pipeline от requirement delta и impact analysis до
+versioned run, с exact refs на Plan Artifact/Workspace Checkpoint, optimistic
+version и scope fingerprint. SQLite schema v58 хранит только metadata и
+redacted evidence; stale drift, duplicate idempotency и terminal unknown-safe
+outcomes проверены focused tests. Authenticated IPC использует command 210/event
+57, Electron показывает metadata-only `IncrementalChangeProtocolPanel`; внешний
+effect базовым executor намеренно не выполняется.

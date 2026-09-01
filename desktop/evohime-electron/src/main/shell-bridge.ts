@@ -332,6 +332,18 @@ function dispatch(
       return accepted(client.send({ workspaceStateCheckpoint: { schemaVersion: 1, requestId: randomUUID(), operation, projectId, taskId, checkpointId, payload: Buffer.alloc(0), expectedVersion, idempotencyKey } }))
     }
 
+    case 'core.incrementalChangeProtocol': {
+      const value = asRecord(payload)
+      const operation = value['operation'] === 'create' || value['operation'] === 'apply' || value['operation'] === 'cancel' || value['operation'] === 'unknown' ? value['operation'] : null
+      const runId = asBoundedString(value['runId'])
+      const body = value['payload'] === undefined ? '' : asBoundedString(value['payload'])
+      const observedFingerprint = value['observedFingerprint'] === undefined ? '' : asBoundedString(value['observedFingerprint'])
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (operation === null || runId === null || body === null || observedFingerprint === null || expectedVersion === null || idempotencyKey === null || body.length > 64 * 1024) return failure('invalid-payload', 'Некорректная операция Incremental Change Protocol.')
+      return accepted(client.send({ incrementalChangeProtocol: { schemaVersion: 1, operation, runId, payload: Buffer.from(body, 'utf8'), expectedVersion, observedFingerprint, idempotencyKey } }))
+    }
+
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)
       const taskId = asBoundedString(value['taskId'])

@@ -1047,6 +1047,7 @@ export const RENDERER_COMMANDS = [
   'core.planArtifactRead',
   'core.planArtifactAction',
   'core.workspaceStateCheckpoint',
+  'core.incrementalChangeProtocol',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1331,6 +1332,7 @@ export interface CommandPayloads {
   'core.planArtifactRead': { artifactId: string }
   'core.planArtifactAction': { operation: 'transition' | 'execute'; artifactId: string; expectedVersion: number; status?: string; policySnapshotHash?: string; taskId?: string; workflowRunId?: string; correlationId: string; idempotencyKey: string }
   'core.workspaceStateCheckpoint': { operation: 'create' | 'compare' | 'restore' | 'restore_task' | 'restore_both'; projectId: string; taskId?: string; checkpointId?: string; expectedVersion?: number; idempotencyKey: string }
+  'core.incrementalChangeProtocol': { operation: 'create' | 'apply' | 'cancel' | 'unknown'; runId: string; payload?: string; expectedVersion?: number; observedFingerprint?: string; idempotencyKey: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
   'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
@@ -1799,6 +1801,7 @@ export interface CommandResults {
   'core.planArtifactRead': { accepted: boolean }
   'core.planArtifactAction': { accepted: boolean }
   'core.workspaceStateCheckpoint': { accepted: boolean }
+  'core.incrementalChangeProtocol': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }
   'core.executeAnalysisKernel': { accepted: boolean }

@@ -1086,6 +1086,22 @@ Authenticated desktop IPC расширен additive command tags 206–208 и ev
 transition/execute actions. Raw prompts, model output, secrets, absolute paths и
 executable identities в Plan Artifact boundary запрещены.
 
+## Incremental Change Protocol v1 (план 59)
+
+`evohime-core::incremental_change_protocol` связывает bounded
+`RequirementDelta` и `ImpactAnalysis` с exact revision/hash существующих Plan
+Artifact и Workspace State Checkpoint. SQLite schema 58 хранит только
+versioned run metadata, fingerprints, redacted evidence и idempotency key;
+исходные prompts/output, absolute paths и capability grants не сохраняются.
+До перехода в `applied` Core сверяет optimistic version и observed scope
+fingerprint; drift даёт `stale` без записи. `cancelled` и
+`unknown_reconciliation_required` terminal и не ретраятся автоматически.
+
+Authenticated IPC command 210/event 57 и Electron `IncrementalChangeProtocolPanel`
+передают bounded JSON и показывают metadata-only projection. Базовый executor
+не выполняет внешний effect; будущие adapters обязаны добавить отдельный
+policy/approval contract.
+
 ## Artifact Handoff Registry v1
 
 `ProjectArtifactRegistry` is a Core-owned semantic layer over `ArtifactStore`.

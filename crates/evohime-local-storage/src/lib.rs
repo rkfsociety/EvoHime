@@ -33,6 +33,7 @@ pub mod external_coding_agent_adapter_store;
 pub mod feedback_store;
 pub mod goal;
 pub mod human_work_items_store;
+pub mod incremental_change_protocol_store;
 pub mod integration_provider_store;
 pub mod invocation_presets_store;
 pub mod memory_store;
@@ -58,7 +59,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 57;
+pub const SCHEMA_VERSION: u32 = 58;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -560,6 +561,7 @@ impl LocalDatabase {
         conversation_event_log_store::install_schema(&connection)?;
         human_work_items_store::install_schema(&connection)?;
         browser_session_store::install_schema(&connection)?;
+        incremental_change_protocol_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
@@ -3593,6 +3595,10 @@ impl LocalDatabase {
         if current < 57 {
             workspace_state_checkpoint::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 57;")?;
+        }
+        if current < 58 {
+            incremental_change_protocol_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 58;")?;
         }
         transaction.commit()?;
         Ok(())

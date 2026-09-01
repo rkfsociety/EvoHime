@@ -291,3 +291,10 @@ idempotent lifecycle. SQLite schema v55 и authenticated IPC command 205/event
 prompts/outputs, credentials или capability authority. Комплект 56-0 … 56-4
 удалён после focused contract/storage/Core, protocol/typecheck и diff-check
 проверок.
+
+План 59 закрыт 1 сентября 2026 года: Incremental Change Protocol v1 реализован
+как bounded Core-owned pipeline от requirement delta/baseline refs до fenced
+metadata transition. Реализованы schema 58, stale/idempotency/terminal-safe
+storage, Core handler, authenticated IPC command 210/event 57 и Electron
+projection. Комплект `59-0` … `59-4` удалён после свежих Rust/Electron
+regression, protocol/typecheck, format и diff-check gates.
