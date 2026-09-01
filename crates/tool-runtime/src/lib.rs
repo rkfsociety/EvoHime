@@ -1,5 +1,6 @@
 pub mod action;
 pub mod app_catalog;
+#[allow(dead_code)]
 mod cdp;
 pub mod execution_policy_profiles;
 pub mod manifest;

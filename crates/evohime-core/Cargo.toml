@@ -15,7 +15,7 @@ name = "kill9-worker-test-helper"
 path = "tests/bin/kill9_worker.rs"
 
 [dependencies]
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
 evohime-context-budget = { path = "../context-budget" }
 evohime-model-gateway = { path = "../model-gateway" }
 evohime-tool-runtime = { path = "../tool-runtime" }

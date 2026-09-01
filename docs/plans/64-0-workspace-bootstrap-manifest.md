@@ -54,7 +54,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - Tool Simulation Runtime v1 из `../architecture.md`.
-- План 55.0 — Agentic Browser Session: sandboxed browser automation со stable refs и SSRF-защитой.
+- Канонический раздел `architecture.md` — Agentic Browser Session v1 (бывший план 55).
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

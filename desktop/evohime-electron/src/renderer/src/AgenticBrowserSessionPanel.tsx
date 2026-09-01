@@ -18,12 +18,16 @@ export function AgenticBrowserSessionPanel() {
       setProjection(payload.projection_json ?? { error_code: 'invalid_projection' })
     } catch { setProjection({ error_code: 'invalid_projection' }) }
   }), [api])
+  const create = () => api?.invoke('agenticBrowserSession.create', {
+    requestId: crypto.randomUUID(), ownerScope: 'conversation', idempotencyKey: crypto.randomUUID()
+  })
   return <section className="panel" aria-label="Agentic Browser Session">
     <h2>Браузерная сессия</h2>
     <p role="status">{projection ? `${projection.state ?? 'unknown'} · rev ${projection.revision ?? 0}` : 'Ожидание состояния Core…'}</p>
     {projection?.session_id && <p>Сессия: {projection.session_id}</p>}
     {projection?.profile_policy && <p>Профиль: {projection.profile_policy} · сеть: {projection.network_policy}</p>}
     {projection?.error_code && <p role="alert">Ошибка: {projection.error_code}</p>}
+    {!projection?.session_id && <button type="button" onClick={() => void create()}>Создать сессию</button>}
     <p>CDP: {projection?.cdp_endpoint ? 'запрещён к показу' : 'не передаётся'} · credentials: {projection?.credentials ? 'запрещены' : 'не передаются'}</p>
   </section>
 }

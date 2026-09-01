@@ -933,10 +933,15 @@ typed `legacy_disabled`, отсутствие packaged backend — `unavailable`
 network policy обязана проверять каждый redirect и фактический resolved IP,
 включая DNS rebinding, а default profile — `ephemeral_clean`.
 
-В текущем релизном package backend остаётся explicit `unavailable`, пока
-packaged Chromium adapter не поставлен в manifest; Core не создаёт внешний CDP
-endpoint fallback. Это fail-closed состояние, а не имитация браузерного
-эффекта. UI получает только session/revision/control/error/artifact metadata.
+Native manifest содержит `browser_backend = EvoHime.exe`. Supervisor передаёт
+Core путь к этому executable, Core запускает его в родительском Job Object и
+обменивается bounded typed JSON через stdio. Electron backend использует
+ephemeral partition, sandboxed BrowserWindow и блокирует каждый HTTP(S)-запрос
+по hostname/resolved IP; arbitrary CDP endpoint не поддерживается. При
+отсутствии packaged executable capability возвращает typed `unavailable`.
+Snapshot, screenshot и download возвращаются как bounded metadata/ArtifactStore
+objects; upload читает только разрешённый artifact locator. UI получает только
+session/revision/control/error/artifact metadata.
 
 ## Voice pipeline и ambient audio
 

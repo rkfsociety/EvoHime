@@ -11,6 +11,7 @@ pub struct BrowserSessionMetadata {
     pub state: String,
     pub revision: u64,
     pub control_generation: u64,
+    pub control_owner: String,
     pub profile_policy: String,
     pub network_policy: String,
     pub policy_hash: String,
@@ -18,11 +19,17 @@ pub struct BrowserSessionMetadata {
 }
 
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
-    connection.execute_batch("CREATE TABLE IF NOT EXISTS browser_session_metadata (session_id TEXT PRIMARY KEY NOT NULL, conversation_id TEXT NOT NULL, run_id TEXT, state TEXT NOT NULL, revision INTEGER NOT NULL, control_generation INTEGER NOT NULL, profile_policy TEXT NOT NULL, network_policy TEXT NOT NULL, policy_hash TEXT NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE INDEX IF NOT EXISTS idx_browser_session_conversation ON browser_session_metadata(conversation_id, updated_at_ms);")
+    connection.execute_batch("CREATE TABLE IF NOT EXISTS browser_session_metadata (session_id TEXT PRIMARY KEY NOT NULL, conversation_id TEXT NOT NULL, run_id TEXT, state TEXT NOT NULL, revision INTEGER NOT NULL, control_generation INTEGER NOT NULL, control_owner TEXT NOT NULL DEFAULT 'agent', profile_policy TEXT NOT NULL, network_policy TEXT NOT NULL, policy_hash TEXT NOT NULL, updated_at_ms INTEGER NOT NULL);")?;
+    match connection.execute("ALTER TABLE browser_session_metadata ADD COLUMN control_owner TEXT NOT NULL DEFAULT 'agent'", []) {
+        Ok(_) => {}
+        Err(error) if error.to_string().contains("duplicate column name") => {}
+        Err(error) => return Err(error),
+    }
+    connection.execute_batch("CREATE INDEX IF NOT EXISTS idx_browser_session_conversation ON browser_session_metadata(conversation_id, updated_at_ms);")
 }
 
 pub fn upsert(connection: &Connection, record: &BrowserSessionMetadata) -> rusqlite::Result<()> {
-    connection.execute("INSERT INTO browser_session_metadata(session_id,conversation_id,run_id,state,revision,control_generation,profile_policy,network_policy,policy_hash,updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) ON CONFLICT(session_id) DO UPDATE SET state=excluded.state, revision=excluded.revision, control_generation=excluded.control_generation, updated_at_ms=excluded.updated_at_ms", rusqlite::params![record.session_id, record.conversation_id, record.run_id, record.state, record.revision, record.control_generation, record.profile_policy, record.network_policy, record.policy_hash, record.updated_at_ms])?;
+    connection.execute("INSERT INTO browser_session_metadata(session_id,conversation_id,run_id,state,revision,control_generation,control_owner,profile_policy,network_policy,policy_hash,updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11) ON CONFLICT(session_id) DO UPDATE SET state=excluded.state, revision=excluded.revision, control_generation=excluded.control_generation, control_owner=excluded.control_owner, updated_at_ms=excluded.updated_at_ms", rusqlite::params![record.session_id, record.conversation_id, record.run_id, record.state, record.revision, record.control_generation, record.control_owner, record.profile_policy, record.network_policy, record.policy_hash, record.updated_at_ms])?;
     Ok(())
 }
 
@@ -30,7 +37,7 @@ pub fn get(
     connection: &Connection,
     session_id: &str,
 ) -> rusqlite::Result<Option<BrowserSessionMetadata>> {
-    connection.query_row("SELECT session_id,conversation_id,run_id,state,revision,control_generation,profile_policy,network_policy,policy_hash,updated_at_ms FROM browser_session_metadata WHERE session_id=?1", [session_id], |row| Ok(BrowserSessionMetadata { session_id: row.get(0)?, conversation_id: row.get(1)?, run_id: row.get(2)?, state: row.get(3)?, revision: row.get(4)?, control_generation: row.get(5)?, profile_policy: row.get(6)?, network_policy: row.get(7)?, policy_hash: row.get(8)?, updated_at_ms: row.get(9)? })).optional()
+    connection.query_row("SELECT session_id,conversation_id,run_id,state,revision,control_generation,control_owner,profile_policy,network_policy,policy_hash,updated_at_ms FROM browser_session_metadata WHERE session_id=?1", [session_id], |row| Ok(BrowserSessionMetadata { session_id: row.get(0)?, conversation_id: row.get(1)?, run_id: row.get(2)?, state: row.get(3)?, revision: row.get(4)?, control_generation: row.get(5)?, control_owner: row.get(6)?, profile_policy: row.get(7)?, network_policy: row.get(8)?, policy_hash: row.get(9)?, updated_at_ms: row.get(10)? })).optional()
 }
 
 #[cfg(test)]
@@ -48,6 +55,7 @@ mod tests {
             state: "starting".into(),
             revision: 0,
             control_generation: 0,
+            control_owner: "agent".into(),
             profile_policy: "ephemeral_clean".into(),
             network_policy: "public_internet".into(),
             policy_hash: "hash".into(),

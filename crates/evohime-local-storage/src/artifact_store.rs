@@ -50,6 +50,59 @@ impl<'a> ArtifactStore<'a> {
         self.quota
     }
 
+    /// Выгрузка ограниченного бинарного результата (например, PNG) без
+    /// промежуточной записи в workspace.
+    pub fn offload_bytes(
+        &self,
+        kind: &str,
+        task_id: &str,
+        owner_task_id: &str,
+        content: &[u8],
+        privacy: Privacy,
+        now: i64,
+    ) -> Result<OffloadResult, StorageError> {
+        if !privacy.allows_offload() {
+            return Err(StorageError::Context(
+                "artifact privacy forbids offload".into(),
+            ));
+        }
+        let hash = content_hash(kind, &ContentForm::Binary(content));
+        let bytes = content.len() as u64;
+        self.ensure_quota(task_id, bytes, now)?;
+        self.connection.execute_batch("BEGIN IMMEDIATE")?;
+        let outcome = (|| -> Result<ArtifactRef, StorageError> {
+            self.connection.execute("INSERT OR REPLACE INTO task_artifacts(content_hash,bytes,content,created_at,last_access_at) VALUES (?1,?2,?3,?4,?4)", rusqlite::params![hash, bytes as i64, content, now])?;
+            let reference = ArtifactRef {
+                locator: format!("artifact://{owner_task_id}/{hash}"),
+                content_hash: hash,
+                task_id: task_id.into(),
+                owner_task_id: owner_task_id.into(),
+                bytes,
+                privacy,
+                status: ArtifactRefStatus::Live,
+                created_at: now,
+                last_access_at: now,
+                ttl_ms: Some(self.quota.default_ttl_ms),
+                summary: format!("binary artifact ({bytes} bytes)"),
+            };
+            self.write_ref(&reference)?;
+            Ok(reference)
+        })();
+        match outcome {
+            Ok(reference) => {
+                self.connection.execute_batch("COMMIT")?;
+                Ok(OffloadResult {
+                    reference,
+                    deduplicated: false,
+                })
+            }
+            Err(error) => {
+                let _ = self.connection.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        }
+    }
+
     /// Выгрузка содержимого. Запись артефакта и обновление ссылок атомарны:
     /// конкурентный offload одинакового содержимого из двух задач даёт один
     /// артефакт и две ссылки, а не гонку.
@@ -205,6 +258,42 @@ impl<'a> ArtifactStore<'a> {
             rusqlite::params![locator, now],
         )?;
         Ok(text)
+    }
+
+    /// Чтение бинарного объекта с теми же проверками владения и hash, что и
+    /// текстовое чтение. Возвращает только содержимое ArtifactStore.
+    pub fn read_bytes(
+        &self,
+        locator: &str,
+        task_id: &str,
+        parent_chain: &[String],
+        kind: &str,
+        now: i64,
+    ) -> Result<Vec<u8>, StorageError> {
+        let reference = self
+            .get_ref(locator)?
+            .ok_or_else(|| StorageError::Context("artifact not found".into()))?;
+        if !access_allowed(&reference, task_id, parent_chain) || !reference.is_readable() {
+            return Err(StorageError::Context("artifact access denied".into()));
+        }
+        let content: Vec<u8> = self
+            .connection
+            .query_row(
+                "SELECT content FROM task_artifacts WHERE content_hash=?1",
+                [&reference.content_hash],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| StorageError::Context("artifact content missing".into()))?;
+        if content_hash(kind, &ContentForm::Binary(&content)) != reference.content_hash {
+            self.set_ref_status(locator, ArtifactRefStatus::Invalid)?;
+            return Err(StorageError::Context("artifact hash mismatch".into()));
+        }
+        self.connection.execute(
+            "UPDATE task_artifacts SET last_access_at=?2 WHERE content_hash=?1",
+            rusqlite::params![reference.content_hash, now],
+        )?;
+        Ok(content)
     }
 
     pub fn get_ref(&self, locator: &str) -> Result<Option<ArtifactRef>, StorageError> {
@@ -522,6 +611,37 @@ mod tests {
     }
 
     const KIND: &str = "tool_result";
+
+    #[test]
+    fn binary_artifact_round_trip_never_uses_a_host_path() {
+        let database = database("binary");
+        let store = ArtifactStore::new(database.connection());
+        let bytes = [0u8, 1, 2, 255];
+        let result = store
+            .offload_bytes(
+                "browser_screenshot",
+                "task",
+                "task",
+                &bytes,
+                Privacy::Workspace,
+                1_000,
+            )
+            .expect("binary offload succeeds");
+        assert!(result.reference.locator.starts_with("artifact://"));
+        assert_eq!(
+            store
+                .read_bytes(
+                    &result.reference.locator,
+                    "task",
+                    &[],
+                    "browser_screenshot",
+                    2_000
+                )
+                .unwrap(),
+            bytes
+        );
+        assert!(!result.reference.locator.contains(":\\"));
+    }
 
     #[test]
     fn a_large_output_is_stored_and_summarized_for_the_context() {

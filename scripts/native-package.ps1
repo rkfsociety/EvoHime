@@ -16,6 +16,7 @@ function New-NativePackageManifest {
         protocol     = 'desktop-ipc-v1'
         components   = [pscustomobject]@{
             ui         = 'EvoHime.exe'
+            browser_backend = 'EvoHime.exe'
             core       = 'evohime-core.exe'
             supervisor = 'evohime-supervisor.exe'
             analysis_worker = 'evohime-analysis-worker.exe'

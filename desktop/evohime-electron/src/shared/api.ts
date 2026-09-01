@@ -1222,6 +1222,23 @@ export const RENDERER_COMMANDS = [
   'humanWorkItems.accept',
   'humanWorkItems.revise',
   'humanWorkItems.cancel',
+  'agenticBrowserSession.create',
+  'agenticBrowserSession.navigate',
+  'agenticBrowserSession.snapshot',
+  'agenticBrowserSession.click',
+  'agenticBrowserSession.fill',
+  'agenticBrowserSession.select',
+  'agenticBrowserSession.press',
+  'agenticBrowserSession.scroll',
+  'agenticBrowserSession.wait',
+  'agenticBrowserSession.back',
+  'agenticBrowserSession.forward',
+  'agenticBrowserSession.reload',
+  'agenticBrowserSession.download',
+  'agenticBrowserSession.upload',
+  'agenticBrowserSession.takeControl',
+  'agenticBrowserSession.returnControl',
+  'agenticBrowserSession.close',
   'automation.listSchedules',
   'automation.saveSchedule',
   'automation.trigger',
@@ -1399,6 +1416,23 @@ export interface CommandPayloads {
   'core.setPermissionMode': { mode: PermissionMode }
   'core.runDoctor': { projectId?: string; detailLevel?: 0 | 1 }
   'core.createDiagnosticsSnapshot': { projectId?: string; conversationId?: string; runId?: string; maxEventCount?: number; maxLogBytes?: number }
+  'agenticBrowserSession.create': { requestId: string; ownerScope: string; idempotencyKey: string; conversationId?: string; runId?: string; policyHash?: string }
+  'agenticBrowserSession.navigate': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; url: string; expectedRevision: number }
+  'agenticBrowserSession.snapshot': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; expectedRevision: number }
+  'agenticBrowserSession.click': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; pageRef: string; elementRef: string; expectedRevision: number }
+  'agenticBrowserSession.fill': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; pageRef: string; elementRef: string; text: string; expectedRevision: number }
+  'agenticBrowserSession.select': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; pageRef: string; elementRef: string; value: string; expectedRevision: number }
+  'agenticBrowserSession.press': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; pageRef: string; elementRef: string; key: string; expectedRevision: number }
+  'agenticBrowserSession.scroll': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; pageRef: string; delta: number; expectedRevision: number }
+  'agenticBrowserSession.wait': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; expectedRevision: number; timeoutMs?: number }
+  'agenticBrowserSession.back': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; expectedRevision: number }
+  'agenticBrowserSession.forward': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; expectedRevision: number }
+  'agenticBrowserSession.reload': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; expectedRevision: number }
+  'agenticBrowserSession.download': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; pageRef: string; elementRef: string; expectedRevision: number }
+  'agenticBrowserSession.upload': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; pageRef: string; elementRef: string; artifactRef: string; expectedRevision: number }
+  'agenticBrowserSession.takeControl': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; expectedRevision: number }
+  'agenticBrowserSession.returnControl': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; expectedRevision: number }
+  'agenticBrowserSession.close': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; expectedRevision: number }
   'core.exportDoctorLogs': { destinationPath: string }
   'core.createDatabaseBackup': { destinationPath: string }
   'core.prepareDatabaseRestore': { backupPath: string }
@@ -1933,6 +1967,23 @@ export interface CommandResults {
   'humanWorkItems.accept': { accepted: boolean }
   'humanWorkItems.revise': { accepted: boolean }
   'humanWorkItems.cancel': { accepted: boolean }
+  'agenticBrowserSession.create': { accepted: boolean }
+  'agenticBrowserSession.navigate': { accepted: boolean }
+  'agenticBrowserSession.snapshot': { accepted: boolean }
+  'agenticBrowserSession.click': { accepted: boolean }
+  'agenticBrowserSession.fill': { accepted: boolean }
+  'agenticBrowserSession.select': { accepted: boolean }
+  'agenticBrowserSession.press': { accepted: boolean }
+  'agenticBrowserSession.scroll': { accepted: boolean }
+  'agenticBrowserSession.wait': { accepted: boolean }
+  'agenticBrowserSession.back': { accepted: boolean }
+  'agenticBrowserSession.forward': { accepted: boolean }
+  'agenticBrowserSession.reload': { accepted: boolean }
+  'agenticBrowserSession.download': { accepted: boolean }
+  'agenticBrowserSession.upload': { accepted: boolean }
+  'agenticBrowserSession.takeControl': { accepted: boolean }
+  'agenticBrowserSession.returnControl': { accepted: boolean }
+  'agenticBrowserSession.close': { accepted: boolean }
   'automation.listSchedules': { accepted: boolean }
   'automation.saveSchedule': { accepted: boolean }
   'automation.trigger': { accepted: boolean }

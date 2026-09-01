@@ -966,6 +966,7 @@ pub mod ambient;
 pub mod ambient_proactivity;
 pub mod analysis_kernel;
 pub mod audit;
+pub mod browser_backend;
 pub mod build;
 pub mod capability_registry;
 pub mod capability_selection;

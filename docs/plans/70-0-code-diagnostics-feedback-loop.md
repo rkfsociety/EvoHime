@@ -45,7 +45,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 41.0 — Execution Policy Profiles: sandboxed shell/process runtime с Windows-first isolation.
-- План 55.0 — Agentic Browser Session: sandboxed browser automation со stable refs и SSRF-защитой.
+- Канонический раздел `architecture.md` — Agentic Browser Session v1 (бывший план 55).
 - План 60.0 — Revision-Safe Workspace Files: uploads/workspace/outputs namespaces и stale-write protection.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 

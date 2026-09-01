@@ -29,6 +29,7 @@ import { createOverlay, type OverlayController } from './overlay'
 import { createMainWindow, focusWindow, loadRenderer } from './window'
 import { WorkspaceService, windowChooser } from './workspace-service'
 import { WorkspaceStore } from './workspace-store'
+import { runBrowserBackend } from './browser-backend'
 
 /**
  * Electron main process.
@@ -69,7 +70,12 @@ const rendererOrigin = isProduction()
 
 const hardening: HardeningOptions = { rendererOrigin, log }
 
-if (process.argv.includes(BUILD_WORKER_FLAG)) {
+if (process.argv.includes('--evohime-browser-backend')) {
+  void runBrowserBackend().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error))
+    app.exit(1)
+  })
+} else if (process.argv.includes(BUILD_WORKER_FLAG)) {
   void runBuildWorkerProcess(process.argv.slice(2))
     .then(() => app.exit(0))
     .catch((error: unknown) => {

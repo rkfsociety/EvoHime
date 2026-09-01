@@ -273,10 +273,11 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   metadata store. The store contains no DOM, cookies, credentials, CDP URL or
   host path.
 - Security/recovery: stale refs and takeover races fail closed; raw selector/
-  env-CDP legacy route is disabled; absent packaged backend is typed unavailable
-  and no browser effect is claimed. Network policy requires redirect and
-  resolved-IP/DNS-rebinding enforcement before release enablement.
+  env-CDP legacy route is disabled; missing packaged backend is typed unavailable
+  and no browser effect is claimed. The packaged backend is `EvoHime.exe`,
+  launched by Core under supervisor Job Object; network policy runs at the
+  request boundary and rejects private resolved IPs and blocked schemes.
 - IPC/UI: authenticated additive command 204/event 53 and metadata-only
   `AgenticBrowserSessionPanel`; protocol/typecheck tests prove no direct CDP or
   sensitive payload projection. Focused Core/storage tests cover lifecycle,
-  stale/takeover and metadata round-trip.
+  stale/takeover, binary ArtifactStore objects and metadata round-trip.

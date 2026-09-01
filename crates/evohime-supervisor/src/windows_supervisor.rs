@@ -875,6 +875,10 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let job = JobObject::create()?;
         let mut command = Command::new(&core_exe);
         command.kill_on_drop(true);
+        let browser_backend = core_exe.parent().map(|parent| parent.join("EvoHime.exe"));
+        if let Some(browser_backend) = browser_backend.filter(|path| path.is_file()) {
+            command.env("EVOHIME_BROWSER_BACKEND_EXE", browser_backend);
+        }
         if let Some(session) = session.as_ref() {
             command.env("EVOHIME_LAUNCH_CONTEXT", &session.context_path);
         }

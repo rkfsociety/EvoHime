@@ -30,6 +30,12 @@
 План 39 (issue #19, Structured Response Contract) закрыт 31 августа 2026
 года; контракт и evidence перенесены в канонические документы.
 
+План 55 (issue #35, Agentic Browser Session) закрыт 1 сентября 2026 года;
+Core lifecycle, packaged backend, SSRF boundary, ArtifactStore transfers,
+authenticated IPC и metadata-only UI перенесены в канонические документы.
+Будущие планы, ссылающиеся на 55, используют эти разделы, а не удалённые
+stage-файлы.
+
 ## Формат и порядок
 
 Имя файла имеет формат `NN-M-slug.md`:

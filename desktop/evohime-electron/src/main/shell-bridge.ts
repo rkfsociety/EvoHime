@@ -2019,6 +2019,43 @@ function dispatch(
       return accepted(client.send({ humanWorkItems: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(JSON.stringify(json), 'utf8'), expectedRevision, idempotencyKey } }))
     }
 
+    case 'agenticBrowserSession.create':
+    case 'agenticBrowserSession.navigate':
+    case 'agenticBrowserSession.snapshot':
+    case 'agenticBrowserSession.click':
+    case 'agenticBrowserSession.fill':
+    case 'agenticBrowserSession.select':
+    case 'agenticBrowserSession.press':
+    case 'agenticBrowserSession.scroll':
+    case 'agenticBrowserSession.wait':
+    case 'agenticBrowserSession.back':
+    case 'agenticBrowserSession.forward':
+    case 'agenticBrowserSession.reload':
+    case 'agenticBrowserSession.download':
+    case 'agenticBrowserSession.upload':
+    case 'agenticBrowserSession.takeControl':
+    case 'agenticBrowserSession.returnControl':
+    case 'agenticBrowserSession.close': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId']); const ownerScope = asBoundedString(value['ownerScope']); const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (requestId === null || ownerScope === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректная команда браузерной сессии.')
+      const rawOperation = command.slice('agenticBrowserSession.'.length)
+      const operation = rawOperation === 'fill' ? 'fill' : rawOperation === 'takeControl' ? 'take_control' : rawOperation === 'returnControl' ? 'return_control' : rawOperation
+      const json: Record<string, unknown> = {}
+      for (const [key, target] of [['conversationId','conversation_id'],['runId','run_id'],['policyHash','policy_hash'],['sessionId','session_id'],['pageRef','page_ref'],['elementRef','element_ref'],['url','url'],['text','text'],['value','value'],['key','key'],['delta','delta'],['timeoutMs','timeout_ms'],['artifactRef','artifact_ref']] as const) {
+        if (value[key] !== undefined) json[target] = value[key]
+      }
+      if (operation !== 'create' && !asBoundedString(value['sessionId'])) return failure('invalid-payload', 'Не указана browser session id.')
+      if (operation === 'navigate' && !asBoundedString(value['url'])) return failure('invalid-payload', 'Не указан URL навигации.')
+      if ((operation === 'click' || operation === 'fill' || operation === 'select' || operation === 'press' || operation === 'download' || operation === 'upload') && (!asBoundedString(value['pageRef']) || !asBoundedString(value['elementRef']))) return failure('invalid-payload', 'Нужны pageRef и elementRef; CSS selector запрещён.')
+      if (operation === 'upload' && !asBoundedString(value['artifactRef'])) return failure('invalid-payload', 'Upload требует разрешённый artifactRef.')
+      const expectedRevision = operation === 'create' ? 0 : asBoundedNumber(value['expectedRevision'], Number.MAX_SAFE_INTEGER)
+      if (expectedRevision === null) return failure('invalid-payload', 'Некорректная page revision.')
+      const correlationId = value['correlationId'] === undefined ? requestId : asBoundedString(value['correlationId'])
+      if (correlationId === null) return failure('invalid-payload', 'Некорректный correlation id.')
+      return accepted(client.send({ agenticBrowserSession: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(JSON.stringify(json), 'utf8'), expectedRevision, idempotencyKey, correlationId } }))
+    }
+
     case 'automation.listSchedules': {
       const value = asRecord(payload)
       const ownerScope = asBoundedString(value['ownerScope'])

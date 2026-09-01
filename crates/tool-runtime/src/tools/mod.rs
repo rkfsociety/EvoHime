@@ -2,6 +2,7 @@ pub mod agent;
 pub mod app;
 pub mod archive;
 pub mod browser;
+#[allow(dead_code)]
 pub mod browser_session;
 pub mod cargo;
 pub mod filesystem;

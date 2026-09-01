@@ -694,20 +694,22 @@ impl ToolRegistry {
                 tools::browser::OPEN_NAME => tools::browser::open(ctx, input).await,
                 tools::browser::EXTRACT_NAME => tools::browser::extract(ctx, input).await,
                 tools::browser_session::NAVIGATE_NAME => {
-                    tools::browser_session::navigate(ctx, input).await
+                    tools::browser_session::legacy_disabled(ctx, input).await
                 }
-                tools::browser_session::READ_NAME => tools::browser_session::read(ctx, input).await,
+                tools::browser_session::READ_NAME => {
+                    tools::browser_session::legacy_disabled(ctx, input).await
+                }
                 tools::browser_session::CLICK_NAME => {
-                    tools::browser_session::click(ctx, input).await
+                    tools::browser_session::legacy_disabled(ctx, input).await
                 }
                 tools::browser_session::SCREENSHOT_NAME => {
-                    tools::browser_session::screenshot(ctx, input).await
+                    tools::browser_session::legacy_disabled(ctx, input).await
                 }
                 tools::browser_session::TYPE_NAME => {
-                    tools::browser_session::type_text(ctx, input).await
+                    tools::browser_session::legacy_disabled(ctx, input).await
                 }
                 tools::browser_session::CLOSE_NAME => {
-                    tools::browser_session::close(ctx, input).await
+                    tools::browser_session::legacy_disabled(ctx, input).await
                 }
                 tools::http::NAME => tools::http::fetch(ctx, input).await,
 
@@ -834,20 +836,22 @@ impl ToolRegistry {
                 tools::browser::OPEN_NAME => tools::browser::open(ctx, input).await,
                 tools::browser::EXTRACT_NAME => tools::browser::extract(ctx, input).await,
                 tools::browser_session::NAVIGATE_NAME => {
-                    tools::browser_session::navigate(ctx, input).await
+                    tools::browser_session::legacy_disabled(ctx, input).await
                 }
-                tools::browser_session::READ_NAME => tools::browser_session::read(ctx, input).await,
+                tools::browser_session::READ_NAME => {
+                    tools::browser_session::legacy_disabled(ctx, input).await
+                }
                 tools::browser_session::CLICK_NAME => {
-                    tools::browser_session::click(ctx, input).await
+                    tools::browser_session::legacy_disabled(ctx, input).await
                 }
                 tools::browser_session::SCREENSHOT_NAME => {
-                    tools::browser_session::screenshot(ctx, input).await
+                    tools::browser_session::legacy_disabled(ctx, input).await
                 }
                 tools::browser_session::TYPE_NAME => {
-                    tools::browser_session::type_text(ctx, input).await
+                    tools::browser_session::legacy_disabled(ctx, input).await
                 }
                 tools::browser_session::CLOSE_NAME => {
-                    tools::browser_session::close(ctx, input).await
+                    tools::browser_session::legacy_disabled(ctx, input).await
                 }
                 tools::http::NAME => tools::http::fetch(ctx, input).await,
 

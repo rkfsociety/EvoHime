@@ -46,6 +46,13 @@ pub const CLOSE_DESCRIPTION: &str = "Close the task's persistent browser tab";
 pub const CLOSE_PERMISSIONS: &[Permission] = &[Permission::BrowserAccess];
 pub const CLOSE_TIMEOUT: Duration = Duration::from_secs(15);
 
+/// Kept as a stable identifier for migration diagnostics; raw selector/CDP
+/// execution is intentionally no longer reachable from the production tool
+/// router. The typed Core IPC surface is the only supported browser path.
+pub async fn legacy_disabled(_ctx: &ToolContext, _input: Value) -> Result<ToolResult, ToolError> {
+    Err(ToolError::Execution("legacy_disabled".into()))
+}
+
 const DEFAULT_TEXT_LIMIT: usize = 4_000;
 const MAX_TEXT_LIMIT: usize = 12_000;
 const DEFAULT_LOAD_WAIT: Duration = Duration::from_secs(10);

@@ -18,7 +18,7 @@
 - План 41.0 — зависимость из обзора.
 - План 47.0 — зависимость из обзора.
 - Tool Simulation Runtime v1 из `../architecture.md`.
-- План 55.0 — зависимость из обзора.
+- Канонический раздел `architecture.md` — Agentic Browser Session v1.
 
 ## Реализация
 

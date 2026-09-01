@@ -98,6 +98,51 @@ pub enum ContractError {
 }
 
 impl BrowserSession {
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_metadata(
+        session_id: &str,
+        conversation_id: String,
+        run_id: Option<String>,
+        state: &str,
+        revision: u64,
+        control_generation: u64,
+        control_owner: &str,
+        profile_policy: String,
+        network_policy: String,
+        policy_hash: String,
+    ) -> Result<Self, ContractError> {
+        let session_id = Uuid::parse_str(session_id)
+            .map_err(|_| ContractError::InvalidInput("session_id".into()))?;
+        let state = match state {
+            "created" => SessionState::Created,
+            "starting" => SessionState::Starting,
+            "ready" => SessionState::Ready,
+            "active" => SessionState::Active,
+            "closing" => SessionState::Closing,
+            "closed" => SessionState::Closed,
+            "failed" => SessionState::Failed,
+            _ => return Err(ContractError::InvalidInput("state".into())),
+        };
+        let control_owner = match control_owner {
+            "agent" => ControlOwner::Agent,
+            "human" => ControlOwner::Human,
+            _ => return Err(ContractError::InvalidInput("control_owner".into())),
+        };
+        Ok(Self {
+            schema_version: CONTRACT_VERSION,
+            session_id,
+            conversation_id,
+            run_id,
+            state,
+            revision,
+            control_owner,
+            control_generation,
+            profile_policy,
+            network_policy,
+            policy_hash,
+        })
+    }
+
     pub fn new(
         conversation_id: impl Into<String>,
         run_id: Option<String>,

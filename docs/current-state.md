@@ -726,8 +726,11 @@ Settings → Диагностика показывает preview и redaction su
   CDP endpoint, raw CSS selector, DOM, cookies, credentials и host screenshot
   path не входят в production contract. IPC command 204/event 53 и Electron
   `AgenticBrowserSessionPanel` показывают metadata-only projection.
-- Legacy `browser.session.*` raw path получает `legacy_disabled`, а packaged
-  backend до поставки в native manifest даёт `browser_backend_unavailable`;
-  неизвестный внешний эффект не объявляется успешным. Redirect/resolved-IP
-  enforcement и packaged Chromium остаются обязательным release gate, поэтому
-  UI/backend capability fail-closed до наличия adapter evidence.
+- Legacy `browser.session.*` raw path получает `legacy_disabled`. Native
+  manifest содержит packaged backend `EvoHime.exe`; supervisor передаёт его
+  Core, а Core управляет отдельным ephemeral BrowserWindow. Redirect и
+  resolved-IP enforcement выполняются backend-ом на каждом запросе. Snapshot,
+  screenshot и download проходят через bounded ArtifactStore; upload принимает
+  только artifact locator. При отсутствии package backend сохраняется typed
+  `browser_backend_unavailable`, а неизвестный внешний эффект не объявляется
+  успешным.

@@ -14,6 +14,7 @@ if ($manifest.components.listener -ne 'evohime-listener.exe') { throw 'listener 
 if ($manifest.components.updater -ne 'evohime-transaction.exe') { throw 'updater component is missing' }
 if ($manifest.components.verifier -ne 'evohime-verify.exe') { throw 'verifier component is missing' }
 if ($manifest.components.ui -ne 'EvoHime.exe') { throw 'UI component is missing' }
+if ($manifest.components.browser_backend -ne 'EvoHime.exe') { throw 'browser backend component is missing' }
 if ($manifest.PSObject.Properties.Name -contains 'web') { throw 'web component must not be packaged' }
 if ($manifest.PSObject.Properties.Name -contains 'postgresql') { throw 'PostgreSQL must not be packaged' }
 
