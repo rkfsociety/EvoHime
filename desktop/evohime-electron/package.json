@@ -19,6 +19,7 @@
     "test:unit": "vitest run --exclude tests/e2e/**",
     "test:e2e": "vitest run tests/e2e",
     "test:all": "vitest run",
+    "test:parallel": "vitest run --file-parallelism",
     "check:bundle": "node scripts/check-production-bundle.mjs",
     "generate:protocol": "node scripts/generate-protocol.mjs",
     "check:protocol": "node scripts/generate-protocol.mjs --check",

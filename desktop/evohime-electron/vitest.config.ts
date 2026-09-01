@@ -12,6 +12,10 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     globals: false,
-    restoreMocks: true
+    restoreMocks: true,
+    // Keep the feedback loop deterministic: the first failing test stops the
+    // run before another file starts doing work.
+    bail: 1,
+    fileParallelism: false
   }
 })
