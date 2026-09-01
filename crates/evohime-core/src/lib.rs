@@ -10420,16 +10420,16 @@ impl TaskCoordinator {
                         .map_err(|e| e.to_string()),
                         "execute" => serde_json::to_vec(
                             &runtime
-                                .execute(
-                                    &artifact_id,
+                                .execute(crate::plan_artifact::ExecutePlanArtifact {
+                                    artifact_id: &artifact_id,
                                     expected_version,
-                                    &policy_snapshot_hash,
-                                    task_id.as_deref(),
-                                    workflow_run_id.as_deref(),
-                                    &correlation_id,
-                                    &idempotency_key,
-                                    now,
-                                )
+                                    policy_snapshot_hash: &policy_snapshot_hash,
+                                    task_id: task_id.as_deref(),
+                                    workflow_run_id: workflow_run_id.as_deref(),
+                                    correlation_id: &correlation_id,
+                                    idempotency_key: &idempotency_key,
+                                    now_ms: now,
+                                })
                                 .await
                                 .map_err(|e| e.to_string())?,
                         )
@@ -10514,14 +10514,14 @@ impl TaskCoordinator {
                                 let database = journal.database().lock().await;
                                 let detail = serde_json::to_vec(&serde_json::json!({"conflict_count": conflicts.len()})).unwrap_or_default();
                                 let operation_id = format!("{}:conflict", if idempotency_key.is_empty() { uuid::Uuid::now_v7().to_string() } else { idempotency_key.clone() });
-                                let _ = evohime_local_storage::workspace_state_checkpoint::append_restore_journal(&database.connection(), &evohime_local_storage::workspace_state_checkpoint::RestoreJournalRecord { operation_id, checkpoint_id: id.clone(), operation: operation.clone(), state: "conflict".into(), detail_json: detail, created_at_ms: now });
+                                let _ = evohime_local_storage::workspace_state_checkpoint::append_restore_journal(database.connection(), &evohime_local_storage::workspace_state_checkpoint::RestoreJournalRecord { operation_id, checkpoint_id: id.clone(), operation: operation.clone(), state: "conflict".into(), detail_json: detail, created_at_ms: now });
                                 return Err(serde_json::to_string(&serde_json::json!({"error_code":"workspace_conflict","conflict_count":conflicts.len()})).unwrap_or_else(|_| "workspace conflict".into()));
                             }
                             crate::workspace_state_checkpoints::restore(&root, &checkpoint).map_err(|e| e.to_string())?;
                             let database = journal.database().lock().await;
                             let detail = serde_json::to_vec(&serde_json::json!({"expected_version": expected_version})).unwrap_or_default();
                             let operation_id = format!("{}:completed", if idempotency_key.is_empty() { uuid::Uuid::now_v7().to_string() } else { idempotency_key.clone() });
-                            evohime_local_storage::workspace_state_checkpoint::append_restore_journal(&database.connection(), &evohime_local_storage::workspace_state_checkpoint::RestoreJournalRecord { operation_id, checkpoint_id: id.clone(), operation: operation.clone(), state: "completed".into(), detail_json: detail, created_at_ms: now }).map_err(|e| e.to_string())?;
+                            evohime_local_storage::workspace_state_checkpoint::append_restore_journal(database.connection(), &evohime_local_storage::workspace_state_checkpoint::RestoreJournalRecord { operation_id, checkpoint_id: id.clone(), operation: operation.clone(), state: "completed".into(), detail_json: detail, created_at_ms: now }).map_err(|e| e.to_string())?;
                             let state = if operation == "restore_both" { "workspace_and_task_projection_restored" } else { "workspace_restored" };
                             serde_json::to_vec(&serde_json::json!({"schema_version":1,"operation":operation,"checkpoint_id":id,"project_id":project_id,"task_id":task_id,"state":state,"conflict_count":0})).map_err(|e| e.to_string())
                         }

@@ -7,6 +7,17 @@ pub use evohime_local_storage::plan_artifact::{
     MAX_STEPS, MAX_TEXT_CHARS, PLAN_ARTIFACT_SCHEMA_VERSION,
 };
 
+pub struct ExecutePlanArtifact<'a> {
+    pub artifact_id: &'a str,
+    pub expected_version: u64,
+    pub policy_snapshot_hash: &'a str,
+    pub task_id: Option<&'a str>,
+    pub workflow_run_id: Option<&'a str>,
+    pub correlation_id: &'a str,
+    pub idempotency_key: &'a str,
+    pub now_ms: i64,
+}
+
 #[derive(Clone)]
 pub struct PlanArtifactRuntime {
     journal: crate::EventJournal,
@@ -70,27 +81,32 @@ impl PlanArtifactRuntime {
 
     pub async fn execute(
         &self,
-        artifact_id: &str,
-        expected_version: u64,
-        policy_snapshot_hash: &str,
-        task_id: Option<&str>,
-        workflow_run_id: Option<&str>,
-        correlation_id: &str,
-        idempotency_key: &str,
-        now_ms: i64,
+        request: ExecutePlanArtifact<'_>,
     ) -> Result<PlanExecutionSnapshot, PlanArtifactError> {
+        let ExecutePlanArtifact {
+            artifact_id,
+            expected_version,
+            policy_snapshot_hash,
+            task_id,
+            workflow_run_id,
+            correlation_id,
+            idempotency_key,
+            now_ms,
+        } = request;
         let database = self.journal.database().lock().await;
         let snapshot =
             evohime_local_storage::plan_artifact::PlanArtifactStore::new(database.connection())
                 .create_execution_snapshot(
-                    artifact_id,
-                    expected_version,
-                    policy_snapshot_hash,
-                    task_id,
-                    workflow_run_id,
-                    correlation_id,
-                    idempotency_key,
-                    now_ms,
+                    evohime_local_storage::plan_artifact::CreateExecutionSnapshot {
+                        id: artifact_id,
+                        expected_version,
+                        policy_snapshot_hash,
+                        task_id,
+                        workflow_run_id,
+                        correlation_id,
+                        idempotency_key,
+                        now_ms,
+                    },
                 )?;
         let payload = serde_json::to_vec(&serde_json::json!({"artifact_id":snapshot.artifact_id,"revision":snapshot.revision,"content_hash":snapshot.content_hash,"policy_snapshot_hash":snapshot.policy_snapshot_hash,"correlation_id":snapshot.correlation_id})).map_err(|e|PlanArtifactError::Invalid(e.to_string()))?;
         database
@@ -145,16 +161,16 @@ mod tests {
             .await
             .unwrap();
         let snapshot = runtime
-            .execute(
-                &accepted.id,
-                2,
-                "policy-hash",
-                Some("task"),
-                None,
-                "correlation",
-                "execute",
-                3,
-            )
+            .execute(ExecutePlanArtifact {
+                artifact_id: &accepted.id,
+                expected_version: 2,
+                policy_snapshot_hash: "policy-hash",
+                task_id: Some("task"),
+                workflow_run_id: None,
+                correlation_id: "correlation",
+                idempotency_key: "execute",
+                now_ms: 3,
+            })
             .await
             .unwrap();
         assert_eq!(snapshot.revision, 3);

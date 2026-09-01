@@ -1,6 +1,6 @@
 use evohime_core::plan_artifact::{
-    AcceptanceCriterion, PlanArtifactRuntime, PlanArtifactStatus, PlanArtifactV1, PlanProvenance,
-    PlanStep,
+    AcceptanceCriterion, ExecutePlanArtifact, PlanArtifactRuntime, PlanArtifactStatus,
+    PlanArtifactV1, PlanProvenance, PlanStep,
 };
 
 fn artifact() -> PlanArtifactV1 {
@@ -77,16 +77,16 @@ async fn uncertain_dispatch_is_a_terminal_visible_outcome() {
         .await
         .unwrap();
     let running = runtime
-        .execute(
-            &accepted.id,
-            2,
-            "policy",
-            Some("task"),
-            None,
-            "correlation",
-            "execute",
-            3,
-        )
+        .execute(ExecutePlanArtifact {
+            artifact_id: &accepted.id,
+            expected_version: 2,
+            policy_snapshot_hash: "policy",
+            task_id: Some("task"),
+            workflow_run_id: None,
+            correlation_id: "correlation",
+            idempotency_key: "execute",
+            now_ms: 3,
+        })
         .await
         .unwrap();
     assert_eq!(running.revision, 3);

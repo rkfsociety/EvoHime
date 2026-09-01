@@ -111,6 +111,17 @@ pub struct PlanExecutionSnapshot {
     pub correlation_id: String,
 }
 
+pub struct CreateExecutionSnapshot<'a> {
+    pub id: &'a str,
+    pub expected_version: u64,
+    pub policy_snapshot_hash: &'a str,
+    pub task_id: Option<&'a str>,
+    pub workflow_run_id: Option<&'a str>,
+    pub correlation_id: &'a str,
+    pub idempotency_key: &'a str,
+    pub now_ms: i64,
+}
+
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum PlanArtifactError {
     #[error("invalid plan artifact: {0}")]
@@ -232,7 +243,23 @@ impl<'a> PlanArtifactStore<'a> {
         }
         let json =
             serde_json::to_vec(&artifact).map_err(|e| PlanArtifactError::Invalid(e.to_string()))?;
-        match self.connection.query_row("SELECT artifact_json FROM plan_artifact_revisions WHERE artifact_id=?1 AND idempotency_key=?2",params![artifact.id,idempotency_key],|r|r.get::<_,Vec<u8>>(0)).optional().map_err(|e|PlanArtifactError::Invalid(e.to_string()))? { Some(existing) => { let old:PlanArtifactV1=serde_json::from_slice(&existing).map_err(|e|PlanArtifactError::Invalid(e.to_string()))?; if old.content_hash==artifact.content_hash { return Ok(old); } return Err(PlanArtifactError::IdempotencyConflict); }, None=>{} }
+        if let Some(existing) = self
+            .connection
+            .query_row(
+                "SELECT artifact_json FROM plan_artifact_revisions WHERE artifact_id=?1 AND idempotency_key=?2",
+                params![artifact.id, idempotency_key],
+                |r| r.get::<_, Vec<u8>>(0),
+            )
+            .optional()
+            .map_err(|e| PlanArtifactError::Invalid(e.to_string()))?
+        {
+            let old: PlanArtifactV1 = serde_json::from_slice(&existing)
+                .map_err(|e| PlanArtifactError::Invalid(e.to_string()))?;
+            if old.content_hash == artifact.content_hash {
+                return Ok(old);
+            }
+            return Err(PlanArtifactError::IdempotencyConflict);
+        }
         self.connection
             .execute(
                 "INSERT INTO plan_artifact_revisions VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
@@ -303,15 +330,18 @@ impl<'a> PlanArtifactStore<'a> {
 
     pub fn create_execution_snapshot(
         &self,
-        id: &str,
-        expected_version: u64,
-        policy_snapshot_hash: &str,
-        task_id: Option<&str>,
-        workflow_run_id: Option<&str>,
-        correlation_id: &str,
-        idempotency_key: &str,
-        now_ms: i64,
+        request: CreateExecutionSnapshot<'_>,
     ) -> Result<PlanExecutionSnapshot, PlanArtifactError> {
+        let CreateExecutionSnapshot {
+            id,
+            expected_version,
+            policy_snapshot_hash,
+            task_id,
+            workflow_run_id,
+            correlation_id,
+            idempotency_key,
+            now_ms,
+        } = request;
         let current = self
             .get(id)?
             .ok_or_else(|| PlanArtifactError::Invalid("artifact not found".into()))?;
