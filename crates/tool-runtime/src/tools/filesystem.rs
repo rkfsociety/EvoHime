@@ -3,7 +3,6 @@ use evohime_permissions::Permission;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::Duration;
-use tokio::fs;
 
 pub const NAME: &str = "filesystem.read";
 pub const DESCRIPTION: &str = "Read a UTF-8 text file from the workspace";
@@ -21,26 +20,28 @@ pub async fn execute(ctx: &ToolContext, input: Value) -> Result<ToolResult, Tool
         message: error.to_string(),
     })?;
 
-    let resolved = ctx
-        .sandbox()?
-        .resolve_existing_for_tool(&input.path, NAME)?;
-    let content = fs::read_to_string(&resolved)
+    let (file_ref, content) = crate::revision_safe_workspace_files::read(ctx, &input.path)
         .await
-        .map_err(|error| match error.kind() {
-            std::io::ErrorKind::NotFound => ToolError::NotFound {
-                tool: NAME.to_string(),
-                path: input.path.clone(),
-                hint: String::new(),
-            },
-            _ => ToolError::Execution(format!("read failed: {error}")),
+        .map_err(|error| {
+            if matches!(error, crate::revision_safe_workspace_files::RevisionError::Io(ref io) if io.kind() == std::io::ErrorKind::NotFound) {
+                return ToolError::NotFound { tool: NAME.into(), path: input.path.clone(), hint: String::new() };
+            }
+            crate::revision_safe_workspace_files::permission(
+                error,
+                NAME,
+                Permission::FilesystemRead,
+            )
         })?;
 
     let display = truncate_for_display(&content);
     Ok(ToolResult {
         output: display.clone(),
         structured: json!({
-            "path": resolved.display().to_string(),
+            "path": input.path,
             "bytes": content.len(),
+            "content_hash": file_ref.content_hash,
+            "revision": file_ref.revision,
+            "namespace": file_ref.namespace.as_str(),
             "preview": display,
         }),
     })

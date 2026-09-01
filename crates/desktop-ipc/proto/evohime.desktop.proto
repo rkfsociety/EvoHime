@@ -1861,6 +1861,7 @@ message CommandEnvelope {
     PlanArtifactCommand plan_artifact_action = 208;
     WorkspaceStateCheckpointCommand workspace_state_checkpoint = 209;
     IncrementalChangeProtocolCommand incremental_change_protocol = 210;
+    RevisionSafeWorkspaceFilesCommand revision_safe_workspace_files = 211;
   }
 }
 
@@ -1968,6 +1969,7 @@ message EventEnvelope {
     PlanArtifactEvent plan_artifact = 55;
     WorkspaceStateCheckpointEvent workspace_state_checkpoint = 56;
     IncrementalChangeProtocolEvent incremental_change_protocol = 57;
+    RevisionSafeWorkspaceFilesEvent revision_safe_workspace_files = 58;
   }
 }
 
@@ -2068,6 +2070,28 @@ message IncrementalChangeProtocolEvent {
   string error_code = 6;
   bytes projection_json = 7;
   bool redacted = 8;
+}
+
+// Plan 60: bounded metadata-only revision-safe workspace files surface.
+message RevisionSafeWorkspaceFilesCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string operation = 4;
+  string logical_path = 5;
+  bytes content = 6;
+  string expected_hash = 7;
+  string idempotency_key = 8;
+}
+
+message RevisionSafeWorkspaceFilesEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  string error_code = 5;
+  bytes projection_json = 6;
+  bool truncated = 7;
 }
 
 // Plan 46: bounded metadata-only Agent Role Profiles surface. Profile bodies

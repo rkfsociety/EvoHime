@@ -19,12 +19,20 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             &["path"],
         ),
         "filesystem.write" => object(
-            serde_json::json!({"path":string("Workspace-relative file path"),"content":string("Complete UTF-8 content")}),
+            serde_json::json!({"path":string("Logical namespace/path"),"content":string("Complete UTF-8 content"),"expected_hash":string("SHA-256 hash from filesystem.read")}),
             &["path", "content"],
         ),
         "filesystem.patch" => object(
-            serde_json::json!({"path":string("Workspace-relative file path"),"patch":string("Unified diff")}),
+            serde_json::json!({"path":string("Logical namespace/path"),"patch":string("Unified diff"),"expected_hash":string("SHA-256 hash from filesystem.read")}),
             &["path", "patch"],
+        ),
+        "filesystem.delete" => object(
+            serde_json::json!({"path":string("Logical namespace/path"),"recursive":{"type":"boolean"},"expected_hash":string("SHA-256 hash of the file before deletion")}),
+            &["path"],
+        ),
+        "filesystem.move" | "filesystem.copy" => object(
+            serde_json::json!({"from":string("Logical namespace/path"),"to":string("Logical namespace/path"),"recursive":{"type":"boolean"},"expected_hash":string("SHA-256 hash of the source file")}),
+            &["from", "to"],
         ),
         "filesystem.search" => object(
             serde_json::json!({"query":string("Text or pattern"),"path":string("Optional workspace path"),"glob":string("Optional glob"),"limit":integer()}),

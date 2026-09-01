@@ -46,6 +46,7 @@ import { HumanWorkItemsPanel } from './HumanWorkItemsPanel'
 import { PlanArtifactPanel } from './PlanArtifactPanel'
 import { WorkspaceStateCheckpointsPanel } from './WorkspaceStateCheckpointsPanel'
 import { IncrementalChangeProtocolPanel } from './IncrementalChangeProtocolPanel'
+import { RevisionSafeWorkspaceFilesPanel } from './RevisionSafeWorkspaceFilesPanel'
 import { WorkbenchPanel } from './WorkbenchPanel'
 import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
 
@@ -72,7 +73,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -99,6 +100,7 @@ const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'plan-artifacts', label: 'Plan Artifacts', icon: '◇' },
   { id: 'workspace-checkpoints', label: 'Workspace Checkpoints', icon: '▣' },
   { id: 'incremental-change', label: 'Incremental Change', icon: 'Δ' },
+  { id: 'revision-safe-files', label: 'Revision-safe Files', icon: '◈' },
   { id: 'packages', label: 'Workflow Package', icon: '⇄' },
   { id: 'benchmarks', label: 'Бенчмарки', icon: '▦' },
   { id: 'middleware', label: 'Middleware', icon: '◇' },
@@ -427,6 +429,7 @@ export function App(): React.JSX.Element {
               {view === 'plan-artifacts' ? <PlanArtifactPanel connection={connection} events={events} /> : null}
               {view === 'workspace-checkpoints' ? <WorkspaceStateCheckpointsPanel connection={connection} events={events} /> : null}
               {view === 'incremental-change' ? <IncrementalChangeProtocolPanel connection={connection} events={events} /> : null}
+              {view === 'revision-safe-files' ? <RevisionSafeWorkspaceFilesPanel connection={connection} events={events} /> : null}
             </div>
           )}
         </div>

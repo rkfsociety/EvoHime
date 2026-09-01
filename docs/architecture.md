@@ -1521,3 +1521,15 @@ Authenticated additive IPC command 203/event 52 и Electron Inbox показыв
 bounded metadata; `get` передаёт только typed user-visible instructions/response
 schema. Raw model prompt, hidden reasoning, credentials и approval payloads
 исключены из projection.
+
+## Revision-Safe Workspace Files v1 (план 60)
+
+Core-owned file tools используют typed namespaces `uploads`, `workspace`,
+`outputs` и run-scoped `scratch`. `FileRef` публикует только logical path,
+namespace, размер, SHA-256 content hash и revision; host path не входит в
+tool/UI projection. Read/write/patch/delete/move/copy проходят через общую
+canonical containment boundary с bounded payloads и traversal/reparse checks.
+Existing-file mutations требуют expected hash; fuzzy patch fallback удалён,
+uploads immutable. Внешнее изменение обнаруживается при следующей mediated
+operation и даёт stale outcome. UI surface показывает только bounded ref/preview
+по project scope; мутации остаются в approval-пути Core tools.

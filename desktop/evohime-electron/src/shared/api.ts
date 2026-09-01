@@ -1048,6 +1048,7 @@ export const RENDERER_COMMANDS = [
   'core.planArtifactAction',
   'core.workspaceStateCheckpoint',
   'core.incrementalChangeProtocol',
+  'core.revisionSafeWorkspaceFiles',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1333,6 +1334,7 @@ export interface CommandPayloads {
   'core.planArtifactAction': { operation: 'transition' | 'execute'; artifactId: string; expectedVersion: number; status?: string; policySnapshotHash?: string; taskId?: string; workflowRunId?: string; correlationId: string; idempotencyKey: string }
   'core.workspaceStateCheckpoint': { operation: 'create' | 'compare' | 'restore' | 'restore_task' | 'restore_both'; projectId: string; taskId?: string; checkpointId?: string; expectedVersion?: number; idempotencyKey: string }
   'core.incrementalChangeProtocol': { operation: 'create' | 'apply' | 'cancel' | 'unknown'; runId: string; payload?: string; expectedVersion?: number; observedFingerprint?: string; idempotencyKey: string }
+  'core.revisionSafeWorkspaceFiles': { operation: 'read'; projectId: string; logicalPath: string; content?: string; expectedHash?: string; idempotencyKey: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
   'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
@@ -1802,6 +1804,7 @@ export interface CommandResults {
   'core.planArtifactAction': { accepted: boolean }
   'core.workspaceStateCheckpoint': { accepted: boolean }
   'core.incrementalChangeProtocol': { accepted: boolean }
+  'core.revisionSafeWorkspaceFiles': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }
   'core.executeAnalysisKernel': { accepted: boolean }

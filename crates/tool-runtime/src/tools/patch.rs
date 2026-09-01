@@ -15,6 +15,7 @@ pub const MAX_PATCH_BYTES: usize = 131_072;
 struct Input {
     path: String,
     patch: String,
+    expected_hash: String,
 }
 
 fn invalid_input(message: impl Into<String>) -> ToolError {
@@ -81,7 +82,7 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
             .unwrap()
             .parse()
             .map_err(|_| invalid_input("malformed hunk range"))?;
-        let mut hunk_begin = start.saturating_sub(1) as isize + offset;
+        let hunk_begin = start.saturating_sub(1) as isize + offset;
         let mut old_index = hunk_begin;
         let mut replacements = Vec::new();
         while let Some(next) = hunk_lines.peek() {
@@ -95,12 +96,10 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
                     .map(|s| s != &item[1..])
                     .unwrap_or(true)
                 {
-                    old_index = lines
-                        .iter()
-                        .position(|line| line == &item[1..])
-                        .map(|index| index as isize)
-                        .ok_or_else(|| ToolError::Execution("patch context mismatch".into()))?;
-                    hunk_begin = old_index;
+                    return Err(ToolError::Execution(
+                        "patch context mismatch; refresh the file and retry with expected_hash"
+                            .into(),
+                    ));
                 }
                 replacements.push(lines[old_index as usize].clone());
                 old_index += 1;
@@ -110,12 +109,10 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
                     .map(|s| s != &item[1..])
                     .unwrap_or(true)
                 {
-                    old_index = lines
-                        .iter()
-                        .position(|line| line == &item[1..])
-                        .map(|index| index as isize)
-                        .ok_or_else(|| ToolError::Execution("patch removal mismatch".into()))?;
-                    hunk_begin = old_index;
+                    return Err(ToolError::Execution(
+                        "patch removal mismatch; refresh the file and retry with expected_hash"
+                            .into(),
+                    ));
                 }
                 old_index += 1;
             } else if let Some(stripped) = item.strip_prefix('+') {
@@ -142,19 +139,19 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
     if original.ends_with('\n') && !result.ends_with('\n') {
         result.push('\n');
     }
-    fs::write(&path, result.as_bytes())
-        .await
-        .map_err(|e| match e.kind() {
-            std::io::ErrorKind::NotFound => ToolError::NotFound {
-                tool: NAME.to_string(),
-                path: input.path.clone(),
-                hint: String::new(),
-            },
-            _ => ToolError::Execution(format!("write failed: {e}")),
-        })?;
+    crate::revision_safe_workspace_files::write(
+        ctx,
+        &input.path,
+        result.as_bytes(),
+        Some(&input.expected_hash),
+    )
+    .await
+    .map_err(|error| {
+        crate::revision_safe_workspace_files::permission(error, NAME, Permission::FilesystemWrite)
+    })?;
     Ok(ToolResult {
         output: format!("applied {applied} hunk(s)"),
-        structured: json!({"path": input.path, "hunks_applied": applied, "bytes": result.len()}),
+        structured: json!({"path": input.path, "hunks_applied": applied, "bytes": result.len(), "change_set": {"status": "observed", "path": input.path}}),
     })
 }
 
@@ -164,14 +161,14 @@ mod tests {
 
     #[test]
     fn accepts_patch_at_byte_limit() {
-        let value = json!({"path": "src/lib.rs", "patch": "a".repeat(MAX_PATCH_BYTES)});
+        let value = json!({"path": "src/lib.rs", "patch": "a".repeat(MAX_PATCH_BYTES), "expected_hash": "hash"});
 
         assert!(validate_input(&value).is_ok());
     }
 
     #[test]
     fn rejects_patch_above_byte_limit() {
-        let value = json!({"path": "src/lib.rs", "patch": "a".repeat(MAX_PATCH_BYTES + 1)});
+        let value = json!({"path": "src/lib.rs", "patch": "a".repeat(MAX_PATCH_BYTES + 1), "expected_hash": "hash"});
 
         let error = validate_input(&value).expect_err("oversized patch must fail");
 
@@ -184,7 +181,7 @@ mod tests {
 
     #[test]
     fn counts_utf8_bytes_not_characters() {
-        let value = json!({"path": "src/lib.rs", "patch": "я".repeat((MAX_PATCH_BYTES / 2) + 1)});
+        let value = json!({"path": "src/lib.rs", "patch": "я".repeat((MAX_PATCH_BYTES / 2) + 1), "expected_hash": "hash"});
 
         assert!(validate_input(&value).is_err());
     }

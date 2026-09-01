@@ -17,9 +17,13 @@ async fn write_creates_and_updates_nested_file() {
         .await
         .unwrap();
     assert_eq!(first.structured["change"], "created");
-    let second = write::execute(&ctx, json!({"path":"nested/a.txt","content":"two"}))
-        .await
-        .unwrap();
+    let hash = first.structured["content_hash"].as_str().unwrap();
+    let second = write::execute(
+        &ctx,
+        json!({"path":"nested/a.txt","content":"two","expected_hash":hash}),
+    )
+    .await
+    .unwrap();
     assert_eq!(second.structured["change"], "updated");
 }
 
@@ -35,7 +39,7 @@ async fn patch_rejects_context_mismatch_without_mutation() {
     };
     let result = patch::execute(
         &ctx,
-        json!({"path":"a.txt","patch":"@@ -1,1 +1,1 @@\n-wrong\n+new\n"}),
+        json!({"path":"a.txt","patch":"@@ -1,1 +1,1 @@\n-wrong\n+new\n","expected_hash":"c3f9c8c283a2b1f2f1896f27a01cbe3cddc0c9d93f752e4639035a0f5b36f6e8"}),
     )
     .await;
     assert!(result.is_err());
@@ -160,12 +164,12 @@ async fn patch_context_recovery_on_wrong_hunk_start() {
         session_id: None,
         progress_tx: None,
     };
-    patch::execute(
+    let result = patch::execute(
         &ctx,
-        json!({"path":"file.txt","patch":"@@ -5,1 +5,1 @@\n-line2\n+modified\n"}),
+        json!({"path":"file.txt","patch":"@@ -5,1 +5,1 @@\n-line2\n+modified\n","expected_hash":"66663af9c7aa341431a8ee2ff27b72abd06c9218f517bb6fef948e4803c19e03"}),
     )
-    .await
-    .unwrap();
+    .await;
+    assert!(result.is_err());
     let content = std::fs::read_to_string(dir.path().join("file.txt")).unwrap();
-    assert_eq!(content, "line1\nmodified\nline3\n");
+    assert_eq!(content, "line1\nline2\nline3\n");
 }

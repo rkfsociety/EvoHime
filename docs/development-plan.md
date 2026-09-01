@@ -298,3 +298,8 @@ metadata transition. Реализованы schema 58, stale/idempotency/termina
 storage, Core handler, authenticated IPC command 210/event 57 и Electron
 projection. Комплект `59-0` … `59-4` удалён после свежих Rust/Electron
 regression, protocol/typecheck, format и diff-check gates.
+
+План 60 (issue #40, Revision-Safe Workspace Files) закрыт 1 сентября 2026
+года. Реализованы typed namespaces, hash-based stale protection, immutable
+uploads, run-scoped scratch, unified filesystem tool boundary и metadata-only
+IPC/UI projection; комплект плана удалён после свежих проверок.

@@ -19,6 +19,7 @@ struct DeleteInput {
     path: String,
     #[serde(default)]
     recursive: bool,
+    expected_hash: Option<String>,
 }
 
 pub async fn delete(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
@@ -27,36 +28,38 @@ pub async fn delete(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
         message: e.to_string(),
     })?;
 
-    let target = ctx.sandbox()?.resolve_existing(&opts.path)?;
+    let (_, path, is_dir) = crate::revision_safe_workspace_files::delete(
+        ctx,
+        &opts.path,
+        opts.expected_hash.as_deref(),
+        opts.recursive,
+    )
+    .await
+    .map_err(|e| {
+        crate::revision_safe_workspace_files::permission(
+            e,
+            DELETE_NAME,
+            Permission::FilesystemWrite,
+        )
+    })?;
 
-    if target.is_dir() {
-        if opts.recursive {
-            fs::remove_dir_all(&target)
-                .await
-                .map_err(|e| ToolError::Execution(format!("directory delete failed: {e}")))?;
-            Ok(ToolResult {
-                output: format!("Directory '{}' deleted recursively", opts.path),
-                structured: json!({
-                    "path": opts.path,
-                    "type": "directory",
-                    "recursive": true
-                }),
-            })
-        } else {
-            Err(ToolError::InvalidInput {
-                tool: DELETE_NAME.to_string(),
-                message: "use recursive=true to delete directories".to_string(),
-            })
-        }
-    } else {
-        fs::remove_file(&target)
-            .await
-            .map_err(|e| ToolError::Execution(format!("file delete failed: {e}")))?;
+    if is_dir {
         Ok(ToolResult {
-            output: format!("File '{}' deleted", opts.path),
+            output: format!("Directory '{}' deleted recursively", path),
             structured: json!({
-                "path": opts.path,
-                "type": "file"
+                "path": path,
+                "type": "directory",
+                "recursive": true,
+                "change_set": {"status": "observed", "path": path}
+            }),
+        })
+    } else {
+        Ok(ToolResult {
+            output: format!("File '{}' deleted", path),
+            structured: json!({
+                "path": path,
+                "type": "file",
+                "change_set": {"status": "observed", "path": path}
             }),
         })
     }
@@ -75,6 +78,7 @@ pub const MOVE_TIMEOUT: Duration = Duration::from_secs(10);
 struct MoveInput {
     from: String,
     to: String,
+    expected_hash: Option<String>,
 }
 
 pub async fn move_file(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
@@ -83,18 +87,23 @@ pub async fn move_file(ctx: &ToolContext, input: Value) -> Result<ToolResult, To
         message: e.to_string(),
     })?;
 
-    let source = ctx.sandbox()?.resolve_existing(&opts.from)?;
-    let dest = ctx.sandbox()?.resolve_for_write(&opts.to)?;
-
-    fs::rename(&source, &dest)
-        .await
-        .map_err(|e| ToolError::Execution(format!("move failed: {e}")))?;
+    let (_, from, _, to) = crate::revision_safe_workspace_files::move_file(
+        ctx,
+        &opts.from,
+        &opts.to,
+        opts.expected_hash.as_deref(),
+    )
+    .await
+    .map_err(|e| {
+        crate::revision_safe_workspace_files::permission(e, MOVE_NAME, Permission::FilesystemWrite)
+    })?;
 
     Ok(ToolResult {
-        output: format!("Moved '{}' to '{}'", opts.from, opts.to),
+        output: format!("Moved '{}' to '{}'", from, to),
         structured: json!({
             "from": opts.from,
-            "to": opts.to
+            "to": opts.to,
+            "change_set": {"status": "observed", "from": from, "to": to}
         }),
     })
 }
@@ -114,6 +123,7 @@ struct CopyInput {
     to: String,
     #[serde(default)]
     recursive: bool,
+    expected_hash: Option<String>,
 }
 
 pub async fn copy(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
@@ -122,8 +132,37 @@ pub async fn copy(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
         message: e.to_string(),
     })?;
 
-    let source = ctx.sandbox()?.resolve_existing(&opts.from)?;
-    let dest = ctx.sandbox()?.resolve_for_write(&opts.to)?;
+    let (_, _, source) = crate::revision_safe_workspace_files::resolve_logical(
+        ctx, &opts.from, false,
+    )
+    .map_err(|e| {
+        crate::revision_safe_workspace_files::permission(e, COPY_NAME, Permission::FilesystemWrite)
+    })?;
+    let (_, _, dest) = crate::revision_safe_workspace_files::resolve_logical(ctx, &opts.to, true)
+        .map_err(|e| {
+        crate::revision_safe_workspace_files::permission(e, COPY_NAME, Permission::FilesystemWrite)
+    })?;
+
+    if source.is_file() {
+        crate::revision_safe_workspace_files::assert_precondition(
+            ctx,
+            &opts.from,
+            opts.expected_hash
+                .as_deref()
+                .ok_or_else(|| ToolError::InvalidInput {
+                    tool: COPY_NAME.to_string(),
+                    message: "expected_hash is required for file copy".to_string(),
+                })?,
+        )
+        .await
+        .map_err(|e| {
+            crate::revision_safe_workspace_files::permission(
+                e,
+                COPY_NAME,
+                Permission::FilesystemWrite,
+            )
+        })?;
+    }
 
     if source.is_dir() {
         if !opts.recursive {
@@ -146,7 +185,8 @@ pub async fn copy(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
         structured: json!({
             "from": opts.from,
             "to": opts.to,
-            "recursive": opts.recursive
+            "recursive": opts.recursive,
+            "change_set": {"status": "observed", "from": opts.from, "to": opts.to}
         }),
     })
 }
@@ -273,6 +313,7 @@ pub async fn mkdir(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolEr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::Digest;
     use std::fs as std_fs;
     use tempfile::tempdir;
     use uuid::Uuid;
@@ -290,9 +331,13 @@ mod tests {
             progress_tx: None,
         };
 
-        let result = delete(&ctx, json!({"path": "test.txt", "recursive": false}))
-            .await
-            .expect("delete");
+        let hash = hex::encode(sha2::Sha256::digest(b"content"));
+        let result = delete(
+            &ctx,
+            json!({"path": "test.txt", "recursive": false, "expected_hash": hash}),
+        )
+        .await
+        .expect("delete");
 
         assert!(!file.exists());
         assert!(result.output.contains("deleted"));
@@ -312,9 +357,13 @@ mod tests {
             progress_tx: None,
         };
 
-        move_file(&ctx, json!({"from": "src.txt", "to": "dst.txt"}))
-            .await
-            .expect("move");
+        let hash = hex::encode(sha2::Sha256::digest(b"content"));
+        move_file(
+            &ctx,
+            json!({"from": "src.txt", "to": "dst.txt", "expected_hash": hash}),
+        )
+        .await
+        .expect("move");
 
         assert!(!src.exists());
         assert!(dst.exists());

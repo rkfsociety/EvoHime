@@ -2432,6 +2432,18 @@ impl IpcBridge {
                     self.write_response(writer, "incremental_change_protocol.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::RevisionSafeWorkspaceFiles(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "read".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_revision_safe_workspace_files(operation, request)
+                        .await?;
+                    self.write_response(writer, "revision_safe_workspace_files.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -6680,6 +6692,35 @@ impl IpcBridge {
                 payload: request.payload,
                 expected_version: request.expected_version,
                 observed_fingerprint: request.observed_fingerprint,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_revision_safe_workspace_files(
+        &self,
+        operation: String,
+        request: generated::RevisionSafeWorkspaceFilesCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::RevisionSafeWorkspaceFiles {
+                operation,
+                project_id: request.owner_scope,
+                logical_path: request.logical_path,
+                content: request.content,
+                expected_hash: request.expected_hash,
                 idempotency_key: request.idempotency_key,
                 reply,
             })

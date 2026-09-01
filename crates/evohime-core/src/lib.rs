@@ -1173,6 +1173,15 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    RevisionSafeWorkspaceFiles {
+        operation: String,
+        project_id: String,
+        logical_path: String,
+        content: Vec<u8>,
+        expected_hash: String,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -10566,6 +10575,38 @@ impl TaskCoordinator {
                             runtime.transition(&run_id, expected_version, next, &observed_fingerprint, now).await.map_err(|e| e.to_string())?
                         }
                         _ => return Err("unsupported incremental change operation".to_string()),
+                    };
+                    serde_json::to_vec(&value).map_err(|e| e.to_string())
+                }.await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::RevisionSafeWorkspaceFiles {
+                operation,
+                project_id,
+                logical_path,
+                content: _,
+                expected_hash: _,
+                idempotency_key: _,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let project = journal.get_project(&project_id).await.map_err(|e| e.to_string())?
+                        .ok_or_else(|| "project not found".to_string())?;
+                    let ctx = evohime_tool_runtime::ToolContext {
+                        workspace_root: project.workspace_path.into(),
+                        task_id: uuid::Uuid::nil(),
+                        session_id: None,
+                        progress_tx: None,
+                    };
+                    let value = match operation.as_str() {
+                        "read" => {
+                            let (file_ref, text) = evohime_tool_runtime::revision_safe_workspace_files::read(&ctx, &logical_path).await.map_err(|e| e.to_string())?;
+                            serde_json::json!({"status":"ok","ref":file_ref,"preview":text.chars().take(20000).collect::<String>()})
+                        }
+                        "write" => return Err("filesystem mutations must use the approved tool boundary".to_string()),
+                        _ => return Err("unsupported revision-safe workspace files operation".to_string()),
                     };
                     serde_json::to_vec(&value).map_err(|e| e.to_string())
                 }.await;

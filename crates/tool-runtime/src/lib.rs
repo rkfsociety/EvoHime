@@ -6,6 +6,7 @@ pub mod execution_policy_profiles;
 pub mod manifest;
 pub mod network_capability;
 mod registry;
+pub mod revision_safe_workspace_files;
 mod risk;
 mod sandbox;
 mod shell_env;

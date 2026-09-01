@@ -793,3 +793,11 @@ redacted evidence; stale drift, duplicate idempotency и terminal unknown-safe
 outcomes проверены focused tests. Authenticated IPC использует command 210/event
 57, Electron показывает metadata-only `IncrementalChangeProtocolPanel`; внешний
 effect базовым executor намеренно не выполняется.
+
+План 60 закрыт 1 сентября 2026 года: Revision-Safe Workspace Files v1
+реализован в общей tool boundary. Typed namespaces, `FileRef` hash/revision,
+stale preconditions, immutable uploads, run-scoped scratch, strict patch
+context, advanced file adapters и additive authenticated IPC/UI projection
+проверены Rust 677 тестами, tool-runtime tests, Electron suite 498 тестами,
+protocol/typecheck, clippy и diff-check. Raw absolute paths новая surface не
+выдаёт; IPC mutations остаются только в Core approval path.

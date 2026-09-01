@@ -344,6 +344,18 @@ function dispatch(
       return accepted(client.send({ incrementalChangeProtocol: { schemaVersion: 1, operation, runId, payload: Buffer.from(body, 'utf8'), expectedVersion, observedFingerprint, idempotencyKey } }))
     }
 
+    case 'core.revisionSafeWorkspaceFiles': {
+      const value = asRecord(payload)
+      const operation = value['operation'] === 'read' ? value['operation'] : null
+      const projectId = asBoundedString(value['projectId'])
+      const logicalPath = asBoundedString(value['logicalPath'])
+      const content = value['content'] === undefined ? '' : asBoundedString(value['content'])
+      const expectedHash = value['expectedHash'] === undefined ? '' : asBoundedString(value['expectedHash'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (operation === null || projectId === null || logicalPath === null || content === null || expectedHash === null || idempotencyKey === null || logicalPath.length > 4096 || content.length > 4 * 1024 * 1024) return failure('invalid-payload', 'Некорректная операция revision-safe файлов.')
+      return accepted(client.send({ revisionSafeWorkspaceFiles: { schemaVersion: 1, requestId: randomUUID(), ownerScope: projectId, operation, logicalPath, content: Buffer.from(content, 'utf8'), expectedHash, idempotencyKey } }))
+    }
+
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)
       const taskId = asBoundedString(value['taskId'])
