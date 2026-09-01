@@ -8,7 +8,7 @@ type Projection = {
 }
 
 /** Metadata-only projection. Browser authority remains in Core. */
-export function AgenticBrowserSessionPanel() {
+export function AgenticBrowserSessionPanel({ onClose }: { readonly onClose: () => void }) {
   const api = useShellApi()
   const [projection, setProjection] = useState<Projection | null>(null)
   useEffect(() => api?.subscribe((event) => {
@@ -21,8 +21,11 @@ export function AgenticBrowserSessionPanel() {
   const create = () => api?.invoke('agenticBrowserSession.create', {
     requestId: crypto.randomUUID(), ownerScope: 'conversation', idempotencyKey: crypto.randomUUID()
   })
-  return <section className="panel" aria-label="Agentic Browser Session">
-    <h2>Браузерная сессия</h2>
+  return <section className="panel browser-session-panel" aria-label="Agentic Browser Session">
+    <div className="panel__header">
+      <div><h2>Браузерная сессия</h2><span>Дополнительная панель</span></div>
+      <button type="button" onClick={onClose}>Скрыть</button>
+    </div>
     <p role="status">{projection ? `${projection.state ?? 'unknown'} · rev ${projection.revision ?? 0}` : 'Ожидание состояния Core…'}</p>
     {projection?.session_id && <p>Сессия: {projection.session_id}</p>}
     {projection?.profile_policy && <p>Профиль: {projection.profile_policy} · сеть: {projection.network_policy}</p>}

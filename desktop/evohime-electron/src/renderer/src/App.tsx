@@ -133,6 +133,9 @@ export function App(): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [developerMenuOpen, setDeveloperMenuOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [workbenchVisible, setWorkbenchVisible] = useState(true)
+  const [browserVisible, setBrowserVisible] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
 
   const api = useShellApi()
@@ -218,10 +221,18 @@ export function App(): React.JSX.Element {
   const title = view === 'chat' ? 'Диалог' : (VIEWS.find((item) => item.id === view)?.label ?? 'Диалог')
 
   return (
-    <div className={`shell${traceOpen ? ' shell--trace-open' : ''}`}>
+    <div className={`shell${traceOpen ? ' shell--trace-open' : ''}${sidebarCollapsed ? ' shell--sidebar-collapsed' : ''}`}>
       <nav className="sidebar" aria-label="Разделы">
         <div className="sidebar__brand">
-          <span className="sidebar__logo" aria-hidden="true">E</span>
+          <button
+            type="button"
+            className="sidebar__brand-toggle"
+            aria-label={sidebarCollapsed ? 'Развернуть боковую панель' : 'Свернуть боковую панель'}
+            title={sidebarCollapsed ? 'Развернуть боковую панель' : 'Свернуть боковую панель'}
+            onClick={() => setSidebarCollapsed((value) => !value)}
+          >
+            <span className="sidebar__logo" aria-hidden="true">E</span>
+          </button>
           <h1 className="sidebar__title">EvoHime</h1>
         </div>
 
@@ -325,6 +336,16 @@ export function App(): React.JSX.Element {
           <h2 className="topbar__title">{title}</h2>
           <span className="topbar__path">{workspace ?? 'папка не выбрана'}</span>
           <span className="topbar__spacer" />
+          {!workbenchVisible ? (
+            <button type="button" className="topbar__panel-toggle" onClick={() => setWorkbenchVisible(true)}>
+              Показать Workbench
+            </button>
+          ) : null}
+          {!browserVisible ? (
+            <button type="button" className="topbar__panel-toggle" onClick={() => setBrowserVisible(true)}>
+              Браузер
+            </button>
+          ) : null}
           <button
             type="button"
             className={`topbar__trace${traceOpen ? ' topbar__trace--active' : ''}`}
@@ -361,8 +382,16 @@ export function App(): React.JSX.Element {
                 identityName={identity?.name ?? null}
                 chatRevision={chatRevision}
               />
-              <WorkbenchPanel connection={connection} chatId={chatId} workspace={workspace} events={events} />
-              <AgenticBrowserSessionPanel />
+              {workbenchVisible ? (
+                <WorkbenchPanel
+                  connection={connection}
+                  chatId={chatId}
+                  workspace={workspace}
+                  events={events}
+                  onClose={() => setWorkbenchVisible(false)}
+                />
+              ) : null}
+              {browserVisible ? <AgenticBrowserSessionPanel onClose={() => setBrowserVisible(false)} /> : null}
             </div>
           ) : (
             <div className="main__scroll">

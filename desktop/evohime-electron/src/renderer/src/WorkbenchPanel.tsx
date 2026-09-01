@@ -10,12 +10,14 @@ export function WorkbenchPanel({
   connection,
   chatId,
   workspace,
-  events
+  events,
+  onClose
 }: {
   readonly connection: ConnectionState
   readonly chatId: string | null
   readonly workspace: string | null
   readonly events: readonly CoreEvent[]
+  readonly onClose: () => void
 }): React.JSX.Element {
   const api = useShellApi()
   const [projection, setProjection] = useState<ConversationWorkbenchProjection | null>(null)
@@ -52,13 +54,24 @@ export function WorkbenchPanel({
   }
 
   const selected = useMemo(() => projection?.tabs.find((tab) => tab.id === presentation.activeTab) ?? null, [projection, presentation.activeTab])
-  if (!chatId) return <section className="workbench workbench--empty"><h3>Conversation Workbench</h3><p>Откройте чат, чтобы привязать рабочую поверхность к conversation.</p></section>
+  if (!chatId) return (
+    <section className="workbench workbench--empty" aria-label="Conversation Workbench">
+      <header className="workbench__header">
+        <div><h3>Conversation Workbench</h3><span>Дополнительная панель</span></div>
+        <button type="button" onClick={onClose}>Скрыть</button>
+      </header>
+      <p>Откройте чат, чтобы привязать рабочую поверхность к conversation.</p>
+    </section>
+  )
 
   return (
     <section className={`workbench${presentation.collapsed ? ' workbench--collapsed' : ''}`} aria-label="Conversation Workbench">
       <header className="workbench__header">
         <div><h3>Conversation Workbench</h3><span>{connection === 'connected' ? 'Core projection' : 'Ожидание Core'}</span></div>
-        <button type="button" onClick={() => savePresentation({ ...presentation, collapsed: !presentation.collapsed })}>{presentation.collapsed ? 'Развернуть' : 'Свернуть'}</button>
+        <div className="workbench__actions">
+          <button type="button" onClick={() => savePresentation({ ...presentation, collapsed: !presentation.collapsed })}>{presentation.collapsed ? 'Развернуть' : 'Свернуть'}</button>
+          <button type="button" onClick={onClose}>Скрыть</button>
+        </div>
       </header>
       {!presentation.collapsed ? <>
         <div className="workbench__tabs" role="tablist" aria-label="Вкладки conversation">
