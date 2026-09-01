@@ -583,6 +583,16 @@ message RunDoctor {
   int32 detail_level = 2;
 }
 
+// Creates a bounded, read-only support snapshot. The snapshot is ephemeral;
+// Electron main may assemble and save it locally after the user reviews it.
+message CreateDiagnosticsSnapshot {
+  string project_id = 1;
+  string conversation_id = 2;
+  string run_id = 3;
+  uint32 max_event_count = 4;
+  uint32 max_log_bytes = 5;
+}
+
 // Exports the local structured logs (core.jsonl / supervisor.jsonl) and
 // recent run_tool_metrics aggregates, redacted, to a user-chosen JSONL file.
 message ExportDoctorLogs {
@@ -1842,6 +1852,7 @@ message CommandEnvelope {
     CausalCollaborationBusCommand causal_collaboration_bus = 199;
     CausalCollaborationBusSubscribeCommand causal_collaboration_bus_subscribe = 200;
     ConversationWorkbenchRequest get_conversation_workbench = 201;
+    CreateDiagnosticsSnapshot create_diagnostics_snapshot = 202;
   }
 }
 

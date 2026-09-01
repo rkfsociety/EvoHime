@@ -1056,6 +1056,7 @@ export const RENDERER_COMMANDS = [
   'core.gitDiff',
   'core.setPermissionMode',
   'core.runDoctor',
+  'core.createDiagnosticsSnapshot',
   'core.exportDoctorLogs',
   'core.createDatabaseBackup',
   'core.prepareDatabaseRestore',
@@ -1389,6 +1390,7 @@ export interface CommandPayloads {
   'core.gitDiff': { workspacePath: string; relativePath?: string; maxBytes?: number }
   'core.setPermissionMode': { mode: PermissionMode }
   'core.runDoctor': { projectId?: string; detailLevel?: 0 | 1 }
+  'core.createDiagnosticsSnapshot': { projectId?: string; conversationId?: string; runId?: string; maxEventCount?: number; maxLogBytes?: number }
   'core.exportDoctorLogs': { destinationPath: string }
   'core.createDatabaseBackup': { destinationPath: string }
   'core.prepareDatabaseRestore': { backupPath: string }
@@ -1734,6 +1736,7 @@ export interface CommandResults {
   'core.gitDiff': { accepted: boolean }
   'core.setPermissionMode': { accepted: boolean }
   'core.runDoctor': { accepted: boolean }
+  'core.createDiagnosticsSnapshot': { accepted: boolean }
   'core.exportDoctorLogs': { accepted: boolean }
   'core.createDatabaseBackup': { accepted: boolean }
   'core.prepareDatabaseRestore': { accepted: boolean }

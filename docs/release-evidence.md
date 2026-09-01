@@ -236,3 +236,19 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 | Memory Governance v1 (plan 50, implemented 2026-09-01) | durable storage schema v51; Core `MemoryWriteGate`; typed authority/durability/confidence; independent evidence guard; existing authenticated memory IPC and metadata-only OperationsPanel | additive migration with legacy safe defaults; invalid/secret/unverified records fail before SQL; pending/model/ambient records stay non-retrievable until validation and confirmation | disable extraction or withhold memory capability; preserve redacted metadata/tombstones; no blind replay of external effects | Core governance 3/3, local-storage memory 18/18, full Core 657 + integration tests, local-storage 236, desktop-ipc 36; Electron 499 passed and 2 skipped; protocol/typecheck and diff-check passed; evidence contains no credentials, raw body or PII |
 | Causal Collaboration Bus v1 (plan 51, implemented 2026-09-01) | Core typed envelope, TeamSession-pinned routing, retained-child sequence substrate, SQLite schema v52, authenticated IPC 199–200/event 50, metadata-only Electron panel | additive migration; 32 KiB payload / 64 KiB envelope / 128-message inbox bounds; duplicate and compare-and-set delivery; subscription state is ephemeral; unknown dispatch is not retried | disable additive commands/events; preserve v51 backup on migration failure; reconcile unknown explicitly; no provider/tool/artifact side effects | Core 660/660 unit + focused module tests, local-storage 237/237, desktop-ipc doc tests; protocol generated; Electron typecheck/test and strict lint gates recorded for release commit; evidence contains no payload bodies, credentials, prompts, transcripts, absolute paths or PII |
 | Conversation Workbench v1 (plan 52, implemented 2026-09-01) | Read-only Core composer over conversation event log; schema v52; authenticated IPC command 201/event 51; six capability-aware tabs; shell ChatStore presentation state | scope/cursor/limit bounds; metadata-only redaction; Tasks/Usage available; Files/Diff/Terminal/Browser typed unavailable; no effects | disable 201/51; clear projection on conversation switch; fresh snapshot after restart/stale cursor; no Core migration/store or blind retry | Core Workbench 2/2 focused tests; Rust check/fmt; Electron protocol/typecheck; Electron suite 500+ passed with source-update tests skipped; ChatStore per-conversation bounds; no raw content, credentials, prompts, paths or PII |
+
+## Plan 53 — Diagnostics & Support Bundle v2 (2026-09-01)
+
+- Contract/runtime: authenticated command 202 returns ephemeral schema-v2 JSON
+  with `PASS/WARN/FAIL/SKIPPED` health results, measured duration, bounds,
+  redaction omissions, metadata-only selected run references and SHA-256 hash.
+  No SQLite migration/store or external effect is introduced.
+- Export/UI: Electron main creates a local store-only ZIP with manifest,
+  health/runtime/errors/events/logs, issue draft and redaction report; the
+  final archive scan rejects credential/path fixtures. Settings preview shows
+  Core state and redaction summary before save, and draft copying remains
+  local. No upload/publication exists.
+- Evidence: Core check, Electron support-bundle 2/2 and shell bridge 56/56,
+  `npm run check:protocol`, `npm run typecheck`, `cargo fmt --all -- --check`
+  and `git diff --check` passed; full Rust/Electron regression gates are run
+  at release time. Evidence contains no credentials, raw payloads or PII.

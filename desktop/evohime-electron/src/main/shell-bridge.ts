@@ -803,6 +803,19 @@ function dispatch(
       return accepted(client.send({ runDoctor: { projectId, detailLevel } }))
     }
 
+    case 'core.createDiagnosticsSnapshot': {
+      const value = asRecord(payload)
+      const projectId = value['projectId'] === undefined ? '' : asBoundedString(value['projectId'])
+      const conversationId = value['conversationId'] === undefined ? '' : asBoundedString(value['conversationId'])
+      const runId = value['runId'] === undefined ? '' : asBoundedString(value['runId'])
+      const maxEventCount = value['maxEventCount'] === undefined ? 200 : value['maxEventCount']
+      const maxLogBytes = value['maxLogBytes'] === undefined ? 64 * 1024 : value['maxLogBytes']
+      if (projectId === null || conversationId === null || runId === null || typeof maxEventCount !== 'number' || typeof maxLogBytes !== 'number' || !Number.isInteger(maxEventCount) || !Number.isInteger(maxLogBytes) || maxEventCount < 0 || maxEventCount > 200 || maxLogBytes < 0 || maxLogBytes > 64 * 1024) {
+        return failure('invalid-payload', 'Некорректные ограничения диагностического snapshot.')
+      }
+      return accepted(client.send({ createDiagnosticsSnapshot: { projectId, conversationId, runId, maxEventCount, maxLogBytes } }))
+    }
+
     case 'core.exportDoctorLogs': {
       const destinationPath = asBoundedString(asRecord(payload)['destinationPath'])
       if (destinationPath === null) return failure('invalid-payload', 'Некорректный путь экспорта диагностики.')

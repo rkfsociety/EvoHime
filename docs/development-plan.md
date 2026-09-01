@@ -255,3 +255,13 @@ Core composer над event log, schema v52 без новой migration, authenti
 201/event 51, шесть capability-aware tabs, bounded per-conversation ChatStore
 presentation state, stale-safe switching, redacted projection и live refresh.
 Комплект `52-0` … `52-4` удалён после свежих Rust/Electron regression gates.
+
+План 53 закрыт 1 сентября 2026 года: Diagnostics & Support Bundle v2
+перенесён в canonical architecture/current-state/release-evidence. Core
+предоставляет ephemeral authenticated snapshot command 202 с typed health
+outcomes, bounds, duration, redaction omissions и metadata-only failed-run
+context. Electron main собирает локальный ZIP с manifest/preview/issue draft и
+делает final whole-archive scan; Settings показывает preview и redaction
+summary. Новая migration/store и network publication отсутствуют. Комплект
+53-0 … 53-4 удалён после focused Core/Electron, protocol/typecheck, formatting
+и diff-check gates.

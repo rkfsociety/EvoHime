@@ -3534,6 +3534,13 @@ impl IpcBridge {
                         .await?;
                     self.write_response(writer, "doctor.report", result).await?;
                 }
+                Some(generated::command_envelope::Command::CreateDiagnosticsSnapshot(request)) => {
+                    let result = self
+                        .dispatch_create_diagnostics_snapshot(request, command.protocol)
+                        .await?;
+                    self.write_response(writer, "diagnostics.snapshot", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::ExportDoctorLogs(request)) => {
                     let result = self
                         .dispatch_export_doctor_logs(request.destination_path)
@@ -6961,6 +6968,52 @@ impl IpcBridge {
                 expected_tools,
                 unavailable_tools,
                 detail_level,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_create_diagnostics_snapshot(
+        &self,
+        request: generated::CreateDiagnosticsSnapshot,
+        protocol: Option<generated::ProtocolVersion>,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let approval_required = match &self.tools {
+            Some(tools) => !matches!(
+                tools.permissions().mode(Permission::FilesystemWrite).await,
+                PermissionMode::Allow
+            ),
+            None => true,
+        };
+        let (registered_tools, expected_tools, unavailable_tools) = match &self.tools {
+            Some(tools) => (tools.list().len() as u32, EXPECTED_TOOL_COUNT, Vec::new()),
+            None => (0, EXPECTED_TOOL_COUNT, Vec::new()),
+        };
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::CreateDiagnosticsSnapshot {
+                project_id: request.project_id,
+                conversation_id: request.conversation_id,
+                run_id: request.run_id,
+                max_event_count: request.max_event_count,
+                max_log_bytes: request.max_log_bytes,
+                protocol_major: protocol.map(|version| version.major),
+                expected_protocol_major: PROTOCOL_MAJOR,
+                provider: self.provider_probe(),
+                approval_required,
+                registered_tools,
+                expected_tools,
+                unavailable_tools,
                 reply,
             })
             .await

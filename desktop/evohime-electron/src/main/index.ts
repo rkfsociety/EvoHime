@@ -8,7 +8,7 @@ import type { AmbientHotkeyStatus, ListeningState, ShellState } from '@shared/ap
 import { ChatStore } from './chat-store'
 import { CodexService } from './codex-service'
 import { JsonlLogger } from './diagnostics/logger'
-import { buildDiagnosticBundle, serializeDiagnosticBundle } from './diagnostics/bundle'
+import { buildSupportBundleFiles, serializeSupportBundle } from './diagnostics/support-bundle'
 import { hasLiveSupervisor, readLaunchContext } from './ipc/launch-context'
 import { CorePipeClient } from './ipc/pipe-client'
 import { dataDirectory, logDirectory } from './paths'
@@ -180,21 +180,21 @@ if (process.argv.includes(BUILD_WORKER_FLAG)) {
       exportDiagnostics: async () => {
         const window = BrowserWindow.getFocusedWindow()
         const save = window
-          ? await dialog.showSaveDialog(window, { defaultPath: 'evohime-diagnostic-bundle.json', filters: [{ name: 'JSON', extensions: ['json'] }] })
-          : await dialog.showSaveDialog({ defaultPath: 'evohime-diagnostic-bundle.json', filters: [{ name: 'JSON', extensions: ['json'] }] })
+          ? await dialog.showSaveDialog(window, { defaultPath: 'evohime-support-bundle.zip', filters: [{ name: 'ZIP archive', extensions: ['zip'] }] })
+          : await dialog.showSaveDialog({ defaultPath: 'evohime-support-bundle.zip', filters: [{ name: 'ZIP archive', extensions: ['zip'] }] })
         if (save.canceled || !save.filePath) return { cancelled: true, path: '' }
-        const bundle = buildDiagnosticBundle({
-          generatedAtMs: Date.now(),
-          appVersion: app.getVersion(),
-          platform: process.platform,
-          architecture: process.arch,
-          state: lastShellState,
-          update: lastUpdateStatus,
-          repair: lastRepairStatus,
+        const snapshotEvent = recentCoreEvents.find((event) => event.eventType === 'diagnostics.snapshot')
+        let snapshot: unknown = { unavailable: true, reason: 'core_snapshot_not_received' }
+        if (snapshotEvent) {
+          try { snapshot = JSON.parse(snapshotEvent.payload) as unknown } catch { snapshot = { unavailable: true, reason: 'malformed_core_snapshot' } }
+        }
+        const files = buildSupportBundleFiles({
+          snapshot,
+          runtime: { appVersion: app.getVersion(), platform: process.platform, architecture: process.arch, state: lastShellState, update: lastUpdateStatus, repair: lastRepairStatus },
           events: recentCoreEvents,
-          logPaths: [logger.path]
+          logs: [logger.path]
         })
-        writeFileSync(save.filePath, serializeDiagnosticBundle(bundle), { encoding: 'utf8', mode: 0o600 })
+        writeFileSync(save.filePath, serializeSupportBundle(files), { mode: 0o600 })
         return { cancelled: false, path: save.filePath }
       },
       log

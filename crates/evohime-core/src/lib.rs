@@ -1004,6 +1004,7 @@ pub mod prd;
 pub mod provider_resilience;
 pub mod retained_child;
 pub mod structured_response_contract;
+pub mod support_bundle;
 pub mod tool_simulation_runtime;
 pub use provider_resilience::{
     default_tool_specs, filter_readonly_tools, handle_provider_error, is_retriable_error,
@@ -1181,6 +1182,23 @@ pub enum CoreCommand {
         expected_tools: u32,
         unavailable_tools: Vec<String>,
         detail_level: crate::doctor::DetailLevel,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Bounded, read-only support snapshot. It never persists diagnostics or
+    /// reads raw prompts, workspace files, credentials, or tool payloads.
+    CreateDiagnosticsSnapshot {
+        project_id: String,
+        conversation_id: String,
+        run_id: String,
+        max_event_count: u32,
+        max_log_bytes: u32,
+        protocol_major: Option<u32>,
+        expected_protocol_major: u32,
+        provider: crate::doctor::ProviderProbe,
+        approval_required: bool,
+        registered_tools: u32,
+        expected_tools: u32,
+        unavailable_tools: Vec<String>,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
     /// Exports the local `logs/core.jsonl` (and `supervisor.jsonl`, when
@@ -10804,6 +10822,61 @@ impl TaskCoordinator {
                 }
                 .await;
                 let _ = reply.send(result);
+            }
+            CoreCommand::CreateDiagnosticsSnapshot {
+                project_id,
+                conversation_id,
+                run_id,
+                max_event_count,
+                max_log_bytes,
+                protocol_major,
+                expected_protocol_major,
+                provider,
+                approval_required,
+                registered_tools,
+                expected_tools,
+                unavailable_tools,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let started = std::time::Instant::now();
+                    let (schema_version, recovery_state) = match &journal {
+                        Some(journal) => {
+                            let (_, version) = journal.storage_snapshot().await.map_err(|e| e.to_string())?;
+                            let recovery = journal.recovery_probe().await.map_err(|e| e.to_string())?;
+                            (version, recovery.state)
+                        }
+                        None => (0, "NOT_CONFIGURED".to_owned()),
+                    };
+                    let doctor = serde_json::json!({
+                        "contract_version": 1,
+                        "checks": [
+                            {"id":"storage", "status": if schema_version > 0 { "OK" } else { "BLOCKED" }, "summary":"Хранилище и схема доступны", "action":"Действий не требуется"},
+                            {"id":"pipe", "status": if protocol_major == Some(expected_protocol_major) { "OK" } else { "BLOCKED" }, "summary":"Core pipe доступен", "action":"Проверь версии UI и Core"},
+                            {"id":"provider", "status": if provider.configured && provider.metadata_valid { "OK" } else { "WARN" }, "summary":"Состояние провайдера проверено", "action":"Проверь настройки провайдера"},
+                            {"id":"recovery", "status": if recovery_state == "CLEAN" { "OK" } else { "WARN" }, "summary":"Состояние recovery: {recovery_state}", "action":"Проверь recovery state"},
+                            {"id":"permissions", "status": if approval_required { "WARN" } else { "OK" }, "summary":"Политика разрешений проверена", "action":"Подтверди требуемое разрешение явно"},
+                            {"id":"tools", "status": if registered_tools >= expected_tools && unavailable_tools.is_empty() { "OK" } else { "WARN" }, "summary":"Каталог tools проверен", "action":"Проверь регистрацию tools"}
+                        ]
+                    });
+                    let doctor_json = serde_json::to_vec(&doctor).map_err(|e| e.to_string())?;
+                    let run_status = if run_id.is_empty() {
+                        String::new()
+                    } else {
+                        let run = journal
+                            .as_ref()
+                            .ok_or_else(|| "run_not_found".to_owned())?
+                            .get_run(&run_id)
+                            .await
+                            .map_err(|e| e.to_string())?
+                            .ok_or_else(|| "run_not_found".to_owned())?;
+                        run.status
+                    };
+                    crate::support_bundle::build_snapshot(&doctor_json, conversation_id, run_id, run_status, max_event_count, max_log_bytes, started.elapsed().as_millis() as u64)
+                }.await;
+                let _ = reply.send(result);
+                let _ = project_id;
             }
             CoreCommand::ExportDoctorLogs {
                 destination_path,

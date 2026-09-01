@@ -688,3 +688,20 @@ capabilities планов 55/60. Presentation state ограничен и хра
 conversation в shell ChatStore; смена conversation сбрасывает projection,
 новый event-log cursor инициирует refresh. Raw content, credentials и authority
 renderer не пересекают границу.
+
+## Diagnostics & Support Bundle v2 (план 53, реализован 2026-09-01)
+
+Core добавляет authenticated additive command 202 для ephemeral bounded
+snapshot: schema v2, health outcomes `PASS/WARN/FAIL/SKIPPED`, duration, bounds,
+safe SHA-256 fingerprint, redaction omissions и metadata-only conversation/run
+references. Snapshot строится только из Core-owned health facts; новая SQLite
+схема/store, raw prompts, workspace files, credentials, tool payloads и
+external effects отсутствуют.
+
+Electron main расширяет локальный экспорт до `evohime-support-bundle-v2` ZIP:
+manifest, health/runtime/errors/events/logs, локальный issue-draft и
+redaction-report. Перед записью выполняется final whole-archive secret/path
+scan, запись ограничена user-selected destination, а raw values fail closed.
+Settings → Диагностика показывает preview и redaction summary, позволяет
+сохранить bundle и скопировать draft; публикация и network upload не
+выполняются.

@@ -8,10 +8,11 @@ import { SkillCatalogPanel } from './SkillCatalogPanel'
 import { IntegrationProviderPanel } from './IntegrationProviderPanel'
 import { EventTriggerRuntimePanel } from './EventTriggerRuntimePanel'
 import { AdaptiveToolCatalogPanel } from './AdaptiveToolCatalogPanel'
+import { DiagnosticsAndSupportBundlePanel } from './DiagnosticsAndSupportBundlePanel'
 
 import type { ConnectionState, CoreEvent } from '@shared/api'
 
-type SettingsTab = 'provider' | 'integrations' | 'triggers' | 'workspace' | 'speech' | 'skills' | 'tools' | 'appearance' | 'security'
+type SettingsTab = 'provider' | 'integrations' | 'triggers' | 'workspace' | 'speech' | 'skills' | 'tools' | 'diagnostics' | 'appearance' | 'security'
 
 interface SettingsModalProps {
   readonly workspace: string | null
@@ -28,6 +29,7 @@ const TABS: readonly { readonly id: SettingsTab; readonly label: string }[] = [
   { id: 'speech', label: 'Распознавание речи' },
   { id: 'skills', label: 'Agent Skills' },
   { id: 'tools', label: 'Каталог tools' },
+  { id: 'diagnostics', label: 'Диагностика' },
   { id: 'appearance', label: 'Внешний вид' },
   { id: 'security', label: 'Безопасность' }
 ]
@@ -95,6 +97,7 @@ export function SettingsModal({ workspace, connection, events, onClose }: Settin
             {tab === 'speech' ? <ListenerRuntimeSection /> : null}
             {tab === 'skills' ? <SkillCatalogPanel workspace={workspace} connection={connection} events={events} /> : null}
             {tab === 'tools' ? <AdaptiveToolCatalogPanel connection={connection} events={events} /> : null}
+            {tab === 'diagnostics' ? <DiagnosticsAndSupportBundlePanel connection={connection} events={events} /> : null}
             {tab === 'appearance' ? <InfoSettings title="Внешний вид" text="Тёмная тема и компактная плотность интерфейса используются как основной режим EvoHime." /> : null}
             {tab === 'security' ? <SafetyPanel connection={connection} events={events} /> : null}
           </div>

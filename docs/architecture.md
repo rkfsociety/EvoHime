@@ -944,7 +944,17 @@ action authority. Worker backend отсутствует в базовом packag
 memory/RAG citations требуют redacted page/frame provenance.
 ## Reliability, recovery и diagnostics
 
-Electron main maintains only a bounded diagnostic projection. The additive shell command `shell.exportDiagnostics` opens a native save dialog and writes `evohime-diagnostic-bundle-v1` with runtime metadata, current shell/update/repair state, bounded Core-event tail and redacted shell-log excerpts. It never reads workspace files, prompts, tool output or credential payloads. Log collection is bounded to at most four files, 64 KiB from each file, 120 total lines and a 512 KiB serialized bundle; the main process reads only the required tail.
+Electron main maintains only a bounded diagnostic projection. The additive shell command `shell.exportDiagnostics` opens a native save dialog and writes `evohime-support-bundle-v2` as a local ZIP with manifest, health, runtime, errors, bounded events/logs, issue draft and redaction report. It never reads workspace files, prompts, tool output or credential payloads; a final whole-archive scan fails closed before saving. ZIP entries are store-only and the destination is created with restrictive permissions. Log collection remains bounded to at most four files, 64 KiB from each file, 120 total lines and a 512 KiB v1-compatible shell projection.
+
+The authenticated additive `CreateDiagnosticsSnapshot` command (tag 202) asks
+Core for an ephemeral, bounded JSON snapshot. It maps existing Doctor checks to
+`PASS/WARN/FAIL/SKIPPED`, includes measured collection duration, redaction
+omissions, bounds and optional conversation/run metadata references, and
+computes a SHA-256 fingerprint. It does not create a store or migration, does
+not include raw prompts/files/tool payloads/credentials, and does not perform
+repair or any external effect. Electron main may include the result in the ZIP
+only after the user reviews the preview; no upload or automatic issue
+publication exists.
 
 Recovery UI consumes Core events as the source of truth and preserves typed `reason_code`, correlation, sequence and `UNKNOWN_OUTCOME`. Terminal task IDs are indexed once per projection, cancellation is offered only when Core explicitly marks `can_cancel`, and user-visible recovery details use a bounded allowlist of non-secret fields. Database operations use `core.cancelDatabaseOperation`, task operations use `core.stopTask`.
 
