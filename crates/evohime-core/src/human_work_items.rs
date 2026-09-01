@@ -237,6 +237,10 @@ impl HumanWorkItemsRegistry {
         item.revision += 1;
         Ok(item.clone())
     }
+    // Keep the wire-facing transition fields together: splitting this method
+    // would make the idempotency fingerprint and the state transition easier
+    // to call inconsistently.
+    #[allow(clippy::too_many_arguments)]
     pub fn transition_idempotent(
         &mut self,
         id: &str,
