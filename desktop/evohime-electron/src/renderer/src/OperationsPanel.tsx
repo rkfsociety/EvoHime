@@ -68,6 +68,9 @@ interface MemoryMetadata {
   readonly verification_confidence: number
   readonly validation_status: string
   readonly policy_version: string
+  readonly authority?: string
+  readonly durability?: string
+  readonly confidence?: number
   readonly expires_at_ms: string | null
 }
 
@@ -689,7 +692,8 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
                 <span>
                   {record.canonical_subject ?? 'без темы'} ·{' '}
                   {TRUST_LABELS[record.source_trust] ?? record.source_trust} · уверенность{' '}
-                  {record.model_confidence.toFixed(2)} · проверка {record.validation_status}
+                  {(record.model_confidence ?? 0).toFixed(2)} · проверка {record.validation_status}
+                  {' · '}{record.authority ?? 'user_asserted'} · {record.durability ?? 'durable'} · governance {(record.confidence ?? 1).toFixed(2)}
                   {record.privacy_class === 'normal' ? '' : ' · содержимое скрыто'}
                   {record.source_trust === 'ambient' ? ' · говорящий не подтверждён' : ''}
                 </span>

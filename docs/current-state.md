@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-31. Планы 01–25 завершены и
+Обновлено: 2026-09-01. Планы 01–25 завершены и
 удалены из каталога временных планов. План 19.0 добавил только пользовательский
 self-repair/self-update цикл; автоматического ремонта, push или перезапуска нет.
 Code signing явно исключён из текущего release scope.
@@ -648,3 +648,17 @@ commands 197–198/event 49 и поля StartTask 6–7. Electron `TaskTimeline`
 optimistic reconciliation, retry тем же id и compatibility fallback на
 глобальные Core events. Authoritative payload, raw credentials и child details
 renderer не получает.
+### Memory Governance v1 (план 50, реализован 2026-09-01)
+
+- storage schema обновлена до v51 additive-миграцией: в существующей записи
+  памяти хранятся `authority`, `durability` и bounded `confidence`; legacy
+  записи получают безопасный `user_asserted`/`durable` профиль;
+- `MemoryWriteGate` Core проверяет каждую durable запись непосредственно перед
+  SQL effect и отклоняет unknown authority/durability, secret, ephemeral/session
+  bypass и непроверенные model/imported confirmed records;
+- reinforcement допускается только по двум и более различным evidence refs;
+  extraction и ambient кандидаты получают `model_proposed`, остаются pending и
+  не становятся retrieval authority без Core validation/explicit confirmation;
+- существующие authenticated memory commands и OperationsPanel расширены
+  metadata-only governance projection; renderer не получает raw body,
+  credentials или authority state-machine.

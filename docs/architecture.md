@@ -1342,3 +1342,28 @@ contracts with Agent Role Profile refs, phases, handoffs, review policies and
 immutable TeamSession snapshots. Schema v49 and authenticated IPC commands
 195–196/event 48 are additive; Electron receives metadata-only projections.
 The boundary excludes prompts, transcripts, credentials and executable tools.
+### Memory Governance v1
+
+План 50 закрыт 1 сентября 2026 года. Durable
+`evohime-local-storage::memory_store::MemoryRecord` остаётся единственной
+персистентной authority; Core `memory_domain` используется только как
+bounded validation/DTO-слой. `MemoryExtractionFields` дополнен typed
+governance metadata: `authority` (`user_asserted`, `system_defined`,
+`model_proposed`, `imported`), `durability` (`ephemeral`, `session`,
+`durable`) и bounded independent `confidence` в диапазоне 0..=1.
+
+`MemoryWriteGate` в `crates/evohime-core/src/memory_governance.rs` выполняет
+fail-closed проверку непосредственно перед каждым Core durable insert:
+неизвестная authority/durability, secret, ephemeral/session bypass,
+невалидная confidence и непроверенная model/imported запись не доходят до
+SQL. Reinforcement требует минимум двух различных evidence refs. Existing
+pending-confirmation, dedup/conflict, approval, provenance, retention и
+tombstone semantics сохраняются; retrieved metadata не расширяет capability.
+
+Storage schema — v51, миграция additive и backup-before-migrate выполняется
+общим storage ladder. Legacy rows получают user-confirmed durable defaults,
+а extraction/ambient candidates сохраняются как `model_proposed`. Existing
+authenticated memory IPC commands и metadata-only Electron OperationsPanel
+показывают governance metadata; raw body/provenance payload, credentials и
+hidden reasoning не передаются в renderer. Restart/recovery не повторяет
+внешние эффекты вслепую.

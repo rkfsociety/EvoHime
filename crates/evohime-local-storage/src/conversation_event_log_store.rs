@@ -1050,7 +1050,7 @@ mod tests {
         }
         {
             let database = crate::LocalDatabase::open(&path).unwrap();
-            assert_eq!(database.schema_version().unwrap(), 50);
+            assert_eq!(database.schema_version().unwrap(), crate::SCHEMA_VERSION);
             let payload = message_payload("first");
             let first = append_event(
                 database.connection(),

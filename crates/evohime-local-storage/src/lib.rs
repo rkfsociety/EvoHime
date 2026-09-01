@@ -52,7 +52,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 50;
+pub const SCHEMA_VERSION: u32 = 51;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -118,6 +118,8 @@ pub enum StorageError {
     /// linkage (план 08-2/08-4).
     #[error("workflow store operation failed: {0}")]
     WorkflowStore(#[from] crate::workflow_store::WorkflowStoreError),
+    #[error("memory store operation failed: {0}")]
+    MemoryStore(#[from] memory_store::MemoryStoreError),
     /// Атомарный переход action+projection не применился: узел уже не в
     /// ожидаемом исходном состоянии (гонка или устаревший вызов).
     #[error("ledger node transition conflict for run {run_id} node {node_id}")]
@@ -3550,6 +3552,12 @@ impl LocalDatabase {
         if current < 50 {
             conversation_event_log_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 50;")?;
+        }
+        if current < 51 {
+            // Plan 50: additive Core-owned governance metadata. Existing
+            // records retain their confirmed user/durable defaults.
+            memory_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 51;")?;
         }
         transaction.commit()?;
         Ok(())

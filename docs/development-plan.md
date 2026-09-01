@@ -230,3 +230,11 @@ dedup, redacted unified projections, before/after history, resume/live IPC
 197–198/event 49 и Electron reconciliation с gap/conflict/retry states.
 Комплект `49-0` … `49-4` удалён после свежих Rust/Electron regression,
 protocol/typecheck, clippy, formatting и diff-check gates.
+# План 50 закрыт: Memory Governance v1
+
+Выполнен 1 сентября 2026 года. Typed governance metadata и
+Core-owned `MemoryWriteGate` добавлены поверх существующих memory
+domain/API/extraction/store без второго durable record/store; schema — v51.
+Подтверждены storage/core focused tests, migration compatibility, independent
+evidence guard, metadata-only projection и существующая authenticated IPC/UI
+граница. Комплект `50-0` … `50-4` удалён после финального regression-прогона.

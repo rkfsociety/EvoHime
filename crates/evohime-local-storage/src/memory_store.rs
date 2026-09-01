@@ -104,6 +104,14 @@ pub struct MemoryExtractionFields {
     pub validation_status: String,
     pub validated_at: Option<String>,
     pub provenance_source_id: Option<String>,
+    /// Core-owned governance classification. Legacy rows default to the
+    /// conservative user-confirmed durable profile.
+    #[serde(default = "default_authority")]
+    pub authority: String,
+    #[serde(default = "default_durability")]
+    pub durability: String,
+    #[serde(default = "default_confidence")]
+    pub confidence: f64,
 }
 
 impl Default for MemoryExtractionFields {
@@ -129,8 +137,21 @@ impl Default for MemoryExtractionFields {
             validation_status: "not_required".to_owned(),
             validated_at: None,
             provenance_source_id: None,
+            authority: default_authority(),
+            durability: default_durability(),
+            confidence: default_confidence(),
         }
     }
+}
+
+fn default_authority() -> String {
+    "user_asserted".to_owned()
+}
+fn default_durability() -> String {
+    "durable".to_owned()
+}
+fn default_confidence() -> f64 {
+    1.0
 }
 
 fn default_record_version() -> u32 {
@@ -217,6 +238,23 @@ impl MemoryRecord {
             &self.extraction.validation_status,
             MAX_ID_BYTES,
         )?;
+        if !matches!(
+            self.extraction.authority.as_str(),
+            "user_asserted" | "system_defined" | "model_proposed" | "imported"
+        ) {
+            return Err(MemoryStoreError::InvalidField("authority"));
+        }
+        if !matches!(
+            self.extraction.durability.as_str(),
+            "ephemeral" | "session" | "durable"
+        ) {
+            return Err(MemoryStoreError::InvalidField("durability"));
+        }
+        if !self.extraction.confidence.is_finite()
+            || !(0.0..=1.0).contains(&self.extraction.confidence)
+        {
+            return Err(MemoryStoreError::InvalidField("confidence"));
+        }
         if self.extraction.record_version == 0
             || self.extraction.evidence_refs.len() > MAX_EVIDENCE_REFS
             || self.extraction.execution_event_refs.len() > MAX_EVIDENCE_REFS
@@ -275,6 +313,8 @@ pub enum MemoryStoreError {
     InvalidPrivacy,
     #[error("invalid TTL")]
     InvalidTtl,
+    #[error("invalid memory governance field: {0}")]
+    InvalidField(&'static str),
     #[error("secret memory is never persisted")]
     SecretNotStorable,
     #[error("confidence must be within 0.0..=1.0")]
@@ -357,6 +397,24 @@ pub fn install_schema(connection: &Connection) -> Result<(), MemoryStoreError> {
             [],
         )?;
     }
+    if !columns.iter().any(|name| name == "authority") {
+        connection.execute(
+            "ALTER TABLE memory_entries ADD COLUMN authority TEXT NOT NULL DEFAULT 'user_asserted'",
+            [],
+        )?;
+    }
+    if !columns.iter().any(|name| name == "durability") {
+        connection.execute(
+            "ALTER TABLE memory_entries ADD COLUMN durability TEXT NOT NULL DEFAULT 'durable'",
+            [],
+        )?;
+    }
+    if !columns.iter().any(|name| name == "confidence") {
+        connection.execute(
+            "ALTER TABLE memory_entries ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0",
+            [],
+        )?;
+    }
     Ok(())
 }
 
@@ -368,7 +426,7 @@ const COLUMNS: &str = "id, scope_kind, scope_id, title, content, provenance, pri
         verification_confidence, privacy_class, source_trust, supersedes,
         superseded_by, supersession_reason, extractor_version, policy_version,
         validation_status, validated_at, provenance_source_id, record_version,
-        evidence_refs, execution_event_refs";
+        evidence_refs, execution_event_refs, authority, durability, confidence";
 
 /// Только те состояния, в которых запись считается активной памятью.
 const RETRIEVABLE_PREDICATE: &str = "forgotten = 0 AND archived = 0
@@ -384,10 +442,10 @@ impl MemoryStoreSql {
          verification_confidence, privacy_class, source_trust, supersedes,
          superseded_by, supersession_reason, extractor_version, policy_version,
          validation_status, validated_at, provenance_source_id, record_version,
-         evidence_refs, execution_event_refs)
+         evidence_refs, execution_event_refs, authority, durability, confidence)
         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26,
-                ?27, ?28, ?29, ?30, ?31)";
+                 ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34)";
     pub const ARCHIVE: &'static str =
         "UPDATE memory_entries SET archived = 1 WHERE id = ?1 AND forgotten = 0";
     /// Forget — logical deletion: statement, заголовок, provenance, canonical
@@ -492,6 +550,9 @@ impl MemoryStoreSql {
                     .unwrap_or_else(|_| "[]".into()),
                 serde_json::to_string(&record.extraction.execution_event_refs)
                     .unwrap_or_else(|_| "[]".into()),
+                record.extraction.authority,
+                record.extraction.durability,
+                record.extraction.confidence,
             ],
         )?;
         Ok(())
@@ -1141,6 +1202,9 @@ fn map_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryRecord> {
                 .unwrap_or(None)
                 .and_then(|value| serde_json::from_str(&value).ok())
                 .unwrap_or_default(),
+            authority: row.get(31).unwrap_or_else(|_| default_authority()),
+            durability: row.get(32).unwrap_or_else(|_| default_durability()),
+            confidence: row.get(33).unwrap_or(1.0),
         },
     })
 }
@@ -1185,9 +1249,12 @@ mod tests {
                     validation_status TEXT NOT NULL DEFAULT 'not_required',
                     validated_at TEXT,
                     provenance_source_id TEXT,
-                    record_version INTEGER NOT NULL DEFAULT 1,
-                    evidence_refs TEXT NOT NULL DEFAULT '[]',
-                    execution_event_refs TEXT NOT NULL DEFAULT '[]'
+                     record_version INTEGER NOT NULL DEFAULT 1,
+                     evidence_refs TEXT NOT NULL DEFAULT '[]',
+                     execution_event_refs TEXT NOT NULL DEFAULT '[]',
+                     authority TEXT NOT NULL DEFAULT 'user_asserted',
+                     durability TEXT NOT NULL DEFAULT 'durable',
+                     confidence REAL NOT NULL DEFAULT 1.0
                 );
                 CREATE TABLE memory_aliases (
                     scope_kind TEXT NOT NULL,
@@ -1838,6 +1905,9 @@ mod tests {
         let mut memory = record("refs", "with evidence");
         memory.extraction.evidence_refs = vec!["evidence-1".into()];
         memory.extraction.execution_event_refs = vec![42];
+        memory.extraction.authority = "model_proposed".into();
+        memory.extraction.durability = "durable".into();
+        memory.extraction.confidence = 0.75;
         MemoryStoreSql::insert(&connection, &memory).expect("insert");
         let loaded = MemoryStoreSql::get_by_id(&connection, "refs")
             .expect("read")
@@ -1845,5 +1915,8 @@ mod tests {
         assert_eq!(loaded.extraction.record_version, 1);
         assert_eq!(loaded.extraction.evidence_refs, vec!["evidence-1"]);
         assert_eq!(loaded.extraction.execution_event_refs, vec![42]);
+        assert_eq!(loaded.extraction.authority, "model_proposed");
+        assert_eq!(loaded.extraction.durability, "durable");
+        assert_eq!(loaded.extraction.confidence, 0.75);
     }
 }

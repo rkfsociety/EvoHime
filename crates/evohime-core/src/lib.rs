@@ -991,6 +991,7 @@ mod listener_pipe;
 pub mod memory_api;
 pub mod memory_domain;
 pub mod memory_extraction;
+pub mod memory_governance;
 pub mod memory_retrieval;
 pub mod model_resilience_policy;
 pub mod observability;
@@ -2951,6 +2952,8 @@ impl EventJournal {
         &self,
         record: &evohime_local_storage::memory_store::MemoryRecord,
     ) -> Result<evohime_local_storage::memory_store::MemoryRecord, StorageError> {
+        crate::memory_governance::MemoryWriteGate::validate(record)
+            .map_err(|error| StorageError::InvalidRecovery(error.to_string()))?;
         let database = self.database.lock().await;
         evohime_local_storage::memory_store::MemoryStoreSql::upsert_lesson(
             database.connection(),
@@ -3163,9 +3166,22 @@ impl EventJournal {
         &self,
         record: &evohime_local_storage::memory_store::MemoryRecord,
     ) -> Result<(), String> {
+        let mut governed = record.clone();
+        if matches!(
+            governed.extraction.confirmation_state.as_str(),
+            "candidate" | "pending_confirmation"
+        ) && governed.extraction.authority == "user_asserted"
+        {
+            governed.extraction.authority = "model_proposed".to_owned();
+        }
+        crate::memory_governance::MemoryWriteGate::validate(&governed)
+            .map_err(|error| error.to_string())?;
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::insert(database.connection(), record)
-            .map_err(|error| error.to_string())
+        evohime_local_storage::memory_store::MemoryStoreSql::insert(
+            database.connection(),
+            &governed,
+        )
+        .map_err(|error| error.to_string())
     }
 
     /// Lists non-forgotten Memory v1 records for one exact scope.
@@ -6170,6 +6186,12 @@ impl ToolAgent {
                     .as_ref()
                     .map(|verdict| verdict.validated_at_ms.to_string()),
                 provenance_source_id: memory_provenance_source_id(&candidate.evidence),
+                authority: "model_proposed".to_owned(),
+                durability: "durable".to_owned(),
+                confidence: verdict
+                    .as_ref()
+                    .map(|verdict| verdict.verification_confidence)
+                    .unwrap_or(0.0),
             };
             if let Err(error) = journal.save_memory(&record).await {
                 write_model_trace(
@@ -6459,6 +6481,9 @@ impl ToolAgent {
                 validation_status: extraction::ValidationStatus::Unknown.as_str().to_owned(),
                 validated_at: None,
                 provenance_source_id: memory_provenance_source_id(&candidate.evidence),
+                authority: "model_proposed".to_owned(),
+                durability: "durable".to_owned(),
+                confidence: 0.0,
             };
             if let Err(error) = journal.save_memory(&record).await {
                 write_model_trace(
@@ -13470,8 +13495,11 @@ fn memory_record_to_json(
         "policy_version": extraction.policy_version,
         "validation_status": extraction.validation_status,
         "validated_at": extraction.validated_at,
-        "provenance_source_id": extraction.provenance_source_id,
-        "statement_chars": record.content.chars().count(),
+         "provenance_source_id": extraction.provenance_source_id,
+         "authority": extraction.authority,
+         "durability": extraction.durability,
+         "confidence": extraction.confidence,
+         "statement_chars": record.content.chars().count(),
         "has_provenance": !provenance.is_null(),
     }))
 }
