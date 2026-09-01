@@ -198,9 +198,11 @@ protocol/typecheck и metadata-only renderer projection.
 
 - визуальная переработка Electron UI по направлению 20 завершена: тёмная
   палитра и токены вынесены в renderer stylesheet, sidebar показывает проекты
-  и чаты, глобальные разделы и настройки доступны из меню пользователя,
-  открывающегося вверх; добавлены клавиатурное закрытие по Escape, закрытие по
-  клику вне меню, active/hover/focus-состояния и адаптивные отступы. Изменения
+  и чаты, пользовательские разделы и настройки доступны из меню пользователя,
+  открывающегося вверх; технические панели скрыты внутри свёрнутого раздела
+  «Интерфейс разработчика» и не перегружают обычный список. Добавлены
+  клавиатурное закрытие по Escape, закрытие по клику вне меню,
+  active/hover/focus-состояния и адаптивные отступы. Изменения
   не затрагивают IPC, Core-owned state, project/chat stores, approvals,
   recovery, updates или настройки компонентов;
 - migration acceptance закрыта на Windows: UI-срезы, authenticated Core IPC, package startup, fault recovery, install/upgrade/rollback и acceptance matrix;

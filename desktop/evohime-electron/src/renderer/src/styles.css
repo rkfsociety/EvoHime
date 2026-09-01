@@ -3023,6 +3023,17 @@ body {
   text-align: center;
 }
 
+.account__menu-chevron {
+  margin-left: auto;
+  width: auto !important;
+}
+
+.account__developer-menu {
+  margin: 2px 0 4px 10px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+}
+
 .topbar {
   min-height: 58px;
   padding: 0 22px;

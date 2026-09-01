@@ -80,15 +80,19 @@ interface ViewDescriptor {
  * Tool sections only. The conversation is not a nav row: it is reached by
  * opening a chat, which is where the user already looks for it.
  */
-const VIEWS: readonly ViewDescriptor[] = [
+const USER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'overview', label: 'Обзор', icon: '◉' },
   { id: 'reviews', label: 'Ревью планов', icon: '✓' },
   { id: 'operations', label: 'Память и Pulse', icon: '◌' },
   { id: 'workflows', label: 'Составные задачи', icon: '⛓' },
-  { id: 'packages', label: 'Workflow Package', icon: '⇄' },
   { id: 'continuations', label: 'Продолжения', icon: '↻' },
   { id: 'kernels', label: 'Анализ', icon: '⌘' },
   { id: 'listening', label: 'Слух', icon: '🎙' },
+  { id: 'human-work-items', label: 'Задачи для человека', icon: '☑' },
+]
+
+const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
+  { id: 'packages', label: 'Workflow Package', icon: '⇄' },
   { id: 'benchmarks', label: 'Бенчмарки', icon: '▦' },
   { id: 'middleware', label: 'Middleware', icon: '◇' },
   { id: 'structured-response', label: 'Structured response', icon: '▤' },
@@ -100,8 +104,9 @@ const VIEWS: readonly ViewDescriptor[] = [
   { id: 'agent-role-profiles', label: 'Профили ролей', icon: '◎' },
   { id: 'team-sop', label: 'Team SOP', icon: '∷' },
   { id: 'causal-collaboration', label: 'Collaboration Bus', icon: '⇆' },
-  { id: 'human-work-items', label: 'Задачи для человека', icon: '☑' },
 ]
+
+const VIEWS: readonly ViewDescriptor[] = [...USER_VIEWS, ...DEVELOPER_VIEWS]
 
 /** Not a nav row: reached through the gear next to the account. */
 const SETTINGS_LABEL = 'Настройки'
@@ -121,6 +126,7 @@ export function App(): React.JSX.Element {
   const [traceOpen, setTraceOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [developerMenuOpen, setDeveloperMenuOpen] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
 
   const api = useShellApi()
@@ -250,7 +256,7 @@ export function App(): React.JSX.Element {
           <UpdateIndicator status={update} />
           {accountMenuOpen ? (
             <div className="account__menu" role="menu" aria-label="Разделы и настройки">
-              {VIEWS.map((item) => (
+              {USER_VIEWS.map((item) => (
                 <NavItem
                   key={item.id}
                   view={item}
@@ -261,6 +267,35 @@ export function App(): React.JSX.Element {
                   }}
                 />
               ))}
+              <button
+                type="button"
+                className="account__menu-item"
+                role="menuitem"
+                aria-expanded={developerMenuOpen}
+                aria-haspopup="menu"
+                onClick={() => setDeveloperMenuOpen((value) => !value)}
+              >
+                <span aria-hidden="true">⌘</span>
+                Интерфейс разработчика
+                <span className="account__menu-chevron" aria-hidden="true">
+                  {developerMenuOpen ? '⌃' : '⌄'}
+                </span>
+              </button>
+              {developerMenuOpen ? (
+                <div className="account__developer-menu" role="menu" aria-label="Интерфейс разработчика">
+                  {DEVELOPER_VIEWS.map((item) => (
+                    <NavItem
+                      key={item.id}
+                      view={item}
+                      active={item.id === view}
+                      onSelect={(id) => {
+                        setView(id)
+                        setAccountMenuOpen(false)
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : null}
               <button
                 type="button"
                 className="account__menu-item"
