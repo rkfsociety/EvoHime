@@ -102,15 +102,12 @@ jobs:
   # Условие — `native`, а не `rust`: этот job исполняет гейты из scripts/, поэтому
   # правка самого гейта обязана его запускать. Иначе коммит, меняющий только
   # scripts/, доходил до сборки установщика, ни разу не прогнав эти гейты.
-  rust-verify:
-    name: Rust — проверки
-    # Проверки идут одной цепочкой: ошибка документации не запускает тяжёлые
-    # native-гейты, а пропущенная проверка остаётся допустимой по фильтру.
-    needs: [changes, documentation]
+  rust-fast:
+    name: Rust — быстрые проверки
+    needs: changes
     if: >-
       always()
       && needs.changes.outputs.native == 'true'
-      && (needs.documentation.result == 'success' || needs.documentation.result == 'skipped')
     runs-on: windows-latest
     env:
       CARGO_BUILD_JOBS: 2
@@ -124,6 +121,24 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Проверка lint всего Rust workspace
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+  rust-heavy:
+    name: Rust — тесты и security-гейты
+    needs: [changes, documentation, rust-fast]
+    if: >-
+      always()
+      && needs.changes.outputs.native == 'true'
+      && needs.rust-fast.result == 'success'
+      && (needs.documentation.result == 'success' || needs.documentation.result == 'skipped')
+    runs-on: windows-latest
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+          components: rustfmt, clippy
       - name: Тесты основной Rust-инфраструктуры
         run: cargo test --locked -p evohime-permissions -p evohime-tool-runtime -p evohime-model-gateway -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc -p evohime-updater -p evohime-receipts -p evohime-listener-contract -p evohime-listener-audio -p evohime-listener-ipc -p evohime-listener
       - name: Privacy gate фонового аудио
@@ -160,14 +175,13 @@ jobs:
           path: artifacts/eval-gate/summary.jsonl
           if-no-files-found: ignore
 
-  # Здесь та же причина: шаги job'а вызывают scripts/postinstall-allowlist.mjs и
-  # npm-скрипты оболочки, а собранный им пакет уходит в установщик.
-  electron-shell:
-    name: Electron — проверки
-    needs: rust-verify
+  # Быстрый Electron-гейт запускается одновременно с rust-fast.
+  electron-fast:
+    name: Electron — protocol и typecheck
+    needs: changes
     if: >-
       always()
-      && needs.rust-verify.result == 'success'
+      && needs.changes.outputs.native == 'true'
     runs-on: windows-latest
     defaults:
       run:
@@ -188,6 +202,31 @@ jobs:
         run: npm run check:protocol
       - name: Typecheck main, preload и renderer
         run: npm run typecheck
+  electron-heavy:
+    name: Electron — E2E и пакет
+    needs: [changes, documentation, rust-heavy, electron-fast]
+    if: >-
+      always()
+      && needs.changes.outputs.native == 'true'
+      && needs.rust-heavy.result == 'success'
+      && needs.electron-fast.result == 'success'
+      && (needs.documentation.result == 'success' || needs.documentation.result == 'skipped')
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop/evohime-electron
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Установка Electron-зависимостей без lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Разрешённые установщики зависимостей
+        run: node scripts/postinstall-allowlist.mjs
       - name: Сборка Core для real-Core IPC E2E
         working-directory: .
         run: cargo build --locked --release -p evohime-core
@@ -202,7 +241,7 @@ jobs:
 
   windows-package:
     name: Windows — совместимость и пакет
-    needs: [changes, documentation, rust-verify, electron-shell]
+    needs: [changes, documentation, rust-heavy, electron-heavy]
     if: >-
       always()
       && (needs.changes.outputs.windows == 'true' || needs.changes.outputs.native == 'true')
@@ -251,9 +290,9 @@ jobs:
 
   build-native:
     name: Сборка — native package и smoke
-    # electron-shell тоже в needs: установщик упаковывает собранную им оболочку,
+    # electron-heavy тоже в needs: установщик упаковывает собранную им оболочку,
     # поэтому его падение обязано останавливать публикацию.
-    needs: [changes, documentation, rust-verify, electron-shell, windows-package]
+    needs: [changes, documentation, rust-heavy, electron-heavy, windows-package]
     # Пропущенная зависимость не должна пропускать этот job, а упавшая — должна
     # его остановить: needs.* даёт skipped, поэтому условие пишется явно.
     if: >-

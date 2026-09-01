@@ -384,6 +384,13 @@ Package startup, installer, upgrade/rollback и Windows compatibility остаю
 запускается только с `EVOHIME_UPDATE_E2E=1`, поскольку выполняет реальную
 пересборку.
 
+Windows CI разделён на две фазы: после `Изменения` быстрые проверки
+`Документация`, `Rust — быстрые проверки` и `Electron — protocol и typecheck`
+запускаются параллельно; после их успеха последовательно выполняются тяжёлые
+Rust security-gates, Electron E2E/package, Windows compatibility, native
+acceptance и публикация. Каждый этап останавливает последующие при ошибке, а
+job-фильтр сохраняет корректные пропуски для незатронутых областей.
+
 ## Следующие направления
 
 План 22 закрыт: diagnostics/recovery hardening, защита credential persistence и
