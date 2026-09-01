@@ -54,7 +54,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Опциональные
 
 - План 45.0 — External Coding Agent Adapter: подключение Codex/Claude/Gemini-подобных executors через typed protocol.
-- План 62.0 — Team Resource Budget: shared cost envelope, per-role allocations и reserved verification budget.
+- Team Resource Budget v1 — shared cost envelope, per-role allocations и reserved verification budget; контракт перенесён в канонические документы.
 - План 83.0 — Reasoning Operator Library: typed Generate/Review/Revise/Ensemble primitives для agent workflows.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 

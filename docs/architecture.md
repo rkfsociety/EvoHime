@@ -1545,3 +1545,21 @@ injection, arbitrary destination, merge, force/reset и push запрещены.
 после проверки `ready` и фактического существования root, поэтому checkpoint
 и filesystem semantics применяются к конкретному worktree backend, а не к
 primary checkout.
+## Team Resource Budget v1 (план 62)
+
+Team Resource Budget — отдельный Core-owned слой над существующими goal/run
+лимитами. TeamBudgetPolicy содержит bounded total limits, per-role/per-phase
+allocations, protected reserve, reallocation mode, wall-clock mode и
+unknown-cost policy; canonical hash и version обязательны. TeamBudgetState
+и append-only ResourceUsageEvent хранятся в SQLite schema v60. Повторная
+запись usage idempotent, обновление state fenced optimistic version; restart
+не сбрасывает counters. Unknown usage маркируется uncertain и не считается
+нулевым.
+
+Preflight складывает текущий spend, reservations и conservative estimate и
+возвращает Allowed, UnknownCost либо BudgetBlocked; reserve доступен только
+policy-разрешённым ролям/фазам. Reallocation не расширяет grants, requester
+не может выдать budget себе, а downgrade provider/model идёт только через
+существующие compatibility/resilience policies. IPC team_resource_budget и
+Electron panel передают bounded JSON/metadata; renderer не владеет state,
+accounting или effect.

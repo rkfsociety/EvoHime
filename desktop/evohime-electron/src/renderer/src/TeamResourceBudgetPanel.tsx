@@ -1,0 +1,10 @@
+import { useEffect, useState } from 'react'
+import { useShellApi } from './shell-api'
+import type { ConnectionState } from '@shared/api'
+
+export function TeamResourceBudgetPanel({ connection, events }: { readonly connection: ConnectionState; readonly events: readonly { readonly eventType: string; readonly payload: string }[] }): React.JSX.Element {
+  const api = useShellApi(); const [ownerScope, setOwnerScope] = useState(''); const [payload, setPayload] = useState(''); const [projection, setProjection] = useState<unknown>(null); const [message, setMessage] = useState('')
+  useEffect(() => { const event = events.find((item) => item.eventType === 'team_resource_budget.result'); if (!event) return; try { setProjection(JSON.parse(event.payload)); setMessage('') } catch { setMessage('Core вернул некорректную budget projection.') } }, [events])
+  const send = async (operation: 'validate_policy' | 'preflight'): Promise<void> => { if (!api || connection !== 'connected' || !ownerScope.trim() || !payload.trim()) { setMessage('Нужны подключение, owner scope и bounded JSON payload.'); return }; const result = await api.invoke('core.teamResourceBudget', { operation, ownerScope: ownerScope.trim(), payload: payload.trim(), idempotencyKey: crypto.randomUUID() }); if (!result.ok) setMessage(result.message) }
+  return <section aria-label="Team Resource Budget"><h3>Team Resource Budget</h3><p>Core владеет envelope, reserve, attribution и BudgetBlocked; UI показывает только bounded projection.</p><label>Owner scope <input value={ownerScope} onChange={(e) => setOwnerScope(e.target.value)} maxLength={128} /></label><label>Policy/state JSON <textarea value={payload} onChange={(e) => setPayload(e.target.value)} maxLength={512 * 1024} /></label><button type="button" onClick={() => void send('validate_policy')}>Проверить policy</button><button type="button" onClick={() => void send('preflight')}>Preflight charge</button>{projection ? <pre>{JSON.stringify(projection, null, 2)}</pre> : null}{message ? <p role="status">{message}</p> : null}</section>
+}

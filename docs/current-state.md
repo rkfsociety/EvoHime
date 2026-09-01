@@ -808,3 +808,10 @@ pinning и approved detached Git worktree create/remove tools. Dirty cleanup,
 ref injection, duplicate/stale registry transitions и реальный временный Git
 worktree проверены focused tests; authenticated IPC и Electron projection
 передают только metadata, без host-path authority.
+Team Resource Budget v1 реализован 1 сентября 2026 года: Core contract
+TeamBudgetPolicy/TeamBudgetState/ResourceUsageEvent с canonical hash,
+soft/hard shared limits, allocations, protected reserve, unknown-cost и
+wall-clock modes; SQLite schema v60 сохраняет policy/state/usage/request
+metadata с idempotency и optimistic version fence. Core IPC предоставляет
+validation, durable policy/state/usage recording и conservative preflight;
+Electron получает только bounded metadata projection.

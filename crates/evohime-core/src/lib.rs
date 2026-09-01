@@ -1031,6 +1031,7 @@ pub mod skill_registry;
 pub mod skill_trust_pipeline;
 pub mod task_memory;
 pub mod task_worktree_isolation;
+pub mod team_resource_budget;
 pub use task_memory::project_scope_id;
 pub mod plan_context;
 pub mod plan_review;
@@ -1190,6 +1191,14 @@ pub enum CoreCommand {
         worktree_id: String,
         branch: String,
         base_commit: String,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    TeamResourceBudget {
+        operation: String,
+        owner_scope: String,
+        payload: Vec<u8>,
         expected_version: u64,
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
@@ -10669,6 +10678,61 @@ impl TaskCoordinator {
                     if !ok { return Err("stale or unknown worktree transition".to_string()); }
                     let record = evohime_local_storage::task_worktree_isolation_store::get(connection.connection(), &worktree_id).map_err(|e| e.to_string())?.ok_or_else(|| "worktree not found".to_string())?;
                     serde_json::to_vec(&record).map_err(|e| e.to_string())
+                }.await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::TeamResourceBudget {
+                operation,
+                owner_scope,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let result = async {
+                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|e| e.to_string())?;
+                    match operation.as_str() {
+                        "validate_policy" | "save_policy" => {
+                            let policy: team_resource_budget::TeamBudgetPolicy = serde_json::from_value(value).map_err(|e| e.to_string())?;
+                            team_resource_budget::validate_hash(&policy).map_err(|e| e.to_string())?;
+                            if operation == "save_policy" {
+                                let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                                let connection = journal.database().lock().await;
+                                let json = serde_json::to_string(&policy).map_err(|e| e.to_string())?;
+                                let inserted = evohime_local_storage::team_resource_budget_store::put_policy(connection.connection(), &owner_scope, policy.version, &json, &policy.content_hash, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                                return serde_json::to_vec(&serde_json::json!({"status":if inserted { "saved" } else { "duplicate" },"policy_id":policy.id,"policy_version":policy.version,"content_hash":policy.content_hash})).map_err(|e| e.to_string());
+                            }
+                            serde_json::to_vec(&serde_json::json!({"status":"valid","policy_id":policy.id,"policy_version":policy.version,"content_hash":policy.content_hash})).map_err(|e| e.to_string())
+                        }
+                        "save_state" => {
+                            let state_value: team_resource_budget::TeamBudgetState = serde_json::from_value(value).map_err(|e| e.to_string())?;
+                            if state_value.schema_version != team_resource_budget::SCHEMA_VERSION || state_value.team_session_id.is_empty() { return Err("invalid team budget state".to_string()); }
+                            let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                            let connection = journal.database().lock().await;
+                            let json = serde_json::to_string(&state_value).map_err(|e| e.to_string())?;
+                            let saved = evohime_local_storage::team_resource_budget_store::put_state(connection.connection(), &state_value.team_session_id, state_value.policy_version, &json, if expected_version == 0 { None } else { Some(expected_version) }, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                            if !saved { return Err("duplicate or stale team budget state".to_string()); }
+                            serde_json::to_vec(&serde_json::json!({"status":"saved","team_session_id":state_value.team_session_id,"version":state_value.version.saturating_add(1)})).map_err(|e| e.to_string())
+                        }
+                        "record_usage" => {
+                            let event: team_resource_budget::ResourceUsageEvent = serde_json::from_value(value).map_err(|e| e.to_string())?;
+                            if event.schema_version != team_resource_budget::SCHEMA_VERSION || event.id.is_empty() || event.team_session_id.is_empty() || event.run_id.is_empty() || event.operation_kind.is_empty() { return Err("invalid team resource usage event".to_string()); }
+                            let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                            let connection = journal.database().lock().await;
+                            let json = serde_json::to_string(&event).map_err(|e| e.to_string())?;
+                            let inserted = evohime_local_storage::team_resource_budget_store::append_usage(connection.connection(), &event.id, &event.team_session_id, &json, event.observed_at_ms).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":if inserted { "recorded" } else { "duplicate" },"usage_id":event.id,"uncertain":event.uncertain,"idempotency_key":idempotency_key})).map_err(|e| e.to_string())
+                        }
+                        "preflight" => {
+                            let request: serde_json::Value = value;
+                            let policy: team_resource_budget::TeamBudgetPolicy = serde_json::from_value(request["policy"].clone()).map_err(|e| e.to_string())?;
+                            let state: team_resource_budget::TeamBudgetState = serde_json::from_value(request["state"].clone()).map_err(|e| e.to_string())?;
+                            let estimate: team_resource_budget::ResourceLimits = serde_json::from_value(request["estimate"].clone()).map_err(|e| e.to_string())?;
+                            let decision = team_resource_budget::preflight_charge(&state, &policy, &estimate, request["reserve_access"].as_bool().unwrap_or(false), request["unknown_cost"].as_bool().unwrap_or(false)).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":format!("{decision:?}").to_lowercase()})).map_err(|e| e.to_string())
+                        }
+                        _ => Err("unsupported team resource budget operation".to_string()),
+                    }
                 }.await;
                 let _ = reply.send(result);
             }

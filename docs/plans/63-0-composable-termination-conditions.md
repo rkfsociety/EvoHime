@@ -44,7 +44,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 62.0 — Team Resource Budget: shared cost envelope, per-role allocations и reserved verification budget.
+- Team Resource Budget v1 — shared cost envelope, per-role allocations и reserved verification budget; контракт перенесён в канонические документы.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

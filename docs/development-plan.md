@@ -308,3 +308,7 @@ IPC/UI projection; комплект плана удалён после свеж�
 Подтверждены durable registry, task pinning к ready worktree root, approved
 detached worktree tool, lifecycle version fencing, safe cleanup и additive
 IPC/UI projection; комплект плана удалён после проверок.
+План 62 (issue #42, Team Resource Budget) закрыт 1 сентября 2026 года.
+Контракт, SQLite schema v60, Core preflight/recording, authenticated additive
+IPC, Electron projection и focused/full verification перенесены в
+docs/architecture.md и docs/current-state.md; комплект плана удалён.

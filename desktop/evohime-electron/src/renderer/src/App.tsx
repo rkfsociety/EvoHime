@@ -48,6 +48,7 @@ import { WorkspaceStateCheckpointsPanel } from './WorkspaceStateCheckpointsPanel
 import { IncrementalChangeProtocolPanel } from './IncrementalChangeProtocolPanel'
 import { RevisionSafeWorkspaceFilesPanel } from './RevisionSafeWorkspaceFilesPanel'
 import { TaskWorktreeIsolationPanel } from './TaskWorktreeIsolationPanel'
+import { TeamResourceBudgetPanel } from './TeamResourceBudgetPanel'
 import { WorkbenchPanel } from './WorkbenchPanel'
 import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
 
@@ -74,7 +75,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files' | 'task-worktree-isolation'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -103,6 +104,7 @@ const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'incremental-change', label: 'Incremental Change', icon: 'Δ' },
   { id: 'revision-safe-files', label: 'Revision-safe Files', icon: '◈' },
   { id: 'task-worktree-isolation', label: 'Task Worktrees', icon: '⑂' },
+  { id: 'team-resource-budget', label: 'Team Budget', icon: '₿' },
   { id: 'packages', label: 'Workflow Package', icon: '⇄' },
   { id: 'benchmarks', label: 'Бенчмарки', icon: '▦' },
   { id: 'middleware', label: 'Middleware', icon: '◇' },
@@ -433,6 +435,7 @@ export function App(): React.JSX.Element {
               {view === 'incremental-change' ? <IncrementalChangeProtocolPanel connection={connection} events={events} /> : null}
               {view === 'revision-safe-files' ? <RevisionSafeWorkspaceFilesPanel connection={connection} events={events} /> : null}
               {view === 'task-worktree-isolation' ? <TaskWorktreeIsolationPanel connection={connection} events={events} /> : null}
+              {view === 'team-resource-budget' ? <TeamResourceBudgetPanel connection={connection} events={events} /> : null}
             </div>
           )}
         </div>

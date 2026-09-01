@@ -365,6 +365,15 @@ function dispatch(
       return accepted(client.send({ taskWorktreeIsolation: { schemaVersion: 1, requestId: randomUUID(), ownerScope: projectId, operation, taskId, worktreeId, branch, baseCommit, expectedVersion, idempotencyKey } }))
     }
 
+    case 'core.teamResourceBudget': {
+      const value = asRecord(payload)
+      const operation = ['validate_policy', 'save_policy', 'preflight', 'save_state', 'record_usage'].includes(String(value['operation'])) ? String(value['operation']) : null
+      const ownerScope = asBoundedString(value['ownerScope']); const budgetPayload = asBoundedString(value['payload']); const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion'])
+      if (operation === null || ownerScope === null || budgetPayload === null || idempotencyKey === null || expectedVersion === null || budgetPayload.length > 512 * 1024) return failure('invalid-payload', 'Некорректная операция Team Resource Budget.')
+      return accepted(client.send({ teamResourceBudget: { schemaVersion: 1, requestId: randomUUID(), ownerScope, operation, payload: Buffer.from(budgetPayload, 'utf8'), expectedVersion, idempotencyKey } }))
+    }
+
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)
       const taskId = asBoundedString(value['taskId'])

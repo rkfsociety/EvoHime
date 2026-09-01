@@ -1050,6 +1050,7 @@ export const RENDERER_COMMANDS = [
   'core.incrementalChangeProtocol',
   'core.revisionSafeWorkspaceFiles',
   'core.taskWorktreeIsolation',
+  'core.teamResourceBudget',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1337,6 +1338,7 @@ export interface CommandPayloads {
   'core.incrementalChangeProtocol': { operation: 'create' | 'apply' | 'cancel' | 'unknown'; runId: string; payload?: string; expectedVersion?: number; observedFingerprint?: string; idempotencyKey: string }
   'core.revisionSafeWorkspaceFiles': { operation: 'read'; projectId: string; logicalPath: string; content?: string; expectedHash?: string; idempotencyKey: string }
   'core.taskWorktreeIsolation': { operation: 'create' | 'ready' | 'integrating' | 'cleanup_pending'; projectId: string; taskId: string; worktreeId: string; branch: string; baseCommit: string; expectedVersion?: number; idempotencyKey: string }
+  'core.teamResourceBudget': { operation: 'validate_policy' | 'save_policy' | 'preflight' | 'save_state' | 'record_usage'; ownerScope: string; payload: string; expectedVersion?: number; idempotencyKey: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
   'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
@@ -1808,6 +1810,7 @@ export interface CommandResults {
   'core.incrementalChangeProtocol': { accepted: boolean }
   'core.revisionSafeWorkspaceFiles': { accepted: boolean }
   'core.taskWorktreeIsolation': { accepted: boolean }
+  'core.teamResourceBudget': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }
   'core.executeAnalysisKernel': { accepted: boolean }
