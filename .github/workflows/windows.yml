@@ -25,7 +25,7 @@ jobs:
   # от отсутствующего прогона, числится пройденным, поэтому workflow стартует
   # всегда, а тяжёлые job включаются по затронутым путям.
   changes:
-    name: Определение затронутых областей
+    name: Изменения
     runs-on: ubuntu-latest
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
@@ -89,7 +89,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   documentation:
-    name: Документация — ссылки и устаревшие ссылки
+    name: Документация
     needs: changes
     if: needs.changes.outputs.docs == 'true'
     runs-on: windows-latest
@@ -102,8 +102,8 @@ jobs:
   # Условие — `native`, а не `rust`: этот job исполняет гейты из scripts/, поэтому
   # правка самого гейта обязана его запускать. Иначе коммит, меняющий только
   # scripts/, доходил до сборки установщика, ни разу не прогнав эти гейты.
-  rust-format:
-    name: Rust — форматирование
+  rust-verify:
+    name: Rust — проверки
     # Проверки идут одной цепочкой: ошибка документации не запускает тяжёлые
     # native-гейты, а пропущенная проверка остаётся допустимой по фильтру.
     needs: [changes, documentation]
@@ -112,8 +112,6 @@ jobs:
       && needs.changes.outputs.native == 'true'
       && (needs.documentation.result == 'success' || needs.documentation.result == 'skipped')
     runs-on: windows-latest
-    # Большой workspace с all-targets-тестами может исчерпать pagefile
-    # windows-latest во время одновременной линковки нескольких test binaries.
     env:
       CARGO_BUILD_JOBS: 2
     steps:
@@ -124,22 +122,6 @@ jobs:
           components: rustfmt, clippy
       - name: Проверка форматирования Rust
         run: cargo fmt --all -- --check
-
-  rust-verify:
-    name: Rust — тесты и проверки безопасности
-    needs: rust-format
-    if: >-
-      always()
-      && needs.rust-format.result == 'success'
-    runs-on: windows-latest
-    env:
-      CARGO_BUILD_JOBS: 2
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable-x86_64-pc-windows-msvc
-          components: rustfmt, clippy
       - name: Проверка lint всего Rust workspace
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Тесты основной Rust-инфраструктуры
@@ -180,8 +162,8 @@ jobs:
 
   # Здесь та же причина: шаги job'а вызывают scripts/postinstall-allowlist.mjs и
   # npm-скрипты оболочки, а собранный им пакет уходит в установщик.
-  electron-check:
-    name: Electron — протокол, типы и проверки
+  electron-shell:
+    name: Electron — проверки
     needs: rust-verify
     if: >-
       always()
@@ -211,26 +193,6 @@ jobs:
         run: cargo build --locked --release -p evohime-core
       - name: Electron — адаптер, политика безопасности и IPC E2E
         run: npm test
-
-  electron-package:
-    name: Electron — сборка и smoke пакета
-    needs: electron-check
-    if: >-
-      always()
-      && needs.electron-check.result == 'success'
-    runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: desktop/evohime-electron
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-      - name: Установка зависимостей Electron
-        run: npm ci --ignore-scripts
-      - name: Разрешённые установщики зависимостей
-        run: node scripts/postinstall-allowlist.mjs
       - name: Сборка Electron shell bundles
         run: npm run build
       - name: Проверка безопасности production bundle
@@ -239,8 +201,8 @@ jobs:
         run: npm run package
 
   windows-package:
-    name: Windows — манифест и подготовка пакета
-    needs: [changes, documentation, rust-verify, electron-package]
+    name: Windows — совместимость и пакет
+    needs: [changes, documentation, rust-verify, electron-shell]
     if: >-
       always()
       && (needs.changes.outputs.windows == 'true' || needs.changes.outputs.native == 'true')
@@ -256,18 +218,8 @@ jobs:
         shell: pwsh
         run: ./scripts/native-package.tests.ps1
 
-  windows-compatibility:
-    name: Windows — совместимость WinUI и IPC
-    needs: windows-package
-    if: >-
-      always()
-      && needs.windows-package.result == 'success'
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable-x86_64-pc-windows-msvc
+      # После package manifest проверяем compatibility runtime в том же
+      # последовательном Windows-этапе.
       - name: Restore WinUI shell
         shell: pwsh
         run: dotnet restore desktop/EvoHime.Tests/EvoHime.Tests.csproj --nologo
@@ -298,10 +250,10 @@ jobs:
           if-no-files-found: ignore
 
   build-native:
-    name: Windows — native package и acceptance
-    # electron-package тоже в needs: установщик упаковывает собранную им оболочку,
+    name: Сборка — native package и smoke
+    # electron-shell тоже в needs: установщик упаковывает собранную им оболочку,
     # поэтому его падение обязано останавливать публикацию.
-    needs: [changes, documentation, rust-verify, electron-package, windows-compatibility]
+    needs: [changes, documentation, rust-verify, electron-shell, windows-package]
     # Пропущенная зависимость не должна пропускать этот job, а упавшая — должна
     # его остановить: needs.* даёт skipped, поэтому условие пишется явно.
     if: >-
@@ -457,7 +409,7 @@ jobs:
   # новых релизов и версионных тегов не появляется. Права на запись есть только
   # у этого job после успешной сборки из main или ручного запуска workflow.
   publish-installer:
-    name: Публикация установщика
+    name: Публикация
     needs: build-native
     if: >-
       !cancelled() &&
