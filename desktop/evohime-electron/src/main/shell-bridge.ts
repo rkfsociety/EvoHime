@@ -374,6 +374,15 @@ function dispatch(
       return accepted(client.send({ teamResourceBudget: { schemaVersion: 1, requestId: randomUUID(), ownerScope, operation, payload: Buffer.from(budgetPayload, 'utf8'), expectedVersion, idempotencyKey } }))
     }
 
+    case 'core.composableTerminationConditions': {
+      const value = asRecord(payload)
+      const operation = ['validate_policy', 'save_policy', 'evaluate', 'save_state'].includes(String(value['operation'])) ? String(value['operation']) : null
+      const ownerScope = asBoundedString(value['ownerScope']); const budgetPayload = asBoundedString(value['payload']); const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion'])
+      if (operation === null || ownerScope === null || budgetPayload === null || idempotencyKey === null || expectedVersion === null || budgetPayload.length > 512 * 1024) return failure('invalid-payload', 'Некорректная операция termination conditions.')
+      return accepted(client.send({ composableTerminationConditions: { schemaVersion: 1, requestId: randomUUID(), ownerScope, operation, payload: Buffer.from(budgetPayload, 'utf8'), expectedVersion, idempotencyKey } }))
+    }
+
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)
       const taskId = asBoundedString(value['taskId'])

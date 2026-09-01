@@ -21,6 +21,7 @@ pub mod capability_selection_store;
 pub mod capability_store;
 pub mod child_store;
 pub mod collaboration_store;
+pub mod composable_termination_conditions_store;
 pub mod context_command_store;
 pub mod context_ledger_store;
 pub mod continuation_store;
@@ -61,7 +62,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 60;
+pub const SCHEMA_VERSION: u32 = 61;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3609,6 +3610,10 @@ impl LocalDatabase {
         if current < 60 {
             team_resource_budget_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 60;")?;
+        }
+        if current < 61 {
+            composable_termination_conditions_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 61;")?;
         }
         transaction.commit()?;
         Ok(())

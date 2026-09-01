@@ -19,7 +19,7 @@
 - План 38.0 — зависимость из обзора.
 - Tool Simulation Runtime v1 из `../architecture.md`.
 - Канонический раздел `architecture.md` — Agentic Browser Session v1.
-- План 63.0 — зависимость из обзора.
+- Composable Termination Conditions v1 — зависимость из канонических документов.
 
 ## Реализация
 

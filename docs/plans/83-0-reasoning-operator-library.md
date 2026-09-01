@@ -56,7 +56,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Опциональные
 
-- План 63.0 — Composable Termination Conditions: first-class stop policies for agent and team runs.
+- Composable Termination Conditions v1 — реализованный Core-контракт из канонических документов.
 - План 79.0 — Team Coordinator: capability-aware delegation, dynamic task routing и managerial validation.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 

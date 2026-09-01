@@ -38,7 +38,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 
 ### Блокирующие
 
-- План 63.0 — Composable Termination Conditions: first-class stop policies for agent and team runs.
+- Composable Termination Conditions v1 — реализованный Core-контракт из канонических документов.
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.
 
 ### Опциональные

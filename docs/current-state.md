@@ -815,3 +815,11 @@ wall-clock modes; SQLite schema v60 сохраняет policy/state/usage/reques
 metadata с idempotency и optimistic version fence. Core IPC предоставляет
 validation, durable policy/state/usage recording и conservative preflight;
 Electron получает только bounded metadata projection.
+План 63 закрыт 1 сентября 2026 года: Composable Termination Conditions v1
+добавляет Core-owned policy/state для тринадцати встроенных условий и композиций
+`Any`/`All`, canonical hash, event cursor, first-trigger evidence и terminal
+outcome. Состояние и policy сохраняются в SQLite schema v61 с optimistic
+version fence; authenticated IPC использует command 214/event 60, Electron
+показывает bounded metadata-only projection. Replay не удваивает counters,
+hard-stop не уступает continuation, а model/provider/tool authority не
+расширяется. Комплект `63-0` … `63-4` удалён после свежих regression gates.

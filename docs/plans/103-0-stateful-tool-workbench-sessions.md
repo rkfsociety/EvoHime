@@ -54,7 +54,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 - План 38.0 — Adaptive Tool Catalog: dynamic selection и deferred tool schemas.
 - Tool Simulation Runtime v1 из `../architecture.md`.
 - Канонический раздел `architecture.md` — Agentic Browser Session v1 (бывший план 55).
-- План 63.0 — Composable Termination Conditions: first-class stop policies for agent and team runs.
+- Composable Termination Conditions v1 — реализованный Core-контракт из канонических документов.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

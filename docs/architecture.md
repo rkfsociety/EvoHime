@@ -1563,3 +1563,22 @@ policy-разрешённым ролям/фазам. Reallocation не расш�
 существующие compatibility/resilience policies. IPC team_resource_budget и
 Electron panel передают bounded JSON/metadata; renderer не владеет state,
 accounting или effect.
+## Composable Termination Conditions v1 (план 63)
+
+Core-owned termination policies compose the thirteen bounded conditions
+`MaxMessages`, `MaxTurns`, `MaxToolCalls`, `TokenBudget`, `CostBudget`,
+`WallClockTimeout`, `IdleTimeout`, `StopEvent`, `SourceMatch`,
+`HandoffReached`, `ExternalSignal`, `GoalStateReached` and
+`WorkflowStateReached` through `Any`/`All`. Policies are schema-versioned,
+canonical-hash validated and depth/node bounded; they never grant model,
+tool or capability authority.
+
+Evaluation is stateful and replay-safe: durable state keeps the event cursor,
+counters, terminal outcome, stable reason code, bounded evidence references
+and the first triggering condition/event. Duplicate or stale events cannot
+double-count or reopen a terminal state. Hard-stop decisions take precedence
+over continuation, while unknown/ambiguous external results remain explicit.
+SQLite schema v61 stores policy and state with optimistic version fencing;
+authenticated additive IPC command 214/event 60 and the Electron panel expose
+only bounded metadata and validation/evaluation results. Renderer does not
+evaluate conditions or own termination authority.

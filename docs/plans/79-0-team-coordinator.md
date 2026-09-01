@@ -45,7 +45,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 ### Блокирующие
 
 - Team Resource Budget v1 — shared cost envelope, per-role allocations и reserved verification budget; контракт перенесён в канонические документы.
-- План 63.0 — Composable Termination Conditions: first-class stop policies for agent and team runs.
+- Composable Termination Conditions v1 — реализованный Core-контракт из канонических документов.
 - План 65.0 — Team Coordination Policies: pluggable routing for multi-agent collaboration.
 - План 66.0 — Typed Agent Handoff Contract: explicit transfer of task ownership and context.
 - действующие Core-owned capability/policy/approval, event journal, SQLite transaction/migration и authenticated IPC boundaries.

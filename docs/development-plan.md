@@ -312,3 +312,9 @@ IPC/UI projection; комплект плана удалён после пров�
 Контракт, SQLite schema v60, Core preflight/recording, authenticated additive
 IPC, Electron projection и focused/full verification перенесены в
 docs/architecture.md и docs/current-state.md; комплект плана удалён.
+План 63 (issue #43, Composable Termination Conditions) закрыт 1 сентября
+2026 года. Реализованы тринадцать встроенных условий, `Any`/`All`, durable
+replay-safe state, first-trigger evidence, hard-stop precedence, schema v61,
+authenticated IPC command 214/event 60 и metadata-only Electron projection.
+Контракт и подтверждённое состояние перенесены в
+`docs/architecture.md` и `docs/current-state.md`; комплект плана удалён.

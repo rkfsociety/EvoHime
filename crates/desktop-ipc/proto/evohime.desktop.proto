@@ -1864,6 +1864,7 @@ message CommandEnvelope {
     RevisionSafeWorkspaceFilesCommand revision_safe_workspace_files = 211;
     TaskWorktreeIsolationCommand task_worktree_isolation = 212;
     TeamResourceBudgetCommand team_resource_budget = 213;
+    ComposableTerminationConditionsCommand composable_termination_conditions = 214;
   }
 }
 
@@ -2132,6 +2133,26 @@ message TeamResourceBudgetCommand {
   string idempotency_key = 7;
 }
 message TeamResourceBudgetEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  string error_code = 5;
+  bytes projection_json = 6;
+  bool truncated = 7;
+}
+
+// Plan 63: bounded Core-owned termination policy/evaluation surface.
+message ComposableTerminationConditionsCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string operation = 4;
+  bytes payload = 5;
+  uint64 expected_version = 6;
+  string idempotency_key = 7;
+}
+message ComposableTerminationConditionsEvent {
   uint32 schema_version = 1;
   string request_id = 2;
   string operation = 3;

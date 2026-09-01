@@ -1020,6 +1020,7 @@ pub use provider_resilience::{
 pub mod recovery;
 pub mod run_policy;
 pub use recovery::{classify_tool_outcome, DenialSource, ToolFailureKind, ToolOutcome};
+pub mod composable_termination_conditions;
 pub mod refinement;
 pub mod research;
 pub mod research_fetch;
@@ -1196,6 +1197,14 @@ pub enum CoreCommand {
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
     TeamResourceBudget {
+        operation: String,
+        owner_scope: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    ComposableTerminationConditions {
         operation: String,
         owner_scope: String,
         payload: Vec<u8>,
@@ -10732,6 +10741,52 @@ impl TaskCoordinator {
                             serde_json::to_vec(&serde_json::json!({"status":format!("{decision:?}").to_lowercase()})).map_err(|e| e.to_string())
                         }
                         _ => Err("unsupported team resource budget operation".to_string()),
+                    }
+                }.await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::ComposableTerminationConditions {
+                operation,
+                owner_scope,
+                payload,
+                expected_version,
+                idempotency_key: _,
+                reply,
+            } => {
+                let result = async {
+                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|e| e.to_string())?;
+                    match operation.as_str() {
+                        "validate_policy" | "save_policy" => {
+                            let policy: composable_termination_conditions::TerminationPolicy = serde_json::from_value(value).map_err(|e| e.to_string())?;
+                            composable_termination_conditions::validate_hash(&policy).map_err(|e| e.to_string())?;
+                            if operation == "save_policy" {
+                                let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                                let connection = journal.database().lock().await;
+                                let json = serde_json::to_string(&policy).map_err(|e| e.to_string())?;
+                                let saved = evohime_local_storage::composable_termination_conditions_store::put_policy(connection.connection(), &owner_scope, policy.version, &json, &policy.content_hash, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                                return serde_json::to_vec(&serde_json::json!({"status":if saved { "saved" } else { "duplicate" },"policy_id":policy.id,"content_hash":policy.content_hash})).map_err(|e| e.to_string());
+                            }
+                            serde_json::to_vec(&serde_json::json!({"status":"valid","policy_id":policy.id,"content_hash":policy.content_hash})).map_err(|e| e.to_string())
+                        }
+                        "evaluate" => {
+                            let policy: composable_termination_conditions::TerminationPolicy = serde_json::from_value(value["policy"].clone()).map_err(|e| e.to_string())?;
+                            let state_value: composable_termination_conditions::TerminationState = serde_json::from_value(value["state"].clone()).map_err(|e| e.to_string())?;
+                            let event: composable_termination_conditions::TerminationEvent = serde_json::from_value(value["event"].clone()).map_err(|e| e.to_string())?;
+                            let decision = composable_termination_conditions::evaluate_policy(&policy, &state_value, &event).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":"evaluated","decision":decision})).map_err(|e| e.to_string())
+                        }
+                        "save_state" => {
+                            let state_value: composable_termination_conditions::TerminationState = serde_json::from_value(value["state"].clone()).map_err(|e| e.to_string())?;
+                            let run_id = value["run_id"].as_str().ok_or_else(|| "run_id is required".to_string())?;
+                            let policy_id = value["policy_id"].as_str().ok_or_else(|| "policy_id is required".to_string())?;
+                            let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                            let connection = journal.database().lock().await;
+                            let json = serde_json::to_string(&state_value).map_err(|e| e.to_string())?;
+                            let saved = evohime_local_storage::composable_termination_conditions_store::put_state(connection.connection(), run_id, policy_id, &json, expected_version, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                            if !saved { return Err("duplicate or stale termination state".to_string()); }
+                            serde_json::to_vec(&serde_json::json!({"status":"saved","run_id":run_id,"version":state_value.version.saturating_add(1)})).map_err(|e| e.to_string())
+                        }
+                        _ => Err("unsupported termination operation".to_string()),
                     }
                 }.await;
                 let _ = reply.send(result);
