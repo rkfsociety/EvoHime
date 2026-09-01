@@ -48,6 +48,12 @@
   changes invalidate element refs; click/type require exact session/page/ref
   preconditions. Human takeover acquires an exclusive lease and fences agent
   actions until explicit release.
+- Backend launch must be owned by Core/supervisor and the packaged executable
+  must be present in native package manifest and smoke fixture. An env CDP
+  endpoint is test-only and may not satisfy production acceptance.
+- Browser network policy must be enforced at the actual backend connection
+  boundary (proxy/interception or equivalent), including redirect and DNS
+  rebinding checks; preflight URL validation alone is not evidence.
 
 ### Recovery contract
 
@@ -61,6 +67,8 @@
 - [ ] Unknown external effect не повторяется автоматически.
 - [ ] Active run pinned к exact contract/policy snapshot.
 - [ ] Recovery/fault-injection tests воспроизводимы.
+- [ ] Browser process cleanup leaves no profile/process leak; crash after
+  dispatch produces `unknown_outcome` and requires explicit reconciliation.
 
 ## Не входит
 

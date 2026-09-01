@@ -917,13 +917,26 @@ model-request provenance; эти источники остаются source of t
 Offline evals используют literal fixtures, frozen inputs и не имеют доступа к
 production filesystem, network, tools или SQLite; malformed traces получают
 typed diagnostics, а неизвестный результат не считается pass.
-## Изолированный browser backend
+## Agentic Browser Session v1 (план 55, реализован 2026-09-01)
 
-Browser tools остаются Core-owned и permission-gated. CDP session привязана к
-task/run, URL проходит SSRF-проверку, mutation tools требуют approval, а
-selector/type inputs bounded; отсутствие CDP configuration даёт typed failure,
-не unrestricted fallback. Browser output и screenshot остаются внутри
-workspace sandbox и не раскрывают typed text в structured output.
+`evohime-core::agentic_browser_session` владеет versioned lifecycle, session
+scope, page revision/fingerprint, bounded snapshots и exclusive
+`Agent/Human` control generation. Любая mutation проверяет exact session/page
+revision; takeover и возврат control увеличивают revision и потому
+инвалидируют старые refs. Durable SQLite schema v54 хранит только lifecycle
+metadata, без DOM, cookies, credentials, CDP endpoint или host paths.
+
+Authenticated IPC additive command 204/event 53 возвращает только bounded
+metadata projection. Raw `EVOHIME_BROWSER_CDP_URL`, CSS selector и прямой
+workspace screenshot path не являются production contract; legacy path получает
+typed `legacy_disabled`, отсутствие packaged backend — `unavailable`. Browser
+network policy обязана проверять каждый redirect и фактический resolved IP,
+включая DNS rebinding, а default profile — `ephemeral_clean`.
+
+В текущем релизном package backend остаётся explicit `unavailable`, пока
+packaged Chromium adapter не поставлен в manifest; Core не создаёт внешний CDP
+endpoint fallback. Это fail-closed состояние, а не имитация браузерного
+эффекта. UI получает только session/revision/control/error/artifact metadata.
 
 ## Voice pipeline и ambient audio
 

@@ -15,6 +15,7 @@ pub mod artifact_store;
 pub mod automation_store;
 pub mod backup;
 pub mod benchmark_store;
+pub mod browser_session_store;
 pub mod capability_selection_store;
 pub mod capability_store;
 pub mod child_store;
@@ -54,7 +55,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 53;
+pub const SCHEMA_VERSION: u32 = 54;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -552,6 +553,7 @@ impl LocalDatabase {
         team_sop_protocols_store::install_schema(&connection)?;
         conversation_event_log_store::install_schema(&connection)?;
         human_work_items_store::install_schema(&connection)?;
+        browser_session_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
@@ -3569,6 +3571,10 @@ impl LocalDatabase {
         if current < 53 {
             human_work_items_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 53;")?;
+        }
+        if current < 54 {
+            browser_session_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 54;")?;
         }
         transaction.commit()?;
         Ok(())

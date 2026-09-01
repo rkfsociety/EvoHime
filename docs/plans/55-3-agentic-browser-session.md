@@ -31,6 +31,10 @@
 ### Protocol and client surfaces
 
 - Proto: добавить additive `AgenticBrowserSessionRequest`, `AgenticBrowserSessionResponse`, `AgenticBrowserSessionEvent` и command/event oneof в `crates/desktop-ipc/proto/evohime.desktop.proto` после проверки свободных tags; сохранить major, replay/resync и bounded frame limits.
+- Перед реализацией зарезервировать и зафиксировать свободный диапазон tags
+  (фактические номера только по live proto); в contract matrix записать
+  request/response/event tags, oneof names, max frame/payload и
+  unknown-field behavior.
 - Bridge: связать `crates/evohime-core/src/ipc_bridge.rs`, `desktop/evohime-electron/src/shared/api.ts`, `desktop/evohime-electron/src/preload/index.ts` и `desktop/evohime-electron/src/main/shell-bridge.ts`; renderer не получает Core/storage authority.
 - UI: создать `desktop/evohime-electron/src/renderer/src/AgenticBrowserSessionPanel.tsx` только как projection/action surface; тесты — `desktop/evohime-electron/tests/agentic_browser_session.test.tsx` и protocol/typecheck gates.
 
@@ -38,6 +42,10 @@
 
 - `C07` — Workbench может показывать безопасную live projection. → дать bounded projection и явные Core-checked actions.
 - `C08` — Human takeover поддерживается без гонки с agent actions. → дать bounded projection и явные Core-checked actions.
+- Projection обязан показывать `session_id`/`page_revision`, control owner,
+  lease generation, stale/unknown/unavailable outcome и artifact metadata, но
+  не CDP endpoint, cookies, profile path, raw DOM/HTML, credentials или hidden
+  reasoning.
 - UI никогда не получает CDP endpoint, cookies, raw DOM or profile path;
   takeover actions carry lease/session/page revision and stale state is visible.
 

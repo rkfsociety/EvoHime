@@ -43,6 +43,7 @@ import { TeamSopProtocolsPanel } from './TeamSopProtocolsPanel'
 import { CausalCollaborationBusPanel } from './CausalCollaborationBusPanel'
 import { HumanWorkItemsPanel } from './HumanWorkItemsPanel'
 import { WorkbenchPanel } from './WorkbenchPanel'
+import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -320,6 +321,7 @@ export function App(): React.JSX.Element {
                 chatRevision={chatRevision}
               />
               <WorkbenchPanel connection={connection} chatId={chatId} workspace={workspace} events={events} />
+              <AgenticBrowserSessionPanel />
             </div>
           ) : (
             <div className="main__scroll">

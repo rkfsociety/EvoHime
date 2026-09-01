@@ -84,6 +84,33 @@ browser tools остаются отдельной capability.
    обновить architecture/current-state только после фактической реализации
    и сохранить команду воспроизведения проверки.
 
+## Обязательные решения definition freeze
+
+- Единственным authoritative owner является `evohime-core`: `tool-runtime` не
+  хранит самостоятельный registry/lifecycle, а получает bounded typed command
+  от Core. Существующие `browser.session.*` имена с raw selector и
+  `EVOHIME_BROWSER_CDP_URL` не считаются совместимым API: до включения новой
+  capability они отключаются или переводятся в typed `legacy_disabled`, без
+  fallback к старому пути.
+- Backend — Core-launched packaged Chromium/CDP adapter с отдельным
+  EvoHime-owned profile и Job Object/lifecycle cleanup; arbitrary external CDP
+  endpoint и личный профиль не входят в production contract. Если backend не
+  входит в текущий package, capability остаётся typed `unavailable`, а stage не
+  закрывается критериями runtime/UI.
+- Network enforcement выполняется backend-ом на каждом redirect и перед
+  соединением с каждым разрешённым IP; одной DNS-проверки исходного URL
+  недостаточно. Core policy snapshot задаёт режим и allowlist, default
+  `PublicInternet` блокирует private/link-local/metadata/localhost и все
+  non-http(s)/browser-internal/file/custom schemes.
+- Все page/element refs ephemeral и включают session id, page revision и
+  fingerprint; screenshot/page text/download являются ArtifactStore objects с
+  bounded locator/hash. Прямая запись browser tool в workspace и host-path из
+  model input запрещены. Download только staging+artifact, execution
+  отсутствует; upload только по разрешённому artifact/workspace ref.
+- Human takeover — Core-owned exclusive lease/generation. Agent mutations
+  отклоняются во время lease, release создаёт новую revision/snapshot, а
+  stale refs получают typed error.
+
 ## Критерии готовности из issue
 
 - [ ] Есть Core-owned BrowserSession lifecycle.

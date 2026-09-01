@@ -716,3 +716,18 @@ Settings → Диагностика показывает preview и redaction su
   event 52, Electron отображает bounded Inbox-проекцию.
 - Team-bound item допускается только для pinned Team SOP human slot; raw model
   prompts, credentials, hidden reasoning и approval payloads отсутствуют.
+
+## Agentic Browser Session v1 (план 55, реализован 2026-09-01)
+
+- Core добавляет `agentic_browser_session` с lifecycle, bounded snapshot,
+  session/page revision refs и human takeover fencing; stale refs отвергаются
+  typed ошибкой, а control generation переживает смену владельца.
+- SQLite schema v54 содержит только bounded `browser_session_metadata`; прямой
+  CDP endpoint, raw CSS selector, DOM, cookies, credentials и host screenshot
+  path не входят в production contract. IPC command 204/event 53 и Electron
+  `AgenticBrowserSessionPanel` показывают metadata-only projection.
+- Legacy `browser.session.*` raw path получает `legacy_disabled`, а packaged
+  backend до поставки в native manifest даёт `browser_backend_unavailable`;
+  неизвестный внешний эффект не объявляется успешным. Redirect/resolved-IP
+  enforcement и packaged Chromium остаются обязательным release gate, поэтому
+  UI/backend capability fail-closed до наличия adapter evidence.

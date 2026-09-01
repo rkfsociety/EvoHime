@@ -4169,6 +4169,14 @@ impl IpcBridge {
                     self.write_human_work_items_response(writer, serde_json::to_vec(&result)?)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::AgenticBrowserSession(request)) => {
+                    let result = self.dispatch_agentic_browser_session(request).await;
+                    self.write_agentic_browser_session_response(
+                        writer,
+                        serde_json::to_vec(&result)?,
+                    )
+                    .await?;
+                }
                 Some(generated::command_envelope::Command::GetConversationEvents(request)) => {
                     let result = self
                         .dispatch_conversation_event_log(request, "history")
@@ -12548,6 +12556,99 @@ impl IpcBridge {
             }
         }
         serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":status,"item_id":item_id,"revision":revision,"state":state,"error_code":error_code,"projection_json":projection})
+    }
+
+    async fn dispatch_agentic_browser_session(
+        &self,
+        request: generated::AgenticBrowserSessionCommand,
+    ) -> serde_json::Value {
+        use crate::agentic_browser_session::{BrowserSession, CONTRACT_VERSION};
+        if request.schema_version != CONTRACT_VERSION
+            || request.request_id.is_empty()
+            || request.owner_scope.is_empty()
+            || request.idempotency_key.is_empty()
+            || request.payload.len() > 64 * 1024
+        {
+            return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"invalid_request","projection_json":{"raw_payload":false}});
+        }
+        let payload: serde_json::Value =
+            serde_json::from_slice(&request.payload).unwrap_or_default();
+        if matches!(
+            request.operation.as_str(),
+            "legacy" | "legacy_selector" | "raw_cdp"
+        ) {
+            return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"legacy_disabled","projection_json":{"raw_payload":false}});
+        }
+        let conversation_id = payload["conversation_id"]
+            .as_str()
+            .unwrap_or(request.owner_scope.as_str());
+        let Ok(mut session) = BrowserSession::new(
+            conversation_id,
+            payload["run_id"].as_str().map(str::to_owned),
+            payload["policy_hash"].as_str().unwrap_or("unknown"),
+        ) else {
+            return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"invalid_scope","projection_json":{"raw_payload":false}});
+        };
+        let available = request.operation == "create";
+        if available {
+            let _ = session.transition(crate::agentic_browser_session::SessionState::Starting);
+            if let Ok(database) = self.journal.database().try_lock() {
+                let _ = evohime_local_storage::browser_session_store::upsert(
+                    database.connection(),
+                    &evohime_local_storage::browser_session_store::BrowserSessionMetadata {
+                        session_id: session.session_id.to_string(),
+                        conversation_id: session.conversation_id.clone(),
+                        run_id: session.run_id.clone(),
+                        state: "starting".into(),
+                        revision: session.revision,
+                        control_generation: session.control_generation,
+                        profile_policy: session.profile_policy.clone(),
+                        network_policy: session.network_policy.clone(),
+                        policy_hash: session.policy_hash.clone(),
+                        updated_at_ms: chrono::Utc::now().timestamp_millis(),
+                    },
+                );
+            }
+        }
+        serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":if available {"ok"} else {"unavailable"},"session_id":session.session_id,"revision":session.revision,"control_owner":"agent","control_generation":session.control_generation,"error_code":if available {""} else {"browser_backend_unavailable"},"projection_json":{"schema_version":1,"session_id":session.session_id,"state":format!("{:?}",session.state).to_lowercase(),"revision":session.revision,"profile_policy":session.profile_policy,"network_policy":session.network_policy,"raw_payload":false,"credentials":false,"cdp_endpoint":false}})
+    }
+
+    async fn write_agentic_browser_session_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let result = generated::AgenticBrowserSessionEvent {
+            schema_version: 1,
+            request_id: value["request_id"].as_str().unwrap_or_default().into(),
+            operation: value["operation"].as_str().unwrap_or_default().into(),
+            status: value["status"].as_str().unwrap_or_default().into(),
+            session_id: value["session_id"].as_str().unwrap_or_default().into(),
+            revision: value["revision"].as_u64().unwrap_or_default(),
+            control_owner: value["control_owner"].as_str().unwrap_or_default().into(),
+            control_generation: value["control_generation"].as_u64().unwrap_or_default(),
+            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+            projection_json: serde_json::to_vec(&value["projection_json"])?,
+        };
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: "agentic_browser_session.result".into(),
+                payload,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: Some(generated::event_envelope::Event::AgenticBrowserSession(
+                    result,
+                )),
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
     }
 
     async fn write_human_work_items_response<W: AsyncWrite + Unpin>(

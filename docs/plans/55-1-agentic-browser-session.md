@@ -55,6 +55,11 @@
 - Session/page/element refs ephemeral; durable хранится только bounded
   lifecycle/audit metadata. Screenshots/downloads идут в ArtifactStore, не
   пишутся прямо в workspace.
+- Зафиксировать exact migration map: новая surface использует typed
+  `browser.session.*` commands с `page_ref`/`element_ref` (существующие raw
+  selector tools сохраняются только как disabled legacy identifiers), а raw
+  CDP URL и screenshot workspace path удаляются из accepted input. Core router
+  различает `legacy_disabled` и `unavailable`.
 - Proto/adapter: определить только versioned DTO, которые нужны stage 3; secrets, raw prompts и executable identities в contract не входят.
 - Тесты: unit fixtures рядом с модулем и `crates/evohime-core/tests/agentic_browser_session_contract.rs` для valid/invalid, bounds, redaction, duplicate/stale и migration/ephemeral решения.
 
@@ -65,11 +70,17 @@
 - `C04` — Есть network/SSRF policy с private-address protection. → зафиксировать typed invariant, error code и deterministic fixture.
 - Redirect hops, post-resolution IP и DNS rebinding входят в тот же policy;
   initial-URL-only проверка не закрывает критерий.
+- `C06` — Upload/download проходят Artifact/Core boundaries. → зафиксировать
+  locator ownership, content hash, size/type/sensitivity limits и отсутствие
+  host paths в model/renderer input.
 
 ### Definition freeze
 
 - До stage 2 зафиксировать schema revision, canonical hash, sensitivity/provenance matrix, typed error codes и exact persistence decision для «Agentic Browser Session: sandboxed browser automation со stable refs и SSRF-защитой».
-- Evidence stage 1: `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` и сохранённые fixtures/SQL migration evidence.
+- Evidence stage 1: focused contract tests плюс
+  `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc`;
+  сохранить fixtures/SQL migration evidence и подтвердить additive schema
+  revision `v54` (или документированное решение о другом свободном номере).
 
 ## Критерии выхода
 

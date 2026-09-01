@@ -265,3 +265,18 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   raw model prompts, credentials, hidden reasoning and approval payloads are
   excluded. Focused Core contract/recovery and Electron privacy tests accompany
   the full Rust/Electron protocol, typecheck and diff-check gates.
+
+## Plan 55 — Agentic Browser Session v1 (2026-09-01)
+
+- Contract/storage: Core-owned lifecycle, page revision/fingerprint refs,
+  Agent/Human control generation, bounded snapshots and SQLite schema v54
+  metadata store. The store contains no DOM, cookies, credentials, CDP URL or
+  host path.
+- Security/recovery: stale refs and takeover races fail closed; raw selector/
+  env-CDP legacy route is disabled; absent packaged backend is typed unavailable
+  and no browser effect is claimed. Network policy requires redirect and
+  resolved-IP/DNS-rebinding enforcement before release enablement.
+- IPC/UI: authenticated additive command 204/event 53 and metadata-only
+  `AgenticBrowserSessionPanel`; protocol/typecheck tests prove no direct CDP or
+  sensitive payload projection. Focused Core/storage tests cover lifecycle,
+  stale/takeover and metadata round-trip.

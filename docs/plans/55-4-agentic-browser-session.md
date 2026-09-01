@@ -40,6 +40,11 @@
    legacy raw CDP/CSS paths are not registered as bypasses.
 7. Проверить cargo fmt --all -- --check, релевантный cargo clippy -D warnings, npm run check:protocol, npm run typecheck, npm test и git diff --check.
 
+8. Проверить package-manifest/fixture наличия packaged browser backend и
+   lifecycle cleanup; отдельно доказать, что `EVOHIME_BROWSER_CDP_URL`, raw
+   CSS selector и прямой screenshot workspace path не принимаются production
+   router-ом.
+
 ## Release-evidence и закрытие
 
 - Bundle содержит commit, versions, test IDs, hashes, typed outcomes и redaction status; credentials, raw output, transcripts, absolute paths и PII исключены.
@@ -53,6 +58,9 @@
 - [ ] Blocking dependencies закрыты.
 - [ ] Ссылки и версии соответствуют checkout.
 - [ ] Release bundle redacted.
+- [ ] Evidence matrix содержит exact schema/IPC tags, backend/package hash,
+  fixture IDs, commands и фактические результаты; гипотезы о performance не
+  выдаются за измерения.
 
 ## Связанный issue
 

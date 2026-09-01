@@ -961,6 +961,7 @@ use uuid::Uuid;
 pub mod agent_benchmark_matrix;
 pub mod agent_middleware_pipeline;
 pub mod agent_role_profiles;
+pub mod agentic_browser_session;
 pub mod ambient;
 pub mod ambient_proactivity;
 pub mod analysis_kernel;
