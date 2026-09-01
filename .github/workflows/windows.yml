@@ -25,6 +25,7 @@ jobs:
   # от отсутствующего прогона, числится пройденным, поэтому workflow стартует
   # всегда, а тяжёлые job включаются по затронутым путям.
   changes:
+    name: Определение затронутых областей
     runs-on: ubuntu-latest
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
@@ -36,7 +37,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Detect touched areas
+      - name: Определение затронутых областей
         id: filter
         shell: bash
         run: |
@@ -88,21 +89,28 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   documentation:
+    name: Документация — ссылки и устаревшие ссылки
     needs: changes
     if: needs.changes.outputs.docs == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Validate documentation links and stale references
+      - name: Проверка ссылок и устаревших ссылок в документации
         shell: pwsh
         run: ./scripts/documentation.tests.ps1
 
   # Условие — `native`, а не `rust`: этот job исполняет гейты из scripts/, поэтому
   # правка самого гейта обязана его запускать. Иначе коммит, меняющий только
   # scripts/, доходил до сборки установщика, ни разу не прогнав эти гейты.
-  rust-native:
-    needs: changes
-    if: needs.changes.outputs.native == 'true'
+  rust-format:
+    name: Rust — форматирование
+    # Проверки идут одной цепочкой: ошибка документации не запускает тяжёлые
+    # native-гейты, а пропущенная проверка остаётся допустимой по фильтру.
+    needs: [changes, documentation]
+    if: >-
+      always()
+      && needs.changes.outputs.native == 'true'
+      && (needs.documentation.result == 'success' || needs.documentation.result == 'skipped')
     runs-on: windows-latest
     # Большой workspace с all-targets-тестами может исчерпать pagefile
     # windows-latest во время одновременной линковки нескольких test binaries.
@@ -114,39 +122,55 @@ jobs:
         with:
           toolchain: stable-x86_64-pc-windows-msvc
           components: rustfmt, clippy
-      - name: Check formatting
+      - name: Проверка форматирования Rust
         run: cargo fmt --all -- --check
-      - name: Lint workspace
+
+  rust-verify:
+    name: Rust — тесты и проверки безопасности
+    needs: rust-format
+    if: >-
+      always()
+      && needs.rust-format.result == 'success'
+    runs-on: windows-latest
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+      - name: Проверка lint всего Rust workspace
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
-      - name: Test native Rust foundation
+      - name: Тесты основной Rust-инфраструктуры
         run: cargo test --locked -p evohime-permissions -p evohime-tool-runtime -p evohime-model-gateway -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc -p evohime-updater -p evohime-receipts -p evohime-listener-contract -p evohime-listener-audio -p evohime-listener-ipc -p evohime-listener
-      - name: Ambient audio privacy gate
+      - name: Privacy gate фонового аудио
         shell: pwsh
         run: ./scripts/ambient-privacy.tests.ps1
-      - name: Receipt key lifecycle contract and verifier tests
+      - name: Контракт жизненного цикла ключей receipt
         shell: pwsh
         run: ./scripts/receipt-key-lifecycle.tests.ps1
-      - name: Check supervisor
+      - name: Проверка supervisor
         run: cargo check --locked -p evohime-supervisor -p evohime-updater
-      - name: Deterministic evaluation and fixture security gate
+      - name: Детерминированная оценка и безопасность fixtures
         shell: pwsh
         run: ./scripts/eval-gate.tests.ps1
-      - name: Mandatory independent security evaluation gate
+      - name: Обязательная независимая security-оценка
         shell: pwsh
         run: ./scripts/security-eval-gate.tests.ps1
-      - name: Automation runtime boundary gate
+      - name: Граница runtime автоматизации
         shell: pwsh
         run: ./scripts/automation-release-gate.tests.ps1
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
-      - name: Install shell dependencies for license metadata verification
+      - name: Установка Electron-зависимостей для license metadata
         working-directory: desktop/evohime-electron
         run: npm ci --ignore-scripts
-      - name: Release evidence and rollback gate
+      - name: Release evidence и rollback gate
         shell: pwsh
         run: ./scripts/release-evidence.tests.ps1
-      - name: Upload redacted evaluation artifact
+      - name: Загрузка обезличенного evaluation-артефакта
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -156,9 +180,12 @@ jobs:
 
   # Здесь та же причина: шаги job'а вызывают scripts/postinstall-allowlist.mjs и
   # npm-скрипты оболочки, а собранный им пакет уходит в установщик.
-  electron-shell:
-    needs: changes
-    if: needs.changes.outputs.native == 'true'
+  electron-check:
+    name: Electron — протокол, типы и проверки
+    needs: rust-verify
+    if: >-
+      always()
+      && needs.rust-verify.result == 'success'
     runs-on: windows-latest
     defaults:
       run:
@@ -171,51 +198,89 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
-      - name: Install shell dependencies without lifecycle scripts
+      - name: Установка Electron-зависимостей без lifecycle scripts
         run: npm ci --ignore-scripts
-      - name: Run allow-listed dependency installers
+      - name: Разрешённые установщики зависимостей
         run: node scripts/postinstall-allowlist.mjs
-      - name: Verify generated IPC bindings match the canonical proto
+      - name: Проверка generated IPC bindings против canonical proto
         run: npm run check:protocol
-      - name: Typecheck main, preload and renderer
+      - name: Typecheck main, preload и renderer
         run: npm run typecheck
-      - name: Build Core for the real-Core IPC E2E tests
+      - name: Сборка Core для real-Core IPC E2E
         working-directory: .
         run: cargo build --locked --release -p evohime-core
-      - name: Test shell adapter, security policy and real-Core IPC
+      - name: Electron — адаптер, политика безопасности и IPC E2E
         run: npm test
-      - name: Build shell bundles
+
+  electron-package:
+    name: Electron — сборка и smoke пакета
+    needs: electron-check
+    if: >-
+      always()
+      && needs.electron-check.result == 'success'
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop/evohime-electron
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Установка зависимостей Electron
+        run: npm ci --ignore-scripts
+      - name: Разрешённые установщики зависимостей
+        run: node scripts/postinstall-allowlist.mjs
+      - name: Сборка Electron shell bundles
         run: npm run build
-      - name: Static security checks over the production bundles
+      - name: Проверка безопасности production bundle
         run: npm run check:bundle
-      - name: Build unpacked package smoke
+      - name: Сборка распакованного Electron package
         run: npm run package
 
-  windows-check:
-    needs: changes
-    if: needs.changes.outputs.windows == 'true' || needs.changes.outputs.native == 'true'
+  windows-package:
+    name: Windows — манифест и подготовка пакета
+    needs: [changes, documentation, rust-verify, electron-package]
+    if: >-
+      always()
+      && (needs.changes.outputs.windows == 'true' || needs.changes.outputs.native == 'true')
+      && !contains(needs.*.result, 'failure')
+      && !contains(needs.*.result, 'cancelled')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable-x86_64-pc-windows-msvc
-      - name: Test package manifest and idempotent staging
+      - name: Проверка manifest и идемпотентного staging
         shell: pwsh
         run: ./scripts/native-package.tests.ps1
+
+  windows-compatibility:
+    name: Windows — совместимость WinUI и IPC
+    needs: windows-package
+    if: >-
+      always()
+      && needs.windows-package.result == 'success'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
       - name: Restore WinUI shell
         shell: pwsh
         run: dotnet restore desktop/EvoHime.Tests/EvoHime.Tests.csproj --nologo
-      - name: Build WinUI shell
+      - name: Сборка WinUI shell
         shell: pwsh
         run: dotnet build desktop/EvoHime.Tests/EvoHime.Tests.csproj -p:Platform=x64 --nologo --no-restore
-      - name: Restore IPC tests
+      - name: Restore IPC-тестов
         shell: pwsh
         run: dotnet restore desktop/EvoHime.IpcTests/EvoHime.IpcTests.csproj --nologo
-      - name: Build IPC tests
+      - name: Сборка IPC-тестов
         shell: pwsh
         run: dotnet build desktop/EvoHime.IpcTests/EvoHime.IpcTests.csproj --nologo --no-restore
-      - name: Test WinUI shell with hang diagnostics
+      - name: Тесты WinUI shell с диагностикой зависаний
         timeout-minutes: 10
         shell: pwsh
         run: >-
@@ -224,7 +289,7 @@ jobs:
           --results-directory "$env:GITHUB_WORKSPACE\TestResults"
           --logger "console;verbosity=detailed"
           --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type mini
-      - name: Upload WinUI hang diagnostics
+      - name: Загрузка диагностики зависания WinUI
         if: failure()
         uses: actions/upload-artifact@v7
         with:
@@ -233,9 +298,10 @@ jobs:
           if-no-files-found: ignore
 
   build-native:
-    # electron-shell тоже в needs: установщик упаковывает собранную им оболочку,
+    name: Windows — native package и acceptance
+    # electron-package тоже в needs: установщик упаковывает собранную им оболочку,
     # поэтому его падение обязано останавливать публикацию.
-    needs: [changes, rust-native, electron-shell, windows-check]
+    needs: [changes, documentation, rust-verify, electron-package, windows-compatibility]
     # Пропущенная зависимость не должна пропускать этот job, а упавшая — должна
     # его остановить: needs.* даёт skipped, поэтому условие пишется явно.
     if: >-
@@ -250,30 +316,30 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable-x86_64-pc-windows-msvc
-      - name: Build native package after CI checks
+      - name: Сборка native package после CI-проверок
         shell: pwsh
         run: |
           ./scripts/build-windows-native.ps1 -OutputPath "$env:GITHUB_WORKSPACE\native-package" -Commit $env:GITHUB_SHA -Branch 'main'
-      - name: Run Electron package startup smoke
+      - name: Smoke запуска Electron package
         shell: pwsh
         run: ./scripts/electron-acceptance.tests.ps1 -PackagePath "$env:GITHUB_WORKSPACE\native-package"
-      - name: Run Electron Core and supervisor fault smoke
+      - name: Smoke отказоустойчивости Electron Core и supervisor
         shell: pwsh
         run: ./scripts/electron-fault.tests.ps1 -PackagePath "$env:GITHUB_WORKSPACE\native-package"
-      - name: Run Electron acceptance matrix
+      - name: Acceptance matrix Electron package
         shell: pwsh
         run: ./scripts/electron-matrix.tests.ps1 -PackagePath "$env:GITHUB_WORKSPACE\native-package"
-      - name: Install Inno Setup
+      - name: Установка Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress --yes
-      - name: Build single Windows installer
+      - name: Сборка единственного Windows-установщика
         shell: pwsh
         run: |
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
           if (-not (Test-Path -LiteralPath $iscc)) { throw "ISCC not found: $iscc" }
           & $iscc "/O$env:GITHUB_WORKSPACE\installer-output" "/DSourceDir=$env:GITHUB_WORKSPACE\native-package" installer/EvoHime.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Install and upgrade smoke
+      - name: Smoke установки и обновления
         shell: pwsh
         run: |
           $installPath = Join-Path $env:RUNNER_TEMP 'EvoHime-install-smoke'
@@ -294,7 +360,7 @@ jobs:
           & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installPath"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path -LiteralPath (Join-Path $installPath 'EvoHime.exe'))) { throw 'Upgrade removed the client executable.' }
-      - name: Rollback smoke after failed installer start
+      - name: Smoke отката после ошибки запуска установщика
         shell: pwsh
         run: |
           $rollbackPath = Join-Path $env:RUNNER_TEMP 'EvoHime-rollback-smoke'
@@ -316,7 +382,7 @@ jobs:
           $after = (Get-FileHash (Join-Path $rollbackPath 'EvoHime.exe')).Hash
           if ($before -ne $after) { throw 'Rollback did not restore the previous client.' }
           if (Test-Path -LiteralPath (Join-Path $statePath 'transaction.json')) { throw 'Rollback left a transaction journal.' }
-      - name: Staged rebuild apply smoke
+      - name: Smoke применения staged rebuild
         shell: pwsh
         run: |
           # Обновление без релиза: клиент пересобирает продукт локально и отдаёт
@@ -360,7 +426,7 @@ jobs:
             throw 'Refused apply must leave the installation untouched.'
           }
 
-      - name: Write installer manifest
+      - name: Запись manifest установщика
         shell: pwsh
         run: |
           $setup = Join-Path $env:GITHUB_WORKSPACE 'installer-output\EvoHime-Setup.exe'
@@ -378,7 +444,7 @@ jobs:
       # Установщик нужен для первой установки и фоновых обновлений клиента.
       # Каждый прогон оставляет его артефактом, а на main он также попадает в
       # постоянный Release после успешной проверки.
-      - name: Upload single installer
+      - name: Загрузка единственного установщика
         uses: actions/upload-artifact@v7
         with:
           name: evohime-windows-installer
@@ -391,6 +457,7 @@ jobs:
   # новых релизов и версионных тегов не появляется. Права на запись есть только
   # у этого job после успешной сборки из main или ручного запуска workflow.
   publish-installer:
+    name: Публикация установщика
     needs: build-native
     if: >-
       !cancelled() &&
@@ -410,7 +477,7 @@ jobs:
         with:
           name: evohime-windows-installer
           path: installer-output
-      - name: Refresh the single installer release
+      - name: Обновление единственного release установщика
         shell: pwsh
         run: |
           $setup = Join-Path $env:GITHUB_WORKSPACE 'installer-output\EvoHime-Setup.exe'
