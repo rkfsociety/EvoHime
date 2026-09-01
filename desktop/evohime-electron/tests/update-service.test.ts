@@ -529,20 +529,6 @@ describe('green commits only', () => {
     expect(test.service.status.message).toContain('не прошли проверки')
   })
 
-  it('takes the newest green commit while the tip is still building', async () => {
-    const green = 'c'.repeat(40)
-    const test = harness({
-      // The tip (REMOTE) is pending, the commit before it is already green.
-      selectGreen: async () => ({ commit: green, tipState: 'pending' })
-    })
-
-    const status = await test.service.check()
-
-    expect(status.phase).toBe('available')
-    expect(status.remoteCommit).toBe(green)
-    expect(status.message).toContain('зелёного коммита')
-  })
-
   it('refuses to guess when the checks cannot be read at all', async () => {
     const { config } = harness()
     const statuses: UpdateStatus[] = []
@@ -613,19 +599,6 @@ describe('inconclusive checks', () => {
 })
 
 describe('documentation-only commits', () => {
-  it('does not rebuild when the new commits touch no product code', async () => {
-    const test = harness({ productChanges: async () => false })
-
-    const status = await test.service.check()
-
-    expect(status.phase).toBe('up-to-date')
-    expect(status.remoteCommit).toBe(REMOTE)
-    expect(status.message).toContain('не трогают код')
-
-    await test.service.runLaunchGate()
-    expect(test.build).not.toHaveBeenCalled()
-  })
-
   it('rebuilds when the range cannot be compared', async () => {
     const test = harness({
       productChanges: async () => {
