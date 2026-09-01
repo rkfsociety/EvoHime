@@ -274,6 +274,12 @@ Human response не является approval или capability grant; Team SOP 
 prompts, credentials или hidden reasoning. Комплект 54-0 … 54-4 удалён после
 focused Rust/Electron, protocol/typecheck, format и diff-check gates.
 
+План 57 закрыт 1 сентября 2026 года: Plan Artifact v1 добавляет durable
+Core-owned versioned planning contract, immutable revisions, explicit Plan to
+Execute transitions, canonical hash, policy snapshot и bounded Electron
+projection. SQLite schema v56 и additive authenticated IPC tags 206–208/event 55
+реализованы; неизвестный effect не повторяется вслепую.
+
 План 56 закрыт 1 сентября 2026 года: Artifact Handoff Registry v1 добавляет
 Core-owned semantic ProjectArtifact revisions поверх ArtifactStore, immutable
 lineage/handoff/acceptance metadata, bounded freshness fingerprints и

@@ -2396,6 +2396,18 @@ impl IpcBridge {
                 Some(generated::command_envelope::Command::StartPlanReview(request)) => {
                     self.start_plan_review(request, writer).await?;
                 }
+                Some(generated::command_envelope::Command::PlanArtifactCreate(request))
+                | Some(generated::command_envelope::Command::PlanArtifactRead(request))
+                | Some(generated::command_envelope::Command::PlanArtifactAction(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "read".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self.dispatch_plan_artifact(operation, request).await?;
+                    self.write_response(writer, "plan_artifact.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -6552,6 +6564,40 @@ impl IpcBridge {
                 title: request.title,
                 workspace_path: request.workspace_path,
                 source_ref: (!request.source_ref.is_empty()).then_some(request.source_ref),
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_plan_artifact(
+        &self,
+        operation: String,
+        request: generated::PlanArtifactCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::PlanArtifact {
+                operation,
+                artifact_json: request.artifact_json,
+                artifact_id: request.artifact_id,
+                expected_version: request.expected_version,
+                status: request.status,
+                policy_snapshot_hash: request.policy_snapshot_hash,
+                task_id: (!request.task_id.is_empty()).then_some(request.task_id),
+                workflow_run_id: (!request.workflow_run_id.is_empty())
+                    .then_some(request.workflow_run_id),
+                correlation_id: request.correlation_id,
+                idempotency_key: request.idempotency_key,
                 reply,
             })
             .await

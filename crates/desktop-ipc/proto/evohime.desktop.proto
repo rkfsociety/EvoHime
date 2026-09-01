@@ -1856,6 +1856,9 @@ message CommandEnvelope {
     HumanWorkItemsCommand human_work_items = 203;
     AgenticBrowserSessionCommand agentic_browser_session = 204;
     ArtifactHandoffRegistryCommand artifact_handoff_registry = 205;
+    PlanArtifactCommand plan_artifact_create = 206;
+    PlanArtifactCommand plan_artifact_read = 207;
+    PlanArtifactCommand plan_artifact_action = 208;
   }
 }
 
@@ -1960,6 +1963,7 @@ message EventEnvelope {
     HumanWorkItemsEvent human_work_items = 52;
     AgenticBrowserSessionEvent agentic_browser_session = 53;
     ArtifactHandoffRegistryEvent artifact_handoff_registry = 54;
+    PlanArtifactEvent plan_artifact = 55;
   }
 }
 
@@ -1985,6 +1989,34 @@ message ArtifactHandoffRegistryEvent {
   string state = 7;
   string error_code = 8;
   bytes projection_json = 9;
+}
+
+// Plan 57: bounded metadata projection. Core validates command payloads;
+// events never contain raw prompts, secrets or executable identities.
+message PlanArtifactCommand {
+  uint32 schema_version = 1;
+  string operation = 2;
+  bytes artifact_json = 3;
+  string artifact_id = 4;
+  uint64 expected_version = 5;
+  string status = 6;
+  string policy_snapshot_hash = 7;
+  string task_id = 8;
+  string workflow_run_id = 9;
+  string correlation_id = 10;
+  string idempotency_key = 11;
+}
+message PlanArtifactEvent {
+  uint32 schema_version = 1;
+  string operation = 2;
+  string artifact_id = 3;
+  uint64 revision = 4;
+  uint64 version = 5;
+  string status = 6;
+  string content_hash = 7;
+  string error_code = 8;
+  bytes projection_json = 9;
+  bool truncated = 10;
 }
 
 // Plan 46: bounded metadata-only Agent Role Profiles surface. Profile bodies

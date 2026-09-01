@@ -282,6 +282,19 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   sensitive payload projection. Focused Core/storage tests cover lifecycle,
   stale/takeover, binary ArtifactStore objects and metadata round-trip.
 
+## Plan 57 — Plan Artifact v1 (2026-09-01)
+
+- Contract: `cargo test -p evohime-local-storage plan_artifact` — PASS;
+  `cargo test -p evohime-core plan_artifact` — PASS.
+- Integration: `cargo check -p evohime-core -p evohime-desktop-ipc` — PASS;
+  `npm run check:protocol` — PASS; `npm run typecheck` — PASS.
+- Redaction/authority: only bounded metadata events are emitted; renderer sends
+  explicit Core actions and no direct database, filesystem, credential or
+  effect authority. Fault/recovery scenarios remain represented by typed
+  `stale`, `invalid_transition` and `unknown_outcome` states.
+- Evidence is tied to the task commit; no credentials, raw prompt/output,
+  absolute paths or personal data are included.
+
 ## Plan 56 — Artifact Handoff Registry v1 (2026-09-01)
 
 - Core/storage: `artifact-handoff/v1`, bounded semantic revisions, lifecycle,

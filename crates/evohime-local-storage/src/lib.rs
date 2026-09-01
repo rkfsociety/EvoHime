@@ -38,6 +38,7 @@ pub mod invocation_presets_store;
 pub mod memory_store;
 pub mod model_limit_store;
 pub mod model_provenance;
+pub mod plan_artifact;
 pub mod reconciliation_verifier;
 pub mod refinement_store;
 pub mod research_store;
@@ -56,7 +57,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 55;
+pub const SCHEMA_VERSION: u32 = 56;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -115,6 +116,8 @@ pub enum StorageError {
     AnalysisKernel(#[from] analysis_kernel::AnalysisKernelError),
     #[error("goal contract violation: {0}")]
     Goal(#[from] goal::GoalError),
+    #[error("plan artifact contract violation: {0}")]
+    PlanArtifact(#[from] plan_artifact::PlanArtifactError),
     /// Нарушение контракта execution ledger (план 08-1/08-2).
     #[error("execution ledger contract violation: {0}")]
     LedgerContract(#[from] execution_ledger::LedgerContractError),
@@ -3579,6 +3582,11 @@ impl LocalDatabase {
         }
         if current < 55 {
             artifact_handoff_registry_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 55;")?;
+        }
+        if current < 56 {
+            plan_artifact::PlanArtifactStore::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 56;")?;
         }
         transaction.commit()?;
         Ok(())

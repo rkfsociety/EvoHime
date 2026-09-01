@@ -744,6 +744,18 @@ Settings → Диагностика показывает preview и redaction su
   `browser_backend_unavailable`, а неизвестный внешний эффект не объявляется
   успешным.
 
+## Plan Artifact v1 (план 57, реализован 2026-09-01)
+
+Plan Artifact v1 добавляет Core-owned durable planning contract: immutable
+revisions, canonical SHA-256 hash, bounded steps/risks/assumptions/criteria,
+explicit `draft/accepted/executing/paused/replan_required/completed/failed/
+unknown_outcome` transitions и durable execution snapshot с exact plan/policy
+hash. SQLite schema повышена до v56; IPC использует additive tags 206–208 и
+typed event projection 55. Electron `PlanArtifactPanel` не вычисляет state
+machine и не обладает authority: все действия проходят authenticated Core.
+Неизвестный внешний результат не превращается в success и не повторяется
+вслепую; raw prompts, secrets и executable identities не покидают Core.
+
 ## Artifact Handoff Registry v1 (план 56, реализован 2026-09-01)
 
 Core получил typed `artifact-handoff/v1` semantic registry поверх существующего

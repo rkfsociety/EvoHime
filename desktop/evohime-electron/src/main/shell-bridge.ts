@@ -290,6 +290,35 @@ function dispatch(
       return accepted(client.send({ resolveTaskCheckpoint: { taskId, workspacePath, checkpointId, expectedSourceEventSeq, action, idempotencyKey } }))
     }
 
+    case 'core.planArtifactCreate': {
+      const value = asRecord(payload)
+      const artifactJson = asBoundedString(value['artifactJson'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (artifactJson === null || artifactJson.length > 64 * 1024 || idempotencyKey === null) return failure('invalid-payload', 'Некорректный Plan Artifact.')
+      return accepted(client.send({ planArtifactCreate: { schemaVersion: 1, operation: 'create', artifactJson: Buffer.from(artifactJson, 'utf8'), idempotencyKey } }))
+    }
+
+    case 'core.planArtifactRead': {
+      const artifactId = asBoundedString(asRecord(payload)['artifactId'])
+      if (artifactId === null) return failure('invalid-payload', 'Некорректный идентификатор Plan Artifact.')
+      return accepted(client.send({ planArtifactRead: { schemaVersion: 1, operation: 'read', artifactId } }))
+    }
+
+    case 'core.planArtifactAction': {
+      const value = asRecord(payload)
+      const operation = value['operation'] === 'transition' || value['operation'] === 'execute' ? value['operation'] : null
+      const artifactId = asBoundedString(value['artifactId'])
+      const expectedVersion = asNonNegativeInteger(value['expectedVersion'])
+      const status = value['status'] === undefined ? '' : asBoundedString(value['status'])
+      const policySnapshotHash = value['policySnapshotHash'] === undefined ? '' : asBoundedString(value['policySnapshotHash'])
+      const taskId = value['taskId'] === undefined ? '' : asBoundedString(value['taskId'])
+      const workflowRunId = value['workflowRunId'] === undefined ? '' : asBoundedString(value['workflowRunId'])
+      const correlationId = asBoundedString(value['correlationId'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (operation === null || artifactId === null || expectedVersion === null || status === null || policySnapshotHash === null || taskId === null || workflowRunId === null || correlationId === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректное действие Plan Artifact.')
+      return accepted(client.send({ planArtifactAction: { schemaVersion: 1, operation, artifactId, expectedVersion, status, policySnapshotHash, taskId, workflowRunId, correlationId, idempotencyKey } }))
+    }
+
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)
       const taskId = asBoundedString(value['taskId'])

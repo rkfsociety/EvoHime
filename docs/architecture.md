@@ -1046,6 +1046,26 @@ publish, owner-scoped single-use handoff, recovery и read-only live inspection
 обслуживаются Core; renderer не получает полномочий, credentials или raw
 runtime payload.
 
+## Plan Artifact v1 (план 57)
+
+`evohime-local-storage::plan_artifact` — единственный mutable authority для
+versioned planning contract. SQLite schema 56 хранит append-only revisions и
+execution snapshots; canonical camelCase JSON без `content_hash` хешируется
+SHA-256. Contract limits: 128 steps, 64 criteria, 32 references, 4 KiB text
+fields и 64 KiB canonical artifact. Состояния проходят только явные переходы
+`draft → accepted → executing → paused|replan_required|completed|failed|unknown_outcome`;
+re-plan создаёт новую revision. `ExecutePlan` фиксирует exact revision/hash и
+policy snapshot, но не добавляет shell/network authority: реальный effect
+остаётся за существующим Core task/workflow boundary и повторной policy,
+capability и approval проверкой. После restart неизвестный dispatch не
+повторяется вслепую. Legacy `TaskPlanSpec`, plan context и plan review — только
+read-only inputs.
+
+Authenticated desktop IPC расширен additive command tags 206–208 и event tag
+55; Electron получает bounded projection и отправляет только явные create/read/
+transition/execute actions. Raw prompts, model output, secrets, absolute paths и
+executable identities в Plan Artifact boundary запрещены.
+
 ## Artifact Handoff Registry v1
 
 `ProjectArtifactRegistry` is a Core-owned semantic layer over `ArtifactStore`.

@@ -1003,6 +1003,7 @@ pub mod model_resilience_policy;
 pub mod observability;
 pub mod permission_rules;
 pub mod plan;
+pub mod plan_artifact;
 pub mod policy_gate;
 pub mod prd;
 pub mod provider_resilience;
@@ -1136,6 +1137,19 @@ pub enum CoreCommand {
         project_id: String,
         task_id: String,
         max_chars: usize,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    PlanArtifact {
+        operation: String,
+        artifact_json: Vec<u8>,
+        artifact_id: String,
+        expected_version: u64,
+        status: String,
+        policy_snapshot_hash: String,
+        task_id: Option<String>,
+        workflow_run_id: Option<String>,
+        correlation_id: String,
+        idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
     GetTaskSnapshot {
@@ -10353,6 +10367,81 @@ impl TaskCoordinator {
                         max_chars.min(32 * 1024),
                     );
                     serde_json::to_vec(&plan).map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::PlanArtifact {
+                operation,
+                artifact_json,
+                artifact_id,
+                expected_version,
+                status,
+                policy_snapshot_hash,
+                task_id,
+                workflow_run_id,
+                correlation_id,
+                idempotency_key,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let runtime = crate::plan_artifact::PlanArtifactRuntime::new(journal);
+                    let now = crate::task_memory::now_millis() as i64;
+                    match operation.as_str() {
+                        "create" => {
+                            let artifact: crate::plan_artifact::PlanArtifactV1 =
+                                serde_json::from_slice(&artifact_json)
+                                    .map_err(|e| e.to_string())?;
+                            serde_json::to_vec(
+                                &runtime
+                                    .create(&artifact, &idempotency_key, now)
+                                    .await
+                                    .map_err(|e| e.to_string())?,
+                            )
+                            .map_err(|e| e.to_string())
+                        }
+                        "read" => serde_json::to_vec(
+                            &runtime.get(&artifact_id).await.map_err(|e| e.to_string())?,
+                        )
+                        .map_err(|e| e.to_string()),
+                        "execute" => serde_json::to_vec(
+                            &runtime
+                                .execute(
+                                    &artifact_id,
+                                    expected_version,
+                                    &policy_snapshot_hash,
+                                    task_id.as_deref(),
+                                    workflow_run_id.as_deref(),
+                                    &correlation_id,
+                                    &idempotency_key,
+                                    now,
+                                )
+                                .await
+                                .map_err(|e| e.to_string())?,
+                        )
+                        .map_err(|e| e.to_string()),
+                        "transition" => {
+                            let next = crate::plan_artifact::PlanArtifactStatus::parse(&status)
+                                .ok_or_else(|| "invalid plan artifact status".to_string())?;
+                            serde_json::to_vec(
+                                &runtime
+                                    .transition(
+                                        &artifact_id,
+                                        expected_version,
+                                        next,
+                                        &idempotency_key,
+                                        now,
+                                    )
+                                    .await
+                                    .map_err(|e| e.to_string())?,
+                            )
+                            .map_err(|e| e.to_string())
+                        }
+                        _ => Err("invalid plan artifact operation".into()),
+                    }
                 }
                 .await;
                 let _ = reply.send(result);

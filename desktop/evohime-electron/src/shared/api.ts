@@ -334,6 +334,17 @@ export interface ContinuationActionResult {
   readonly errorCode: string
 }
 
+export interface PlanArtifactProjection {
+  readonly schemaVersion: number
+  readonly id: string
+  readonly revision: number
+  readonly version: number
+  readonly status: string
+  readonly contentHash: string
+  readonly steps: readonly { readonly id: string; readonly description: string; readonly risk: string }[]
+  readonly acceptanceCriteria: readonly { readonly id: string; readonly description: string; readonly evidenceKind: string; readonly required: boolean }[]
+}
+
 export interface CoreEvent {
   readonly sequenceId: number
   readonly coreInstanceId?: string
@@ -361,6 +372,7 @@ export interface CoreEvent {
   readonly goalAction?: GoalActionResult | null
   readonly continuation?: ContinuationProjection | null
   readonly continuationAction?: ContinuationActionResult | null
+  readonly planArtifact?: PlanArtifactProjection | null
   readonly refinement?: RefinementProjection | null
   readonly refinementList?: { readonly candidates: readonly RefinementProjection[]; readonly truncated: boolean; readonly errorCode: string } | null
   readonly refinementAction?: RefinementActionResult | null
@@ -1017,6 +1029,9 @@ export const RENDERER_COMMANDS = [
   'core.getConversationWorkbench',
   'core.getTaskCheckpoint',
   'core.resolveTaskCheckpoint',
+  'core.planArtifactCreate',
+  'core.planArtifactRead',
+  'core.planArtifactAction',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1297,6 +1312,9 @@ export interface CommandPayloads {
     action: 'acknowledge_recovery' | 'request_resume'
     idempotencyKey: string
   }
+  'core.planArtifactCreate': { artifactJson: string; idempotencyKey: string }
+  'core.planArtifactRead': { artifactId: string }
+  'core.planArtifactAction': { operation: 'transition' | 'execute'; artifactId: string; expectedVersion: number; status?: string; policySnapshotHash?: string; taskId?: string; workflowRunId?: string; correlationId: string; idempotencyKey: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
   'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
@@ -1761,6 +1779,9 @@ export interface CommandResults {
   'core.getConversationWorkbench': { accepted: boolean }
   'core.getTaskCheckpoint': { accepted: boolean }
   'core.resolveTaskCheckpoint': { accepted: boolean }
+  'core.planArtifactCreate': { accepted: boolean }
+  'core.planArtifactRead': { accepted: boolean }
+  'core.planArtifactAction': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }
   'core.executeAnalysisKernel': { accepted: boolean }
