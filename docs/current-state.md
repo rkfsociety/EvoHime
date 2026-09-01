@@ -743,3 +743,21 @@ Settings → Диагностика показывает preview и redaction su
   только artifact locator. При отсутствии package backend сохраняется typed
   `browser_backend_unavailable`, а неизвестный внешний эффект не объявляется
   успешным.
+
+## Artifact Handoff Registry v1 (план 56, реализован 2026-09-01)
+
+Core получил typed `artifact-handoff/v1` semantic registry поверх существующего
+ArtifactStore: registry хранит только immutable revision metadata, lineage,
+handoff/acceptance state и idempotency outcomes; bytes не дублируются. SQLite
+schema v55 добавляет registry tables транзакционно с backup-before-migrate.
+Bounded validation отвергает неизвестную версию, oversized metadata, secret/
+prompt/output fields и refs вне `artifact://`; lifecycle включает produced,
+review, accepted, needs-revision, superseded, stale и rejected.
+
+Workspace и parent fingerprints остаются Core evidence: unrelated paths не
+инвалидируют revision, неизвестный scope даёт `possibly_stale`, исторические
+revisions не переписываются. Authenticated additive IPC command 205/event 54 и
+Electron `ArtifactHandoffRegistryPanel` показывают только metadata projection;
+renderer не получает bytes, raw prompts, outputs, credentials или authority.
+Операции list/get/publish/handoff/accept/revise/mark-stale fail closed при
+invalid scope/ref и не создают capabilities или внешних effects.

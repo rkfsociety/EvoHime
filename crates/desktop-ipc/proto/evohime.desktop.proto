@@ -1855,6 +1855,7 @@ message CommandEnvelope {
     CreateDiagnosticsSnapshot create_diagnostics_snapshot = 202;
     HumanWorkItemsCommand human_work_items = 203;
     AgenticBrowserSessionCommand agentic_browser_session = 204;
+    ArtifactHandoffRegistryCommand artifact_handoff_registry = 205;
   }
 }
 
@@ -1958,7 +1959,32 @@ message EventEnvelope {
     ConversationWorkbenchEvent conversation_workbench = 51;
     HumanWorkItemsEvent human_work_items = 52;
     AgenticBrowserSessionEvent agentic_browser_session = 53;
+    ArtifactHandoffRegistryEvent artifact_handoff_registry = 54;
   }
+}
+
+// Plan 56: bounded metadata-only semantic artifact registry. Bytes, secrets,
+// prompts and raw outputs never cross the desktop boundary.
+message ArtifactHandoffRegistryCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string project_id = 3;
+  string operation = 4;
+  bytes payload = 5;
+  uint64 expected_revision = 6;
+  string idempotency_key = 7;
+  string correlation_id = 8;
+}
+message ArtifactHandoffRegistryEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  string artifact_id = 5;
+  uint64 revision = 6;
+  string state = 7;
+  string error_code = 8;
+  bytes projection_json = 9;
 }
 
 // Plan 46: bounded metadata-only Agent Role Profiles surface. Profile bodies

@@ -281,3 +281,15 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   `AgenticBrowserSessionPanel`; protocol/typecheck tests prove no direct CDP or
   sensitive payload projection. Focused Core/storage tests cover lifecycle,
   stale/takeover, binary ArtifactStore objects and metadata round-trip.
+
+## Plan 56 — Artifact Handoff Registry v1 (2026-09-01)
+
+- Core/storage: `artifact-handoff/v1`, bounded semantic revisions, lifecycle,
+  metadata-only lineage/handoffs/acceptance and schema v55 additive migration;
+  existing ArtifactStore remains the only byte owner.
+- IPC/UI: authenticated additive command 205/event 54 and Electron
+  `ArtifactHandoffRegistryPanel`; refs/projection only, with secret/raw
+  prompt/output rejection and no capability expansion.
+- Evidence: focused Core/storage tests, `cargo check`, generated protocol
+  check, Electron typecheck and `git diff --check`; no credentials, raw
+  payloads, transcripts, absolute paths or PII are included.

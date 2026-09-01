@@ -1046,6 +1046,22 @@ publish, owner-scoped single-use handoff, recovery и read-only live inspection
 обслуживаются Core; renderer не получает полномочий, credentials или raw
 runtime payload.
 
+## Artifact Handoff Registry v1
+
+`ProjectArtifactRegistry` is a Core-owned semantic layer over `ArtifactStore`.
+SQLite schema v55 stores immutable artifact revisions, lineage edges, typed
+handoffs, acceptance decisions and idempotency outcomes; it never duplicates
+content bytes. Contract `artifact-handoff/v1` validates bounded metadata,
+`artifact://` refs, producer/consumer role snapshots and lifecycle transitions.
+Workspace and parent revision fingerprints drive selective freshness; unknown
+scope is `possibly_stale`, and historical revisions are not rewritten.
+
+Authenticated additive IPC command 205/event 54 and the Electron panel expose
+bounded metadata only. Renderer cannot read SQLite/ArtifactStore, mint identity,
+change capabilities, or supply secrets, prompts, raw outputs and executable
+identities. Restart/recovery preserves durable registry state and does not
+blindly repeat an optional consumer effect.
+
 ### Conversational Workflow Composer v1
 
 Composer добавляет natural-language authoring поверх Builder v1. Контракт

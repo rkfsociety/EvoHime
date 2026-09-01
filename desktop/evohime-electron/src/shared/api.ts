@@ -1211,6 +1211,13 @@ export const RENDERER_COMMANDS = [
   'teamSopProtocols.reviewSession',
   'teamSopProtocols.reviseSession',
   'teamSopProtocols.cancel',
+  'artifactHandoffRegistry.list',
+  'artifactHandoffRegistry.get',
+  'artifactHandoffRegistry.publish',
+  'artifactHandoffRegistry.handoff',
+  'artifactHandoffRegistry.accept',
+  'artifactHandoffRegistry.revise',
+  'artifactHandoffRegistry.markStale',
   'causalCollaborationBus.list',
   'causalCollaborationBus.publish',
   'causalCollaborationBus.subscribe',
@@ -1688,6 +1695,13 @@ export interface CommandPayloads {
   'teamSopProtocols.reviewSession': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; expectedVersion: number }
   'teamSopProtocols.reviseSession': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; expectedVersion: number }
   'teamSopProtocols.cancel': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string }
+  'artifactHandoffRegistry.list': { requestId: string; projectId: string; correlationId: string; idempotencyKey: string }
+  'artifactHandoffRegistry.get': { requestId: string; projectId: string; correlationId: string; idempotencyKey: string; artifactId: string; revision: number }
+  'artifactHandoffRegistry.publish': { requestId: string; projectId: string; correlationId: string; idempotencyKey: string; artifact: Record<string, unknown> }
+  'artifactHandoffRegistry.handoff': { requestId: string; projectId: string; correlationId: string; idempotencyKey: string; artifactId: string; revision: number; handoffId: string; producerIdentity: string; consumerIdentity: string }
+  'artifactHandoffRegistry.accept': { requestId: string; projectId: string; correlationId: string; idempotencyKey: string; artifactId: string; revision: number }
+  'artifactHandoffRegistry.revise': { requestId: string; projectId: string; correlationId: string; idempotencyKey: string; artifactId: string; revision: number }
+  'artifactHandoffRegistry.markStale': { requestId: string; projectId: string; correlationId: string; idempotencyKey: string; artifactId: string; revision: number }
   'causalCollaborationBus.list': { requestId: string; ownerScope: string; idempotencyKey: string; correlationId: string }
   'causalCollaborationBus.publish': { requestId: string; ownerScope: string; idempotencyKey: string; correlationId: string; message: Record<string, unknown> }
   'causalCollaborationBus.subscribe': { requestId: string; ownerScope: string; sessionId: string; afterSequence?: number; limit?: number }
@@ -1956,6 +1970,13 @@ export interface CommandResults {
   'teamSopProtocols.reviewSession': { accepted: boolean }
   'teamSopProtocols.reviseSession': { accepted: boolean }
   'teamSopProtocols.cancel': { accepted: boolean }
+  'artifactHandoffRegistry.list': { accepted: boolean }
+  'artifactHandoffRegistry.get': { accepted: boolean }
+  'artifactHandoffRegistry.publish': { accepted: boolean }
+  'artifactHandoffRegistry.handoff': { accepted: boolean }
+  'artifactHandoffRegistry.accept': { accepted: boolean }
+  'artifactHandoffRegistry.revise': { accepted: boolean }
+  'artifactHandoffRegistry.markStale': { accepted: boolean }
   'causalCollaborationBus.list': { accepted: boolean }
   'causalCollaborationBus.publish': { accepted: boolean }
   'causalCollaborationBus.subscribe': { accepted: boolean }

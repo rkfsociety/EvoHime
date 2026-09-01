@@ -965,6 +965,7 @@ pub mod agentic_browser_session;
 pub mod ambient;
 pub mod ambient_proactivity;
 pub mod analysis_kernel;
+pub mod artifact_handoff_registry;
 pub mod audit;
 pub mod browser_backend;
 pub mod build;

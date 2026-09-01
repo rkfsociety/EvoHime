@@ -273,3 +273,12 @@ Human response не является approval или capability grant; Team SOP 
 использует command 203/event 52, Electron показывает bounded Inbox без raw model
 prompts, credentials или hidden reasoning. Комплект 54-0 … 54-4 удалён после
 focused Rust/Electron, protocol/typecheck, format и diff-check gates.
+
+План 56 закрыт 1 сентября 2026 года: Artifact Handoff Registry v1 добавляет
+Core-owned semantic ProjectArtifact revisions поверх ArtifactStore, immutable
+lineage/handoff/acceptance metadata, bounded freshness fingerprints и
+idempotent lifecycle. SQLite schema v55 и authenticated IPC command 205/event
+54 аддитивны; Electron показывает metadata-only projection без bytes, raw
+prompts/outputs, credentials или capability authority. Комплект 56-0 … 56-4
+удалён после focused contract/storage/Core, protocol/typecheck и diff-check
+проверок.

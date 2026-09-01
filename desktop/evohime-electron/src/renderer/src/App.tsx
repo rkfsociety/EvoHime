@@ -39,6 +39,7 @@ import { ModelResiliencePolicyPanel } from './ModelResiliencePolicyPanel'
 import { ExecutionBackendRegistryPanel } from './ExecutionBackendRegistryPanel'
 import { ToolSimulationRuntimePanel } from './ToolSimulationRuntimePanel'
 import { AgentRoleProfilesPanel } from './AgentRoleProfilesPanel'
+import { ArtifactHandoffRegistryPanel } from './ArtifactHandoffRegistryPanel'
 import { TeamSopProtocolsPanel } from './TeamSopProtocolsPanel'
 import { CausalCollaborationBusPanel } from './CausalCollaborationBusPanel'
 import { HumanWorkItemsPanel } from './HumanWorkItemsPanel'
@@ -68,7 +69,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'team-sop' | 'causal-collaboration' | 'human-work-items'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -102,6 +103,7 @@ const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'execution-backends', label: 'Среды выполнения', icon: '⌘' },
   { id: 'tool-simulation', label: 'Симуляция инструментов', icon: '◇' },
   { id: 'agent-role-profiles', label: 'Профили ролей', icon: '◎' },
+  { id: 'artifact-handoff-registry', label: 'Артефакты и передачи', icon: '◇' },
   { id: 'team-sop', label: 'Team SOP', icon: '∷' },
   { id: 'causal-collaboration', label: 'Collaboration Bus', icon: '⇆' },
 ]
@@ -383,6 +385,7 @@ export function App(): React.JSX.Element {
               {view === 'execution-backends' ? <ExecutionBackendRegistryPanel /> : null}
               {view === 'tool-simulation' ? <ToolSimulationRuntimePanel /> : null}
               {view === 'agent-role-profiles' ? <AgentRoleProfilesPanel /> : null}
+              {view === 'artifact-handoff-registry' ? <ArtifactHandoffRegistryPanel /> : null}
               {view === 'team-sop' ? <TeamSopProtocolsPanel /> : null}
               {view === 'causal-collaboration' ? <CausalCollaborationBusPanel /> : null}
               {view === 'human-work-items' ? <HumanWorkItemsPanel /> : null}

@@ -1989,6 +1989,22 @@ function dispatch(
       return accepted(client.send(operation==='list'?{teamSopProtocolsList:body}:{teamSopProtocolsAction:body}))
     }
 
+    case 'artifactHandoffRegistry.list':
+    case 'artifactHandoffRegistry.get':
+    case 'artifactHandoffRegistry.publish':
+    case 'artifactHandoffRegistry.handoff':
+    case 'artifactHandoffRegistry.accept':
+    case 'artifactHandoffRegistry.revise':
+    case 'artifactHandoffRegistry.markStale': {
+      const value = asRecord(payload)
+      const projectId = asBoundedString(value['projectId']); const requestId = asBoundedString(value['requestId'])
+      const correlationId = asBoundedString(value['correlationId']); const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (!projectId || !requestId || !correlationId || !idempotencyKey) return failure('invalid-payload', 'Некорректный запрос реестра артефактов.')
+      const operation = command.slice('artifactHandoffRegistry.'.length)
+      const body: Record<string, unknown> = { requestId, projectId, operation: operation === 'markStale' ? 'mark_stale' : operation, correlationId, idempotencyKey, payload: new TextEncoder().encode(JSON.stringify(value['artifact'] ?? value)) }
+      return accepted(client.send({ artifactHandoffRegistry: body }))
+    }
+
     case 'causalCollaborationBus.list':
     case 'causalCollaborationBus.publish': {
       const value = asRecord(payload); const requestId=asBoundedString(value['requestId']); const ownerScope=asBoundedString(value['ownerScope']); const idempotencyKey=asBoundedString(value['idempotencyKey']); const correlationId=asBoundedString(value['correlationId']);

@@ -11,6 +11,7 @@ pub mod agent_middleware_pipeline_store;
 pub mod agent_role_profiles_store;
 pub mod ambient_store;
 pub mod analysis_kernel;
+pub mod artifact_handoff_registry_store;
 pub mod artifact_store;
 pub mod automation_store;
 pub mod backup;
@@ -55,7 +56,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 54;
+pub const SCHEMA_VERSION: u32 = 55;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3575,6 +3576,9 @@ impl LocalDatabase {
         if current < 54 {
             browser_session_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 54;")?;
+        }
+        if current < 55 {
+            artifact_handoff_registry_store::install_schema(&transaction)?;
         }
         transaction.commit()?;
         Ok(())
