@@ -243,6 +243,22 @@ function dispatch(
         : { subscribeConversationEvents: request }))
     }
 
+    case 'core.getConversationWorkbench': {
+      const value = asRecord(payload)
+      const conversationId = asGoalToken(value['conversationId'])
+      const workspaceId = asBoundedString(value['workspaceId'])
+      const runId = value['runId'] === undefined ? '' : asGoalToken(value['runId'])
+      const backendSnapshotHash = value['backendSnapshotHash'] === undefined ? '' : asGoalToken(value['backendSnapshotHash'])
+      const capabilitySnapshotHash = value['capabilitySnapshotHash'] === undefined ? '' : asGoalToken(value['capabilitySnapshotHash'])
+      const afterSequence = value['afterSequence'] === undefined ? 0 : asNonNegativeInteger(value['afterSequence'])
+      const limit = value['limit'] === undefined ? 100 : asBoundedNumber(value['limit'], 200)
+      if (conversationId === null || workspaceId === null || runId === null || backendSnapshotHash === null || capabilitySnapshotHash === null || afterSequence === null || limit === null || limit < 1) {
+        return failure('invalid-payload', 'Некорректная проекция Workbench.')
+      }
+      log('info', 'shell.command_forwarded', { command })
+      return accepted(client.send({ getConversationWorkbench: { schemaVersion: 1, requestId: `${conversationId}:${afterSequence}`, conversationId, workspaceId, runId, backendSnapshotHash, capabilitySnapshotHash, afterSequence, limit } }))
+    }
+
     case 'core.getTaskCheckpoint': {
       const value = asRecord(payload)
       const taskId = asBoundedString(value['taskId'])
@@ -1087,6 +1103,22 @@ function dispatch(
       const chat = chats.open(chatId)
       chats.remove(chatId)
       return { ok: true, value: chat ? chats.list(chat.workspacePath) : [] }
+    }
+
+    case 'chat.getWorkbenchPresentation': {
+      const chatId = asBoundedString(asRecord(payload)['chatId'])
+      if (chatId === null) return failure('invalid-payload', 'Некорректный идентификатор чата.')
+      return { ok: true, value: chats.getWorkbenchPresentation(chatId) }
+    }
+
+    case 'chat.saveWorkbenchPresentation': {
+      const value = asRecord(payload)
+      const chatId = asBoundedString(value['chatId'])
+      const presentation = asRecord(value['presentation'])
+      const activeTab = asBoundedString(presentation['activeTab'])
+      const splitRatio = typeof presentation['splitRatio'] === 'number' ? presentation['splitRatio'] : Number.NaN
+      if (chatId === null || activeTab === null || !Number.isFinite(splitRatio)) return failure('invalid-payload', 'Некорректное состояние Workbench.')
+      return { ok: true, value: chats.saveWorkbenchPresentation(chatId, { activeTab, splitRatio, collapsed: presentation['collapsed'] === true }) }
     }
 
     case 'review.pickPlan':

@@ -117,4 +117,16 @@ describe('chat store', () => {
     expect(titleFromPrompt('x'.repeat(200)).length).toBeLessThanOrEqual(81)
     expect(titleFromPrompt('   ')).toBe('Без названия')
   })
+
+  it('keeps bounded Workbench presentation state per conversation', () => {
+    const store = newStore()
+    const first = store.create('C:\\work\\repo')!
+    const second = store.create('C:\\work\\repo')!
+
+    expect(store.getWorkbenchPresentation(first.id)).toEqual({ activeTab: 'tasks', splitRatio: 0.5, collapsed: false })
+    expect(store.saveWorkbenchPresentation(first.id, { activeTab: 'usage', splitRatio: 9, collapsed: true })).toEqual({ activeTab: 'usage', splitRatio: 0.8, collapsed: true })
+    expect(store.getWorkbenchPresentation(first.id).activeTab).toBe('usage')
+    expect(store.getWorkbenchPresentation(second.id).activeTab).toBe('tasks')
+    expect(store.saveWorkbenchPresentation(first.id, { activeTab: 'secret', splitRatio: -1, collapsed: false })).toEqual({ activeTab: 'tasks', splitRatio: 0.2, collapsed: false })
+  })
 })

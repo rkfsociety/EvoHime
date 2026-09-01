@@ -4169,6 +4169,11 @@ impl IpcBridge {
                     self.write_conversation_event_log_response(writer, result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::GetConversationWorkbench(request)) => {
+                    let result = self.dispatch_conversation_workbench(request).await;
+                    self.write_conversation_workbench_response(writer, result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::CausalCollaborationBus(request)) => {
                     let result = self.dispatch_causal_collaboration_bus(request).await;
                     self.write_causal_collaboration_response(writer, result)
@@ -11983,6 +11988,103 @@ impl IpcBridge {
             core_instance_id: self.core_instance_id.clone(),
             session_epoch: self.session_epoch,
             event: Some(generated::event_envelope::Event::ConversationEventLog(
+                result,
+            )),
+        };
+        transport::write_frame(writer, &event.encode_to_vec()).await?;
+        Ok(())
+    }
+
+    async fn dispatch_conversation_workbench(
+        &self,
+        request: generated::ConversationWorkbenchRequest,
+    ) -> generated::ConversationWorkbenchEvent {
+        let error = |code: &'static str| generated::ConversationWorkbenchEvent {
+            schema_version: crate::conversation_workbench::CONTRACT_VERSION,
+            request_id: request.request_id.clone(),
+            operation: "get".into(),
+            conversation_id: request.conversation_id.clone(),
+            event_cursor: 0,
+            status: "rejected".into(),
+            error_code: code.into(),
+            projection_json: Vec::new(),
+        };
+        if request.schema_version != crate::conversation_workbench::CONTRACT_VERSION
+            || request.request_id.is_empty()
+            || crate::conversation_workbench::validate_scope(
+                &request.conversation_id,
+                &request.workspace_id,
+                &request.run_id,
+                &request.backend_snapshot_hash,
+                &request.capability_snapshot_hash,
+                request.after_sequence,
+                request.limit as usize,
+            )
+            .is_err()
+        {
+            return error("invalid_request");
+        }
+        let limit = request.limit as usize;
+        let page = if request.after_sequence == 0 {
+            self.journal
+                .conversation_history_before(&request.conversation_id, u64::MAX, limit)
+                .await
+        } else {
+            self.journal
+                .conversation_history_after(&request.conversation_id, request.after_sequence, limit)
+                .await
+        };
+        let page = match page {
+            Ok(page) => page,
+            Err(StorageError::ConversationEventLog(
+                evohime_local_storage::conversation_event_log_store::ConversationStoreError::CursorExpired { .. },
+            )) => return error("cursor_expired"),
+            Err(StorageError::ConversationEventLog(
+                evohime_local_storage::conversation_event_log_store::ConversationStoreError::ConversationNotFound,
+            )) => return error("conversation_not_found"),
+            Err(_) => return error("projection_unavailable"),
+        };
+        let projection = crate::conversation_workbench::build_projection(
+            request.conversation_id.clone(),
+            request.workspace_id,
+            request.run_id,
+            request.backend_snapshot_hash,
+            request.capability_snapshot_hash,
+            page.newest_sequence.unwrap_or(request.after_sequence),
+            &page.events,
+        );
+        let projection_json = match serde_json::to_vec(&projection) {
+            Ok(value) if value.len() <= crate::conversation_workbench::MAX_PROJECTION_BYTES => {
+                value
+            }
+            _ => return error("projection_too_large"),
+        };
+        generated::ConversationWorkbenchEvent {
+            schema_version: crate::conversation_workbench::CONTRACT_VERSION,
+            request_id: request.request_id,
+            operation: "get".into(),
+            conversation_id: projection.conversation_id,
+            event_cursor: projection.event_cursor,
+            status: "ok".into(),
+            error_code: String::new(),
+            projection_json,
+        }
+    }
+
+    async fn write_conversation_workbench_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        result: generated::ConversationWorkbenchEvent,
+    ) -> Result<(), IpcBridgeError> {
+        let event = generated::EventEnvelope {
+            protocol: Some(protocol()),
+            sequence_id: 0,
+            task_id: String::new(),
+            event_type: "conversation.workbench".into(),
+            payload: Vec::new(),
+            core_instance_id: self.core_instance_id.clone(),
+            session_epoch: self.session_epoch,
+            event: Some(generated::event_envelope::Event::ConversationWorkbench(
                 result,
             )),
         };

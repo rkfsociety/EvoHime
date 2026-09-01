@@ -6,6 +6,7 @@ import type {
   ConnectionState,
   ConversationEventLogPage,
   ConversationEventProjection,
+  ConversationWorkbenchProjection,
   ContinuationActionResult,
   ContinuationProjection,
   AnalysisKernelProjection,
@@ -60,7 +61,7 @@ type ICommandEnvelope = evohime.desktop.v1.ICommandEnvelope
  * (plan 0, stage 1).
  */
 
-export const CLIENT_CAPABILITIES = ['conversation_event_log', 'replay', 'resync', 'task_checkpoint', 'skills', 'goals', 'workflow_builder'] as const
+export const CLIENT_CAPABILITIES = ['conversation_event_log', 'conversation_workbench', 'replay', 'resync', 'task_checkpoint', 'skills', 'goals', 'workflow_builder'] as const
 
 export const DEFAULT_CONNECT_TIMEOUT_MS = 5_000
 export const DEFAULT_HANDSHAKE_TIMEOUT_MS = 5_000
@@ -564,6 +565,7 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       , refinementList: decodeRefinementList(event.refinementList)
       , refinementAction: decodeRefinementAction(event.refinementAction)
       , conversationEventLog: decodeConversationEventLog(event.conversationEventLog)
+      , conversationWorkbench: decodeConversationWorkbench(event.conversationWorkbench)
     })
   }
 
@@ -695,6 +697,37 @@ function decodeConversationEventLog(
     hasNewer: Boolean(projected.hasNewer),
     earliestAvailableSequence: Number(projected.earliestAvailableSequence ?? 0),
     errorCode: projected.errorCode ?? ''
+  }
+}
+
+function decodeConversationWorkbench(
+  projected: evohime.desktop.v1.IConversationWorkbenchEvent | null | undefined
+): ConversationWorkbenchProjection | null {
+  if (!projected || projected.status !== 'ok' || !projected.projectionJson?.length) return null
+  try {
+    const value = JSON.parse(Buffer.from(projected.projectionJson).toString('utf8')) as Record<string, unknown>
+    const tabs = Array.isArray(value['tabs']) ? value['tabs'] : []
+    return {
+      schemaVersion: Number(value['schema_version'] ?? 0),
+      conversationId: typeof value['conversation_id'] === 'string' ? value['conversation_id'] : '',
+      workspaceId: typeof value['workspace_id'] === 'string' ? value['workspace_id'] : '',
+      runId: typeof value['run_id'] === 'string' ? value['run_id'] : '',
+      backendSnapshotHash: typeof value['backend_snapshot_hash'] === 'string' ? value['backend_snapshot_hash'] : '',
+      capabilitySnapshotHash: typeof value['capability_snapshot_hash'] === 'string' ? value['capability_snapshot_hash'] : '',
+      eventCursor: Number(value['event_cursor'] ?? 0),
+      eventCount: Number(value['event_count'] ?? 0),
+      taskCount: Number(value['task_count'] ?? 0),
+      usageInputTokens: Number(value['usage_input_tokens'] ?? 0),
+      usageOutputTokens: Number(value['usage_output_tokens'] ?? 0),
+      tabs: tabs.flatMap((tab): ConversationWorkbenchProjection['tabs'][number][] => {
+        if (typeof tab !== 'object' || tab === null) return []
+        const item = tab as Record<string, unknown>
+        return [{ id: String(item['id'] ?? ''), label: String(item['label'] ?? ''), availability: String(item['availability'] ?? 'unavailable'), reason: String(item['reason'] ?? ''), badgeSource: String(item['badge_source'] ?? ''), persistence: String(item['persistence'] ?? 'presentation_only') }]
+      }),
+      redaction: typeof value['redaction'] === 'string' ? value['redaction'] : 'renderer_metadata_only'
+    }
+  } catch {
+    return null
   }
 }
 

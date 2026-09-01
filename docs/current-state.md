@@ -675,5 +675,16 @@ renderer не получает.
   only message metadata, hashes, delivery and provenance; raw payloads,
   prompts, credentials and grants never cross the boundary.
 - Delivery is compare-and-set and unknown dispatch outcomes are terminal until
-  explicit reconciliation; no provider, tool or artifact authority is created
-  by the bus.
+explicit reconciliation; no provider, tool or artifact authority is created
+by the bus.
+
+План 52 реализован 1 сентября 2026 года: Conversation Workbench v1 добавляет
+рядом с chat единую bounded surface из шести capability-aware tabs. Core
+composer использует существующий conversation event log и возвращает typed
+metadata-only projection через authenticated command 201/event 51; schema
+остаётся v52, отдельного Workbench store нет. Tasks/Usage показывают Core
+evidence, Files/Diff/Terminal/Browser — typed `unavailable` до будущих
+capabilities планов 55/60. Presentation state ограничен и хранится per
+conversation в shell ChatStore; смена conversation сбрасывает projection,
+новый event-log cursor инициирует refresh. Raw content, credentials и authority
+renderer не пересекают границу.

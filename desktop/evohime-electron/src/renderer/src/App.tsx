@@ -41,6 +41,7 @@ import { ToolSimulationRuntimePanel } from './ToolSimulationRuntimePanel'
 import { AgentRoleProfilesPanel } from './AgentRoleProfilesPanel'
 import { TeamSopProtocolsPanel } from './TeamSopProtocolsPanel'
 import { CausalCollaborationBusPanel } from './CausalCollaborationBusPanel'
+import { WorkbenchPanel } from './WorkbenchPanel'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -302,19 +303,22 @@ export function App(): React.JSX.Element {
 
         <div className="main__body">
           {view === 'chat' ? (
-            <TaskTimeline
-              connection={connection}
-              events={events}
-              workspace={workspace}
-              chatId={chatId}
-              onChatTouched={() => setChatRevision((value) => value + 1)}
-              onChatOpened={(id) => {
-                setChatId(id)
-                setChatRevision((value) => value + 1)
-              }}
-              identityName={identity?.name ?? null}
-              chatRevision={chatRevision}
-            />
+            <div className="conversation-layout">
+              <TaskTimeline
+                connection={connection}
+                events={events}
+                workspace={workspace}
+                chatId={chatId}
+                onChatTouched={() => setChatRevision((value) => value + 1)}
+                onChatOpened={(id) => {
+                  setChatId(id)
+                  setChatRevision((value) => value + 1)
+                }}
+                identityName={identity?.name ?? null}
+                chatRevision={chatRevision}
+              />
+              <WorkbenchPanel connection={connection} chatId={chatId} workspace={workspace} events={events} />
+            </div>
           ) : (
             <div className="main__scroll">
               {view === 'overview' ? <OverviewPanel connection={connection} events={events} workspace={workspace} /> : null}

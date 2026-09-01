@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-import type { ChatMessage, ChatRecord, ChatSummary } from '@shared/api'
+import type { ChatMessage, ChatRecord, ChatSummary, WorkbenchPresentation } from '@shared/api'
 
 import { normalizeWorkspacePath } from './workspace-store'
 
@@ -25,6 +25,7 @@ interface StoredDocument {
 }
 
 const EMPTY: StoredDocument = { chats: [] }
+const DEFAULT_WORKBENCH: WorkbenchPresentation = { activeTab: 'tasks', splitRatio: 0.5, collapsed: false }
 
 /** First line of the prompt, bounded — enough to recognise a chat in a list. */
 export function titleFromPrompt(prompt: string): string {
@@ -66,6 +67,7 @@ export class ChatStore {
       updatedMs: stamp,
       taskIds: [],
       messages: []
+      , workbenchPresentation: DEFAULT_WORKBENCH
     }
     const current = this.read().chats
     const siblings = current.filter((item) => samePath(item.workspacePath, normalized))
@@ -114,6 +116,23 @@ export class ChatStore {
   remove(chatId: string): void {
     const current = this.read().chats
     this.write({ chats: current.filter((chat) => chat.id !== chatId) })
+  }
+
+  getWorkbenchPresentation(chatId: string): WorkbenchPresentation {
+    return this.open(chatId)?.workbenchPresentation ?? DEFAULT_WORKBENCH
+  }
+
+  saveWorkbenchPresentation(chatId: string, value: WorkbenchPresentation): WorkbenchPresentation {
+    const current = this.read().chats
+    const chat = current.find((item) => item.id === chatId)
+    if (!chat) return DEFAULT_WORKBENCH
+    const presentation: WorkbenchPresentation = {
+      activeTab: ['files', 'diff', 'tasks', 'terminal', 'browser', 'usage'].includes(value.activeTab) ? value.activeTab : 'tasks',
+      splitRatio: Number.isFinite(value.splitRatio) ? Math.min(0.8, Math.max(0.2, value.splitRatio)) : 0.5,
+      collapsed: Boolean(value.collapsed)
+    }
+    this.write({ chats: current.map((item) => item.id === chatId ? { ...item, workbenchPresentation: presentation } : item) })
+    return presentation
   }
 
   /** Drops every chat of a workspace the user stopped tracking. */
@@ -204,7 +223,18 @@ function parseChat(value: unknown): ChatRecord | null {
     createdMs: numeric(record['createdMs']),
     updatedMs: numeric(record['updatedMs']),
     taskIds: taskIds.slice(-MAX_MESSAGES_PER_CHAT),
-    messages
+      messages
+      , workbenchPresentation: parseWorkbenchPresentation(record['workbenchPresentation'])
+  }
+}
+
+function parseWorkbenchPresentation(value: unknown): WorkbenchPresentation {
+  if (typeof value !== 'object' || value === null) return DEFAULT_WORKBENCH
+  const record = value as Record<string, unknown>
+  return {
+    activeTab: typeof record['activeTab'] === 'string' && ['files', 'diff', 'tasks', 'terminal', 'browser', 'usage'].includes(record['activeTab']) ? record['activeTab'] : 'tasks',
+    splitRatio: typeof record['splitRatio'] === 'number' && Number.isFinite(record['splitRatio']) ? Math.min(0.8, Math.max(0.2, record['splitRatio'])) : 0.5,
+    collapsed: record['collapsed'] === true
   }
 }
 

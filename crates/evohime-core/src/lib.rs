@@ -976,6 +976,7 @@ pub mod child_workflow;
 pub mod context_budget;
 pub mod continuation;
 pub mod conversation_event_log;
+pub mod conversation_workbench;
 pub mod conversational_workflow_composer;
 pub mod doctor;
 pub mod evals;

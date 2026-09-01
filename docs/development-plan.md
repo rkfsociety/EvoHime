@@ -248,3 +248,10 @@ provider/tool/artifact effects bus не запускает.
 Подтверждены storage/core focused tests, migration compatibility, independent
 evidence guard, metadata-only projection и существующая authenticated IPC/UI
 граница. Комплект `50-0` … `50-4` удалён после финального regression-прогона.
+
+План 52 закрыт 1 сентября 2026 года: Conversation Workbench v1 перенесён в
+canonical architecture/current-state/release-evidence. Подтверждены read-only
+Core composer над event log, schema v52 без новой migration, authenticated IPC
+201/event 51, шесть capability-aware tabs, bounded per-conversation ChatStore
+presentation state, stale-safe switching, redacted projection и live refresh.
+Комплект `52-0` … `52-4` удалён после свежих Rust/Electron regression gates.

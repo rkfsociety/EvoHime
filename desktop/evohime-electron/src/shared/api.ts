@@ -366,6 +366,8 @@ export interface CoreEvent {
   readonly refinementAction?: RefinementActionResult | null
   /** Typed page/live projection from the Core-owned conversation log. */
   readonly conversationEventLog?: ConversationEventLogPage | null
+  /** Typed metadata-only Workbench projection. */
+  readonly conversationWorkbench?: ConversationWorkbenchProjection | null
 }
 
 export interface ConversationEventProjection {
@@ -398,6 +400,31 @@ export interface ConversationEventLogPage {
   readonly hasNewer: boolean
   readonly earliestAvailableSequence: number
   readonly errorCode: string
+}
+
+export interface ConversationWorkbenchTab {
+  readonly id: string
+  readonly label: string
+  readonly availability: 'available' | 'unavailable' | string
+  readonly reason: string
+  readonly badgeSource: string
+  readonly persistence: 'presentation_only' | string
+}
+
+export interface ConversationWorkbenchProjection {
+  readonly schemaVersion: number
+  readonly conversationId: string
+  readonly workspaceId: string
+  readonly runId: string
+  readonly backendSnapshotHash: string
+  readonly capabilitySnapshotHash: string
+  readonly eventCursor: number
+  readonly eventCount: number
+  readonly taskCount: number
+  readonly usageInputTokens: number
+  readonly usageOutputTokens: number
+  readonly tabs: readonly ConversationWorkbenchTab[]
+  readonly redaction: string
 }
 
 export type ShellEvent =
@@ -564,6 +591,13 @@ export interface ChatRecord {
   /** Tasks started from this chat; the transcript is filtered by them. */
   readonly taskIds: readonly string[]
   readonly messages: readonly ChatMessage[]
+  readonly workbenchPresentation: WorkbenchPresentation
+}
+
+export interface WorkbenchPresentation {
+  readonly activeTab: string
+  readonly splitRatio: number
+  readonly collapsed: boolean
 }
 
 /** Row of the chat list: enough to render it without loading transcripts. */
@@ -980,6 +1014,7 @@ export const RENDERER_COMMANDS = [
   'core.startTask',
   'core.getConversationEvents',
   'core.subscribeConversationEvents',
+  'core.getConversationWorkbench',
   'core.getTaskCheckpoint',
   'core.resolveTaskCheckpoint',
   'core.createAnalysisKernel',
@@ -1060,6 +1095,8 @@ export const RENDERER_COMMANDS = [
   'chat.create',
   'chat.open',
   'chat.appendPrompt',
+  'chat.getWorkbenchPresentation',
+  'chat.saveWorkbenchPresentation',
   'chat.remove',
   'review.pickPlan',
   'review.start',
@@ -1217,6 +1254,7 @@ export interface CommandPayloads {
   'core.startTask': { taskId: string; prompt: string; workspacePath: string; conversationId?: string; clientMessageId?: string; preferredRouteHint?: 'local' | 'cloud' | 'codex_cli' | null; executionKind?: 'dialogue' | 'coding' }
   'core.getConversationEvents': { conversationId: string; beforeSequence?: number; afterSequence?: number; limit?: number; kindsFilter?: readonly string[] }
   'core.subscribeConversationEvents': { conversationId: string; afterSequence: number; limit?: number; kindsFilter?: readonly string[] }
+  'core.getConversationWorkbench': { conversationId: string; workspaceId: string; runId?: string; backendSnapshotHash?: string; capabilitySnapshotHash?: string; afterSequence?: number; limit?: number }
   'core.getTaskCheckpoint': { taskId: string; workspacePath: string; maxReplayEvents?: number }
   'core.resolveTaskCheckpoint': {
     taskId: string
@@ -1396,6 +1434,8 @@ export interface CommandPayloads {
   'chat.open': { chatId: string }
   'chat.appendPrompt': { chatId: string; taskId: string; clientMessageId?: string; prompt: string }
   'chat.remove': { chatId: string }
+  'chat.getWorkbenchPresentation': { chatId: string }
+  'chat.saveWorkbenchPresentation': { chatId: string; presentation: WorkbenchPresentation }
   /** `directory` — папка, открытая в диалоге; пустая строка = выбор системы. */
   'review.pickPlan': { directory?: string }
   /** `sourcePaths` — пути проверяемых файлов: по ним ядро читает соседние планы, на которые они ссылаются. */
@@ -1652,6 +1692,7 @@ export interface CommandResults {
   'core.startTask': { accepted: boolean }
   'core.getConversationEvents': { accepted: boolean }
   'core.subscribeConversationEvents': { accepted: boolean }
+  'core.getConversationWorkbench': { accepted: boolean }
   'core.getTaskCheckpoint': { accepted: boolean }
   'core.resolveTaskCheckpoint': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
@@ -1738,6 +1779,8 @@ export interface CommandResults {
   'chat.open': ChatRecord | null
   'chat.appendPrompt': ChatRecord | null
   'chat.remove': readonly ChatSummary[]
+  'chat.getWorkbenchPresentation': WorkbenchPresentation
+  'chat.saveWorkbenchPresentation': WorkbenchPresentation
   /** `directory` — папка выбранного файла, чтобы следующий диалог открылся в ней. */
   'review.pickPlan': { cancelled: boolean; files: readonly PlanFile[]; directory: string }
   'review.start': { accepted: boolean; reviewId: string }

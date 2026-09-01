@@ -1377,3 +1377,21 @@ and subscriptions are ephemeral. Authenticated IPC commands 199–200/event 50
 and the Electron panel expose only redacted metadata. Compare-and-set delivery
 and terminal `unknown` recovery prevent blind retries; subscriptions do not
 grant artifact, tool or provider authority.
+
+## Conversation Workbench v1 (план 52, реализован 2026-09-01)
+
+Workbench — bounded read-only Core projection рядом с `TaskTimeline`, а не новый
+runtime или store. Core composer агрегирует существующий redacted conversation
+event log: cursor, число событий/задач и usage counters. Typed registry содержит
+Files, Diff, Tasks, Terminal, Browser и Usage; Tasks/Usage доступны по Core
+evidence, остальные до соответствующих capabilities дают `unavailable`.
+
+Authenticated IPC additive использует command 201 и event 51, contract v1;
+SQLite schema остаётся v52. Запрос scoped к conversation/workspace и bounded
+cursor/limit, projection содержит snapshot refs. Renderer получает metadata-only
+JSON без raw content, credentials или executable identity. Existing event replay
+drives live refresh; switching conversation clears the projection first.
+
+Presentation state (`activeTab`, `splitRatio`, `collapsed`) хранится только в
+shell `chats.json` per conversation. Workbench не запускает effects, не добавляет
+capabilities и не повторяет unknown outcomes.

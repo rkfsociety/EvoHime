@@ -1619,6 +1619,30 @@ message CausalCollaborationBusEvent {
   bytes projection_json = 7; bool truncated = 8;
 }
 
+// Plan 52: bounded, read-only projection over the Core-owned conversation log.
+// No raw prompts, credentials, file contents or executable identities cross IPC.
+message ConversationWorkbenchRequest {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string conversation_id = 3;
+  string workspace_id = 4;
+  string run_id = 5;
+  string backend_snapshot_hash = 6;
+  string capability_snapshot_hash = 7;
+  uint64 after_sequence = 8;
+  uint32 limit = 9;
+}
+message ConversationWorkbenchEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string conversation_id = 4;
+  uint64 event_cursor = 5;
+  string status = 6;
+  string error_code = 7;
+  bytes projection_json = 8;
+}
+
 message CommandEnvelope {
   ProtocolVersion protocol = 1;
   string request_id = 2;
@@ -1817,6 +1841,7 @@ message CommandEnvelope {
     ConversationEventLogRequest subscribe_conversation_events = 198;
     CausalCollaborationBusCommand causal_collaboration_bus = 199;
     CausalCollaborationBusSubscribeCommand causal_collaboration_bus_subscribe = 200;
+    ConversationWorkbenchRequest get_conversation_workbench = 201;
   }
 }
 
@@ -1917,6 +1942,7 @@ message EventEnvelope {
     TeamSopProtocolsEvent team_sop_protocols = 48;
     ConversationEventLogEvent conversation_event_log = 49;
     CausalCollaborationBusEvent causal_collaboration_bus = 50;
+    ConversationWorkbenchEvent conversation_workbench = 51;
   }
 }
 
