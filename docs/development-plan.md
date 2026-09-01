@@ -235,6 +235,16 @@ protocol/typecheck, clippy, formatting и diff-check gates.
 Выполнен 1 сентября 2026 года. Typed governance metadata и
 Core-owned `MemoryWriteGate` добавлены поверх существующих memory
 domain/API/extraction/store без второго durable record/store; schema — v51.
+
+План 51 реализован 1 сентября 2026 года: Causal Collaboration Bus v1
+использует Core-owned typed envelope, TeamSession protocol hash и Core-derived
+sender/routing поверх retained-child sequence substrate. Значимые сообщения
+хранятся metadata-only в `collaboration_messages` (schema v52), общий inbox
+ограничен 128 pending сообщений, payload — 32 KiB; subscriptions ephemeral.
+Authenticated IPC additive: commands 199–200/event 50, Electron показывает
+только bounded redacted projection. Duplicate, route denial, secret/oversize,
+compare-and-set delivery и unknown recovery проверены focused tests; внешние
+provider/tool/artifact effects bus не запускает.
 Подтверждены storage/core focused tests, migration compatibility, independent
 evidence guard, metadata-only projection и существующая authenticated IPC/UI
 граница. Комплект `50-0` … `50-4` удалён после финального regression-прогона.

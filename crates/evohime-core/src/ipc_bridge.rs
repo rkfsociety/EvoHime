@@ -4169,6 +4169,18 @@ impl IpcBridge {
                     self.write_conversation_event_log_response(writer, result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::CausalCollaborationBus(request)) => {
+                    let result = self.dispatch_causal_collaboration_bus(request).await;
+                    self.write_causal_collaboration_response(writer, result)
+                        .await?;
+                }
+                Some(generated::command_envelope::Command::CausalCollaborationBusSubscribe(
+                    request,
+                )) => {
+                    let result = self.dispatch_causal_collaboration_subscribe(request).await;
+                    self.write_causal_collaboration_response(writer, result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::SaveAutomationSchedule(request)) => {
                     let result = self.dispatch_save_automation_schedule(request).await;
                     self.write_response(
@@ -11975,6 +11987,248 @@ impl IpcBridge {
             )),
         };
         transport::write_frame(writer, &event.encode_to_vec()).await?;
+        Ok(())
+    }
+
+    async fn dispatch_causal_collaboration_bus(
+        &self,
+        request: generated::CausalCollaborationBusCommand,
+    ) -> serde_json::Value {
+        use crate::causal_collaboration_bus::{
+            validate, Address, CollaborationMessage, DeliveryState, MessageKind, Sensitivity,
+            CONTRACT_VERSION,
+        };
+        let base = |status: &str, code: &str, projection: serde_json::Value| serde_json::json!({"schema_version": CONTRACT_VERSION, "request_id": request.request_id, "operation": request.operation, "status": status, "error_code": code, "version": 0, "projection_json": projection});
+        if request.schema_version != CONTRACT_VERSION
+            || request.request_id.is_empty()
+            || request.owner_scope.is_empty()
+            || request.idempotency_key.is_empty()
+            || request.correlation_id.is_empty()
+            || request.payload.len() > crate::causal_collaboration_bus::MAX_PAYLOAD_BYTES
+        {
+            return base(
+                "rejected",
+                "invalid_request",
+                serde_json::json!({"raw_payload":false}),
+            );
+        }
+        if request.operation == "list" || request.operation == "reconcile" {
+            let database = self.journal.database().lock().await;
+            if request.operation == "reconcile" {
+                let _ =
+                    evohime_local_storage::collaboration_store::reconcile(database.connection());
+            }
+            let messages =
+                evohime_local_storage::collaboration_store::list::<CollaborationMessage>(
+                    database.connection(),
+                    &request.owner_scope,
+                    128,
+                )
+                .unwrap_or_default();
+            return base(
+                "ok",
+                "",
+                serde_json::json!({"session_id":request.owner_scope,"count":messages.len(),"messages":messages.iter().map(|m| serde_json::json!({"message_id":m.message_id,"kind":m.kind,"sender":m.sender,"receiver":m.receiver,"sequence":m.sequence,"payload_hash":m.payload_hash,"sensitivity":m.sensitivity,"provenance_id":m.provenance_id,"delivery":DeliveryState::Queued})).collect::<Vec<_>>(),"raw_payload":false}),
+            );
+        }
+        if request.operation != "publish" {
+            return base(
+                "unavailable",
+                "unsupported_operation",
+                serde_json::json!({"raw_payload":false}),
+            );
+        }
+        let mut message: CollaborationMessage = match serde_json::from_slice(&request.payload) {
+            Ok(v) => v,
+            Err(_) => {
+                return base(
+                    "rejected",
+                    "invalid_payload",
+                    serde_json::json!({"raw_payload":false}),
+                )
+            }
+        };
+        message.session_id = request.owner_scope.clone();
+        message.idempotency_key = request.idempotency_key.clone();
+        message.correlation_id = request.correlation_id.clone();
+        message.sender = Address::Parent;
+        if matches!(
+            message.kind,
+            MessageKind::Progress
+                | MessageKind::Notice
+                | MessageKind::ArtifactRef
+                | MessageKind::Request
+                | MessageKind::Response
+        ) && message.sensitivity != Sensitivity::Secret
+        {
+        } else {
+            return base(
+                "rejected",
+                "invalid_message",
+                serde_json::json!({"raw_payload":false}),
+            );
+        }
+        if let Err(error) = validate(&message) {
+            return base(
+                "rejected",
+                &error.to_string(),
+                serde_json::json!({"raw_payload":false}),
+            );
+        }
+        {
+            let team = self.team_sop.lock().await;
+            let Some(session) = team.sessions.get(&message.session_id) else {
+                return base(
+                    "rejected",
+                    "destination_forbidden",
+                    serde_json::json!({"raw_payload":false}),
+                );
+            };
+            if !matches!(
+                session.status,
+                crate::team_sop_protocols::SessionStatus::Pinned
+                    | crate::team_sop_protocols::SessionStatus::Running
+                    | crate::team_sop_protocols::SessionStatus::Paused
+            ) || session.snapshot.content_hash != message.protocol_hash
+            {
+                return base(
+                    "rejected",
+                    "destination_forbidden",
+                    serde_json::json!({"raw_payload":false}),
+                );
+            }
+            if let Address::RoleSlot { slot_id } | Address::DirectRoleInstance { slot_id, .. } =
+                &message.receiver
+            {
+                let Some(slot) = serde_json::from_slice::<crate::team_sop_protocols::TeamProtocol>(
+                    &session.snapshot.protocol_json,
+                )
+                .ok()
+                .and_then(|p| {
+                    p.participants
+                        .into_iter()
+                        .find(|slot| slot.slot_id == *slot_id)
+                }) else {
+                    return base(
+                        "rejected",
+                        "destination_forbidden",
+                        serde_json::json!({"raw_payload":false}),
+                    );
+                };
+                if !slot.allowed_peer_routes.is_empty()
+                    && !slot
+                        .allowed_peer_routes
+                        .iter()
+                        .any(|route| route == "parent" || route == "*")
+                {
+                    return base(
+                        "rejected",
+                        "destination_forbidden",
+                        serde_json::json!({"raw_payload":false}),
+                    );
+                }
+            }
+        }
+        let mut database = self.journal.database().lock().await;
+        if evohime_local_storage::collaboration_store::exists(
+            database.connection(),
+            &request.idempotency_key,
+        )
+        .unwrap_or(false)
+        {
+            return base(
+                "ok",
+                "duplicate",
+                serde_json::json!({"session_id":message.session_id,"message_id":message.message_id,"deduplicated":true,"raw_payload":false}),
+            );
+        }
+        let sequence = match evohime_local_storage::retained_child_store::RetainedChildStore::next_parent_sequence(database.connection_mut(), &message.session_id) { Ok(v)=>v, Err(_)=>return base("unavailable","storage_failed",serde_json::json!({"raw_payload":false})) };
+        message.sequence = sequence;
+        let sender = message.sender.clone();
+        let receiver = message.receiver.clone();
+        match evohime_local_storage::collaboration_store::enqueue(
+            database.connection_mut(),
+            &message.session_id,
+            &message.idempotency_key,
+            &message.message_id,
+            &sender,
+            &receiver,
+            &message,
+            sequence,
+            chrono::Utc::now().timestamp_millis(),
+        ) {
+            Ok(true) => base(
+                "accepted",
+                "",
+                serde_json::json!({"session_id":message.session_id,"message_id":message.message_id,"sequence":sequence,"delivery":"queued","raw_payload":false}),
+            ),
+            Ok(false) => base(
+                "ok",
+                "duplicate",
+                serde_json::json!({"deduplicated":true,"raw_payload":false}),
+            ),
+            Err(_) => base(
+                "rejected",
+                "inbox_full",
+                serde_json::json!({"raw_payload":false}),
+            ),
+        }
+    }
+
+    async fn dispatch_causal_collaboration_subscribe(
+        &self,
+        request: generated::CausalCollaborationBusSubscribeCommand,
+    ) -> serde_json::Value {
+        if request.schema_version != crate::causal_collaboration_bus::CONTRACT_VERSION
+            || request.owner_scope.is_empty()
+            || request.session_id != request.owner_scope
+        {
+            return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"destination_forbidden","projection_json":{"raw_payload":false}});
+        }
+        let database = self.journal.database().lock().await;
+        let messages = evohime_local_storage::collaboration_store::list::<
+            crate::causal_collaboration_bus::CollaborationMessage,
+        >(
+            database.connection(),
+            &request.session_id,
+            request.limit.clamp(1, 128),
+        )
+        .unwrap_or_default();
+        serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"ok","error_code":"","version":0,"projection_json":{"session_id":request.session_id,"after_sequence":request.after_sequence,"messages":messages.into_iter().filter(|m|m.sequence>request.after_sequence).map(|m|serde_json::json!({"message_id":m.message_id,"kind":m.kind,"sender":m.sender,"receiver":m.receiver,"sequence":m.sequence,"payload_hash":m.payload_hash,"provenance_id":m.provenance_id,"delivery":"queued","raw_payload":false})).collect::<Vec<_>>()}})
+    }
+
+    async fn write_causal_collaboration_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        value: serde_json::Value,
+    ) -> Result<(), IpcBridgeError> {
+        let event = generated::CausalCollaborationBusEvent {
+            schema_version: 1,
+            request_id: value["request_id"].as_str().unwrap_or_default().into(),
+            operation: value["operation"].as_str().unwrap_or_default().into(),
+            status: value["status"].as_str().unwrap_or_default().into(),
+            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+            version: value["version"].as_u64().unwrap_or_default(),
+            projection_json: serde_json::to_vec(&value["projection_json"])?,
+            truncated: false,
+        };
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: "causal_collaboration_bus.result".into(),
+                payload: serde_json::to_vec(&value)?,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: Some(generated::event_envelope::Event::CausalCollaborationBus(
+                    event,
+                )),
+            }
+            .encode_to_vec(),
+        )
+        .await?;
         Ok(())
     }
 

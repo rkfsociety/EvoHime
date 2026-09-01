@@ -40,6 +40,7 @@ import { ExecutionBackendRegistryPanel } from './ExecutionBackendRegistryPanel'
 import { ToolSimulationRuntimePanel } from './ToolSimulationRuntimePanel'
 import { AgentRoleProfilesPanel } from './AgentRoleProfilesPanel'
 import { TeamSopProtocolsPanel } from './TeamSopProtocolsPanel'
+import { CausalCollaborationBusPanel } from './CausalCollaborationBusPanel'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -64,7 +65,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'team-sop'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'team-sop' | 'causal-collaboration'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -95,6 +96,7 @@ const VIEWS: readonly ViewDescriptor[] = [
   { id: 'tool-simulation', label: 'Симуляция инструментов', icon: '◇' },
   { id: 'agent-role-profiles', label: 'Профили ролей', icon: '◎' },
   { id: 'team-sop', label: 'Team SOP', icon: '∷' },
+  { id: 'causal-collaboration', label: 'Collaboration Bus', icon: '⇆' },
 ]
 
 /** Not a nav row: reached through the gear next to the account. */
@@ -339,6 +341,7 @@ export function App(): React.JSX.Element {
               {view === 'tool-simulation' ? <ToolSimulationRuntimePanel /> : null}
               {view === 'agent-role-profiles' ? <AgentRoleProfilesPanel /> : null}
               {view === 'team-sop' ? <TeamSopProtocolsPanel /> : null}
+              {view === 'causal-collaboration' ? <CausalCollaborationBusPanel /> : null}
             </div>
           )}
         </div>

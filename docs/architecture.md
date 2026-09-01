@@ -1367,3 +1367,13 @@ authenticated memory IPC commands и metadata-only Electron OperationsPanel
 показывают governance metadata; raw body/provenance payload, credentials и
 hidden reasoning не передаются в renderer. Restart/recovery не повторяет
 внешние эффекты вслепую.
+
+**Causal Collaboration Bus v1 (план 51).** Core-owned typed messages are
+scoped to an active TeamSession and its pinned protocol hash. Sender identity
+and peer routes are derived by Core; the bus extends the retained-child
+sequence substrate with metadata-only `collaboration_messages` in schema v52.
+Payloads are bounded to 32 KiB, each session has at most 128 pending messages,
+and subscriptions are ephemeral. Authenticated IPC commands 199–200/event 50
+and the Electron panel expose only redacted metadata. Compare-and-set delivery
+and terminal `unknown` recovery prevent blind retries; subscriptions do not
+grant artifact, tool or provider authority.

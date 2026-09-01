@@ -18,6 +18,7 @@ pub mod benchmark_store;
 pub mod capability_selection_store;
 pub mod capability_store;
 pub mod child_store;
+pub mod collaboration_store;
 pub mod context_command_store;
 pub mod context_ledger_store;
 pub mod continuation_store;
@@ -52,7 +53,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 51;
+pub const SCHEMA_VERSION: u32 = 52;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3558,6 +3559,10 @@ impl LocalDatabase {
             // records retain their confirmed user/durable defaults.
             memory_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 51;")?;
+        }
+        if current < 52 {
+            collaboration_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 52;")?;
         }
         transaction.commit()?;
         Ok(())

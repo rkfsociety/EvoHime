@@ -1601,6 +1601,24 @@ message RetainChild { string parent_id = 1; string child_id = 2; string family_r
 message SendChildFollowUp { string parent_id = 1; string child_id = 2; string idempotency_key = 3; uint64 expected_child_revision = 4; string instruction = 5; repeated string context_refs = 6; repeated string requested_grants = 7; string budget_json = 8; string mode = 9; string correlation_id = 10; }
 message DeleteRetainedChild { string parent_id = 1; string child_id = 2; uint64 expected_registry_version = 3; }
 
+// Plan 51: bounded Core-owned collaboration bus. Payload is redacted metadata
+// at the desktop boundary; authority and sender identity remain in Core.
+message CausalCollaborationBusCommand {
+  uint32 schema_version = 1; string request_id = 2; string owner_scope = 3;
+  string operation = 4; bytes payload = 5; uint64 expected_version = 6;
+  string idempotency_key = 7; string correlation_id = 8;
+}
+message CausalCollaborationBusSubscribeCommand {
+  uint32 schema_version = 1; string request_id = 2; string owner_scope = 3;
+  string operation = 4; string session_id = 5; uint64 after_sequence = 6;
+  uint32 limit = 7;
+}
+message CausalCollaborationBusEvent {
+  uint32 schema_version = 1; string request_id = 2; string operation = 3;
+  string status = 4; string error_code = 5; uint64 version = 6;
+  bytes projection_json = 7; bool truncated = 8;
+}
+
 message CommandEnvelope {
   ProtocolVersion protocol = 1;
   string request_id = 2;
@@ -1797,6 +1815,8 @@ message CommandEnvelope {
     TeamSopProtocolsCommand team_sop_protocols_action = 196;
     ConversationEventLogRequest get_conversation_events = 197;
     ConversationEventLogRequest subscribe_conversation_events = 198;
+    CausalCollaborationBusCommand causal_collaboration_bus = 199;
+    CausalCollaborationBusSubscribeCommand causal_collaboration_bus_subscribe = 200;
   }
 }
 
@@ -1896,6 +1916,7 @@ message EventEnvelope {
     AgentRoleProfilesEvent agent_role_profiles = 47;
     TeamSopProtocolsEvent team_sop_protocols = 48;
     ConversationEventLogEvent conversation_event_log = 49;
+    CausalCollaborationBusEvent causal_collaboration_bus = 50;
   }
 }
 

@@ -1173,6 +1173,9 @@ export const RENDERER_COMMANDS = [
   'teamSopProtocols.reviewSession',
   'teamSopProtocols.reviseSession',
   'teamSopProtocols.cancel',
+  'causalCollaborationBus.list',
+  'causalCollaborationBus.publish',
+  'causalCollaborationBus.subscribe',
   'automation.listSchedules',
   'automation.saveSchedule',
   'automation.trigger',
@@ -1601,6 +1604,9 @@ export interface CommandPayloads {
   'teamSopProtocols.reviewSession': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; expectedVersion: number }
   'teamSopProtocols.reviseSession': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; expectedVersion: number }
   'teamSopProtocols.cancel': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string }
+  'causalCollaborationBus.list': { requestId: string; ownerScope: string; idempotencyKey: string; correlationId: string }
+  'causalCollaborationBus.publish': { requestId: string; ownerScope: string; idempotencyKey: string; correlationId: string; message: Record<string, unknown> }
+  'causalCollaborationBus.subscribe': { requestId: string; ownerScope: string; sessionId: string; afterSequence?: number; limit?: number }
   'automation.listSchedules': { ownerScope: string; limit?: number }
   'automation.saveSchedule': {
     scheduleId: string
@@ -1854,6 +1860,9 @@ export interface CommandResults {
   'teamSopProtocols.reviewSession': { accepted: boolean }
   'teamSopProtocols.reviseSession': { accepted: boolean }
   'teamSopProtocols.cancel': { accepted: boolean }
+  'causalCollaborationBus.list': { accepted: boolean }
+  'causalCollaborationBus.publish': { accepted: boolean }
+  'causalCollaborationBus.subscribe': { accepted: boolean }
   'automation.listSchedules': { accepted: boolean }
   'automation.saveSchedule': { accepted: boolean }
   'automation.trigger': { accepted: boolean }

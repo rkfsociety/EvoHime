@@ -1944,6 +1944,17 @@ function dispatch(
       return accepted(client.send(operation==='list'?{teamSopProtocolsList:body}:{teamSopProtocolsAction:body}))
     }
 
+    case 'causalCollaborationBus.list':
+    case 'causalCollaborationBus.publish': {
+      const value = asRecord(payload); const requestId=asBoundedString(value['requestId']); const ownerScope=asBoundedString(value['ownerScope']); const idempotencyKey=asBoundedString(value['idempotencyKey']); const correlationId=asBoundedString(value['correlationId']);
+      if(requestId===null||ownerScope===null||idempotencyKey===null||correlationId===null)return failure('invalid-payload','Некорректная команда Collaboration Bus.')
+      const operation=command.slice('causalCollaborationBus.'.length); const json=operation==='publish'?value['message']:{}; if(operation==='publish'&&(!json||typeof json!=='object'||Array.isArray(json)))return failure('invalid-payload','Некорректное сообщение Collaboration Bus.')
+      return accepted(client.send({causalCollaborationBus:{schemaVersion:1,requestId,ownerScope,operation,payload:Buffer.from(JSON.stringify(json),'utf8'),expectedVersion:0,idempotencyKey,correlationId}}))
+    }
+    case 'causalCollaborationBus.subscribe': {
+      const value=asRecord(payload); const requestId=asBoundedString(value['requestId']); const ownerScope=asBoundedString(value['ownerScope']); const sessionId=asBoundedString(value['sessionId']); const afterSequence=value['afterSequence']===undefined?0:asBoundedNumber(value['afterSequence'],Number.MAX_SAFE_INTEGER); const limit=value['limit']===undefined?128:asBoundedNumber(value['limit'],128); if(requestId===null||ownerScope===null||sessionId===null||afterSequence===null||limit===null)return failure('invalid-payload','Некорректная подписка Collaboration Bus.'); return accepted(client.send({causalCollaborationBusSubscribe:{schemaVersion:1,requestId,ownerScope,operation:'subscribe',sessionId,afterSequence,limit}}))
+    }
+
     case 'automation.listSchedules': {
       const value = asRecord(payload)
       const ownerScope = asBoundedString(value['ownerScope'])

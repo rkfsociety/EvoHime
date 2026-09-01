@@ -662,3 +662,18 @@ renderer не получает.
 - существующие authenticated memory commands и OperationsPanel расширены
   metadata-only governance projection; renderer не получает raw body,
   credentials или authority state-machine.
+
+## Causal Collaboration Bus v1 (план 51, реализован 2026-09-01)
+
+- Core validates a typed envelope and pins routing to an active TeamSession
+  protocol hash; sender identity is Core-derived and peer destinations are
+  bounded by the Team SOP roster.
+- Durable significant messages use the retained-child sequence substrate and
+  `collaboration_messages` in SQLite schema v52. Inbox is capped at 128
+  pending messages and payload at 32 KiB; subscriptions are process-local.
+- Authenticated additive IPC uses commands 199–200/event 50. Electron exposes
+  only message metadata, hashes, delivery and provenance; raw payloads,
+  prompts, credentials and grants never cross the boundary.
+- Delivery is compare-and-set and unknown dispatch outcomes are terminal until
+  explicit reconciliation; no provider, tool or artifact authority is created
+  by the bus.
