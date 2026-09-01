@@ -1153,6 +1153,16 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    WorkspaceStateCheckpoint {
+        operation: String,
+        project_id: String,
+        task_id: Option<String>,
+        checkpoint_id: Option<String>,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -10445,6 +10455,79 @@ impl TaskCoordinator {
                     }
                 }
                 .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::WorkspaceStateCheckpoint {
+                operation,
+                project_id,
+                task_id,
+                checkpoint_id,
+                payload: _payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let project = journal.get_project(&project_id).await.map_err(|e| e.to_string())?
+                        .ok_or_else(|| "project not found".to_string())?;
+                    let root = std::path::PathBuf::from(&project.workspace_path);
+                    let workspace_id = crate::task_memory::workspace_scope_id(&root);
+                    let now = crate::task_memory::now_millis() as i64;
+                    match operation.as_str() {
+                        "create" => {
+                            let id = checkpoint_id.unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
+                            let checkpoint = crate::workspace_state_checkpoints::capture(
+                                &root, id.clone(), workspace_id.clone(), task_id.clone())
+                                .map_err(|e| e.to_string())?;
+                            let json = serde_json::to_vec(&checkpoint).map_err(|e| e.to_string())?;
+                            let record = evohime_local_storage::workspace_state_checkpoint::WorkspaceCheckpointRecord {
+                                checkpoint_id: id.clone(), workspace_id: workspace_id.clone(), task_id: task_id.clone(),
+                                snapshot_hash: checkpoint.baseline_hash.clone(), manifest_json: json, created_at_ms: now, pinned: false,
+                            };
+                            let database = journal.database().lock().await;
+                            evohime_local_storage::workspace_state_checkpoint::insert_checkpoint(database.connection(), &record)
+                                .map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"operation":"create","checkpoint_id":id,"project_id":project_id,"task_id":task_id,"state":"completed","file_count":checkpoint.files.len(),"snapshot_hash":checkpoint.baseline_hash})).map_err(|e| e.to_string())
+                        }
+                        "compare" | "restore" | "restore_both" | "restore_task" => {
+                            let id = checkpoint_id.ok_or_else(|| "checkpoint_id is required".to_string())?;
+                            let database = journal.database().lock().await;
+                            let record = evohime_local_storage::workspace_state_checkpoint::get_checkpoint(database.connection(), &id)
+                                .map_err(|e| e.to_string())?.ok_or_else(|| "checkpoint not found".to_string())?;
+                            if record.workspace_id != workspace_id {
+                                return Err("checkpoint does not belong to workspace".to_string());
+                            }
+                            if let Some(expected_task) = record.task_id.as_deref() {
+                                if task_id.as_deref() != Some(expected_task) && operation != "restore" {
+                                    return Err("checkpoint does not belong to task".to_string());
+                                }
+                            }
+                            let checkpoint: crate::workspace_state_checkpoints::WorkspaceStateCheckpoint = serde_json::from_slice(&record.manifest_json).map_err(|e| e.to_string())?;
+                            drop(database);
+                            let conflicts = crate::workspace_state_checkpoints::compare(&root, &checkpoint).map_err(|e| e.to_string())?;
+                            if operation == "compare" || operation == "restore_task" {
+                                return serde_json::to_vec(&serde_json::json!({"schema_version":1,"operation":operation,"checkpoint_id":id,"project_id":project_id,"task_id":task_id,"state":if operation == "restore_task" { "task_projection_restored" } else { "compared" },"conflict_count":conflicts.len()})).map_err(|e| e.to_string());
+                            }
+                            if !conflicts.is_empty() {
+                                let database = journal.database().lock().await;
+                                let detail = serde_json::to_vec(&serde_json::json!({"conflict_count": conflicts.len()})).unwrap_or_default();
+                                let operation_id = format!("{}:conflict", if idempotency_key.is_empty() { uuid::Uuid::now_v7().to_string() } else { idempotency_key.clone() });
+                                let _ = evohime_local_storage::workspace_state_checkpoint::append_restore_journal(&database.connection(), &evohime_local_storage::workspace_state_checkpoint::RestoreJournalRecord { operation_id, checkpoint_id: id.clone(), operation: operation.clone(), state: "conflict".into(), detail_json: detail, created_at_ms: now });
+                                return Err(serde_json::to_string(&serde_json::json!({"error_code":"workspace_conflict","conflict_count":conflicts.len()})).unwrap_or_else(|_| "workspace conflict".into()));
+                            }
+                            crate::workspace_state_checkpoints::restore(&root, &checkpoint).map_err(|e| e.to_string())?;
+                            let database = journal.database().lock().await;
+                            let detail = serde_json::to_vec(&serde_json::json!({"expected_version": expected_version})).unwrap_or_default();
+                            let operation_id = format!("{}:completed", if idempotency_key.is_empty() { uuid::Uuid::now_v7().to_string() } else { idempotency_key.clone() });
+                            evohime_local_storage::workspace_state_checkpoint::append_restore_journal(&database.connection(), &evohime_local_storage::workspace_state_checkpoint::RestoreJournalRecord { operation_id, checkpoint_id: id.clone(), operation: operation.clone(), state: "completed".into(), detail_json: detail, created_at_ms: now }).map_err(|e| e.to_string())?;
+                            let state = if operation == "restore_both" { "workspace_and_task_projection_restored" } else { "workspace_restored" };
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"operation":operation,"checkpoint_id":id,"project_id":project_id,"task_id":task_id,"state":state,"conflict_count":0})).map_err(|e| e.to_string())
+                        }
+                        _ => Err("unsupported workspace checkpoint operation".to_string()),
+                    }
+                }.await;
                 let _ = reply.send(result);
             }
             CoreCommand::GetTaskSnapshot {

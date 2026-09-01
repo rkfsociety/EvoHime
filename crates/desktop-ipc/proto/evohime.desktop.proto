@@ -1859,6 +1859,7 @@ message CommandEnvelope {
     PlanArtifactCommand plan_artifact_create = 206;
     PlanArtifactCommand plan_artifact_read = 207;
     PlanArtifactCommand plan_artifact_action = 208;
+    WorkspaceStateCheckpointCommand workspace_state_checkpoint = 209;
   }
 }
 
@@ -1964,6 +1965,7 @@ message EventEnvelope {
     AgenticBrowserSessionEvent agentic_browser_session = 53;
     ArtifactHandoffRegistryEvent artifact_handoff_registry = 54;
     PlanArtifactEvent plan_artifact = 55;
+    WorkspaceStateCheckpointEvent workspace_state_checkpoint = 56;
   }
 }
 
@@ -2017,6 +2019,32 @@ message PlanArtifactEvent {
   string error_code = 8;
   bytes projection_json = 9;
   bool truncated = 10;
+}
+
+// Plan 58: Core-owned workspace file checkpoint metadata and explicit actions.
+// Payloads are bounded request data; the event projection never carries file
+// bytes, prompts, credentials or hidden reasoning.
+message WorkspaceStateCheckpointCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string project_id = 4;
+  string task_id = 5;
+  string checkpoint_id = 6;
+  bytes payload = 7;
+  uint64 expected_version = 8;
+  string idempotency_key = 9;
+}
+message WorkspaceStateCheckpointEvent {
+  uint32 schema_version = 1;
+  string operation = 2;
+  string project_id = 3;
+  string task_id = 4;
+  string checkpoint_id = 5;
+  string state = 6;
+  string error_code = 7;
+  bytes projection_json = 8;
+  bool truncated = 9;
 }
 
 // Plan 46: bounded metadata-only Agent Role Profiles surface. Profile bodies

@@ -44,6 +44,7 @@ import { TeamSopProtocolsPanel } from './TeamSopProtocolsPanel'
 import { CausalCollaborationBusPanel } from './CausalCollaborationBusPanel'
 import { HumanWorkItemsPanel } from './HumanWorkItemsPanel'
 import { PlanArtifactPanel } from './PlanArtifactPanel'
+import { WorkspaceStateCheckpointsPanel } from './WorkspaceStateCheckpointsPanel'
 import { WorkbenchPanel } from './WorkbenchPanel'
 import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
 
@@ -70,7 +71,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -95,6 +96,7 @@ const USER_VIEWS: readonly ViewDescriptor[] = [
 
 const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'plan-artifacts', label: 'Plan Artifacts', icon: '◇' },
+  { id: 'workspace-checkpoints', label: 'Workspace Checkpoints', icon: '▣' },
   { id: 'packages', label: 'Workflow Package', icon: '⇄' },
   { id: 'benchmarks', label: 'Бенчмарки', icon: '▦' },
   { id: 'middleware', label: 'Middleware', icon: '◇' },
@@ -392,6 +394,7 @@ export function App(): React.JSX.Element {
               {view === 'causal-collaboration' ? <CausalCollaborationBusPanel /> : null}
               {view === 'human-work-items' ? <HumanWorkItemsPanel /> : null}
               {view === 'plan-artifacts' ? <PlanArtifactPanel connection={connection} events={events} /> : null}
+              {view === 'workspace-checkpoints' ? <WorkspaceStateCheckpointsPanel connection={connection} events={events} /> : null}
             </div>
           )}
         </div>

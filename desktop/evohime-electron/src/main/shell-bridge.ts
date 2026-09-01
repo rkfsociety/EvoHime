@@ -319,6 +319,19 @@ function dispatch(
       return accepted(client.send({ planArtifactAction: { schemaVersion: 1, operation, artifactId, expectedVersion, status, policySnapshotHash, taskId, workflowRunId, correlationId, idempotencyKey } }))
     }
 
+    case 'core.workspaceStateCheckpoint': {
+      const value = asRecord(payload)
+      const operation = value['operation'] === 'create' || value['operation'] === 'compare' || value['operation'] === 'restore' || value['operation'] === 'restore_task' || value['operation'] === 'restore_both'
+        ? value['operation'] : null
+      const projectId = asBoundedString(value['projectId'])
+      const taskId = value['taskId'] === undefined ? '' : asBoundedString(value['taskId'])
+      const checkpointId = value['checkpointId'] === undefined ? '' : asBoundedString(value['checkpointId'])
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (operation === null || projectId === null || taskId === null || checkpointId === null || expectedVersion === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректная операция checkpoint состояния workspace.')
+      return accepted(client.send({ workspaceStateCheckpoint: { schemaVersion: 1, requestId: randomUUID(), operation, projectId, taskId, checkpointId, payload: Buffer.alloc(0), expectedVersion, idempotencyKey } }))
+    }
+
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)
       const taskId = asBoundedString(value['taskId'])

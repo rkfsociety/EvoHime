@@ -826,14 +826,15 @@ use. The defaults are 4096 files, 64 MiB total, 1 MiB per file, 512 path bytes
 and 128 components. Snapshot metadata and restore journal tables are additive
 schema v57; bytes are not placed in the renderer or user `.git`.
 
-The existing build snapshot IPC remains the compatibility transport for the
-current desktop release. Its restore path now uses the plan-58 adapter: it
-rechecks every captured file fingerprint immediately before the first write,
-returns a conflict on user/external edits, and never performs a force reset.
-It restores workspace files only; it does not mutate `TaskCheckpoint`, SQLite
-task history, credentials, or external effects. A future dedicated checkpoint
-IPC can expose compare/restore metadata without changing this authority
-boundary.
+The existing build snapshot IPC remains a compatibility transport. The
+dedicated additive `workspace_state_checkpoint` command (desktop IPC tag 209)
+exposes create, compare, workspace restore, task-projection restore and
+combined restore. Electron shows it only in the collapsed developer interface;
+the renderer receives bounded metadata and never reads files. Restore is
+preflighted, journaled and conflict-safe: user/external edits produce a typed
+conflict and no overwrite. Task restore is an independent projection action;
+combined restore executes both explicit actions. Neither path mutates
+credentials or external effects.
 
 ### Agent Skills
 

@@ -114,8 +114,11 @@ Core и supervisor — внутренние компоненты установ�
   symlink/reparse entries; лимиты — 4096 файлов, 64 MiB всего и 1 MiB на файл.
   Storage metadata/journal установлены additive schema v57. Существующий
   `RestoreTaskSnapshot` использует adapter плана 58 и повторяет fingerprints
-  перед записью; изменённый пользователем файл возвращает conflict. Focused
-  проверки: Core 3 tests, local-storage 1 test и recovery integration 1 test.
+  перед записью; изменённый пользователем файл возвращает conflict. Additive
+  IPC tag 209 и Electron developer panel дают create/compare/restore,
+  независимое восстановление task projection и combined restore; результаты
+  пишутся в bounded restore journal. Focused проверки: Core 3 tests,
+  local-storage 1 test и recovery integration 1 test.
 - streamed task timeline, cancellation и approval round-trip;
 - Windows package smoke tests и Windows CI;
 - единый Inno Setup installer с одним desktop shortcut; установленный клиент сам поднимает supervisor, а supervisor — Core;

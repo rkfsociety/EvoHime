@@ -323,4 +323,7 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   credentials or external effects.
 - Checks: `cargo fmt --all`, focused Core contract tests (3 PASS), local-storage
   storage test (1 PASS), recovery integration test (1 PASS), plus the final
-  workspace/package/protocol checks recorded with the task commit.
+  workspace/package/protocol checks recorded with the task commit. Additive
+  desktop IPC tag 209, generated bindings, Core dispatch and the Electron
+  developer panel cover all five explicit operations; restore conflicts are
+  journaled and task projection restore remains independent from file restore.
