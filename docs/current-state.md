@@ -108,6 +108,14 @@ Core и supervisor — внутренние компоненты установ�
   bundle checks. Release audit подтвердил backup/restore, redaction,
   automation и license gates; evidence для закрытия зафиксирован в
   [`release-evidence.md`](release-evidence.md);
+- Workspace State Checkpoints v1 добавляет отдельный Core contract для bounded
+  file-state capture/compare и conflict-safe restore. Контракт не изменяет
+  immutable TaskCheckpoint и исключает `.git`, зависимости, build-кэши и
+  symlink/reparse entries; лимиты — 4096 файлов, 64 MiB всего и 1 MiB на файл.
+  Storage metadata/journal установлены additive schema v57. Существующий
+  `RestoreTaskSnapshot` использует adapter плана 58 и повторяет fingerprints
+  перед записью; изменённый пользователем файл возвращает conflict. Focused
+  проверки: Core 3 tests, local-storage 1 test и recovery integration 1 test.
 - streamed task timeline, cancellation и approval round-trip;
 - Windows package smoke tests и Windows CI;
 - единый Inno Setup installer с одним desktop shortcut; установленный клиент сам поднимает supervisor, а supervisor — Core;

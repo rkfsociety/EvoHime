@@ -306,3 +306,21 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Evidence: focused Core/storage tests, `cargo check`, generated protocol
   check, Electron typecheck and `git diff --check`; no credentials, raw
   payloads, transcripts, absolute paths or PII are included.
+
+## Plan 58 — Workspace State Checkpoints v1 (2026-09-01)
+
+- Contract: `evohime_core::workspace_state_checkpoints` is independent from
+  immutable `TaskCheckpointV1`; it captures bounded regular files, computes
+  deterministic SHA-256 hashes, excludes VCS/build/dependency directories and
+  rejects symlink/reparse entries.
+- Storage: additive schema v57 creates metadata and restore-journal tables;
+  snapshot metadata is bounded and snapshot bytes remain outside the renderer
+  and user Git history. Existing build snapshot IPC is the compatibility
+  surface and now calls the conflict-safe plan-58 restore adapter.
+- Recovery/security: preflight rechecks every captured file immediately before
+  the first write; dirty user/external files produce typed conflict and no
+  overwrite. The adapter does not mutate task history, SQLite task state,
+  credentials or external effects.
+- Checks: `cargo fmt --all`, focused Core contract tests (3 PASS), local-storage
+  storage test (1 PASS), recovery integration test (1 PASS), plus the final
+  workspace/package/protocol checks recorded with the task commit.

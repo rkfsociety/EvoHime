@@ -20,7 +20,10 @@ desktop-клиент, выбирает workspace, выполняет задач�
 
 ## Текущий порядок работ
 
-Планы 22, 23, 24 и 25 реализованы и закрыты. План 23 — TaskCheckpoint для compaction
+Планы 22, 23, 24 и 25 реализованы и закрыты. План 58 реализован и закрыт:
+workspace file checkpoints отделены от TaskCheckpoint; подробный контракт и
+границы находятся в `docs/architecture.md`, evidence — в
+`docs/release-evidence.md`. План 23 — TaskCheckpoint для compaction
 и recovery — прошёл этапы 23.1 (contract/storage), 23.2 (runtime/recovery),
 23.3 (IPC/UI) и 23.4 (acceptance/release evidence); комплект `23-0` … `23-4`
 удалён после переноса контракта и состояния в актуальную документацию. После

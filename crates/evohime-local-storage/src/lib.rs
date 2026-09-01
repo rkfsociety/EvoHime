@@ -51,13 +51,14 @@ pub mod toolkit_store;
 pub mod visual_workflow_builder_store;
 pub mod workflow_package_store;
 pub mod workflow_store;
+pub mod workspace_state_checkpoint;
 
 pub use backup::{
     BackupObjectSummary, BackupPreview, BackupProgress, BackupProgressPhase, BackupResult,
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 56;
+pub const SCHEMA_VERSION: u32 = 57;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -539,6 +540,7 @@ impl LocalDatabase {
         context_ledger_store::install_compaction_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         task_checkpoint::install_schema(&connection)?;
+        workspace_state_checkpoint::install_schema(&connection)?;
         goal::install_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         retained_child_store::install_schema(&connection)?;
@@ -3587,6 +3589,10 @@ impl LocalDatabase {
         if current < 56 {
             plan_artifact::PlanArtifactStore::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 56;")?;
+        }
+        if current < 57 {
+            workspace_state_checkpoint::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 57;")?;
         }
         transaction.commit()?;
         Ok(())

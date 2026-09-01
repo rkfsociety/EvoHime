@@ -1011,6 +1011,7 @@ pub mod retained_child;
 pub mod structured_response_contract;
 pub mod support_bundle;
 pub mod tool_simulation_runtime;
+pub mod workspace_state_checkpoints;
 pub use provider_resilience::{
     default_tool_specs, filter_readonly_tools, handle_provider_error, is_retriable_error,
     ProviderResilienceConfig,
@@ -10523,8 +10524,11 @@ impl TaskCoordinator {
                         crate::build::WorkspaceSnapshot,
                     >(&snapshot.payload)
                     .map_err(|error| format!("invalid snapshot: {error}"))?;
-                    crate::build::restore_snapshot(&project.workspace_path, &workspace_snapshot)
-                        .map_err(|error| error.to_string())?;
+                    crate::workspace_state_checkpoints::restore_build_snapshot_safe(
+                        &project.workspace_path,
+                        &workspace_snapshot,
+                    )
+                    .map_err(|error| error.to_string())?;
                     let audit_payload = serde_json::to_vec(&serde_json::json!({
                         "task_id": task_id,
                         "snapshot_id": snapshot_id,
