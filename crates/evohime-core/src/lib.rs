@@ -985,6 +985,7 @@ pub mod execution_backend_registry;
 pub mod export;
 pub mod external_coding_agent_adapter;
 pub mod goal;
+pub mod human_work_items;
 pub mod integration_provider_runtime;
 pub mod integration_provider_sdk;
 pub mod invocation_presets;

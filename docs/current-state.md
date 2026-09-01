@@ -705,3 +705,14 @@ scan, запись ограничена user-selected destination, а raw values
 Settings → Диагностика показывает preview и redaction summary, позволяет
 сохранить bundle и скопировать draft; публикация и network upload не
 выполняются.
+
+## Human Work Items v1 (план 54, реализован 2026-09-01)
+
+- Core добавляет versioned durable `HumanWorkItem` и state machine с typed
+  response schema, optimistic revision, cancellation, revision request и
+  fail-closed expiry; user response не становится approval/capability grant.
+- Additive SQLite schema v53 хранит JSON current state и transition metadata;
+  common migration path делает backup до upgrade. IPC использует command 203 /
+  event 52, Electron отображает bounded Inbox-проекцию.
+- Team-bound item допускается только для pinned Team SOP human slot; raw model
+  prompts, credentials, hidden reasoning и approval payloads отсутствуют.

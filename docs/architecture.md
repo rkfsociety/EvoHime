@@ -1405,3 +1405,24 @@ drives live refresh; switching conversation clears the projection first.
 Presentation state (`activeTab`, `splitRatio`, `collapsed`) хранится только в
 shell `chats.json` per conversation. Workbench не запускает effects, не добавляет
 capabilities и не повторяет unknown outcomes.
+
+## Human Work Items v1 (план 54)
+
+`evohime-core::human_work_items` владеет durable typed Inbox в schema v53.
+`HumanWorkItem` имеет versioned state machine `Draft → WaitingForHuman →
+InProgress → Submitted → Accepted` с явными `NeedsRevision`, `Cancelled` и
+`Expired`; optimistic revision, bounded instructions и `Text`/`Choice` response
+schema проверяются в Core. Ответ, принятый от authenticated shell actor, —
+только typed data: он не является approval, capability grant или tool identity.
+
+Опциональная привязка к Team SOP использует pinned session/protocol hash и
+принимается только для Agent Role Profile в `ExecutionMode::Human`; отсутствующий,
+устаревший или AI-слот отказывается fail-closed. SQLite хранит текущее JSON
+состояние и append-only metadata transition rows; общий migration ladder делает
+backup-before-migrate. В v1 нет provider/tool/child dispatch: timeout даёт
+`Expired`, restart восстанавливает лишь durable state и не создаёт completion.
+
+Authenticated additive IPC command 203/event 52 и Electron Inbox показывают
+bounded metadata; `get` передаёт только typed user-visible instructions/response
+schema. Raw model prompt, hidden reasoning, credentials и approval payloads
+исключены из projection.

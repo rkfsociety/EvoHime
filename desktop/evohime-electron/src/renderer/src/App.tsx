@@ -41,6 +41,7 @@ import { ToolSimulationRuntimePanel } from './ToolSimulationRuntimePanel'
 import { AgentRoleProfilesPanel } from './AgentRoleProfilesPanel'
 import { TeamSopProtocolsPanel } from './TeamSopProtocolsPanel'
 import { CausalCollaborationBusPanel } from './CausalCollaborationBusPanel'
+import { HumanWorkItemsPanel } from './HumanWorkItemsPanel'
 import { WorkbenchPanel } from './WorkbenchPanel'
 
 /**
@@ -66,7 +67,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'team-sop' | 'causal-collaboration'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'team-sop' | 'causal-collaboration' | 'human-work-items'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -98,6 +99,7 @@ const VIEWS: readonly ViewDescriptor[] = [
   { id: 'agent-role-profiles', label: 'Профили ролей', icon: '◎' },
   { id: 'team-sop', label: 'Team SOP', icon: '∷' },
   { id: 'causal-collaboration', label: 'Collaboration Bus', icon: '⇆' },
+  { id: 'human-work-items', label: 'Задачи для человека', icon: '☑' },
 ]
 
 /** Not a nav row: reached through the gear next to the account. */
@@ -346,6 +348,7 @@ export function App(): React.JSX.Element {
               {view === 'agent-role-profiles' ? <AgentRoleProfilesPanel /> : null}
               {view === 'team-sop' ? <TeamSopProtocolsPanel /> : null}
               {view === 'causal-collaboration' ? <CausalCollaborationBusPanel /> : null}
+              {view === 'human-work-items' ? <HumanWorkItemsPanel /> : null}
             </div>
           )}
         </div>

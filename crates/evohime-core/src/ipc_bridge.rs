@@ -374,6 +374,7 @@ pub struct IpcBridge {
         Arc<tokio::sync::Mutex<crate::external_coding_agent_adapter::ExternalAgentRegistry>>,
     role_profiles: Arc<tokio::sync::Mutex<crate::agent_role_profiles::AgentRoleProfilesRegistry>>,
     team_sop: Arc<tokio::sync::Mutex<crate::team_sop_protocols::TeamSopRegistry>>,
+    human_work_items: Arc<tokio::sync::Mutex<crate::human_work_items::HumanWorkItemsRegistry>>,
     conversation_subscription: ConversationSubscription,
 }
 
@@ -665,6 +666,7 @@ impl IpcBridge {
             role_profiles: Arc::new(tokio::sync::Mutex::new(Default::default())),
             conversation_subscription: Arc::new(tokio::sync::Mutex::new(None)),
             team_sop: Arc::new(tokio::sync::Mutex::new(Default::default())),
+            human_work_items: Arc::new(tokio::sync::Mutex::new(Default::default())),
         }
     }
 
@@ -700,6 +702,7 @@ impl IpcBridge {
             role_profiles: Arc::new(tokio::sync::Mutex::new(Default::default())),
             conversation_subscription: Arc::new(tokio::sync::Mutex::new(None)),
             team_sop: Arc::new(tokio::sync::Mutex::new(Default::default())),
+            human_work_items: Arc::new(tokio::sync::Mutex::new(Default::default())),
         }
     }
 
@@ -742,6 +745,7 @@ impl IpcBridge {
             role_profiles: Arc::new(tokio::sync::Mutex::new(Default::default())),
             conversation_subscription: Arc::new(tokio::sync::Mutex::new(None)),
             team_sop: Arc::new(tokio::sync::Mutex::new(Default::default())),
+            human_work_items: Arc::new(tokio::sync::Mutex::new(Default::default())),
         }
     }
 
@@ -4158,6 +4162,11 @@ impl IpcBridge {
                 | Some(generated::command_envelope::Command::TeamSopProtocolsAction(request)) => {
                     let result = self.dispatch_team_sop_protocols(request).await;
                     self.write_team_sop_protocols_response(writer, serde_json::to_vec(&result)?)
+                        .await?;
+                }
+                Some(generated::command_envelope::Command::HumanWorkItems(request)) => {
+                    let result = self.dispatch_human_work_items(request).await;
+                    self.write_human_work_items_response(writer, serde_json::to_vec(&result)?)
                         .await?;
                 }
                 Some(generated::command_envelope::Command::GetConversationEvents(request)) => {
@@ -12380,6 +12389,195 @@ impl IpcBridge {
                 event: Some(generated::event_envelope::Event::CausalCollaborationBus(
                     event,
                 )),
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn dispatch_human_work_items(
+        &self,
+        request: generated::HumanWorkItemsCommand,
+    ) -> serde_json::Value {
+        use crate::human_work_items::{
+            HumanWorkItem, HumanWorkItemError, HumanWorkItemState, CONTRACT_VERSION,
+        };
+        if request.schema_version != CONTRACT_VERSION
+            || request.request_id.is_empty()
+            || request.owner_scope.is_empty()
+            || request.idempotency_key.is_empty()
+            || request.payload.len() > 64 * 1024
+        {
+            return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","state":"unknown","error_code":"invalid_request","projection_json":{"raw_prompt":false,"credentials":false}});
+        }
+        // A team-bound item is admissible only for the immutable role snapshot
+        // selected by Core and only when that profile explicitly permits a human.
+        if request.operation == "create" {
+            if let Ok(item) = serde_json::from_slice::<HumanWorkItem>(&request.payload) {
+                if let Some(slot_ref) = item.team_slot.as_ref() {
+                    let team = self.team_sop.lock().await;
+                    let allowed = team.sessions.get(&slot_ref.session_id).and_then(|session| {
+                        if session.snapshot.content_hash != slot_ref.protocol_hash {
+                            return None;
+                        }
+                        serde_json::from_slice::<crate::team_sop_protocols::TeamProtocol>(
+                            &session.snapshot.protocol_json,
+                        )
+                        .ok()
+                        .and_then(|protocol| {
+                            protocol
+                                .participants
+                                .into_iter()
+                                .find(|slot| slot.slot_id == slot_ref.slot_id)
+                                .map(|slot| slot.role_profile_ref.id)
+                        })
+                    });
+                    drop(team);
+                    let human = if let Some(profile_id) = allowed {
+                        self.role_profiles
+                            .lock()
+                            .await
+                            .profiles
+                            .get(&profile_id)
+                            .is_some_and(|profile| {
+                                matches!(
+                                    profile.execution_mode,
+                                    crate::agent_role_profiles::ExecutionMode::Human
+                                )
+                            })
+                    } else {
+                        false
+                    };
+                    if !human {
+                        return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","state":"failed","error_code":"human_slot_denied","projection_json":{"raw_prompt":false,"credentials":false,"approval":false}});
+                    }
+                }
+            }
+        }
+        let mut registry = self.human_work_items.lock().await;
+        if registry.items.is_empty() {
+            if let Ok(database) = self.journal.database().try_lock() {
+                if let Ok(rows) = evohime_local_storage::human_work_items_store::load_all_json(
+                    database.connection(),
+                ) {
+                    for row in rows {
+                        if let Ok(item) = serde_json::from_slice::<HumanWorkItem>(&row) {
+                            registry.items.insert(item.id.clone(), item);
+                        }
+                    }
+                }
+            }
+        }
+        let mut item_id = String::new();
+        let mut revision = 0_u64;
+        let mut state = "waiting_for_human".to_owned();
+        let mut projection = serde_json::json!({"schema_version":1,"count":registry.items.len(),"raw_prompt":false,"credentials":false,"approval":false});
+        let result: Result<(), HumanWorkItemError> = (|| match request.operation.as_str() {
+            "list" => {
+                projection = serde_json::json!({"schema_version":1,"count":registry.items.len(),"items":registry.list().into_iter().map(|item| serde_json::json!({"id":item.id,"revision":item.revision,"title":item.title,"state":item.state,"team_slot":item.team_slot,"expires_at_ms":item.expires_at_ms})).collect::<Vec<_>>(),"raw_prompt":false,"credentials":false,"approval":false});
+                Ok(())
+            }
+            "get" => {
+                let payload: serde_json::Value = serde_json::from_slice(&request.payload)
+                    .map_err(|_| HumanWorkItemError::Invalid("payload"))?;
+                item_id = payload["item_id"].as_str().unwrap_or_default().to_owned();
+                let item = registry
+                    .items
+                    .get(&item_id)
+                    .ok_or(HumanWorkItemError::NotFound)?;
+                revision = item.revision;
+                state = format!("{:?}", item.state).to_lowercase();
+                projection = serde_json::json!({"schema_version":1,"id":item.id,"revision":item.revision,"title":item.title,"instructions":item.instructions,"response_schema":item.response_schema,"state":item.state,"team_slot":item.team_slot,"expires_at_ms":item.expires_at_ms,"raw_prompt":false,"credentials":false,"approval":false});
+                Ok(())
+            }
+            "create" => {
+                let item: HumanWorkItem = serde_json::from_slice(&request.payload)
+                    .map_err(|_| HumanWorkItemError::Invalid("payload"))?;
+                item_id = item.id.clone();
+                revision = item.revision;
+                state = format!("{:?}", item.state).to_lowercase();
+                let saved = registry.create(item, &request.idempotency_key)?;
+                projection = serde_json::json!({"schema_version":1,"id":saved.id,"revision":saved.revision,"title":saved.title,"state":saved.state,"team_slot":saved.team_slot,"raw_prompt":false,"credentials":false,"approval":false});
+                Ok(())
+            }
+            "start" | "submit" | "accept" | "revise" | "return" | "cancel" => {
+                let payload: serde_json::Value = serde_json::from_slice(&request.payload)
+                    .map_err(|_| HumanWorkItemError::Invalid("payload"))?;
+                item_id = payload["item_id"].as_str().unwrap_or_default().to_owned();
+                let response = payload["response"].as_str().map(str::to_owned);
+                let saved = registry.transition_idempotent(
+                    &item_id,
+                    request.expected_revision,
+                    &request.operation,
+                    response,
+                    "shell",
+                    chrono::Utc::now().timestamp_millis(),
+                    &request.idempotency_key,
+                )?;
+                revision = saved.revision;
+                state = format!("{:?}", saved.state).to_lowercase();
+                projection = serde_json::json!({"schema_version":1,"id":saved.id,"revision":saved.revision,"title":saved.title,"state":saved.state,"team_slot":saved.team_slot,"response_present":saved.response.is_some(),"submitted_by":saved.submitted_by,"raw_prompt":false,"credentials":false,"approval":false});
+                Ok(())
+            }
+            "expire_due" => {
+                let changed = registry.expire_due(chrono::Utc::now().timestamp_millis());
+                projection = serde_json::json!({"schema_version":1,"expired":changed.len(),"state":HumanWorkItemState::Expired,"raw_prompt":false,"credentials":false,"approval":false});
+                Ok(())
+            }
+            _ => Err(HumanWorkItemError::Invalid("unsupported_operation")),
+        })();
+        let (status, error_code) = match result {
+            Ok(()) => ("ok", String::new()),
+            Err(error) => ("rejected", error.to_string()),
+        };
+        if status == "ok" && !item_id.is_empty() {
+            if let Some(item) = registry.items.get(&item_id) {
+                if let Ok(database) = self.journal.database().try_lock() {
+                    let json = serde_json::to_vec(item).unwrap_or_default();
+                    let _ = evohime_local_storage::human_work_items_store::save(
+                        database.connection(),
+                        &item.id,
+                        item.revision,
+                        &format!("{:?}", item.state).to_lowercase(),
+                        &json,
+                        &request.operation,
+                        chrono::Utc::now().timestamp_millis(),
+                    );
+                }
+            }
+        }
+        serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":status,"item_id":item_id,"revision":revision,"state":state,"error_code":error_code,"projection_json":projection})
+    }
+
+    async fn write_human_work_items_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let result = generated::HumanWorkItemsEvent {
+            schema_version: 1,
+            request_id: value["request_id"].as_str().unwrap_or_default().into(),
+            operation: value["operation"].as_str().unwrap_or_default().into(),
+            status: value["status"].as_str().unwrap_or_default().into(),
+            item_id: value["item_id"].as_str().unwrap_or_default().into(),
+            revision: value["revision"].as_u64().unwrap_or_default(),
+            state: value["state"].as_str().unwrap_or_default().into(),
+            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+            projection_json: serde_json::to_vec(&value["projection_json"])?,
+        };
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: "human_work_items.result".into(),
+                payload,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: Some(generated::event_envelope::Event::HumanWorkItems(result)),
             }
             .encode_to_vec(),
         )

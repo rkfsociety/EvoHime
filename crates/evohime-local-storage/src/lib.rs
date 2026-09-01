@@ -30,6 +30,7 @@ pub mod execution_policy_profiles_store;
 pub mod external_coding_agent_adapter_store;
 pub mod feedback_store;
 pub mod goal;
+pub mod human_work_items_store;
 pub mod integration_provider_store;
 pub mod invocation_presets_store;
 pub mod memory_store;
@@ -53,7 +54,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 52;
+pub const SCHEMA_VERSION: u32 = 53;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -550,6 +551,7 @@ impl LocalDatabase {
         skill_trust_pipeline_store::install_schema(&connection)?;
         team_sop_protocols_store::install_schema(&connection)?;
         conversation_event_log_store::install_schema(&connection)?;
+        human_work_items_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
@@ -3563,6 +3565,10 @@ impl LocalDatabase {
         if current < 52 {
             collaboration_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 52;")?;
+        }
+        if current < 53 {
+            human_work_items_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 53;")?;
         }
         transaction.commit()?;
         Ok(())

@@ -1214,6 +1214,14 @@ export const RENDERER_COMMANDS = [
   'causalCollaborationBus.list',
   'causalCollaborationBus.publish',
   'causalCollaborationBus.subscribe',
+  'humanWorkItems.list',
+  'humanWorkItems.get',
+  'humanWorkItems.create',
+  'humanWorkItems.start',
+  'humanWorkItems.submit',
+  'humanWorkItems.accept',
+  'humanWorkItems.revise',
+  'humanWorkItems.cancel',
   'automation.listSchedules',
   'automation.saveSchedule',
   'automation.trigger',
@@ -1649,6 +1657,14 @@ export interface CommandPayloads {
   'causalCollaborationBus.list': { requestId: string; ownerScope: string; idempotencyKey: string; correlationId: string }
   'causalCollaborationBus.publish': { requestId: string; ownerScope: string; idempotencyKey: string; correlationId: string; message: Record<string, unknown> }
   'causalCollaborationBus.subscribe': { requestId: string; ownerScope: string; sessionId: string; afterSequence?: number; limit?: number }
+  'humanWorkItems.list': { requestId: string; ownerScope: string; idempotencyKey: string }
+  'humanWorkItems.get': { requestId: string; ownerScope: string; idempotencyKey: string; itemId: string }
+  'humanWorkItems.create': { requestId: string; ownerScope: string; idempotencyKey: string; item: Record<string, unknown> }
+  'humanWorkItems.start': { requestId: string; ownerScope: string; idempotencyKey: string; itemId: string; expectedRevision: number }
+  'humanWorkItems.submit': { requestId: string; ownerScope: string; idempotencyKey: string; itemId: string; expectedRevision: number; response: string }
+  'humanWorkItems.accept': { requestId: string; ownerScope: string; idempotencyKey: string; itemId: string; expectedRevision: number }
+  'humanWorkItems.revise': { requestId: string; ownerScope: string; idempotencyKey: string; itemId: string; expectedRevision: number }
+  'humanWorkItems.cancel': { requestId: string; ownerScope: string; idempotencyKey: string; itemId: string; expectedRevision: number }
   'automation.listSchedules': { ownerScope: string; limit?: number }
   'automation.saveSchedule': {
     scheduleId: string
@@ -1909,6 +1925,14 @@ export interface CommandResults {
   'causalCollaborationBus.list': { accepted: boolean }
   'causalCollaborationBus.publish': { accepted: boolean }
   'causalCollaborationBus.subscribe': { accepted: boolean }
+  'humanWorkItems.list': { accepted: boolean }
+  'humanWorkItems.get': { accepted: boolean }
+  'humanWorkItems.create': { accepted: boolean }
+  'humanWorkItems.start': { accepted: boolean }
+  'humanWorkItems.submit': { accepted: boolean }
+  'humanWorkItems.accept': { accepted: boolean }
+  'humanWorkItems.revise': { accepted: boolean }
+  'humanWorkItems.cancel': { accepted: boolean }
   'automation.listSchedules': { accepted: boolean }
   'automation.saveSchedule': { accepted: boolean }
   'automation.trigger': { accepted: boolean }

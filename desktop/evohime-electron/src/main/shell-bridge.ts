@@ -2000,6 +2000,25 @@ function dispatch(
       const value=asRecord(payload); const requestId=asBoundedString(value['requestId']); const ownerScope=asBoundedString(value['ownerScope']); const sessionId=asBoundedString(value['sessionId']); const afterSequence=value['afterSequence']===undefined?0:asBoundedNumber(value['afterSequence'],Number.MAX_SAFE_INTEGER); const limit=value['limit']===undefined?128:asBoundedNumber(value['limit'],128); if(requestId===null||ownerScope===null||sessionId===null||afterSequence===null||limit===null)return failure('invalid-payload','Некорректная подписка Collaboration Bus.'); return accepted(client.send({causalCollaborationBusSubscribe:{schemaVersion:1,requestId,ownerScope,operation:'subscribe',sessionId,afterSequence,limit}}))
     }
 
+    case 'humanWorkItems.list':
+    case 'humanWorkItems.get':
+    case 'humanWorkItems.create':
+    case 'humanWorkItems.start':
+    case 'humanWorkItems.submit':
+    case 'humanWorkItems.accept':
+    case 'humanWorkItems.revise':
+    case 'humanWorkItems.cancel': {
+      const value = asRecord(payload); const requestId = asBoundedString(value['requestId']); const ownerScope = asBoundedString(value['ownerScope']); const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (requestId === null || ownerScope === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректная команда Human Work Item.')
+      const operation = command.slice('humanWorkItems.'.length); const json: Record<string, unknown> = {}
+      if (operation === 'create') { const item = value['item']; if (!item || typeof item !== 'object' || Array.isArray(item)) return failure('invalid-payload', 'Некорректная задача для человека.'); Object.assign(json, item) }
+      if (operation === 'get' || operation === 'start' || operation === 'submit' || operation === 'accept' || operation === 'revise' || operation === 'cancel') { const itemId = asBoundedString(value['itemId']); if (itemId === null) return failure('invalid-payload', 'Некорректный идентификатор задачи.'); json['item_id'] = itemId }
+      if (operation === 'submit') { const response = asBoundedString(value['response']); if (response === null) return failure('invalid-payload', 'Некорректный ответ.'); json['response'] = response }
+      const expectedRevision = operation === 'start' || operation === 'submit' || operation === 'accept' || operation === 'revise' || operation === 'cancel' ? asBoundedNumber(value['expectedRevision'], Number.MAX_SAFE_INTEGER) : 0
+      if (expectedRevision === null) return failure('invalid-payload', 'Некорректная версия задачи.')
+      return accepted(client.send({ humanWorkItems: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(JSON.stringify(json), 'utf8'), expectedRevision, idempotencyKey } }))
+    }
+
     case 'automation.listSchedules': {
       const value = asRecord(payload)
       const ownerScope = asBoundedString(value['ownerScope'])

@@ -252,3 +252,16 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   `npm run check:protocol`, `npm run typecheck`, `cargo fmt --all -- --check`
   and `git diff --check` passed; full Rust/Electron regression gates are run
   at release time. Evidence contains no credentials, raw payloads or PII.
+
+## Plan 54 — Human Work Items v1 (2026-09-01)
+
+- Contract/storage: Core-owned bounded `HumanWorkItem`, typed `Text`/`Choice`
+  response schema, optimistic transitions and schema v53 JSON/transition store.
+  The common migration ladder retains backup-before-migrate behaviour.
+- Security/recovery: a shell submission is data rather than approval or grant;
+  expiry is terminal, restart replays durable state only, and Team SOP bindings
+  require a pinned human execution-mode slot. There is no v1 external dispatch.
+- IPC/UI: authenticated command 203/event 52 and Electron Inbox projection;
+  raw model prompts, credentials, hidden reasoning and approval payloads are
+  excluded. Focused Core contract/recovery and Electron privacy tests accompany
+  the full Rust/Electron protocol, typecheck and diff-check gates.

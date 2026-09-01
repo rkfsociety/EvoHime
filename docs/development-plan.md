@@ -265,3 +265,11 @@ context. Electron main собирает локальный ZIP с manifest/previ
 summary. Новая migration/store и network publication отсутствуют. Комплект
 53-0 … 53-4 удалён после focused Core/Electron, protocol/typecheck, formatting
 и diff-check gates.
+
+План 54 закрыт 1 сентября 2026 года: Human Work Items v1 добавляет durable
+Core-owned Inbox, schema v53, typed response schema и optimistic state machine.
+Human response не является approval или capability grant; Team SOP binding
+допускает только pinned `ExecutionMode::Human` role slot. Authenticated IPC
+использует command 203/event 52, Electron показывает bounded Inbox без raw model
+prompts, credentials или hidden reasoning. Комплект 54-0 … 54-4 удалён после
+focused Rust/Electron, protocol/typecheck, format и diff-check gates.

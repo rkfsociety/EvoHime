@@ -1853,6 +1853,7 @@ message CommandEnvelope {
     CausalCollaborationBusSubscribeCommand causal_collaboration_bus_subscribe = 200;
     ConversationWorkbenchRequest get_conversation_workbench = 201;
     CreateDiagnosticsSnapshot create_diagnostics_snapshot = 202;
+    HumanWorkItemsCommand human_work_items = 203;
   }
 }
 
@@ -1954,6 +1955,7 @@ message EventEnvelope {
     ConversationEventLogEvent conversation_event_log = 49;
     CausalCollaborationBusEvent causal_collaboration_bus = 50;
     ConversationWorkbenchEvent conversation_workbench = 51;
+    HumanWorkItemsEvent human_work_items = 52;
   }
 }
 
@@ -1999,6 +2001,30 @@ message TeamSopProtocolsEvent {
   string status = 4;
   string session_id = 5;
   uint64 version = 6;
+  string state = 7;
+  string error_code = 8;
+  bytes projection_json = 9;
+}
+
+// Plan 54: Core-owned durable human task inbox. User-visible instructions and
+// typed responses are bounded data; approvals, credentials and model prompts
+// do not cross this surface.
+message HumanWorkItemsCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string operation = 4;
+  bytes payload = 5;
+  uint64 expected_revision = 6;
+  string idempotency_key = 7;
+}
+message HumanWorkItemsEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  string item_id = 5;
+  uint64 revision = 6;
   string state = 7;
   string error_code = 8;
   bytes projection_json = 9;
