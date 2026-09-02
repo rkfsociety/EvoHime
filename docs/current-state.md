@@ -889,3 +889,9 @@ schema/version validation, explicit migration, dependency-cycle detection,
 secret rejection, inspect/diff/dump операции и durable SQLite schema v71.
 Authenticated IPC command 225/event 70 и metadata-only Electron panel не
 расширяют authority и не загружают dynamic code.
+План 75 закрыт 2 сентября 2026 года: Typed Context References v1. Добавлены
+versioned ContextRef/ResolvedContextRef, built-in resolver registry,
+revision/hash binding, lazy context budget, safe locator/URL validation и
+durable SQLite schema v72. Authenticated IPC command 226/event 71 и
+metadata-only Electron panel не дают renderer filesystem/network authority;
+referenced content остаётся untrusted data.

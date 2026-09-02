@@ -60,6 +60,7 @@ pub mod team_resource_budget_store;
 pub mod team_sop_protocols_store;
 pub mod toolkit_store;
 pub mod typed_agent_handoff_contract_store;
+pub mod typed_context_references_store;
 pub mod visual_workflow_builder_store;
 pub mod workflow_optimization_lab_store;
 pub mod workflow_package_store;
@@ -72,7 +73,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 71;
+pub const SCHEMA_VERSION: u32 = 72;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3665,6 +3666,10 @@ impl LocalDatabase {
             declarative_agent_component_registry_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 71;")?;
         }
+        if current < 72 {
+            typed_context_references_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 72;")?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -3684,12 +3689,12 @@ mod tests {
     }
 
     #[test]
-    fn schema_71_installs_configuration_experience_diagnostics_task_graph_and_component_registry_tables(
+    fn schema_72_installs_configuration_experience_diagnostics_task_graph_component_registry_and_refs_tables(
     ) {
         let path = temp_database_path("experience-replay-schema-66");
         let _ = std::fs::remove_file(&path);
         let database = LocalDatabase::open(&path).expect("database opens");
-        assert_eq!(database.schema_version().expect("schema version"), 71);
+        assert_eq!(database.schema_version().expect("schema version"), 72);
         let has_table: i64 = database
             .connection()
             .query_row(

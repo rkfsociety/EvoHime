@@ -366,6 +366,21 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   check/clippy, protocol check, Electron typecheck and full Electron regression.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
 
+## Plan 75 — Typed Context References v1 (2026-09-02)
+
+- Contract: versioned ContextRef/ResolvedContextRef, closed built-in kinds,
+  availability/projection enums, exact revision/hash binding and bounded
+  resolver metadata.
+- Safety/runtime: lazy deterministic context budget, path traversal/SSRF
+  rejection, untrusted referenced content and no capability widening; mutable
+  aliases resolve to concrete evidence before model use.
+- Durability/IPC/UI: additive SQLite schema v72, authenticated command 226 /
+  event 71 and Electron metadata-only resolver/budget panel.
+- Checks: focused Rust resolver tests, schema migration test, cargo
+  check/clippy, protocol check, Electron typecheck, focused UI test and full
+  Electron regression. Evidence excludes secrets, raw prompts/outputs,
+  absolute paths and PII.
+
 ## Plan 74 — Declarative Agent Component Registry v1 (2026-09-02)
 
 - Contract: stable public provider IDs, typed descriptors, separate

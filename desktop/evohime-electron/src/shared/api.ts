@@ -1063,6 +1063,7 @@ export const RENDERER_COMMANDS = [
   'core.coreTopicSubscriptionEventBus',
   'core.dependencyAwareTaskGraph',
   'core.declarativeAgentComponentRegistry',
+  'core.typedContextReferences',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1363,6 +1364,7 @@ export interface CommandPayloads {
   'core.coreTopicSubscriptionEventBus': { operation: 'publish' | 'subscribe' | 'ack' | 'nack'; capability: string; payload: string; idempotencyKey: string }
   'core.dependencyAwareTaskGraph': { operation: 'create' | 'get' | 'validate' | 'apply_patch'; graphId: string; payload: string; expectedRevision?: number; grants?: readonly string[] }
   'core.declarativeAgentComponentRegistry': { operation: 'create' | 'get' | 'validate' | 'replace' | 'diff'; registryId: string; payload: string; expectedRevision?: number }
+  'core.typedContextReferences': { operation: 'resolve' | 'budget' | 'kinds'; refId: string; payload: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
   'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
@@ -1847,6 +1849,7 @@ export interface CommandResults {
   'core.coreTopicSubscriptionEventBus': { accepted: boolean }
   'core.dependencyAwareTaskGraph': { accepted: boolean }
   'core.declarativeAgentComponentRegistry': { accepted: boolean }
+  'core.typedContextReferences': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }
   'core.executeAnalysisKernel': { accepted: boolean }

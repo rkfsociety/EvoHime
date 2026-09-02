@@ -2628,6 +2628,18 @@ impl IpcBridge {
                     )
                     .await?;
                 }
+                Some(generated::command_envelope::Command::TypedContextReferences(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "resolve".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_typed_context_references(operation, request)
+                        .await?;
+                    self.write_response(writer, "typed_context_references.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -7247,6 +7259,32 @@ impl IpcBridge {
                 payload: request.payload,
                 expected_revision: request.expected_revision,
                 grants: request.grants,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_typed_context_references(
+        &self,
+        operation: String,
+        request: generated::TypedContextReferencesCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::TypedContextReferences {
+                operation,
+                ref_id: request.ref_id,
+                payload: request.payload,
                 reply,
             })
             .await

@@ -9,6 +9,7 @@ pub mod experience_replay_library;
 pub mod schema_driven_agent_configuration;
 pub mod sensitive_data_guardrails;
 pub mod team_sop_protocols;
+pub mod typed_context_references;
 pub mod workflow_optimization_lab;
 pub mod workspace_bootstrap_manifest;
 
@@ -1364,6 +1365,12 @@ pub enum CoreCommand {
         expected_revision: u64,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    TypedContextReferences {
+        operation: String,
+        ref_id: String,
+        payload: Vec<u8>,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -2040,6 +2047,11 @@ pub enum CoreEvent {
         registry_id: String,
         operation: String,
         revision: u64,
+        projection_json: String,
+    },
+    TypedContextReferences {
+        ref_id: String,
+        operation: String,
         projection_json: String,
     },
     /// Bounded durable routing decision projection.
@@ -3136,6 +3148,7 @@ impl EventJournal {
             CoreEvent::CoreTopicSubscriptionEventBus { .. } => "core-topic-bus",
             CoreEvent::DependencyAwareTaskGraph { graph_id, .. } => graph_id,
             CoreEvent::DeclarativeAgentComponentRegistry { registry_id, .. } => registry_id,
+            CoreEvent::TypedContextReferences { ref_id, .. } => ref_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3176,6 +3189,7 @@ impl EventJournal {
             CoreEvent::DeclarativeAgentComponentRegistry { .. } => {
                 "declarative_agent_component_registry.result"
             }
+            CoreEvent::TypedContextReferences { .. } => "typed_context_references.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -11745,6 +11759,63 @@ impl TaskCoordinator {
                     registry_id,
                     operation,
                     revision: expected_revision,
+                    projection_json,
+                };
+                let journal = state.lock().await.journal.clone();
+                if let Some(journal) = journal {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::TypedContextReferences {
+                operation,
+                ref_id,
+                payload,
+                reply,
+            } => {
+                let result = async {
+                    let reference: crate::typed_context_references::ContextRef =
+                        serde_json::from_slice(&payload)
+                            .map_err(|_| "invalid_context_ref".to_string())?;
+                    crate::typed_context_references::validate_ref(&reference)
+                        .map_err(|e| e.to_string())?;
+                    let resolved = match operation.as_str() {
+                        "resolve" => serde_json::to_vec(
+                            &crate::typed_context_references::resolve(
+                                &reference,
+                                reference.revision_hint.clone(),
+                                None,
+                            )
+                            .map_err(|e| e.to_string())?,
+                        )
+                        .map_err(|e| e.to_string())?,
+                        "budget" => {
+                            let refs: Vec<crate::typed_context_references::ResolvedContextRef> =
+                                serde_json::from_slice(&payload)
+                                    .map_err(|_| "invalid_budget_refs".to_string())?;
+                            serde_json::to_vec(&crate::typed_context_references::plan_budget(
+                                &refs, 4096,
+                            ))
+                            .map_err(|e| e.to_string())?
+                        }
+                        "kinds" => {
+                            serde_json::to_vec(&crate::typed_context_references::supported_kinds())
+                                .map_err(|e| e.to_string())?
+                        }
+                        _ => return Err("unsupported_context_reference_operation".into()),
+                    };
+                    Ok(resolved)
+                }
+                .await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::TypedContextReferences {
+                    ref_id,
+                    operation,
                     projection_json,
                 };
                 let journal = state.lock().await.journal.clone();

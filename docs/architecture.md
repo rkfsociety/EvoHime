@@ -1713,3 +1713,15 @@ Descriptor diff/dump и explicit one-step migration остаются determinist
 bounded; dynamic code loading и marketplace отсутствуют. Durable registry
 хранится в SQLite schema v71, authenticated additive IPC использует command 225
 / event 70, а Electron показывает только metadata/action projection.
+
+## Typed Context References v1 (план 75)
+
+Core-owned typed resolver принимает только bounded built-in reference kinds
+для file/folder/workspace, git, diagnostics, terminal, artifact/task/plan,
+goal/workflow, browser snapshot и read-only URL. Resolver валидирует scope,
+safe locator, SSRF/path boundary, exact revision/hash и sensitivity; refs не
+содержат raw content и не расширяют capabilities. Lazy projection budget
+детерминированно отбрасывает или откладывает контекст сверх лимита.
+Durable reference metadata хранится в SQLite schema v72, authenticated
+additive IPC использует command 226/event 71, Electron показывает только
+metadata/chip projection.

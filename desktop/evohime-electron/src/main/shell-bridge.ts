@@ -462,6 +462,11 @@ function dispatch(
       if(operation===null||registryId===null||registryPayload===null||expectedRevision===null||registryId.length>128||registryPayload.length>64*1024)return failure('invalid-payload','Некорректная операция Component Registry.')
       return accepted(client.send({declarativeAgentComponentRegistry:{schemaVersion:1,requestId:randomUUID(),operation,registryId,payload:Buffer.from(registryPayload,'utf8'),expectedRevision}}))
     }
+    case 'core.typedContextReferences': {
+      const value=asRecord(payload); const operation=['resolve','budget','kinds'].includes(String(value['operation']))?String(value['operation']):null; const refId=asBoundedString(value['refId']); const refPayload=asBoundedString(value['payload']);
+      if(operation===null||refId===null||refPayload===null||refId.length>128||refPayload.length>128*1024)return failure('invalid-payload','Некорректная операция Context References.')
+      return accepted(client.send({typedContextReferences:{schemaVersion:1,requestId:randomUUID(),operation,refId,payload:Buffer.from(refPayload,'utf8')}}))
+    }
 
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)
