@@ -175,6 +175,29 @@ fn classify_routing_task(prompt: &str, tools: &[ToolSpec]) -> &'static str {
     }
 }
 
+/// Аргументы для policy-only preflight при построении каталога инструментов.
+/// Preflight не выполняет инструмент, но path-инструментам всё равно нужен
+/// существующий workspace-relative путь, иначе безопасный инструмент ошибочно
+/// выпадает из authorized snapshot.
+fn catalog_preflight_input(tool_name: &str) -> serde_json::Value {
+    match tool_name {
+        "filesystem.read" | "filesystem.list" => serde_json::json!({ "path": "." }),
+        "filesystem.search" => serde_json::json!({
+            "query": "EvoHime",
+            "path": "."
+        }),
+        "filesystem.write" => serde_json::json!({
+            "path": ".evohime-catalog-probe",
+            "content": ""
+        }),
+        "filesystem.patch" => serde_json::json!({
+            "path": ".evohime-catalog-probe",
+            "patch": "--- a/.evohime-catalog-probe\n+++ b/.evohime-catalog-probe\n@@\n"
+        }),
+        _ => serde_json::json!({}),
+    }
+}
+
 const LEGACY_TOOL_NAMES: &[&str] = &[
     "agent.run",
     "filesystem.list",
@@ -7621,7 +7644,7 @@ impl ToolAgent {
         for tool in self.tools.list() {
             if matches!(
                 self.tools
-                    .preflight(&context, tool.name, &serde_json::json!({}))
+                    .preflight(&context, tool.name, &catalog_preflight_input(tool.name))
                     .await,
                 Ok(evohime_tool_runtime::ToolPreflightDecision::Allowed { .. })
             ) {
@@ -7637,9 +7660,14 @@ impl ToolAgent {
         )
         .map_err(|error| AgentRunError::Internal(error.to_string()))?;
         let selection_started = Instant::now();
+        let catalog_query = if DeliveryRequirements::from_prompt(&prompt).research {
+            format!("{prompt} filesystem.list filesystem.read filesystem.search")
+        } else {
+            prompt.clone()
+        };
         let selection = adaptive_tool_catalog::select_deterministic(
             &projection,
-            &prompt,
+            &catalog_query,
             adaptive_tool_catalog::DEFAULT_MAX_TOOLS,
         )
         .map_err(|error| AgentRunError::Internal(error.to_string()))?;
@@ -14514,6 +14542,22 @@ mod tests {
         assert!(prompt.contains("не сформулировал конкретное поручение"));
         assert!(prompt.contains("Не проси пользователя прислать структуру"));
         assert!(prompt.contains("до успешного результата"));
+    }
+
+    #[test]
+    fn catalog_preflight_uses_safe_workspace_arguments_for_filesystem_tools() {
+        assert_eq!(
+            super::catalog_preflight_input("filesystem.list"),
+            serde_json::json!({ "path": "." })
+        );
+        assert_eq!(
+            super::catalog_preflight_input("filesystem.read"),
+            serde_json::json!({ "path": "." })
+        );
+        assert_eq!(
+            super::catalog_preflight_input("filesystem.search"),
+            serde_json::json!({ "query": "EvoHime", "path": "." })
+        );
     }
 
     #[test]
