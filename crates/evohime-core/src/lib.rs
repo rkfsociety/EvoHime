@@ -8406,6 +8406,26 @@ impl ToolAgent {
                     return Ok(message);
                 }
                 let mut final_message = strip_legacy_function_blocks(&result.content);
+                if final_message.trim().is_empty() && iteration + 1 < self.max_iterations {
+                    write_model_trace(
+                        "task.empty_final_recovery",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "iteration": iteration,
+                            "reason": "final response contained no visible text"
+                        }),
+                    );
+                    messages.push(ChatMessage::text(ChatRole::Assistant, result.content));
+                    messages.push(ChatMessage::text(
+                        ChatRole::User,
+                        "Верни итоговый ответ обычным текстом. Не вызывай инструменты и не оставляй служебные блоки; дай пользователю краткий, но содержательный отчёт по уже выполненной задаче.",
+                    ));
+                    continue;
+                }
+                if final_message.trim().is_empty() {
+                    final_message =
+                        "Не удалось получить текстовый итог от модели после выполнения задачи.".into();
+                }
                 if let (Some(journal), Some((search, initial_context))) =
                     (&self.journal, rag_validation.take())
                 {
