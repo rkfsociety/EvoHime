@@ -1877,3 +1877,14 @@ ambiguous paths исключаются. Renderer получает только r
 evidence — 64 KiB. Shared index, `git add -A`, force/reset/rebase/push и
 неподтверждённые commit/undo effects запрещены; stale/ambiguous outcomes
 возвращаются типизированно.
+
+## Stateful Tool Workbench Sessions (план 103, reuse плана 78)
+
+Stateful tool collections используют существующий Core-owned Capability
+Workbench contract: `WorkbenchDescriptor` задаёт scope/concurrency/tools,
+`WorkbenchInstance` — lifecycle/revision/in-flight state, а leases и snapshots
+хранятся в SQLite. Snapshot принимает только bounded logical state и credential
+refs; process handles, secrets и private backend state исключены. Reset/restart,
+stale revision, capability denial, lease expiry и unknown/unavailable outcomes
+обрабатываются Core handler-ом и metadata-only Electron projection. Новый
+параллельный authority для плана 103 не создаётся.

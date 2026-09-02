@@ -603,3 +603,13 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Electron bridge/panel exposes only redacted included/excluded path metadata.
 - Commit/undo/keep effects refuse without explicit Git preflight; no shared
   index, force operation, automatic push or secret payload.
+
+## Plan 103 — Stateful Tool Workbench Sessions (2026-09-02)
+
+- Existing Capability Workbench v1 is the authoritative implementation:
+  lifecycle/revision, bounded scope/concurrency, leases, capability-filtered
+  tools, reset/degraded recovery and metadata-only snapshots.
+- Reuse evidence: focused Core/storage/IPC/UI tests and full Electron regression;
+  no second authority or duplicate transport was introduced.
+- Snapshot validation rejects secrets, process handles and forbidden private
+  state; unknown/unavailable backend outcomes remain typed and fail closed.

@@ -959,3 +959,8 @@ Core-owned bounded baseline, attribution и immutable commit-candidate metadata,
 durable schema 79, additive IPC 233/78, Electron projection и безопасные
 typed refusals для commit/undo без preflight. Проверены focused Rust tests,
 clippy, protocol/typecheck и `git diff --check`.
+План 103 закрыт 2 сентября 2026 года через подтверждённое переиспользование
+Capability Workbench v1 (план 78): versioned descriptor/session, lifecycle,
+scope/concurrency, leases, reset/degraded recovery, capability filtering и
+secret-free bounded snapshots уже реализованы в Core/storage/IPC/UI. Второй
+authority не добавлялся.
