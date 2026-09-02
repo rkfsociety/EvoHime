@@ -419,3 +419,7 @@ deterministic decision, protocol/typecheck и regression verification.
 План 89 закрыт 3 сентября 2026 года. Checkpoint Forking & Replay перенесён в
 Core/storage/IPC/UI; комплект `89-0` … `89-4` удалён после contract, bounds,
 no-effect replay, protocol/typecheck и verification.
+
+План 92 закрыт 3 сентября 2026 года. Privacy & Telemetry Governance перенесён
+в Core/storage/IPC/UI; комплект `92-0` … `92-4` удалён после focused Rust,
+clippy, protocol/typecheck и полного Electron regression.

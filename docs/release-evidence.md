@@ -666,3 +666,17 @@ native package smoke and `git diff --check`.
   `git diff --check`; existing Sensitive Data Guardrails remain authoritative.
 - Evidence: focused Core tests, storage migration, clippy `-D warnings`,
   protocol/typecheck, regression and `git diff --check`.
+
+## Plan 92 — Privacy & Telemetry Governance (2026-09-03)
+
+- Core-owned per-category consent and typed `TelemetryEventV1` use an
+  allowlisted metadata dictionary; unknown properties and sensitive markers
+  fail closed before persistence or any possible egress.
+- Schema 88 and authenticated IPC command/event 242/87 provide a bounded
+  offline queue, deterministic event-id deduplication, idempotency claims and
+  revoke/clear lifecycle. No provider SDK or external network sink is enabled;
+  diagnostics remain a separate category.
+- Evidence: focused Core 3/3, local-storage 3/3, clippy `-D warnings`,
+  generated protocol check, TypeScript typecheck, Electron regression 528
+  passed/2 skipped, UI smoke test and `git diff --check`; evidence is
+  metadata-only and contains no credentials, prompts or raw output.

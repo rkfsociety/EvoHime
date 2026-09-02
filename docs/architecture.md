@@ -968,6 +968,24 @@ model-request provenance; эти источники остаются source of t
 Offline evals используют literal fixtures, frozen inputs и не имеют доступа к
 production filesystem, network, tools или SQLite; malformed traces получают
 typed diagnostics, а неизвестный результат не считается pass.
+
+## Privacy & Telemetry Governance v1 (план 92, реализован 2026-09-03)
+
+Telemetry governance принадлежит Core и не требуется для работы приложения.
+`TelemetryCategory::{Product,Operational,Diagnostics}` имеет отдельный
+versioned consent (`unknown`, `denied`, `granted`); default state не разрешает
+внешнюю отправку. Typed `TelemetryEventV1` принимает только allowlisted
+metadata properties (`app_version`, `platform`, `action_class`, `outcome`,
+`reason_code`, `duration_ms`, `schema_version`, `count`). Неизвестные поля,
+превышение bounds и значения с секретными маркерами отвергаются до записи.
+
+Разрешённые события попадают только в bounded offline SQLite queue (512
+элементов/64 KiB event bound) с deterministic `event_id` deduplication. Core
+handler предоставляет consent, enqueue, list и clear; clear удаляет queue и
+consent, а UI предоставляет просмотр, явный revoke и очистку. Authenticated
+IPC additive command 242/event 87, storage schema 88. Queue не является
+provider SDK или network sink: diagnostics и потенциальная external telemetry
+разделены, внешний egress остаётся default-closed и за пределами v1.
 ## Agentic Browser Session v1 (план 55, реализован 2026-09-01)
 
 `evohime-core::agentic_browser_session` владеет versioned lifecycle, session

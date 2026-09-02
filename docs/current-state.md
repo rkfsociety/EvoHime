@@ -1020,3 +1020,10 @@ Electron surface. Unknown rules требуют prompt.
 validated immutable lineage, storage schema 87, bounded overrides, workspace
 fingerprint, no-effect replay invariant, authenticated IPC 241/86 и
 metadata-only Electron surface.
+
+План 92 закрыт 3 сентября 2026 года: Privacy & Telemetry Governance v1
+добавил Core-owned per-category consent, allowlisted typed events,
+deny-by-default sensitive-value guard, bounded offline SQLite queue с
+deterministic deduplication, revoke/clear lifecycle и metadata-only Electron
+panel. Используются schema 88 и authenticated IPC 242/87; внешний egress
+остаётся закрытым.

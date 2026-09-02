@@ -14,6 +14,7 @@ pub mod experience_replay_library;
 pub mod headless_core_cli;
 pub mod knowledge_source_registry_project_role;
 pub mod output_guardrail_pipeline;
+pub mod privacy_and_telemetry_governance;
 pub mod project_instruction_stack;
 pub mod reasoning_operator_library;
 pub mod safe_ui_extension_framework;
@@ -1506,6 +1507,14 @@ pub enum CoreCommand {
         payload: Vec<u8>,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    PrivacyTelemetryGovernance {
+        operation: String,
+        category: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -2276,6 +2285,12 @@ pub enum CoreEvent {
     CheckpointForking {
         fork_run_id: String,
         operation: String,
+        version: u64,
+        projection_json: String,
+    },
+    PrivacyTelemetryGovernance {
+        operation: String,
+        category: String,
         version: u64,
         projection_json: String,
     },
@@ -3389,6 +3404,7 @@ impl EventJournal {
             CoreEvent::StandingApprovalProfiles { profile_id, .. } => profile_id,
             CoreEvent::ApprovalPolicyProfiles { profile_id, .. } => profile_id,
             CoreEvent::CheckpointForking { fork_run_id, .. } => fork_run_id,
+            CoreEvent::PrivacyTelemetryGovernance { category, .. } => category,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3447,6 +3463,7 @@ impl EventJournal {
             CoreEvent::StandingApprovalProfiles { .. } => "standing_approval_profiles.result",
             CoreEvent::ApprovalPolicyProfiles { .. } => "approval_policy_profiles.result",
             CoreEvent::CheckpointForking { .. } => "checkpoint_forking.result",
+            CoreEvent::PrivacyTelemetryGovernance { .. } => "privacy_telemetry_governance.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -13567,6 +13584,33 @@ impl TaskCoordinator {
                 let event = CoreEvent::CheckpointForking {
                     fork_run_id,
                     operation,
+                    version: 1,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::PrivacyTelemetryGovernance {
+                operation,
+                category,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                #[allow(clippy::possible_missing_else, clippy::needless_question_mark)]
+                let result = async { use crate::privacy_and_telemetry_governance as g; use evohime_local_storage::privacy_telemetry_store as store; let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?; let db=journal.database().lock().await; if idempotency_key.is_empty() || idempotency_key.len()>128 { return Err("invalid_idempotency_key".to_string()); } if expected_version != 0 { let current=store::consent_revision(db.connection()).map_err(|_|"storage_failed".to_string())?.unwrap_or(0); if current != expected_version { return Err("stale_version".to_string()); } } if !store::claim_idempotency(db.connection(),&idempotency_key,&operation).map_err(|_|"storage_failed".to_string())? { return Ok(serde_json::to_vec(&serde_json::json!({"status":"replayed","redacted":true})).map_err(|_|"serialization_failed".to_string())?); } match operation.as_str(){"consent"=>{let c:g::ConsentState=serde_json::from_slice(&payload).map_err(|_|"invalid_consent".to_string())?;g::validate_consent(&c).map_err(|e|e.to_string())?;let j=serde_json::to_vec(&c).map_err(|_|"serialization_failed".to_string())?;store::put_consent(db.connection(),&j,c.revision).map_err(|_|"storage_failed".to_string())?;serde_json::to_vec(&serde_json::json!({"status":"consent_saved","redacted":true})).map_err(|_|"serialization_failed".to_string())},"enqueue"=>{let request:g::TelemetryEnqueueRequest=serde_json::from_slice(&payload).map_err(|_|"invalid_enqueue_request".to_string())?;let e=request.event;g::enqueue(&request.consent,e.clone()).map_err(|e|e.to_string())?;let j=serde_json::to_vec(&e).map_err(|_|"serialization_failed".to_string())?;let inserted=store::put_event(db.connection(),&e.event_id,&format!("{:?}",e.category),&j,e.created_at_ms).map_err(|_|"storage_failed".to_string())?;serde_json::to_vec(&serde_json::json!({"queued":inserted,"redacted":true})).map_err(|_|"serialization_failed".to_string())},"list"=>serde_json::to_vec(&serde_json::json!({"events":store::list(db.connection()).map_err(|_|"storage_failed".to_string())?,"redacted":true})).map_err(|_|"serialization_failed".to_string()),"clear"=>{store::clear(db.connection()).map_err(|_|"storage_failed".to_string())?;serde_json::to_vec(&serde_json::json!({"status":"cleared","redacted":true})).map_err(|_|"serialization_failed".to_string())},_=>Err("unsupported_privacy_telemetry_operation".into())}}.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::PrivacyTelemetryGovernance {
+                    operation,
+                    category,
                     version: 1,
                     projection_json,
                 };

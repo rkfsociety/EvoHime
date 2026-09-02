@@ -55,6 +55,7 @@ pub mod model_limit_store;
 pub mod model_provenance;
 pub mod output_guardrail_pipeline_store;
 pub mod plan_artifact;
+pub mod privacy_telemetry_store;
 pub mod project_instruction_stack_store;
 pub mod reasoning_operator_library_store;
 pub mod reconciliation_verifier;
@@ -88,7 +89,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 87;
+pub const SCHEMA_VERSION: u32 = 88;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -600,6 +601,7 @@ impl LocalDatabase {
         standing_approval_profiles_store::install_schema(&connection)?;
         approval_policy_profiles_store::install_schema(&connection)?;
         checkpoint_forking_store::install_schema(&connection)?;
+        privacy_telemetry_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
@@ -3753,6 +3755,10 @@ impl LocalDatabase {
         if current < 87 {
             checkpoint_forking_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 87;")?;
+        }
+        if current < 88 {
+            privacy_telemetry_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 88;")?;
         }
         transaction.commit()?;
         Ok(())

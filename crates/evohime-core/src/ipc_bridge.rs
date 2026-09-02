@@ -2920,6 +2920,18 @@ impl IpcBridge {
                     self.write_response(writer, "checkpoint_forking.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::PrivacyTelemetryGovernance(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "list".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_privacy_telemetry_governance(operation, request)
+                        .await?;
+                    self.write_response(writer, "privacy_telemetry_governance.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -7983,6 +7995,33 @@ impl IpcBridge {
             operation,
             fork_run_id: request.fork_run_id,
             payload: request.payload,
+            reply,
+        })
+        .await
+        .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_privacy_telemetry_governance(
+        &self,
+        operation: String,
+        request: generated::PrivacyTelemetryGovernanceCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let c = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        c.dispatch(CoreCommand::PrivacyTelemetryGovernance {
+            operation,
+            category: request.category,
+            payload: request.payload,
+            expected_version: request.expected_version,
+            idempotency_key: request.idempotency_key,
             reply,
         })
         .await
