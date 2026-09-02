@@ -1799,7 +1799,8 @@ event projections, отделяет stdout NDJSON от stderr diagnostics и red
 secrets, credentials, prompts, tokens, hidden reasoning и raw output.
 Поддерживаются human/one-shot, `--json` NDJSON, bounded stdin, detached
 acceptance, watch с reconnect от последнего sequence, status, cancel и
-typed unavailable для неподдержанного resume. Exit codes versioned (0–8),
+`resume` безопасно возобновляет наблюдение за существующим run через тот же
+event cursor; он не перезапускает агент и не повторяет effect. Exit codes versioned (0–8),
 а `eva.exe` включён в Windows package без Node/Python runtime.
 
 ## Capability Workbench v1 (план 78)

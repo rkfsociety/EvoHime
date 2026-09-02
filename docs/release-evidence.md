@@ -455,7 +455,8 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   human/one-shot/NDJSON modes, stable exit-code mapping and redacted payloads.
 - Runtime/client: authenticated named-pipe role `cli`, existing Core task and
   workflow commands, detached acceptance, status/watch/cancel and reconnect
-  from event cursor; no direct DB or second agent runtime.
+  from event cursor; `resume` is a safe follow alias over that cursor, with no
+  direct DB or second agent runtime.
 - Packaging: official Windows `eva.exe` companion is included in the native
   package; Node/Python are not required by the CLI.
 - Checks: CLI unit tests (3), Core contract tests (2), cargo check/fmt/clippy,

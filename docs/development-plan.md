@@ -423,3 +423,7 @@ no-effect replay, protocol/typecheck и verification.
 План 92 закрыт 3 сентября 2026 года. Privacy & Telemetry Governance перенесён
 в Core/storage/IPC/UI; комплект `92-0` … `92-4` удалён после focused Rust,
 clippy, protocol/typecheck и полного Electron regression.
+
+План 93 закрыт 3 сентября 2026 года через evidence reuse реализации Headless
+Core CLI v1 из плана 77; добавлено безопасное `resume` как follow event cursor.
+Комплект `93-0` … `93-4` удалён после CLI tests, clippy и diff-check.

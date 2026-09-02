@@ -912,7 +912,7 @@ authenticated `cli`, Rust companion binary `eva.exe`, human/one-shot и NDJSON
 reconnect по event cursor. CLI использует существующие Core task/workflow
 contracts, не получает прямой доступ к БД или runtime, redacts sensitive
 projection и поставляется в Windows package; `resume` возвращает typed
-unavailable, поскольку безопасный task-resume contract в Core ещё не объявлен.
+follow через существующий event cursor и не перезапускает агент или effect.
 
 План 78 закрыт 2 сентября 2026 года: Capability Workbench v1. Добавлены
 versioned Core-owned descriptor/instance/lifecycle/scope/concurrency contract,

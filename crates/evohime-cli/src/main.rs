@@ -194,10 +194,6 @@ mod windows_client {
     }
 
     pub async fn run(command: Command) -> ExitCode {
-        if matches!(command, Command::Resume { .. }) {
-            eprintln!("unavailable: безопасный resume для этого Core-контракта не объявлен");
-            return ExitCode::CoreUnavailable;
-        }
         let mut client = match CoreClient::connect(0).await {
             Ok(client) => client,
             Err(error) => {
@@ -312,7 +308,7 @@ mod windows_client {
                     ExitCode::CoreUnavailable
                 }
             },
-            Command::Resume { .. } => unreachable!(),
+            Command::Resume { task_id, json } => watch_events(&mut client, &task_id, json).await,
         }
     }
 

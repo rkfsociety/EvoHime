@@ -260,6 +260,13 @@ mod tests {
                     json: true,
                 },
             ),
+            (
+                "resume",
+                Command::Resume {
+                    task_id: "run-1".into(),
+                    json: true,
+                },
+            ),
         ] {
             let args = vec![name.into(), "run-1".into(), "--json".into()];
             assert_eq!(parse_args(&args).unwrap(), expected);
