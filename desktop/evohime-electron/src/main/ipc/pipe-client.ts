@@ -9,6 +9,7 @@ import type {
   ConversationWorkbenchProjection,
   CapabilityWorkbenchProjection,
   TeamCoordinatorProjection,
+  ProjectInstructionStackProjection,
   ContinuationActionResult,
   ContinuationProjection,
   AnalysisKernelProjection,
@@ -570,6 +571,7 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       , conversationWorkbench: decodeConversationWorkbench(event.conversationWorkbench)
       , capabilityWorkbench: decodeCapabilityWorkbench(event.capabilityWorkbench)
       , teamCoordinator: decodeTeamCoordinator(event.teamCoordinator)
+      , projectInstructionStack: decodeProjectInstructionStack(event.projectInstructionStack)
     })
   }
 
@@ -769,6 +771,16 @@ function decodeTeamCoordinator(
     errorCode: projected.errorCode ?? '',
     projection
   }
+}
+
+function decodeProjectInstructionStack(
+  projected: evohime.desktop.v1.IProjectInstructionStackEvent | null | undefined
+): ProjectInstructionStackProjection | null {
+  if (!projected) return null
+  const raw = decodePayload(projected.projectionJson)
+  let projection: unknown = null
+  try { projection = JSON.parse(raw) } catch { projection = null }
+  return { schemaVersion: Number(projected.schemaVersion ?? 0), workspaceRoot: projected.workspaceRoot ?? '', operation: projected.operation ?? '', revision: Number(projected.revision ?? 0), status: projected.status ?? '', errorCode: projected.errorCode ?? '', projection }
 }
 
 function decodeConversationEvent(

@@ -495,6 +495,18 @@ function dispatch(
       if (operation === null || workItemId === null || coordinatorPayload === null || expectedRevision === null || idempotencyKey === null || workItemId.length > 128 || coordinatorPayload.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Team Coordinator.')
       return accepted(client.send({teamCoordinator:{schemaVersion:1,workItemId,operation,payload:Buffer.from(coordinatorPayload,'utf8'),expectedRevision,idempotencyKey}}))
     }
+    case 'core.projectInstructionStack': {
+      const value = asRecord(payload)
+      const operations = ['discover', 'compile', 'get', 'toggle']
+      const operation = operations.includes(String(value['operation'])) ? String(value['operation']) : null
+      const workspaceRoot = asBoundedString(value['workspaceRoot'])
+      const stackPayload = value['payload'] === undefined ? '' : asBoundedString(value['payload'])
+      const expectedRevision = value['expectedRevision'] === undefined ? 0 : asNonNegativeInteger(value['expectedRevision'])
+      const idempotencyKey = value['idempotencyKey'] === undefined ? randomUUID() : asBoundedString(value['idempotencyKey'])
+      const relevantPaths = Array.isArray(value['relevantPaths']) && value['relevantPaths'].every(item => typeof item === 'string') ? value['relevantPaths'] as string[] : []
+      if (operation === null || workspaceRoot === null || stackPayload === null || expectedRevision === null || idempotencyKey === null || workspaceRoot.length > 260 || stackPayload.length > 64 * 1024 || relevantPaths.length > 64 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Project Instruction Stack.')
+      return accepted(client.send({projectInstructionStack:{schemaVersion:1,workspaceRoot,operation,payload:Buffer.from(stackPayload,'utf8'),relevantPaths,expectedRevision,idempotencyKey}}))
+    }
 
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)

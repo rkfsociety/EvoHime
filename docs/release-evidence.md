@@ -383,6 +383,24 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   check/clippy, protocol check, Electron typecheck and full Electron regression.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
 
+## Plan 80 — Project Instruction Stack v1 (2026-09-02)
+
+- Contract: Core-owned allowlisted discovery, frontmatter normalization,
+  canonical paths, deterministic activation/precedence, source hashes and
+  revisions for global/workspace/nested/AGENTS rules.
+- Safety/bounds: 64 files, 64 KiB per rule, 256 KiB snapshot and 16 384 token
+  budget; symlink/path escape, authority metadata, malformed input and
+  overflow fail closed without silent truncation; markdown is never executed.
+- Durability/runtime: additive SQLite schema v76, immutable snapshots,
+  idempotency and restart-safe enabled/revision state; model context pins the
+  snapshot hash and provenance includes rule hash/revision metadata.
+- IPC/UI: authenticated additive command 230/event 75, generated bindings and
+  Electron metadata-only Project Instruction Stack panel.
+- Checks: cargo fmt/check/clippy, focused Core discovery/contract and storage
+  tests, protocol check, Electron typecheck, full Electron regression (102
+  files passed, 526 tests passed, 2 skipped) and native package smoke PASS.
+  Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
+
 ## Plan 79 — Team Coordinator v1 (2026-09-02)
 
 - Contract/runtime: bounded versioned `TeamWorkItem`, deterministic

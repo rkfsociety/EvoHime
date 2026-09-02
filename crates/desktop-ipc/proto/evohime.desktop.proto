@@ -1880,6 +1880,7 @@ message CommandEnvelope {
     SafeUiExtensionFrameworkCommand safe_ui_extension_framework = 227;
     CapabilityWorkbenchCommand capability_workbench = 228;
     TeamCoordinatorCommand team_coordinator = 229;
+    ProjectInstructionStackCommand project_instruction_stack = 230;
   }
 }
 
@@ -2004,6 +2005,7 @@ message EventEnvelope {
     SafeUiExtensionFrameworkEvent safe_ui_extension_framework = 72;
     CapabilityWorkbenchEvent capability_workbench = 73;
     TeamCoordinatorEvent team_coordinator = 74;
+    ProjectInstructionStackEvent project_instruction_stack = 75;
   }
 }
 
@@ -2224,6 +2226,26 @@ message TeamCoordinatorCommand {
 message TeamCoordinatorEvent {
   uint32 schema_version = 1;
   string work_item_id = 2;
+  string operation = 3;
+  uint64 revision = 4;
+  string status = 5;
+  string error_code = 6;
+  bytes projection_json = 7;
+}
+
+// Plan 80: bounded Core-owned project instruction discovery/projection.
+message ProjectInstructionStackCommand {
+  uint32 schema_version = 1;
+  string workspace_root = 2;
+  string operation = 3;
+  bytes payload = 4;
+  repeated string relevant_paths = 5;
+  uint64 expected_revision = 6;
+  string idempotency_key = 7;
+}
+message ProjectInstructionStackEvent {
+  uint32 schema_version = 1;
+  string workspace_root = 2;
   string operation = 3;
   uint64 revision = 4;
   string status = 5;

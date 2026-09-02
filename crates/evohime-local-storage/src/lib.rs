@@ -47,6 +47,7 @@ pub mod memory_store;
 pub mod model_limit_store;
 pub mod model_provenance;
 pub mod plan_artifact;
+pub mod project_instruction_stack_store;
 pub mod reconciliation_verifier;
 pub mod refinement_store;
 pub mod research_store;
@@ -76,7 +77,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 75;
+pub const SCHEMA_VERSION: u32 = 76;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3685,6 +3686,10 @@ impl LocalDatabase {
             team_coordinator_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 75;")?;
         }
+        if current < 76 {
+            project_instruction_stack_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 76;")?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -3704,12 +3709,12 @@ mod tests {
     }
 
     #[test]
-    fn schema_75_installs_configuration_experience_diagnostics_task_graph_component_registry_refs_workbench_and_coordinator_tables(
+    fn schema_76_installs_configuration_experience_diagnostics_task_graph_component_registry_refs_workbench_coordinator_and_instruction_tables(
     ) {
         let path = temp_database_path("experience-replay-schema-66");
         let _ = std::fs::remove_file(&path);
         let database = LocalDatabase::open(&path).expect("database opens");
-        assert_eq!(database.schema_version().expect("schema version"), 75);
+        assert_eq!(database.schema_version().expect("schema version"), 76);
         let has_ui_extension_table: i64 = database
             .connection()
             .query_row(
@@ -3737,6 +3742,15 @@ mod tests {
             )
             .expect("coordinator table query");
         assert_eq!(has_coordinator_table, 1);
+        let has_instruction_table: i64 = database
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='project_instruction_rules'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("instruction table query");
+        assert_eq!(has_instruction_table, 1);
         let has_table: i64 = database
             .connection()
             .query_row(

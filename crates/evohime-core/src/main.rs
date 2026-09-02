@@ -816,6 +816,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::TeamCoordinator { work_item_id, operation, revision, .. } => println!(
             "team_coordinator.result {work_item_id}: {operation} revision={revision}"
         ),
+        evohime_core::CoreEvent::ProjectInstructionStack { workspace_root, operation, revision, .. } => println!(
+            "project_instruction_stack.result {workspace_root}: {operation} revision={revision}"
+        ),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             println!("review.history_cleared {marker_id}")
         }

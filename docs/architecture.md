@@ -1800,3 +1800,26 @@ managerial decisions. Authenticated IPC command 229/event 74 и Electron Team
 Coordinator panel передают только bounded projection; queue, roster/load,
 assignments, consultations и escalation не вычисляются в renderer. Raw
 prompts/outputs, credentials, grants и executable identities запрещены.
+
+## Project Instruction Stack v1 (план 80)
+
+Project Instruction Stack — Core-owned bounded registry и compiled snapshot
+проектных инструкций. Разрешённые источники: глобальные правила из
+`%APPDATA%/EvoHime/rules`, workspace `.evohime/rules/*.md`, вложенные
+`AGENTS.md` и корневой compatibility `AGENTS.md`. Markdown рассматривается
+как untrusted text: frontmatter не расширяет tools, capabilities, grants,
+credentials или approvals, fenced code не исполняется, а security policy и
+Skills остаются отдельными authoritative surfaces.
+
+Discovery ограничен 64 файлами, 64 KiB на файл, 256 KiB snapshot и 16 384
+оценочными токенами; canonical workspace paths, symlink/reparse escape,
+malformed metadata и переполнение бюджета дают typed diagnostics без silent
+truncation. Activation поддерживает Always, RelevantPath и Explicit,
+детерминированный precedence/ordering, content hash и source revision.
+
+SQLite schema v76 хранит registry, immutable snapshots и idempotency results.
+Authenticated IPC command 230/event 75 и Electron developer panel передают
+только bounded metadata projection: active rules, source/scope, why active,
+hash/revision, diagnostics и budget. Перед model call Core pin-ит snapshot
+hash, добавляет bounded untrusted project-instruction context и включает
+rule hash/revision в model provenance; authority не расширяется.

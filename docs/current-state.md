@@ -928,3 +928,12 @@ decomposition/reassignment, managerial review с независимыми gate c
 revision-fenced storage, authenticated IPC command 229/event 74 и
 projection-only Electron panel. SQLite schema поднята до v75; raw prompts,
 outputs, credentials, grants и executable identities не передаются.
+
+План 80 закрыт 2 сентября 2026 года: Project Instruction Stack v1 реализует
+Core-owned discovery/normalization/precedence для глобальных, workspace,
+вложенных и AGENTS-источников, path/explicit activation, bounded snapshot,
+hash/revision provenance, durable SQLite schema v76, authenticated IPC command
+230/event 75 и metadata-only Electron panel. Перед model call Core фиксирует
+snapshot hash и применяет только bounded untrusted instruction context;
+authority-bearing metadata, executable semantics, secrets и raw content в UI
+projection запрещены.
