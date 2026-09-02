@@ -1885,6 +1885,7 @@ message CommandEnvelope {
     KnowledgeSourceRegistryProjectRoleCommand knowledge_source_registry = 232;
     AgentGitChangeSetsCommand agent_git_change_sets = 233;
     ArchitectEditorModelPipelineCommand architect_editor_pipeline = 234;
+    EventVisualizerRegistryCommand event_visualizer_registry = 235;
   }
 }
 
@@ -2014,6 +2015,7 @@ message EventEnvelope {
     KnowledgeSourceRegistryProjectRoleEvent knowledge_source_registry = 77;
     AgentGitChangeSetsEvent agent_git_change_sets = 78;
     ArchitectEditorModelPipelineEvent architect_editor_pipeline = 79;
+    EventVisualizerRegistryEvent event_visualizer_registry = 80;
   }
 }
 
@@ -2307,6 +2309,15 @@ message ArchitectEditorModelPipelineCommand {
 }
 message ArchitectEditorModelPipelineEvent {
   uint32 schema_version = 1; string pipeline_id = 2; string operation = 3;
+  uint64 version = 4; string status = 5; string error_code = 6;
+  bytes projection_json = 7;
+}
+message EventVisualizerRegistryCommand {
+  uint32 schema_version = 1; string visualizer_id = 2; string operation = 3;
+  bytes payload = 4; uint64 expected_version = 5; string idempotency_key = 6;
+}
+message EventVisualizerRegistryEvent {
+  uint32 schema_version = 1; string visualizer_id = 2; string operation = 3;
   uint64 version = 4; string status = 5; string error_code = 6;
   bytes projection_json = 7;
 }

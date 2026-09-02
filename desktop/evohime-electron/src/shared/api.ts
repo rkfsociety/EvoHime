@@ -401,6 +401,7 @@ export interface CoreEvent {
   readonly knowledgeSourceRegistry?: KnowledgeSourceRegistryProjection | null
   readonly agentGitChangeSets?: AgentGitChangeSetsProjection | null
   readonly architectEditorPipeline?: ArchitectEditorPipelineProjection | null
+  readonly eventVisualizerRegistry?: EventVisualizerRegistryProjection | null
 }
 
 export interface CapabilityWorkbenchProjection {
@@ -464,6 +465,7 @@ export interface AgentGitChangeSetsProjection {
 }
 
 export interface ArchitectEditorPipelineProjection { readonly schemaVersion: number; readonly pipelineId: string; readonly operation: string; readonly version: number; readonly status: string; readonly errorCode: string; readonly projection: unknown }
+export interface EventVisualizerRegistryProjection { readonly schemaVersion: number; readonly visualizerId: string; readonly operation: string; readonly version: number; readonly status: string; readonly errorCode: string; readonly projection: unknown }
 
 export interface ConversationEventProjection {
   readonly schemaVersion: number
@@ -1141,6 +1143,7 @@ export const RENDERER_COMMANDS = [
   'core.knowledgeSourceRegistry',
   'core.agentGitChangeSets',
   'core.architectEditorPipeline',
+  'core.eventVisualizerRegistry',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1450,6 +1453,7 @@ export interface CommandPayloads {
   'core.knowledgeSourceRegistry': { operation: 'register' | 'get' | 'bind' | 'index' | 'retrieve'; sourceId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.agentGitChangeSets': { operation: 'observe' | 'candidate' | 'get_candidate' | 'commit' | 'undo' | 'keep'; changeSetId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.architectEditorPipeline': { operation: 'create' | 'get' | 'accept_intent'; pipelineId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
+  'core.eventVisualizerRegistry': { operation: 'list' | 'register' | 'resolve'; visualizerId?: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
   'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
@@ -1943,6 +1947,7 @@ export interface CommandResults {
   'core.knowledgeSourceRegistry': { accepted: boolean }
   'core.agentGitChangeSets': { accepted: boolean }
   'core.architectEditorPipeline': { accepted: boolean }
+  'core.eventVisualizerRegistry': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }
   'core.executeAnalysisKernel': { accepted: boolean }

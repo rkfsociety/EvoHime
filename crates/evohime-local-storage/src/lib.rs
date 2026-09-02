@@ -34,6 +34,7 @@ pub mod core_topic_subscription_event_bus_store;
 pub mod declarative_agent_component_registry_store;
 pub mod dependency_aware_task_graph_store;
 pub mod event_trigger_runtime_store;
+pub mod event_visualizer_registry_store;
 pub mod execution_backend_registry_store;
 pub mod execution_ledger;
 pub mod execution_policy_profiles_store;
@@ -81,7 +82,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 80;
+pub const SCHEMA_VERSION: u32 = 81;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -586,6 +587,7 @@ impl LocalDatabase {
         incremental_change_protocol_store::install_schema(&connection)?;
         agent_git_change_sets_store::install_schema(&connection)?;
         architect_editor_model_pipeline_store::install_schema(&connection)?;
+        event_visualizer_registry_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
@@ -3711,6 +3713,10 @@ impl LocalDatabase {
         if current < 80 {
             architect_editor_model_pipeline_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 80;")?;
+        }
+        if current < 81 {
+            event_visualizer_registry_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 81;")?;
         }
         transaction.commit()?;
         Ok(())

@@ -631,3 +631,13 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   capability grants.
 - Evidence: focused Rust tests, clippy with `-D warnings`, generated protocol
   check, Electron typecheck/tests and `git diff --check`.
+
+## Plan 81 — Event Visualizer Registry (2026-09-02)
+
+- Schema 81 and IPC tags 235/80 provide versioned descriptors, deterministic
+  matchers, built-in visualizers and a safe generic fallback.
+- Extension descriptors are bounded/redacted and cannot claim host-controlled
+  security rendering; renderer receives projection/action metadata only.
+- Evidence: focused Rust tests, storage round-trip, clippy `-D warnings`,
+  protocol check, typecheck, full Electron regression (528 passed, 2 skipped),
+  native package smoke and `git diff --check`.

@@ -831,6 +831,7 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::ArchitectEditorModelPipeline { pipeline_id, operation, version, .. } => println!(
             "architect_editor_pipeline.result {pipeline_id}: {operation} version={version}"
         ),
+        evohime_core::CoreEvent::EventVisualizerRegistry { visualizer_id, operation, version, .. } => println!("event_visualizer_registry.result {visualizer_id}: {operation} version={version}"),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             println!("review.history_cleared {marker_id}")
         }

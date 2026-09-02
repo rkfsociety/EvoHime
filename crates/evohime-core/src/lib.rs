@@ -6,6 +6,7 @@ pub mod code_diagnostics_feedback_loop;
 pub mod core_topic_subscription_event_bus;
 pub mod declarative_agent_component_registry;
 pub mod dependency_aware_task_graph;
+pub mod event_visualizer_registry;
 pub mod experience_replay_library;
 pub mod headless_core_cli;
 pub mod knowledge_source_registry_project_role;
@@ -1445,6 +1446,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    EventVisualizerRegistry {
+        operation: String,
+        visualizer_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -2172,6 +2181,12 @@ pub enum CoreEvent {
     },
     ArchitectEditorModelPipeline {
         pipeline_id: String,
+        operation: String,
+        version: u64,
+        projection_json: String,
+    },
+    EventVisualizerRegistry {
+        visualizer_id: String,
         operation: String,
         version: u64,
         projection_json: String,
@@ -3279,6 +3294,7 @@ impl EventJournal {
             CoreEvent::KnowledgeSourceRegistryProjectRole { source_id, .. } => source_id,
             CoreEvent::AgentGitChangeSets { change_set_id, .. } => change_set_id,
             CoreEvent::ArchitectEditorModelPipeline { pipeline_id, .. } => pipeline_id,
+            CoreEvent::EventVisualizerRegistry { visualizer_id, .. } => visualizer_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3330,6 +3346,7 @@ impl EventJournal {
             }
             CoreEvent::AgentGitChangeSets { .. } => "agent_git_change_sets.result",
             CoreEvent::ArchitectEditorModelPipeline { .. } => "architect_editor_pipeline.result",
+            CoreEvent::EventVisualizerRegistry { .. } => "event_visualizer_registry.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -13148,6 +13165,43 @@ impl TaskCoordinator {
                     .unwrap_or_else(|| "{}".into());
                 let event = CoreEvent::ArchitectEditorModelPipeline {
                     pipeline_id,
+                    operation,
+                    version: expected_version,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::EventVisualizerRegistry {
+                operation,
+                visualizer_id,
+                payload,
+                expected_version,
+                idempotency_key: _,
+                reply,
+            } => {
+                let result = async {
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    use crate::event_visualizer_registry as registry;
+                    use evohime_local_storage::event_visualizer_registry_store as store;
+                    match operation.as_str() {
+                        "list" => { let mut descriptors = registry::builtins(); let rows = store::list(database.connection()).map_err(|_| "storage_failed".to_string())?; for row in rows { if let Ok(d) = serde_json::from_slice(&row) { descriptors.push(d); } } serde_json::to_vec(&serde_json::json!({"schema_version":1,"descriptors":descriptors,"redacted":true})).map_err(|_| "serialization_failed".to_string()) }
+                        "register" => { let d: registry::VisualizerDescriptor = serde_json::from_slice(&payload).map_err(|_| "invalid_visualizer_descriptor".to_string())?; registry::validate_descriptor(&d).map_err(|e| e.to_string())?; let json=serde_json::to_vec(&d).map_err(|_| "serialization_failed".to_string())?; store::put(database.connection(),&d.id,d.version,&d.content_hash,&json,crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())?; serde_json::to_vec(&serde_json::json!({"schema_version":1,"visualizer_id":d.id,"status":"registered","redacted":true})).map_err(|_| "serialization_failed".to_string()) }
+                        "resolve" => { let matcher: registry::VisualizerMatcher = serde_json::from_slice(&payload).map_err(|_| "invalid_visualizer_matcher".to_string())?; let mut descriptors=registry::builtins(); let rows=store::list(database.connection()).map_err(|_| "storage_failed".to_string())?; for row in rows { if let Ok(d)=serde_json::from_slice(&row) { descriptors.push(d); } } let resolution=registry::resolve(&descriptors,&matcher).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"schema_version":1,"resolution":resolution,"redacted":true})).map_err(|_| "serialization_failed".to_string()) }
+                        _ => Err("unsupported_event_visualizer_registry_operation".into()),
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::EventVisualizerRegistry {
+                    visualizer_id,
                     operation,
                     version: expected_version,
                     projection_json,

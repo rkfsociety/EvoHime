@@ -383,3 +383,7 @@ Capability Workbench v1: требования Stateful Tool Workbench Sessions �
 План 91 закрыт 2 сентября 2026 года. Architect-Editor Model Pipeline v1
 перенесён в Core/storage/IPC/UI; комплект `91-0` … `91-4` удалён после
 contract, migration, drift, protocol, typecheck и Electron verification checks.
+
+План 81 закрыт 2 сентября 2026 года. Event Visualizer Registry v1 перенесён в
+Core/storage/IPC/UI; комплект `81-0` … `81-4` удалён после contract, fallback,
+storage, protocol, typecheck и Electron verification checks.

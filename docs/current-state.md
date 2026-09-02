@@ -975,3 +975,9 @@ authority не добавлялся.
 bounded storage/migration, workspace drift fence, additive IPC и metadata-only
 Electron panel. Actual mutations остаются за существующей Core
 security/mutation boundary.
+
+План 81 закрыт 2 сентября 2026 года: Event Visualizer Registry v1 добавил
+Core-owned versioned descriptors/matchers, built-in tool/file/test/workflow/
+artifact visualizers, deterministic generic fallback, bounded storage и
+additive IPC/UI projection. Расширения не получают capability и не могут
+вытеснить host-controlled security renderers.

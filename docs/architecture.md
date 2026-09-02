@@ -1907,3 +1907,14 @@ typed EditIntent и exact workspace revision fence. Intent является пр
 boundary. Payload bounded: 128 путей/операций, 256 KiB intent и 3 retries.
 Electron получает только redacted projection и Core-checked actions через
 additive IPC; hidden reasoning и credentials не сохраняются.
+
+## Event Visualizer Registry v1 (план 81)
+
+Core-owned registry разрешает typed event matcher детерминированно по
+specificity/priority/id и всегда имеет host-controlled generic fallback.
+Встроенные descriptors покрывают tool, file, test, workflow и artifact events;
+extension contributions декларативны и не могут заменить security-critical
+host renderer. Projection bounded и sensitivity-filtered, действия остаются
+Core-owned. SQLite schema v81 и authenticated additive IPC command 235/event 80
+хранят только metadata/descriptor state; arbitrary HTML/JS и raw payload не
+передаются renderer.
