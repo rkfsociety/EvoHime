@@ -2932,6 +2932,18 @@ impl IpcBridge {
                     self.write_response(writer, "privacy_telemetry_governance.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::ConversationBridgeAdapters(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "list".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_conversation_bridge_adapters(operation, request)
+                        .await?;
+                    self.write_response(writer, "conversation_bridge_adapters.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -8022,6 +8034,34 @@ impl IpcBridge {
             payload: request.payload,
             expected_version: request.expected_version,
             idempotency_key: request.idempotency_key,
+            reply,
+        })
+        .await
+        .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_conversation_bridge_adapters(
+        &self,
+        operation: String,
+        request: generated::ConversationBridgeAdaptersCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let c = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        c.dispatch(CoreCommand::ConversationBridgeAdapters {
+            operation,
+            bridge_id: request.bridge_id,
+            payload: request.payload,
+            expected_revision: request.expected_revision,
+            idempotency_key: request.idempotency_key,
+            correlation_id: request.correlation_id,
             reply,
         })
         .await

@@ -427,3 +427,7 @@ clippy, protocol/typecheck и полного Electron regression.
 План 93 закрыт 3 сентября 2026 года через evidence reuse реализации Headless
 Core CLI v1 из плана 77; добавлено безопасное `resume` как follow event cursor.
 Комплект `93-0` … `93-4` удалён после CLI tests, clippy и diff-check.
+
+План 94 закрыт 3 сентября 2026 года. Conversation Bridge Adapters перенесены
+в Core/storage/IPC/UI; комплект `94-0` … `94-4` удалён после contract,
+principal/revoke/dedup проверок, protocol/typecheck и полного Electron regression.

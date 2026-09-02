@@ -680,4 +680,17 @@ native package smoke and `git diff --check`.
 - Evidence: focused Core 3/3, local-storage 3/3, clippy `-D warnings`,
   generated protocol check, TypeScript typecheck, Electron regression 528
   passed/2 skipped, UI smoke test and `git diff --check`; evidence is
-  metadata-only and contains no credentials, prompts or raw output.
+metadata-only and contains no credentials, prompts or raw output.
+
+## Plan 94 — Conversation Bridge Adapters (2026-09-03)
+
+- Core contract: provider allowlist, durable `ConversationBridge`/
+  `ThreadBinding`, explicit principal pairing, revision-fenced revoke and
+  typed attention/approval/Human Work Item command kinds.
+- Runtime/storage: schema 89, bounded inbound queue with message-id
+  deduplication, stored principal checks before bind/inbound/remote command,
+  redacted outbound metadata projection; no network ingress or credentials.
+- IPC/UI: authenticated additive command/event 243/88, generated bindings,
+  metadata-only panel and typed bridge API. Evidence: Core 3/3, storage 1/1,
+  clippy `-D warnings`, protocol/typecheck, focused UI 1/1 and full Electron
+  regression 530 passed/2 skipped; `git diff --check` passed.

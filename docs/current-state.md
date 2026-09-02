@@ -1027,3 +1027,10 @@ deny-by-default sensitive-value guard, bounded offline SQLite queue с
 deterministic deduplication, revoke/clear lifecycle и metadata-only Electron
 panel. Используются schema 88 и authenticated IPC 242/87; внешний egress
 остаётся закрытым.
+
+План 94 закрыт 3 сентября 2026 года: Conversation Bridge Adapters v1 добавил
+durable Core-owned bridge/thread binding, explicit paired principal,
+revision-fenced revoke, inbound dedup bounded queue, typed remote-command
+allowlist и redacted outbound projection. Используются schema 89 и
+authenticated IPC 243/88; provider network ingress и credentials в контур не
+входят.

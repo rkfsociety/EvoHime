@@ -986,6 +986,24 @@ consent, а UI предоставляет просмотр, явный revoke и
 IPC additive command 242/event 87, storage schema 88. Queue не является
 provider SDK или network sink: diagnostics и потенциальная external telemetry
 разделены, внешний egress остаётся default-closed и за пределами v1.
+
+## Conversation Bridge Adapters v1 (план 94, реализован 2026-09-03)
+
+`ConversationBridge` и `ThreadBinding` — Core-owned versioned metadata,
+связывающие allowlisted provider/thread с local conversation. Bridge хранит
+только principal identity и pairing hash (не token/credential); pairing,
+revision fence и revoke проверяются Core против durable paired state.
+
+Inbound messages принимаются только после binding/principal authorization и
+deduplicate по `message_id` в bounded SQLite queue (256). Remote control
+ограничен typed `Attention`, `ApprovalReply` и `HumanWorkItemReply`; он не
+выдаёт capabilities, workspace paths, credentials или standing approval.
+Outbound bridge projection — bounded redacted metadata с provenance ID, без
+message text/raw prompt/tool output. Authenticated additive IPC command 243/
+event 88 и schema 89 обслуживают Core handler; Electron показывает только
+состояние и revoke/clear actions. Сетевые provider adapters и ingress
+transport остаются отдельным следующим слоем, поэтому потеря bridge не
+затрагивает локальную conversation.
 ## Agentic Browser Session v1 (план 55, реализован 2026-09-01)
 
 `evohime-core::agentic_browser_session` владеет versioned lifecycle, session

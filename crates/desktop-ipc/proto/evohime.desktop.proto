@@ -1893,6 +1893,7 @@ message CommandEnvelope {
     ApprovalPolicyProfilesCommand approval_policy_profiles = 240;
     CheckpointForkingCommand checkpoint_forking = 241;
     PrivacyTelemetryGovernanceCommand privacy_telemetry_governance = 242;
+    ConversationBridgeAdaptersCommand conversation_bridge_adapters = 243;
   }
 }
 
@@ -2030,6 +2031,7 @@ message EventEnvelope {
     ApprovalPolicyProfilesEvent approval_policy_profiles = 85;
     CheckpointForkingEvent checkpoint_forking = 86;
     PrivacyTelemetryGovernanceEvent privacy_telemetry_governance = 87;
+    ConversationBridgeAdaptersEvent conversation_bridge_adapters = 88;
   }
 }
 
@@ -2349,6 +2351,8 @@ message CheckpointForkingCommand { uint32 schema_version=1; string fork_run_id=2
 message CheckpointForkingEvent { uint32 schema_version=1; string fork_run_id=2; string operation=3; uint64 version=4; string status=5; string error_code=6; bytes projection_json=7; }
 message PrivacyTelemetryGovernanceCommand { uint32 schema_version=1; string operation=2; string category=3; bytes payload=4; uint64 expected_version=5; string idempotency_key=6; }
 message PrivacyTelemetryGovernanceEvent { uint32 schema_version=1; string operation=2; string category=3; uint64 version=4; string status=5; string error_code=6; bytes projection_json=7; }
+message ConversationBridgeAdaptersCommand { uint32 schema_version=1; string operation=2; string bridge_id=3; bytes payload=4; uint64 expected_revision=5; string idempotency_key=6; string correlation_id=7; }
+message ConversationBridgeAdaptersEvent { uint32 schema_version=1; string operation=2; string bridge_id=3; uint64 revision=4; string status=5; string error_code=6; bytes projection_json=7; }
 
 // Plan 64: bounded metadata-only Workspace Bootstrap Manifest surface.
 message WorkspaceBootstrapManifestCommand {

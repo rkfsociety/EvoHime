@@ -1155,6 +1155,7 @@ export const RENDERER_COMMANDS = [
   'core.approvalPolicyProfiles',
   'core.checkpointForking',
   'core.privacyTelemetryGovernance',
+  'core.conversationBridgeAdapters',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1471,6 +1472,7 @@ export interface CommandPayloads {
   'core.approvalPolicyProfiles': { operation: 'list' | 'create' | 'update' | 'revoke' | 'decide'; profileId?: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.checkpointForking': { operation: 'fork'; forkRunId: string; payload: string; idempotencyKey?: string }
   'core.privacyTelemetryGovernance': { operation: 'consent' | 'enqueue' | 'list' | 'clear'; category?: string; payload?: string; idempotencyKey?: string }
+  'core.conversationBridgeAdapters': { operation: 'create' | 'revoke' | 'bind' | 'inbound' | 'remote_command' | 'project' | 'list' | 'clear'; bridgeId: string; payload?: string; expectedRevision?: number; idempotencyKey?: string; correlationId?: string }
   'core.reasoningOperatorLibrary': { operation: 'list' | 'register' | 'execute'; operatorId?: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
@@ -1972,6 +1974,7 @@ export interface CommandResults {
   'core.approvalPolicyProfiles': { accepted: boolean }
   'core.checkpointForking': { accepted: boolean }
   'core.privacyTelemetryGovernance': { accepted: boolean }
+  'core.conversationBridgeAdapters': { accepted: boolean }
   'core.reasoningOperatorLibrary': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }
