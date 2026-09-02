@@ -395,11 +395,22 @@ export interface CoreEvent {
   /** Typed metadata-only Workbench projection. */
   readonly conversationWorkbench?: ConversationWorkbenchProjection | null
   readonly capabilityWorkbench?: CapabilityWorkbenchProjection | null
+  readonly teamCoordinator?: TeamCoordinatorProjection | null
 }
 
 export interface CapabilityWorkbenchProjection {
   readonly schemaVersion: number
   readonly instanceId: string
+  readonly operation: string
+  readonly revision: number
+  readonly status: string
+  readonly errorCode: string
+  readonly projection: unknown
+}
+
+export interface TeamCoordinatorProjection {
+  readonly schemaVersion: number
+  readonly workItemId: string
   readonly operation: string
   readonly revision: number
   readonly status: string
@@ -1077,6 +1088,7 @@ export const RENDERER_COMMANDS = [
   'core.typedContextReferences',
   'core.safeUiExtensionFramework',
   'core.capabilityWorkbench',
+  'core.teamCoordinator',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1380,6 +1392,7 @@ export interface CommandPayloads {
   'core.typedContextReferences': { operation: 'resolve' | 'budget' | 'kinds'; refId: string; payload: string }
   'core.safeUiExtensionFramework': { operation: 'install' | 'get' | 'validate' | 'enable' | 'disable' | 'update'; extensionId: string; payload: string; expectedRevision?: number }
   'core.capabilityWorkbench': { operation: 'create' | 'get' | 'start' | 'ready' | 'stop' | 'stopped' | 'reset' | 'degraded' | 'recover' | 'heartbeat' | 'list_tools' | 'call_tool' | 'cancel' | 'resource' | 'snapshot' | 'restore'; instanceId: string; ownerId: string; payload: string; expectedRevision?: number; grants?: readonly string[] }
+  'core.teamCoordinator': { operation: 'create' | 'get' | 'list' | 'propose' | 'assign' | 'consult' | 'review' | 'decompose' | 'reassign' | 'cancel'; workItemId: string; payload: string; expectedRevision?: number; idempotencyKey?: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
   'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
@@ -1867,6 +1880,7 @@ export interface CommandResults {
   'core.typedContextReferences': { accepted: boolean }
   'core.safeUiExtensionFramework': { accepted: boolean }
   'core.capabilityWorkbench': { accepted: boolean }
+  'core.teamCoordinator': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }
   'core.executeAnalysisKernel': { accepted: boolean }

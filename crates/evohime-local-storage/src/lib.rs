@@ -58,6 +58,7 @@ pub mod skill_trust_pipeline_store;
 pub mod task_checkpoint;
 pub mod task_worktree_isolation_store;
 pub mod team_coordination_policies_store;
+pub mod team_coordinator_store;
 pub mod team_resource_budget_store;
 pub mod team_sop_protocols_store;
 pub mod toolkit_store;
@@ -75,7 +76,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 74;
+pub const SCHEMA_VERSION: u32 = 75;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3680,6 +3681,10 @@ impl LocalDatabase {
             capability_workbenches_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 74;")?;
         }
+        if current < 75 {
+            team_coordinator_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 75;")?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -3699,12 +3704,12 @@ mod tests {
     }
 
     #[test]
-    fn schema_74_installs_configuration_experience_diagnostics_task_graph_component_registry_refs_and_workbench_tables(
+    fn schema_75_installs_configuration_experience_diagnostics_task_graph_component_registry_refs_workbench_and_coordinator_tables(
     ) {
         let path = temp_database_path("experience-replay-schema-66");
         let _ = std::fs::remove_file(&path);
         let database = LocalDatabase::open(&path).expect("database opens");
-        assert_eq!(database.schema_version().expect("schema version"), 74);
+        assert_eq!(database.schema_version().expect("schema version"), 75);
         let has_ui_extension_table: i64 = database
             .connection()
             .query_row(
@@ -3723,6 +3728,15 @@ mod tests {
             )
             .expect("workbench table query");
         assert_eq!(has_workbench_table, 1);
+        let has_coordinator_table: i64 = database
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='team_coordinator_work_items'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("coordinator table query");
+        assert_eq!(has_coordinator_table, 1);
         let has_table: i64 = database
             .connection()
             .query_row(

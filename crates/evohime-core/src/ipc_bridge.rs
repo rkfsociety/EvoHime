@@ -877,7 +877,36 @@ impl IpcBridge {
                 .starts_with("ledger.")
                 .then(|| decode_typed_execution_event(&record.payload))
                 .flatten();
-            let typed_event = if record.event_type == "conversation.event" {
+            let typed_event = if record.event_type == "team_coordinator.result" {
+                serde_json::from_slice::<serde_json::Value>(&record.payload)
+                    .ok()
+                    .and_then(|value| {
+                        let event = value.get("TeamCoordinator").unwrap_or(&value);
+                        Some(generated::event_envelope::Event::TeamCoordinator(
+                            generated::TeamCoordinatorEvent {
+                                schema_version: 1,
+                                work_item_id: event.get("work_item_id")?.as_str()?.to_owned(),
+                                operation: event.get("operation")?.as_str()?.to_owned(),
+                                revision: event
+                                    .get("revision")
+                                    .and_then(serde_json::Value::as_u64)
+                                    .unwrap_or_default(),
+                                status: event
+                                    .get("status")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_owned(),
+                                error_code: String::new(),
+                                projection_json: event
+                                    .get("projection_json")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or("{}")
+                                    .as_bytes()
+                                    .to_vec(),
+                            },
+                        ))
+                    })
+            } else if record.event_type == "conversation.event" {
                 let subscription = self.conversation_subscription.lock().await.clone();
                 decode_conversation_event(&record.payload).and_then(|conversation| {
                     let allowed = subscription
@@ -2662,6 +2691,16 @@ impl IpcBridge {
                         .dispatch_capability_workbench(operation, request)
                         .await?;
                     self.write_response(writer, "capability_workbench.result", result)
+                        .await?;
+                }
+                Some(generated::command_envelope::Command::TeamCoordinator(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "get".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self.dispatch_team_coordinator(operation, request).await?;
+                    self.write_response(writer, "team_coordinator.result", result)
                         .await?;
                 }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
@@ -7365,6 +7404,34 @@ impl IpcBridge {
                 payload: request.payload,
                 expected_revision: request.expected_revision,
                 grants: request.grants,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_team_coordinator(
+        &self,
+        operation: String,
+        request: generated::TeamCoordinatorCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::TeamCoordinator {
+                operation,
+                work_item_id: request.work_item_id,
+                payload: request.payload,
+                expected_revision: request.expected_revision,
+                idempotency_key: request.idempotency_key,
                 reply,
             })
             .await

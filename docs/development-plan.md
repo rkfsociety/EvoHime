@@ -352,3 +352,6 @@ Electron projection/panel и focused/full verification. Комплект `78-0` 
 из `docs/plans` по следующему номеру.
 План 77 закрыт 2 сентября 2026 года. Следующий незавершённый этап выбирается
 из `docs/plans` по следующему номеру.
+План 79 закрыт 2 сентября 2026 года. Team Coordinator v1 перенесён в
+`docs/architecture.md` и `docs/current-state.md`; следующий незавершённый
+этап выбирается из `docs/plans` по следующему номеру.

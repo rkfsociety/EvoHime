@@ -11,6 +11,7 @@ pub mod headless_core_cli;
 pub mod safe_ui_extension_framework;
 pub mod schema_driven_agent_configuration;
 pub mod sensitive_data_guardrails;
+pub mod team_coordinator;
 pub mod team_sop_protocols;
 pub mod typed_context_references;
 pub mod workflow_optimization_lab;
@@ -1390,6 +1391,14 @@ pub enum CoreCommand {
         grants: Vec<String>,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    TeamCoordinator {
+        operation: String,
+        work_item_id: String,
+        payload: Vec<u8>,
+        expected_revision: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -2081,6 +2090,12 @@ pub enum CoreEvent {
     },
     CapabilityWorkbench {
         instance_id: String,
+        operation: String,
+        revision: u64,
+        projection_json: String,
+    },
+    TeamCoordinator {
+        work_item_id: String,
         operation: String,
         revision: u64,
         projection_json: String,
@@ -3182,6 +3197,7 @@ impl EventJournal {
             CoreEvent::TypedContextReferences { ref_id, .. } => ref_id,
             CoreEvent::SafeUiExtensionFramework { extension_id, .. } => extension_id,
             CoreEvent::CapabilityWorkbench { instance_id, .. } => instance_id,
+            CoreEvent::TeamCoordinator { work_item_id, .. } => work_item_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3225,6 +3241,7 @@ impl EventJournal {
             CoreEvent::TypedContextReferences { .. } => "typed_context_references.result",
             CoreEvent::SafeUiExtensionFramework { .. } => "safe_ui_extension_framework.result",
             CoreEvent::CapabilityWorkbench { .. } => "capability_workbench.result",
+            CoreEvent::TeamCoordinator { .. } => "team_coordinator.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -12163,6 +12180,331 @@ impl TaskCoordinator {
                         .unwrap_or(expected_revision);
                 let event = CoreEvent::CapabilityWorkbench {
                     instance_id,
+                    operation,
+                    revision,
+                    projection_json,
+                };
+                let journal = state.lock().await.journal.clone();
+                if let Some(journal) = journal {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::TeamCoordinator {
+                operation,
+                work_item_id,
+                payload,
+                expected_revision,
+                idempotency_key,
+                reply,
+            } => {
+                let result = async {
+                    let journal = state
+                        .lock()
+                        .await
+                        .journal
+                        .clone()
+                        .ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    use crate::team_coordinator as coordinator;
+                    use evohime_local_storage::team_coordinator_store as store;
+                    let now = crate::task_memory::now_millis() as i64;
+                    if !idempotency_key.is_empty() {
+                        if let Some(cached) =
+                            store::get_idempotency(database.connection(), &idempotency_key)
+                                .map_err(|_| "storage_failed".to_string())?
+                        {
+                            return Ok(cached);
+                        }
+                    }
+                    let encode = |item: &coordinator::TeamWorkItem| {
+                        serde_json::to_vec(item).map_err(|_| "serialization_failed".to_string())
+                    };
+                    let status = |item: &coordinator::TeamWorkItem| {
+                        serde_json::to_value(item.status)
+                            .ok()
+                            .and_then(|value| value.as_str().map(str::to_owned))
+                            .unwrap_or_else(|| "unknown".to_owned())
+                    };
+                    match operation.as_str() {
+                        "create" => {
+                            let item: coordinator::TeamWorkItem = serde_json::from_slice(&payload)
+                                .map_err(|_| "invalid_work_item")?;
+                            if item.id != work_item_id {
+                                return Err("work_item_id_mismatch".into());
+                            }
+                            coordinator::validate_work_item(&item).map_err(|e| e.to_string())?;
+                            let json = encode(&item)?;
+                            store::put_work_item(
+                                database.connection(),
+                                &item.id,
+                                item.revision as i64,
+                                &status(&item),
+                                item.assigned_instance_id.as_deref(),
+                                item.attempt as i64,
+                                &json,
+                                now,
+                            )
+                            .map_err(|e| {
+                                if matches!(e, rusqlite::Error::SqliteFailure(_, _)) {
+                                    "work_item_exists".to_string()
+                                } else {
+                                    "storage_failed".to_string()
+                                }
+                            })?;
+                            Ok(json)
+                        }
+                        "get" => store::get_work_item(database.connection(), &work_item_id)
+                            .map_err(|_| "storage_failed".to_string())?
+                            .ok_or_else(|| "work_item_not_found".to_string()),
+                        "list" => {
+                            let rows = store::list_work_items(
+                                database.connection(),
+                                coordinator::MAX_WORK_ITEMS,
+                            )
+                            .map_err(|_| "storage_failed".to_string())?;
+                            let items: Vec<serde_json::Value> = rows
+                                .into_iter()
+                                .filter_map(|json| serde_json::from_slice(&json).ok())
+                                .collect();
+                            serde_json::to_vec(&serde_json::json!({
+                                "schema_version": coordinator::SCHEMA_VERSION,
+                                "queue_count": items.len(),
+                                "work_items": items,
+                                "candidate_count": 0,
+                                "assignment_count": 0,
+                                "consultation_count": 0,
+                                "escalation": null,
+                            }))
+                            .map_err(|_| "serialization_failed".to_string())
+                        }
+                        "propose" => {
+                            let request: serde_json::Value = serde_json::from_slice(&payload)
+                                .map_err(|_| "invalid_proposal_request")?;
+                            let item: coordinator::TeamWorkItem = if let Some(value) =
+                                request.get("item")
+                            {
+                                serde_json::from_value(value.clone())
+                                    .map_err(|_| "invalid_work_item")?
+                            } else {
+                                let json =
+                                    store::get_work_item(database.connection(), &work_item_id)
+                                        .map_err(|_| "storage_failed".to_string())?
+                                        .ok_or_else(|| "work_item_not_found".to_string())?;
+                                serde_json::from_slice(&json).map_err(|_| "corrupt_work_item")?
+                            };
+                            let candidates: Vec<coordinator::ParticipantCandidate> = request
+                                .get("candidates")
+                                .cloned()
+                                .map(|value| {
+                                    serde_json::from_value(value)
+                                        .map_err(|_| "invalid_candidates".to_string())
+                                })
+                                .transpose()?
+                                .unwrap_or_default();
+                            let proposal = coordinator::propose_assignment(&item, &candidates)
+                                .map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&proposal)
+                                .map_err(|_| "serialization_failed".to_string())
+                        }
+                        "assign" => {
+                            let request: serde_json::Value = serde_json::from_slice(&payload)
+                                .map_err(|_| "invalid_assignment_request")?;
+                            let mut item: coordinator::TeamWorkItem = serde_json::from_value(
+                                request.get("item").cloned().ok_or("invalid_work_item")?,
+                            )
+                            .map_err(|_| "invalid_work_item")?;
+                            let proposal: coordinator::DelegationProposal = serde_json::from_value(
+                                request.get("proposal").cloned().ok_or("invalid_proposal")?,
+                            )
+                            .map_err(|_| "invalid_proposal")?;
+                            let candidate: coordinator::ParticipantCandidate =
+                                serde_json::from_value(
+                                    request
+                                        .get("candidate")
+                                        .cloned()
+                                        .ok_or("invalid_candidate")?,
+                                )
+                                .map_err(|_| "invalid_candidate")?;
+                            if item.id != work_item_id {
+                                return Err("work_item_id_mismatch".into());
+                            }
+                            coordinator::validate_proposal(&item, &proposal, &candidate)
+                                .map_err(|e| e.to_string())?;
+                            coordinator::transition(
+                                &mut item,
+                                coordinator::WorkItemStatus::Assigned,
+                                expected_revision,
+                            )
+                            .map_err(|e| e.to_string())?;
+                            item.assigned_instance_id = Some(candidate.instance_id.clone());
+                            let json = encode(&item)?;
+                            if !store::replace_work_item(
+                                database.connection(),
+                                &item.id,
+                                expected_revision as i64,
+                                item.revision as i64,
+                                &status(&item),
+                                item.assigned_instance_id.as_deref(),
+                                item.attempt as i64,
+                                &json,
+                                now,
+                            )
+                            .map_err(|_| "storage_failed")?
+                            {
+                                return Err("stale_work_item_revision".into());
+                            }
+                            let assignment_id = uuid::Uuid::now_v7().to_string();
+                            let proposal_json = serde_json::to_vec(&proposal)
+                                .map_err(|_| "serialization_failed")?;
+                            store::put_assignment(
+                                database.connection(),
+                                &assignment_id,
+                                &item.id,
+                                &candidate.instance_id,
+                                &proposal_json,
+                                now,
+                            )
+                            .map_err(|_| "storage_failed")?;
+                            Ok(json)
+                        }
+                        "consult" => {
+                            let query: coordinator::SpecialistQuery =
+                                serde_json::from_slice(&payload)
+                                    .map_err(|_| "invalid_consultation")?;
+                            coordinator::validate_consultation(&query)
+                                .map_err(|e| e.to_string())?;
+                            let json =
+                                serde_json::to_vec(&query).map_err(|_| "serialization_failed")?;
+                            store::put_consultation(database.connection(), &query.id, &json, now)
+                                .map_err(|_| "storage_failed")?;
+                            Ok(json)
+                        }
+                        "review" => {
+                            let review: coordinator::CoordinationReview =
+                                serde_json::from_slice(&payload).map_err(|_| "invalid_review")?;
+                            if review.work_item_id != work_item_id {
+                                return Err("work_item_id_mismatch".into());
+                            }
+                            coordinator::validate_review(&review).map_err(|e| e.to_string())?;
+                            let json =
+                                serde_json::to_vec(&review).map_err(|_| "serialization_failed")?;
+                            let decision_id = uuid::Uuid::now_v7().to_string();
+                            store::put_decision(
+                                database.connection(),
+                                &decision_id,
+                                &work_item_id,
+                                &json,
+                                now,
+                            )
+                            .map_err(|_| "storage_failed")?;
+                            Ok(json)
+                        }
+                        "decompose" => {
+                            let proposal: coordinator::DecompositionProposal =
+                                serde_json::from_slice(&payload)
+                                    .map_err(|_| "invalid_decomposition")?;
+                            if proposal.parent_work_item_id != work_item_id {
+                                return Err("work_item_id_mismatch".into());
+                            }
+                            coordinator::validate_decomposition(&proposal)
+                                .map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&proposal)
+                                .map_err(|_| "serialization_failed".to_string())
+                        }
+                        "reassign" => {
+                            let mut item: coordinator::TeamWorkItem =
+                                serde_json::from_slice(&payload)
+                                    .map_err(|_| "invalid_work_item")?;
+                            if item.id != work_item_id {
+                                return Err("work_item_id_mismatch".into());
+                            }
+                            coordinator::validate_reassignment(&item).map_err(|e| e.to_string())?;
+                            coordinator::transition(
+                                &mut item,
+                                coordinator::WorkItemStatus::Proposed,
+                                expected_revision,
+                            )
+                            .map_err(|e| e.to_string())?;
+                            item.assigned_instance_id = None;
+                            item.attempt = item.attempt.saturating_add(1);
+                            coordinator::validate_reassignment(&item).map_err(|e| e.to_string())?;
+                            let json = encode(&item)?;
+                            if !store::replace_work_item(
+                                database.connection(),
+                                &item.id,
+                                expected_revision as i64,
+                                item.revision as i64,
+                                &status(&item),
+                                None,
+                                item.attempt as i64,
+                                &json,
+                                now,
+                            )
+                            .map_err(|_| "storage_failed")?
+                            {
+                                return Err("stale_work_item_revision".into());
+                            }
+                            Ok(json)
+                        }
+                        "cancel" => {
+                            let json = store::get_work_item(database.connection(), &work_item_id)
+                                .map_err(|_| "storage_failed".to_string())?
+                                .ok_or_else(|| "work_item_not_found".to_string())?;
+                            let mut item: coordinator::TeamWorkItem =
+                                serde_json::from_slice(&json).map_err(|_| "corrupt_work_item")?;
+                            coordinator::transition(
+                                &mut item,
+                                coordinator::WorkItemStatus::Cancelled,
+                                expected_revision,
+                            )
+                            .map_err(|e| e.to_string())?;
+                            let json = encode(&item)?;
+                            if !store::replace_work_item(
+                                database.connection(),
+                                &item.id,
+                                expected_revision as i64,
+                                item.revision as i64,
+                                &status(&item),
+                                item.assigned_instance_id.as_deref(),
+                                item.attempt as i64,
+                                &json,
+                                now,
+                            )
+                            .map_err(|_| "storage_failed")?
+                            {
+                                return Err("stale_work_item_revision".into());
+                            }
+                            Ok(json)
+                        }
+                        _ => Err("unsupported_team_coordinator_operation".into()),
+                    }
+                }
+                .await;
+                if !idempotency_key.is_empty() {
+                    if let Ok(bytes) = &result {
+                        if let Some(journal) = state.lock().await.journal.clone() {
+                            let database = journal.database().lock().await;
+                            let _ = evohime_local_storage::team_coordinator_store::put_idempotency(
+                                database.connection(),
+                                &idempotency_key,
+                                bytes,
+                            );
+                        }
+                    }
+                }
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+                    .unwrap_or_else(|| "{}".to_owned());
+                let revision = serde_json::from_str::<serde_json::Value>(&projection_json)
+                    .ok()
+                    .and_then(|value| value.get("revision").and_then(serde_json::Value::as_u64))
+                    .unwrap_or(expected_revision);
+                let event = CoreEvent::TeamCoordinator {
+                    work_item_id,
                     operation,
                     revision,
                     projection_json,

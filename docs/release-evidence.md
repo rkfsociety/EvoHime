@@ -383,6 +383,20 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   check/clippy, protocol check, Electron typecheck and full Electron regression.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
 
+## Plan 79 — Team Coordinator v1 (2026-09-02)
+
+- Contract/runtime: bounded versioned `TeamWorkItem`, deterministic
+  capability/output matching, consultations, decomposition/reassignment and
+  managerial review with independent security/acceptance gates.
+- Durability: additive SQLite schema v75 with revision-fenced work items and
+  assignment/consultation/decision records; stale and unavailable outcomes
+  remain typed.
+- IPC/UI: authenticated additive command 229/event 74, generated bindings and
+  projection-only Electron panel for queue, roster/load, assignments and
+  escalation.
+- Redaction: no secrets, raw prompts/outputs, grants, executable identities,
+  absolute paths or PII in the coordinator contract or release evidence.
+
 ## Plan 77 — Headless Core CLI v1 (2026-09-02)
 
 - Contract: Core-owned bounded RunRequest, `evohime.cli.event/v1`, explicit

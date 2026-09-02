@@ -1879,6 +1879,7 @@ message CommandEnvelope {
     TypedContextReferencesCommand typed_context_references = 226;
     SafeUiExtensionFrameworkCommand safe_ui_extension_framework = 227;
     CapabilityWorkbenchCommand capability_workbench = 228;
+    TeamCoordinatorCommand team_coordinator = 229;
   }
 }
 
@@ -2002,6 +2003,7 @@ message EventEnvelope {
     TypedContextReferencesEvent typed_context_references = 71;
     SafeUiExtensionFrameworkEvent safe_ui_extension_framework = 72;
     CapabilityWorkbenchEvent capability_workbench = 73;
+    TeamCoordinatorEvent team_coordinator = 74;
   }
 }
 
@@ -2203,6 +2205,25 @@ message CapabilityWorkbenchCommand {
 message CapabilityWorkbenchEvent {
   uint32 schema_version = 1;
   string instance_id = 2;
+  string operation = 3;
+  uint64 revision = 4;
+  string status = 5;
+  string error_code = 6;
+  bytes projection_json = 7;
+}
+
+// Plan 79: bounded Core-owned Team Coordinator projection and command.
+message TeamCoordinatorCommand {
+  uint32 schema_version = 1;
+  string work_item_id = 2;
+  string operation = 3;
+  bytes payload = 4;
+  uint64 expected_revision = 5;
+  string idempotency_key = 6;
+}
+message TeamCoordinatorEvent {
+  uint32 schema_version = 1;
+  string work_item_id = 2;
   string operation = 3;
   uint64 revision = 4;
   string status = 5;

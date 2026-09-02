@@ -484,6 +484,17 @@ function dispatch(
       if (operation === null || instanceId === null || ownerId === null || workbenchPayload === null || expectedRevision === null || instanceId.length > 128 || ownerId.length > 128 || workbenchPayload.length > 256 * 1024 || grants.length > 128) return failure('invalid-payload', 'Некорректная операция Capability Workbench.')
       return accepted(client.send({capabilityWorkbench:{schemaVersion:1,instanceId,ownerId,operation,payload:Buffer.from(workbenchPayload,'utf8'),expectedRevision,grants}}))
     }
+    case 'core.teamCoordinator': {
+      const value = asRecord(payload)
+      const operations = ['create','get','list','propose','assign','consult','review','decompose','reassign','cancel']
+      const operation = operations.includes(String(value['operation'])) ? String(value['operation']) : null
+      const workItemId = asBoundedString(value['workItemId'])
+      const coordinatorPayload = asBoundedString(value['payload'])
+      const expectedRevision = value['expectedRevision'] === undefined ? 0 : asNonNegativeInteger(value['expectedRevision'])
+      const idempotencyKey = value['idempotencyKey'] === undefined ? randomUUID() : asBoundedString(value['idempotencyKey'])
+      if (operation === null || workItemId === null || coordinatorPayload === null || expectedRevision === null || idempotencyKey === null || workItemId.length > 128 || coordinatorPayload.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Team Coordinator.')
+      return accepted(client.send({teamCoordinator:{schemaVersion:1,workItemId,operation,payload:Buffer.from(coordinatorPayload,'utf8'),expectedRevision,idempotencyKey}}))
+    }
 
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)

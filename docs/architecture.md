@@ -1782,3 +1782,21 @@ availability и cancellation outcome (`cancelled`, `already_terminal`,
 `unknown`). Неизвестные Core surfaces возвращают typed unavailable/degraded;
 arbitrary backend не загружается. Electron developer panel — bounded
 projection и маршрутизация, без state machine, DB или effects в renderer.
+
+## Team Coordinator v1 (план 79)
+
+Team Coordinator — Core-owned bounded orchestration surface поверх уже
+разрешённых team/workflow boundaries. `TeamWorkItem`, `DelegationProposal`,
+`SpecialistQuery`, `ParticipantCandidate`, `CoordinationReview` и
+`DecompositionProposal` имеют schema v1, IDs до 128 bytes, максимум 64 work
+items, 32 candidates, 16 consultations/children, 3 reassignments и 32 active
+assignments. Coordinator только предлагает решение: Core повторно проверяет
+capability/output compatibility, roster, revision и gates, не создаёт роли,
+grants или внешний runtime. Unknown/stale/busy/incompatible результаты
+типизированы и не превращаются в blind retry.
+
+Durable SQLite schema v75 хранит work items, assignments, consultations и
+managerial decisions. Authenticated IPC command 229/event 74 и Electron Team
+Coordinator panel передают только bounded projection; queue, roster/load,
+assignments, consultations и escalation не вычисляются в renderer. Raw
+prompts/outputs, credentials, grants и executable identities запрещены.

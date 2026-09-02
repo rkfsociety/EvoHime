@@ -922,3 +922,9 @@ schema v74 для instances, snapshots и leases. Authenticated IPC исполь
 command 228/event 73; Electron developer panel остаётся metadata-only и не
 получает authority или runtime handles. Raw credentials, prompts/outputs,
 OS handles и executable identities в portable state запрещены.
+План 79 закрыт 2 сентября 2026 года: Team Coordinator v1 реализует durable
+bounded work items, capability/output-aware proposals, consultations,
+decomposition/reassignment, managerial review с независимыми gate checks,
+revision-fenced storage, authenticated IPC command 229/event 74 и
+projection-only Electron panel. SQLite schema поднята до v75; raw prompts,
+outputs, credentials, grants и executable identities не передаются.
