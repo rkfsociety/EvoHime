@@ -2910,6 +2910,16 @@ impl IpcBridge {
                     self.write_response(writer, "approval_policy_profiles.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::CheckpointForking(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "fork".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self.dispatch_checkpoint_forking(operation, request).await?;
+                    self.write_response(writer, "checkpoint_forking.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -7952,6 +7962,31 @@ impl IpcBridge {
             })
             .await
             .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_checkpoint_forking(
+        &self,
+        operation: String,
+        request: generated::CheckpointForkingCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let c = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        c.dispatch(CoreCommand::CheckpointForking {
+            operation,
+            fork_run_id: request.fork_run_id,
+            payload: request.payload,
+            reply,
+        })
+        .await
+        .map_err(|e| FrameError::Io(e.to_string()))?;
         response
             .await
             .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?

@@ -3,6 +3,7 @@ pub struct CoreVersion;
 pub mod adaptive_tool_catalog;
 pub mod approval_policy_profiles;
 pub mod capability_workbenches;
+pub mod checkpoint_forking_and_replay;
 pub mod code_diagnostics_feedback_loop;
 pub mod core_topic_subscription_event_bus;
 pub mod customization_inventory;
@@ -1499,6 +1500,12 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    CheckpointForking {
+        operation: String,
+        fork_run_id: String,
+        payload: Vec<u8>,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -2262,6 +2269,12 @@ pub enum CoreEvent {
     },
     ApprovalPolicyProfiles {
         profile_id: String,
+        operation: String,
+        version: u64,
+        projection_json: String,
+    },
+    CheckpointForking {
+        fork_run_id: String,
         operation: String,
         version: u64,
         projection_json: String,
@@ -3375,6 +3388,7 @@ impl EventJournal {
             CoreEvent::CustomizationInventory { item_id, .. } => item_id,
             CoreEvent::StandingApprovalProfiles { profile_id, .. } => profile_id,
             CoreEvent::ApprovalPolicyProfiles { profile_id, .. } => profile_id,
+            CoreEvent::CheckpointForking { fork_run_id, .. } => fork_run_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3432,6 +3446,7 @@ impl EventJournal {
             CoreEvent::CustomizationInventory { .. } => "customization_inventory.result",
             CoreEvent::StandingApprovalProfiles { .. } => "standing_approval_profiles.result",
             CoreEvent::ApprovalPolicyProfiles { .. } => "approval_policy_profiles.result",
+            CoreEvent::CheckpointForking { .. } => "checkpoint_forking.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -13499,6 +13514,60 @@ impl TaskCoordinator {
                     profile_id,
                     operation,
                     version: expected_version,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::CheckpointForking {
+                operation,
+                fork_run_id,
+                payload,
+                reply,
+            } => {
+                let result = async {
+                    if operation != "fork" {
+                        return Err("unsupported_checkpoint_fork_operation".into());
+                    };
+                    let request: crate::checkpoint_forking_and_replay::ForkRequest =
+                        serde_json::from_slice(&payload)
+                            .map_err(|_| "invalid_fork_request".to_string())?;
+                    let lineage =
+                        crate::checkpoint_forking_and_replay::create(request, fork_run_id.clone())
+                            .map_err(|e| e.to_string())?;
+                    let journal = state
+                        .lock()
+                        .await
+                        .journal
+                        .clone()
+                        .ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let db = journal.database().lock().await;
+                    let json = serde_json::to_vec(&lineage)
+                        .map_err(|_| "serialization_failed".to_string())?;
+                    evohime_local_storage::checkpoint_forking_store::put(
+                        db.connection(),
+                        &lineage.fork_run_id,
+                        &lineage.source_checkpoint_id,
+                        &lineage.parent_run_id,
+                        &json,
+                        crate::task_memory::now_millis() as i64,
+                    )
+                    .map_err(|_| "storage_failed".to_string())?;
+                    Ok(json)
+                }
+                .await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::CheckpointForking {
+                    fork_run_id,
+                    operation,
+                    version: 1,
                     projection_json,
                 };
                 if let Some(journal) = state.lock().await.journal.clone() {

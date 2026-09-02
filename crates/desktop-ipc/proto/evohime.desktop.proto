@@ -1891,6 +1891,7 @@ message CommandEnvelope {
     CustomizationInventoryCommand customization_inventory = 238;
     StandingApprovalProfilesCommand standing_approval_profiles = 239;
     ApprovalPolicyProfilesCommand approval_policy_profiles = 240;
+    CheckpointForkingCommand checkpoint_forking = 241;
   }
 }
 
@@ -2026,6 +2027,7 @@ message EventEnvelope {
     CustomizationInventoryEvent customization_inventory = 83;
     StandingApprovalProfilesEvent standing_approval_profiles = 84;
     ApprovalPolicyProfilesEvent approval_policy_profiles = 85;
+    CheckpointForkingEvent checkpoint_forking = 86;
   }
 }
 
@@ -2341,6 +2343,8 @@ message StandingApprovalProfilesCommand { uint32 schema_version=1; string profil
 message StandingApprovalProfilesEvent { uint32 schema_version=1; string profile_id=2; string operation=3; uint64 version=4; string status=5; string error_code=6; bytes projection_json=7; }
 message ApprovalPolicyProfilesCommand { uint32 schema_version=1; string profile_id=2; string operation=3; bytes payload=4; uint64 expected_version=5; string idempotency_key=6; }
 message ApprovalPolicyProfilesEvent { uint32 schema_version=1; string profile_id=2; string operation=3; uint64 version=4; string status=5; string error_code=6; bytes projection_json=7; }
+message CheckpointForkingCommand { uint32 schema_version=1; string fork_run_id=2; string operation=3; bytes payload=4; uint64 expected_version=5; string idempotency_key=6; }
+message CheckpointForkingEvent { uint32 schema_version=1; string fork_run_id=2; string operation=3; uint64 version=4; string status=5; string error_code=6; bytes projection_json=7; }
 
 // Plan 64: bounded metadata-only Workspace Bootstrap Manifest surface.
 message WorkspaceBootstrapManifestCommand {

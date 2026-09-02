@@ -837,6 +837,7 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::CustomizationInventory { item_id, operation, version, .. } => println!("customization_inventory.result {item_id}: {operation} version={version}"),
         evohime_core::CoreEvent::StandingApprovalProfiles { profile_id, operation, version, .. } => println!("standing_approval_profiles.result {profile_id}: {operation} version={version}"),
         evohime_core::CoreEvent::ApprovalPolicyProfiles { profile_id, operation, version, .. } => println!("approval_policy_profiles.result {profile_id}: {operation} version={version}"),
+        evohime_core::CoreEvent::CheckpointForking { fork_run_id, operation, version, .. } => println!("checkpoint_forking.result {fork_run_id}: {operation} version={version}"),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             println!("review.history_cleared {marker_id}")
         }

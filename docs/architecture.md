@@ -566,6 +566,14 @@ revoke/match, а каждое решение требует дальнейшей
 tags 240/85 предоставляют list/create/update/revoke/decide. Этот слой не
 выдаёт capabilities и не отменяет ExecutionPolicy.
 
+## Checkpoint Forking & Replay v1 (план 89)
+
+Fork создаёт отдельную Core-owned lineage запись (schema 1, storage 87) из
+validated checkpoint boundary с новой run identity, workspace fingerprint и
+bounded overrides. Source immutable; `effects_replayed=false`, внешние
+side effects автоматически не повторяются. IPC tags 241/86 дают typed
+fork request и metadata-only projection.
+
 ## Memory Extraction
 
 Извлечение фактов из диалога реализовано в `crates/evohime-core/src/memory_extraction.rs`. Этот раздел — канонический контракт: исходный план удалён из `docs/plans/` после реализации, как того требует правило каталога.

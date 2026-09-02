@@ -415,3 +415,7 @@ expiry/use-limit, protocol/typecheck и regression verification.
 План 88 закрыт 2 сентября 2026 года. Approval Policy Profiles перенесены в
 Core/storage/IPC/UI; комплект `88-0` … `88-4` удалён после contract,
 deterministic decision, protocol/typecheck и regression verification.
+
+План 89 закрыт 3 сентября 2026 года. Checkpoint Forking & Replay перенесён в
+Core/storage/IPC/UI; комплект `89-0` … `89-4` удалён после contract, bounds,
+no-effect replay, protocol/typecheck и verification.

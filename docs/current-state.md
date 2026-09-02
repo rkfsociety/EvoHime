@@ -1015,3 +1015,8 @@ surface. Профиль не выдаёт capability и не заменяет Ex
 Core resolver, storage schema 86, bounded scope/risk/expiry rules,
 fail-closed hard requirements, authenticated IPC 240/85 и metadata-only
 Electron surface. Unknown rules требуют prompt.
+
+План 89 закрыт 3 сентября 2026 года: Checkpoint Forking & Replay v1 добавил
+validated immutable lineage, storage schema 87, bounded overrides, workspace
+fingerprint, no-effect replay invariant, authenticated IPC 241/86 и
+metadata-only Electron surface.
