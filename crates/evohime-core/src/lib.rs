@@ -1087,6 +1087,7 @@ pub mod task_memory;
 pub mod task_worktree_isolation;
 pub mod team_coordination_policies;
 pub mod team_resource_budget;
+pub mod typed_agent_handoff_contract;
 pub use task_memory::project_scope_id;
 pub mod plan_context;
 pub mod plan_review;
@@ -1279,6 +1280,16 @@ pub enum CoreCommand {
         operation: String,
         team_id: String,
         payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    TypedAgentHandoffContract {
+        operation: String,
+        handoff_id: String,
+        packet_json: Vec<u8>,
+        actor: String,
+        reason: String,
         expected_version: u64,
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
@@ -1907,6 +1918,13 @@ pub enum CoreEvent {
         manifest_id: String,
         revision: u64,
         content_hash: String,
+        projection_json: String,
+    },
+    TypedAgentHandoffContract {
+        handoff_id: String,
+        operation: String,
+        state: String,
+        version: u64,
         projection_json: String,
     },
     /// Bounded durable routing decision projection.
@@ -2992,6 +3010,7 @@ impl EventJournal {
             CoreEvent::WorkflowProgress { run_id, .. } => run_id,
             CoreEvent::WorkspaceBootstrapManifest { workspace_id, .. } => workspace_id,
             CoreEvent::TeamCoordinationPolicies { team_id, .. } => team_id,
+            CoreEvent::TypedAgentHandoffContract { handoff_id, .. } => handoff_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3015,6 +3034,7 @@ impl EventJournal {
             CoreEvent::WorkflowProgress { .. } => "workflow.progress",
             CoreEvent::WorkspaceBootstrapManifest { .. } => "workspace_bootstrap_manifest.result",
             CoreEvent::TeamCoordinationPolicies { .. } => "team_coordination_policies.result",
+            CoreEvent::TypedAgentHandoffContract { .. } => "typed_agent_handoff_contract.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -3037,6 +3057,9 @@ impl EventJournal {
             }
             CoreEvent::TeamCoordinationPolicies { .. } => {
                 serde_json::to_vec(event).expect("team coordination projection serializes")
+            }
+            CoreEvent::TypedAgentHandoffContract { .. } => {
+                serde_json::to_vec(event).expect("handoff projection serializes")
             }
             _ => serde_json::to_vec(event).expect("core events serialize"),
         };
@@ -11148,6 +11171,85 @@ impl TaskCoordinator {
                     status: event_value
                         .as_ref()
                         .and_then(|value| value.get("status"))
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("failed")
+                        .to_owned(),
+                    version: event_value
+                        .as_ref()
+                        .and_then(|value| value.get("version"))
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0),
+                    projection_json: event_value
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "{}".into()),
+                };
+                let (journal, events) = {
+                    let guard = state.lock().await;
+                    (guard.journal.clone(), guard.events.clone())
+                };
+                if let Some(journal) = journal {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::TypedAgentHandoffContract {
+                operation,
+                handoff_id,
+                packet_json,
+                actor,
+                reason,
+                expected_version,
+                idempotency_key: _,
+                reply,
+            } => {
+                let event_operation = operation.clone();
+                let event_handoff_id = handoff_id.clone();
+                let result = async {
+                    if handoff_id.is_empty() || handoff_id.len() > crate::typed_agent_handoff_contract::MAX_TEXT {
+                        return Err("invalid handoff id".to_string());
+                    }
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let connection = journal.database().lock().await;
+                    match operation.as_str() {
+                        "propose" => {
+                            let packet: crate::typed_agent_handoff_contract::HandoffPacket = serde_json::from_slice(&packet_json).map_err(|_| "invalid handoff packet".to_string())?;
+                            if packet.handoff_id != handoff_id { return Err("handoff identity mismatch".to_string()); }
+                            let record = crate::typed_agent_handoff_contract::propose(packet, "ipc-request").map_err(|e| e.to_string())?;
+                            let packet_bytes = serde_json::to_vec(&record.packet).map_err(|e| e.to_string())?;
+                            let state_bytes = serde_json::to_vec(&record).map_err(|e| e.to_string())?;
+                            let saved = evohime_local_storage::typed_agent_handoff_contract_store::put(connection.connection(), &handoff_id, &packet_bytes, &state_bytes, "proposed", crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                            if !saved { return serde_json::to_vec(&serde_json::json!({"status":"duplicate","handoff_id":handoff_id,"version":1,"idempotent":true})).map_err(|e| e.to_string()); }
+                            serde_json::to_vec(&serde_json::json!({"status":"proposed","handoff_id":handoff_id,"version":record.version})).map_err(|e| e.to_string())
+                        }
+                        "transition" => {
+                            let (_, state_bytes, _, _) = evohime_local_storage::typed_agent_handoff_contract_store::load(connection.connection(), &handoff_id).map_err(|e| e.to_string())?.ok_or_else(|| "handoff_not_found".to_string())?;
+                            let mut record: crate::typed_agent_handoff_contract::HandoffRecord = serde_json::from_slice(&state_bytes).map_err(|_| "handoff_state_corrupt".to_string())?;
+                            let next: crate::typed_agent_handoff_contract::HandoffState = serde_json::from_slice(&packet_json).map_err(|_| "invalid handoff state".to_string())?;
+                            crate::typed_agent_handoff_contract::transition(&mut record, next, &actor, &reason, expected_version, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                            let bytes = serde_json::to_vec(&record).map_err(|e| e.to_string())?;
+                            if !evohime_local_storage::typed_agent_handoff_contract_store::transition(connection.connection(), &handoff_id, &bytes, &format!("{:?}", record.state).to_lowercase(), expected_version, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())? { return Err("stale_handoff".to_string()); }
+                            serde_json::to_vec(&serde_json::json!({"status":"transitioned","handoff_id":handoff_id,"state":record.state,"version":record.version})).map_err(|e| e.to_string())
+                        }
+                        "get" => {
+                            let (_, state_bytes, state, version) = evohime_local_storage::typed_agent_handoff_contract_store::load(connection.connection(), &handoff_id).map_err(|e| e.to_string())?.ok_or_else(|| "handoff_not_found".to_string())?;
+                            let record: serde_json::Value = serde_json::from_slice(&state_bytes).map_err(|_| "handoff_state_corrupt".to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":state,"handoff_id":handoff_id,"version":version,"record":record})).map_err(|e| e.to_string())
+                        }
+                        _ => Err("unsupported handoff operation".to_string()),
+                    }
+                }.await;
+                let event_value = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|payload| serde_json::from_slice::<serde_json::Value>(payload).ok());
+                let event = CoreEvent::TypedAgentHandoffContract {
+                    handoff_id: event_handoff_id,
+                    operation: event_operation,
+                    state: event_value
+                        .as_ref()
+                        .and_then(|value| value.get("state"))
+                        .or_else(|| event_value.as_ref().and_then(|value| value.get("status")))
                         .and_then(serde_json::Value::as_str)
                         .unwrap_or("failed")
                         .to_owned(),

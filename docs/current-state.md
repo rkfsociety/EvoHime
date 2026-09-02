@@ -836,3 +836,8 @@ validation selector target и repeated-selection guards. State хранится 
 schema v63 с optimistic version/idempotency, а authenticated IPC использует
 command 216/event 60 и metadata-only Electron projection. Координация не
 запускает effects и не расширяет grants.
+Обновлено: 2026-09-02. План 66 закрыт: Typed Agent Handoff Contract v1
+реализует bounded `HandoffPacket`, ACK/NACK lifecycle, expiry/stale guards,
+structured context budget и provenance. Pending handoffs сохраняются в SQLite
+schema v64; Core handler не наследует capabilities/credentials, а command 217
+и event 62 с Electron-панелью передают только metadata projection.

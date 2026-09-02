@@ -352,3 +352,16 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Checks: focused contract/recovery/storage tests, cargo check, protocol check,
   Electron typecheck and full Electron regression. Evidence excludes secrets,
   raw prompts/outputs, absolute paths and PII.
+## Plan 66 — Typed Agent Handoff Contract v1 (2026-09-02)
+
+- Contract: versioned bounded HandoffPacket, structured context budget,
+  provenance and explicit Proposed/Accepted/Active/Completed plus rejection,
+  expiry, failure and return outcomes.
+- Durability/recovery: additive SQLite schema v64, duplicate/stale fencing,
+  pending state persistence and expiry-safe transitions; no implicit grant or
+  credential inheritance.
+- IPC/UI: authenticated additive command 217/event 62, generated bindings and
+  Electron metadata-only lifecycle panel.
+- Checks: focused contract/recovery/storage tests, schema migration, cargo
+  check/clippy, protocol check, Electron typecheck and full Electron regression.
+  Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.

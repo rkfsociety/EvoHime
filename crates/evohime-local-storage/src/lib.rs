@@ -53,6 +53,7 @@ pub mod team_coordination_policies_store;
 pub mod team_resource_budget_store;
 pub mod team_sop_protocols_store;
 pub mod toolkit_store;
+pub mod typed_agent_handoff_contract_store;
 pub mod visual_workflow_builder_store;
 pub mod workflow_package_store;
 pub mod workflow_store;
@@ -64,7 +65,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 63;
+pub const SCHEMA_VERSION: u32 = 64;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3625,6 +3626,10 @@ impl LocalDatabase {
             team_coordination_policies_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 63;")?;
         }
+        if current < 64 {
+            typed_agent_handoff_contract_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 64;")?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -3644,11 +3649,11 @@ mod tests {
     }
 
     #[test]
-    fn schema_63_installs_workspace_bootstrap_and_team_tables() {
-        let path = temp_database_path("workspace-bootstrap-schema-63");
+    fn schema_64_installs_bootstrap_team_and_handoff_tables() {
+        let path = temp_database_path("workspace-bootstrap-schema-64");
         let _ = std::fs::remove_file(&path);
         let database = LocalDatabase::open(&path).expect("database opens");
-        assert_eq!(database.schema_version().expect("schema version"), 63);
+        assert_eq!(database.schema_version().expect("schema version"), 64);
         let has_table: i64 = database
             .connection()
             .query_row(
@@ -3667,6 +3672,15 @@ mod tests {
             )
             .expect("team policy table query");
         assert_eq!(has_team_table, 1);
+        let has_handoff_table: i64 = database
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='typed_agent_handoffs'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("handoff table query");
+        assert_eq!(has_handoff_table, 1);
         drop(database);
         let _ = std::fs::remove_file(&path);
     }

@@ -2506,6 +2506,18 @@ impl IpcBridge {
                     self.write_response(writer, "team_coordination_policies.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::TypedAgentHandoffContract(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "get".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_typed_agent_handoff_contract(operation, request)
+                        .await?;
+                    self.write_response(writer, "typed_agent_handoff_contract.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -6926,6 +6938,36 @@ impl IpcBridge {
                 operation,
                 team_id: request.team_id,
                 payload: request.payload,
+                expected_version: request.expected_version,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_typed_agent_handoff_contract(
+        &self,
+        operation: String,
+        request: generated::TypedAgentHandoffContractCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::TypedAgentHandoffContract {
+                operation,
+                handoff_id: request.handoff_id,
+                packet_json: request.packet_json,
+                actor: request.actor,
+                reason: request.reason,
                 expected_version: request.expected_version,
                 idempotency_key: request.idempotency_key,
                 reply,

@@ -1867,6 +1867,7 @@ message CommandEnvelope {
     ComposableTerminationConditionsCommand composable_termination_conditions = 214;
     WorkspaceBootstrapManifestCommand workspace_bootstrap_manifest = 215;
     TeamCoordinationPoliciesCommand team_coordination_policies = 216;
+    TypedAgentHandoffContractCommand typed_agent_handoff_contract = 217;
   }
 }
 
@@ -1978,6 +1979,7 @@ message EventEnvelope {
     TaskWorktreeIsolationEvent task_worktree_isolation = 59;
     WorkspaceBootstrapManifestEvent workspace_bootstrap_manifest = 61;
     TeamCoordinationPoliciesEvent team_coordination_policies = 60;
+    TypedAgentHandoffContractEvent typed_agent_handoff_contract = 62;
   }
 }
 
@@ -2206,6 +2208,29 @@ message TeamCoordinationPoliciesEvent {
   string status = 4;
   string team_id = 5;
   uint64 version = 6;
+  string error_code = 7;
+  bytes projection_json = 8;
+}
+
+// Plan 66: bounded metadata-only handoff lifecycle surface.
+message TypedAgentHandoffContractCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  bytes packet_json = 4;
+  string handoff_id = 5;
+  string actor = 6;
+  string reason = 7;
+  uint64 expected_version = 8;
+  string idempotency_key = 9;
+}
+message TypedAgentHandoffContractEvent {
+  uint32 schema_version = 1;
+  uint32 version = 2;
+  string request_id = 3;
+  string operation = 4;
+  string state = 5;
+  string handoff_id = 6;
   string error_code = 7;
   bytes projection_json = 8;
 }

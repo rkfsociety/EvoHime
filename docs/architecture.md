@@ -1610,3 +1610,15 @@ v63 с optimistic version/idempotency; selection event — bounded metadata-only
 Coordination не запускает tools/shell и не расширяет child grants,
 permissions или capability set. Authenticated IPC command 216/event 60 и
 Electron developer panel показывают только Core projection.
+## Typed Agent Handoff Contract v1 (план 66)
+
+`HandoffPacket` — Core-owned bounded transfer of task ownership between
+logical agents/roles/child contexts. It carries objective, reason, summary,
+checkpoint/artifact/evidence refs, open questions, blockers, run refs,
+`ContextTransferSpec`, expiry and provenance; capabilities, credentials and
+authority are never inherited. State transitions are
+`Proposed -> Accepted -> Active -> Completed` with typed `Rejected`, `Expired`,
+`Failed` and `Returned` outcomes. Every transition is actor/reason/version
+fenced, duplicate delivery is idempotent, and pending state survives restart
+in SQLite schema v64. Authenticated additive IPC command 217/event 62 and the
+Electron developer panel expose bounded lifecycle metadata only.

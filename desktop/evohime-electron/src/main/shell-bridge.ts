@@ -408,6 +408,16 @@ function dispatch(
       return accepted(client.send({ teamCoordinationPolicies: { schemaVersion: 1, requestId: randomUUID(), teamId, operation, payload: Buffer.from(policyPayload, 'utf8'), expectedVersion, idempotencyKey } }))
     }
 
+    case 'core.typedAgentHandoffContract': {
+      const value = asRecord(payload)
+      const operation = ['propose', 'transition', 'get'].includes(String(value['operation'])) ? String(value['operation']) : null
+      const handoffId = asBoundedString(value['handoffId']); const packetJson = value['packetJson'] === '' && operation === 'get' ? '' : asBoundedString(value['packetJson'])
+      const actor = value['actor'] === '' && operation === 'get' ? '' : asBoundedString(value['actor']); const reason = value['reason'] === '' && operation === 'get' ? '' : asBoundedString(value['reason']); const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion'])
+      if (operation === null || handoffId === null || packetJson === null || actor === null || reason === null || idempotencyKey === null || expectedVersion === null || packetJson.length > 256 * 1024) return failure('invalid-payload', 'Некорректная операция Typed Agent Handoff.')
+      return accepted(client.send({ typedAgentHandoffContract: { schemaVersion: 1, requestId: randomUUID(), operation, packetJson: Buffer.from(packetJson, 'utf8'), handoffId, actor, reason, expectedVersion, idempotencyKey } }))
+    }
+
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)
       const taskId = asBoundedString(value['taskId'])
