@@ -1898,3 +1898,12 @@ API. Каждое finding получает стабильный fingerprint; sup
 absolute paths/arguments и не является доказательством регрессии. Windows CI
 отдельно запускает smoke gate; подтверждённые runtime anchors остаются
 обычными focused tests production paths.
+
+## Architect-Editor Model Pipeline (план 91)
+
+Core хранит versioned pipeline с отдельными Architect/Editor ModelProfile,
+typed EditIntent и exact workspace revision fence. Intent является предложением,
+а не capability grant; editor writes проходят существующую Core mutation
+boundary. Payload bounded: 128 путей/операций, 256 KiB intent и 3 retries.
+Electron получает только redacted projection и Core-checked actions через
+additive IPC; hidden reasoning и credentials не сохраняются.

@@ -828,6 +828,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::AgentGitChangeSets { change_set_id, operation, version, .. } => println!(
             "agent_git_change_sets.result {change_set_id}: {operation} version={version}"
         ),
+        evohime_core::CoreEvent::ArchitectEditorModelPipeline { pipeline_id, operation, version, .. } => println!(
+            "architect_editor_pipeline.result {pipeline_id}: {operation} version={version}"
+        ),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             println!("review.history_cleared {marker_id}")
         }

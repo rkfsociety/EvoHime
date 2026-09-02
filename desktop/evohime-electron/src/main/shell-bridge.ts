@@ -540,6 +540,9 @@ function dispatch(
       if (operation === null || changeSetId === null || changePayload === null || expectedVersion === null || idempotencyKey === null || changeSetId.length > 128 || changePayload.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Agent Git Change Sets.')
       return accepted(client.send({agentGitChangeSets:{schemaVersion:1,changeSetId,operation,payload:Buffer.from(changePayload,'utf8'),expectedVersion,idempotencyKey}}))
     }
+    case 'core.architectEditorPipeline': {
+      const value = asRecord(payload); const operations = ['create', 'get', 'accept_intent']; const operation = operations.includes(String(value['operation'])) ? String(value['operation']) : null; const pipelineId = asBoundedString(value['pipelineId']); const pipelinePayload = value['payload'] === undefined ? '' : asBoundedString(value['payload']); const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion']); const idempotencyKey = value['idempotencyKey'] === undefined ? randomUUID() : asBoundedString(value['idempotencyKey']); if (operation === null || pipelineId === null || pipelinePayload === null || expectedVersion === null || idempotencyKey === null || pipelineId.length > 128 || pipelinePayload.length > 256 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Architect/Editor Pipeline.'); return accepted(client.send({architectEditorPipeline:{schemaVersion:1,pipelineId,operation,payload:Buffer.from(pipelinePayload,'utf8'),expectedVersion,idempotencyKey}}))
+    }
 
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)

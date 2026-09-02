@@ -1105,6 +1105,7 @@ pub mod team_resource_budget;
 pub mod typed_agent_handoff_contract;
 pub use task_memory::project_scope_id;
 pub mod agent_git_change_sets;
+pub mod architect_editor_model_pipeline;
 pub mod plan_context;
 pub mod plan_review;
 pub mod task_checkpoint;
@@ -1431,6 +1432,14 @@ pub enum CoreCommand {
     AgentGitChangeSets {
         operation: String,
         change_set_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    ArchitectEditorModelPipeline {
+        operation: String,
+        pipeline_id: String,
         payload: Vec<u8>,
         expected_version: u64,
         idempotency_key: String,
@@ -2157,6 +2166,12 @@ pub enum CoreEvent {
     },
     AgentGitChangeSets {
         change_set_id: String,
+        operation: String,
+        version: u64,
+        projection_json: String,
+    },
+    ArchitectEditorModelPipeline {
+        pipeline_id: String,
         operation: String,
         version: u64,
         projection_json: String,
@@ -3263,6 +3278,7 @@ impl EventJournal {
             CoreEvent::WorkspaceSets { set_id, .. } => set_id,
             CoreEvent::KnowledgeSourceRegistryProjectRole { source_id, .. } => source_id,
             CoreEvent::AgentGitChangeSets { change_set_id, .. } => change_set_id,
+            CoreEvent::ArchitectEditorModelPipeline { pipeline_id, .. } => pipeline_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3313,6 +3329,7 @@ impl EventJournal {
                 "knowledge_source_registry.result"
             }
             CoreEvent::AgentGitChangeSets { .. } => "agent_git_change_sets.result",
+            CoreEvent::ArchitectEditorModelPipeline { .. } => "architect_editor_pipeline.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -13094,6 +13111,43 @@ impl TaskCoordinator {
                     .unwrap_or_else(|| "{}".into());
                 let event = CoreEvent::AgentGitChangeSets {
                     change_set_id,
+                    operation,
+                    version: expected_version,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::ArchitectEditorModelPipeline {
+                operation,
+                pipeline_id,
+                payload,
+                expected_version,
+                idempotency_key: _,
+                reply,
+            } => {
+                let result = async {
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    use crate::architect_editor_model_pipeline as pipeline;
+                    use evohime_local_storage::architect_editor_model_pipeline_store as store;
+                    match operation.as_str() {
+                        "create" => { let p: pipeline::ModelPhasePipeline = serde_json::from_slice(&payload).map_err(|_| "invalid_pipeline".to_string())?; pipeline::validate_pipeline(&p).map_err(|e| e.to_string())?; let json=serde_json::to_vec(&p).map_err(|_| "serialization_failed".to_string())?; store::put(database.connection(),&p.id,p.schema_version,&p.content_hash,&json,crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())?; serde_json::to_vec(&serde_json::json!({"schema_version":1,"pipeline_id":p.id,"status":p.status,"same_model":p.same_model,"redacted":true})).map_err(|_| "serialization_failed".to_string()) }
+                        "accept_intent" => { let json=store::get(database.connection(),&pipeline_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "pipeline_not_found".to_string())?; let mut p:pipeline::ModelPhasePipeline=serde_json::from_slice(&json).map_err(|_| "corrupt_pipeline".to_string())?; let req:serde_json::Value=serde_json::from_slice(&payload).map_err(|_| "invalid_intent".to_string())?; let intent:pipeline::EditIntent=serde_json::from_value(req.get("intent").cloned().ok_or_else(|| "invalid_intent".to_string())?).map_err(|_| "invalid_intent".to_string())?; let rev=req.get("workspace_revision").and_then(|v|v.as_str()).unwrap_or_default(); pipeline::accept_intent(&mut p,intent,rev).map_err(|e| e.to_string())?; if expected_version!=0 && expected_version!=1 {return Err("pipeline_stale_version".into())}; serde_json::to_vec(&serde_json::json!({"schema_version":1,"pipeline_id":p.id,"status":p.status,"intent_ready":true,"redacted":true})).map_err(|_| "serialization_failed".to_string()) }
+                        "get" => { let json=store::get(database.connection(),&pipeline_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "pipeline_not_found".to_string())?; let p:pipeline::ModelPhasePipeline=serde_json::from_slice(&json).map_err(|_| "corrupt_pipeline".to_string())?; serde_json::to_vec(&serde_json::json!({"schema_version":1,"pipeline_id":p.id,"status":p.status,"workspace_revision":p.workspace_revision,"same_model":p.same_model,"intent_present":p.intent.is_some(),"redacted":true})).map_err(|_| "serialization_failed".to_string()) }
+                        _ => Err("unsupported_architect_editor_operation".into())
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::ArchitectEditorModelPipeline {
+                    pipeline_id,
                     operation,
                     version: expected_version,
                     projection_json,

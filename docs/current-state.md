@@ -969,3 +969,9 @@ Capability Workbench v1 (план 78): versioned descriptor/session, lifecycle,
 scope/concurrency, leases, reset/degraded recovery, capability filtering и
 secret-free bounded snapshots уже реализованы в Core/storage/IPC/UI. Второй
 authority не добавлялся.
+
+План 91 закрыт 2 сентября 2026 года: Architect-Editor Model Pipeline v1
+добавил Core-owned versioned contract, typed EditIntent, model profiles,
+bounded storage/migration, workspace drift fence, additive IPC и metadata-only
+Electron panel. Actual mutations остаются за существующей Core
+security/mutation boundary.

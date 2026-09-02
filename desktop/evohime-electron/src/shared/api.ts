@@ -400,6 +400,7 @@ export interface CoreEvent {
   readonly workspaceSets?: WorkspaceSetsProjection | null
   readonly knowledgeSourceRegistry?: KnowledgeSourceRegistryProjection | null
   readonly agentGitChangeSets?: AgentGitChangeSetsProjection | null
+  readonly architectEditorPipeline?: ArchitectEditorPipelineProjection | null
 }
 
 export interface CapabilityWorkbenchProjection {
@@ -461,6 +462,8 @@ export interface AgentGitChangeSetsProjection {
   readonly errorCode: string
   readonly projection: unknown
 }
+
+export interface ArchitectEditorPipelineProjection { readonly schemaVersion: number; readonly pipelineId: string; readonly operation: string; readonly version: number; readonly status: string; readonly errorCode: string; readonly projection: unknown }
 
 export interface ConversationEventProjection {
   readonly schemaVersion: number
@@ -1137,6 +1140,7 @@ export const RENDERER_COMMANDS = [
   'core.workspaceSets',
   'core.knowledgeSourceRegistry',
   'core.agentGitChangeSets',
+  'core.architectEditorPipeline',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1445,6 +1449,7 @@ export interface CommandPayloads {
   'core.workspaceSets': { operation: 'create' | 'get' | 'update' | 'bind' | 'search'; setId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.knowledgeSourceRegistry': { operation: 'register' | 'get' | 'bind' | 'index' | 'retrieve'; sourceId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.agentGitChangeSets': { operation: 'observe' | 'candidate' | 'get_candidate' | 'commit' | 'undo' | 'keep'; changeSetId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
+  'core.architectEditorPipeline': { operation: 'create' | 'get' | 'accept_intent'; pipelineId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
   'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
@@ -1937,6 +1942,7 @@ export interface CommandResults {
   'core.workspaceSets': { accepted: boolean }
   'core.knowledgeSourceRegistry': { accepted: boolean }
   'core.agentGitChangeSets': { accepted: boolean }
+  'core.architectEditorPipeline': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }
   'core.executeAnalysisKernel': { accepted: boolean }

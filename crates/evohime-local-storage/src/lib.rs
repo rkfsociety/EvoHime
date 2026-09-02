@@ -12,6 +12,7 @@ pub mod agent_middleware_pipeline_store;
 pub mod agent_role_profiles_store;
 pub mod ambient_store;
 pub mod analysis_kernel;
+pub mod architect_editor_model_pipeline_store;
 pub mod artifact_handoff_registry_store;
 pub mod artifact_store;
 pub mod automation_store;
@@ -80,7 +81,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 79;
+pub const SCHEMA_VERSION: u32 = 80;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -584,6 +585,7 @@ impl LocalDatabase {
         browser_session_store::install_schema(&connection)?;
         incremental_change_protocol_store::install_schema(&connection)?;
         agent_git_change_sets_store::install_schema(&connection)?;
+        architect_editor_model_pipeline_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
@@ -3705,6 +3707,10 @@ impl LocalDatabase {
         if current < 79 {
             agent_git_change_sets_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 79;")?;
+        }
+        if current < 80 {
+            architect_editor_model_pipeline_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 80;")?;
         }
         transaction.commit()?;
         Ok(())

@@ -13,6 +13,7 @@ import type {
   WorkspaceSetsProjection,
   KnowledgeSourceRegistryProjection,
   AgentGitChangeSetsProjection,
+  ArchitectEditorPipelineProjection,
   ContinuationActionResult,
   ContinuationProjection,
   AnalysisKernelProjection,
@@ -578,6 +579,7 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       , workspaceSets: decodeWorkspaceSets(event.workspaceSets)
       , knowledgeSourceRegistry: decodeKnowledgeSourceRegistry(event.knowledgeSourceRegistry)
       , agentGitChangeSets: decodeAgentGitChangeSets(event.agentGitChangeSets)
+      , architectEditorPipeline: decodeArchitectEditorPipeline(event.architectEditorPipeline)
     })
   }
 
@@ -813,6 +815,8 @@ function decodeAgentGitChangeSets(projected: evohime.desktop.v1.IAgentGitChangeS
   try { projection = JSON.parse(Buffer.from(projected.projectionJson ?? new Uint8Array()).toString('utf8')) } catch { projection = null }
   return { schemaVersion: projected.schemaVersion ?? 1, changeSetId: projected.changeSetId ?? '', operation: projected.operation ?? '', version: Number(projected.version ?? 0), status: projected.status ?? '', errorCode: projected.errorCode ?? '', projection }
 }
+
+function decodeArchitectEditorPipeline(projected: evohime.desktop.v1.IArchitectEditorModelPipelineEvent | null | undefined): ArchitectEditorPipelineProjection | null { if (!projected) return null; let projection: unknown = null; try { projection = JSON.parse(Buffer.from(projected.projectionJson ?? new Uint8Array()).toString('utf8')) } catch { projection = null }; return { schemaVersion: projected.schemaVersion ?? 1, pipelineId: projected.pipelineId ?? '', operation: projected.operation ?? '', version: Number(projected.version ?? 0), status: projected.status ?? '', errorCode: projected.errorCode ?? '', projection } }
 
 function decodeConversationEvent(
   projected: evohime.desktop.v1.IConversationEventProjection

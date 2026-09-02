@@ -621,3 +621,13 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   no second authority or duplicate transport was introduced.
 - Snapshot validation rejects secrets, process handles and forbidden private
   state; unknown/unavailable backend outcomes remain typed and fail closed.
+
+## Plan 91 — Architect-Editor Model Pipeline (2026-09-02)
+
+- Schema 80 stores the versioned Core-owned pipeline and typed EditIntent with
+  content hash and exact workspace revision fence.
+- Additive IPC command/event tags 234/79 expose only bounded redacted metadata;
+  Electron UI is projection/action-only and does not receive hidden reasoning or
+  capability grants.
+- Evidence: focused Rust tests, clippy with `-D warnings`, generated protocol
+  check, Electron typecheck/tests and `git diff --check`.

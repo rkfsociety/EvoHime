@@ -2826,6 +2826,18 @@ impl IpcBridge {
                     self.write_response(writer, "agent_git_change_sets.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::ArchitectEditorPipeline(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "get".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_architect_editor_pipeline(operation, request)
+                        .await?;
+                    self.write_response(writer, "architect_editor_pipeline.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -7672,6 +7684,34 @@ impl IpcBridge {
             })
             .await
             .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_architect_editor_pipeline(
+        &self,
+        operation: String,
+        request: generated::ArchitectEditorModelPipelineCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::ArchitectEditorModelPipeline {
+                operation,
+                pipeline_id: request.pipeline_id,
+                payload: request.payload,
+                expected_version: request.expected_version,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
         response
             .await
             .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?

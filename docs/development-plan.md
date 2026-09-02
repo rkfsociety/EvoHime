@@ -379,3 +379,7 @@ fingerprint-based suppressions reviewable.
 План 103 закрыт 2 сентября 2026 года evidence-проверкой существующего
 Capability Workbench v1: требования Stateful Tool Workbench Sessions покрыты
 его контрактом и adapters, поэтому отдельные дублирующие типы не создавались.
+
+План 91 закрыт 2 сентября 2026 года. Architect-Editor Model Pipeline v1
+перенесён в Core/storage/IPC/UI; комплект `91-0` … `91-4` удалён после
+contract, migration, drift, protocol, typecheck и Electron verification checks.
