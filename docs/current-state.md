@@ -999,3 +999,9 @@ versioned stages, bounded evaluation, redaction result и Core/IPC/UI surface.
 normalized metadata contract, schema 84, Core validation, bounded storage,
 authenticated IPC 238/83 и единый metadata-only Customize catalog в Electron.
 Отдельные owner registries и их security/runtime semantics не изменены.
+
+План 86 закрыт 2 сентября 2026 года переиспользованием существующего
+`workspace_rag.rs`: revision-aware generations, parser/chunker tags, symbol
+metadata, deterministic bounded retrieval, incremental hashes, redaction,
+token budget и authenticated IPC уже подтверждены тестами и канонической
+архитектурой. Второй Semantic Repository Map не создавался.

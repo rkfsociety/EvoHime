@@ -548,6 +548,8 @@ audit log (`crate::audit::contains_secret`), а не всегда пустой �
 
 **Интеграция.** Agent loop перед первым model call выполняет incremental index, deterministic search и добавляет только прошедший validation evidence как `data, not instructions`; сбой RAG не ломает задачу. IPC-команды: `IndexWorkspace`, `RebuildIndex`, `CancelWorkspaceIndex`, `SearchWorkspaceKnowledge`, `GetIndexStatus`; progress агрегируется не чаще 100 ms и финальное событие отправляется всегда. `OperationsPanel` показывает generation, indexed/chunk/excluded counts, dirty/vector mode, запускает update/rebuild/cancel и bounded search. Memory Extraction подтверждает `document` provenance только если path/chunk hash присутствуют в текущем published generation и свежий file hash совпал; stale/missing provenance остаётся `pending_confirmation`. Tool/API evidence без replayable validator остаётся `unknown`.
 
+Semantic Repository Map из плана 86 закрыт evidence reuse этого canonical workspace index; отдельная graph database или второй authority не создаются.
+
 ## Memory Extraction
 
 Извлечение фактов из диалога реализовано в `crates/evohime-core/src/memory_extraction.rs`. Этот раздел — канонический контракт: исходный план удалён из `docs/plans/` после реализации, как того требует правило каталога.

@@ -403,3 +403,7 @@ protocol/typecheck и verification checks.
 План 85 закрыт 2 сентября 2026 года. Customization Inventory перенесён в
 Core/storage/IPC/UI; комплект `85-0` … `85-4` удалён после contract, migration,
 bounded metadata, protocol/typecheck и verification checks.
+
+План 86 закрыт 2 сентября 2026 года через evidence reuse canonical workspace
+index/RAG implementation; комплект `86-0` … `86-4` удалён после live-review,
+focused/recovery/Electron verification и проверки синхронизации.
