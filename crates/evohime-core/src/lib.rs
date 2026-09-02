@@ -1104,6 +1104,7 @@ pub mod team_coordination_policies;
 pub mod team_resource_budget;
 pub mod typed_agent_handoff_contract;
 pub use task_memory::project_scope_id;
+pub mod agent_git_change_sets;
 pub mod plan_context;
 pub mod plan_review;
 pub mod task_checkpoint;
@@ -1422,6 +1423,14 @@ pub enum CoreCommand {
     KnowledgeSourceRegistryProjectRole {
         operation: String,
         source_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    AgentGitChangeSets {
+        operation: String,
+        change_set_id: String,
         payload: Vec<u8>,
         expected_version: u64,
         idempotency_key: String,
@@ -2142,6 +2151,12 @@ pub enum CoreEvent {
     },
     KnowledgeSourceRegistryProjectRole {
         source_id: String,
+        operation: String,
+        version: u64,
+        projection_json: String,
+    },
+    AgentGitChangeSets {
+        change_set_id: String,
         operation: String,
         version: u64,
         projection_json: String,
@@ -3247,6 +3262,7 @@ impl EventJournal {
             CoreEvent::ProjectInstructionStack { workspace_root, .. } => workspace_root,
             CoreEvent::WorkspaceSets { set_id, .. } => set_id,
             CoreEvent::KnowledgeSourceRegistryProjectRole { source_id, .. } => source_id,
+            CoreEvent::AgentGitChangeSets { change_set_id, .. } => change_set_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3296,6 +3312,7 @@ impl EventJournal {
             CoreEvent::KnowledgeSourceRegistryProjectRole { .. } => {
                 "knowledge_source_registry.result"
             }
+            CoreEvent::AgentGitChangeSets { .. } => "agent_git_change_sets.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -13020,6 +13037,63 @@ impl TaskCoordinator {
                     .unwrap_or_else(|| "{}".into());
                 let event = CoreEvent::KnowledgeSourceRegistryProjectRole {
                     source_id,
+                    operation,
+                    version: expected_version,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::AgentGitChangeSets {
+                operation,
+                change_set_id,
+                payload,
+                expected_version,
+                idempotency_key: _,
+                reply,
+            } => {
+                let result = async {
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    use crate::agent_git_change_sets as git_sets;
+                    use evohime_local_storage::agent_git_change_sets_store as store;
+                    match operation.as_str() {
+                        "observe" => {
+                            let set: git_sets::AgentGitChangeSet = serde_json::from_slice(&payload).map_err(|_| "invalid_agent_git_change_set".to_string())?;
+                            git_sets::validate_change_set(&set).map_err(|e| e.to_string())?;
+                            let json = serde_json::to_vec(&set).map_err(|_| "serialization_failed".to_string())?;
+                            store::put_change_set(database.connection(), &set.id, set.version, &set.content_hash, &json, set.created_at_ms).map_err(|_| "storage_failed".to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"change_set_id":set.id,"status":"observed","path_count":set.paths.len(),"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "candidate" => {
+                            let json = store::get_change_set(database.connection(), &change_set_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "change_set_not_found".to_string())?;
+                            let set: git_sets::AgentGitChangeSet = serde_json::from_slice(&json).map_err(|_| "corrupt_agent_git_change_set".to_string())?;
+                            if expected_version != 0 && expected_version != set.version as u64 { return Err("agent_git_change_set_stale_version".into()); }
+                            let message = serde_json::from_slice::<serde_json::Value>(&payload).ok().and_then(|v| v.get("message").and_then(|m| m.as_str()).map(str::to_owned)).unwrap_or_else(|| "Agent change set".into());
+                            let candidate = git_sets::build_candidate(&set, message, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                            let candidate_json = serde_json::to_vec(&candidate).map_err(|_| "serialization_failed".to_string())?;
+                            store::put_candidate(database.connection(), &candidate.id, &set.id, &candidate.diff_hash, &candidate_json, candidate.created_at_ms).map_err(|_| "storage_failed".to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"candidate_id":candidate.id,"change_set_id":set.id,"included_paths":candidate.included_paths,"excluded_paths":candidate.excluded_paths,"diff_hash":candidate.diff_hash,"verification_status":candidate.verification_status,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "get_candidate" => {
+                            let json = store::get_candidate(database.connection(), &change_set_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "candidate_not_found".to_string())?;
+                            let candidate: git_sets::GitCommitCandidate = serde_json::from_slice(&json).map_err(|_| "corrupt_agent_git_candidate".to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"candidate_id":candidate.id,"change_set_id":candidate.change_set_ref,"included_paths":candidate.included_paths,"excluded_paths":candidate.excluded_paths,"diff_hash":candidate.diff_hash,"proposed_message":candidate.proposed_message,"verification_status":candidate.verification_status,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "keep" | "undo" | "commit" => Err("agent_git_effect_requires_explicit_git_preflight".into()),
+                        _ => Err("unsupported_agent_git_change_sets_operation".into()),
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::AgentGitChangeSets {
+                    change_set_id,
                     operation,
                     version: expected_version,
                     projection_json,

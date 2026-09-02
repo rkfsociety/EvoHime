@@ -529,6 +529,17 @@ function dispatch(
       if (operation === null || sourceId === null || sourcePayload === null || expectedVersion === null || idempotencyKey === null || sourceId.length > 128 || sourcePayload.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Knowledge Source Registry.')
       return accepted(client.send({knowledgeSourceRegistry:{schemaVersion:1,sourceId,operation,payload:Buffer.from(sourcePayload,'utf8'),expectedVersion,idempotencyKey}}))
     }
+    case 'core.agentGitChangeSets': {
+      const value = asRecord(payload)
+      const operations = ['observe', 'candidate', 'get_candidate', 'commit', 'undo', 'keep']
+      const operation = operations.includes(String(value['operation'])) ? String(value['operation']) : null
+      const changeSetId = asBoundedString(value['changeSetId'])
+      const changePayload = value['payload'] === undefined ? '' : asBoundedString(value['payload'])
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion'])
+      const idempotencyKey = value['idempotencyKey'] === undefined ? randomUUID() : asBoundedString(value['idempotencyKey'])
+      if (operation === null || changeSetId === null || changePayload === null || expectedVersion === null || idempotencyKey === null || changeSetId.length > 128 || changePayload.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Agent Git Change Sets.')
+      return accepted(client.send({agentGitChangeSets:{schemaVersion:1,changeSetId,operation,payload:Buffer.from(changePayload,'utf8'),expectedVersion,idempotencyKey}}))
+    }
 
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)

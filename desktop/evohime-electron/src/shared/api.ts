@@ -399,6 +399,7 @@ export interface CoreEvent {
   readonly projectInstructionStack?: ProjectInstructionStackProjection | null
   readonly workspaceSets?: WorkspaceSetsProjection | null
   readonly knowledgeSourceRegistry?: KnowledgeSourceRegistryProjection | null
+  readonly agentGitChangeSets?: AgentGitChangeSetsProjection | null
 }
 
 export interface CapabilityWorkbenchProjection {
@@ -444,6 +445,16 @@ export interface WorkspaceSetsProjection {
 export interface KnowledgeSourceRegistryProjection {
   readonly schemaVersion: number
   readonly sourceId: string
+  readonly operation: string
+  readonly version: number
+  readonly status: string
+  readonly errorCode: string
+  readonly projection: unknown
+}
+
+export interface AgentGitChangeSetsProjection {
+  readonly schemaVersion: number
+  readonly changeSetId: string
   readonly operation: string
   readonly version: number
   readonly status: string
@@ -1125,6 +1136,7 @@ export const RENDERER_COMMANDS = [
   'core.projectInstructionStack',
   'core.workspaceSets',
   'core.knowledgeSourceRegistry',
+  'core.agentGitChangeSets',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1432,6 +1444,7 @@ export interface CommandPayloads {
   'core.projectInstructionStack': { operation: 'discover' | 'compile' | 'get' | 'toggle'; workspaceRoot: string; payload?: string; relevantPaths?: readonly string[]; expectedRevision?: number; idempotencyKey?: string }
   'core.workspaceSets': { operation: 'create' | 'get' | 'update' | 'bind' | 'search'; setId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.knowledgeSourceRegistry': { operation: 'register' | 'get' | 'bind' | 'index' | 'retrieve'; sourceId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
+  'core.agentGitChangeSets': { operation: 'observe' | 'candidate' | 'get_candidate' | 'commit' | 'undo' | 'keep'; changeSetId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
   'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
@@ -1923,6 +1936,7 @@ export interface CommandResults {
   'core.projectInstructionStack': { accepted: boolean }
   'core.workspaceSets': { accepted: boolean }
   'core.knowledgeSourceRegistry': { accepted: boolean }
+  'core.agentGitChangeSets': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }
   'core.executeAnalysisKernel': { accepted: boolean }

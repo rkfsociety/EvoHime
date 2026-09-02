@@ -7,6 +7,7 @@ use std::{
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+pub mod agent_git_change_sets_store;
 pub mod agent_middleware_pipeline_store;
 pub mod agent_role_profiles_store;
 pub mod ambient_store;
@@ -79,7 +80,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 78;
+pub const SCHEMA_VERSION: u32 = 79;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -582,6 +583,7 @@ impl LocalDatabase {
         human_work_items_store::install_schema(&connection)?;
         browser_session_store::install_schema(&connection)?;
         incremental_change_protocol_store::install_schema(&connection)?;
+        agent_git_change_sets_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
@@ -3699,6 +3701,10 @@ impl LocalDatabase {
         if current < 78 {
             knowledge_source_registry_project_role_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 78;")?;
+        }
+        if current < 79 {
+            agent_git_change_sets_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 79;")?;
         }
         transaction.commit()?;
         Ok(())

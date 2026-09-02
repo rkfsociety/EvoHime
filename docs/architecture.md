@@ -1866,3 +1866,14 @@ redacted metadata; raw chunks/credentials/prompts/outputs остаются Core-
 и chunk, 128 hits/query, 256 KiB evidence и 16 384 view tokens. Secret source
 не входит в lower-sensitivity view, stale source не считается Ready, а
 unauthorized source ID не попадает в retrieval.
+## Agent Git Change Sets v1 (план 102)
+
+Core хранит bounded `AgentGitChangeSet` с exact baseline (`HEAD`, dirty
+fingerprint и workspace binding), классификацией путей и immutable
+`GitCommitCandidate`. По умолчанию в candidate попадают только
+`AgentAuthored` и `GeneratedByApprovedTool`; pre-existing, external, secret и
+ambiguous paths исключаются. Renderer получает только redacted projection.
+Контракт ограничен 256 путями, candidate — 128 путями, message — 4 KiB,
+evidence — 64 KiB. Shared index, `git add -A`, force/reset/rebase/push и
+неподтверждённые commit/undo effects запрещены; stale/ambiguous outcomes
+возвращаются типизированно.

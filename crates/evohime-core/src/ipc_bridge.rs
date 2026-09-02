@@ -2814,6 +2814,18 @@ impl IpcBridge {
                     self.write_response(writer, "knowledge_source_registry.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::AgentGitChangeSets(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "get_candidate".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_agent_git_change_sets(operation, request)
+                        .await?;
+                    self.write_response(writer, "agent_git_change_sets.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -7625,6 +7637,34 @@ impl IpcBridge {
             .dispatch(CoreCommand::KnowledgeSourceRegistryProjectRole {
                 operation,
                 source_id: request.source_id,
+                payload: request.payload,
+                expected_version: request.expected_version,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_agent_git_change_sets(
+        &self,
+        operation: String,
+        request: generated::AgentGitChangeSetsCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::AgentGitChangeSets {
+                operation,
+                change_set_id: request.change_set_id,
                 payload: request.payload,
                 expected_version: request.expected_version,
                 idempotency_key: request.idempotency_key,

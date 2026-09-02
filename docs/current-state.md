@@ -954,3 +954,8 @@ provenance, durable SQLite schema v78, bounded keyword indexing/retrieval,
 authenticated IPC command 232/event 77 и metadata-only Electron panel. Registry
 и manifests переживают restart; parser content не исполняется, secrets/raw
 chunks не передаются renderer, unauthorized source не используется.
+План 102 закрыт 2 сентября 2026 года: Agent Git Change Sets v1 реализует
+Core-owned bounded baseline, attribution и immutable commit-candidate metadata,
+durable schema 79, additive IPC 233/78, Electron projection и безопасные
+typed refusals для commit/undo без preflight. Проверены focused Rust tests,
+clippy, protocol/typecheck и `git diff --check`.

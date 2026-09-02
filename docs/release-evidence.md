@@ -595,3 +595,11 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Checks: focused contract/recovery/storage/migration tests, cargo fmt/check/
   clippy, protocol check, Electron typecheck and full Electron regression.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
+## Plan 102 — Agent Git Change Sets v1 (2026-09-02)
+
+- Rust contract/storage: baseline, attribution, candidate hash, path traversal,
+  ambiguity and bounded payload tests.
+- Schema 79 and additive authenticated IPC command 233/event 78.
+- Electron bridge/panel exposes only redacted included/excluded path metadata.
+- Commit/undo/keep effects refuse without explicit Git preflight; no shared
+  index, force operation, automatic push or secret payload.

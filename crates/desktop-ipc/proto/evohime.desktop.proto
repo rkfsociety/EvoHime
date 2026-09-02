@@ -1883,6 +1883,7 @@ message CommandEnvelope {
     ProjectInstructionStackCommand project_instruction_stack = 230;
     WorkspaceSetsCommand workspace_sets = 231;
     KnowledgeSourceRegistryProjectRoleCommand knowledge_source_registry = 232;
+    AgentGitChangeSetsCommand agent_git_change_sets = 233;
   }
 }
 
@@ -2010,6 +2011,7 @@ message EventEnvelope {
     ProjectInstructionStackEvent project_instruction_stack = 75;
     WorkspaceSetsEvent workspace_sets = 76;
     KnowledgeSourceRegistryProjectRoleEvent knowledge_source_registry = 77;
+    AgentGitChangeSetsEvent agent_git_change_sets = 78;
   }
 }
 
@@ -2283,6 +2285,17 @@ message KnowledgeSourceRegistryProjectRoleCommand {
 }
 message KnowledgeSourceRegistryProjectRoleEvent {
   uint32 schema_version = 1; string source_id = 2; string operation = 3;
+  uint64 version = 4; string status = 5; string error_code = 6;
+  bytes projection_json = 7;
+}
+
+// Plan 102: bounded Core-owned agent Git change-set projection.
+message AgentGitChangeSetsCommand {
+  uint32 schema_version = 1; string change_set_id = 2; string operation = 3;
+  bytes payload = 4; uint64 expected_version = 5; string idempotency_key = 6;
+}
+message AgentGitChangeSetsEvent {
+  uint32 schema_version = 1; string change_set_id = 2; string operation = 3;
   uint64 version = 4; string status = 5; string error_code = 6;
   bytes projection_json = 7;
 }
