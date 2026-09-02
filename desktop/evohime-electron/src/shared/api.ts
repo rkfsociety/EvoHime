@@ -1053,6 +1053,7 @@ export const RENDERER_COMMANDS = [
   'core.teamResourceBudget',
   'core.composableTerminationConditions',
   'core.workspaceBootstrapManifest',
+  'core.teamCoordinationPolicies',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1343,6 +1344,7 @@ export interface CommandPayloads {
   'core.teamResourceBudget': { operation: 'validate_policy' | 'save_policy' | 'preflight' | 'save_state' | 'record_usage'; ownerScope: string; payload: string; expectedVersion?: number; idempotencyKey: string }
   'core.composableTerminationConditions': { operation: 'validate_policy' | 'save_policy' | 'evaluate' | 'save_state'; ownerScope: string; payload: string; expectedVersion?: number; idempotencyKey: string }
   'core.workspaceBootstrapManifest': { operation: 'validate' | 'discover' | 'save' | 'approve' | 'run'; projectId: string; workspaceId: string; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'core.teamCoordinationPolicies': { operation: 'validate_policy' | 'save_policy' | 'select' | 'save_state'; teamId: string; payload: string; expectedVersion?: number; idempotencyKey: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
   'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
@@ -1817,6 +1819,7 @@ export interface CommandResults {
   'core.teamResourceBudget': { accepted: boolean }
   'core.composableTerminationConditions': { accepted: boolean }
   'core.workspaceBootstrapManifest': { accepted: boolean }
+  'core.teamCoordinationPolicies': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }
   'core.executeAnalysisKernel': { accepted: boolean }

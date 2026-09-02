@@ -320,3 +320,5 @@ authenticated IPC command 214/event 60 и metadata-only Electron projection.
 `docs/architecture.md` и `docs/current-state.md`; комплект плана удалён.
 План 64 закрыт 2 сентября 2026 года. Следующий незавершённый этап выбирается
 из `docs/plans` по следующему номеру.
+План 65 закрыт 2 сентября 2026 года. Следующий незавершённый этап выбирается
+из `docs/plans` по следующему номеру.

@@ -49,6 +49,7 @@ pub mod scratchpad_store;
 pub mod skill_trust_pipeline_store;
 pub mod task_checkpoint;
 pub mod task_worktree_isolation_store;
+pub mod team_coordination_policies_store;
 pub mod team_resource_budget_store;
 pub mod team_sop_protocols_store;
 pub mod toolkit_store;
@@ -63,7 +64,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 62;
+pub const SCHEMA_VERSION: u32 = 63;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3620,6 +3621,10 @@ impl LocalDatabase {
             workspace_bootstrap_manifest_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 62;")?;
         }
+        if current < 63 {
+            team_coordination_policies_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 63;")?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -3639,11 +3644,11 @@ mod tests {
     }
 
     #[test]
-    fn schema_62_installs_workspace_bootstrap_tables() {
-        let path = temp_database_path("workspace-bootstrap-schema-62");
+    fn schema_63_installs_workspace_bootstrap_and_team_tables() {
+        let path = temp_database_path("workspace-bootstrap-schema-63");
         let _ = std::fs::remove_file(&path);
         let database = LocalDatabase::open(&path).expect("database opens");
-        assert_eq!(database.schema_version().expect("schema version"), 62);
+        assert_eq!(database.schema_version().expect("schema version"), 63);
         let has_table: i64 = database
             .connection()
             .query_row(
@@ -3653,6 +3658,15 @@ mod tests {
             )
             .expect("bootstrap table query");
         assert_eq!(has_table, 1);
+        let has_team_table: i64 = database
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='team_coordination_policies'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("team policy table query");
+        assert_eq!(has_team_table, 1);
         drop(database);
         let _ = std::fs::remove_file(&path);
     }

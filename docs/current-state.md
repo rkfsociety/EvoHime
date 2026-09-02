@@ -830,3 +830,9 @@ lease и recovery в `unknown_outcome`. Запуск ограничен суще
 ExecutionPolicy process boundary и не передаёт наружу raw output, environment,
 секреты или абсолютные пути. Authenticated IPC использует command 215/event 61,
 а Electron — metadata-only developer panel.
+План 65 закрыт 2 сентября 2026 года: Team Coordination Policies v1 добавляет
+versioned TeamSpec, RoundRobin/Selector/DirectedHandoff/RoleRouter, Core
+validation selector target и repeated-selection guards. State хранится в SQLite
+schema v63 с optimistic version/idempotency, а authenticated IPC использует
+command 216/event 60 и metadata-only Electron projection. Координация не
+запускает effects и не расширяет grants.

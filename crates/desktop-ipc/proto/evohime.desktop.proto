@@ -1866,6 +1866,7 @@ message CommandEnvelope {
     TeamResourceBudgetCommand team_resource_budget = 213;
     ComposableTerminationConditionsCommand composable_termination_conditions = 214;
     WorkspaceBootstrapManifestCommand workspace_bootstrap_manifest = 215;
+    TeamCoordinationPoliciesCommand team_coordination_policies = 216;
   }
 }
 
@@ -1976,6 +1977,7 @@ message EventEnvelope {
     RevisionSafeWorkspaceFilesEvent revision_safe_workspace_files = 58;
     TaskWorktreeIsolationEvent task_worktree_isolation = 59;
     WorkspaceBootstrapManifestEvent workspace_bootstrap_manifest = 61;
+    TeamCoordinationPoliciesEvent team_coordination_policies = 60;
   }
 }
 
@@ -2185,6 +2187,27 @@ message WorkspaceBootstrapManifestEvent {
   string content_hash = 7;
   string error_code = 8;
   bytes projection_json = 9;
+}
+
+// Plan 65: bounded metadata-only team coordination policy surface.
+message TeamCoordinationPoliciesCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string team_id = 3;
+  string operation = 4;
+  bytes payload = 5;
+  uint64 expected_version = 6;
+  string idempotency_key = 7;
+}
+message TeamCoordinationPoliciesEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  string team_id = 5;
+  uint64 version = 6;
+  string error_code = 7;
+  bytes projection_json = 8;
 }
 
 // Plan 46: bounded metadata-only Agent Role Profiles surface. Profile bodies

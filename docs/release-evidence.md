@@ -340,3 +340,15 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Checks: focused Core/storage tests, schema migration test, cargo check,
   protocol generation/check, Electron typecheck, cargo format and diff-check.
   Evidence contains no credentials, raw process output, environment or PII.
+## Plan 65 — Team Coordination Policies v1 (2026-09-02)
+
+- Contract: versioned bounded TeamSpec with four policies; Core validates
+  selector targets, directed handoff owner, event refs and loop limits.
+- Durability: additive SQLite schema v63 stores policy revisions and fenced
+  idempotent coordination state; restart uses persisted state, no blind effect
+  retry is introduced.
+- IPC/UI: authenticated additive command 216/event 60, generated bindings and
+  Electron metadata-only developer panel; Core remains the only authority.
+- Checks: focused contract/recovery/storage tests, cargo check, protocol check,
+  Electron typecheck and full Electron regression. Evidence excludes secrets,
+  raw prompts/outputs, absolute paths and PII.

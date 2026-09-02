@@ -1085,6 +1085,7 @@ pub mod skill_registry;
 pub mod skill_trust_pipeline;
 pub mod task_memory;
 pub mod task_worktree_isolation;
+pub mod team_coordination_policies;
 pub mod team_resource_budget;
 pub use task_memory::project_scope_id;
 pub mod plan_context;
@@ -1269,6 +1270,14 @@ pub enum CoreCommand {
         operation: String,
         project_id: String,
         workspace_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    TeamCoordinationPolicies {
+        operation: String,
+        team_id: String,
         payload: Vec<u8>,
         expected_version: u64,
         idempotency_key: String,
@@ -1898,6 +1907,14 @@ pub enum CoreEvent {
         manifest_id: String,
         revision: u64,
         content_hash: String,
+        projection_json: String,
+    },
+    /// Bounded durable routing decision projection.
+    TeamCoordinationPolicies {
+        team_id: String,
+        operation: String,
+        status: String,
+        version: u64,
         projection_json: String,
     },
     /// Marks the point after which review history is shown. The journal is
@@ -2974,6 +2991,7 @@ impl EventJournal {
             CoreEvent::ChildWorkflowProjection { task_id, .. } => task_id,
             CoreEvent::WorkflowProgress { run_id, .. } => run_id,
             CoreEvent::WorkspaceBootstrapManifest { workspace_id, .. } => workspace_id,
+            CoreEvent::TeamCoordinationPolicies { team_id, .. } => team_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -2996,6 +3014,7 @@ impl EventJournal {
             CoreEvent::ChildWorkflowProjection { .. } => "child.workflow",
             CoreEvent::WorkflowProgress { .. } => "workflow.progress",
             CoreEvent::WorkspaceBootstrapManifest { .. } => "workspace_bootstrap_manifest.result",
+            CoreEvent::TeamCoordinationPolicies { .. } => "team_coordination_policies.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -3015,6 +3034,9 @@ impl EventJournal {
             }
             CoreEvent::WorkspaceBootstrapManifest { .. } => {
                 serde_json::to_vec(event).expect("bootstrap projection serializes")
+            }
+            CoreEvent::TeamCoordinationPolicies { .. } => {
+                serde_json::to_vec(event).expect("team coordination projection serializes")
             }
             _ => serde_json::to_vec(event).expect("core events serialize"),
         };
@@ -11057,6 +11079,84 @@ impl TaskCoordinator {
                         .unwrap_or("")
                         .to_owned(),
                     projection_json: event_payload
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "{}".into()),
+                };
+                let (journal, events) = {
+                    let guard = state.lock().await;
+                    (guard.journal.clone(), guard.events.clone())
+                };
+                if let Some(journal) = journal {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::TeamCoordinationPolicies {
+                operation,
+                team_id,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let event_operation = operation.clone();
+                let event_team_id = team_id.clone();
+                let result = async {
+                    if team_id.is_empty() || team_id.len() > crate::team_coordination_policies::MAX_TEXT || idempotency_key.is_empty() {
+                        return Err("invalid coordination request".to_string());
+                    }
+                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid coordination payload".to_string())?;
+                    let spec: crate::team_coordination_policies::TeamSpec = serde_json::from_value(value.get("team").cloned().ok_or_else(|| "team spec required".to_string())?).map_err(|_| "invalid team spec".to_string())?;
+                    if spec.id != team_id { return Err("team identity mismatch".to_string()); }
+                    crate::team_coordination_policies::validate_team(&spec).map_err(|e| e.to_string())?;
+                    match operation.as_str() {
+                        "validate_policy" => serde_json::to_vec(&serde_json::json!({"status":"valid","team_id":team_id,"revision":spec.revision,"content_hash":crate::team_coordination_policies::canonical_hash(&spec).map_err(|e| e.to_string())?})).map_err(|e| e.to_string()),
+                        "select" => {
+                            let state: crate::team_coordination_policies::TeamCoordinationState = serde_json::from_value(value.get("state").cloned().ok_or_else(|| "state required".to_string())?).map_err(|_| "invalid coordination state".to_string())?;
+                            let event_ids: Vec<String> = value.get("event_ids").and_then(serde_json::Value::as_array).map(|items| items.iter().filter_map(serde_json::Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
+                            let (next, decision) = crate::team_coordination_policies::select_next(&spec, &state, value.get("handoff_from").and_then(serde_json::Value::as_str), value.get("selector_role").and_then(serde_json::Value::as_str), value.get("event_type").and_then(serde_json::Value::as_str), &event_ids).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":"selected","team_id":team_id,"version":expected_version.saturating_add(1),"state":next,"decision":decision})).map_err(|e| e.to_string())
+                        }
+                        "save_state" => {
+                            let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                            let state_value = value.get("state").cloned().ok_or_else(|| "state required".to_string())?;
+                            let json = serde_json::to_vec(&state_value).map_err(|e| e.to_string())?;
+                            let connection = journal.database().lock().await;
+                            let saved = evohime_local_storage::team_coordination_policies_store::save_state(connection.connection(), &team_id, spec.revision, &json, expected_version, &idempotency_key, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                            if !saved { return Err("version_conflict_or_duplicate".to_string()); }
+                            serde_json::to_vec(&serde_json::json!({"status":"saved","team_id":team_id,"version":expected_version.saturating_add(1)})).map_err(|e| e.to_string())
+                        }
+                        "save_policy" => {
+                            let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                            let json = serde_json::to_vec(&spec).map_err(|e| e.to_string())?;
+                            let hash = crate::team_coordination_policies::canonical_hash(&spec).map_err(|e| e.to_string())?;
+                            let connection = journal.database().lock().await;
+                            let saved = evohime_local_storage::team_coordination_policies_store::save_policy(connection.connection(), &team_id, spec.revision, &json, &hash, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":if saved {"saved"} else {"duplicate"},"team_id":team_id,"revision":spec.revision,"content_hash":hash})).map_err(|e| e.to_string())
+                        }
+                        _ => Err("unsupported coordination operation".to_string()),
+                    }
+                }.await;
+                let event_value = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|payload| serde_json::from_slice::<serde_json::Value>(payload).ok());
+                let event = CoreEvent::TeamCoordinationPolicies {
+                    team_id: event_team_id,
+                    operation: event_operation,
+                    status: event_value
+                        .as_ref()
+                        .and_then(|value| value.get("status"))
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("failed")
+                        .to_owned(),
+                    version: event_value
+                        .as_ref()
+                        .and_then(|value| value.get("version"))
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0),
+                    projection_json: event_value
                         .map(|value| value.to_string())
                         .unwrap_or_else(|| "{}".into()),
                 };

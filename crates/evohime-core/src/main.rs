@@ -774,6 +774,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::WorkspaceBootstrapManifest { workspace_id, operation, status, .. } => println!(
             "workspace_bootstrap_manifest.result {workspace_id}: {operation} {status}"
         ),
+        evohime_core::CoreEvent::TeamCoordinationPolicies { team_id, operation, status, .. } => println!(
+            "team_coordination_policies.result {team_id}: {operation} {status}"
+        ),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             println!("review.history_cleared {marker_id}")
         }

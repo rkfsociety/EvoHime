@@ -1599,3 +1599,14 @@ running lease single-flight, истёкший lease переводится в `u
 через существующий `ExecutionPolicyProfile`/Job Object boundary, с timeout,
 cancel-on-drop и scrubbed environment; network effects и неподдержанные file
 effects fail closed. Electron показывает только developer metadata projection.
+## Team Coordination Policies v1 (план 65)
+
+TeamSpec и coordination policy принадлежат Core и versioned. Поддерживаются
+RoundRobin, Selector, DirectedHandoff и RoleRouter. Core валидирует роли,
+selector output, target и event refs; DirectedHandoff дополнительно требует
+текущего owner. Loop/repeated-selection и team-turn limits являются частью
+state machine. Policy state отдельно от transcript сохраняется в SQLite schema
+v63 с optimistic version/idempotency; selection event — bounded metadata-only.
+Coordination не запускает tools/shell и не расширяет child grants,
+permissions или capability set. Authenticated IPC command 216/event 60 и
+Electron developer panel показывают только Core projection.

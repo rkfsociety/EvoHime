@@ -397,6 +397,17 @@ function dispatch(
       return accepted(client.send({ workspaceBootstrapManifest: { schemaVersion: 1, requestId: randomUUID(), projectId, workspaceId, operation, payload: Buffer.from(manifestPayload, 'utf8'), expectedVersion, idempotencyKey } }))
     }
 
+    case 'core.teamCoordinationPolicies': {
+      const value = asRecord(payload)
+      const operation = ['validate_policy', 'save_policy', 'select', 'save_state'].includes(String(value['operation'])) ? String(value['operation']) : null
+      const teamId = asBoundedString(value['teamId'])
+      const policyPayload = asBoundedString(value['payload'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion'])
+      if (operation === null || teamId === null || policyPayload === null || idempotencyKey === null || expectedVersion === null || policyPayload.length > 256 * 1024) return failure('invalid-payload', 'Некорректная операция Team Coordination Policies.')
+      return accepted(client.send({ teamCoordinationPolicies: { schemaVersion: 1, requestId: randomUUID(), teamId, operation, payload: Buffer.from(policyPayload, 'utf8'), expectedVersion, idempotencyKey } }))
+    }
+
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)
       const taskId = asBoundedString(value['taskId'])
