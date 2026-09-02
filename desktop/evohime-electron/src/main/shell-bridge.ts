@@ -518,6 +518,17 @@ function dispatch(
       if (operation === null || setId === null || setPayload === null || expectedVersion === null || idempotencyKey === null || setId.length > 128 || setPayload.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Workspace Sets.')
       return accepted(client.send({workspaceSets:{schemaVersion:1,setId,operation,payload:Buffer.from(setPayload,'utf8'),expectedVersion,idempotencyKey}}))
     }
+    case 'core.knowledgeSourceRegistry': {
+      const value = asRecord(payload)
+      const operations = ['register', 'get', 'bind', 'index', 'retrieve']
+      const operation = operations.includes(String(value['operation'])) ? String(value['operation']) : null
+      const sourceId = asBoundedString(value['sourceId'])
+      const sourcePayload = value['payload'] === undefined ? '' : asBoundedString(value['payload'])
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion'])
+      const idempotencyKey = value['idempotencyKey'] === undefined ? randomUUID() : asBoundedString(value['idempotencyKey'])
+      if (operation === null || sourceId === null || sourcePayload === null || expectedVersion === null || idempotencyKey === null || sourceId.length > 128 || sourcePayload.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Knowledge Source Registry.')
+      return accepted(client.send({knowledgeSourceRegistry:{schemaVersion:1,sourceId,operation,payload:Buffer.from(sourcePayload,'utf8'),expectedVersion,idempotencyKey}}))
+    }
 
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)

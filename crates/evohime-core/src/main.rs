@@ -822,6 +822,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
     evohime_core::CoreEvent::WorkspaceSets { set_id, operation, version, .. } => println!(
             "workspace_sets.result {set_id}: {operation} version={version}"
         ),
+    evohime_core::CoreEvent::KnowledgeSourceRegistryProjectRole { source_id, operation, version, .. } => println!(
+            "knowledge_source_registry.result {source_id}: {operation} version={version}"
+        ),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             println!("review.history_cleared {marker_id}")
         }

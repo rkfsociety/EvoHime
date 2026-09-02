@@ -383,6 +383,23 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   check/clippy, protocol check, Electron typecheck and full Electron regression.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
 
+## Plan 101 — Knowledge Source Registry v1 (2026-09-02)
+
+- Contract: separate versioned KnowledgeSource/Binding/View/Chunk/Hit types,
+  source lifecycle, sensitivity/trust, role/project/workflow targets and
+  source revision/locator provenance; Knowledge remains separate from Memory.
+- Runtime/durability: additive SQLite schema v78 for sources, bindings,
+  manifests and chunks; monotonic source revisions, Ready-only authorized
+  KnowledgeView, bounded keyword index/retrieval and stale/secret fail-closed
+  behavior; scripts/macros and embedded fetch are not executed.
+- IPC/UI: authenticated additive command 232/event 77, generated bindings and
+  Electron metadata-only Knowledge Sources panel; raw chunks, credentials,
+  prompts, outputs and absolute paths stay out of the renderer projection.
+- Checks: focused Core contract/retrieval and storage revision tests, cargo
+  fmt/check/clippy, migration check, protocol check, Electron typecheck,
+  focused UI test, full Electron regression and native package smoke PASS.
+  Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
+
 ## Plan 100 — Workspace Sets v1 (2026-09-02)
 
 - Contract: versioned bounded WorkspaceSet with up to 8 roots, unique aliases,

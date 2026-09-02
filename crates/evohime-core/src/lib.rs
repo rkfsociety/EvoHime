@@ -8,6 +8,7 @@ pub mod declarative_agent_component_registry;
 pub mod dependency_aware_task_graph;
 pub mod experience_replay_library;
 pub mod headless_core_cli;
+pub mod knowledge_source_registry_project_role;
 pub mod project_instruction_stack;
 pub mod safe_ui_extension_framework;
 pub mod schema_driven_agent_configuration;
@@ -1418,6 +1419,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    KnowledgeSourceRegistryProjectRole {
+        operation: String,
+        source_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -2127,6 +2136,12 @@ pub enum CoreEvent {
     },
     WorkspaceSets {
         set_id: String,
+        operation: String,
+        version: u64,
+        projection_json: String,
+    },
+    KnowledgeSourceRegistryProjectRole {
+        source_id: String,
         operation: String,
         version: u64,
         projection_json: String,
@@ -3231,6 +3246,7 @@ impl EventJournal {
             CoreEvent::TeamCoordinator { work_item_id, .. } => work_item_id,
             CoreEvent::ProjectInstructionStack { workspace_root, .. } => workspace_root,
             CoreEvent::WorkspaceSets { set_id, .. } => set_id,
+            CoreEvent::KnowledgeSourceRegistryProjectRole { source_id, .. } => source_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3277,6 +3293,9 @@ impl EventJournal {
             CoreEvent::TeamCoordinator { .. } => "team_coordinator.result",
             CoreEvent::ProjectInstructionStack { .. } => "project_instruction_stack.result",
             CoreEvent::WorkspaceSets { .. } => "workspace_sets.result",
+            CoreEvent::KnowledgeSourceRegistryProjectRole { .. } => {
+                "knowledge_source_registry.result"
+            }
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -12913,6 +12932,94 @@ impl TaskCoordinator {
                     .unwrap_or_else(|| "{}".to_owned());
                 let event = CoreEvent::WorkspaceSets {
                     set_id,
+                    operation,
+                    version: expected_version,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::KnowledgeSourceRegistryProjectRole {
+                operation,
+                source_id,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let _ = idempotency_key;
+                let result = async {
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    use crate::knowledge_source_registry_project_role as knowledge;
+                    use evohime_local_storage::knowledge_source_registry_project_role_store as store;
+                    let policy = knowledge::default_policy();
+                    match operation.as_str() {
+                        "register" => {
+                            let source: knowledge::KnowledgeSource = serde_json::from_slice(&payload).map_err(|_| "invalid_knowledge_source".to_string())?;
+                            knowledge::validate_source(&source, &policy).map_err(|e| e.to_string())?;
+                            let json = serde_json::to_vec(&source).map_err(|_| "serialization_failed".to_string())?;
+                            store::put_source(database.connection(), &source.id, source.version, &source.content_hash, &json, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"source_id":source.id,"version":source.version,"kind":source.kind,"status":source.status,"fingerprint":source.source_fingerprint,"sensitivity":source.sensitivity,"content_hash":source.content_hash,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "get" => {
+                            let json = store::get_source(database.connection(), &source_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "knowledge_source_not_found".to_string())?;
+                            let source: knowledge::KnowledgeSource = serde_json::from_slice(&json).map_err(|_| "corrupt_knowledge_source".to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"source_id":source.id,"version":source.version,"kind":source.kind,"status":source.status,"fingerprint":source.source_fingerprint,"sensitivity":source.sensitivity,"content_hash":source.content_hash,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "bind" => {
+                            let binding: knowledge::KnowledgeBinding = serde_json::from_slice(&payload).map_err(|_| "invalid_knowledge_binding".to_string())?;
+                            knowledge::validate_binding(&binding, &policy).map_err(|e| e.to_string())?;
+                            if binding.source_id != source_id { return Err("knowledge_source_mismatch".into()); }
+                            let binding_id = format!("{}:{}:{}", binding.target_kind as u8, binding.target_id, binding.source_id);
+                            let json = serde_json::to_vec(&binding).map_err(|_| "serialization_failed".to_string())?;
+                            store::put_binding(database.connection(), &binding_id, &binding.source_id, &json, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"source_id":binding.source_id,"target_id":binding.target_id,"bound":true,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "index" => {
+                            let chunks: Vec<knowledge::KnowledgeChunk> = serde_json::from_slice(&payload).map_err(|_| "invalid_knowledge_chunks".to_string())?;
+                            if chunks.len() > knowledge::MAX_CHUNKS_PER_SOURCE { return Err("knowledge_chunk_limit".into()); }
+                            for chunk in &chunks {
+                                if chunk.source_id != source_id || chunk.content_projection.len() > knowledge::MAX_CHUNK_BYTES { return Err("invalid_knowledge_chunk".into()); }
+                                let json = serde_json::to_vec(chunk).map_err(|_| "serialization_failed".to_string())?;
+                                store::put_chunk(database.connection(), &chunk.id, &chunk.source_id, chunk.source_revision, chunk.ordinal, &chunk.locator, &json, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())?;
+                            }
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"source_id":source_id,"indexed_chunks":chunks.len(),"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "retrieve" => {
+                            let request: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_knowledge_query".to_string())?;
+                            let query = request.get("query").and_then(serde_json::Value::as_str).ok_or_else(|| "invalid_knowledge_query".to_string())?;
+                            if query.is_empty() || query.len() > knowledge::MAX_ID_BYTES { return Err("invalid_knowledge_query".into()); }
+                            let target_kind: knowledge::TargetKind = serde_json::from_value(request.get("target_kind").cloned().unwrap_or(serde_json::json!("project"))).map_err(|_| "invalid_knowledge_target".to_string())?;
+                            let target_id = request.get("target_id").and_then(serde_json::Value::as_str).ok_or_else(|| "invalid_knowledge_target".to_string())?;
+                            let source_json = store::get_source(database.connection(), &source_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "knowledge_source_not_found".to_string())?;
+                            let source: knowledge::KnowledgeSource = serde_json::from_slice(&source_json).map_err(|_| "corrupt_knowledge_source".to_string())?;
+                            let bindings = store::list_bindings(database.connection(), &source_id, knowledge::MAX_BINDINGS_PER_SOURCE).map_err(|_| "storage_failed".to_string())?.into_iter().filter_map(|json| serde_json::from_slice(&json).ok()).collect::<Vec<knowledge::KnowledgeBinding>>();
+                            let view = knowledge::build_view(format!("view-{source_id}"), "runtime".into(), std::slice::from_ref(&source), &bindings, target_kind, target_id, knowledge::Sensitivity::Internal, "keyword".into(), None, &policy).map_err(|e| e.to_string())?;
+                            let mut hits = Vec::new();
+                            for json in store::list_chunks(database.connection(), &source_id, knowledge::MAX_CHUNKS_PER_SOURCE).map_err(|_| "storage_failed".to_string())? {
+                                let chunk: knowledge::KnowledgeChunk = serde_json::from_slice(&json).map_err(|_| "corrupt_knowledge_chunk".to_string())?;
+                                if chunk.content_projection.to_ascii_lowercase().contains(&query.to_ascii_lowercase()) {
+                                    let hit = knowledge::KnowledgeHit { source_id: chunk.source_id, source_revision: chunk.source_revision, chunk_id: chunk.id, locator: chunk.locator, excerpt: chunk.content_projection, score: 1, match_reasons: vec!["keyword".into()], freshness: if source.status == knowledge::SourceStatus::Ready { "current".into() } else { "stale".into() }, trust_class: source.trust_class.clone() };
+                                    knowledge::validate_hit(&hit, &view, &policy).map_err(|e| e.to_string())?;
+                                    hits.push(hit); if hits.len() >= knowledge::MAX_HITS { break; }
+                                }
+                            }
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"source_id":source_id,"view_id":view.id,"hit_count":hits.len(),"hits":hits,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        _ => Err("unsupported_knowledge_registry_operation".into()),
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::KnowledgeSourceRegistryProjectRole {
+                    source_id,
                     operation,
                     version: expected_version,
                     projection_json,

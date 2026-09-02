@@ -1844,3 +1844,25 @@ Workspace Sets panel получает только bounded redacted projection.
 definition, 256 KiB binding/event/evidence, 32 grants/refs per root и 1 024
 search matches per root. Imported config требует явного user mapping; rules,
 skills и diagnostics сохраняют source-root provenance и не расширяют authority.
+
+## Knowledge Source Registry v1 (план 101)
+
+Knowledge Source Registry — отдельный от Memory Core-owned слой reference
+corpus. `KnowledgeSource` имеет typed kind/status lifecycle, origin/fingerprint,
+sensitivity/trust и content revision; `KnowledgeBinding` связывает источник с
+project, role, workflow, team protocol или session без расширения grants.
+`KnowledgeView` строится Core из Ready и authorized bindings, а
+`KnowledgeHit` сохраняет source revision, chunk id, locator, freshness и
+retrieval provenance. Knowledge hit автоматически не становится Memory.
+
+SQLite schema v78 хранит sources, bindings, manifests и bounded chunks с
+monotonic revisions. Core операции register/get/bind/index/retrieve используют
+provider-neutral keyword path, Ready/sensitivity authorization и typed failure;
+parser scripts/macros и embedded fetch не исполняются. Authenticated IPC
+command 232/event 77 и Electron Knowledge Sources panel передают только
+redacted metadata; raw chunks/credentials/prompts/outputs остаются Core-owned.
+
+Лимиты: 128 sources, 32 bindings/source, 1 024 chunks/source, 64 KiB source
+и chunk, 128 hits/query, 256 KiB evidence и 16 384 view tokens. Secret source
+не входит в lower-sensitivity view, stale source не считается Ready, а
+unauthorized source ID не попадает в retrieval.

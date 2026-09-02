@@ -11,6 +11,7 @@ import type {
   TeamCoordinatorProjection,
   ProjectInstructionStackProjection,
   WorkspaceSetsProjection,
+  KnowledgeSourceRegistryProjection,
   ContinuationActionResult,
   ContinuationProjection,
   AnalysisKernelProjection,
@@ -574,6 +575,7 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       , teamCoordinator: decodeTeamCoordinator(event.teamCoordinator)
       , projectInstructionStack: decodeProjectInstructionStack(event.projectInstructionStack)
       , workspaceSets: decodeWorkspaceSets(event.workspaceSets)
+      , knowledgeSourceRegistry: decodeKnowledgeSourceRegistry(event.knowledgeSourceRegistry)
     })
   }
 
@@ -793,6 +795,14 @@ function decodeWorkspaceSets(
   let projection: unknown = null
   try { projection = JSON.parse(raw) } catch { projection = null }
   return { schemaVersion: Number(projected.schemaVersion ?? 0), setId: projected.setId ?? '', operation: projected.operation ?? '', version: Number(projected.version ?? 0), status: projected.status ?? '', errorCode: projected.errorCode ?? '', projection }
+}
+
+function decodeKnowledgeSourceRegistry(projected: evohime.desktop.v1.IKnowledgeSourceRegistryProjectRoleEvent | null | undefined): KnowledgeSourceRegistryProjection | null {
+  if (!projected) return null
+  const raw = decodePayload(projected.projectionJson)
+  let projection: unknown = null
+  try { projection = JSON.parse(raw) } catch { projection = null }
+  return { schemaVersion: Number(projected.schemaVersion ?? 0), sourceId: projected.sourceId ?? '', operation: projected.operation ?? '', version: Number(projected.version ?? 0), status: projected.status ?? '', errorCode: projected.errorCode ?? '', projection }
 }
 
 function decodeConversationEvent(

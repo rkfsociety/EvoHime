@@ -1,0 +1,13 @@
+import { useEffect, useState } from 'react'
+import type { ConnectionState, KnowledgeSourceRegistryProjection, ShellEvent } from '@shared/api'
+import { useShellApi } from './shell-api'
+
+const OPERATIONS = ['get', 'register', 'bind', 'index', 'retrieve'] as const
+type Operation = typeof OPERATIONS[number]
+export function KnowledgeSourceRegistryProjectRolePanel({ connection }: { readonly connection: ConnectionState }): React.JSX.Element {
+  const api = useShellApi(); const [operation, setOperation] = useState<Operation>('get'); const [sourceId, setSourceId] = useState('source-1'); const [payload, setPayload] = useState(''); const [projection, setProjection] = useState<KnowledgeSourceRegistryProjection | null>(null); const [message, setMessage] = useState('')
+  useEffect(() => api?.subscribe((event: ShellEvent) => { if (event.kind === 'core-event' && event.event.knowledgeSourceRegistry) setProjection(event.event.knowledgeSourceRegistry) }), [api])
+  const send = async (): Promise<void> => { if (!api || connection !== 'connected') { setMessage('Нет подключения к Core.'); return }; const result = await api.invoke('core.knowledgeSourceRegistry', { operation, sourceId, payload }); setMessage(result.ok ? 'Запрос принят Core.' : result.message) }
+  const data = projection?.projection && typeof projection.projection === 'object' && projection.projection !== null ? projection.projection as Record<string, unknown> : null
+  return <section aria-label="Knowledge Source Registry"><h3>Knowledge Source Registry</h3><p>Reference Knowledge отделён от Memory. Источник, binding, sensitivity, revision и provenance принадлежат Core; renderer получает только bounded metadata.</p><div><strong>Source:</strong> {String(data?.['source_id'] ?? projection?.sourceId ?? '—')} <strong>Version:</strong> {String(data?.['version'] ?? projection?.version ?? '—')} <strong>Status:</strong> {String(data?.['status'] ?? '—')} <strong>Fingerprint:</strong> {String(data?.['fingerprint'] ?? '—')}</div><label>Операция<select value={operation} onChange={event => setOperation(event.target.value as Operation)}>{OPERATIONS.map(item => <option key={item}>{item}</option>)}</select></label><label>Source ID<input value={sourceId} onChange={event => setSourceId(event.target.value)} /></label><label>Payload JSON<textarea aria-label="Knowledge Source Registry JSON" value={payload} onChange={event => setPayload(event.target.value)} maxLength={64 * 1024} /></label><button type="button" onClick={() => void send()}>Отправить в Core</button>{message ? <p role="status">{message}</p> : null}</section>
+}

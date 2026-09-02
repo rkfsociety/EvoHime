@@ -43,6 +43,7 @@ pub mod human_work_items_store;
 pub mod incremental_change_protocol_store;
 pub mod integration_provider_store;
 pub mod invocation_presets_store;
+pub mod knowledge_source_registry_project_role_store;
 pub mod memory_store;
 pub mod model_limit_store;
 pub mod model_provenance;
@@ -78,7 +79,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 77;
+pub const SCHEMA_VERSION: u32 = 78;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3695,6 +3696,10 @@ impl LocalDatabase {
             workspace_sets_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 77;")?;
         }
+        if current < 78 {
+            knowledge_source_registry_project_role_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 78;")?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -3714,12 +3719,12 @@ mod tests {
     }
 
     #[test]
-    fn schema_77_installs_configuration_experience_diagnostics_task_graph_component_registry_refs_workbench_coordinator_instruction_and_workspace_set_tables(
+    fn schema_78_installs_configuration_experience_diagnostics_task_graph_component_registry_refs_workbench_coordinator_instruction_workspace_set_and_knowledge_tables(
     ) {
         let path = temp_database_path("experience-replay-schema-66");
         let _ = std::fs::remove_file(&path);
         let database = LocalDatabase::open(&path).expect("database opens");
-        assert_eq!(database.schema_version().expect("schema version"), 77);
+        assert_eq!(database.schema_version().expect("schema version"), 78);
         let has_ui_extension_table: i64 = database
             .connection()
             .query_row(

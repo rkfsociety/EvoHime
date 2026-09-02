@@ -365,3 +365,8 @@ Electron projection/panel и focused/full verification. Комплект `78-0` 
 `docs/architecture.md` и `docs/current-state.md`; комплект `100-0` … `100-4`
 удалён после contract/runtime/IPC/UI/verification checks. Следующий
 незавершённый этап выбирается из `docs/plans` по следующему номеру.
+
+План 101 закрыт 2 сентября 2026 года. Knowledge Source Registry v1 перенесён
+в `docs/architecture.md` и `docs/current-state.md`; комплект `101-0` … `101-4`
+удалён после contract/runtime/retrieval/IPC/UI/verification checks. Следующий
+незавершённый этап выбирается из `docs/plans` по следующему номеру.

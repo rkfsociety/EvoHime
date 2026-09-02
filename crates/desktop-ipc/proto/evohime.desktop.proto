@@ -1882,6 +1882,7 @@ message CommandEnvelope {
     TeamCoordinatorCommand team_coordinator = 229;
     ProjectInstructionStackCommand project_instruction_stack = 230;
     WorkspaceSetsCommand workspace_sets = 231;
+    KnowledgeSourceRegistryProjectRoleCommand knowledge_source_registry = 232;
   }
 }
 
@@ -2008,6 +2009,7 @@ message EventEnvelope {
     TeamCoordinatorEvent team_coordinator = 74;
     ProjectInstructionStackEvent project_instruction_stack = 75;
     WorkspaceSetsEvent workspace_sets = 76;
+    KnowledgeSourceRegistryProjectRoleEvent knowledge_source_registry = 77;
   }
 }
 
@@ -2271,6 +2273,17 @@ message WorkspaceSetsEvent {
   uint64 version = 4;
   string status = 5;
   string error_code = 6;
+  bytes projection_json = 7;
+}
+
+// Plan 101: bounded Core-owned Knowledge Source Registry projection.
+message KnowledgeSourceRegistryProjectRoleCommand {
+  uint32 schema_version = 1; string source_id = 2; string operation = 3;
+  bytes payload = 4; uint64 expected_version = 5; string idempotency_key = 6;
+}
+message KnowledgeSourceRegistryProjectRoleEvent {
+  uint32 schema_version = 1; string source_id = 2; string operation = 3;
+  uint64 version = 4; string status = 5; string error_code = 6;
   bytes projection_json = 7;
 }
 

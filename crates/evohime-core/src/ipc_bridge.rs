@@ -982,6 +982,33 @@ impl IpcBridge {
                             },
                         ))
                     })
+            } else if record.event_type == "knowledge_source_registry.result" {
+                serde_json::from_slice::<serde_json::Value>(&record.payload)
+                    .ok()
+                    .and_then(|value| {
+                        let event = value
+                            .get("KnowledgeSourceRegistryProjectRole")
+                            .unwrap_or(&value);
+                        Some(generated::event_envelope::Event::KnowledgeSourceRegistry(
+                            generated::KnowledgeSourceRegistryProjectRoleEvent {
+                                schema_version: 1,
+                                source_id: event.get("source_id")?.as_str()?.to_owned(),
+                                operation: event.get("operation")?.as_str()?.to_owned(),
+                                version: event
+                                    .get("version")
+                                    .and_then(serde_json::Value::as_u64)
+                                    .unwrap_or_default(),
+                                status: String::new(),
+                                error_code: String::new(),
+                                projection_json: event
+                                    .get("projection_json")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or("{}")
+                                    .as_bytes()
+                                    .to_vec(),
+                            },
+                        ))
+                    })
             } else {
                 execution_event
                     .map(|event| generated::event_envelope::Event::ExecutionEvent(Box::new(event)))
@@ -2773,6 +2800,18 @@ impl IpcBridge {
                     };
                     let result = self.dispatch_workspace_sets(operation, request).await?;
                     self.write_response(writer, "workspace_sets.result", result)
+                        .await?;
+                }
+                Some(generated::command_envelope::Command::KnowledgeSourceRegistry(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "get".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_knowledge_source_registry(operation, request)
+                        .await?;
+                    self.write_response(writer, "knowledge_source_registry.result", result)
                         .await?;
                 }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
@@ -7558,6 +7597,34 @@ impl IpcBridge {
             .dispatch(CoreCommand::WorkspaceSets {
                 operation,
                 set_id: request.set_id,
+                payload: request.payload,
+                expected_version: request.expected_version,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_knowledge_source_registry(
+        &self,
+        operation: String,
+        request: generated::KnowledgeSourceRegistryProjectRoleCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::KnowledgeSourceRegistryProjectRole {
+                operation,
+                source_id: request.source_id,
                 payload: request.payload,
                 expected_version: request.expected_version,
                 idempotency_key: request.idempotency_key,

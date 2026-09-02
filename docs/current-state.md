@@ -946,3 +946,11 @@ recovery metadata. Authenticated IPC command 231/event 76 и Electron panel
 остаются projection-only; host paths, secrets, raw prompts/outputs и implicit
 parent-directory authority не передаются. Независимые Git roots не объявляются
 filesystem-atomic; partial/unknown outcomes сохраняют per-root semantics.
+
+План 101 закрыт 2 сентября 2026 года: Knowledge Source Registry v1 реализует
+отдельные от Memory versioned KnowledgeSource/Binding/View/Chunk/Hit contracts,
+Ready/stale lifecycle, sensitivity authorization, source revision/locator
+provenance, durable SQLite schema v78, bounded keyword indexing/retrieval,
+authenticated IPC command 232/event 77 и metadata-only Electron panel. Registry
+и manifests переживают restart; parser content не исполняется, secrets/raw
+chunks не передаются renderer, unauthorized source не используется.
