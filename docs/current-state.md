@@ -1010,3 +1010,8 @@ token budget и authenticated IPC уже подтверждены тестами
 Core validator/matcher, storage schema 85, expiry/use limits, fail-closed
 critical-risk handling, authenticated IPC 239/84 и metadata-only Electron
 surface. Профиль не выдаёт capability и не заменяет ExecutionPolicy.
+
+План 88 закрыт 2 сентября 2026 года: Approval Policy Profiles v1 добавил
+Core resolver, storage schema 86, bounded scope/risk/expiry rules,
+fail-closed hard requirements, authenticated IPC 240/85 и metadata-only
+Electron surface. Unknown rules требуют prompt.

@@ -12,6 +12,7 @@ pub mod agent_middleware_pipeline_store;
 pub mod agent_role_profiles_store;
 pub mod ambient_store;
 pub mod analysis_kernel;
+pub mod approval_policy_profiles_store;
 pub mod architect_editor_model_pipeline_store;
 pub mod artifact_handoff_registry_store;
 pub mod artifact_store;
@@ -86,7 +87,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 85;
+pub const SCHEMA_VERSION: u32 = 86;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -596,6 +597,7 @@ impl LocalDatabase {
         output_guardrail_pipeline_store::install_schema(&connection)?;
         customization_inventory_store::install_schema(&connection)?;
         standing_approval_profiles_store::install_schema(&connection)?;
+        approval_policy_profiles_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
@@ -3741,6 +3743,10 @@ impl LocalDatabase {
         if current < 85 {
             standing_approval_profiles_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 85;")?;
+        }
+        if current < 86 {
+            approval_policy_profiles_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 86;")?;
         }
         transaction.commit()?;
         Ok(())

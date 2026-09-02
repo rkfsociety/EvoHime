@@ -1,6 +1,7 @@
 pub struct CoreVersion;
 
 pub mod adaptive_tool_catalog;
+pub mod approval_policy_profiles;
 pub mod capability_workbenches;
 pub mod code_diagnostics_feedback_loop;
 pub mod core_topic_subscription_event_bus;
@@ -1490,6 +1491,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    ApprovalPolicyProfiles {
+        operation: String,
+        profile_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -2246,6 +2255,12 @@ pub enum CoreEvent {
         projection_json: String,
     },
     StandingApprovalProfiles {
+        profile_id: String,
+        operation: String,
+        version: u64,
+        projection_json: String,
+    },
+    ApprovalPolicyProfiles {
         profile_id: String,
         operation: String,
         version: u64,
@@ -3359,6 +3374,7 @@ impl EventJournal {
             CoreEvent::OutputGuardrailPipeline { pipeline_id, .. } => pipeline_id,
             CoreEvent::CustomizationInventory { item_id, .. } => item_id,
             CoreEvent::StandingApprovalProfiles { profile_id, .. } => profile_id,
+            CoreEvent::ApprovalPolicyProfiles { profile_id, .. } => profile_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3415,6 +3431,7 @@ impl EventJournal {
             CoreEvent::OutputGuardrailPipeline { .. } => "output_guardrail_pipeline.result",
             CoreEvent::CustomizationInventory { .. } => "customization_inventory.result",
             CoreEvent::StandingApprovalProfiles { .. } => "standing_approval_profiles.result",
+            CoreEvent::ApprovalPolicyProfiles { .. } => "approval_policy_profiles.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -13441,6 +13458,44 @@ impl TaskCoordinator {
                     .and_then(|b| String::from_utf8(b.clone()).ok())
                     .unwrap_or_else(|| "{}".into());
                 let event = CoreEvent::StandingApprovalProfiles {
+                    profile_id,
+                    operation,
+                    version: expected_version,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::ApprovalPolicyProfiles {
+                operation,
+                profile_id,
+                payload,
+                expected_version,
+                reply,
+                ..
+            } => {
+                let result = async {
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    use crate::approval_policy_profiles as policy;
+                    use evohime_local_storage::approval_policy_profiles_store as store;
+                    match operation.as_str() {
+                        "list" => { let mut values:Vec<policy::ApprovalPolicyProfile>=Vec::new(); for row in store::list(database.connection()).map_err(|_|"storage_failed".to_string())? { if let Ok(p)=serde_json::from_slice(&row){values.push(p)} } serde_json::to_vec(&serde_json::json!({"schema_version":1,"profiles":values,"redacted":true})).map_err(|_|"serialization_failed".to_string()) }
+                        "create"|"update" => { let p:policy::ApprovalPolicyProfile=serde_json::from_slice(&payload).map_err(|_|"invalid_policy_profile".to_string())?; policy::validate(&p).map_err(|e|e.to_string())?; if !profile_id.is_empty()&&p.id!=profile_id{return Err("profile_id_mismatch".into())}; let j=serde_json::to_vec(&p).map_err(|_|"serialization_failed".to_string())?; store::put(database.connection(),&p.id,p.version,p.enabled,&j,crate::task_memory::now_millis() as i64).map_err(|_|"storage_failed".to_string())?; serde_json::to_vec(&serde_json::json!({"schema_version":1,"profile_id":p.id,"version":p.version,"status":"saved","redacted":true})).map_err(|_|"serialization_failed".to_string()) }
+                        "revoke" => { if expected_version==0{return Err("expected_version_required".into())}; database.connection().execute("UPDATE approval_policy_profiles SET enabled=0, version=version+1 WHERE id=?1 AND version=?2",rusqlite::params![profile_id,expected_version]).map_err(|_|"storage_failed".to_string())?; serde_json::to_vec(&serde_json::json!({"schema_version":1,"profile_id":profile_id,"version":expected_version+1,"status":"revoked","redacted":true})).map_err(|_|"serialization_failed".to_string()) }
+                        "decide" => { let req:serde_json::Value=serde_json::from_slice(&payload).map_err(|_|"invalid_policy_request".to_string())?; let scope=req["scope_id"].as_str().ok_or_else(||"invalid_policy_request".to_string())?; let action=req["action_class"].as_str().ok_or_else(||"invalid_policy_request".to_string())?; let resource=req["resource"].as_str().ok_or_else(||"invalid_policy_request".to_string())?; let risk=req["risk"].as_u64().ok_or_else(||"invalid_policy_request".to_string())? as u8; let now=req["now_ms"].as_i64().unwrap_or(0); let mut decisions=Vec::new(); for row in store::list(database.connection()).map_err(|_|"storage_failed".to_string())? {if let Ok(p)=serde_json::from_slice::<policy::ApprovalPolicyProfile>(&row){decisions.push(policy::decide(&p,scope,action,resource,risk,now).map_err(|e|e.to_string())?)}} let d=decisions.into_iter().find(|x|!x.require_prompt).unwrap_or(policy::PolicyDecision{require_prompt:true,profile_id:None,reason:"prompt_required".into(),hard_requirement:risk>=3}); serde_json::to_vec(&serde_json::json!({"schema_version":1,"require_prompt":d.require_prompt,"profile_id":d.profile_id,"reason":d.reason,"hard_requirement":d.hard_requirement,"redacted":true})).map_err(|_|"serialization_failed".to_string()) }
+                        _=>Err("unsupported_approval_policy_operation".into())
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::ApprovalPolicyProfiles {
                     profile_id,
                     operation,
                     version: expected_version,

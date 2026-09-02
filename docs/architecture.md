@@ -558,6 +558,14 @@ risk всегда hard-deny; match возвращает объяснимую п�
 capabilities. Additive authenticated IPC tags 239/84 дают list/create/update/
 revoke/match, а каждое решение требует дальнейшей проверки ExecutionPolicy.
 
+## Approval Policy Profiles v1 (план 88)
+
+Отдельный Core-owned policy layer (schema 1, storage 86) детерминированно
+решает `require_prompt` по scope/action/resource/risk с expiry. Critical risk
+всегда остаётся hard requirement; unknown/missing rule требует prompt. IPC
+tags 240/85 предоставляют list/create/update/revoke/decide. Этот слой не
+выдаёт capabilities и не отменяет ExecutionPolicy.
+
 ## Memory Extraction
 
 Извлечение фактов из диалога реализовано в `crates/evohime-core/src/memory_extraction.rs`. Этот раздел — канонический контракт: исходный план удалён из `docs/plans/` после реализации, как того требует правило каталога.

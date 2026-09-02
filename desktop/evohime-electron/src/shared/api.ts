@@ -1152,6 +1152,7 @@ export const RENDERER_COMMANDS = [
   'core.outputGuardrailPipeline',
   'core.customizationInventory',
   'core.standingApprovalProfiles',
+  'core.approvalPolicyProfiles',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1465,6 +1466,7 @@ export interface CommandPayloads {
   'core.outputGuardrailPipeline': { operation: 'evaluate'; pipelineId: string; payload: string; expectedVersion?: number; idempotencyKey?: string }
   'core.customizationInventory': { operation: 'list' | 'register' | 'remove'; itemId?: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.standingApprovalProfiles': { operation: 'list' | 'create' | 'update' | 'revoke' | 'match'; profileId?: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
+  'core.approvalPolicyProfiles': { operation: 'list' | 'create' | 'update' | 'revoke' | 'decide'; profileId?: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.reasoningOperatorLibrary': { operation: 'list' | 'register' | 'execute'; operatorId?: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
@@ -1963,6 +1965,7 @@ export interface CommandResults {
   'core.outputGuardrailPipeline': { accepted: boolean }
   'core.customizationInventory': { accepted: boolean }
   'core.standingApprovalProfiles': { accepted: boolean }
+  'core.approvalPolicyProfiles': { accepted: boolean }
   'core.reasoningOperatorLibrary': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }

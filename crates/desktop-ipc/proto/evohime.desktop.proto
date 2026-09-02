@@ -1890,6 +1890,7 @@ message CommandEnvelope {
     OutputGuardrailPipelineCommand output_guardrail_pipeline = 237;
     CustomizationInventoryCommand customization_inventory = 238;
     StandingApprovalProfilesCommand standing_approval_profiles = 239;
+    ApprovalPolicyProfilesCommand approval_policy_profiles = 240;
   }
 }
 
@@ -2024,6 +2025,7 @@ message EventEnvelope {
     OutputGuardrailPipelineEvent output_guardrail_pipeline = 82;
     CustomizationInventoryEvent customization_inventory = 83;
     StandingApprovalProfilesEvent standing_approval_profiles = 84;
+    ApprovalPolicyProfilesEvent approval_policy_profiles = 85;
   }
 }
 
@@ -2337,6 +2339,8 @@ message CustomizationInventoryCommand { uint32 schema_version=1; string item_id=
 message CustomizationInventoryEvent { uint32 schema_version=1; string item_id=2; string operation=3; uint64 version=4; string status=5; string error_code=6; bytes projection_json=7; }
 message StandingApprovalProfilesCommand { uint32 schema_version=1; string profile_id=2; string operation=3; bytes payload=4; uint64 expected_version=5; string idempotency_key=6; }
 message StandingApprovalProfilesEvent { uint32 schema_version=1; string profile_id=2; string operation=3; uint64 version=4; string status=5; string error_code=6; bytes projection_json=7; }
+message ApprovalPolicyProfilesCommand { uint32 schema_version=1; string profile_id=2; string operation=3; bytes payload=4; uint64 expected_version=5; string idempotency_key=6; }
+message ApprovalPolicyProfilesEvent { uint32 schema_version=1; string profile_id=2; string operation=3; uint64 version=4; string status=5; string error_code=6; bytes projection_json=7; }
 
 // Plan 64: bounded metadata-only Workspace Bootstrap Manifest surface.
 message WorkspaceBootstrapManifestCommand {

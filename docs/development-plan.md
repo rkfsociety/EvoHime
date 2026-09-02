@@ -411,3 +411,7 @@ focused/recovery/Electron verification и проверки синхрониза�
 План 87 закрыт 2 сентября 2026 года. Standing Approval Profiles перенесены в
 Core/storage/IPC/UI; комплект `87-0` … `87-4` удалён после contract, matcher,
 expiry/use-limit, protocol/typecheck и regression verification.
+
+План 88 закрыт 2 сентября 2026 года. Approval Policy Profiles перенесены в
+Core/storage/IPC/UI; комплект `88-0` … `88-4` удалён после contract,
+deterministic decision, protocol/typecheck и regression verification.
