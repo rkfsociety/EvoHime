@@ -3737,12 +3737,15 @@ mod tests {
     }
 
     #[test]
-    fn schema_78_installs_configuration_experience_diagnostics_task_graph_component_registry_refs_workbench_coordinator_instruction_workspace_set_and_knowledge_tables(
+    fn latest_schema_installs_configuration_experience_diagnostics_task_graph_component_registry_refs_workbench_coordinator_instruction_workspace_set_and_knowledge_tables(
     ) {
         let path = temp_database_path("experience-replay-schema-66");
         let _ = std::fs::remove_file(&path);
         let database = LocalDatabase::open(&path).expect("database opens");
-        assert_eq!(database.schema_version().expect("schema version"), 78);
+        assert_eq!(
+            database.schema_version().expect("schema version"),
+            SCHEMA_VERSION
+        );
         let has_ui_extension_table: i64 = database
             .connection()
             .query_row(
