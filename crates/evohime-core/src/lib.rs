@@ -214,6 +214,19 @@ fn requires_workspace_research_catalog(prompt: &str) -> bool {
     .any(|marker| prompt.contains(marker))
 }
 
+fn model_is_waiting_instead_of_reporting(content: &str) -> bool {
+    let content = content.to_lowercase();
+    [
+        "жду результата",
+        "подожди результаты",
+        "что ты хочешь",
+        "уточни, пожалуйста",
+        "ожидаю результата",
+    ]
+    .iter()
+    .any(|marker| content.contains(marker))
+}
+
 const LEGACY_TOOL_NAMES: &[&str] = &[
     "agent.run",
     "filesystem.list",
@@ -926,7 +939,7 @@ fn delivery_next_step(
             "НЕМЕДЛЕННО прочитай один из ключевых файлов: filesystem.read с JSON {\"path\":\"Cargo.toml\"} или {\"path\":\"README.md\"}. Не повторяй filesystem.list и не пиши отчёт."
         } else if !research_has_search {
             "НЕМЕДЛЕННО вызови filesystem.search с полным JSON {\"query\":\"TODO\",\"path\":\".\"} или найди по коду ключевой компонент. Не используй предположения о структуре вроде crates; путь должен существовать в текущем workspace. Не повторяй уже выполненное чтение и не пиши отчёт."
-        } else if research_observations < 5 {
+        } else if research_observations < 3 {
             "НЕМЕДЛЕННО прочитай ещё один конкретный архитектурный файл через filesystem.read, например docs/architecture.md или docs/current-state.md. Не пиши отчёт."
         } else {
             "НЕМЕДЛЕННО подготовь итоговый отчёт по уже собранным данным. Не вызывай инструменты."
@@ -8341,10 +8354,11 @@ impl ToolAgent {
             }
             if tool_calls.is_empty() {
                 let research_done = !delivery_requirements.research
-                    || (research_observations >= 5
+                    || (research_observations >= 3
                         && research_has_overview
                         && research_has_content
-                        && research_has_search);
+                        && research_has_search
+                        && !model_is_waiting_instead_of_reporting(&result.content));
                 let missing = delivery_requirements.missing(
                     research_done,
                     mutation_done,
@@ -14578,6 +14592,12 @@ mod tests {
         );
         assert!(super::requires_workspace_research_catalog(
             "Изучи проект и расскажи, как он устроен"
+        ));
+        assert!(super::model_is_waiting_instead_of_reporting(
+            "Жду результата от filesystem.list"
+        ));
+        assert!(!super::model_is_waiting_instead_of_reporting(
+            "Проект состоит из Android-приложения и Gradle-модуля."
         ));
     }
 
