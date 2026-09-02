@@ -8206,23 +8206,26 @@ impl ToolAgent {
                         }),
                     );
                     // Legacy models often print an entire future plan in one
-                    // response. Execute every new, valid safe call from that
-                    // plan before asking the model for its next observation.
-                    // Unsafe calls are excluded by the parser; the directory
-                    // read below is also invalid for the filesystem tool.
-                    for call in parsed_legacy_calls.into_iter().filter(|call| {
-                        let invalid_directory_read = call.name == "filesystem.read"
-                            && serde_json::from_str::<serde_json::Value>(&call.arguments)
-                                .ok()
-                                .and_then(|value| {
-                                    value
-                                        .get("path")
-                                        .and_then(|path| path.as_str())
-                                        .map(str::to_string)
-                                })
-                                .is_some_and(|path| path == ".");
-                        !invalid_directory_read
-                    }) {
+                    // response. Respect the one-tool-per-step contract and
+                    // execute only the first new, valid safe call. The
+                    // directory read below is also invalid for filesystem.read.
+                    if let Some(call) = parsed_legacy_calls
+                        .into_iter()
+                        .filter(|call| {
+                            let invalid_directory_read = call.name == "filesystem.read"
+                                && serde_json::from_str::<serde_json::Value>(&call.arguments)
+                                    .ok()
+                                    .and_then(|value| {
+                                        value
+                                            .get("path")
+                                            .and_then(|path| path.as_str())
+                                            .map(str::to_string)
+                                    })
+                                    .is_some_and(|path| path == ".");
+                            !invalid_directory_read
+                        })
+                        .next()
+                    {
                         tool_calls.push(call);
                     }
                 }
@@ -8815,7 +8818,6 @@ impl ToolAgent {
                 if outcome.ok {
                     consecutive_failures.remove(&call.name);
                     failures_without_success = 0;
-                    recent_tool_calls.forget_reads();
                 } else {
                     let failures = consecutive_failures.entry(call.name.clone()).or_default();
                     *failures += 1;
