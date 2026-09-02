@@ -2610,6 +2610,24 @@ impl IpcBridge {
                     self.write_response(writer, "dependency_aware_task_graph.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::DeclarativeAgentComponentRegistry(
+                    request,
+                )) => {
+                    let operation = if request.operation.is_empty() {
+                        "get".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_declarative_agent_component_registry(operation, request)
+                        .await?;
+                    self.write_response(
+                        writer,
+                        "declarative_agent_component_registry.result",
+                        result,
+                    )
+                    .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -7229,6 +7247,33 @@ impl IpcBridge {
                 payload: request.payload,
                 expected_revision: request.expected_revision,
                 grants: request.grants,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_declarative_agent_component_registry(
+        &self,
+        operation: String,
+        request: generated::DeclarativeAgentComponentRegistryCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::DeclarativeAgentComponentRegistry {
+                operation,
+                registry_id: request.registry_id,
+                payload: request.payload,
+                expected_revision: request.expected_revision,
                 reply,
             })
             .await

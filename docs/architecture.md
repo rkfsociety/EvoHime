@@ -1702,3 +1702,14 @@ SQLite schema v70, после restart восстанавливается из du
 Authenticated additive IPC использует command 224/event 69, Electron получает
 только metadata-only projection и не вычисляет state machine или не запускает
 effects.
+
+## Declarative Agent Component Registry v1 (план 74)
+
+Core-owned registry использует stable public provider IDs, typed
+`ComponentDescriptor`, отдельные spec/component versions и built-in trusted
+allowlist. Loading выполняет provider/type/version/schema/dependency validation;
+unknown providers, cycles, missing migrations и raw secret values fail closed.
+Descriptor diff/dump и explicit one-step migration остаются deterministic и
+bounded; dynamic code loading и marketplace отсутствуют. Durable registry
+хранится в SQLite schema v71, authenticated additive IPC использует command 225
+/ event 70, а Electron показывает только metadata/action projection.

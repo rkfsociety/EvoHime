@@ -457,6 +457,11 @@ function dispatch(
       if(operation===null||graphId===null||graphPayload===null||expectedRevision===null||graphId.length>128||graphPayload.length>512*1024||grants.length>256)return failure('invalid-payload','Некорректная операция графа задач.')
       return accepted(client.send({dependencyAwareTaskGraph:{schemaVersion:1,requestId:randomUUID(),operation,graphId,payload:Buffer.from(graphPayload,'utf8'),expectedRevision,grants}}))
     }
+    case 'core.declarativeAgentComponentRegistry': {
+      const value=asRecord(payload); const operation=['create','get','validate','replace','diff'].includes(String(value['operation']))?String(value['operation']):null; const registryId=asBoundedString(value['registryId']); const registryPayload=asBoundedString(value['payload']); const expectedRevision=value['expectedRevision']===undefined?0:asNonNegativeInteger(value['expectedRevision']);
+      if(operation===null||registryId===null||registryPayload===null||expectedRevision===null||registryId.length>128||registryPayload.length>64*1024)return failure('invalid-payload','Некорректная операция Component Registry.')
+      return accepted(client.send({declarativeAgentComponentRegistry:{schemaVersion:1,requestId:randomUUID(),operation,registryId,payload:Buffer.from(registryPayload,'utf8'),expectedRevision}}))
+    }
 
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)

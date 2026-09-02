@@ -3,6 +3,7 @@ pub struct CoreVersion;
 pub mod adaptive_tool_catalog;
 pub mod code_diagnostics_feedback_loop;
 pub mod core_topic_subscription_event_bus;
+pub mod declarative_agent_component_registry;
 pub mod dependency_aware_task_graph;
 pub mod experience_replay_library;
 pub mod schema_driven_agent_configuration;
@@ -1356,6 +1357,13 @@ pub enum CoreCommand {
         grants: Vec<String>,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    DeclarativeAgentComponentRegistry {
+        operation: String,
+        registry_id: String,
+        payload: Vec<u8>,
+        expected_revision: u64,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -2024,6 +2032,12 @@ pub enum CoreEvent {
     },
     DependencyAwareTaskGraph {
         graph_id: String,
+        operation: String,
+        revision: u64,
+        projection_json: String,
+    },
+    DeclarativeAgentComponentRegistry {
+        registry_id: String,
         operation: String,
         revision: u64,
         projection_json: String,
@@ -3121,6 +3135,7 @@ impl EventJournal {
             CoreEvent::WorkflowOptimizationLab { run_id, .. } => run_id,
             CoreEvent::CoreTopicSubscriptionEventBus { .. } => "core-topic-bus",
             CoreEvent::DependencyAwareTaskGraph { graph_id, .. } => graph_id,
+            CoreEvent::DeclarativeAgentComponentRegistry { registry_id, .. } => registry_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3158,6 +3173,9 @@ impl EventJournal {
                 "core_topic_subscription_event_bus.result"
             }
             CoreEvent::DependencyAwareTaskGraph { .. } => "dependency_aware_task_graph.result",
+            CoreEvent::DeclarativeAgentComponentRegistry { .. } => {
+                "declarative_agent_component_registry.result"
+            }
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -11687,6 +11705,44 @@ impl TaskCoordinator {
                     .unwrap_or_else(|| "{}".into());
                 let event = CoreEvent::DependencyAwareTaskGraph {
                     graph_id,
+                    operation,
+                    revision: expected_revision,
+                    projection_json,
+                };
+                let journal = state.lock().await.journal.clone();
+                if let Some(journal) = journal {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::DeclarativeAgentComponentRegistry {
+                operation,
+                registry_id,
+                payload,
+                expected_revision,
+                reply,
+            } => {
+                let result = async {
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    use evohime_local_storage::declarative_agent_component_registry_store as store;
+                    match operation.as_str() {
+                        "get" => store::get(database.connection(), &registry_id).map_err(|e|e.to_string())?.ok_or_else(|| "registry_not_found".to_string()),
+                        "validate" => { let registry: crate::declarative_agent_component_registry::Registry=serde_json::from_slice(&payload).map_err(|_|"invalid_registry".to_string())?; crate::declarative_agent_component_registry::validate_registry(&registry).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"valid","revision":registry.revision,"providers":registry.providers.len(),"components":registry.components.len()})).map_err(|e|e.to_string()) }
+                        "create" => { let registry: crate::declarative_agent_component_registry::Registry=serde_json::from_slice(&payload).map_err(|_|"invalid_registry".to_string())?; crate::declarative_agent_component_registry::validate_registry(&registry).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&registry).map_err(|e|e.to_string())?; if !store::put(database.connection(),&registry_id,registry.revision,&json,&registry.content_hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())? {return Err("registry_exists".into())} Ok(json) }
+                        "replace" => { let registry: crate::declarative_agent_component_registry::Registry=serde_json::from_slice(&payload).map_err(|_|"invalid_registry".to_string())?; crate::declarative_agent_component_registry::validate_registry(&registry).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&registry).map_err(|e|e.to_string())?; if !store::replace(database.connection(),&registry_id,expected_revision,registry.revision,&json,&registry.content_hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())? {return Err("stale_registry_revision".into())} Ok(json) }
+                        "diff" => { let pair: Vec<crate::declarative_agent_component_registry::ComponentDescriptor>=serde_json::from_slice(&payload).map_err(|_|"invalid_diff".to_string())?; if pair.len()!=2{return Err("diff_requires_two_descriptors".into())}; serde_json::to_vec(&crate::declarative_agent_component_registry::diff(&pair[0],&pair[1]).map_err(|e|e.to_string())?).map_err(|e|e.to_string()) }
+                        _ => Err("unsupported_component_registry_operation".into())
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::DeclarativeAgentComponentRegistry {
+                    registry_id,
                     operation,
                     revision: expected_revision,
                     projection_json,

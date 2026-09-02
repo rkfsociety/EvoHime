@@ -365,6 +365,21 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Checks: focused contract/recovery/storage tests, schema migration, cargo
   check/clippy, protocol check, Electron typecheck and full Electron regression.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
+
+## Plan 74 — Declarative Agent Component Registry v1 (2026-09-02)
+
+- Contract: stable public provider IDs, typed descriptors, separate
+  spec/component versions, built-in trust allowlist, bounded config/refs and
+  canonical serialization.
+- Safety/loading: schema/type/version/dependency validation, explicit migration,
+  fail-closed unknown/untrusted providers, cycle detection and raw-secret
+  rejection; no arbitrary dynamic code loading.
+- Durability/IPC/UI: additive SQLite schema v71, authenticated command 225 /
+  event 70, bounded metadata-only Electron inspect/diff/migration surface.
+- Checks: focused Rust contract tests, schema migration test, cargo
+  check/clippy, protocol check, Electron typecheck, focused registry UI test
+  and full Electron regression. Evidence excludes secrets, raw prompts/outputs,
+  absolute paths and PII.
 ## Plan 73 — Dependency-Aware Task Graph v1 (2026-09-02)
 
 - Contract: bounded typed execution tasks/dependencies, DAG validation,

@@ -1875,6 +1875,7 @@ message CommandEnvelope {
     WorkflowOptimizationLabCommand workflow_optimization_lab = 222;
     CoreTopicSubscriptionEventBusCommand core_topic_subscription_event_bus = 223;
     DependencyAwareTaskGraphCommand dependency_aware_task_graph = 224;
+    DeclarativeAgentComponentRegistryCommand declarative_agent_component_registry = 225;
   }
 }
 
@@ -1994,6 +1995,7 @@ message EventEnvelope {
     WorkflowOptimizationLabEvent workflow_optimization_lab = 67;
     CoreTopicSubscriptionEventBusEvent core_topic_subscription_event_bus = 68;
     DependencyAwareTaskGraphEvent dependency_aware_task_graph = 69;
+    DeclarativeAgentComponentRegistryEvent declarative_agent_component_registry = 70;
   }
 }
 
@@ -2349,6 +2351,15 @@ message DependencyAwareTaskGraphCommand {
   repeated string grants = 7;
 }
 message DependencyAwareTaskGraphEvent {
+  uint32 schema_version = 1; string request_id = 2; string operation = 3;
+  string status = 4; uint64 revision = 5; bytes projection_json = 6;
+  string error_code = 7;
+}
+message DeclarativeAgentComponentRegistryCommand {
+  uint32 schema_version = 1; string request_id = 2; string operation = 3;
+  string registry_id = 4; bytes payload = 5; uint64 expected_revision = 6;
+}
+message DeclarativeAgentComponentRegistryEvent {
   uint32 schema_version = 1; string request_id = 2; string operation = 3;
   string status = 4; uint64 revision = 5; bytes projection_json = 6;
   string error_code = 7;

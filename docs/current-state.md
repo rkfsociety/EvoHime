@@ -883,3 +883,9 @@ ready-set, immutable completed revisions, atomic semantic replan patch и
 downstream-only invalidation. Durable SQLite schema v70, authenticated IPC
 command 224/event 69 и metadata-only Electron panel проверены; renderer не
 владеет графом и не запускает effects.
+План 74 закрыт 2 сентября 2026 года: Declarative Agent Component Registry v1.
+Добавлены stable provider IDs, typed descriptors, built-in trust allowlist,
+schema/version validation, explicit migration, dependency-cycle detection,
+secret rejection, inspect/diff/dump операции и durable SQLite schema v71.
+Authenticated IPC command 225/event 70 и metadata-only Electron panel не
+расширяют authority и не загружают dynamic code.
