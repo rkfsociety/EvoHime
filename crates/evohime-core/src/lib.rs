@@ -198,6 +198,22 @@ fn catalog_preflight_input(tool_name: &str) -> serde_json::Value {
     }
 }
 
+fn requires_workspace_research_catalog(prompt: &str) -> bool {
+    let prompt = prompt.to_lowercase();
+    [
+        "изучи",
+        "исследуй",
+        "ознаком",
+        "проверь проект",
+        "найди в проекте",
+        "объясни проект",
+        "understand the project",
+        "inspect the project",
+    ]
+    .iter()
+    .any(|marker| prompt.contains(marker))
+}
+
 const LEGACY_TOOL_NAMES: &[&str] = &[
     "agent.run",
     "filesystem.list",
@@ -7660,7 +7676,7 @@ impl ToolAgent {
         )
         .map_err(|error| AgentRunError::Internal(error.to_string()))?;
         let selection_started = Instant::now();
-        let catalog_query = if DeliveryRequirements::from_prompt(&prompt).research {
+        let catalog_query = if requires_workspace_research_catalog(&prompt) {
             format!("{prompt} filesystem.list filesystem.read filesystem.search")
         } else {
             prompt.clone()
@@ -14558,6 +14574,9 @@ mod tests {
             super::catalog_preflight_input("filesystem.search"),
             serde_json::json!({ "query": "EvoHime", "path": "." })
         );
+        assert!(super::requires_workspace_research_catalog(
+            "Изучи проект и расскажи, как он устроен"
+        ));
     }
 
     #[test]
