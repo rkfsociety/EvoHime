@@ -50,6 +50,7 @@ import { RevisionSafeWorkspaceFilesPanel } from './RevisionSafeWorkspaceFilesPan
 import { TaskWorktreeIsolationPanel } from './TaskWorktreeIsolationPanel'
 import { TeamResourceBudgetPanel } from './TeamResourceBudgetPanel'
 import { ComposableTerminationConditionsPanel } from './ComposableTerminationConditionsPanel'
+import { WorkspaceBootstrapManifestPanel } from './WorkspaceBootstrapManifestPanel'
 import { WorkbenchPanel } from './WorkbenchPanel'
 import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
 
@@ -76,7 +77,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -107,6 +108,7 @@ const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'task-worktree-isolation', label: 'Task Worktrees', icon: '⑂' },
   { id: 'team-resource-budget', label: 'Team Budget', icon: '₿' },
   { id: 'composable-termination-conditions', label: 'Termination', icon: '⏹' },
+  { id: 'workspace-bootstrap-manifest', label: 'Bootstrap Manifest', icon: '⌂' },
   { id: 'packages', label: 'Workflow Package', icon: '⇄' },
   { id: 'benchmarks', label: 'Бенчмарки', icon: '▦' },
   { id: 'middleware', label: 'Middleware', icon: '◇' },
@@ -445,6 +447,7 @@ export function App(): React.JSX.Element {
               {view === 'task-worktree-isolation' ? <TaskWorktreeIsolationPanel connection={connection} events={events} /> : null}
               {view === 'team-resource-budget' ? <TeamResourceBudgetPanel connection={connection} events={events} /> : null}
               {view === 'composable-termination-conditions' ? <ComposableTerminationConditionsPanel connection={connection} events={events} /> : null}
+              {view === 'workspace-bootstrap-manifest' ? <WorkspaceBootstrapManifestPanel connection={connection} events={events} /> : null}
             </div>
           )}
         </div>

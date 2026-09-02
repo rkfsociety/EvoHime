@@ -1052,6 +1052,7 @@ export const RENDERER_COMMANDS = [
   'core.taskWorktreeIsolation',
   'core.teamResourceBudget',
   'core.composableTerminationConditions',
+  'core.workspaceBootstrapManifest',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1341,6 +1342,7 @@ export interface CommandPayloads {
   'core.taskWorktreeIsolation': { operation: 'create' | 'ready' | 'integrating' | 'cleanup_pending'; projectId: string; taskId: string; worktreeId: string; branch: string; baseCommit: string; expectedVersion?: number; idempotencyKey: string }
   'core.teamResourceBudget': { operation: 'validate_policy' | 'save_policy' | 'preflight' | 'save_state' | 'record_usage'; ownerScope: string; payload: string; expectedVersion?: number; idempotencyKey: string }
   'core.composableTerminationConditions': { operation: 'validate_policy' | 'save_policy' | 'evaluate' | 'save_state'; ownerScope: string; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'core.workspaceBootstrapManifest': { operation: 'validate' | 'discover' | 'save' | 'approve' | 'run'; projectId: string; workspaceId: string; payload: string; expectedVersion?: number; idempotencyKey: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
   'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
@@ -1814,6 +1816,7 @@ export interface CommandResults {
   'core.taskWorktreeIsolation': { accepted: boolean }
   'core.teamResourceBudget': { accepted: boolean }
   'core.composableTerminationConditions': { accepted: boolean }
+  'core.workspaceBootstrapManifest': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }
   'core.executeAnalysisKernel': { accepted: boolean }

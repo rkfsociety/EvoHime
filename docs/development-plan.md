@@ -318,3 +318,5 @@ replay-safe state, first-trigger evidence, hard-stop precedence, schema v61,
 authenticated IPC command 214/event 60 и metadata-only Electron projection.
 Контракт и подтверждённое состояние перенесены в
 `docs/architecture.md` и `docs/current-state.md`; комплект плана удалён.
+План 64 закрыт 2 сентября 2026 года. Следующий незавершённый этап выбирается
+из `docs/plans` по следующему номеру.

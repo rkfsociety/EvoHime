@@ -1582,3 +1582,20 @@ SQLite schema v61 stores policy and state with optimistic version fencing;
 authenticated additive IPC command 214/event 60 and the Electron panel expose
 only bounded metadata and validation/evaluation results. Renderer does not
 evaluate conditions or own termination authority.
+## Workspace Bootstrap Manifest v1 (план 64)
+
+Core принимает versioned `WorkspaceBootstrapManifest` только через
+authenticated additive IPC command 215/event 61. Manifest имеет bounded schema,
+SHA-256 content hash и явное описание шагов, executable identity,
+idempotency и network requirement. Discover читает только
+`.evohime/bootstrap.json` из уже выбранного проекта; Core повторно проверяет
+workspace scope, относительные пути и размер.
+
+SQLite schema v62 хранит manifest, trust decision и preparation cache по
+`workspace_id + manifest_hash + fingerprint`. Новый hash/fingerprint не
+наследует доверие или результат. Запуск возможен только для exact trusted hash;
+running lease single-flight, истёкший lease переводится в `unknown_outcome`, а
+повтор подготовленного exact cache возвращает bounded metadata. Процессы идут
+через существующий `ExecutionPolicyProfile`/Job Object boundary, с timeout,
+cancel-on-drop и scrubbed environment; network effects и неподдержанные file
+effects fail closed. Electron показывает только developer metadata projection.

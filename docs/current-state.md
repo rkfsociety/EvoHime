@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-09-01. Планы 01–25 завершены и
+Обновлено: 2026-09-02. Планы 01–25 завершены и
 удалены из каталога временных планов. План 19.0 добавил только пользовательский
 self-repair/self-update цикл; автоматического ремонта, push или перезапуска нет.
 Code signing явно исключён из текущего release scope.
@@ -823,3 +823,10 @@ version fence; authenticated IPC использует command 214/event 60, Elec
 показывает bounded metadata-only projection. Replay не удваивает counters,
 hard-stop не уступает continuation, а model/provider/tool authority не
 расширяется. Комплект `63-0` … `63-4` удалён после свежих regression gates.
+План 64 закрыт 2 сентября 2026 года: Workspace Bootstrap Manifest v1. Добавлены
+bounded Core manifest/validator, allowlisted discovery, exact trust/hash
+проверка, schema v62 preparation cache с fingerprint invalidation, single-flight
+lease и recovery в `unknown_outcome`. Запуск ограничен существующей
+ExecutionPolicy process boundary и не передаёт наружу raw output, environment,
+секреты или абсолютные пути. Authenticated IPC использует command 215/event 61,
+а Electron — metadata-only developer panel.

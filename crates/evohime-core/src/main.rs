@@ -771,6 +771,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
             "workflow.progress {run_id}: {} node={} attempt={} error={}",
             projection.event_type, projection.node_id, projection.attempt, projection.error_code
         ),
+        evohime_core::CoreEvent::WorkspaceBootstrapManifest { workspace_id, operation, status, .. } => println!(
+            "workspace_bootstrap_manifest.result {workspace_id}: {operation} {status}"
+        ),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             println!("review.history_cleared {marker_id}")
         }

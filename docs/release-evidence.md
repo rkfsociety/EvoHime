@@ -327,3 +327,16 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   desktop IPC tag 209, generated bindings, Core dispatch and the Electron
   developer panel cover all five explicit operations; restore conflicts are
   journaled and task projection restore remains independent from file restore.
+## Plan 64 — Workspace Bootstrap Manifest v1 (2026-09-02)
+
+- Contract/security: bounded schema and hash validation, allowlisted local
+  discovery, exact trust approval, relative-path checks, deny-by-default
+  network handling, and unsupported-effect fail-closed behavior.
+- Durability/recovery: additive SQLite schema v62, exact hash/fingerprint cache,
+  single-flight leases, stale lease fencing to `unknown_outcome`, and prepared
+  result deduplication.
+- IPC/UI: authenticated additive command 215/event 61, generated bindings, and
+  Electron developer panel with metadata-only event projection.
+- Checks: focused Core/storage tests, schema migration test, cargo check,
+  protocol generation/check, Electron typecheck, cargo format and diff-check.
+  Evidence contains no credentials, raw process output, environment or PII.

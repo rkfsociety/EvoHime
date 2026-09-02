@@ -55,6 +55,7 @@ pub mod toolkit_store;
 pub mod visual_workflow_builder_store;
 pub mod workflow_package_store;
 pub mod workflow_store;
+pub mod workspace_bootstrap_manifest_store;
 pub mod workspace_state_checkpoint;
 
 pub use backup::{
@@ -62,7 +63,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 61;
+pub const SCHEMA_VERSION: u32 = 62;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3615,6 +3616,10 @@ impl LocalDatabase {
             composable_termination_conditions_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 61;")?;
         }
+        if current < 62 {
+            workspace_bootstrap_manifest_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 62;")?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -3631,6 +3636,25 @@ mod tests {
 
     fn temp_database_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("evohime-test-{name}-{}.db", std::process::id()))
+    }
+
+    #[test]
+    fn schema_62_installs_workspace_bootstrap_tables() {
+        let path = temp_database_path("workspace-bootstrap-schema-62");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        assert_eq!(database.schema_version().expect("schema version"), 62);
+        let has_table: i64 = database
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='workspace_bootstrap_manifests'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("bootstrap table query");
+        assert_eq!(has_table, 1);
+        drop(database);
+        let _ = std::fs::remove_file(&path);
     }
 
     /// Clearing the review history must hide earlier runs from the list while

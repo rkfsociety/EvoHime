@@ -383,6 +383,20 @@ function dispatch(
       return accepted(client.send({ composableTerminationConditions: { schemaVersion: 1, requestId: randomUUID(), ownerScope, operation, payload: Buffer.from(budgetPayload, 'utf8'), expectedVersion, idempotencyKey } }))
     }
 
+    case 'core.workspaceBootstrapManifest': {
+      const value = asRecord(payload)
+      const operation = ['validate', 'discover', 'save', 'approve', 'run'].includes(String(value['operation'])) ? String(value['operation']) : null
+      const projectId = asBoundedString(value['projectId'])
+      const workspaceId = asBoundedString(value['workspaceId'])
+      const manifestPayload = value['payload'] === '' && operation === 'discover' ? '' : asBoundedString(value['payload'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion'])
+      if (operation === null || projectId === null || workspaceId === null || manifestPayload === null || idempotencyKey === null || expectedVersion === null || manifestPayload.length > 64 * 1024) {
+        return failure('invalid-payload', 'Некорректный Workspace Bootstrap Manifest.')
+      }
+      return accepted(client.send({ workspaceBootstrapManifest: { schemaVersion: 1, requestId: randomUUID(), projectId, workspaceId, operation, payload: Buffer.from(manifestPayload, 'utf8'), expectedVersion, idempotencyKey } }))
+    }
+
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)
       const taskId = asBoundedString(value['taskId'])

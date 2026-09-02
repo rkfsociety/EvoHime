@@ -3,6 +3,7 @@ pub struct CoreVersion;
 pub mod adaptive_tool_catalog;
 pub mod sensitive_data_guardrails;
 pub mod team_sop_protocols;
+pub mod workspace_bootstrap_manifest;
 
 pub const AGENT_IDENTITY_PROMPT: &str =
     "Ты — Ева, AI-агент приложения EvoHime. Ева — короткое имя EvoHime; понимай обращения к тебе «Ева» и «EvoHime» как к одному агенту.";
@@ -1264,6 +1265,15 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    WorkspaceBootstrapManifest {
+        operation: String,
+        project_id: String,
+        workspace_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -1879,6 +1889,16 @@ pub enum CoreEvent {
     WorkflowProgress {
         run_id: String,
         projection: Box<crate::workflow_runtime::WorkflowEventProjection>,
+    },
+    /// Bounded durable projection for workspace bootstrap lifecycle changes.
+    WorkspaceBootstrapManifest {
+        workspace_id: String,
+        operation: String,
+        status: String,
+        manifest_id: String,
+        revision: u64,
+        content_hash: String,
+        projection_json: String,
     },
     /// Marks the point after which review history is shown. The journal is
     /// append-only, so clearing hides earlier reviews instead of deleting them.
@@ -2953,6 +2973,7 @@ impl EventJournal {
             CoreEvent::ReviewHistoryCleared { marker_id } => marker_id,
             CoreEvent::ChildWorkflowProjection { task_id, .. } => task_id,
             CoreEvent::WorkflowProgress { run_id, .. } => run_id,
+            CoreEvent::WorkspaceBootstrapManifest { workspace_id, .. } => workspace_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -2974,6 +2995,7 @@ impl EventJournal {
             CoreEvent::ReviewHistoryCleared { .. } => "review.history_cleared",
             CoreEvent::ChildWorkflowProjection { .. } => "child.workflow",
             CoreEvent::WorkflowProgress { .. } => "workflow.progress",
+            CoreEvent::WorkspaceBootstrapManifest { .. } => "workspace_bootstrap_manifest.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -2990,6 +3012,9 @@ impl EventJournal {
             }
             CoreEvent::WorkflowProgress { projection, .. } => {
                 serde_json::to_vec(projection).expect("workflow projection serializes")
+            }
+            CoreEvent::WorkspaceBootstrapManifest { .. } => {
+                serde_json::to_vec(event).expect("bootstrap projection serializes")
             }
             _ => serde_json::to_vec(event).expect("core events serialize"),
         };
@@ -10866,6 +10891,183 @@ impl TaskCoordinator {
                         _ => Err("unsupported termination operation".to_string()),
                     }
                 }.await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::WorkspaceBootstrapManifest {
+                operation,
+                project_id,
+                workspace_id,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let event_operation = operation.clone();
+                let event_workspace_id = workspace_id.clone();
+                let result = async {
+                    if workspace_id.is_empty() || workspace_id.len() > crate::workspace_bootstrap_manifest::MAX_ID {
+                        return Err("invalid workspace_id".to_string());
+                    }
+                    let manifest_payload = if operation == "discover" && payload.is_empty() {
+                        let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                        let connection = journal.database().lock().await;
+                        let project = connection.get_project(&project_id).map_err(|e| e.to_string())?
+                            .ok_or_else(|| "project not found".to_string())?;
+                        let root = std::path::PathBuf::from(project.workspace_path);
+                        if crate::task_memory::workspace_scope_id(&root) != workspace_id {
+                            return Err("workspace identity mismatch".to_string());
+                        }
+                        std::fs::read(root.join(".evohime").join("bootstrap.json")).map_err(|_| "bootstrap manifest not found".to_string())?
+                    } else { payload };
+                    let manifest: crate::workspace_bootstrap_manifest::WorkspaceBootstrapManifest =
+                        serde_json::from_slice(&manifest_payload).map_err(|e| e.to_string())?;
+                    if manifest.workspace_id != workspace_id {
+                        return Err("workspace scope mismatch".to_string());
+                    }
+                    crate::workspace_bootstrap_manifest::validate_manifest(&manifest)
+                        .map_err(|e| e.to_string())?;
+                    match operation.as_str() {
+                        "validate" | "discover" | "save" | "approve" | "run" => {
+                            if operation == "save" {
+                                let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                                let connection = journal.database().lock().await;
+                                let json = serde_json::to_string(&manifest).map_err(|e| e.to_string())?;
+                                let saved = evohime_local_storage::workspace_bootstrap_manifest_store::put_manifest(
+                                    connection.connection(),
+                                    (&manifest.id, &manifest.workspace_id, manifest.revision, &manifest.content_hash, &json, "policy-v1", crate::task_memory::now_millis() as i64),
+                                ).map_err(|e| e.to_string())?;
+                                return serde_json::to_vec(&serde_json::json!({
+                                    "status": if saved { "saved" } else { "duplicate" },
+                                    "manifest_id": manifest.id,
+                                    "revision": manifest.revision,
+                                    "content_hash": manifest.content_hash,
+                                })).map_err(|e| e.to_string());
+                            }
+                            if operation == "run" {
+                                if idempotency_key.is_empty() {
+                                    return Err("idempotency key required".to_string());
+                                }
+                                let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                                {
+                                    let connection = journal.database().lock().await;
+                                    let trust = evohime_local_storage::workspace_bootstrap_manifest_store::manifest_trust(
+                                        connection.connection(), &manifest.id, manifest.revision,
+                                    ).map_err(|e| e.to_string())?;
+                                    if !matches!(trust, Some((status, hash)) if status == "trusted" && hash == manifest.content_hash) {
+                                        return Err("trust_required".to_string());
+                                    }
+                                }
+                                let root = {
+                                    let connection = journal.database().lock().await;
+                                    let project = connection.get_project(&project_id).map_err(|e| e.to_string())?
+                                        .ok_or_else(|| "project not found".to_string())?;
+                                    let root = std::path::PathBuf::from(project.workspace_path);
+                                    if crate::task_memory::workspace_scope_id(&root) != manifest.workspace_id {
+                                        return Err("workspace identity mismatch".to_string());
+                                    }
+                                    root
+                                };
+                                let now_ms = crate::task_memory::now_millis() as i64;
+                                let lease_id = uuid::Uuid::new_v4().to_string();
+                                let reserved = {
+                                    let connection = journal.database().lock().await;
+                                    let _ = evohime_local_storage::workspace_bootstrap_manifest_store::fence_expired_preparations(
+                                        connection.connection(), now_ms.saturating_sub(30 * 60 * 1000),
+                                    ).map_err(|e| e.to_string())?;
+                                    evohime_local_storage::workspace_bootstrap_manifest_store::reserve_preparation(
+                                        connection.connection(), &manifest.workspace_id, &manifest.id,
+                                        &manifest.content_hash, &manifest.content_hash, &lease_id,
+                                        now_ms,
+                                    ).map_err(|e| e.to_string())?
+                                };
+                                if !reserved {
+                                    let connection = journal.database().lock().await;
+                                    if let Some((_, status, version)) = evohime_local_storage::workspace_bootstrap_manifest_store::get_preparation(
+                                        connection.connection(), &manifest.workspace_id, &manifest.id,
+                                        &manifest.content_hash, &manifest.content_hash,
+                                    ).map_err(|e| e.to_string())? {
+                                        if expected_version != 0 && expected_version != version as u64 {
+                                            return Err("version_conflict".to_string());
+                                        }
+                                        if status == "prepared" {
+                                            return serde_json::to_vec(&serde_json::json!({"status": status, "manifest_id": manifest.id, "content_hash": manifest.content_hash, "idempotent": true})).map_err(|e| e.to_string());
+                                        }
+                                    }
+                                    return Err("already_running_or_prepared".to_string());
+                                }
+                                let run = crate::workspace_bootstrap_manifest::run_bounded(&root, &manifest).await;
+                                let (status, result_json, error) = match run {
+                                    Ok(results) => ("prepared", Some(serde_json::to_string(&results).map_err(|e| e.to_string())?), None),
+                                    Err(e) => (if matches!(e, crate::workspace_bootstrap_manifest::BootstrapManifestError::TimedOut) { "unknown_outcome" } else { "failed" }, None, Some(e.to_string())),
+                                };
+                                let connection = journal.database().lock().await;
+                                evohime_local_storage::workspace_bootstrap_manifest_store::complete_preparation(
+                                    connection.connection(), &manifest.workspace_id, &manifest.id, &lease_id,
+                                    status, result_json.as_deref(), crate::task_memory::now_millis() as i64,
+                                ).map_err(|e| e.to_string())?;
+                                if let Some(error) = error { return Err(error); }
+                                return serde_json::to_vec(&serde_json::json!({"status": status, "manifest_id": manifest.id, "content_hash": manifest.content_hash})).map_err(|e| e.to_string());
+                            }
+                            if operation == "approve" {
+                                let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                                let connection = journal.database().lock().await;
+                                let approved = evohime_local_storage::workspace_bootstrap_manifest_store::approve_manifest(
+                                    connection.connection(), &manifest.id, manifest.revision, &manifest.content_hash, "restricted-process-v1",
+                                ).map_err(|e| e.to_string())?;
+                                return serde_json::to_vec(&serde_json::json!({"status": if approved { "trusted" } else { "trust_unchanged" }, "manifest_id": manifest.id, "content_hash": manifest.content_hash})).map_err(|e| e.to_string());
+                            }
+                            serde_json::to_vec(&serde_json::json!({
+                            "status": if operation == "discover" { "pending_review" } else { "valid" },
+                            "manifest_id": manifest.id,
+                            "revision": manifest.revision,
+                            "content_hash": manifest.content_hash,
+                        })).map_err(|e| e.to_string())
+                        }
+                        _ => Err("unsupported workspace bootstrap operation".to_string()),
+                    }
+                }.await;
+                let event_payload = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|payload| serde_json::from_slice::<serde_json::Value>(payload).ok());
+                let event = CoreEvent::WorkspaceBootstrapManifest {
+                    workspace_id: event_workspace_id,
+                    operation: event_operation,
+                    status: event_payload
+                        .as_ref()
+                        .and_then(|value| value.get("status"))
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("failed")
+                        .to_owned(),
+                    manifest_id: event_payload
+                        .as_ref()
+                        .and_then(|value| value.get("manifest_id"))
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("")
+                        .to_owned(),
+                    revision: event_payload
+                        .as_ref()
+                        .and_then(|value| value.get("revision"))
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0),
+                    content_hash: event_payload
+                        .as_ref()
+                        .and_then(|value| value.get("content_hash"))
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("")
+                        .to_owned(),
+                    projection_json: event_payload
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "{}".into()),
+                };
+                let (journal, events) = {
+                    let guard = state.lock().await;
+                    (guard.journal.clone(), guard.events.clone())
+                };
+                if let Some(journal) = journal {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = events.send(event);
                 let _ = reply.send(result);
             }
             CoreCommand::GetTaskSnapshot {
