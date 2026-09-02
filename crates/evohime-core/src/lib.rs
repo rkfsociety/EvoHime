@@ -8222,23 +8222,19 @@ impl ToolAgent {
                     // response. Respect the one-tool-per-step contract and
                     // execute only the first new, valid safe call. The
                     // directory read below is also invalid for filesystem.read.
-                    if let Some(call) = parsed_legacy_calls
-                        .into_iter()
-                        .filter(|call| {
-                            let invalid_directory_read = call.name == "filesystem.read"
-                                && serde_json::from_str::<serde_json::Value>(&call.arguments)
-                                    .ok()
-                                    .and_then(|value| {
-                                        value
-                                            .get("path")
-                                            .and_then(|path| path.as_str())
-                                            .map(str::to_string)
-                                    })
-                                    .is_some_and(|path| path == ".");
-                            !invalid_directory_read
-                        })
-                        .next()
-                    {
+                    if let Some(call) = parsed_legacy_calls.into_iter().find(|call| {
+                        let invalid_directory_read = call.name == "filesystem.read"
+                            && serde_json::from_str::<serde_json::Value>(&call.arguments)
+                                .ok()
+                                .and_then(|value| {
+                                    value
+                                        .get("path")
+                                        .and_then(|path| path.as_str())
+                                        .map(str::to_string)
+                                })
+                                .is_some_and(|path| path == ".");
+                        !invalid_directory_read
+                    }) {
                         tool_calls.push(call);
                     }
                 }
@@ -8424,7 +8420,8 @@ impl ToolAgent {
                 }
                 if final_message.trim().is_empty() {
                     final_message =
-                        "Не удалось получить текстовый итог от модели после выполнения задачи.".into();
+                        "Не удалось получить текстовый итог от модели после выполнения задачи."
+                            .into();
                 }
                 if let (Some(journal), Some((search, initial_context))) =
                     (&self.journal, rag_validation.take())
