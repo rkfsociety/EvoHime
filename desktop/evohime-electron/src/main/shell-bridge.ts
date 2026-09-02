@@ -452,6 +452,11 @@ function dispatch(
       if(operation===null||capability===null||busPayload===null||idempotencyKey===null||capability.length>128||busPayload.length>64*1024)return failure('invalid-payload','Некорректная операция Core Topic Bus.')
       return accepted(client.send({coreTopicSubscriptionEventBus:{schemaVersion:1,requestId:randomUUID(),operation,capability,payload:Buffer.from(busPayload,'utf8'),idempotencyKey}}))
     }
+    case 'core.dependencyAwareTaskGraph': {
+      const value=asRecord(payload); const operation=['create','get','validate','apply_patch'].includes(String(value['operation']))?String(value['operation']):null; const graphId=asBoundedString(value['graphId']); const graphPayload=asBoundedString(value['payload']); const expectedRevision=value['expectedRevision']===undefined?0:asNonNegativeInteger(value['expectedRevision']); const grants=Array.isArray(value['grants'])&&value['grants'].every(item=>typeof item==='string')?value['grants'] as string[]:[];
+      if(operation===null||graphId===null||graphPayload===null||expectedRevision===null||graphId.length>128||graphPayload.length>512*1024||grants.length>256)return failure('invalid-payload','Некорректная операция графа задач.')
+      return accepted(client.send({dependencyAwareTaskGraph:{schemaVersion:1,requestId:randomUUID(),operation,graphId,payload:Buffer.from(graphPayload,'utf8'),expectedRevision,grants}}))
+    }
 
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)

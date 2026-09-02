@@ -798,6 +798,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::CoreTopicSubscriptionEventBus { operation, .. } => println!(
             "core_topic_subscription_event_bus.result: {operation}"
         ),
+        evohime_core::CoreEvent::DependencyAwareTaskGraph { graph_id, operation, revision, .. } => println!(
+            "dependency_aware_task_graph.result {graph_id}: {operation} revision={revision}"
+        ),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             println!("review.history_cleared {marker_id}")
         }

@@ -3,6 +3,7 @@ pub struct CoreVersion;
 pub mod adaptive_tool_catalog;
 pub mod code_diagnostics_feedback_loop;
 pub mod core_topic_subscription_event_bus;
+pub mod dependency_aware_task_graph;
 pub mod experience_replay_library;
 pub mod schema_driven_agent_configuration;
 pub mod sensitive_data_guardrails;
@@ -1347,6 +1348,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    DependencyAwareTaskGraph {
+        operation: String,
+        graph_id: String,
+        payload: Vec<u8>,
+        expected_revision: u64,
+        grants: Vec<String>,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -2011,6 +2020,12 @@ pub enum CoreEvent {
     },
     CoreTopicSubscriptionEventBus {
         operation: String,
+        projection_json: String,
+    },
+    DependencyAwareTaskGraph {
+        graph_id: String,
+        operation: String,
+        revision: u64,
         projection_json: String,
     },
     /// Bounded durable routing decision projection.
@@ -3105,6 +3120,7 @@ impl EventJournal {
             } => workspace_root_id,
             CoreEvent::WorkflowOptimizationLab { run_id, .. } => run_id,
             CoreEvent::CoreTopicSubscriptionEventBus { .. } => "core-topic-bus",
+            CoreEvent::DependencyAwareTaskGraph { graph_id, .. } => graph_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3141,6 +3157,7 @@ impl EventJournal {
             CoreEvent::CoreTopicSubscriptionEventBus { .. } => {
                 "core_topic_subscription_event_bus.result"
             }
+            CoreEvent::DependencyAwareTaskGraph { .. } => "dependency_aware_task_graph.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -11634,6 +11651,44 @@ impl TaskCoordinator {
                     .unwrap_or_else(|| "{}".into());
                 let event = CoreEvent::CoreTopicSubscriptionEventBus {
                     operation,
+                    projection_json,
+                };
+                let journal = state.lock().await.journal.clone();
+                if let Some(journal) = journal {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::DependencyAwareTaskGraph {
+                operation,
+                graph_id,
+                payload,
+                expected_revision,
+                grants,
+                reply,
+            } => {
+                let result = async {
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    use evohime_local_storage::dependency_aware_task_graph_store as store;
+                    match operation.as_str() {
+                        "validate" => { let graph: crate::dependency_aware_task_graph::TaskGraph = serde_json::from_slice(&payload).map_err(|_| "invalid_graph".to_string())?; crate::dependency_aware_task_graph::validate(&graph, &grants).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"valid","ready":crate::dependency_aware_task_graph::ready_set(&graph),"revision":graph.revision})).map_err(|e|e.to_string()) }
+                        "get" => store::get(database.connection(), &graph_id).map_err(|e|e.to_string())?.ok_or_else(|| "graph_not_found".to_string()),
+                        "create" => { let graph: crate::dependency_aware_task_graph::TaskGraph=serde_json::from_slice(&payload).map_err(|_|"invalid_graph".to_string())?; crate::dependency_aware_task_graph::validate(&graph,&grants).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&graph).map_err(|e|e.to_string())?; if !store::put(database.connection(),&graph_id,graph.revision,&json,&graph.content_hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())? { return Err("graph_exists".into()); } Ok(json) }
+                        "apply_patch" => { let bytes=store::get(database.connection(),&graph_id).map_err(|e|e.to_string())?.ok_or_else(||"graph_not_found".to_string())?; let current: crate::dependency_aware_task_graph::TaskGraph=serde_json::from_slice(&bytes).map_err(|_|"corrupt_graph".to_string())?; let ops: Vec<crate::dependency_aware_task_graph::PatchOp>=serde_json::from_slice(&payload).map_err(|_|"invalid_patch".to_string())?; let next=crate::dependency_aware_task_graph::apply_patch(current,&ops,expected_revision,&grants).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&next).map_err(|e|e.to_string())?; if !store::replace(database.connection(),&graph_id,expected_revision,next.revision,&json,&next.content_hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())? { return Err("stale_graph_revision".into()); } Ok(json) }
+                        _ => Err("unsupported_task_graph_operation".into())
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::DependencyAwareTaskGraph {
+                    graph_id,
+                    operation,
+                    revision: expected_revision,
                     projection_json,
                 };
                 let journal = state.lock().await.journal.clone();

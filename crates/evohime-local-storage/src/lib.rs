@@ -28,6 +28,7 @@ pub mod context_ledger_store;
 pub mod continuation_store;
 pub mod conversation_event_log_store;
 pub mod core_topic_subscription_event_bus_store;
+pub mod dependency_aware_task_graph_store;
 pub mod event_trigger_runtime_store;
 pub mod execution_backend_registry_store;
 pub mod execution_ledger;
@@ -70,7 +71,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 69;
+pub const SCHEMA_VERSION: u32 = 70;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3655,6 +3656,10 @@ impl LocalDatabase {
             core_topic_subscription_event_bus_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 69;")?;
         }
+        if current < 70 {
+            dependency_aware_task_graph_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 70;")?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -3674,11 +3679,11 @@ mod tests {
     }
 
     #[test]
-    fn schema_69_installs_configuration_experience_diagnostics_and_bus_tables() {
+    fn schema_70_installs_configuration_experience_diagnostics_and_task_graph_tables() {
         let path = temp_database_path("experience-replay-schema-66");
         let _ = std::fs::remove_file(&path);
         let database = LocalDatabase::open(&path).expect("database opens");
-        assert_eq!(database.schema_version().expect("schema version"), 69);
+        assert_eq!(database.schema_version().expect("schema version"), 70);
         let has_table: i64 = database
             .connection()
             .query_row(

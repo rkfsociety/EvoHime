@@ -1874,6 +1874,7 @@ message CommandEnvelope {
     CodeDiagnosticsFeedbackLoopCommand code_diagnostics_feedback_loop = 221;
     WorkflowOptimizationLabCommand workflow_optimization_lab = 222;
     CoreTopicSubscriptionEventBusCommand core_topic_subscription_event_bus = 223;
+    DependencyAwareTaskGraphCommand dependency_aware_task_graph = 224;
   }
 }
 
@@ -1992,6 +1993,7 @@ message EventEnvelope {
     CodeDiagnosticsFeedbackLoopEvent code_diagnostics_feedback_loop = 66;
     WorkflowOptimizationLabEvent workflow_optimization_lab = 67;
     CoreTopicSubscriptionEventBusEvent core_topic_subscription_event_bus = 68;
+    DependencyAwareTaskGraphEvent dependency_aware_task_graph = 69;
   }
 }
 
@@ -2337,6 +2339,16 @@ message CoreTopicSubscriptionEventBusCommand {
   string capability = 4; bytes payload = 5; string idempotency_key = 6;
 }
 message CoreTopicSubscriptionEventBusEvent {
+  uint32 schema_version = 1; string request_id = 2; string operation = 3;
+  string status = 4; uint64 revision = 5; bytes projection_json = 6;
+  string error_code = 7;
+}
+message DependencyAwareTaskGraphCommand {
+  uint32 schema_version = 1; string request_id = 2; string operation = 3;
+  string graph_id = 4; bytes payload = 5; uint64 expected_revision = 6;
+  repeated string grants = 7;
+}
+message DependencyAwareTaskGraphEvent {
   uint32 schema_version = 1; string request_id = 2; string operation = 3;
   string status = 4; uint64 revision = 5; bytes projection_json = 6;
   string error_code = 7;

@@ -59,6 +59,7 @@ import { RuntimeInterventionPipelinePanel } from './RuntimeInterventionPipelineP
 import { CodeDiagnosticsFeedbackLoopPanel } from './CodeDiagnosticsFeedbackLoopPanel'
 import { WorkflowOptimizationLabPanel } from './WorkflowOptimizationLabPanel'
 import { CoreTopicSubscriptionEventBusPanel } from './CoreTopicSubscriptionEventBusPanel'
+import { DependencyAwareTaskGraphPanel } from './DependencyAwareTaskGraphPanel'
 import { WorkbenchPanel } from './WorkbenchPanel'
 import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
 
@@ -85,7 +86,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'core-topic-subscription-event-bus'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'core-topic-subscription-event-bus' | 'dependency-aware-task-graph'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -125,6 +126,7 @@ const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'code-diagnostics-feedback-loop', label: 'Code Diagnostics', icon: '⌁' },
   { id: 'workflow-optimization-lab', label: 'Workflow Lab', icon: '◌' },
   { id: 'core-topic-subscription-event-bus', label: 'Topic Bus', icon: '⇆' },
+  { id: 'dependency-aware-task-graph', label: 'Task Graph', icon: '◇' },
   { id: 'packages', label: 'Workflow Package', icon: '⇄' },
   { id: 'benchmarks', label: 'Бенчмарки', icon: '▦' },
   { id: 'middleware', label: 'Middleware', icon: '◇' },
@@ -472,6 +474,7 @@ export function App(): React.JSX.Element {
               {view === 'code-diagnostics-feedback-loop' ? <CodeDiagnosticsFeedbackLoopPanel connection={connection} /> : null}
               {view === 'workflow-optimization-lab' ? <WorkflowOptimizationLabPanel connection={connection} /> : null}
               {view === 'core-topic-subscription-event-bus' ? <CoreTopicSubscriptionEventBusPanel connection={connection} /> : null}
+              {view === 'dependency-aware-task-graph' ? <DependencyAwareTaskGraphPanel connection={connection} /> : null}
             </div>
           )}
         </div>

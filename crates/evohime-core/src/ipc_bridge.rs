@@ -2598,6 +2598,18 @@ impl IpcBridge {
                     self.write_response(writer, "core_topic_subscription_event_bus.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::DependencyAwareTaskGraph(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "get".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_dependency_aware_task_graph(operation, request)
+                        .await?;
+                    self.write_response(writer, "dependency_aware_task_graph.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -7189,6 +7201,34 @@ impl IpcBridge {
                 payload: request.payload,
                 capability: request.capability,
                 idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_dependency_aware_task_graph(
+        &self,
+        operation: String,
+        request: generated::DependencyAwareTaskGraphCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::DependencyAwareTaskGraph {
+                operation,
+                graph_id: request.graph_id,
+                payload: request.payload,
+                expected_revision: request.expected_revision,
+                grants: request.grants,
                 reply,
             })
             .await

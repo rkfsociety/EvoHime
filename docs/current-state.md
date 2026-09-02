@@ -877,3 +877,9 @@ capability checks, durable SQLite schema v69, ACK/NACK/retry/dead-letter,
 backpressure bounds и restart reconciliation. Authenticated IPC command 223 /
 event 68 и Electron metadata-only panel не расширяют authority; внешний broker
 не требуется.
+План 73 закрыт 2 сентября 2026 года: Dependency-Aware Task Graph v1.
+Добавлены bounded typed tasks/dependencies, DAG validation, deterministic
+ready-set, immutable completed revisions, atomic semantic replan patch и
+downstream-only invalidation. Durable SQLite schema v70, authenticated IPC
+command 224/event 69 и metadata-only Electron panel проверены; renderer не
+владеет графом и не запускает effects.

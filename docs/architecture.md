@@ -1690,3 +1690,15 @@ SQLite schema v69 с bounded queue/in-flight policy, ACK/NACK, максимум 
 проверяют capability и не дают renderer unrestricted access или внешнего broker.
 Authenticated additive IPC использует command 223/event 68, Electron получает
 только bounded metadata projection.
+
+## Dependency-Aware Task Graph v1 (план 73)
+
+Core-owned `TaskGraph` хранит versioned `ExecutionTask` и typed
+`TaskDependency`, валидирует bounded DAG, unknown references, cycles и grants
+ceiling, а ready-set вычисляется детерминированно. Semantic patch из bounded
+операций применяется атомарно с optimistic revision fencing; completed tasks
+immutable, а изменения инвалидируют только downstream-ветви. Граф хранится в
+SQLite schema v70, после restart восстанавливается из durable state.
+Authenticated additive IPC использует command 224/event 69, Electron получает
+только metadata-only projection и не вычисляет state machine или не запускает
+effects.

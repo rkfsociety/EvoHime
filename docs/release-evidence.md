@@ -365,6 +365,20 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Checks: focused contract/recovery/storage tests, schema migration, cargo
   check/clippy, protocol check, Electron typecheck and full Electron regression.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
+## Plan 73 — Dependency-Aware Task Graph v1 (2026-09-02)
+
+- Contract: bounded typed execution tasks/dependencies, DAG validation,
+  deterministic ready-set, typed statuses, grants ceiling and immutable
+  completed revisions.
+- Replanning: atomic revision-fenced semantic patch; unknown references and
+  cycles reject the whole patch; only downstream non-completed tasks become
+  invalidated.
+- Durability/IPC/UI: SQLite schema v70, authenticated additive command 224 /
+  event 69 and Electron metadata-only graph projection; renderer has no graph
+  authority or effect execution.
+- Checks: focused Rust graph tests, schema migration test, cargo check/clippy,
+  protocol check, Electron typecheck and full Electron regression. Evidence
+  excludes secrets, raw prompts/outputs, absolute paths and PII.
 ## Plan 71 — Workflow Optimization Lab v1 (2026-09-02)
 
 - Contract: bounded versioned OptimizationRun/Candidate, declarative mutations,
