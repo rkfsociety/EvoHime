@@ -117,6 +117,9 @@ jobs:
         with:
           toolchain: stable-x86_64-pc-windows-msvc
           components: rustfmt, clippy
+      - name: Runtime Stall Guard — static report
+        shell: pwsh
+        run: ./scripts/runtime-stall-guard.tests.ps1
       - name: Проверка форматирования Rust
         run: cargo fmt --all -- --check
       - name: Проверка lint всего Rust workspace

@@ -959,6 +959,11 @@ Core-owned bounded baseline, attribution и immutable commit-candidate metadata,
 durable schema 79, additive IPC 233/78, Electron projection и безопасные
 typed refusals для commit/undo без preflight. Проверены focused Rust tests,
 clippy, protocol/typecheck и `git diff --check`.
+План 90 закрыт 2 сентября 2026 года: Runtime Stall Guard добавил bounded
+static detector `scripts/runtime-stall-guard.ps1`, fingerprint-based
+suppression metadata, redacted JSON report и CI gate в Windows workflow.
+Локальный smoke `scripts/runtime-stall-guard.tests.ps1` пройден; detector не
+исполняет найденный код и не пишет absolute paths или sensitive payload.
 План 103 закрыт 2 сентября 2026 года через подтверждённое переиспользование
 Capability Workbench v1 (план 78): versioned descriptor/session, lifecycle,
 scope/concurrency, leases, reset/degraded recovery, capability filtering и

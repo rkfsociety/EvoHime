@@ -1888,3 +1888,13 @@ refs; process handles, secrets и private backend state исключены. Rese
 stale revision, capability denial, lease expiry и unknown/unavailable outcomes
 обрабатываются Core handler-ом и metadata-only Electron projection. Новый
 параллельный authority для плана 103 не создаётся.
+
+## Runtime Stall Guard (план 90)
+
+`scripts/runtime-stall-guard.ps1` выполняет только чтение исходников и строит
+bounded JSON report по известным sync filesystem/process/sleep/network/database
+API. Каждое finding получает стабильный fingerprint; suppression допускается
+только с явной причиной. Detector не исполняет найденный код, не сохраняет
+absolute paths/arguments и не является доказательством регрессии. Windows CI
+отдельно запускает smoke gate; подтверждённые runtime anchors остаются
+обычными focused tests production paths.

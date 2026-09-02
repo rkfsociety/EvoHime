@@ -373,6 +373,9 @@ Electron projection/panel и focused/full verification. Комплект `78-0` 
 План 102 закрыт 2 сентября 2026 года. Agent Git Change Sets v1 перенесён в
 Core/storage/IPC/UI; комплект плана удалён после проверки bounded attribution,
 storage migration, redaction и отказов неизвестных Git effects.
+План 90 закрыт 2 сентября 2026 года. Runtime Stall Guard перенесён в scripts
+и Windows CI: static findings отделены от runtime gates, отчёт bounded и
+fingerprint-based suppressions reviewable.
 План 103 закрыт 2 сентября 2026 года evidence-проверкой существующего
 Capability Workbench v1: требования Stateful Tool Workbench Sessions покрыты
 его контрактом и adapters, поэтому отдельные дублирующие типы не создавались.

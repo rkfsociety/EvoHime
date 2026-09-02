@@ -604,6 +604,14 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Commit/undo/keep effects refuse without explicit Git preflight; no shared
   index, force operation, automatic push or secret payload.
 
+## Plan 90 — Runtime Stall Guard (2026-09-02)
+
+- Static detector scans known sync filesystem/process/sleep/network/database
+  APIs and emits a bounded machine-readable JSON report.
+- Findings carry stable fingerprints and explicit suppression reason; report
+  excludes absolute paths and sensitive arguments. Detector never executes code.
+- Windows CI runs the smoke gate; local `runtime-stall-guard.tests.ps1` passed.
+
 ## Plan 103 — Stateful Tool Workbench Sessions (2026-09-02)
 
 - Existing Capability Workbench v1 is the authoritative implementation:
