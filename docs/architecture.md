@@ -1918,3 +1918,12 @@ host renderer. Projection bounded и sensitivity-filtered, действия ос
 Core-owned. SQLite schema v81 и authenticated additive IPC command 235/event 80
 хранят только metadata/descriptor state; arbitrary HTML/JS и raw payload не
 передаются renderer.
+
+## Context Mentions v1 (план 82)
+
+Explicit user-authored `@` mentions проходят Core lexer и переиспользуют
+Typed Context References v1: file/folder/git/diagnostics/terminal/artifact
+refs, canonical revision/hash и bounded projection. Imported/tool/model text не
+разрешается автоматически; mention не расширяет capabilities и unknown syntax
+не регистрирует resolver. Resolver остаётся Core authority, renderer получает
+только chips/projection.

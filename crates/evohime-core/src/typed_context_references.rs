@@ -9,6 +9,57 @@ pub const MAX_LOCATOR: usize = 64 * 1024;
 pub const MAX_PROJECTED_BYTES: usize = 512 * 1024;
 pub const MAX_METADATA_BYTES: usize = 128 * 1024;
 pub const MAX_TERMINAL_BYTES: usize = 32 * 1024;
+pub const MAX_MENTIONS_PER_MESSAGE: usize = 32;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ContextMention {
+    pub raw: String,
+    pub kind: RefKind,
+    pub locator: String,
+    pub display_label: String,
+}
+
+/// Parses only explicit user-authored text. Imported/tool/model text must pass
+/// `explicit_user_authored = false` and therefore cannot trigger resolution.
+pub fn parse_mentions(text: &str, explicit_user_authored: bool) -> Vec<ContextMention> {
+    if !explicit_user_authored {
+        return Vec::new();
+    }
+    text.split_whitespace()
+        .filter_map(|token| {
+            let value = token.trim_matches(|c: char| c == ',' || c == '.' || c == ')' || c == ']');
+            let (kind, locator) = if let Some(v) = value.strip_prefix("@folder:") {
+                (RefKind::Folder, v)
+            } else if let Some(v) = value.strip_prefix("@git:commit:") {
+                (RefKind::GitCommit, v)
+            } else if value == "@git:changes" {
+                (RefKind::GitDiff, "HEAD")
+            } else if let Some(v) = value.strip_prefix("@diagnostics:") {
+                (RefKind::Diagnostics, v)
+            } else if let Some(v) = value.strip_prefix("@terminal:") {
+                (RefKind::TerminalRange, v)
+            } else if let Some(v) = value.strip_prefix("@artifact:") {
+                (RefKind::Artifact, v)
+            } else {
+                (RefKind::File, value.strip_prefix('@')?)
+            };
+            if locator.is_empty()
+                || locator.len() > MAX_LOCATOR
+                || locator.contains("..")
+                || locator.chars().any(char::is_control)
+            {
+                return None;
+            }
+            Some(ContextMention {
+                raw: value.into(),
+                kind,
+                locator: locator.into(),
+                display_label: locator.into(),
+            })
+        })
+        .take(MAX_MENTIONS_PER_MESSAGE)
+        .collect()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RefKind {
@@ -241,5 +292,16 @@ mod tests {
         x.kind = RefKind::UrlReadOnly;
         x.locator = "https://127.0.0.1/a".into();
         assert_eq!(validate_ref(&x), Err(ContextRefError::UnsafeLocator))
+    }
+    #[test]
+    fn parses_only_explicit_user_mentions() {
+        let mentions = parse_mentions(
+            "@src/lib.rs @folder:crates @git:changes @artifact:report",
+            true,
+        );
+        assert_eq!(mentions.len(), 4);
+        assert_eq!(mentions[1].kind, RefKind::Folder);
+        assert!(parse_mentions("@folder:../secret", true).is_empty());
+        assert!(parse_mentions("@src/secrets", false).is_empty());
     }
 }

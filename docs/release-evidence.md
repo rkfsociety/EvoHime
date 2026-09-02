@@ -640,4 +640,13 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   security rendering; renderer receives projection/action metadata only.
 - Evidence: focused Rust tests, storage round-trip, clippy `-D warnings`,
   protocol check, typecheck, full Electron regression (528 passed, 2 skipped),
-  native package smoke and `git diff --check`.
+native package smoke and `git diff --check`.
+
+## Plan 82 — Context Mentions (2026-09-02)
+
+- Explicit user-only lexer covers file/folder/git/diagnostics/terminal/artifact
+  syntax and rejects traversal/control/oversized locators.
+- Core reuses Typed Context References v1 for revision/hash, sensitivity and
+  bounded projections; untrusted imported text cannot trigger expansion.
+- Evidence: three focused Core tests, clippy `-D warnings`, full Electron
+  regression (528 passed, 2 skipped), native smoke and `git diff --check`.

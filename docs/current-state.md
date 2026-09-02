@@ -981,3 +981,8 @@ Core-owned versioned descriptors/matchers, built-in tool/file/test/workflow/
 artifact visualizers, deterministic generic fallback, bounded storage и
 additive IPC/UI projection. Расширения не получают capability и не могут
 вытеснить host-controlled security renderers.
+
+План 82 закрыт 2 сентября 2026 года: explicit-user-only Context Mentions
+подключены к Typed Context References v1 для file/folder/git/diagnostics/
+terminal/artifact, с traversal fence и отрицательным тестом для untrusted
+imported content. Новая surface не создаёт второй resolver authority.

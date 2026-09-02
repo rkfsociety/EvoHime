@@ -12064,12 +12064,28 @@ impl TaskCoordinator {
                 reply,
             } => {
                 let result = async {
+                    if operation == "parse" {
+                        return serde_json::to_vec(
+                            &crate::typed_context_references::parse_mentions(
+                                std::str::from_utf8(&payload).unwrap_or_default(),
+                                true,
+                            ),
+                        )
+                        .map_err(|e| e.to_string());
+                    }
                     let reference: crate::typed_context_references::ContextRef =
                         serde_json::from_slice(&payload)
                             .map_err(|_| "invalid_context_ref".to_string())?;
                     crate::typed_context_references::validate_ref(&reference)
                         .map_err(|e| e.to_string())?;
                     let resolved = match operation.as_str() {
+                        "parse" => {
+                            serde_json::to_vec(&crate::typed_context_references::parse_mentions(
+                                std::str::from_utf8(&payload).unwrap_or_default(),
+                                true,
+                            ))
+                            .map_err(|e| e.to_string())?
+                        }
                         "resolve" => serde_json::to_vec(
                             &crate::typed_context_references::resolve(
                                 &reference,

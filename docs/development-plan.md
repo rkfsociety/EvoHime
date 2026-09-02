@@ -387,3 +387,7 @@ contract, migration, drift, protocol, typecheck и Electron verification checks.
 План 81 закрыт 2 сентября 2026 года. Event Visualizer Registry v1 перенесён в
 Core/storage/IPC/UI; комплект `81-0` … `81-4` удалён после contract, fallback,
 storage, protocol, typecheck и Electron verification checks.
+
+План 82 закрыт 2 сентября 2026 года. Context Mentions перенесены в
+Typed Context References/Core boundary; комплект `82-0` … `82-4` удалён после
+parser, security, focused Rust, clippy, protocol/typecheck и regression checks.
