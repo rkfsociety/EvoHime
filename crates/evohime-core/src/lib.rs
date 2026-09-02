@@ -1,6 +1,7 @@
 pub struct CoreVersion;
 
 pub mod adaptive_tool_catalog;
+pub mod code_diagnostics_feedback_loop;
 pub mod experience_replay_library;
 pub mod schema_driven_agent_configuration;
 pub mod sensitive_data_guardrails;
@@ -1320,6 +1321,15 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    CodeDiagnosticsFeedbackLoop {
+        operation: String,
+        workspace_root_id: String,
+        payload: Vec<u8>,
+        baseline_snapshot_id: String,
+        expected_revision: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -1968,6 +1978,12 @@ pub enum CoreEvent {
     RuntimeInterventionPipeline {
         run_id: String,
         operation: String,
+        projection_json: String,
+    },
+    CodeDiagnosticsFeedbackLoop {
+        workspace_root_id: String,
+        operation: String,
+        revision: u64,
         projection_json: String,
     },
     /// Bounded durable routing decision projection.
@@ -3057,6 +3073,9 @@ impl EventJournal {
             CoreEvent::SchemaDrivenAgentConfiguration { scope, .. } => scope,
             CoreEvent::ExperienceReplayLibrary { scope, .. } => scope,
             CoreEvent::RuntimeInterventionPipeline { run_id, .. } => run_id,
+            CoreEvent::CodeDiagnosticsFeedbackLoop {
+                workspace_root_id, ..
+            } => workspace_root_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3086,6 +3105,9 @@ impl EventJournal {
             }
             CoreEvent::ExperienceReplayLibrary { .. } => "experience_replay_library.result",
             CoreEvent::RuntimeInterventionPipeline { .. } => "runtime_intervention_pipeline.result",
+            CoreEvent::CodeDiagnosticsFeedbackLoop { .. } => {
+                "code_diagnostics_feedback_loop.result"
+            }
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -11458,6 +11480,46 @@ impl TaskCoordinator {
                 let event = CoreEvent::RuntimeInterventionPipeline {
                     run_id,
                     operation,
+                    projection_json,
+                };
+                let journal = state.lock().await.journal.clone();
+                if let Some(journal) = journal {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::CodeDiagnosticsFeedbackLoop {
+                operation,
+                workspace_root_id,
+                payload,
+                baseline_snapshot_id,
+                expected_revision,
+                idempotency_key: _,
+                reply,
+            } => {
+                let event_operation = operation.clone();
+                let result = async {
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    use evohime_local_storage::code_diagnostics_feedback_loop_store as store;
+                    match operation.as_str() {
+                        "register_provider" => { let p: crate::code_diagnostics_feedback_loop::Provider = serde_json::from_slice(&payload).map_err(|_| "invalid_provider".to_string())?; crate::code_diagnostics_feedback_loop::validate_provider(&p).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&p).map_err(|e|e.to_string())?; let saved=store::put_provider(database.connection(),&p.id,&json,&p.content_hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":if saved {"registered"} else {"duplicate"},"provider_id":p.id,"revision":1})).map_err(|e|e.to_string()) }
+                        "snapshot" => { let s: crate::code_diagnostics_feedback_loop::Snapshot=serde_json::from_slice(&payload).map_err(|_| "invalid_snapshot".to_string())?; crate::code_diagnostics_feedback_loop::validate_snapshot(&s).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&s).map_err(|e|e.to_string())?; let saved=store::put_snapshot(database.connection(),&s.id,&s.workspace_fingerprint,&json,&s.content_hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":if saved {"stored"} else {"duplicate"},"snapshot_id":s.id,"revision":1})).map_err(|e|e.to_string()) }
+                        "delta" => { let current: crate::code_diagnostics_feedback_loop::Snapshot=serde_json::from_slice(&payload).map_err(|_| "invalid_snapshot".to_string())?; let baseline_json=store::get_snapshot(database.connection(),&baseline_snapshot_id).map_err(|e|e.to_string())?.ok_or_else(|| "baseline_not_found".to_string())?; let baseline: crate::code_diagnostics_feedback_loop::Snapshot=serde_json::from_slice(&baseline_json).map_err(|_| "invalid_baseline".to_string())?; let d=crate::code_diagnostics_feedback_loop::delta(&baseline,&current).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&d).map_err(|e|e.to_string())?; let id=format!("{}:{}",baseline.id,current.id); let _=store::put_delta(database.connection(),&id,&baseline.id,&current.id,&json,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"ok","revision":expected_revision.saturating_add(1),"delta":d})).map_err(|e|e.to_string()) }
+                        "gate" => { let s: crate::code_diagnostics_feedback_loop::Snapshot=serde_json::from_slice(&payload).map_err(|_| "invalid_snapshot".to_string())?; crate::code_diagnostics_feedback_loop::validate_snapshot(&s).map_err(|e|e.to_string())?; let errors=s.diagnostics.iter().filter(|d|!d.stale && d.severity=="error").count(); serde_json::to_vec(&serde_json::json!({"status":if errors==0 {"passed"} else {"blocked"},"error_count":errors,"revision":expected_revision})).map_err(|e|e.to_string()) }
+                        _ => Err("unsupported_diagnostics_operation".into()),
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::CodeDiagnosticsFeedbackLoop {
+                    workspace_root_id,
+                    operation: event_operation,
+                    revision: expected_revision,
                     projection_json,
                 };
                 let journal = state.lock().await.journal.clone();

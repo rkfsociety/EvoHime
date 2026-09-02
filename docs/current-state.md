@@ -859,3 +859,9 @@ external publish, добавлены explicit pause/abort decisions, fail-closed
 metadata и bounded reentrancy guard. Authenticated IPC command 220/event 65 и
 Electron developer panel показывают только безопасную диагностику; renderer не
 регистрирует authoritative handlers.
+План 70 закрыт 2 сентября 2026 года: Code Diagnostics Feedback Loop v1.
+Добавлены Core-owned provider registry, versioned diagnostics с canonical
+workspace/file binding, durable SQLite schema v67, snapshots и deterministic
+introduced/resolved/persisting delta, typed quality gate, authenticated IPC
+command 221/event 66 и Electron Problems projection. Stale refs, oversized или
+неcanonical input отклоняются; renderer не получает authority или raw output.

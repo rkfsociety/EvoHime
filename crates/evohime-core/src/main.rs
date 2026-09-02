@@ -789,6 +789,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::RuntimeInterventionPipeline { run_id, operation, .. } => println!(
             "runtime_intervention_pipeline.result {run_id}: {operation}"
         ),
+        evohime_core::CoreEvent::CodeDiagnosticsFeedbackLoop { workspace_root_id, operation, revision, .. } => println!(
+            "code_diagnostics_feedback_loop.result {workspace_root_id}: {operation} revision={revision}"
+        ),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             println!("review.history_cleared {marker_id}")
         }

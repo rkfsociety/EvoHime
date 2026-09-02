@@ -436,6 +436,12 @@ function dispatch(
       if (String(value['operation'] ?? 'evaluate') !== 'evaluate' || runId === null || interventionPayload === null || idempotencyKey === null || runId.length > 256 || interventionPayload.length > 256 * 1024) return failure('invalid-payload', 'Некорректная операция Runtime Intervention Pipeline.')
       return accepted(client.send({ runtimeInterventionPipeline: { schemaVersion: 1, requestId: randomUUID(), operation: 'evaluate', runId, payload: Buffer.from(interventionPayload, 'utf8'), idempotencyKey } }))
     }
+    case 'core.codeDiagnosticsFeedbackLoop': {
+      const value = asRecord(payload); const operation = ['register_provider', 'snapshot', 'delta', 'gate'].includes(String(value['operation'])) ? String(value['operation']) : null
+      const workspaceRootId = asBoundedString(value['workspaceRootId']); const diagnosticsPayload = asBoundedString(value['payload']); const baselineSnapshotId = value['baselineSnapshotId'] === undefined ? '' : asBoundedString(value['baselineSnapshotId']); const idempotencyKey = asBoundedString(value['idempotencyKey']); const expectedRevision = value['expectedRevision'] === undefined ? 0 : asNonNegativeInteger(value['expectedRevision'])
+      if (operation === null || workspaceRootId === null || diagnosticsPayload === null || baselineSnapshotId === null || idempotencyKey === null || expectedRevision === null || workspaceRootId.length > 128 || diagnosticsPayload.length > 512 * 1024) return failure('invalid-payload', 'Некорректная операция Code Diagnostics.')
+      return accepted(client.send({ codeDiagnosticsFeedbackLoop: { schemaVersion: 1, requestId: randomUUID(), operation, workspaceRootId, payload: Buffer.from(diagnosticsPayload, 'utf8'), baselineSnapshotId, expectedRevision, idempotencyKey } }))
+    }
 
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)

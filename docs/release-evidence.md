@@ -365,6 +365,19 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Checks: focused contract/recovery/storage tests, schema migration, cargo
   check/clippy, protocol check, Electron typecheck and full Electron regression.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
+## Plan 70 — Code Diagnostics Feedback Loop v1 (2026-09-02)
+
+- Contract: Core-owned registered providers, bounded versioned diagnostics,
+  canonical workspace/file binding and SHA-256 snapshot hashes.
+- Delta/gate: durable snapshots and deltas classify introduced, resolved and
+  persisting diagnostics; stale bindings are rejected and quality gate returns
+  typed blocked/passed outcomes.
+- IPC/UI: authenticated additive command 221/event 66, generated bindings and
+  Electron metadata-only Problems projection.
+- Checks: focused Rust contract/storage tests, cargo fmt/check, protocol check,
+  Electron typecheck and full Electron regression (94 files passed, 518 tests
+  passed, 2 skipped). Evidence excludes credentials, raw diagnostics, prompts,
+  absolute paths and PII.
 ## Plan 69 — Runtime Intervention Pipeline v1 (2026-09-02)
 
 - Contract: typed hook phases, deterministic ordering, explicit decisions,

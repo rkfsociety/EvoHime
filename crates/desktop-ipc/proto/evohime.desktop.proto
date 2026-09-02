@@ -1871,6 +1871,7 @@ message CommandEnvelope {
     SchemaDrivenAgentConfigurationCommand schema_driven_agent_configuration = 218;
     ExperienceReplayLibraryCommand experience_replay_library = 219;
     RuntimeInterventionPipelineCommand runtime_intervention_pipeline = 220;
+    CodeDiagnosticsFeedbackLoopCommand code_diagnostics_feedback_loop = 221;
   }
 }
 
@@ -1986,6 +1987,7 @@ message EventEnvelope {
     SchemaDrivenAgentConfigurationEvent schema_driven_agent_configuration = 63;
     ExperienceReplayLibraryEvent experience_replay_library = 64;
     RuntimeInterventionPipelineEvent runtime_intervention_pipeline = 65;
+    CodeDiagnosticsFeedbackLoopEvent code_diagnostics_feedback_loop = 66;
   }
 }
 
@@ -2301,6 +2303,18 @@ message RuntimeInterventionPipelineEvent {
   string run_id = 5;
   string error_code = 6;
   bytes projection_json = 7;
+}
+
+// Plan 70: bounded metadata-only code diagnostics projection.
+message CodeDiagnosticsFeedbackLoopCommand {
+  uint32 schema_version = 1; string request_id = 2; string operation = 3;
+  string workspace_root_id = 4; bytes payload = 5; string baseline_snapshot_id = 6;
+  string idempotency_key = 7; uint64 expected_revision = 8;
+}
+message CodeDiagnosticsFeedbackLoopEvent {
+  uint32 schema_version = 1; string request_id = 2; string operation = 3;
+  string status = 4; uint64 revision = 5; bytes projection_json = 6;
+  string error_code = 7; bool truncated = 8;
 }
 
 // Plan 46: bounded metadata-only Agent Role Profiles surface. Profile bodies

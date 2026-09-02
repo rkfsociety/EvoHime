@@ -1656,3 +1656,15 @@ handlers fail closed; mutations имеют safe hashes/patch metadata без sec
 значений, approval всегда revalidated Core, а intervention depth ограничивает
 reentrancy. Authenticated additive IPC command 220/event 65 и Electron
 developer panel передают только bounded diagnostics.
+
+## Code Diagnostics Feedback Loop v1 (план 70)
+
+Core нормализует зарегистрированные provider diagnostics в versioned
+revision-bound snapshots. Canonical `sha256:` hashes и workspace-relative file
+refs дают deterministic introduced/resolved/persisting delta; stale bindings
+отклоняются как evidence. Registry, snapshots и deltas сохраняются в SQLite
+schema v67, а quality gate возвращает только typed passed/blocked outcome.
+Только Core может зарегистрировать provider или сохранить snapshot; raw output,
+commands, credentials и arbitrary code actions не получают capabilities.
+Authenticated additive IPC использует command 221/event 66, Electron получает
+bounded metadata projection и не вычисляет state machine.
