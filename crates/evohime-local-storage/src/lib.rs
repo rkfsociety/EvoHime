@@ -30,6 +30,7 @@ pub mod event_trigger_runtime_store;
 pub mod execution_backend_registry_store;
 pub mod execution_ledger;
 pub mod execution_policy_profiles_store;
+pub mod experience_replay_library_store;
 pub mod external_coding_agent_adapter_store;
 pub mod feedback_store;
 pub mod goal;
@@ -66,7 +67,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 65;
+pub const SCHEMA_VERSION: u32 = 66;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3635,6 +3636,10 @@ impl LocalDatabase {
             schema_driven_agent_configuration_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 65;")?;
         }
+        if current < 66 {
+            experience_replay_library_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 66;")?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -3654,11 +3659,11 @@ mod tests {
     }
 
     #[test]
-    fn schema_65_installs_configuration_tables() {
-        let path = temp_database_path("schema-driven-configuration-schema-65");
+    fn schema_66_installs_configuration_and_experience_tables() {
+        let path = temp_database_path("experience-replay-schema-66");
         let _ = std::fs::remove_file(&path);
         let database = LocalDatabase::open(&path).expect("database opens");
-        assert_eq!(database.schema_version().expect("schema version"), 65);
+        assert_eq!(database.schema_version().expect("schema version"), 66);
         let has_table: i64 = database
             .connection()
             .query_row(
@@ -3688,6 +3693,8 @@ mod tests {
         assert_eq!(has_handoff_table, 1);
         let has_configuration_table: i64 = database.connection().query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='schema_agent_configurations'", [], |row| row.get(0)).expect("configuration table query");
         assert_eq!(has_configuration_table, 1);
+        let has_experience_table: i64 = database.connection().query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='experience_replay_records'", [], |row| row.get(0)).expect("experience table query");
+        assert_eq!(has_experience_table, 1);
         drop(database);
         let _ = std::fs::remove_file(&path);
     }

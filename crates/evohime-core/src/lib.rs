@@ -1,6 +1,7 @@
 pub struct CoreVersion;
 
 pub mod adaptive_tool_catalog;
+pub mod experience_replay_library;
 pub mod schema_driven_agent_configuration;
 pub mod sensitive_data_guardrails;
 pub mod team_sop_protocols;
@@ -1303,6 +1304,15 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    ExperienceReplayLibrary {
+        operation: String,
+        scope: String,
+        scope_id: String,
+        payload: Vec<u8>,
+        expected_revision: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -1937,6 +1947,12 @@ pub enum CoreEvent {
         projection_json: String,
     },
     SchemaDrivenAgentConfiguration {
+        scope: String,
+        operation: String,
+        revision: u64,
+        projection_json: String,
+    },
+    ExperienceReplayLibrary {
         scope: String,
         operation: String,
         revision: u64,
@@ -3027,6 +3043,7 @@ impl EventJournal {
             CoreEvent::TeamCoordinationPolicies { team_id, .. } => team_id,
             CoreEvent::TypedAgentHandoffContract { handoff_id, .. } => handoff_id,
             CoreEvent::SchemaDrivenAgentConfiguration { scope, .. } => scope,
+            CoreEvent::ExperienceReplayLibrary { scope, .. } => scope,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3054,6 +3071,7 @@ impl EventJournal {
             CoreEvent::SchemaDrivenAgentConfiguration { .. } => {
                 "schema_driven_agent_configuration.result"
             }
+            CoreEvent::ExperienceReplayLibrary { .. } => "experience_replay_library.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -11345,6 +11363,52 @@ impl TaskCoordinator {
                     .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
                     .unwrap_or_else(|| "{}".into());
                 let event = CoreEvent::SchemaDrivenAgentConfiguration {
+                    scope: event_scope,
+                    operation: event_operation,
+                    revision,
+                    projection_json,
+                };
+                let journal = state.lock().await.journal.clone();
+                if let Some(journal) = journal {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::ExperienceReplayLibrary {
+                operation,
+                scope,
+                scope_id,
+                payload,
+                expected_revision,
+                idempotency_key: _,
+                reply,
+            } => {
+                let event_scope = scope.clone();
+                let event_operation = operation.clone();
+                let result = async {
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    let scope_kind = match scope.as_str() { "Session"=>crate::experience_replay_library::ExperienceScope::Session,"Project"=>crate::experience_replay_library::ExperienceScope::Project,"User"=>crate::experience_replay_library::ExperienceScope::User,"RoleProfile"=>crate::experience_replay_library::ExperienceScope::RoleProfile,"WorkflowProfile"=>crate::experience_replay_library::ExperienceScope::WorkflowProfile,_=>return Err("invalid_experience_scope".into()) };
+                    match operation.as_str() {
+                        "write" => { let record: crate::experience_replay_library::ExperienceRecord = serde_json::from_slice(&payload).map_err(|_| "invalid_experience_record".to_string())?; if record.scope != scope_kind || record.scope_id != scope_id { return Err("experience_scope_denied".into()); } crate::experience_replay_library::validate_and_write_gate(&record).map_err(|e|e.to_string())?; let hash=record.content_hash.clone(); let json=serde_json::to_vec(&record).map_err(|e|e.to_string())?; let saved=evohime_local_storage::experience_replay_library_store::put(database.connection(),&record.id,&scope,&scope_id,&json,&hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":if saved{"stored"}else{"duplicate"},"id":record.id,"revision":1,"idempotent":!saved})).map_err(|e|e.to_string()) }
+                        "list" => { let records=evohime_local_storage::experience_replay_library_store::list(database.connection(),&scope,&scope_id,64).map_err(|e|e.to_string())?; let records:Vec<serde_json::Value>=records.into_iter().filter_map(|b|serde_json::from_slice(&b).ok()).collect(); serde_json::to_vec(&serde_json::json!({"status":"ok","scope":scope,"records":records})).map_err(|e|e.to_string()) }
+                        "context" => { let records=evohime_local_storage::experience_replay_library_store::list(database.connection(),&scope,&scope_id,64).map_err(|e|e.to_string())?; let records:Vec<crate::experience_replay_library::ExperienceRecord>=records.into_iter().filter_map(|b|serde_json::from_slice(&b).ok()).collect(); let context=crate::experience_replay_library::project_context(&records,crate::experience_replay_library::MAX_CONTEXT_BYTES).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"ok","context":context,"max_bytes":crate::experience_replay_library::MAX_CONTEXT_BYTES})).map_err(|e|e.to_string()) }
+                        _ => Err("unsupported_experience_operation".into()),
+                    }
+                }.await;
+                let revision = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| serde_json::from_slice::<serde_json::Value>(b).ok())
+                    .and_then(|v| v.get("revision").and_then(serde_json::Value::as_u64))
+                    .unwrap_or(expected_revision);
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::ExperienceReplayLibrary {
                     scope: event_scope,
                     operation: event_operation,
                     revision,

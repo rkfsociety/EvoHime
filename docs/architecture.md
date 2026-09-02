@@ -1635,3 +1635,14 @@ secret states и deterministic `sha256` hash. Snapshot revision fenced
 optimistically и сохраняется metadata-only в SQLite schema v65; обновление не
 мутирует active run и не запускает side effects. Authenticated additive IPC
 использует command 218/event 63, Electron получает только bounded projection.
+
+## Experience Replay Library v1 (план 68)
+
+Core-owned `ExperienceRecord` хранит bounded episodic trajectory summaries,
+typed outcome и evidence-backed score отдельно от Memory/Refinement. Write Gate
+требует evidence, scope, redaction, hash и не принимает `UnknownOutcome`;
+credentials/raw outputs и chain-of-thought не сохраняются. Опыт хранится в
+SQLite schema v66 с duplicate-safe записью. Bounded context projection остаётся
+untrusted advisory; Core сохраняет scope/retention policy и не расширяет
+capabilities. Authenticated additive IPC command 219/event 64 и Electron
+developer panel показывают только metadata/action projection.

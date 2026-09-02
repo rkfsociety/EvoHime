@@ -365,6 +365,18 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Checks: focused contract/recovery/storage tests, schema migration, cargo
   check/clippy, protocol check, Electron typecheck and full Electron regression.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
+## Plan 68 — Experience Replay Library v1 (2026-09-02)
+
+- Contract: bounded episodic records/steps, typed outcomes, evidence-backed
+  score, scope/sensitivity/retention metadata and deterministic content hash.
+- Write/recovery: Write Gate rejects missing evidence, unsafe refs and unknown
+  outcome; duplicate-safe additive SQLite schema v66 and bounded context
+  projection preserve advisory/non-authoritative semantics.
+- IPC/UI: authenticated additive command 219/event 64, generated bindings and
+  Electron metadata-only experience panel.
+- Checks: focused contract/recovery/storage/migration tests, cargo fmt/check/
+  clippy, protocol check, Electron typecheck and full Electron regression.
+  Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
 ## Plan 67 — Schema-Driven Agent Configuration v1 (2026-09-02)
 
 - Contract: versioned five-layer schema, typed field/registry/apply enums,

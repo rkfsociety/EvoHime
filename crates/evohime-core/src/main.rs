@@ -783,6 +783,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::SchemaDrivenAgentConfiguration { scope, operation, revision, .. } => println!(
             "schema_driven_agent_configuration.result {scope}: {operation} revision={revision}"
         ),
+        evohime_core::CoreEvent::ExperienceReplayLibrary { scope, operation, revision, .. } => println!(
+            "experience_replay_library.result {scope}: {operation} revision={revision}"
+        ),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             println!("review.history_cleared {marker_id}")
         }

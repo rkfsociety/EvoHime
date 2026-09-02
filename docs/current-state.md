@@ -847,3 +847,9 @@ typed registry references и semantic patches, redacts secret values и сохр
 revision-fenced snapshots в SQLite schema v65. Authenticated IPC command 218 /
 event 63 и Electron developer panel передают только bounded metadata projection;
 active run snapshot не мутируется.
+План 68 закрыт 2 сентября 2026 года: Experience Replay Library v1. Добавлены
+bounded `ExperienceRecord`/`ExperienceStep`, evidence-backed Write Gate,
+unknown-outcome rejection, scope/hash/redaction checks, duplicate-safe SQLite
+schema v66 и bounded untrusted context projection. Authenticated IPC использует
+command 219/event 64, Electron — metadata-only panel; опыт не становится
+Memory, Refinement или источником capabilities.

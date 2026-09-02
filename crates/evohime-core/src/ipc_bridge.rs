@@ -2532,6 +2532,18 @@ impl IpcBridge {
                     self.write_response(writer, "schema_driven_agent_configuration.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::ExperienceReplayLibrary(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "list".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_experience_replay_library(operation, request)
+                        .await?;
+                    self.write_response(writer, "experience_replay_library.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -7009,6 +7021,35 @@ impl IpcBridge {
             .dispatch(CoreCommand::SchemaDrivenAgentConfiguration {
                 operation,
                 scope: request.scope,
+                payload: request.payload,
+                expected_revision: request.expected_revision,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_experience_replay_library(
+        &self,
+        operation: String,
+        request: generated::ExperienceReplayLibraryCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::ExperienceReplayLibrary {
+                operation,
+                scope: request.scope,
+                scope_id: request.scope_id,
                 payload: request.payload,
                 expected_revision: request.expected_revision,
                 idempotency_key: request.idempotency_key,

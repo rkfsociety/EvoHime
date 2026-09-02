@@ -425,6 +425,12 @@ function dispatch(
       if (operation === null || scope === null || configPayload === null || idempotencyKey === null || expectedRevision === null || scope.length > 64 || configPayload.length > 256 * 1024) return failure('invalid-payload', 'Некорректная операция schema-driven configuration.')
       return accepted(client.send({ schemaDrivenAgentConfiguration: { schemaVersion: 1, requestId: randomUUID(), operation, scope, payload: Buffer.from(configPayload, 'utf8'), expectedRevision, idempotencyKey } }))
     }
+    case 'core.experienceReplayLibrary': {
+      const value = asRecord(payload); const operation = ['write', 'list', 'context'].includes(String(value['operation'])) ? String(value['operation']) : null
+      const scope = asBoundedString(value['scope']); const scopeId = asBoundedString(value['scopeId']); const experiencePayload = asBoundedString(value['payload']); const idempotencyKey = asBoundedString(value['idempotencyKey']); const expectedRevision = value['expectedRevision'] === undefined ? 0 : asNonNegativeInteger(value['expectedRevision'])
+      if (operation === null || scope === null || scopeId === null || experiencePayload === null || idempotencyKey === null || expectedRevision === null || scope.length > 32 || scopeId.length > 256 || experiencePayload.length > 512 * 1024) return failure('invalid-payload', 'Некорректная операция Experience Replay.')
+      return accepted(client.send({ experienceReplayLibrary: { schemaVersion: 1, requestId: randomUUID(), operation, scope, scopeId, payload: Buffer.from(experiencePayload, 'utf8'), expectedRevision, idempotencyKey } }))
+    }
 
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)
