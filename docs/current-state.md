@@ -991,3 +991,6 @@ imported content. Новая surface не создаёт второй resolver a
 Core-owned Generate/Review/Revise/Ensemble definitions, bounded request
 validation, durable registry и additive IPC surface. Operators не расширяют
 capabilities и не выполняют effects.
+
+План 84 закрыт 2 сентября 2026 года: Output Guardrail Pipeline v1 добавил
+versioned stages, bounded evaluation, redaction result и Core/IPC/UI surface.

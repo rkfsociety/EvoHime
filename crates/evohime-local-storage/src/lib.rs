@@ -50,6 +50,7 @@ pub mod knowledge_source_registry_project_role_store;
 pub mod memory_store;
 pub mod model_limit_store;
 pub mod model_provenance;
+pub mod output_guardrail_pipeline_store;
 pub mod plan_artifact;
 pub mod project_instruction_stack_store;
 pub mod reasoning_operator_library_store;
@@ -83,7 +84,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 82;
+pub const SCHEMA_VERSION: u32 = 83;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -590,6 +591,7 @@ impl LocalDatabase {
         architect_editor_model_pipeline_store::install_schema(&connection)?;
         event_visualizer_registry_store::install_schema(&connection)?;
         reasoning_operator_library_store::install_schema(&connection)?;
+        output_guardrail_pipeline_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
@@ -3723,6 +3725,10 @@ impl LocalDatabase {
         if current < 82 {
             reasoning_operator_library_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 82;")?;
+        }
+        if current < 83 {
+            output_guardrail_pipeline_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 83;")?;
         }
         transaction.commit()?;
         Ok(())

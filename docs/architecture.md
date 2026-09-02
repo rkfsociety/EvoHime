@@ -1936,3 +1936,10 @@ bounded typed input/output contracts и максимумом трёх попыт
 mutation authority; результаты остаются proposals до обычных Core boundaries.
 SQLite schema v82 и authenticated additive IPC command 236/event 81 хранят
 только metadata и redacted projections.
+
+## Output Guardrail Pipeline v1 (план 84)
+
+Core-owned pipeline выполняет bounded Validate/Transform/Redact stages перед
+accepted output/handoff. Schema 83 и IPC tags 237/82 сохраняют только typed
+metadata; correction attempts ограничены тремя, а Sensitive Data Guardrails
+остаётся canonical redaction policy.

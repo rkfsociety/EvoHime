@@ -657,5 +657,12 @@ native package smoke and `git diff --check`.
   definitions and bounded proposal requests.
 - Operators remain Core-owned computation only; no tool/capability/mutation
   authority is inferred from model output.
+
+## Plan 84 — Output Guardrail Pipeline (2026-09-02)
+
+- Schema 83 and IPC tags 237/82 provide typed Validate/Transform/Redact stages
+  and bounded evaluation with three retries.
+- Evidence: focused guardrail tests, clippy, protocol/typecheck and
+  `git diff --check`; existing Sensitive Data Guardrails remain authoritative.
 - Evidence: focused Core tests, storage migration, clippy `-D warnings`,
   protocol/typecheck, regression and `git diff --check`.

@@ -16,6 +16,7 @@ import type {
   ArchitectEditorPipelineProjection,
   EventVisualizerRegistryProjection,
   ReasoningOperatorLibraryProjection,
+  OutputGuardrailPipelineProjection,
   ContinuationActionResult,
   ContinuationProjection,
   AnalysisKernelProjection,
@@ -584,6 +585,7 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       , architectEditorPipeline: decodeArchitectEditorPipeline(event.architectEditorPipeline)
       , eventVisualizerRegistry: decodeEventVisualizerRegistry(event.eventVisualizerRegistry)
       , reasoningOperatorLibrary: decodeReasoningOperatorLibrary(event.reasoningOperatorLibrary)
+      , outputGuardrailPipeline: decodeOutputGuardrailPipeline(event.outputGuardrailPipeline)
     })
   }
 
@@ -823,6 +825,7 @@ function decodeAgentGitChangeSets(projected: evohime.desktop.v1.IAgentGitChangeS
 function decodeArchitectEditorPipeline(projected: evohime.desktop.v1.IArchitectEditorModelPipelineEvent | null | undefined): ArchitectEditorPipelineProjection | null { if (!projected) return null; let projection: unknown = null; try { projection = JSON.parse(Buffer.from(projected.projectionJson ?? new Uint8Array()).toString('utf8')) } catch { projection = null }; return { schemaVersion: projected.schemaVersion ?? 1, pipelineId: projected.pipelineId ?? '', operation: projected.operation ?? '', version: Number(projected.version ?? 0), status: projected.status ?? '', errorCode: projected.errorCode ?? '', projection } }
 function decodeEventVisualizerRegistry(projected: evohime.desktop.v1.IEventVisualizerRegistryEvent | null | undefined): EventVisualizerRegistryProjection | null { if (!projected) return null; let projection: unknown = null; try { projection = JSON.parse(Buffer.from(projected.projectionJson ?? new Uint8Array()).toString('utf8')) } catch { projection = null }; return { schemaVersion: projected.schemaVersion ?? 1, visualizerId: projected.visualizerId ?? '', operation: projected.operation ?? '', version: Number(projected.version ?? 0), status: projected.status ?? '', errorCode: projected.errorCode ?? '', projection } }
 function decodeReasoningOperatorLibrary(projected: evohime.desktop.v1.IReasoningOperatorLibraryEvent | null | undefined): ReasoningOperatorLibraryProjection | null { if (!projected) return null; let projection: unknown = null; try { projection = JSON.parse(Buffer.from(projected.projectionJson ?? new Uint8Array()).toString('utf8')) } catch { projection = null }; return { schemaVersion: projected.schemaVersion ?? 1, operatorId: projected.operatorId ?? '', operation: projected.operation ?? '', version: Number(projected.version ?? 0), status: projected.status ?? '', errorCode: projected.errorCode ?? '', projection } }
+function decodeOutputGuardrailPipeline(projected: evohime.desktop.v1.IOutputGuardrailPipelineEvent | null | undefined): OutputGuardrailPipelineProjection | null { if (!projected) return null; let projection: unknown = null; try { projection = JSON.parse(Buffer.from(projected.projectionJson ?? new Uint8Array()).toString('utf8')) } catch { projection = null }; return { schemaVersion: projected.schemaVersion ?? 1, pipelineId: projected.pipelineId ?? '', operation: projected.operation ?? '', version: Number(projected.version ?? 0), status: projected.status ?? '', errorCode: projected.errorCode ?? '', projection } }
 
 function decodeConversationEvent(
   projected: evohime.desktop.v1.IConversationEventProjection

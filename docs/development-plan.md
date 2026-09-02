@@ -395,3 +395,7 @@ parser, security, focused Rust, clippy, protocol/typecheck и regression checks.
 План 83 закрыт 2 сентября 2026 года. Reasoning Operator Library перенесена в
 Core/storage/IPC; комплект `83-0` … `83-4` удалён после contract, bounds,
 storage, protocol/typecheck и regression checks.
+
+План 84 закрыт 2 сентября 2026 года. Output Guardrail Pipeline перенесён в
+Core/storage/IPC/UI; комплект `84-0` … `84-4` удалён после bounds, redaction,
+protocol/typecheck и verification checks.

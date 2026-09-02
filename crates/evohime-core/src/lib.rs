@@ -10,6 +10,7 @@ pub mod event_visualizer_registry;
 pub mod experience_replay_library;
 pub mod headless_core_cli;
 pub mod knowledge_source_registry_project_role;
+pub mod output_guardrail_pipeline;
 pub mod project_instruction_stack;
 pub mod reasoning_operator_library;
 pub mod safe_ui_extension_framework;
@@ -1463,6 +1464,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    OutputGuardrailPipeline {
+        operation: String,
+        pipeline_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -2202,6 +2211,12 @@ pub enum CoreEvent {
     },
     ReasoningOperatorLibrary {
         operator_id: String,
+        operation: String,
+        version: u64,
+        projection_json: String,
+    },
+    OutputGuardrailPipeline {
+        pipeline_id: String,
         operation: String,
         version: u64,
         projection_json: String,
@@ -3311,6 +3326,7 @@ impl EventJournal {
             CoreEvent::ArchitectEditorModelPipeline { pipeline_id, .. } => pipeline_id,
             CoreEvent::EventVisualizerRegistry { visualizer_id, .. } => visualizer_id,
             CoreEvent::ReasoningOperatorLibrary { operator_id, .. } => operator_id,
+            CoreEvent::OutputGuardrailPipeline { pipeline_id, .. } => pipeline_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3364,6 +3380,7 @@ impl EventJournal {
             CoreEvent::ArchitectEditorModelPipeline { .. } => "architect_editor_pipeline.result",
             CoreEvent::EventVisualizerRegistry { .. } => "event_visualizer_registry.result",
             CoreEvent::ReasoningOperatorLibrary { .. } => "reasoning_operator_library.result",
+            CoreEvent::OutputGuardrailPipeline { .. } => "output_guardrail_pipeline.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -13272,6 +13289,32 @@ impl TaskCoordinator {
                     .unwrap_or_else(|| "{}".into());
                 let event = CoreEvent::ReasoningOperatorLibrary {
                     operator_id,
+                    operation,
+                    version: expected_version,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::OutputGuardrailPipeline {
+                operation,
+                pipeline_id,
+                payload,
+                expected_version,
+                idempotency_key: _,
+                reply,
+            } => {
+                let result = async { if operation != "evaluate" { return Err("unsupported_output_guardrail_operation".into()); } let p: crate::output_guardrail_pipeline::GuardrailPipeline = serde_json::from_slice(&payload).map_err(|_| "invalid_guardrail_pipeline".to_string())?; let r=crate::output_guardrail_pipeline::evaluate(&p, &payload).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"schema_version":1,"pipeline_id":pipeline_id,"version":expected_version,"result":r,"redacted":true})).map_err(|_|"serialization_failed".to_string()) }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::OutputGuardrailPipeline {
+                    pipeline_id,
                     operation,
                     version: expected_version,
                     projection_json,
