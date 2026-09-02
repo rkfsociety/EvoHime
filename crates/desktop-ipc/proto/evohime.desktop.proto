@@ -1886,6 +1886,7 @@ message CommandEnvelope {
     AgentGitChangeSetsCommand agent_git_change_sets = 233;
     ArchitectEditorModelPipelineCommand architect_editor_pipeline = 234;
     EventVisualizerRegistryCommand event_visualizer_registry = 235;
+    ReasoningOperatorLibraryCommand reasoning_operator_library = 236;
   }
 }
 
@@ -2016,6 +2017,7 @@ message EventEnvelope {
     AgentGitChangeSetsEvent agent_git_change_sets = 78;
     ArchitectEditorModelPipelineEvent architect_editor_pipeline = 79;
     EventVisualizerRegistryEvent event_visualizer_registry = 80;
+    ReasoningOperatorLibraryEvent reasoning_operator_library = 81;
   }
 }
 
@@ -2321,6 +2323,8 @@ message EventVisualizerRegistryEvent {
   uint64 version = 4; string status = 5; string error_code = 6;
   bytes projection_json = 7;
 }
+message ReasoningOperatorLibraryCommand { uint32 schema_version=1; string operator_id=2; string operation=3; bytes payload=4; uint64 expected_version=5; string idempotency_key=6; }
+message ReasoningOperatorLibraryEvent { uint32 schema_version=1; string operator_id=2; string operation=3; uint64 version=4; string status=5; string error_code=6; bytes projection_json=7; }
 
 // Plan 64: bounded metadata-only Workspace Bootstrap Manifest surface.
 message WorkspaceBootstrapManifestCommand {

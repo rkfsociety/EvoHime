@@ -1927,3 +1927,12 @@ refs, canonical revision/hash и bounded projection. Imported/tool/model text н
 разрешается автоматически; mention не расширяет capabilities и unknown syntax
 не регистрирует resolver. Resolver остаётся Core authority, renderer получает
 только chips/projection.
+
+## Reasoning Operator Library v1 (план 83)
+
+Core хранит versioned definitions для Generate/Review/Revise/Ensemble с
+bounded typed input/output contracts и максимумом трёх попыток. Operators
+являются model-computation primitives: они не получают tools, grants или
+mutation authority; результаты остаются proposals до обычных Core boundaries.
+SQLite schema v82 и authenticated additive IPC command 236/event 81 хранят
+только metadata и redacted projections.

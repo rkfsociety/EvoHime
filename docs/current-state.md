@@ -986,3 +986,8 @@ additive IPC/UI projection. Расширения не получают capabilit
 подключены к Typed Context References v1 для file/folder/git/diagnostics/
 terminal/artifact, с traversal fence и отрицательным тестом для untrusted
 imported content. Новая surface не создаёт второй resolver authority.
+
+План 83 закрыт 2 сентября 2026 года: Reasoning Operator Library v1 добавил
+Core-owned Generate/Review/Revise/Ensemble definitions, bounded request
+validation, durable registry и additive IPC surface. Operators не расширяют
+capabilities и не выполняют effects.

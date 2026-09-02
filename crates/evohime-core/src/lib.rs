@@ -11,6 +11,7 @@ pub mod experience_replay_library;
 pub mod headless_core_cli;
 pub mod knowledge_source_registry_project_role;
 pub mod project_instruction_stack;
+pub mod reasoning_operator_library;
 pub mod safe_ui_extension_framework;
 pub mod schema_driven_agent_configuration;
 pub mod sensitive_data_guardrails;
@@ -1454,6 +1455,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    ReasoningOperatorLibrary {
+        operation: String,
+        operator_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -2187,6 +2196,12 @@ pub enum CoreEvent {
     },
     EventVisualizerRegistry {
         visualizer_id: String,
+        operation: String,
+        version: u64,
+        projection_json: String,
+    },
+    ReasoningOperatorLibrary {
+        operator_id: String,
         operation: String,
         version: u64,
         projection_json: String,
@@ -3295,6 +3310,7 @@ impl EventJournal {
             CoreEvent::AgentGitChangeSets { change_set_id, .. } => change_set_id,
             CoreEvent::ArchitectEditorModelPipeline { pipeline_id, .. } => pipeline_id,
             CoreEvent::EventVisualizerRegistry { visualizer_id, .. } => visualizer_id,
+            CoreEvent::ReasoningOperatorLibrary { operator_id, .. } => operator_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3347,6 +3363,7 @@ impl EventJournal {
             CoreEvent::AgentGitChangeSets { .. } => "agent_git_change_sets.result",
             CoreEvent::ArchitectEditorModelPipeline { .. } => "architect_editor_pipeline.result",
             CoreEvent::EventVisualizerRegistry { .. } => "event_visualizer_registry.result",
+            CoreEvent::ReasoningOperatorLibrary { .. } => "reasoning_operator_library.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -13218,6 +13235,43 @@ impl TaskCoordinator {
                     .unwrap_or_else(|| "{}".into());
                 let event = CoreEvent::EventVisualizerRegistry {
                     visualizer_id,
+                    operation,
+                    version: expected_version,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::ReasoningOperatorLibrary {
+                operation,
+                operator_id,
+                payload,
+                expected_version,
+                idempotency_key: _,
+                reply,
+            } => {
+                let result = async {
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    use crate::reasoning_operator_library as operators;
+                    use evohime_local_storage::reasoning_operator_library_store as store;
+                    match operation.as_str() {
+                        "list" => { let mut defs=operators::builtins(); for row in store::list(database.connection()).map_err(|_|"storage_failed".to_string())? { if let Ok(d)=serde_json::from_slice(&row){defs.push(d)} } serde_json::to_vec(&serde_json::json!({"schema_version":1,"operators":defs,"redacted":true})).map_err(|_|"serialization_failed".to_string()) }
+                        "register" => { let d:operators::ReasoningOperatorDefinition=serde_json::from_slice(&payload).map_err(|_|"invalid_operator_definition".to_string())?; operators::validate(&d).map_err(|e|e.to_string())?; let j=serde_json::to_vec(&d).map_err(|_|"serialization_failed".to_string())?; store::put(database.connection(),&d.id,d.version,&d.content_hash,&j,crate::task_memory::now_millis() as i64).map_err(|_|"storage_failed".to_string())?; serde_json::to_vec(&serde_json::json!({"schema_version":1,"operator_id":d.id,"status":"registered","redacted":true})).map_err(|_|"serialization_failed".to_string()) }
+                        "execute" => { let req:operators::OperatorRequest=serde_json::from_slice(&payload).map_err(|_|"invalid_operator_request".to_string())?; operators::validate_request(&req).map_err(|e|e.to_string())?; if req.operator_id!=operator_id{return Err("operator_id_mismatch".into())}; if expected_version>3{return Err("operator_stale_version".into())}; serde_json::to_vec(&serde_json::json!({"schema_version":1,"operator_id":operator_id,"status":"proposed","output_contract":"typed_json","redacted":true})).map_err(|_|"serialization_failed".to_string()) }
+                        _=>Err("unsupported_reasoning_operator_operation".into())
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::ReasoningOperatorLibrary {
+                    operator_id,
                     operation,
                     version: expected_version,
                     projection_json,

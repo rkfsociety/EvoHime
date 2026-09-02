@@ -650,3 +650,12 @@ native package smoke and `git diff --check`.
   bounded projections; untrusted imported text cannot trigger expansion.
 - Evidence: three focused Core tests, clippy `-D warnings`, full Electron
   regression (528 passed, 2 skipped), native smoke and `git diff --check`.
+
+## Plan 83 — Reasoning Operator Library (2026-09-02)
+
+- Schema 82 and IPC tags 236/81 provide typed Generate/Review/Revise/Ensemble
+  definitions and bounded proposal requests.
+- Operators remain Core-owned computation only; no tool/capability/mutation
+  authority is inferred from model output.
+- Evidence: focused Core tests, storage migration, clippy `-D warnings`,
+  protocol/typecheck, regression and `git diff --check`.

@@ -391,3 +391,7 @@ storage, protocol, typecheck и Electron verification checks.
 План 82 закрыт 2 сентября 2026 года. Context Mentions перенесены в
 Typed Context References/Core boundary; комплект `82-0` … `82-4` удалён после
 parser, security, focused Rust, clippy, protocol/typecheck и regression checks.
+
+План 83 закрыт 2 сентября 2026 года. Reasoning Operator Library перенесена в
+Core/storage/IPC; комплект `83-0` … `83-4` удалён после contract, bounds,
+storage, protocol/typecheck и regression checks.
