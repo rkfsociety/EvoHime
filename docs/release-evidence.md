@@ -377,6 +377,19 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Checks: focused Rust contract, cargo check/clippy, protocol check, Electron
   typecheck and full Electron regression; evidence excludes credentials, raw
   benchmark output, prompts, absolute paths and PII.
+## Plan 72 — Core Topic/Subscription Event Bus v1 (2026-09-02)
+
+- Contract: versioned typed Topic/Event/Subscription, correlation/causation,
+  exact/prefix/type selectors, bounded payloads and capability requirements.
+- Delivery: ephemeral and durable modes, SQLite schema v69, ACK/NACK with
+  bounded retries, dead-letter records, idempotent event identity and crash
+  reconciliation to unknown without blind retry.
+- IPC/UI: authenticated additive command 223/event 68 and Electron
+  metadata-only projection; no external broker or renderer authority.
+- Checks: focused Rust contract/recovery/schema tests, cargo check/clippy,
+  protocol check, Electron typecheck and full regression (96 files passed,
+  520 tests passed, 2 skipped). Evidence excludes secrets, raw payloads,
+  credentials, absolute paths and PII.
 ## Plan 70 — Code Diagnostics Feedback Loop v1 (2026-09-02)
 
 - Contract: Core-owned registered providers, bounded versioned diagnostics,

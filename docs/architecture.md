@@ -1679,3 +1679,14 @@ holdout разделены, security regression блокирует резуль�
 только явным Core-checked action после holdout и не активируется автоматически.
 Authenticated additive IPC использует command 222/event 67; Electron показывает
 bounded metadata projection без optimizer tools или production authority.
+
+## Core Topic/Subscription Event Bus v1 (план 72)
+
+Локальный Core bus маршрутизирует typed Event с first-class correlation и
+causation по exact/namespace-prefix/type selectors. Ephemeral subscriptions
+не обещают restart delivery; correctness-critical durable events сохраняются в
+SQLite schema v69 с bounded queue/in-flight policy, ACK/NACK, максимум тремя
+попытками, dead-letter и crash reconciliation в `unknown`. Publish/subscribe
+проверяют capability и не дают renderer unrestricted access или внешнего broker.
+Authenticated additive IPC использует command 223/event 68, Electron получает
+только bounded metadata projection.

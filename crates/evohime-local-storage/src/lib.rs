@@ -27,6 +27,7 @@ pub mod context_command_store;
 pub mod context_ledger_store;
 pub mod continuation_store;
 pub mod conversation_event_log_store;
+pub mod core_topic_subscription_event_bus_store;
 pub mod event_trigger_runtime_store;
 pub mod execution_backend_registry_store;
 pub mod execution_ledger;
@@ -69,7 +70,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 68;
+pub const SCHEMA_VERSION: u32 = 69;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3650,6 +3651,10 @@ impl LocalDatabase {
             workflow_optimization_lab_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 68;")?;
         }
+        if current < 69 {
+            core_topic_subscription_event_bus_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 69;")?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -3669,11 +3674,11 @@ mod tests {
     }
 
     #[test]
-    fn schema_67_installs_configuration_experience_and_diagnostics_tables() {
+    fn schema_69_installs_configuration_experience_diagnostics_and_bus_tables() {
         let path = temp_database_path("experience-replay-schema-66");
         let _ = std::fs::remove_file(&path);
         let database = LocalDatabase::open(&path).expect("database opens");
-        assert_eq!(database.schema_version().expect("schema version"), 67);
+        assert_eq!(database.schema_version().expect("schema version"), 69);
         let has_table: i64 = database
             .connection()
             .query_row(
@@ -3707,6 +3712,15 @@ mod tests {
         assert_eq!(has_experience_table, 1);
         let has_diagnostics_table: i64 = database.connection().query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='code_diagnostics_snapshots'", [], |row| row.get(0)).expect("diagnostics table query");
         assert_eq!(has_diagnostics_table, 1);
+        let has_bus_table: i64 = database
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='core_bus_events'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("bus table query");
+        assert_eq!(has_bus_table, 1);
         drop(database);
         let _ = std::fs::remove_file(&path);
     }

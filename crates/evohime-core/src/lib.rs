@@ -2,6 +2,7 @@ pub struct CoreVersion;
 
 pub mod adaptive_tool_catalog;
 pub mod code_diagnostics_feedback_loop;
+pub mod core_topic_subscription_event_bus;
 pub mod experience_replay_library;
 pub mod schema_driven_agent_configuration;
 pub mod sensitive_data_guardrails;
@@ -1339,6 +1340,13 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    CoreTopicSubscriptionEventBus {
+        operation: String,
+        payload: Vec<u8>,
+        capability: String,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -1999,6 +2007,10 @@ pub enum CoreEvent {
         run_id: String,
         operation: String,
         revision: u64,
+        projection_json: String,
+    },
+    CoreTopicSubscriptionEventBus {
+        operation: String,
         projection_json: String,
     },
     /// Bounded durable routing decision projection.
@@ -3092,6 +3104,7 @@ impl EventJournal {
                 workspace_root_id, ..
             } => workspace_root_id,
             CoreEvent::WorkflowOptimizationLab { run_id, .. } => run_id,
+            CoreEvent::CoreTopicSubscriptionEventBus { .. } => "core-topic-bus",
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3125,6 +3138,9 @@ impl EventJournal {
                 "code_diagnostics_feedback_loop.result"
             }
             CoreEvent::WorkflowOptimizationLab { .. } => "workflow_optimization_lab.result",
+            CoreEvent::CoreTopicSubscriptionEventBus { .. } => {
+                "core_topic_subscription_event_bus.result"
+            }
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -11582,6 +11598,42 @@ impl TaskCoordinator {
                     run_id,
                     operation,
                     revision: expected_revision,
+                    projection_json,
+                };
+                let journal = state.lock().await.journal.clone();
+                if let Some(journal) = journal {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::CoreTopicSubscriptionEventBus {
+                operation,
+                payload,
+                capability,
+                idempotency_key: _,
+                reply,
+            } => {
+                let result = async {
+                    let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;
+                    let database=journal.database().lock().await;
+                    use evohime_local_storage::core_topic_subscription_event_bus_store as store;
+                    let required=if operation=="publish"{"runtime.events.publish"}else{"runtime.events.read"};
+                    if capability!=required{return Err("capability_denied".into())}
+                    match operation.as_str() {
+                        "publish"=>{let e:crate::core_topic_subscription_event_bus::Event=serde_json::from_slice(&payload).map_err(|_|"invalid_event".to_string())?;crate::core_topic_subscription_event_bus::validate_event(&e).map_err(|e|e.to_string())?;let json=serde_json::to_vec(&e).map_err(|e|e.to_string())?;let saved=store::put_event(database.connection(),&e.event_id,&json,&e.content_hash,"published",crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":if saved{"published"}else{"duplicate"},"event_id":e.event_id})).map_err(|e|e.to_string())}
+                        "subscribe"=>{let s:crate::core_topic_subscription_event_bus::Subscription=serde_json::from_slice(&payload).map_err(|_|"invalid_subscription".to_string())?;crate::core_topic_subscription_event_bus::validate_subscription(&s).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"subscribed","subscription_id":s.id})).map_err(|e|e.to_string())}
+                        "ack"|"nack"=>{let v:serde_json::Value=serde_json::from_slice(&payload).map_err(|_|"invalid_delivery".to_string())?;let sub=v.get("subscription_id").and_then(|x|x.as_str()).ok_or_else(||"subscription_missing".to_string())?;let id=v.get("event_id").and_then(|x|x.as_str()).ok_or_else(||"event_missing".to_string())?;let attempt=v.get("attempt").and_then(|x|x.as_u64()).unwrap_or(1) as u32;let next=crate::core_topic_subscription_event_bus::transition(crate::core_topic_subscription_event_bus::DeliveryState::InFlight,operation.as_str(),attempt).map_err(|e|e.to_string())?;store::put_delivery(database.connection(),sub,id,&format!("{next:?}"),attempt,v.get("error").and_then(|x|x.as_str()),crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;if matches!(next,crate::core_topic_subscription_event_bus::DeliveryState::DeadLetter){store::put_dead_letter(database.connection(),sub,id,attempt,"consumer_failure","redacted",crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;}serde_json::to_vec(&serde_json::json!({"status":format!("{next:?}").to_lowercase(),"attempt":attempt})).map_err(|e|e.to_string())}
+                        _=>Err("unsupported_bus_operation".into()),
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::CoreTopicSubscriptionEventBus {
+                    operation,
                     projection_json,
                 };
                 let journal = state.lock().await.journal.clone();

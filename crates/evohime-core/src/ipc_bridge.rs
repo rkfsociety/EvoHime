@@ -2584,6 +2584,20 @@ impl IpcBridge {
                     self.write_response(writer, "workflow_optimization_lab.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::CoreTopicSubscriptionEventBus(
+                    request,
+                )) => {
+                    let operation = if request.operation.is_empty() {
+                        "subscribe".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_core_topic_subscription_event_bus(operation, request)
+                        .await?;
+                    self.write_response(writer, "core_topic_subscription_event_bus.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -7147,6 +7161,33 @@ impl IpcBridge {
                 run_id: request.run_id,
                 payload: request.payload,
                 expected_revision: request.expected_revision,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_core_topic_subscription_event_bus(
+        &self,
+        operation: String,
+        request: generated::CoreTopicSubscriptionEventBusCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::CoreTopicSubscriptionEventBus {
+                operation,
+                payload: request.payload,
+                capability: request.capability,
                 idempotency_key: request.idempotency_key,
                 reply,
             })

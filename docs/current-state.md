@@ -871,3 +871,9 @@ Benchmark Matrix evaluation, durable SQLite schema v68, security hard rejection,
 explicit holdout-gated promotion, authenticated IPC command 222/event 67 и
 Electron metadata-only panel. Лаборатория offline-only и не может сама менять
 production workflow.
+План 72 закрыт 2 сентября 2026 года: Core Topic/Subscription Event Bus v1.
+Добавлены typed topic/event/subscription contracts, exact/prefix/type routing,
+capability checks, durable SQLite schema v69, ACK/NACK/retry/dead-letter,
+backpressure bounds и restart reconciliation. Authenticated IPC command 223 /
+event 68 и Electron metadata-only panel не расширяют authority; внешний broker
+не требуется.

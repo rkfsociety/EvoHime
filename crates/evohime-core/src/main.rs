@@ -795,6 +795,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::WorkflowOptimizationLab { run_id, operation, revision, .. } => println!(
             "workflow_optimization_lab.result {run_id}: {operation} revision={revision}"
         ),
+        evohime_core::CoreEvent::CoreTopicSubscriptionEventBus { operation, .. } => println!(
+            "core_topic_subscription_event_bus.result: {operation}"
+        ),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             println!("review.history_cleared {marker_id}")
         }

@@ -447,6 +447,11 @@ function dispatch(
       if(operation===null||runId===null||optimizationPayload===null||idempotencyKey===null||expectedRevision===null||runId.length>128||optimizationPayload.length>128*1024)return failure('invalid-payload','Некорректная операция Workflow Optimization Lab.')
       return accepted(client.send({workflowOptimizationLab:{schemaVersion:1,requestId:randomUUID(),operation,runId,payload:Buffer.from(optimizationPayload,'utf8'),expectedRevision,idempotencyKey}}))
     }
+    case 'core.coreTopicSubscriptionEventBus': {
+      const value=asRecord(payload); const operation=['publish','subscribe','ack','nack'].includes(String(value['operation']))?String(value['operation']):null; const capability=asBoundedString(value['capability']); const busPayload=asBoundedString(value['payload']); const idempotencyKey=asBoundedString(value['idempotencyKey']);
+      if(operation===null||capability===null||busPayload===null||idempotencyKey===null||capability.length>128||busPayload.length>64*1024)return failure('invalid-payload','Некорректная операция Core Topic Bus.')
+      return accepted(client.send({coreTopicSubscriptionEventBus:{schemaVersion:1,requestId:randomUUID(),operation,capability,payload:Buffer.from(busPayload,'utf8'),idempotencyKey}}))
+    }
 
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)
