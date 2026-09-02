@@ -60,3 +60,108 @@ fn duplicate_roles_and_unknown_versions_are_rejected() {
         Err(CoordinationError::Invalid("member"))
     ));
 }
+
+#[test]
+fn versioned_strategies_keep_selection_core_owned_and_bounded() {
+    let team = spec();
+    let strategy = strategy_from_team(
+        &team,
+        "session-1",
+        "protocol-1",
+        &"a".repeat(64),
+        TeamCoordinationStrategyKind::ModelSelector,
+        Some("reviewer".into()),
+    )
+    .unwrap();
+    assert_eq!(canonical_strategy_hash(&strategy).unwrap().len(), 64);
+    let state = initial_strategy_state(&strategy).unwrap();
+    let (next, decision) = select_strategy(
+        &strategy,
+        &state,
+        Some(&ParticipantIdentity {
+            role: "coder".into(),
+        }),
+        None,
+        &[],
+    )
+    .unwrap();
+    assert_eq!(decision.participant.role, "coder");
+    assert!(!decision.fallback);
+    assert_eq!(next.session_id, "session-1");
+    assert!(select_strategy(
+        &strategy,
+        &next,
+        Some(&ParticipantIdentity {
+            role: "not-eligible".into()
+        }),
+        None,
+        &[],
+    )
+    .is_ok());
+}
+
+#[test]
+fn selector_failure_uses_only_explicit_fallback() {
+    let team = spec();
+    let strategy = strategy_from_team(
+        &team,
+        "session-1",
+        "protocol-1",
+        &"b".repeat(64),
+        TeamCoordinationStrategyKind::RuleSelector,
+        Some("reviewer".into()),
+    )
+    .unwrap();
+    let state = initial_strategy_state(&strategy).unwrap();
+    let (_, decision) = select_strategy(&strategy, &state, None, None, &[]).unwrap();
+    assert_eq!(decision.participant.role, "reviewer");
+    assert!(decision.fallback);
+}
+
+#[test]
+fn handoff_swarm_and_graph_require_declared_edges() {
+    let team = spec();
+    let routes = BTreeMap::from([(String::from("coder"), vec![String::from("reviewer")])]);
+    for kind in [
+        TeamCoordinationStrategyKind::HandoffSwarm {
+            routes: routes.clone(),
+        },
+        TeamCoordinationStrategyKind::GraphDirected {
+            edges: routes.clone(),
+        },
+    ] {
+        let strategy = strategy_from_team(
+            &team,
+            "session-1",
+            "protocol-1",
+            &"c".repeat(64),
+            kind,
+            None,
+        )
+        .unwrap();
+        let mut state = initial_strategy_state(&strategy).unwrap();
+        state.coordination.current_owner = Some("coder".into());
+        assert!(select_strategy(
+            &strategy,
+            &state,
+            Some(&ParticipantIdentity {
+                role: "reviewer".into(),
+            }),
+            Some("coder"),
+            &[],
+        )
+        .is_ok());
+        assert!(matches!(
+            select_strategy(
+                &strategy,
+                &state,
+                Some(&ParticipantIdentity {
+                    role: "coder".into(),
+                }),
+                Some("coder"),
+                &[],
+            ),
+            Err(CoordinationError::ProtocolRouteDenied)
+        ));
+    }
+}

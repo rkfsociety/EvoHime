@@ -589,6 +589,9 @@ impl LocalDatabase {
         benchmark_store::install_schema(&connection)?;
         skill_trust_pipeline_store::install_schema(&connection)?;
         team_sop_protocols_store::install_schema(&connection)?;
+        // Plan 95: durable strategy snapshots are installed idempotently so
+        // databases already at the current schema receive the additive table.
+        team_coordination_policies_store::install_schema(&connection)?;
         conversation_event_log_store::install_schema(&connection)?;
         human_work_items_store::install_schema(&connection)?;
         browser_session_store::install_schema(&connection)?;

@@ -356,6 +356,14 @@ Electron projection/panel и focused/full verification. Комплект `78-0` 
 `docs/architecture.md` и `docs/current-state.md`; следующий незавершённый
 этап выбирается из `docs/plans` по следующему номеру.
 
+План 95 закрыт 3 сентября 2026 года. Team Coordination Strategies v1
+реализован поверх policy/protocol/session authority: Core-owned typed
+strategy selection, explicit fallback, protocol-validated handoff/graph
+routes, durable session-pinned snapshots, authenticated projection и
+focused/recovery/storage evidence перенесены в каноническую документацию.
+Комплект `95-0` … `95-4` удалён после end-to-end проверки. Следующий
+незавершённый этап выбирается из `docs/plans` по следующему номеру.
+
 План 80 закрыт 2 сентября 2026 года. Project Instruction Stack v1 перенесён
 в `docs/architecture.md` и `docs/current-state.md`; комплект `80-0` … `80-4`
 удалён после end-to-end реализации и проверок. Следующий незавершённый этап

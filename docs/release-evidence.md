@@ -369,6 +369,26 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Checks: focused contract/recovery/storage tests, cargo check, protocol check,
   Electron typecheck and full Electron regression. Evidence excludes secrets,
   raw prompts/outputs, absolute paths and PII.
+## Plan 95 — Team Coordination Strategies v1 (2026-09-03)
+
+- Contract: versioned Core-owned `TeamCoordinationStrategy` with
+  RoundRobin/RuleSelector/ModelSelector/HandoffSwarm/GraphDirected; eligible
+  roles are derived from the TeamSpec roster before selection, and model input
+  is restricted to typed `ParticipantIdentity`.
+- Runtime/security: explicit deterministic fallback only, bounded team and
+  repeated-selection limits, immutable `session_id`/strategy revision/
+  protocol hash fencing, and protocol-snapshot producer/consumer validation
+  before handoff/graph dispatch. No capability grant or effect is performed by
+  selection; route denial is fail-closed.
+- Durability/client: additive idempotent
+  `team_coordination_strategy_snapshots` storage with optimistic versioning;
+  authenticated existing command 216/event 60 operation `select_strategy` and
+  bounded Electron projection. No raw prompts, rationale, credentials,
+  transcripts or PII are exposed.
+- Checks: Core contract 5/5, local-storage strategy snapshot 1/1, prior
+  policy regression 3/3, cargo fmt, protocol/typecheck and diff-check; focused
+  evidence is reproducible and redacted. Unknown/stale/denied outcomes do not
+  retry an external effect.
 ## Plan 66 — Typed Agent Handoff Contract v1 (2026-09-02)
 
 - Contract: versioned bounded HandoffPacket, structured context budget,

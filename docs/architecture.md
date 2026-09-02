@@ -1661,7 +1661,7 @@ running lease single-flight, истёкший lease переводится в `u
 через существующий `ExecutionPolicyProfile`/Job Object boundary, с timeout,
 cancel-on-drop и scrubbed environment; network effects и неподдержанные file
 effects fail closed. Electron показывает только developer metadata projection.
-## Team Coordination Policies v1 (план 65)
+## Team Coordination Policies и Strategies v1 (планы 65 и 95)
 
 TeamSpec и coordination policy принадлежат Core и versioned. Поддерживаются
 RoundRobin, Selector, DirectedHandoff и RoleRouter. Core валидирует роли,
@@ -1672,6 +1672,22 @@ v63 с optimistic version/idempotency; selection event — bounded metadata-only
 Coordination не запускает tools/shell и не расширяет child grants,
 permissions или capability set. Authenticated IPC command 216/event 60 и
 Electron developer panel показывают только Core projection.
+
+Поверх этого policy-контракта план 95 добавляет versioned
+`TeamCoordinationStrategy`: `RoundRobin`, `RuleSelector`, `ModelSelector`,
+`HandoffSwarm` и `GraphDirected`. Core сначала фиксирует eligible roster из
+TeamSpec, затем принимает от model selector только typed `ParticipantIdentity`
+и отклоняет неизвестные роли. Для selector failure допускается только явно
+записанный deterministic `fallback_role`; неявного выбора участника нет.
+Swarm/graph переходы проходят проверку producer/consumer handoff из
+immutable `ProtocolSnapshot` до dispatch. Strategy содержит
+`session_id`/`protocol_hash`/revision, а `StrategySessionState` проверяет их
+при каждом переходе; strategy и state сохраняются fenced/idempotently в
+`team_coordination_strategy_snapshots`. Повторный выбор, последовательные
+ходы и общий бюджет ограничены; route denial и stale snapshot не запускают
+effect. Операция `select_strategy` использует существующий authenticated
+command 216/event 60 и metadata-only Electron projection, поэтому новая
+поверхность не создаёт capabilities и не переносит authority в renderer.
 ## Typed Agent Handoff Contract v1 (план 66)
 
 `HandoffPacket` — Core-owned bounded transfer of task ownership between

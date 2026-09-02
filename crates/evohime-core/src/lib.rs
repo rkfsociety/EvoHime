@@ -11737,6 +11737,47 @@ impl TaskCoordinator {
                             let saved = evohime_local_storage::team_coordination_policies_store::save_policy(connection.connection(), &team_id, spec.revision, &json, &hash, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
                             serde_json::to_vec(&serde_json::json!({"status":if saved {"saved"} else {"duplicate"},"team_id":team_id,"revision":spec.revision,"content_hash":hash})).map_err(|e| e.to_string())
                         }
+                        "select_strategy" => {
+                            let strategy: crate::team_coordination_policies::TeamCoordinationStrategy = serde_json::from_value(value.get("strategy").cloned().ok_or_else(|| "strategy required".to_string())?).map_err(|_| "invalid coordination strategy".to_string())?;
+                            crate::team_coordination_policies::validate_strategy(&strategy).map_err(|e| e.to_string())?;
+                            if strategy.eligible_roles.iter().any(|role| !spec.members.iter().any(|member| member.role == *role)) {
+                                return Err("strategy eligible set exceeds team roster".to_string());
+                            }
+                            let snapshot: crate::team_sop_protocols::ProtocolSnapshot = serde_json::from_value(value.get("protocol_snapshot").cloned().ok_or_else(|| "protocol snapshot required".to_string())?).map_err(|_| "invalid protocol snapshot".to_string())?;
+                            if snapshot.protocol_id != strategy.protocol_id || snapshot.content_hash != strategy.protocol_hash {
+                                return Err("protocol snapshot mismatch".to_string());
+                            }
+                            let protocol: crate::team_sop_protocols::TeamProtocol = serde_json::from_slice(&snapshot.protocol_json).map_err(|_| "invalid protocol snapshot".to_string())?;
+                            crate::team_sop_protocols::validate_protocol(&protocol).map_err(|e| e.to_string())?;
+                            let state_value = value.get("state").cloned().ok_or_else(|| "strategy state required".to_string())?;
+                            let strategy_state: crate::team_coordination_policies::StrategySessionState = serde_json::from_value(state_value).map_err(|_| "invalid strategy state".to_string())?;
+                            let participant = value.get("participant").cloned().map(|item| serde_json::from_value::<crate::team_coordination_policies::ParticipantIdentity>(item).map_err(|_| "invalid participant identity".to_string())).transpose()?;
+                            let handoff_from = value.get("handoff_from").and_then(serde_json::Value::as_str);
+                            if matches!(&strategy.kind, crate::team_coordination_policies::TeamCoordinationStrategyKind::HandoffSwarm { .. } | crate::team_coordination_policies::TeamCoordinationStrategyKind::GraphDirected { .. }) {
+                                let from = handoff_from.ok_or_else(|| "handoff source required".to_string())?;
+                                let to = participant.as_ref().map(|item| item.role.as_str()).ok_or_else(|| "handoff target required".to_string())?;
+                                crate::team_coordination_policies::validate_protocol_route(&snapshot, from, to).map_err(|e| e.to_string())?;
+                            }
+                            let event_ids: Vec<String> = value.get("event_ids").and_then(serde_json::Value::as_array).map(|items| items.iter().filter_map(serde_json::Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
+                            let (next, decision) = crate::team_coordination_policies::select_strategy(&strategy, &strategy_state, participant.as_ref(), handoff_from, &event_ids).map_err(|e| e.to_string())?;
+                            let strategy_json = serde_json::to_vec(&strategy).map_err(|e| e.to_string())?;
+                            let next_json = serde_json::to_vec(&next).map_err(|e| e.to_string())?;
+                            let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                            let connection = journal.database().lock().await;
+                            let saved = evohime_local_storage::team_coordination_policies_store::save_strategy_state(connection.connection(), evohime_local_storage::team_coordination_policies_store::StrategyStateInput {
+                                session_id: &strategy.session_id,
+                                strategy_id: &strategy.strategy_id,
+                                strategy_revision: strategy.revision,
+                                protocol_hash: &strategy.protocol_hash,
+                                strategy_json: &strategy_json,
+                                state_json: &next_json,
+                                expected_version,
+                                idempotency_key: &idempotency_key,
+                                now_ms: crate::task_memory::now_millis() as i64,
+                            }).map_err(|e| e.to_string())?;
+                            if !saved { return Err("version_conflict_or_duplicate".to_string()); }
+                            serde_json::to_vec(&serde_json::json!({"status":"selected","team_id":team_id,"session_id":strategy.session_id,"strategy_id":strategy.strategy_id,"protocol_hash":strategy.protocol_hash,"version":expected_version.saturating_add(1),"state":next,"decision":decision})).map_err(|e| e.to_string())
+                        }
                         _ => Err("unsupported coordination operation".to_string()),
                     }
                 }.await;

@@ -835,7 +835,16 @@ versioned TeamSpec, RoundRobin/Selector/DirectedHandoff/RoleRouter, Core
 validation selector target и repeated-selection guards. State хранится в SQLite
 schema v63 с optimistic version/idempotency, а authenticated IPC использует
 command 216/event 60 и metadata-only Electron projection. Координация не
-запускает effects и не расширяет grants.
+запускает effects и не расширяет grants. План 95 закрыт 3 сентября 2026 года:
+добавлен Core-owned versioned `TeamCoordinationStrategy` с
+RoundRobin/RuleSelector/ModelSelector/HandoffSwarm/GraphDirected, Core-derived
+eligible roster, typed participant identity, явным deterministic fallback и
+repeat/no-progress guards. Immutable strategy/protocol snapshot привязан к
+TeamSession (`session_id`, `protocol_hash`, revision), сохраняется в additive
+`team_coordination_strategy_snapshots` с fencing/idempotency, а handoff/graph
+маршруты сверяются с protocol snapshot до dispatch. Клиент использует
+authenticated `select_strategy` через существующую bounded surface; raw
+prompt/output, rationale, credentials и capability grants не передаются.
 Обновлено: 2026-09-02. План 66 закрыт: Typed Agent Handoff Contract v1
 реализует bounded `HandoffPacket`, ACK/NACK lifecycle, expiry/stale guards,
 structured context budget и provenance. Pending handoffs сохраняются в SQLite
