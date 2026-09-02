@@ -53,6 +53,7 @@ import { ComposableTerminationConditionsPanel } from './ComposableTerminationCon
 import { WorkspaceBootstrapManifestPanel } from './WorkspaceBootstrapManifestPanel'
 import { TeamCoordinationPoliciesPanel } from './TeamCoordinationPoliciesPanel'
 import { TypedAgentHandoffContractPanel } from './TypedAgentHandoffContractPanel'
+import { SchemaDrivenAgentConfigurationPanel } from './SchemaDrivenAgentConfigurationPanel'
 import { WorkbenchPanel } from './WorkbenchPanel'
 import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
 
@@ -79,7 +80,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'typed-agent-handoff-contract'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -113,6 +114,7 @@ const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'workspace-bootstrap-manifest', label: 'Bootstrap Manifest', icon: '⌂' },
   { id: 'team-coordination-policies', label: 'Team Coordination', icon: '⇄' },
   { id: 'typed-agent-handoff-contract', label: 'Typed Handoff', icon: '⇢' },
+  { id: 'schema-driven-agent-configuration', label: 'Schema Configuration', icon: '⚙' },
   { id: 'packages', label: 'Workflow Package', icon: '⇄' },
   { id: 'benchmarks', label: 'Бенчмарки', icon: '▦' },
   { id: 'middleware', label: 'Middleware', icon: '◇' },
@@ -454,6 +456,7 @@ export function App(): React.JSX.Element {
               {view === 'workspace-bootstrap-manifest' ? <WorkspaceBootstrapManifestPanel connection={connection} events={events} /> : null}
               {view === 'team-coordination-policies' ? <TeamCoordinationPoliciesPanel connection={connection} events={events} /> : null}
               {view === 'typed-agent-handoff-contract' ? <TypedAgentHandoffContractPanel connection={connection} events={events} /> : null}
+              {view === 'schema-driven-agent-configuration' ? <SchemaDrivenAgentConfigurationPanel connection={connection} events={events} /> : null}
             </div>
           )}
         </div>

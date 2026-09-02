@@ -1055,6 +1055,7 @@ export const RENDERER_COMMANDS = [
   'core.workspaceBootstrapManifest',
   'core.teamCoordinationPolicies',
   'core.typedAgentHandoffContract',
+  'core.schemaDrivenAgentConfiguration',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1347,6 +1348,7 @@ export interface CommandPayloads {
   'core.workspaceBootstrapManifest': { operation: 'validate' | 'discover' | 'save' | 'approve' | 'run'; projectId: string; workspaceId: string; payload: string; expectedVersion?: number; idempotencyKey: string }
   'core.teamCoordinationPolicies': { operation: 'validate_policy' | 'save_policy' | 'select' | 'save_state'; teamId: string; payload: string; expectedVersion?: number; idempotencyKey: string }
   'core.typedAgentHandoffContract': { operation: 'propose' | 'transition' | 'get'; handoffId: string; packetJson: string; actor: string; reason: string; expectedVersion?: number; idempotencyKey: string }
+  'core.schemaDrivenAgentConfiguration': { operation: 'get_schema' | 'get_snapshot' | 'apply'; scope: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
   'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
@@ -1823,6 +1825,7 @@ export interface CommandResults {
   'core.workspaceBootstrapManifest': { accepted: boolean }
   'core.teamCoordinationPolicies': { accepted: boolean }
   'core.typedAgentHandoffContract': { accepted: boolean }
+  'core.schemaDrivenAgentConfiguration': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }
   'core.executeAnalysisKernel': { accepted: boolean }

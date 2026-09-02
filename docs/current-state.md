@@ -841,3 +841,9 @@ command 216/event 60 и metadata-only Electron projection. Координаци�
 structured context budget и provenance. Pending handoffs сохраняются в SQLite
 schema v64; Core handler не наследует capabilities/credentials, а command 217
 и event 62 с Electron-панелью передают только metadata projection.
+План 67 закрыт 2 сентября 2026 года: Schema-Driven Agent Configuration v1.
+Core публикует versioned schema и effective snapshots для пяти слоёв, валидирует
+typed registry references и semantic patches, redacts secret values и сохраняет
+revision-fenced snapshots в SQLite schema v65. Authenticated IPC command 218 /
+event 63 и Electron developer panel передают только bounded metadata projection;
+active run snapshot не мутируется.

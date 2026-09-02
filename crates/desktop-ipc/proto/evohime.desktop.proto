@@ -1868,6 +1868,7 @@ message CommandEnvelope {
     WorkspaceBootstrapManifestCommand workspace_bootstrap_manifest = 215;
     TeamCoordinationPoliciesCommand team_coordination_policies = 216;
     TypedAgentHandoffContractCommand typed_agent_handoff_contract = 217;
+    SchemaDrivenAgentConfigurationCommand schema_driven_agent_configuration = 218;
   }
 }
 
@@ -1980,6 +1981,7 @@ message EventEnvelope {
     WorkspaceBootstrapManifestEvent workspace_bootstrap_manifest = 61;
     TeamCoordinationPoliciesEvent team_coordination_policies = 60;
     TypedAgentHandoffContractEvent typed_agent_handoff_contract = 62;
+    SchemaDrivenAgentConfigurationEvent schema_driven_agent_configuration = 63;
   }
 }
 
@@ -2231,6 +2233,27 @@ message TypedAgentHandoffContractEvent {
   string operation = 4;
   string state = 5;
   string handoff_id = 6;
+  string error_code = 7;
+  bytes projection_json = 8;
+}
+
+// Plan 67: Core-owned schema and metadata-only effective configuration surface.
+message SchemaDrivenAgentConfigurationCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string scope = 4;
+  bytes payload = 5;
+  uint64 expected_revision = 6;
+  string idempotency_key = 7;
+}
+message SchemaDrivenAgentConfigurationEvent {
+  uint32 schema_version = 1;
+  uint64 revision = 2;
+  string request_id = 3;
+  string operation = 4;
+  string status = 5;
+  string scope = 6;
   string error_code = 7;
   bytes projection_json = 8;
 }

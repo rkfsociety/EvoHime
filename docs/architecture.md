@@ -1622,3 +1622,16 @@ authority are never inherited. State transitions are
 fenced, duplicate delivery is idempotent, and pending state survives restart
 in SQLite schema v64. Authenticated additive IPC command 217/event 62 and the
 Electron developer panel expose bounded lifecycle metadata only.
+
+## Schema-Driven Agent Configuration v1 (план 67)
+
+Core публикует versioned `ConfigurationSchema` с пятью слоями
+`ApplicationDefaults`, `WorkspaceDefaults`, `AgentProfile`,
+`ConversationDefaults`, `RunOverride`. Поля имеют typed kinds, Core registry
+source, sensitivity и apply/restart semantics; semantic patches проверяются
+Core, а неизвестные executable-like fields и недоступные references отклоняются.
+`ConfigurationSnapshot` содержит effective values, source layers, redacted
+secret states и deterministic `sha256` hash. Snapshot revision fenced
+optimistically и сохраняется metadata-only в SQLite schema v65; обновление не
+мутирует active run и не запускает side effects. Authenticated additive IPC
+использует command 218/event 63, Electron получает только bounded projection.

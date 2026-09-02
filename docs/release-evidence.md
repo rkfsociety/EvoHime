@@ -365,3 +365,16 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Checks: focused contract/recovery/storage tests, schema migration, cargo
   check/clippy, protocol check, Electron typecheck and full Electron regression.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
+## Plan 67 — Schema-Driven Agent Configuration v1 (2026-09-02)
+
+- Contract: versioned five-layer schema, typed field/registry/apply enums,
+  semantic patches, diagnostics, restart semantics and deterministic effective
+  snapshot hash.
+- Durability/safety: additive SQLite schema v65, optimistic revision fencing,
+  redacted credential state, unknown/executable-like fields rejected, active
+  snapshots immutable.
+- IPC/UI: authenticated additive command 218/event 63, generated bindings and
+  Electron metadata-only schema/snapshot/action panel.
+- Checks: focused contract/recovery/storage/migration tests, cargo fmt/check/
+  clippy, protocol check, Electron typecheck and full Electron regression.
+  Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.

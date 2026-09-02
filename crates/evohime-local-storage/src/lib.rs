@@ -45,6 +45,7 @@ pub mod reconciliation_verifier;
 pub mod refinement_store;
 pub mod research_store;
 pub mod retained_child_store;
+pub mod schema_driven_agent_configuration_store;
 pub mod scratchpad_store;
 pub mod skill_trust_pipeline_store;
 pub mod task_checkpoint;
@@ -65,7 +66,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 64;
+pub const SCHEMA_VERSION: u32 = 65;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3630,6 +3631,10 @@ impl LocalDatabase {
             typed_agent_handoff_contract_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 64;")?;
         }
+        if current < 65 {
+            schema_driven_agent_configuration_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 65;")?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -3649,11 +3654,11 @@ mod tests {
     }
 
     #[test]
-    fn schema_64_installs_bootstrap_team_and_handoff_tables() {
-        let path = temp_database_path("workspace-bootstrap-schema-64");
+    fn schema_65_installs_configuration_tables() {
+        let path = temp_database_path("schema-driven-configuration-schema-65");
         let _ = std::fs::remove_file(&path);
         let database = LocalDatabase::open(&path).expect("database opens");
-        assert_eq!(database.schema_version().expect("schema version"), 64);
+        assert_eq!(database.schema_version().expect("schema version"), 65);
         let has_table: i64 = database
             .connection()
             .query_row(
@@ -3681,6 +3686,8 @@ mod tests {
             )
             .expect("handoff table query");
         assert_eq!(has_handoff_table, 1);
+        let has_configuration_table: i64 = database.connection().query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='schema_agent_configurations'", [], |row| row.get(0)).expect("configuration table query");
+        assert_eq!(has_configuration_table, 1);
         drop(database);
         let _ = std::fs::remove_file(&path);
     }

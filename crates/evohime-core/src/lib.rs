@@ -1,6 +1,7 @@
 pub struct CoreVersion;
 
 pub mod adaptive_tool_catalog;
+pub mod schema_driven_agent_configuration;
 pub mod sensitive_data_guardrails;
 pub mod team_sop_protocols;
 pub mod workspace_bootstrap_manifest;
@@ -1294,6 +1295,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    SchemaDrivenAgentConfiguration {
+        operation: String,
+        scope: String,
+        payload: Vec<u8>,
+        expected_revision: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -1925,6 +1934,12 @@ pub enum CoreEvent {
         operation: String,
         state: String,
         version: u64,
+        projection_json: String,
+    },
+    SchemaDrivenAgentConfiguration {
+        scope: String,
+        operation: String,
+        revision: u64,
         projection_json: String,
     },
     /// Bounded durable routing decision projection.
@@ -3011,6 +3026,7 @@ impl EventJournal {
             CoreEvent::WorkspaceBootstrapManifest { workspace_id, .. } => workspace_id,
             CoreEvent::TeamCoordinationPolicies { team_id, .. } => team_id,
             CoreEvent::TypedAgentHandoffContract { handoff_id, .. } => handoff_id,
+            CoreEvent::SchemaDrivenAgentConfiguration { scope, .. } => scope,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3035,6 +3051,9 @@ impl EventJournal {
             CoreEvent::WorkspaceBootstrapManifest { .. } => "workspace_bootstrap_manifest.result",
             CoreEvent::TeamCoordinationPolicies { .. } => "team_coordination_policies.result",
             CoreEvent::TypedAgentHandoffContract { .. } => "typed_agent_handoff_contract.result",
+            CoreEvent::SchemaDrivenAgentConfiguration { .. } => {
+                "schema_driven_agent_configuration.result"
+            }
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -11270,6 +11289,72 @@ impl TaskCoordinator {
                     let _ = journal.record(&event).await;
                 }
                 let _ = events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::SchemaDrivenAgentConfiguration {
+                operation,
+                scope,
+                payload,
+                expected_revision,
+                idempotency_key: _,
+                reply,
+            } => {
+                let event_operation = operation.clone();
+                let event_scope = scope.clone();
+                let result = async {
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    let scope_kind = match scope.as_str() { "application" => crate::schema_driven_agent_configuration::ConfigurationScope::ApplicationDefaults, "workspace" => crate::schema_driven_agent_configuration::ConfigurationScope::WorkspaceDefaults, "agent" => crate::schema_driven_agent_configuration::ConfigurationScope::AgentProfile, "conversation" => crate::schema_driven_agent_configuration::ConfigurationScope::ConversationDefaults, "run" => crate::schema_driven_agent_configuration::ConfigurationScope::RunOverride, _ => return Err("invalid_configuration_scope".into()) };
+                    let schema = crate::schema_driven_agent_configuration::builtin_schema(scope_kind);
+                    match operation.as_str() {
+                        "get_schema" => serde_json::to_vec(&schema).map_err(|e| e.to_string()),
+                        "get_snapshot" => {
+                            let Some((_, snapshot, _)) = evohime_local_storage::schema_driven_agent_configuration_store::load(database.connection(), &scope).map_err(|e| e.to_string())? else { return serde_json::to_vec(&serde_json::json!({"status":"not_configured","scope":scope,"schema":schema})).map_err(|e| e.to_string()); };
+                            Ok(snapshot)
+                        }
+                        "apply" => {
+                            let input: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_configuration_payload".to_string())?;
+                            let mut values = input.get("values").and_then(serde_json::Value::as_object).cloned().unwrap_or_default();
+                            let patches = if let Some(raw) = input.get("patches").and_then(serde_json::Value::as_array) {
+                                let mut parsed = Vec::with_capacity(raw.len());
+                                for item in raw { let object = item.as_object().ok_or_else(|| "invalid_configuration_patch".to_string())?; let kind = match object.get("kind").and_then(serde_json::Value::as_str).unwrap_or("") { "SetField" => crate::schema_driven_agent_configuration::PatchKind::SetField, "ClearOverride" => crate::schema_driven_agent_configuration::PatchKind::ClearOverride, "ResetSection" => crate::schema_driven_agent_configuration::PatchKind::ResetSection, "BindReference" => crate::schema_driven_agent_configuration::PatchKind::BindReference, _ => return Err("invalid_configuration_patch_kind".into()) }; let field = object.get("field").and_then(serde_json::Value::as_str).ok_or_else(|| "patch_field_required".to_string())?.to_owned(); let value = object.get("value").cloned(); if matches!(kind, crate::schema_driven_agent_configuration::PatchKind::SetField | crate::schema_driven_agent_configuration::PatchKind::BindReference) { if let Some(value) = &value { values.insert(field.clone(), value.clone()); } } else if matches!(kind, crate::schema_driven_agent_configuration::PatchKind::ClearOverride) { values.remove(&field); } else { values.clear(); } parsed.push(crate::schema_driven_agent_configuration::ConfigurationPatch { kind, field, value_json: value }); }
+                                parsed
+                            } else { values.iter().map(|(field, value)| crate::schema_driven_agent_configuration::ConfigurationPatch { kind: crate::schema_driven_agent_configuration::PatchKind::SetField, field: field.clone(), value_json: Some(value.clone()) }).collect::<Vec<_>>() };
+                            crate::schema_driven_agent_configuration::validate_patches(&schema, &patches).map_err(|e| e.to_string())?;
+                            let layers = [("requested", &values)];
+                            let current = evohime_local_storage::schema_driven_agent_configuration_store::load(database.connection(), &scope).map_err(|e| e.to_string())?;
+                            let revision = current.as_ref().map(|(_, _, revision)| *revision).unwrap_or(0);
+                            if current.is_some() && revision != expected_revision { return Err("configuration_revision_conflict".into()); }
+                            let snapshot = crate::schema_driven_agent_configuration::effective_snapshot(scope_kind, &schema, revision + 1, &layers).map_err(|e| e.to_string())?;
+                            let schema_json = serde_json::to_vec(&schema).map_err(|e| e.to_string())?; let snapshot_json = serde_json::to_vec(&snapshot).map_err(|e| e.to_string())?;
+                            if !evohime_local_storage::schema_driven_agent_configuration_store::save(database.connection(), &scope, &schema_json, &snapshot_json, revision + 1, crate::task_memory::now_millis() as i64, expected_revision).map_err(|e| e.to_string())? { return Err("configuration_revision_conflict".into()); }
+                            Ok(snapshot_json)
+                        }
+                        _ => Err("unsupported_configuration_operation".into()),
+                    }
+                }.await;
+                let revision = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(bytes).ok())
+                    .and_then(|v| v.get("revision").and_then(serde_json::Value::as_u64))
+                    .unwrap_or(0);
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::SchemaDrivenAgentConfiguration {
+                    scope: event_scope,
+                    operation: event_operation,
+                    revision,
+                    projection_json,
+                };
+                let journal = state.lock().await.journal.clone();
+                if let Some(journal) = journal {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
                 let _ = reply.send(result);
             }
             CoreCommand::GetTaskSnapshot {

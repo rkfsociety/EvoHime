@@ -417,6 +417,14 @@ function dispatch(
       if (operation === null || handoffId === null || packetJson === null || actor === null || reason === null || idempotencyKey === null || expectedVersion === null || packetJson.length > 256 * 1024) return failure('invalid-payload', 'Некорректная операция Typed Agent Handoff.')
       return accepted(client.send({ typedAgentHandoffContract: { schemaVersion: 1, requestId: randomUUID(), operation, packetJson: Buffer.from(packetJson, 'utf8'), handoffId, actor, reason, expectedVersion, idempotencyKey } }))
     }
+    case 'core.schemaDrivenAgentConfiguration': {
+      const value = asRecord(payload)
+      const operation = ['get_schema', 'get_snapshot', 'apply'].includes(String(value['operation'])) ? String(value['operation']) : null
+      const scope = asBoundedString(value['scope']); const configPayload = asBoundedString(value['payload']); const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const expectedRevision = value['expectedRevision'] === undefined ? 0 : asNonNegativeInteger(value['expectedRevision'])
+      if (operation === null || scope === null || configPayload === null || idempotencyKey === null || expectedRevision === null || scope.length > 64 || configPayload.length > 256 * 1024) return failure('invalid-payload', 'Некорректная операция schema-driven configuration.')
+      return accepted(client.send({ schemaDrivenAgentConfiguration: { schemaVersion: 1, requestId: randomUUID(), operation, scope, payload: Buffer.from(configPayload, 'utf8'), expectedRevision, idempotencyKey } }))
+    }
 
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)
