@@ -1150,6 +1150,7 @@ export const RENDERER_COMMANDS = [
   'core.eventVisualizerRegistry',
   'core.reasoningOperatorLibrary',
   'core.outputGuardrailPipeline',
+  'core.customizationInventory',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1461,6 +1462,7 @@ export interface CommandPayloads {
   'core.architectEditorPipeline': { operation: 'create' | 'get' | 'accept_intent'; pipelineId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.eventVisualizerRegistry': { operation: 'list' | 'register' | 'resolve'; visualizerId?: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.outputGuardrailPipeline': { operation: 'evaluate'; pipelineId: string; payload: string; expectedVersion?: number; idempotencyKey?: string }
+  'core.customizationInventory': { operation: 'list' | 'register' | 'remove'; itemId?: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.reasoningOperatorLibrary': { operation: 'list' | 'register' | 'execute'; operatorId?: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
@@ -1957,6 +1959,7 @@ export interface CommandResults {
   'core.architectEditorPipeline': { accepted: boolean }
   'core.eventVisualizerRegistry': { accepted: boolean }
   'core.outputGuardrailPipeline': { accepted: boolean }
+  'core.customizationInventory': { accepted: boolean }
   'core.reasoningOperatorLibrary': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }

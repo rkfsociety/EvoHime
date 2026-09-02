@@ -1943,3 +1943,11 @@ Core-owned pipeline выполняет bounded Validate/Transform/Redact stages 
 accepted output/handoff. Schema 83 и IPC tags 237/82 сохраняют только typed
 metadata; correction attempts ограничены тремя, а Sensitive Data Guardrails
 остаётся canonical redaction policy.
+
+## Customization Inventory v1 (план 85)
+
+Core-owned normalized metadata catalog объединяет Skill, Integration, Profile,
+Workflow и UiExtension без объединения runtime semantics. Schema 84 и
+authenticated additive IPC tags 238/83 поддерживают bounded list/register/remove;
+owner registries сохраняют authority, grants и side-effect policies. Renderer
+видит только redacted metadata projection.

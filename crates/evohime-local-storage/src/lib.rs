@@ -31,6 +31,7 @@ pub mod context_ledger_store;
 pub mod continuation_store;
 pub mod conversation_event_log_store;
 pub mod core_topic_subscription_event_bus_store;
+pub mod customization_inventory_store;
 pub mod declarative_agent_component_registry_store;
 pub mod dependency_aware_task_graph_store;
 pub mod event_trigger_runtime_store;
@@ -84,7 +85,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 83;
+pub const SCHEMA_VERSION: u32 = 84;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -592,6 +593,7 @@ impl LocalDatabase {
         event_visualizer_registry_store::install_schema(&connection)?;
         reasoning_operator_library_store::install_schema(&connection)?;
         output_guardrail_pipeline_store::install_schema(&connection)?;
+        customization_inventory_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
@@ -3729,6 +3731,10 @@ impl LocalDatabase {
         if current < 83 {
             output_guardrail_pipeline_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 83;")?;
+        }
+        if current < 84 {
+            customization_inventory_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 84;")?;
         }
         transaction.commit()?;
         Ok(())

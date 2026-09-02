@@ -4,6 +4,7 @@ pub mod adaptive_tool_catalog;
 pub mod capability_workbenches;
 pub mod code_diagnostics_feedback_loop;
 pub mod core_topic_subscription_event_bus;
+pub mod customization_inventory;
 pub mod declarative_agent_component_registry;
 pub mod dependency_aware_task_graph;
 pub mod event_visualizer_registry;
@@ -1472,6 +1473,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    CustomizationInventory {
+        operation: String,
+        item_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -2217,6 +2226,12 @@ pub enum CoreEvent {
     },
     OutputGuardrailPipeline {
         pipeline_id: String,
+        operation: String,
+        version: u64,
+        projection_json: String,
+    },
+    CustomizationInventory {
+        item_id: String,
         operation: String,
         version: u64,
         projection_json: String,
@@ -3327,6 +3342,7 @@ impl EventJournal {
             CoreEvent::EventVisualizerRegistry { visualizer_id, .. } => visualizer_id,
             CoreEvent::ReasoningOperatorLibrary { operator_id, .. } => operator_id,
             CoreEvent::OutputGuardrailPipeline { pipeline_id, .. } => pipeline_id,
+            CoreEvent::CustomizationInventory { item_id, .. } => item_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3381,6 +3397,7 @@ impl EventJournal {
             CoreEvent::EventVisualizerRegistry { .. } => "event_visualizer_registry.result",
             CoreEvent::ReasoningOperatorLibrary { .. } => "reasoning_operator_library.result",
             CoreEvent::OutputGuardrailPipeline { .. } => "output_guardrail_pipeline.result",
+            CoreEvent::CustomizationInventory { .. } => "customization_inventory.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -13315,6 +13332,61 @@ impl TaskCoordinator {
                     .unwrap_or_else(|| "{}".into());
                 let event = CoreEvent::OutputGuardrailPipeline {
                     pipeline_id,
+                    operation,
+                    version: expected_version,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::CustomizationInventory {
+                operation,
+                item_id,
+                payload,
+                expected_version,
+                reply,
+                ..
+            } => {
+                let result = async {
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    use crate::customization_inventory as inventory;
+                    use evohime_local_storage::customization_inventory_store as store;
+                    match operation.as_str() {
+                        "list" => {
+                            let mut items = Vec::new();
+                            for row in store::list(database.connection()).map_err(|_| "storage_failed".to_string())? {
+                                if let Ok(item) = serde_json::from_slice(&row) { items.push(item); }
+                            }
+                            inventory::sort(&mut items).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"items":items,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "register" => {
+                            let item: inventory::CustomizationItem = serde_json::from_slice(&payload).map_err(|_| "invalid_customization_item".to_string())?;
+                            inventory::validate(&item).map_err(|e| e.to_string())?;
+                            if !item_id.is_empty() && item.id != item_id { return Err("item_id_mismatch".into()); }
+                            let data = serde_json::to_vec(&item).map_err(|_| "serialization_failed".to_string())?;
+                            store::put(database.connection(), &item.id, &format!("{:?}", item.kind), item.version, &data, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"item_id":item.id,"version":item.version,"status":"registered","redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "remove" => {
+                            if expected_version == 0 { return Err("expected_version_required".into()); }
+                            database.connection().execute("DELETE FROM customization_inventory WHERE id=?1 AND version=?2", rusqlite::params![item_id, expected_version]).map_err(|_| "storage_failed".to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"item_id":item_id,"version":expected_version,"status":"removed","redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        _ => Err("unsupported_customization_inventory_operation".into())
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::CustomizationInventory {
+                    item_id,
                     operation,
                     version: expected_version,
                     projection_json,

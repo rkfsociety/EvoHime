@@ -71,6 +71,7 @@ import { KnowledgeSourceRegistryProjectRolePanel } from './KnowledgeSourceRegist
 import { AgentGitChangeSetsPanel } from './AgentGitChangeSetsPanel'
 import { ArchitectEditorModelPipelinePanel } from './ArchitectEditorModelPipelinePanel'
 import { EventVisualizerRegistryPanel } from './EventVisualizerRegistryPanel'
+import { CustomizationInventoryPanel } from './CustomizationInventoryPanel'
 import { WorkbenchPanel } from './WorkbenchPanel'
 import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
 
@@ -97,7 +98,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'core-topic-subscription-event-bus' | 'dependency-aware-task-graph' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'core-topic-subscription-event-bus' | 'dependency-aware-task-graph' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -149,6 +150,7 @@ const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'agent-git-change-sets', label: 'Agent Git Changes', icon: '⑂' },
   { id: 'architect-editor-pipeline', label: 'Architect / Editor', icon: '⇢' },
   { id: 'event-visualizer-registry', label: 'Event Visualizers', icon: '▦' },
+  { id: 'customization-inventory', label: 'Customization', icon: '◈' },
   { id: 'packages', label: 'Workflow Package', icon: '⇄' },
   { id: 'benchmarks', label: 'Бенчмарки', icon: '▦' },
   { id: 'middleware', label: 'Middleware', icon: '◇' },
@@ -508,6 +510,7 @@ export function App(): React.JSX.Element {
               {view === 'agent-git-change-sets' ? <AgentGitChangeSetsPanel connection={connection} /> : null}
               {view === 'architect-editor-pipeline' ? <ArchitectEditorModelPipelinePanel connection={connection} /> : null}
               {view === 'event-visualizer-registry' ? <EventVisualizerRegistryPanel connection={connection} /> : null}
+              {view === 'customization-inventory' ? <CustomizationInventoryPanel connection={connection} /> : null}
             </div>
           )}
         </div>

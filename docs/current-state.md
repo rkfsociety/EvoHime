@@ -994,3 +994,8 @@ capabilities и не выполняют effects.
 
 План 84 закрыт 2 сентября 2026 года: Output Guardrail Pipeline v1 добавил
 versioned stages, bounded evaluation, redaction result и Core/IPC/UI surface.
+
+План 85 закрыт 2 сентября 2026 года: Customization Inventory v1 добавил
+normalized metadata contract, schema 84, Core validation, bounded storage,
+authenticated IPC 238/83 и единый metadata-only Customize catalog в Electron.
+Отдельные owner registries и их security/runtime semantics не изменены.

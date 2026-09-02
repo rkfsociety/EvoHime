@@ -399,3 +399,7 @@ storage, protocol/typecheck и regression checks.
 План 84 закрыт 2 сентября 2026 года. Output Guardrail Pipeline перенесён в
 Core/storage/IPC/UI; комплект `84-0` … `84-4` удалён после bounds, redaction,
 protocol/typecheck и verification checks.
+
+План 85 закрыт 2 сентября 2026 года. Customization Inventory перенесён в
+Core/storage/IPC/UI; комплект `85-0` … `85-4` удалён после contract, migration,
+bounded metadata, protocol/typecheck и verification checks.
