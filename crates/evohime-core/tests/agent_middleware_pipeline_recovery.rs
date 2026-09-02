@@ -11,6 +11,8 @@ fn service(policy: BuiltinPolicy) -> AgentMiddlewarePipelineService {
             phases: vec![HookPhase::BeforeTool],
             state_class: StateClass::Checkpoint,
             policy,
+            mode: HandlerMode::Policy,
+            failure_policy: FailurePolicy::FailClosed,
         }],
     )
     .unwrap();
@@ -33,6 +35,7 @@ fn request(key: &str) -> MiddlewareRequest {
         phase: HookPhase::BeforeTool,
         input_hash: "input-hash".into(),
         capability_snapshot_hash: "caps".into(),
+        intervention_depth: 0,
     }
 }
 

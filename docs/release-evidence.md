@@ -365,6 +365,17 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Checks: focused contract/recovery/storage tests, schema migration, cargo
   check/clippy, protocol check, Electron typecheck and full Electron regression.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
+## Plan 69 — Runtime Intervention Pipeline v1 (2026-09-02)
+
+- Contract: typed hook phases, deterministic ordering, explicit decisions,
+  handler modes/failure policy, mutation audit hashes and reentrancy limits.
+- Runtime safety: fail-closed security handlers, approval separation and
+  bounded Core-only evaluation; renderer/plugins cannot gain authority.
+- IPC/UI: authenticated additive command 220/event 65, generated bindings and
+  Electron metadata-only diagnostics panel.
+- Checks: focused contract/recovery tests, cargo fmt/check/clippy, protocol
+  check, Electron typecheck and full Electron regression. Evidence excludes
+  secrets, raw prompts/outputs, absolute paths and PII.
 ## Plan 68 — Experience Replay Library v1 (2026-09-02)
 
 - Contract: bounded episodic records/steps, typed outcomes, evidence-backed

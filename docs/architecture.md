@@ -1646,3 +1646,13 @@ SQLite schema v66 с duplicate-safe записью. Bounded context projection �
 untrusted advisory; Core сохраняет scope/retention policy и не расширяет
 capabilities. Authenticated additive IPC command 219/event 64 и Electron
 developer panel показывают только metadata/action projection.
+## Runtime Intervention Pipeline v1 (план 69)
+
+Core-owned pipeline поддерживает typed hooks для model request/response,
+agent messages, tool dispatch/results, handoff, workflow commit и external
+publish. Handlers упорядочиваются по phase/priority/stable id и возвращают
+явные Allow/Modify/Deny/PauseForApproval/Abort decisions. Built-in policy
+handlers fail closed; mutations имеют safe hashes/patch metadata без secret
+значений, approval всегда revalidated Core, а intervention depth ограничивает
+reentrancy. Authenticated additive IPC command 220/event 65 и Electron
+developer panel передают только bounded diagnostics.

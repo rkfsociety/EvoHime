@@ -853,3 +853,9 @@ unknown-outcome rejection, scope/hash/redaction checks, duplicate-safe SQLite
 schema v66 и bounded untrusted context projection. Authenticated IPC использует
 command 219/event 64, Electron — metadata-only panel; опыт не становится
 Memory, Refinement или источником capabilities.
+План 69 закрыт 2 сентября 2026 года: Runtime Intervention Pipeline v1.
+Middleware-контур расширен до typed hook phases для handoff, workflow commit и
+external publish, добавлены explicit pause/abort decisions, fail-closed policy
+metadata и bounded reentrancy guard. Authenticated IPC command 220/event 65 и
+Electron developer panel показывают только безопасную диагностику; renderer не
+регистрирует authoritative handlers.

@@ -431,6 +431,11 @@ function dispatch(
       if (operation === null || scope === null || scopeId === null || experiencePayload === null || idempotencyKey === null || expectedRevision === null || scope.length > 32 || scopeId.length > 256 || experiencePayload.length > 512 * 1024) return failure('invalid-payload', 'Некорректная операция Experience Replay.')
       return accepted(client.send({ experienceReplayLibrary: { schemaVersion: 1, requestId: randomUUID(), operation, scope, scopeId, payload: Buffer.from(experiencePayload, 'utf8'), expectedRevision, idempotencyKey } }))
     }
+    case 'core.runtimeInterventionPipeline': {
+      const value = asRecord(payload); const runId = asBoundedString(value['runId']); const interventionPayload = asBoundedString(value['payload']); const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (String(value['operation'] ?? 'evaluate') !== 'evaluate' || runId === null || interventionPayload === null || idempotencyKey === null || runId.length > 256 || interventionPayload.length > 256 * 1024) return failure('invalid-payload', 'Некорректная операция Runtime Intervention Pipeline.')
+      return accepted(client.send({ runtimeInterventionPipeline: { schemaVersion: 1, requestId: randomUUID(), operation: 'evaluate', runId, payload: Buffer.from(interventionPayload, 'utf8'), idempotencyKey } }))
+    }
 
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)

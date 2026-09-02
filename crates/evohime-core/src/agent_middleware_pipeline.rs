@@ -16,6 +16,7 @@ pub const MAX_ID_CHARS: usize = 128;
 pub const MAX_TEXT_CHARS: usize = 512;
 pub const MAX_EVENTS: usize = 256;
 pub const MAX_EVENT_BYTES: usize = 16 * 1024;
+pub const MAX_INTERVENTION_DEPTH: u8 = 4;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
@@ -28,10 +29,13 @@ pub enum HookPhase {
     BeforeTool,
     WrapToolCall,
     AfterTool,
+    BeforeHandoff,
+    BeforeWorkflowStateCommit,
+    BeforeExternalPublish,
 }
 
 impl HookPhase {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 11] = [
         Self::BeforeAgent,
         Self::AfterAgent,
         Self::BeforeModel,
@@ -40,6 +44,9 @@ impl HookPhase {
         Self::BeforeTool,
         Self::WrapToolCall,
         Self::AfterTool,
+        Self::BeforeHandoff,
+        Self::BeforeWorkflowStateCommit,
+        Self::BeforeExternalPublish,
     ];
 }
 
@@ -58,6 +65,25 @@ pub enum BuiltinPolicy {
     Narrow { max_bytes: u32 },
     Redact { fields: Vec<String> },
     Block { reason: String },
+    PauseForApproval { reason: String },
+    Abort { reason: String },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HandlerMode {
+    ObserveOnly,
+    Policy,
+    Transform,
+    ApprovalGate,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FailurePolicy {
+    FailClosed,
+    FailOperation,
+    FailOpen,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -68,6 +94,8 @@ pub struct MiddlewareSpec {
     pub phases: Vec<HookPhase>,
     pub state_class: StateClass,
     pub policy: BuiltinPolicy,
+    pub mode: HandlerMode,
+    pub failure_policy: FailurePolicy,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -97,6 +125,8 @@ pub struct MiddlewareRequest {
     pub phase: HookPhase,
     pub input_hash: String,
     pub capability_snapshot_hash: String,
+    #[serde(default)]
+    pub intervention_depth: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -118,6 +148,9 @@ pub enum PipelineOutcome {
     LimitExceeded,
     Unavailable,
     Unknown,
+    PauseForApproval { reason: String },
+    Aborted { reason: String },
+    ReentrantLimit,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -210,6 +243,13 @@ impl PipelineDefinition {
                     return Err(PipelineError::Limit("reason"));
                 }
             }
+            if let BuiltinPolicy::PauseForApproval { reason } | BuiltinPolicy::Abort { reason } =
+                &item.policy
+            {
+                if reason.chars().count() > MAX_TEXT_CHARS {
+                    return Err(PipelineError::Limit("reason"));
+                }
+            }
             if let BuiltinPolicy::Narrow { max_bytes } = item.policy {
                 if max_bytes == 0 {
                     return Err(PipelineError::Limit("max_bytes"));
@@ -275,6 +315,9 @@ impl AgentMiddlewarePipelineService {
         {
             return Err(PipelineError::Invalid("request snapshot"));
         }
+        if request.intervention_depth > MAX_INTERVENTION_DEPTH {
+            return Ok((PipelineOutcome::ReentrantLimit, Vec::new()));
+        }
         text("correlation_id", &request.correlation_id)?;
         text("idempotency_key", &request.idempotency_key)?;
         text("input_hash", &request.input_hash)?;
@@ -312,6 +355,12 @@ impl AgentMiddlewarePipelineService {
                 BuiltinPolicy::Block { reason } => PipelineOutcome::Blocked {
                     reason: reason.clone(),
                 },
+                BuiltinPolicy::PauseForApproval { reason } => PipelineOutcome::PauseForApproval {
+                    reason: reason.clone(),
+                },
+                BuiltinPolicy::Abort { reason } => PipelineOutcome::Aborted {
+                    reason: reason.clone(),
+                },
             };
             self.next_sequence += 1;
             let event = PipelineEvent {
@@ -332,7 +381,12 @@ impl AgentMiddlewarePipelineService {
                 return Err(PipelineError::EventTooLarge);
             }
             events.push(event);
-            if matches!(outcome, PipelineOutcome::Blocked { .. }) {
+            if matches!(
+                outcome,
+                PipelineOutcome::Blocked { .. }
+                    | PipelineOutcome::PauseForApproval { .. }
+                    | PipelineOutcome::Aborted { .. }
+            ) {
                 break;
             }
         }
@@ -357,6 +411,8 @@ mod tests {
                 phases: vec![HookPhase::BeforeTool],
                 state_class: StateClass::Public,
                 policy,
+                mode: HandlerMode::Policy,
+                failure_policy: FailurePolicy::FailClosed,
             }],
         )
         .unwrap()
@@ -375,7 +431,7 @@ mod tests {
     }
     #[test]
     fn all_phases_are_versioned() {
-        assert_eq!(HookPhase::ALL.len(), 8);
+        assert_eq!(HookPhase::ALL.len(), 11);
     }
     #[test]
     fn ordering_and_override_are_deterministic() {
@@ -387,6 +443,7 @@ mod tests {
             phase: HookPhase::BeforeTool,
             input_hash: "h".into(),
             capability_snapshot_hash: "caps".into(),
+            intervention_depth: 0,
         };
         let a = s.evaluate(&request).unwrap();
         assert!(matches!(a.0, PipelineOutcome::Overridden(_)));
@@ -402,6 +459,7 @@ mod tests {
             phase: HookPhase::BeforeTool,
             input_hash: "h".into(),
             capability_snapshot_hash: "caps".into(),
+            intervention_depth: 0,
         };
         s.evaluate(&request).unwrap();
         assert_eq!(s.evaluate(&request).unwrap().0, PipelineOutcome::Duplicate);
@@ -421,5 +479,57 @@ mod tests {
             AgentMiddlewarePipelineService::new(d, s, "caps"),
             Err(PipelineError::Invalid("run snapshot"))
         ));
+    }
+
+    #[test]
+    fn pause_abort_and_reentrancy_are_explicit() {
+        let pipeline = definition(BuiltinPolicy::PauseForApproval {
+            reason: "approve".into(),
+        });
+        let snap = PipelineRunSnapshot {
+            run_id: "run".into(),
+            definition_id: pipeline.definition_id.clone(),
+            definition_revision: pipeline.revision,
+            contract_hash: pipeline.contract_hash.clone(),
+            policy_hash: "policy".into(),
+            capability_snapshot_hash: "caps".into(),
+        };
+        let mut pipeline = AgentMiddlewarePipelineService::new(pipeline, snap, "caps").unwrap();
+        let mut req = MiddlewareRequest {
+            run_id: "run".into(),
+            correlation_id: "c".into(),
+            idempotency_key: "pause".into(),
+            phase: HookPhase::BeforeTool,
+            input_hash: "h".into(),
+            capability_snapshot_hash: "caps".into(),
+            intervention_depth: 0,
+        };
+        assert!(matches!(
+            pipeline.evaluate(&req).unwrap().0,
+            PipelineOutcome::PauseForApproval { .. }
+        ));
+        let abort_definition = definition(BuiltinPolicy::Abort {
+            reason: "stop".into(),
+        });
+        let snap = PipelineRunSnapshot {
+            run_id: "run".into(),
+            definition_id: abort_definition.definition_id.clone(),
+            definition_revision: abort_definition.revision,
+            contract_hash: abort_definition.contract_hash.clone(),
+            policy_hash: "policy".into(),
+            capability_snapshot_hash: "caps".into(),
+        };
+        let mut abort =
+            AgentMiddlewarePipelineService::new(abort_definition, snap, "caps").unwrap();
+        req.idempotency_key = "abort".into();
+        assert!(matches!(
+            abort.evaluate(&req).unwrap().0,
+            PipelineOutcome::Aborted { .. }
+        ));
+        req.intervention_depth = MAX_INTERVENTION_DEPTH + 1;
+        assert_eq!(
+            abort.evaluate(&req).unwrap().0,
+            PipelineOutcome::ReentrantLimit
+        );
     }
 }

@@ -1313,6 +1313,13 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    RuntimeInterventionPipeline {
+        operation: String,
+        run_id: String,
+        payload: Vec<u8>,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -1956,6 +1963,11 @@ pub enum CoreEvent {
         scope: String,
         operation: String,
         revision: u64,
+        projection_json: String,
+    },
+    RuntimeInterventionPipeline {
+        run_id: String,
+        operation: String,
         projection_json: String,
     },
     /// Bounded durable routing decision projection.
@@ -3044,6 +3056,7 @@ impl EventJournal {
             CoreEvent::TypedAgentHandoffContract { handoff_id, .. } => handoff_id,
             CoreEvent::SchemaDrivenAgentConfiguration { scope, .. } => scope,
             CoreEvent::ExperienceReplayLibrary { scope, .. } => scope,
+            CoreEvent::RuntimeInterventionPipeline { run_id, .. } => run_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3072,6 +3085,7 @@ impl EventJournal {
                 "schema_driven_agent_configuration.result"
             }
             CoreEvent::ExperienceReplayLibrary { .. } => "experience_replay_library.result",
+            CoreEvent::RuntimeInterventionPipeline { .. } => "runtime_intervention_pipeline.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -11412,6 +11426,38 @@ impl TaskCoordinator {
                     scope: event_scope,
                     operation: event_operation,
                     revision,
+                    projection_json,
+                };
+                let journal = state.lock().await.journal.clone();
+                if let Some(journal) = journal {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::RuntimeInterventionPipeline {
+                operation,
+                run_id,
+                payload: _,
+                idempotency_key,
+                reply,
+            } => {
+                let result = async {
+                    use crate::agent_middleware_pipeline::{AgentMiddlewarePipelineService, BuiltinPolicy, FailurePolicy, HandlerMode, HookPhase, MiddlewareRequest, MiddlewareSpec, PipelineDefinition, PipelineRunSnapshot, StateClass};
+                    let definition = PipelineDefinition::new("runtime-intervention", 1, vec![MiddlewareSpec { id: "core-policy".into(), version: 1, priority: 0, phases: HookPhase::ALL.to_vec(), state_class: StateClass::Public, policy: BuiltinPolicy::Observe, mode: HandlerMode::ObserveOnly, failure_policy: FailurePolicy::FailClosed }]).map_err(|e| e.to_string())?;
+                    let snapshot = PipelineRunSnapshot { run_id: run_id.clone(), definition_id: definition.definition_id.clone(), definition_revision: definition.revision, contract_hash: definition.contract_hash.clone(), policy_hash: "core-policy-v1".into(), capability_snapshot_hash: "core-capability-snapshot".into() };
+                    let mut service = AgentMiddlewarePipelineService::new(definition, snapshot, "core-capability-snapshot").map_err(|e| e.to_string())?;
+                    let request = MiddlewareRequest { run_id: run_id.clone(), correlation_id: format!("runtime:{run_id}"), idempotency_key, phase: HookPhase::BeforeAgent, input_hash: "metadata-only".into(), capability_snapshot_hash: "core-capability-snapshot".into(), intervention_depth: 0 };
+                    let (outcome, events) = service.evaluate(&request).map_err(|e| e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"ok","operation":operation,"run_id":run_id,"outcome":outcome,"events":events})).map_err(|e| e.to_string())
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::RuntimeInterventionPipeline {
+                    run_id,
+                    operation,
                     projection_json,
                 };
                 let journal = state.lock().await.journal.clone();

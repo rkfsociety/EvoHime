@@ -1057,6 +1057,7 @@ export const RENDERER_COMMANDS = [
   'core.typedAgentHandoffContract',
   'core.schemaDrivenAgentConfiguration',
   'core.experienceReplayLibrary',
+  'core.runtimeInterventionPipeline',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1351,6 +1352,7 @@ export interface CommandPayloads {
   'core.typedAgentHandoffContract': { operation: 'propose' | 'transition' | 'get'; handoffId: string; packetJson: string; actor: string; reason: string; expectedVersion?: number; idempotencyKey: string }
   'core.schemaDrivenAgentConfiguration': { operation: 'get_schema' | 'get_snapshot' | 'apply'; scope: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.experienceReplayLibrary': { operation: 'write' | 'list' | 'context'; scope: string; scopeId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
+  'core.runtimeInterventionPipeline': { operation: 'evaluate'; runId: string; payload: string; idempotencyKey: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
   'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
@@ -1829,6 +1831,7 @@ export interface CommandResults {
   'core.typedAgentHandoffContract': { accepted: boolean }
   'core.schemaDrivenAgentConfiguration': { accepted: boolean }
   'core.experienceReplayLibrary': { accepted: boolean }
+  'core.runtimeInterventionPipeline': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }
   'core.executeAnalysisKernel': { accepted: boolean }
