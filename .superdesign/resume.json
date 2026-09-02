@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "app-shell": {
+      "targetKind": "existing-ui",
+      "projectId": "85f50f7b-7ad8-481f-96b2-f6d2c2f2046a",
+      "activeDraftId": "56ff56b2-8243-409e-acb0-10d3545f5610",
+      "baselineDraftId": "56ff56b2-8243-409e-acb0-10d3545f5610",
+      "contextFiles": [
+        "desktop/evohime-electron/src/renderer/src/App.tsx",
+        "desktop/evohime-electron/src/renderer/src/ProjectSidebar.tsx",
+        "desktop/evohime-electron/src/renderer/src/TaskTimeline.tsx",
+        "desktop/evohime-electron/src/renderer/src/WorkbenchPanel.tsx",
+        "desktop/evohime-electron/src/renderer/src/styles.css:1:220",
+        "desktop/evohime-electron/src/renderer/src/styles.css:597:740",
+        "desktop/evohime-electron/src/renderer/src/styles.css:1835:1885",
+        "desktop/evohime-electron/src/renderer/src/styles.css:1920:2050"
+      ],
+      "fingerprints": {
+        "desktop/evohime-electron/src/renderer/src/App.tsx": "92ebdf4b13bddab76f528803cb7edcfb98e42b2eabde6d40880b58bf11c0c328",
+        "desktop/evohime-electron/src/renderer/src/ProjectSidebar.tsx": "136c2bb20fd5ff757f5048dbd3e59c8c959ec72f4036c889280c6dcb8edc682e",
+        "desktop/evohime-electron/src/renderer/src/TaskTimeline.tsx": "eeb623ce97b7861dbfbb9cac5bd4ce66ea65583c14b02f581427528d9d1cc4d1",
+        "desktop/evohime-electron/src/renderer/src/WorkbenchPanel.tsx": "ed610df0549ce7b8546c959db7c5391a66db94644ec059a50119b7fa00b01d95",
+        "desktop/evohime-electron/src/renderer/src/styles.css": "266596848c106dcb1a0ceab2eda8215ea38ea795a8e22710808e734f3e3f9212"
+      },
+      "drafts": {
+        "56ff56b2-8243-409e-acb0-10d3545f5610": {
+          "title": "EvoHime UX Redesign",
+          "visualDirection": "спокойная тёмная оболочка с одним очевидным основным сценарием",
+          "currentVersion": 2
+        }
+      },
+      "updatedAt": "2026-09-02T00:00:00.000Z"
+    }
+  }
+}
