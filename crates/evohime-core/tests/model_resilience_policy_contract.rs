@@ -18,7 +18,10 @@ fn contract_is_versioned_bounded_and_ephemeral() {
     let invalid =
         evohime_core::model_resilience_policy::ModelResiliencePolicyDefinition { rules, ..policy };
     assert!(matches!(invalid.validate(), Err(PolicyError::Invalid(_))));
-    assert_eq!(evohime_local_storage::SCHEMA_VERSION, 61);
+    assert!(
+        evohime_local_storage::SCHEMA_VERSION >= 61,
+        "model resilience policy requires schema version 61 or newer"
+    );
     assert_eq!(DataResidency::Any, DataResidency::Any);
 }
 
