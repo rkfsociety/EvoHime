@@ -366,6 +366,21 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   check/clippy, protocol check, Electron typecheck and full Electron regression.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
 
+## Plan 76 — Safe UI Extension Framework v1 (2026-09-02)
+
+- Contract: versioned bounded `UiExtensionManifest`, declarative contribution
+  kinds, Core-owned trust/compatibility metadata, install-disabled lifecycle,
+  optimistic revision fence and fail-closed unknown bindings.
+- Durability/safety: additive SQLite schema v73 stores scoped installed state;
+  restart does not auto-enable extensions; arbitrary renderer code,
+  shell/filesystem/network bindings and path traversal are rejected.
+- IPC/UI: authenticated additive command 227/event 72, generated bindings and
+  Electron metadata-only UI Extensions panel.
+- Checks: 2 focused Core unit tests, schema 73 migration test, strict clippy,
+  protocol generation/check, typecheck, focused UI test and full Electron
+  regression: 99 files passed, 523 tests passed, 2 skipped. Evidence excludes
+  secrets, raw prompts/outputs, absolute paths and PII.
+
 ## Plan 75 — Typed Context References v1 (2026-09-02)
 
 - Contract: versioned ContextRef/ResolvedContextRef, closed built-in kinds,

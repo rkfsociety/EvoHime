@@ -807,6 +807,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::TypedContextReferences { ref_id, operation, .. } => println!(
             "typed_context_references.result {ref_id}: {operation}"
         ),
+        evohime_core::CoreEvent::SafeUiExtensionFramework { extension_id, operation, revision, .. } => println!(
+            "safe_ui_extension_framework.result {extension_id}: {operation} revision={revision}"
+        ),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             println!("review.history_cleared {marker_id}")
         }

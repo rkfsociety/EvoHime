@@ -50,6 +50,7 @@ pub mod reconciliation_verifier;
 pub mod refinement_store;
 pub mod research_store;
 pub mod retained_child_store;
+pub mod safe_ui_extension_framework_store;
 pub mod schema_driven_agent_configuration_store;
 pub mod scratchpad_store;
 pub mod skill_trust_pipeline_store;
@@ -73,7 +74,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 72;
+pub const SCHEMA_VERSION: u32 = 73;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3670,6 +3671,10 @@ impl LocalDatabase {
             typed_context_references_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 72;")?;
         }
+        if current < 73 {
+            safe_ui_extension_framework_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 73;")?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -3689,12 +3694,21 @@ mod tests {
     }
 
     #[test]
-    fn schema_72_installs_configuration_experience_diagnostics_task_graph_component_registry_and_refs_tables(
+    fn schema_73_installs_configuration_experience_diagnostics_task_graph_component_registry_refs_and_ui_extension_tables(
     ) {
         let path = temp_database_path("experience-replay-schema-66");
         let _ = std::fs::remove_file(&path);
         let database = LocalDatabase::open(&path).expect("database opens");
-        assert_eq!(database.schema_version().expect("schema version"), 72);
+        assert_eq!(database.schema_version().expect("schema version"), 73);
+        let has_ui_extension_table: i64 = database
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='safe_ui_extensions'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("UI extension table query");
+        assert_eq!(has_ui_extension_table, 1);
         let has_table: i64 = database
             .connection()
             .query_row(

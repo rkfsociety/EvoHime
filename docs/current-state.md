@@ -895,3 +895,12 @@ revision/hash binding, lazy context budget, safe locator/URL validation и
 durable SQLite schema v72. Authenticated IPC command 226/event 71 и
 metadata-only Electron panel не дают renderer filesystem/network authority;
 referenced content остаётся untrusted data.
+
+План 76 закрыт 2 сентября 2026 года: Safe UI Extension Framework v1.
+Добавлены versioned declarative manifest и bounded host-rendered
+contributions, Core-owned trust/compatibility metadata, durable scoped
+install-disabled lifecycle с revision fencing, SQLite schema v73,
+authenticated IPC command 227/event 72 и metadata-only Electron UI.
+Arbitrary renderer code, shell/filesystem/network bindings и auto-enable после
+restart запрещены; focused Rust/storage/Electron checks и полный Electron
+regression пройдены.

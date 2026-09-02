@@ -6,6 +6,7 @@ pub mod core_topic_subscription_event_bus;
 pub mod declarative_agent_component_registry;
 pub mod dependency_aware_task_graph;
 pub mod experience_replay_library;
+pub mod safe_ui_extension_framework;
 pub mod schema_driven_agent_configuration;
 pub mod sensitive_data_guardrails;
 pub mod team_sop_protocols;
@@ -1371,6 +1372,13 @@ pub enum CoreCommand {
         payload: Vec<u8>,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    SafeUiExtensionFramework {
+        operation: String,
+        extension_id: String,
+        payload: Vec<u8>,
+        expected_revision: u64,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -2052,6 +2060,12 @@ pub enum CoreEvent {
     TypedContextReferences {
         ref_id: String,
         operation: String,
+        projection_json: String,
+    },
+    SafeUiExtensionFramework {
+        extension_id: String,
+        operation: String,
+        revision: u64,
         projection_json: String,
     },
     /// Bounded durable routing decision projection.
@@ -3149,6 +3163,7 @@ impl EventJournal {
             CoreEvent::DependencyAwareTaskGraph { graph_id, .. } => graph_id,
             CoreEvent::DeclarativeAgentComponentRegistry { registry_id, .. } => registry_id,
             CoreEvent::TypedContextReferences { ref_id, .. } => ref_id,
+            CoreEvent::SafeUiExtensionFramework { extension_id, .. } => extension_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3190,6 +3205,7 @@ impl EventJournal {
                 "declarative_agent_component_registry.result"
             }
             CoreEvent::TypedContextReferences { .. } => "typed_context_references.result",
+            CoreEvent::SafeUiExtensionFramework { .. } => "safe_ui_extension_framework.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -11816,6 +11832,75 @@ impl TaskCoordinator {
                 let event = CoreEvent::TypedContextReferences {
                     ref_id,
                     operation,
+                    projection_json,
+                };
+                let journal = state.lock().await.journal.clone();
+                if let Some(journal) = journal {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::SafeUiExtensionFramework {
+                operation,
+                extension_id,
+                payload,
+                expected_revision,
+                reply,
+            } => {
+                let result = async {
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    use evohime_local_storage::safe_ui_extension_framework_store as store;
+                    match operation.as_str() {
+                        "install" => {
+                            let manifest: crate::safe_ui_extension_framework::UiExtensionManifest = serde_json::from_slice(&payload).map_err(|_| "invalid_manifest".to_string())?;
+                            if manifest.id != extension_id { return Err("extension_id_mismatch".into()); }
+                            let installed = crate::safe_ui_extension_framework::install(manifest, "workspace", "revision-1").map_err(|e| e.to_string())?;
+                            let json = serde_json::to_vec(&installed).map_err(|e| e.to_string())?;
+                            if !store::put(database.connection(), &extension_id, installed.revision, &format!("{:?}", installed.lifecycle), &json, &installed.manifest_hash, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())? { return Err("extension_exists".into()); }
+                            Ok(json)
+                        }
+                        "get" => store::get(database.connection(), &extension_id).map_err(|e| e.to_string())?.ok_or_else(|| "extension_not_found".into()),
+                        "validate" => {
+                            let manifest: crate::safe_ui_extension_framework::UiExtensionManifest = serde_json::from_slice(&payload).map_err(|_| "invalid_manifest".to_string())?;
+                            crate::safe_ui_extension_framework::validate(&manifest).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":"valid","id":manifest.id,"contributions":manifest.contributions.len()})).map_err(|e| e.to_string())
+                        }
+                        "enable" | "disable" => {
+                            let json = store::get(database.connection(), &extension_id).map_err(|e| e.to_string())?.ok_or_else(|| "extension_not_found".to_string())?;
+                            let mut installed: crate::safe_ui_extension_framework::InstalledUiExtension = serde_json::from_slice(&json).map_err(|_| "corrupt_extension".to_string())?;
+                            let target = if operation == "enable" { crate::safe_ui_extension_framework::Lifecycle::Enabled } else { crate::safe_ui_extension_framework::Lifecycle::Disabled };
+                            crate::safe_ui_extension_framework::transition(&mut installed, target, expected_revision).map_err(|e| e.to_string())?;
+                            let next = serde_json::to_vec(&installed).map_err(|e| e.to_string())?;
+                            if !store::replace(database.connection(), &extension_id, installed.revision, &format!("{:?}", installed.lifecycle), &next, &installed.manifest_hash, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())? { return Err("extension_not_found".into()); }
+                            Ok(next)
+                        }
+                        "update" => {
+                            let manifest: crate::safe_ui_extension_framework::UiExtensionManifest = serde_json::from_slice(&payload).map_err(|_| "invalid_manifest".to_string())?;
+                            if manifest.id != extension_id { return Err("extension_id_mismatch".into()); }
+                            let current_json = store::get(database.connection(), &extension_id).map_err(|e| e.to_string())?.ok_or_else(|| "extension_not_found".to_string())?;
+                            let current: crate::safe_ui_extension_framework::InstalledUiExtension = serde_json::from_slice(&current_json).map_err(|_| "corrupt_extension".to_string())?;
+                            if current.revision != expected_revision { return Err("stale revision".into()); }
+                            if current.manifest.required_projection_capabilities != manifest.required_projection_capabilities { return Err("capability delta requires review".into()); }
+                            let mut updated = crate::safe_ui_extension_framework::install(manifest, &current.scope, &current.resolved_revision).map_err(|e| e.to_string())?;
+                            updated.revision = current.revision + 1;
+                            let next = serde_json::to_vec(&updated).map_err(|e| e.to_string())?;
+                            if !store::replace(database.connection(), &extension_id, updated.revision, &format!("{:?}", updated.lifecycle), &next, &updated.manifest_hash, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())? { return Err("extension_not_found".into()); }
+                            Ok(next)
+                        }
+                        _ => Err("unsupported_ui_extension_operation".into())
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::SafeUiExtensionFramework {
+                    extension_id,
+                    operation,
+                    revision: expected_revision,
                     projection_json,
                 };
                 let journal = state.lock().await.journal.clone();

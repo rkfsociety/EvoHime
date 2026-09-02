@@ -1877,6 +1877,7 @@ message CommandEnvelope {
     DependencyAwareTaskGraphCommand dependency_aware_task_graph = 224;
     DeclarativeAgentComponentRegistryCommand declarative_agent_component_registry = 225;
     TypedContextReferencesCommand typed_context_references = 226;
+    SafeUiExtensionFrameworkCommand safe_ui_extension_framework = 227;
   }
 }
 
@@ -1998,6 +1999,7 @@ message EventEnvelope {
     DependencyAwareTaskGraphEvent dependency_aware_task_graph = 69;
     DeclarativeAgentComponentRegistryEvent declarative_agent_component_registry = 70;
     TypedContextReferencesEvent typed_context_references = 71;
+    SafeUiExtensionFrameworkEvent safe_ui_extension_framework = 72;
   }
 }
 
@@ -2373,6 +2375,15 @@ message TypedContextReferencesCommand {
 message TypedContextReferencesEvent {
   uint32 schema_version = 1; string request_id = 2; string operation = 3;
   string status = 4; bytes projection_json = 5; string error_code = 6;
+}
+message SafeUiExtensionFrameworkCommand {
+  uint32 schema_version = 1; string request_id = 2; string operation = 3;
+  string extension_id = 4; bytes payload = 5; uint64 expected_revision = 6;
+}
+message SafeUiExtensionFrameworkEvent {
+  uint32 schema_version = 1; string request_id = 2; string operation = 3;
+  string status = 4; uint64 revision = 5; bytes projection_json = 6;
+  string error_code = 7;
 }
 
 // Plan 46: bounded metadata-only Agent Role Profiles surface. Profile bodies

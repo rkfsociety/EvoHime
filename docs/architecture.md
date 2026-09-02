@@ -1725,3 +1725,20 @@ safe locator, SSRF/path boundary, exact revision/hash и sensitivity; refs не
 Durable reference metadata хранится в SQLite schema v72, authenticated
 additive IPC использует command 226/event 71, Electron показывает только
 metadata/chip projection.
+
+## Safe UI Extension Framework v1 (план 76)
+
+Core-owned `UiExtensionManifest` описывает только bounded declarative
+contributions: pages, conversation panels, sidebar items, status cards,
+artifact visualizers, themes и settings sections. Host renderer строит их
+собственными компонентами; arbitrary JavaScript/native code, shell,
+filesystem, network и прямой доступ к Core DB не допускаются. Data sources и
+actions разрешаются только через известные Core-owned bindings, а unknown
+binding, path traversal и oversized manifest fail closed.
+Установленный lifecycle durable и scoped: install всегда создаёт
+`InstalledDisabled`, enable/disable разделены optimistic revision fence, а
+restart не включает расширение автоматически. SQLite schema v73 хранит только
+Core-authoritative metadata и serialized manifest; ephemeral render errors не
+становятся authority. Authenticated additive IPC использует command 227/event
+72, Electron получает metadata-only projection и не вычисляет lifecycle или
+capabilities.

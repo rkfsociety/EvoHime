@@ -467,6 +467,11 @@ function dispatch(
       if(operation===null||refId===null||refPayload===null||refId.length>128||refPayload.length>128*1024)return failure('invalid-payload','Некорректная операция Context References.')
       return accepted(client.send({typedContextReferences:{schemaVersion:1,requestId:randomUUID(),operation,refId,payload:Buffer.from(refPayload,'utf8')}}))
     }
+    case 'core.safeUiExtensionFramework': {
+      const value=asRecord(payload); const operation=['install','get','validate','enable','disable','update'].includes(String(value['operation']))?String(value['operation']):null; const extensionId=asBoundedString(value['extensionId']); const extensionPayload=asBoundedString(value['payload']); const expectedRevision=value['expectedRevision']===undefined?0:asNonNegativeInteger(value['expectedRevision']);
+      if(operation===null||extensionId===null||extensionPayload===null||expectedRevision===null||extensionId.length>128||extensionPayload.length>64*1024)return failure('invalid-payload','Некорректная операция UI Extension.')
+      return accepted(client.send({safeUiExtensionFramework:{schemaVersion:1,requestId:randomUUID(),operation,extensionId,payload:Buffer.from(extensionPayload,'utf8'),expectedRevision}}))
+    }
 
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)
