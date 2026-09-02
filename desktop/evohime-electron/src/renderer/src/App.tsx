@@ -144,7 +144,9 @@ export function App(): React.JSX.Element {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [developerMenuOpen, setDeveloperMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [workbenchVisible, setWorkbenchVisible] = useState(true)
+  // Дополнительные панели не должны конкурировать с чатом при первом запуске.
+  // Пользователь открывает их явно из верхней панели.
+  const [workbenchVisible, setWorkbenchVisible] = useState(false)
   const [browserVisible, setBrowserVisible] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
 
@@ -348,12 +350,12 @@ export function App(): React.JSX.Element {
           <span className="topbar__spacer" />
           {!workbenchVisible ? (
             <button type="button" className="topbar__panel-toggle" onClick={() => setWorkbenchVisible(true)}>
-              Показать Workbench
+              Рабочая панель
             </button>
           ) : null}
           {!browserVisible ? (
             <button type="button" className="topbar__panel-toggle" onClick={() => setBrowserVisible(true)}>
-              Браузер
+              Открыть браузер
             </button>
           ) : null}
           <button
@@ -378,7 +380,7 @@ export function App(): React.JSX.Element {
 
         <div className="main__body">
           {view === 'chat' ? (
-            <div className="conversation-layout">
+            <div className={`conversation-layout${workbenchVisible || browserVisible ? '' : ' conversation-layout--chat-only'}`}>
               <TaskTimeline
                 connection={connection}
                 events={events}
@@ -392,16 +394,20 @@ export function App(): React.JSX.Element {
                 identityName={identity?.name ?? null}
                 chatRevision={chatRevision}
               />
-              {workbenchVisible ? (
-                <WorkbenchPanel
-                  connection={connection}
-                  chatId={chatId}
-                  workspace={workspace}
-                  events={events}
-                  onClose={() => setWorkbenchVisible(false)}
-                />
+              {workbenchVisible || browserVisible ? (
+                <aside className="conversation-side-panels" aria-label="Дополнительные панели">
+                  {workbenchVisible ? (
+                    <WorkbenchPanel
+                      connection={connection}
+                      chatId={chatId}
+                      workspace={workspace}
+                      events={events}
+                      onClose={() => setWorkbenchVisible(false)}
+                    />
+                  ) : null}
+                  {browserVisible ? <AgenticBrowserSessionPanel onClose={() => setBrowserVisible(false)} /> : null}
+                </aside>
               ) : null}
-              {browserVisible ? <AgenticBrowserSessionPanel onClose={() => setBrowserVisible(false)} /> : null}
             </div>
           ) : (
             <div className="main__scroll">
