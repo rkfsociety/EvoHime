@@ -507,6 +507,17 @@ function dispatch(
       if (operation === null || workspaceRoot === null || stackPayload === null || expectedRevision === null || idempotencyKey === null || workspaceRoot.length > 260 || stackPayload.length > 64 * 1024 || relevantPaths.length > 64 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Project Instruction Stack.')
       return accepted(client.send({projectInstructionStack:{schemaVersion:1,workspaceRoot,operation,payload:Buffer.from(stackPayload,'utf8'),relevantPaths,expectedRevision,idempotencyKey}}))
     }
+    case 'core.workspaceSets': {
+      const value = asRecord(payload)
+      const operations = ['create', 'get', 'update', 'bind', 'search']
+      const operation = operations.includes(String(value['operation'])) ? String(value['operation']) : null
+      const setId = asBoundedString(value['setId'])
+      const setPayload = value['payload'] === undefined ? '' : asBoundedString(value['payload'])
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion'])
+      const idempotencyKey = value['idempotencyKey'] === undefined ? randomUUID() : asBoundedString(value['idempotencyKey'])
+      if (operation === null || setId === null || setPayload === null || expectedVersion === null || idempotencyKey === null || setId.length > 128 || setPayload.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Workspace Sets.')
+      return accepted(client.send({workspaceSets:{schemaVersion:1,setId,operation,payload:Buffer.from(setPayload,'utf8'),expectedVersion,idempotencyKey}}))
+    }
 
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)

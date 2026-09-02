@@ -383,6 +383,23 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   check/clippy, protocol check, Electron typecheck and full Electron regression.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
 
+## Plan 100 — Workspace Sets v1 (2026-09-02)
+
+- Contract: versioned bounded WorkspaceSet with up to 8 roots, unique aliases,
+  per-root grants/kind/VCS/revision identity, canonical root-qualified refs and
+  typed validation errors.
+- Runtime/recovery: durable schema v77 definitions, idempotency,
+  version-fenced update, bind snapshots with exact set/root hash and restart
+  recovery; cross-root search enforces per-root grant and traversal bounds.
+- IPC/UI: authenticated additive command 231/event 76, generated bindings and
+  Electron metadata-only Workspace Sets panel; canonical paths and sensitive
+  payloads remain Core-only.
+- Checks: focused Core contract/search tests, storage/version/migration tests,
+  cargo fmt/check/clippy, protocol check, Electron typecheck, full Electron
+  regression (103 files passed, 527 tests passed, 2 skipped) and native package
+  smoke PASS. Evidence excludes secrets, raw prompts/outputs, absolute paths
+  and PII.
+
 ## Plan 80 — Project Instruction Stack v1 (2026-09-02)
 
 - Contract: Core-owned allowlisted discovery, frontmatter normalization,

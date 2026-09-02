@@ -1823,3 +1823,24 @@ Authenticated IPC command 230/event 75 и Electron developer panel переда�
 hash/revision, diagnostics и budget. Перед model call Core pin-ит snapshot
 hash, добавляет bounded untrusted project-instruction context и включает
 rule hash/revision в model provenance; authority не расширяется.
+
+## Workspace Sets v1 (план 100)
+
+Workspace Set — Core-owned bounded объединение до 8 самостоятельных roots без
+фиктивной общей filesystem/VCS transaction. Каждый root имеет уникальные
+`root_id`/alias, canonical binding, RootKind, независимые grants, VCS state и
+revision identity. Root-qualified `WorkspaceResourceRef` и bounded cross-root
+search не допускают parent escape, implicit соседний root или доступ без grant;
+read-only reference root не может получить write grant.
+
+Durable SQLite schema v77 хранит versioned set definitions, idempotency results
+и pinned `WorkspaceSetRunBinding` snapshots. Bind проверяет enabled roots и
+set version, сохраняет exact set/root hash и восстанавливает binding после
+restart; независимые roots не объявляются atomic. Authenticated additive IPC
+command 231/event 76 предоставляет create/get/update/bind/search, а Electron
+Workspace Sets panel получает только bounded redacted projection.
+
+Лимиты: 8 roots/set, 128 bytes IDs/aliases, 260 bytes path hint, 64 KiB
+definition, 256 KiB binding/event/evidence, 32 grants/refs per root и 1 024
+search matches per root. Imported config требует явного user mapping; rules,
+skills и diagnostics сохраняют source-root provenance и не расширяют authority.

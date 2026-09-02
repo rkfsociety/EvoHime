@@ -937,3 +937,12 @@ hash/revision provenance, durable SQLite schema v76, authenticated IPC command
 snapshot hash и применяет только bounded untrusted instruction context;
 authority-bearing metadata, executable semantics, secrets и raw content в UI
 projection запрещены.
+
+План 100 закрыт 2 сентября 2026 года: Workspace Sets v1 реализует bounded
+Core-owned multi-root contract с уникальными aliases, per-root grants/kinds/VCS
+identity, canonical root-qualified refs, bounded cross-root search, durable
+schema v77, idempotent version-fenced updates, pinned run bindings и typed
+recovery metadata. Authenticated IPC command 231/event 76 и Electron panel
+остаются projection-only; host paths, secrets, raw prompts/outputs и implicit
+parent-directory authority не передаются. Независимые Git roots не объявляются
+filesystem-atomic; partial/unknown outcomes сохраняют per-root semantics.

@@ -66,6 +66,7 @@ import { SafeUiExtensionFrameworkPanel } from './SafeUiExtensionFrameworkPanel'
 import { CapabilityWorkbenchPanel } from './CapabilityWorkbenchPanel'
 import { TeamCoordinatorPanel } from './TeamCoordinatorPanel'
 import { ProjectInstructionStackPanel } from './ProjectInstructionStackPanel'
+import { WorkspaceSetsPanel } from './WorkspaceSetsPanel'
 import { WorkbenchPanel } from './WorkbenchPanel'
 import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
 
@@ -92,7 +93,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'core-topic-subscription-event-bus' | 'dependency-aware-task-graph' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'core-topic-subscription-event-bus' | 'dependency-aware-task-graph' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -139,6 +140,7 @@ const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'capability-workbench', label: 'Capability Workbench', icon: '⚒' },
   { id: 'team-coordinator', label: 'Team Coordinator', icon: '◈' },
   { id: 'project-instruction-stack', label: 'Project Instructions', icon: '☷' },
+  { id: 'workspace-sets', label: 'Workspace Sets', icon: '▦' },
   { id: 'packages', label: 'Workflow Package', icon: '⇄' },
   { id: 'benchmarks', label: 'Бенчмарки', icon: '▦' },
   { id: 'middleware', label: 'Middleware', icon: '◇' },
@@ -493,6 +495,7 @@ export function App(): React.JSX.Element {
               {view === 'capability-workbench' ? <CapabilityWorkbenchPanel connection={connection} /> : null}
               {view === 'team-coordinator' ? <TeamCoordinatorPanel connection={connection} /> : null}
               {view === 'project-instruction-stack' ? <ProjectInstructionStackPanel connection={connection} /> : null}
+              {view === 'workspace-sets' ? <WorkspaceSetsPanel connection={connection} /> : null}
             </div>
           )}
         </div>

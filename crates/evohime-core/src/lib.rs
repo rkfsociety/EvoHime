@@ -17,6 +17,7 @@ pub mod team_sop_protocols;
 pub mod typed_context_references;
 pub mod workflow_optimization_lab;
 pub mod workspace_bootstrap_manifest;
+pub mod workspace_sets;
 
 pub const AGENT_IDENTITY_PROMPT: &str =
     "Ты — Ева, AI-агент приложения EvoHime. Ева — короткое имя EvoHime; понимай обращения к тебе «Ева» и «EvoHime» как к одному агенту.";
@@ -1409,6 +1410,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    WorkspaceSets {
+        operation: String,
+        set_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -2114,6 +2123,12 @@ pub enum CoreEvent {
         workspace_root: String,
         operation: String,
         revision: u64,
+        projection_json: String,
+    },
+    WorkspaceSets {
+        set_id: String,
+        operation: String,
+        version: u64,
         projection_json: String,
     },
     /// Bounded durable routing decision projection.
@@ -3215,6 +3230,7 @@ impl EventJournal {
             CoreEvent::CapabilityWorkbench { instance_id, .. } => instance_id,
             CoreEvent::TeamCoordinator { work_item_id, .. } => work_item_id,
             CoreEvent::ProjectInstructionStack { workspace_root, .. } => workspace_root,
+            CoreEvent::WorkspaceSets { set_id, .. } => set_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3260,6 +3276,7 @@ impl EventJournal {
             CoreEvent::CapabilityWorkbench { .. } => "capability_workbench.result",
             CoreEvent::TeamCoordinator { .. } => "team_coordinator.result",
             CoreEvent::ProjectInstructionStack { .. } => "project_instruction_stack.result",
+            CoreEvent::WorkspaceSets { .. } => "workspace_sets.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -10033,6 +10050,26 @@ impl TaskCoordinator {
                         &workspace_root.to_string_lossy(),
                         crate::task_memory::now_millis() as i64,
                     );
+                    if let Ok(Some(binding)) =
+                        evohime_local_storage::workspace_sets_store::get_run_binding(
+                            database.connection(),
+                            &task_id,
+                        )
+                    {
+                        if let Ok(binding) = serde_json::from_slice::<serde_json::Value>(&binding) {
+                            write_model_trace(
+                                "workspace_sets.run_binding_pinned",
+                                serde_json::json!({
+                                    "task_id": task_id,
+                                    "set_id": binding.get("set_id"),
+                                    "set_version": binding.get("set_version"),
+                                    "set_hash": binding.get("set_hash"),
+                                    "root_count": binding.get("roots").and_then(serde_json::Value::as_array).map_or(0, Vec::len),
+                                    "pinned": binding.get("pinned")
+                                }),
+                            );
+                        }
+                    }
                 }
                 drop(state_guard);
                 tokio::spawn(async move {
@@ -12735,6 +12772,152 @@ impl TaskCoordinator {
                 };
                 let journal = state.lock().await.journal.clone();
                 if let Some(journal) = journal {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::WorkspaceSets {
+                operation,
+                set_id,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let result = async {
+                    let journal = state
+                        .lock()
+                        .await
+                        .journal
+                        .clone()
+                        .ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    use crate::workspace_sets as sets;
+                    use evohime_local_storage::workspace_sets_store as store;
+                    if !idempotency_key.is_empty() {
+                        if let Some(cached) = store::get_idempotency(database.connection(), &idempotency_key)
+                            .map_err(|_| "storage_failed".to_string())? {
+                            return Ok(cached);
+                        }
+                    }
+                    let policy = sets::default_policy();
+                    match operation.as_str() {
+                        "search" => {
+                            let json = store::get(database.connection(), &set_id)
+                                .map_err(|_| "storage_failed".to_string())?
+                                .ok_or_else(|| "workspace_set_not_found".to_string())?;
+                            let set: sets::WorkspaceSet = serde_json::from_slice(&json)
+                                .map_err(|_| "corrupt_workspace_set".to_string())?;
+                            let scope: sets::SearchScope = serde_json::from_slice(&payload)
+                                .map_err(|_| "invalid_workspace_search".to_string())?;
+                            let matches = sets::search(&set, &scope, &policy)
+                                .map_err(|error| error.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"set_id":set.id,"match_count":matches.len(),"matches":matches,"redacted":true}))
+                                .map_err(|_| "serialization_failed".to_string())
+                        }
+                        "bind" => {
+                            let request: serde_json::Value = serde_json::from_slice(&payload)
+                                .map_err(|_| "invalid_workspace_set_binding".to_string())?;
+                            let task_id = request.get("task_id").and_then(serde_json::Value::as_str)
+                                .ok_or_else(|| "invalid_workspace_set_binding".to_string())?;
+                            let requested_roots = request.get("root_ids").and_then(|value| serde_json::from_value::<Vec<String>>(value.clone()).ok()).unwrap_or_default();
+                            let json = store::get(database.connection(), &set_id)
+                                .map_err(|_| "storage_failed".to_string())?
+                                .ok_or_else(|| "workspace_set_not_found".to_string())?;
+                            let set: sets::WorkspaceSet = serde_json::from_slice(&json)
+                                .map_err(|_| "corrupt_workspace_set".to_string())?;
+                            if expected_version != 0 && expected_version != set.version {
+                                return Err("workspace_set_stale_version".into());
+                            }
+                            let roots: Vec<_> = if requested_roots.is_empty() {
+                                set.roots.iter().filter(|root| root.enabled).collect()
+                            } else {
+                                set.roots.iter().filter(|root| requested_roots.iter().any(|id| id == &root.root_id) && root.enabled).collect()
+                            };
+                            if roots.is_empty() || roots.len() > sets::MAX_ROOTS {
+                                return Err("workspace_set_no_enabled_roots".into());
+                            }
+                            let binding = serde_json::json!({
+                                "schema_version": 1,
+                                "task_id": task_id,
+                                "set_id": set.id,
+                                "set_version": set.version,
+                                "set_hash": set.content_hash,
+                                "roots": roots.iter().map(|root| serde_json::json!({"root_id":root.root_id,"alias":root.alias,"canonical_path":root.canonical_path,"kind":root.kind,"grants":root.grants,"vcs":root.vcs,"revision":root.vcs.as_ref().map(|v| v.working_tree_revision)})).collect::<Vec<_>>(),
+                                "pinned": true
+                            });
+                            let binding_json = serde_json::to_vec(&binding).map_err(|_| "serialization_failed".to_string())?;
+                            if binding_json.len() > sets::MAX_BINDING_SNAPSHOT_BYTES { return Err("workspace_set_binding_too_large".into()); }
+                            store::bind_run(database.connection(), task_id, &set.id, set.version, &binding_json, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"task_id":task_id,"set_id":set.id,"set_version":set.version,"set_hash":set.content_hash,"root_count":roots.len(),"pinned":true,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "create" => {
+                            let set: sets::WorkspaceSet = serde_json::from_slice(&payload)
+                                .map_err(|_| "invalid_workspace_set".to_string())?;
+                            let set = sets::canonicalize_and_hash(set, &policy)
+                                .map_err(|error| error.to_string())?;
+                            let json = serde_json::to_vec(&set).map_err(|_| "serialization_failed".to_string())?;
+                            if !store::create(database.connection(), &set.id, &json, &set.content_hash, crate::task_memory::now_millis() as i64)
+                                .map_err(|_| "storage_failed".to_string())? {
+                                return Err("workspace_set_duplicate".into());
+                            }
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"set":set,"redacted":true}))
+                                .map_err(|_| "serialization_failed".to_string())
+                        }
+                        "get" => {
+                            let json = store::get(database.connection(), &set_id)
+                                .map_err(|_| "storage_failed".to_string())?
+                                .ok_or_else(|| "workspace_set_not_found".to_string())?;
+                            let set: sets::WorkspaceSet = serde_json::from_slice(&json)
+                                .map_err(|_| "corrupt_workspace_set".to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"id":set.id,"version":set.version,"name":set.name,"root_count":set.roots.len(),"default_root_id":set.default_root_id,"content_hash":set.content_hash,"redacted":true}))
+                                .map_err(|_| "serialization_failed".to_string())
+                        }
+                        "update" => {
+                            let set: sets::WorkspaceSet = serde_json::from_slice(&payload)
+                                .map_err(|_| "invalid_workspace_set".to_string())?;
+                            if set.id != set_id || set.version != expected_version.saturating_add(1) {
+                                return Err("workspace_set_stale_version".into());
+                            }
+                            let set = sets::canonicalize_and_hash(set, &policy)
+                                .map_err(|error| error.to_string())?;
+                            let json = serde_json::to_vec(&set).map_err(|_| "serialization_failed".to_string())?;
+                            if !store::update(database.connection(), &set_id, expected_version, set.version, &json, &set.content_hash, crate::task_memory::now_millis() as i64)
+                                .map_err(|_| "storage_failed".to_string())? {
+                                return Err("workspace_set_stale_version".into());
+                            }
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"id":set.id,"version":set.version,"root_count":set.roots.len(),"content_hash":set.content_hash,"redacted":true}))
+                                .map_err(|_| "serialization_failed".to_string())
+                        }
+                        _ => Err("unsupported_workspace_sets_operation".into()),
+                    }
+                }
+                .await;
+                if !idempotency_key.is_empty() {
+                    if let Ok(bytes) = &result {
+                        if let Some(journal) = state.lock().await.journal.clone() {
+                            let database = journal.database().lock().await;
+                            let _ = evohime_local_storage::workspace_sets_store::put_idempotency(
+                                database.connection(),
+                                &idempotency_key,
+                                bytes,
+                            );
+                        }
+                    }
+                }
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+                    .unwrap_or_else(|| "{}".to_owned());
+                let event = CoreEvent::WorkspaceSets {
+                    set_id,
+                    operation,
+                    version: expected_version,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
                     let _ = journal.record(&event).await;
                 }
                 let _ = state.lock().await.events.send(event);

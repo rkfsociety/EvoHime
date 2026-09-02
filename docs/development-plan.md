@@ -360,3 +360,8 @@ Electron projection/panel и focused/full verification. Комплект `78-0` 
 в `docs/architecture.md` и `docs/current-state.md`; комплект `80-0` … `80-4`
 удалён после end-to-end реализации и проверок. Следующий незавершённый этап
 выбирается из `docs/plans` по следующему номеру.
+
+План 100 закрыт 2 сентября 2026 года. Workspace Sets v1 перенесён в
+`docs/architecture.md` и `docs/current-state.md`; комплект `100-0` … `100-4`
+удалён после contract/runtime/IPC/UI/verification checks. Следующий
+незавершённый этап выбирается из `docs/plans` по следующему номеру.

@@ -10,6 +10,7 @@ import type {
   CapabilityWorkbenchProjection,
   TeamCoordinatorProjection,
   ProjectInstructionStackProjection,
+  WorkspaceSetsProjection,
   ContinuationActionResult,
   ContinuationProjection,
   AnalysisKernelProjection,
@@ -572,6 +573,7 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       , capabilityWorkbench: decodeCapabilityWorkbench(event.capabilityWorkbench)
       , teamCoordinator: decodeTeamCoordinator(event.teamCoordinator)
       , projectInstructionStack: decodeProjectInstructionStack(event.projectInstructionStack)
+      , workspaceSets: decodeWorkspaceSets(event.workspaceSets)
     })
   }
 
@@ -781,6 +783,16 @@ function decodeProjectInstructionStack(
   let projection: unknown = null
   try { projection = JSON.parse(raw) } catch { projection = null }
   return { schemaVersion: Number(projected.schemaVersion ?? 0), workspaceRoot: projected.workspaceRoot ?? '', operation: projected.operation ?? '', revision: Number(projected.revision ?? 0), status: projected.status ?? '', errorCode: projected.errorCode ?? '', projection }
+}
+
+function decodeWorkspaceSets(
+  projected: evohime.desktop.v1.IWorkspaceSetsEvent | null | undefined
+): WorkspaceSetsProjection | null {
+  if (!projected) return null
+  const raw = decodePayload(projected.projectionJson)
+  let projection: unknown = null
+  try { projection = JSON.parse(raw) } catch { projection = null }
+  return { schemaVersion: Number(projected.schemaVersion ?? 0), setId: projected.setId ?? '', operation: projected.operation ?? '', version: Number(projected.version ?? 0), status: projected.status ?? '', errorCode: projected.errorCode ?? '', projection }
 }
 
 function decodeConversationEvent(

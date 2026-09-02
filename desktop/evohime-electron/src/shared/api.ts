@@ -397,6 +397,7 @@ export interface CoreEvent {
   readonly capabilityWorkbench?: CapabilityWorkbenchProjection | null
   readonly teamCoordinator?: TeamCoordinatorProjection | null
   readonly projectInstructionStack?: ProjectInstructionStackProjection | null
+  readonly workspaceSets?: WorkspaceSetsProjection | null
 }
 
 export interface CapabilityWorkbenchProjection {
@@ -424,6 +425,16 @@ export interface ProjectInstructionStackProjection {
   readonly workspaceRoot: string
   readonly operation: string
   readonly revision: number
+  readonly status: string
+  readonly errorCode: string
+  readonly projection: unknown
+}
+
+export interface WorkspaceSetsProjection {
+  readonly schemaVersion: number
+  readonly setId: string
+  readonly operation: string
+  readonly version: number
   readonly status: string
   readonly errorCode: string
   readonly projection: unknown
@@ -1101,6 +1112,7 @@ export const RENDERER_COMMANDS = [
   'core.capabilityWorkbench',
   'core.teamCoordinator',
   'core.projectInstructionStack',
+  'core.workspaceSets',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1406,6 +1418,7 @@ export interface CommandPayloads {
   'core.capabilityWorkbench': { operation: 'create' | 'get' | 'start' | 'ready' | 'stop' | 'stopped' | 'reset' | 'degraded' | 'recover' | 'heartbeat' | 'list_tools' | 'call_tool' | 'cancel' | 'resource' | 'snapshot' | 'restore'; instanceId: string; ownerId: string; payload: string; expectedRevision?: number; grants?: readonly string[] }
   'core.teamCoordinator': { operation: 'create' | 'get' | 'list' | 'propose' | 'assign' | 'consult' | 'review' | 'decompose' | 'reassign' | 'cancel'; workItemId: string; payload: string; expectedRevision?: number; idempotencyKey?: string }
   'core.projectInstructionStack': { operation: 'discover' | 'compile' | 'get' | 'toggle'; workspaceRoot: string; payload?: string; relevantPaths?: readonly string[]; expectedRevision?: number; idempotencyKey?: string }
+  'core.workspaceSets': { operation: 'create' | 'get' | 'update' | 'bind' | 'search'; setId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
   'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
@@ -1895,6 +1908,7 @@ export interface CommandResults {
   'core.capabilityWorkbench': { accepted: boolean }
   'core.teamCoordinator': { accepted: boolean }
   'core.projectInstructionStack': { accepted: boolean }
+  'core.workspaceSets': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }
   'core.executeAnalysisKernel': { accepted: boolean }

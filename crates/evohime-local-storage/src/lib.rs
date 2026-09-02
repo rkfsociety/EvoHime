@@ -70,6 +70,7 @@ pub mod workflow_optimization_lab_store;
 pub mod workflow_package_store;
 pub mod workflow_store;
 pub mod workspace_bootstrap_manifest_store;
+pub mod workspace_sets_store;
 pub mod workspace_state_checkpoint;
 
 pub use backup::{
@@ -77,7 +78,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 76;
+pub const SCHEMA_VERSION: u32 = 77;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3690,6 +3691,10 @@ impl LocalDatabase {
             project_instruction_stack_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 76;")?;
         }
+        if current < 77 {
+            workspace_sets_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 77;")?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -3709,12 +3714,12 @@ mod tests {
     }
 
     #[test]
-    fn schema_76_installs_configuration_experience_diagnostics_task_graph_component_registry_refs_workbench_coordinator_and_instruction_tables(
+    fn schema_77_installs_configuration_experience_diagnostics_task_graph_component_registry_refs_workbench_coordinator_instruction_and_workspace_set_tables(
     ) {
         let path = temp_database_path("experience-replay-schema-66");
         let _ = std::fs::remove_file(&path);
         let database = LocalDatabase::open(&path).expect("database opens");
-        assert_eq!(database.schema_version().expect("schema version"), 76);
+        assert_eq!(database.schema_version().expect("schema version"), 77);
         let has_ui_extension_table: i64 = database
             .connection()
             .query_row(
@@ -3751,6 +3756,15 @@ mod tests {
             )
             .expect("instruction table query");
         assert_eq!(has_instruction_table, 1);
+        let has_workspace_sets_table: i64 = database
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='workspace_sets'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("workspace set table query");
+        assert_eq!(has_workspace_sets_table, 1);
         let has_table: i64 = database
             .connection()
             .query_row(

@@ -1881,6 +1881,7 @@ message CommandEnvelope {
     CapabilityWorkbenchCommand capability_workbench = 228;
     TeamCoordinatorCommand team_coordinator = 229;
     ProjectInstructionStackCommand project_instruction_stack = 230;
+    WorkspaceSetsCommand workspace_sets = 231;
   }
 }
 
@@ -2006,6 +2007,7 @@ message EventEnvelope {
     CapabilityWorkbenchEvent capability_workbench = 73;
     TeamCoordinatorEvent team_coordinator = 74;
     ProjectInstructionStackEvent project_instruction_stack = 75;
+    WorkspaceSetsEvent workspace_sets = 76;
   }
 }
 
@@ -2248,6 +2250,25 @@ message ProjectInstructionStackEvent {
   string workspace_root = 2;
   string operation = 3;
   uint64 revision = 4;
+  string status = 5;
+  string error_code = 6;
+  bytes projection_json = 7;
+}
+
+// Plan 100: bounded Core-owned multi-root Workspace Set contract.
+message WorkspaceSetsCommand {
+  uint32 schema_version = 1;
+  string set_id = 2;
+  string operation = 3;
+  bytes payload = 4;
+  uint64 expected_version = 5;
+  string idempotency_key = 6;
+}
+message WorkspaceSetsEvent {
+  uint32 schema_version = 1;
+  string set_id = 2;
+  string operation = 3;
+  uint64 version = 4;
   string status = 5;
   string error_code = 6;
   bytes projection_json = 7;
