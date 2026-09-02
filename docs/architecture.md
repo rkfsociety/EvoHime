@@ -1757,3 +1757,28 @@ secrets, credentials, prompts, tokens, hidden reasoning и raw output.
 acceptance, watch с reconnect от последнего sequence, status, cancel и
 typed unavailable для неподдержанного resume. Exit codes versioned (0–8),
 а `eva.exe` включён в Windows package без Node/Python runtime.
+
+## Capability Workbench v1 (план 78)
+
+Capability Workbench — Core-owned lifecycle-scoped runtime component, а не
+renderer/plugin runtime. Versioned `WorkbenchDescriptor` ограничивает kind,
+scope (`RunScoped`, `GoalScoped`, `ProjectScoped`, `UserSessionScoped`),
+concurrency (`Exclusive`, `Serialized`, `Parallel`), tools и shared resources.
+Границы первой версии: IDs до 128 bytes, до 128 tools, 64 resources, 32
+leases/in-flight calls и portable snapshot до 256 KiB. Capability grants
+фильтруют discovery и проверяются повторно перед call.
+
+Состояния `Created → Starting → Ready → Stopping → Stopped` дополняются
+`Resetting`, `Degraded` и `Failed`; переходы revision-fenced. Durable SQLite
+schema v74 хранит только сериализованный logical instance, snapshots и
+resource leases. Heartbeat продлевает lease, истечение переводит instance в
+`Degraded`, очищает in-flight accounting и допускает reconciliation/recovery.
+Portable snapshot содержит только безопасное logical state и credential refs:
+raw credentials, prompts/outputs, OS handles и executable identities запрещены.
+
+Core command 228/event 73 предоставляет create/get/start/stop/reset,
+list_tools, typed call result, snapshot/restore, heartbeat, resource
+availability и cancellation outcome (`cancelled`, `already_terminal`,
+`unknown`). Неизвестные Core surfaces возвращают typed unavailable/degraded;
+arbitrary backend не загружается. Electron developer panel — bounded
+projection и маршрутизация, без state machine, DB или effects в renderer.

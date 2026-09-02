@@ -1878,6 +1878,7 @@ message CommandEnvelope {
     DeclarativeAgentComponentRegistryCommand declarative_agent_component_registry = 225;
     TypedContextReferencesCommand typed_context_references = 226;
     SafeUiExtensionFrameworkCommand safe_ui_extension_framework = 227;
+    CapabilityWorkbenchCommand capability_workbench = 228;
   }
 }
 
@@ -2000,6 +2001,7 @@ message EventEnvelope {
     DeclarativeAgentComponentRegistryEvent declarative_agent_component_registry = 70;
     TypedContextReferencesEvent typed_context_references = 71;
     SafeUiExtensionFrameworkEvent safe_ui_extension_framework = 72;
+    CapabilityWorkbenchEvent capability_workbench = 73;
   }
 }
 
@@ -2186,6 +2188,26 @@ message ComposableTerminationConditionsEvent {
   string error_code = 5;
   bytes projection_json = 6;
   bool truncated = 7;
+}
+
+// Plan 78: bounded Core-owned capability workbench lifecycle surface.
+message CapabilityWorkbenchCommand {
+  uint32 schema_version = 1;
+  string instance_id = 2;
+  string owner_id = 3;
+  string operation = 4;
+  bytes payload = 5;
+  uint64 expected_revision = 6;
+  repeated string grants = 7;
+}
+message CapabilityWorkbenchEvent {
+  uint32 schema_version = 1;
+  string instance_id = 2;
+  string operation = 3;
+  uint64 revision = 4;
+  string status = 5;
+  string error_code = 6;
+  bytes projection_json = 7;
 }
 
 // Plan 64: bounded metadata-only Workspace Bootstrap Manifest surface.

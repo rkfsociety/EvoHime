@@ -9,6 +9,23 @@ output, transcripts, absolute paths и PII запрещены.
 
 Статус: `TECHNICAL_GATES_PASS / RELEASE_GREEN`.
 
+## Plan 78 — Capability Workbench v1 (2026-09-02)
+
+- Contract: versioned Core-owned descriptor/instance lifecycle, four scopes,
+  exclusive/serialized/parallel concurrency, dynamic tool discovery with
+  capability recheck, shared-resource availability and typed cancellation.
+- Durability/recovery: additive SQLite schema v74 stores instances, safe
+  snapshots and resource leases; bounds are 128-byte IDs, 128 tools, 64
+  resources, 32 leases/in-flight calls and 256 KiB snapshots. Heartbeat,
+  expiry and degraded recovery do not persist OS handles or raw credentials.
+- IPC/UI: authenticated additive command 228/event 73 and Electron
+  metadata-only Capability Workbench panel; no arbitrary backend, renderer
+  state machine, direct DB access or effect execution.
+- Checks: focused Core/storage contract tests, cargo fmt/check/clippy,
+  protocol generation/check, Electron typecheck, focused panel test and full
+  Electron regression. `git diff --check` passed; evidence excludes secrets,
+  prompts, raw outputs, handles, absolute paths and PII.
+
 Continuation Policy v1 зафиксирован task-only коммитом `605c5ba1` с последующим
 исправлением миграционного порядка и boxed IPC future в текущем task commit:
 schema `v36`, authenticated IPC tags `151–156`, Core decision outcomes

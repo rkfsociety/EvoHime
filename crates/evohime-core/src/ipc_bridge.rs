@@ -2652,6 +2652,18 @@ impl IpcBridge {
                     self.write_response(writer, "safe_ui_extension_framework.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::CapabilityWorkbench(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "get".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_capability_workbench(operation, request)
+                        .await?;
+                    self.write_response(writer, "capability_workbench.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -7328,6 +7340,35 @@ impl IpcBridge {
             })
             .await
             .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_capability_workbench(
+        &self,
+        operation: String,
+        request: generated::CapabilityWorkbenchCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::CapabilityWorkbench {
+                operation,
+                instance_id: request.instance_id,
+                owner_id: request.owner_id,
+                payload: request.payload,
+                expected_revision: request.expected_revision,
+                grants: request.grants,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
         response
             .await
             .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?

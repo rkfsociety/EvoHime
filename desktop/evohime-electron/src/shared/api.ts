@@ -394,6 +394,17 @@ export interface CoreEvent {
   readonly conversationEventLog?: ConversationEventLogPage | null
   /** Typed metadata-only Workbench projection. */
   readonly conversationWorkbench?: ConversationWorkbenchProjection | null
+  readonly capabilityWorkbench?: CapabilityWorkbenchProjection | null
+}
+
+export interface CapabilityWorkbenchProjection {
+  readonly schemaVersion: number
+  readonly instanceId: string
+  readonly operation: string
+  readonly revision: number
+  readonly status: string
+  readonly errorCode: string
+  readonly projection: unknown
 }
 
 export interface ConversationEventProjection {
@@ -1065,6 +1076,7 @@ export const RENDERER_COMMANDS = [
   'core.declarativeAgentComponentRegistry',
   'core.typedContextReferences',
   'core.safeUiExtensionFramework',
+  'core.capabilityWorkbench',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1367,6 +1379,7 @@ export interface CommandPayloads {
   'core.declarativeAgentComponentRegistry': { operation: 'create' | 'get' | 'validate' | 'replace' | 'diff'; registryId: string; payload: string; expectedRevision?: number }
   'core.typedContextReferences': { operation: 'resolve' | 'budget' | 'kinds'; refId: string; payload: string }
   'core.safeUiExtensionFramework': { operation: 'install' | 'get' | 'validate' | 'enable' | 'disable' | 'update'; extensionId: string; payload: string; expectedRevision?: number }
+  'core.capabilityWorkbench': { operation: 'create' | 'get' | 'start' | 'ready' | 'stop' | 'stopped' | 'reset' | 'degraded' | 'recover' | 'heartbeat' | 'list_tools' | 'call_tool' | 'cancel' | 'resource' | 'snapshot' | 'restore'; instanceId: string; ownerId: string; payload: string; expectedRevision?: number; grants?: readonly string[] }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
   'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
@@ -1853,6 +1866,7 @@ export interface CommandResults {
   'core.declarativeAgentComponentRegistry': { accepted: boolean }
   'core.typedContextReferences': { accepted: boolean }
   'core.safeUiExtensionFramework': { accepted: boolean }
+  'core.capabilityWorkbench': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }
   'core.executeAnalysisKernel': { accepted: boolean }

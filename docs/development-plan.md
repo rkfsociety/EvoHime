@@ -320,6 +320,12 @@ authenticated IPC command 214/event 60 и metadata-only Electron projection.
 `docs/architecture.md` и `docs/current-state.md`; комплект плана удалён.
 План 64 закрыт 2 сентября 2026 года. Следующий незавершённый этап выбирается
 из `docs/plans` по следующему номеру.
+
+План 78 закрыт 2 сентября 2026 года. Capability Workbench v1 реализован
+end-to-end: Core contract/state machine, schema v74 storage для instances,
+snapshots и leases, capability recheck, typed IPC command 228/event 73,
+Electron projection/panel и focused/full verification. Комплект `78-0` …
+`78-4` удалён после переноса контракта и состояния в канонические документы.
 План 74 закрыт 2 сентября 2026 года. Следующий незавершённый этап выбирается
 из `docs/plans` по следующему номеру.
 План 73 закрыт 2 сентября 2026 года. Следующий незавершённый этап выбирается

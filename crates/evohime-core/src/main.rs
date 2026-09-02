@@ -810,6 +810,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::SafeUiExtensionFramework { extension_id, operation, revision, .. } => println!(
             "safe_ui_extension_framework.result {extension_id}: {operation} revision={revision}"
         ),
+        evohime_core::CoreEvent::CapabilityWorkbench { instance_id, operation, revision, .. } => println!(
+            "capability_workbench.result {instance_id}: {operation} revision={revision}"
+        ),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             println!("review.history_cleared {marker_id}")
         }

@@ -913,3 +913,12 @@ reconnect по event cursor. CLI использует существующие C
 contracts, не получает прямой доступ к БД или runtime, redacts sensitive
 projection и поставляется в Windows package; `resume` возвращает typed
 unavailable, поскольку безопасный task-resume contract в Core ещё не объявлен.
+
+План 78 закрыт 2 сентября 2026 года: Capability Workbench v1. Добавлены
+versioned Core-owned descriptor/instance/lifecycle/scope/concurrency contract,
+dynamic capability-filtered tools, shared resources, typed call/cancellation
+outcomes, safe snapshot validation, heartbeat/expiry recovery и durable SQLite
+schema v74 для instances, snapshots и leases. Authenticated IPC использует
+command 228/event 73; Electron developer panel остаётся metadata-only и не
+получает authority или runtime handles. Raw credentials, prompts/outputs,
+OS handles и executable identities в portable state запрещены.

@@ -472,6 +472,18 @@ function dispatch(
       if(operation===null||extensionId===null||extensionPayload===null||expectedRevision===null||extensionId.length>128||extensionPayload.length>64*1024)return failure('invalid-payload','Некорректная операция UI Extension.')
       return accepted(client.send({safeUiExtensionFramework:{schemaVersion:1,requestId:randomUUID(),operation,extensionId,payload:Buffer.from(extensionPayload,'utf8'),expectedRevision}}))
     }
+    case 'core.capabilityWorkbench': {
+      const value = asRecord(payload)
+      const operations = ['create','get','start','ready','stop','stopped','reset','degraded','recover','heartbeat','list_tools','call_tool','cancel','resource','snapshot','restore']
+      const operation = operations.includes(String(value['operation'])) ? String(value['operation']) : null
+      const instanceId = asBoundedString(value['instanceId'])
+      const ownerId = asBoundedString(value['ownerId'])
+      const workbenchPayload = asBoundedString(value['payload'])
+      const expectedRevision = value['expectedRevision'] === undefined ? 0 : asNonNegativeInteger(value['expectedRevision'])
+      const grants = Array.isArray(value['grants']) && value['grants'].every(item => typeof item === 'string') ? value['grants'] as string[] : []
+      if (operation === null || instanceId === null || ownerId === null || workbenchPayload === null || expectedRevision === null || instanceId.length > 128 || ownerId.length > 128 || workbenchPayload.length > 256 * 1024 || grants.length > 128) return failure('invalid-payload', 'Некорректная операция Capability Workbench.')
+      return accepted(client.send({capabilityWorkbench:{schemaVersion:1,instanceId,ownerId,operation,payload:Buffer.from(workbenchPayload,'utf8'),expectedRevision,grants}}))
+    }
 
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)
