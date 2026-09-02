@@ -91,6 +91,7 @@ describe('model picker', () => {
             models: ['gemini-2.5-flash:free', 'gpt-5-nano:free', 'grok-4.1:free']
           })
         ]}
+        use="text"
       />
     )
 
@@ -110,11 +111,12 @@ describe('model picker', () => {
           mode: 'free',
           models: ['mythomax-l2-13b:free', 'usable:free']
         })]}
+        use="text"
       />
     )
 
     await userEvent.click(await screen.findByRole('button', { name: /Модель/ }))
-    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['mythomax-l2-13b:free', 'usable:free'])
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['usable:free', 'mythomax-l2-13b:free'])
   })
 
   it('requests the configured tier and offers what the provider returned', async () => {
@@ -129,13 +131,14 @@ describe('model picker', () => {
       <ModelPicker
         connection="connected"
         events={[event('model.catalog', { mode: 'paid', models: ['gpt-4o-mini', 'claude'] })]}
+        use="text"
       />
     )
 
     await userEvent.click(await screen.findByRole('button', { name: /Модель/ }))
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
-      'gpt-4o-mini',
-      'claude'
+      'claude',
+      'gpt-4o-mini'
     ])
   })
 
@@ -144,6 +147,7 @@ describe('model picker', () => {
       <ModelPicker
         connection="connected"
         events={[event('model.catalog', { mode: 'free', models: ['a:free', 'b:free'] })]}
+        use="text"
       />
     )
 
@@ -160,6 +164,7 @@ describe('model picker', () => {
       <ModelPicker
         connection="connected"
         events={[event('model.catalog', { mode: 'free', models: ['first:free', 'second:free'] })]}
+        use="text"
       />
     )
 
@@ -169,6 +174,23 @@ describe('model picker', () => {
         payload: { model: 'first:free' }
       })
     )
+  })
+
+  it('keeps only verified agent models in the chat picker and puts Haiku first', async () => {
+    render(
+      <ModelPicker
+        connection="connected"
+        events={[event('model.catalog', {
+          mode: 'free',
+          models: ['mythomax-l2-13b:free', 'claude-haiku-4.5-cheap:free', 'gemma-3-27b-it:free']
+        })]}
+      />
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: /Модель/ }))
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'claude-haiku-4.5-cheap:free'
+    ])
   })
 
   it('points at the key when the catalogue could not be read', async () => {

@@ -4,6 +4,7 @@ import type { ChatProviderMode, ConnectionState, CoreEvent, CodexModel, CodexRat
 
 import { useShellApi } from './shell-api'
 import { CodexRateLimits } from './CodexRateLimits'
+import { capabilityForModel, sortModelsForUse, type ModelUse } from '@shared/model-capabilities'
 
 /**
  * Model selection for the next task, shown in the composer.
@@ -20,9 +21,10 @@ export interface ModelPickerProps {
   readonly connection: ConnectionState
   readonly events: readonly CoreEvent[]
   readonly provider: ChatProviderMode
+  readonly use?: ModelUse
 }
 
-export function ModelPicker({ connection, events, provider = 'literouter' }: ModelPickerProps & { readonly provider?: ChatProviderMode }): React.JSX.Element | null {
+export function ModelPicker({ connection, events, provider = 'literouter', use = 'agent' }: ModelPickerProps & { readonly provider?: ChatProviderMode }): React.JSX.Element | null {
   const api = useShellApi()
   const connected = CONNECTED_STATES.includes(connection)
   const [tier, setTier] = useState<ModelTier | null>(null)
@@ -64,13 +66,12 @@ export function ModelPicker({ connection, events, provider = 'literouter' }: Mod
     if (provider === 'codex_cli') return
     if (!catalog) return
     const parsed = parseJson(catalog.payload)
-    setModels(
-      Array.isArray(parsed['models'])
-        ? parsed['models'].filter((model): model is string => typeof model === 'string' && model.trim().length > 0)
-        : []
-    )
+    const catalogModels = Array.isArray(parsed['models'])
+      ? parsed['models'].filter((model): model is string => typeof model === 'string' && model.trim().length > 0)
+      : []
+    setModels(sortModelsForUse(provider, catalogModels, use))
     setError(typeof parsed['error'] === 'string' ? parsed['error'] : null)
-  }, [catalog, provider])
+  }, [catalog, provider, use])
 
   useEffect(() => {
     if (provider === 'codex_cli') return
@@ -128,6 +129,9 @@ export function ModelPicker({ connection, events, provider = 'literouter' }: Mod
         current={known ? current : ''}
         onSelect={(model) => void select(model)}
       />
+      {provider !== 'codex_cli' && use === 'agent' && models.length > 0 ? (
+        <span className="model-picker__hint" title={capabilityForModel(provider, current).reason}>агентские модели</span>
+      ) : null}
       {provider === 'codex_cli' ? <CodexRateLimits rateLimits={codexRateLimits} compact /> : null}
     </>
   )

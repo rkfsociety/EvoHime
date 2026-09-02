@@ -522,7 +522,7 @@ export function TaskTimeline({
               onChange={setProviderMode}
               disabled={busy}
             />
-            <ModelPicker connection={connection} events={events} provider={providerMode} />
+            <ModelPicker connection={connection} events={events} provider={providerMode} use="agent" />
           </div>
 
 
