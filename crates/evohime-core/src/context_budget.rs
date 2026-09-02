@@ -672,6 +672,13 @@ fn registry_from_specs(specs: &[ToolSpec]) -> Vec<ToolRegistryEntry> {
 }
 
 fn is_mutation_tool(name: &str) -> bool {
+    // `agent.run` делегирует bounded-задачу в отдельный backend. Сам вызов не
+    // меняет workspace и не должен исчезать из read-only loadout только из-за
+    // слова `run`; дочерний backend повторно проверяет свои capabilities.
+    if name == "agent.run" {
+        return false;
+    }
+
     const MUTATION_MARKERS: [&str; 8] = [
         "write", "delete", "remove", "create", "apply", "commit", "exec", "run",
     ];
@@ -975,6 +982,22 @@ mod tests {
         assert_eq!(assembled.messages[0].role, ChatRole::System);
         assert_eq!(assembled.messages[1].content, "проверь репозиторий");
         assert_eq!(assembled.ledger().context_ledger_hash.len(), 64);
+    }
+
+    #[test]
+    fn agent_run_is_available_for_a_safe_project_research_request() {
+        let mut runtime = runtime();
+        let messages = vec![
+            ChatMessage::text(ChatRole::System, "системная политика"),
+            ChatMessage::text(ChatRole::User, "Изучи проект и расскажи, как он устроен"),
+        ];
+        let assembled = assemble(&mut runtime, &messages, &[spec("agent.run")]);
+
+        assert!(assembled.check_tool_call("agent.run").is_ok());
+        assert!(assembled
+            .tool_specs
+            .iter()
+            .any(|tool| tool.function.name == "agent.run"));
     }
 
     /// Окно, названное провайдером, должно доходить до планировщика: без этого
