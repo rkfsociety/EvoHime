@@ -58,6 +58,7 @@ pub mod team_sop_protocols_store;
 pub mod toolkit_store;
 pub mod typed_agent_handoff_contract_store;
 pub mod visual_workflow_builder_store;
+pub mod workflow_optimization_lab_store;
 pub mod workflow_package_store;
 pub mod workflow_store;
 pub mod workspace_bootstrap_manifest_store;
@@ -68,7 +69,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 67;
+pub const SCHEMA_VERSION: u32 = 68;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3644,6 +3645,10 @@ impl LocalDatabase {
         if current < 67 {
             code_diagnostics_feedback_loop_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 67;")?;
+        }
+        if current < 68 {
+            workflow_optimization_lab_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 68;")?;
         }
         transaction.commit()?;
         Ok(())

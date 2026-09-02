@@ -1872,6 +1872,7 @@ message CommandEnvelope {
     ExperienceReplayLibraryCommand experience_replay_library = 219;
     RuntimeInterventionPipelineCommand runtime_intervention_pipeline = 220;
     CodeDiagnosticsFeedbackLoopCommand code_diagnostics_feedback_loop = 221;
+    WorkflowOptimizationLabCommand workflow_optimization_lab = 222;
   }
 }
 
@@ -1988,6 +1989,7 @@ message EventEnvelope {
     ExperienceReplayLibraryEvent experience_replay_library = 64;
     RuntimeInterventionPipelineEvent runtime_intervention_pipeline = 65;
     CodeDiagnosticsFeedbackLoopEvent code_diagnostics_feedback_loop = 66;
+    WorkflowOptimizationLabEvent workflow_optimization_lab = 67;
   }
 }
 
@@ -2315,6 +2317,17 @@ message CodeDiagnosticsFeedbackLoopEvent {
   uint32 schema_version = 1; string request_id = 2; string operation = 3;
   string status = 4; uint64 revision = 5; bytes projection_json = 6;
   string error_code = 7; bool truncated = 8;
+}
+// Plan 71: bounded offline workflow optimization lab.
+message WorkflowOptimizationLabCommand {
+  uint32 schema_version = 1; string request_id = 2; string operation = 3;
+  string run_id = 4; bytes payload = 5; uint64 expected_revision = 6;
+  string idempotency_key = 7;
+}
+message WorkflowOptimizationLabEvent {
+  uint32 schema_version = 1; string request_id = 2; string operation = 3;
+  string status = 4; string run_id = 5; uint64 revision = 6;
+  string error_code = 7; bytes projection_json = 8;
 }
 
 // Plan 46: bounded metadata-only Agent Role Profiles surface. Profile bodies

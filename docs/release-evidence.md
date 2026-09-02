@@ -365,6 +365,18 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Checks: focused contract/recovery/storage tests, schema migration, cargo
   check/clippy, protocol check, Electron typecheck and full Electron regression.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
+## Plan 71 — Workflow Optimization Lab v1 (2026-09-02)
+
+- Contract: bounded versioned OptimizationRun/Candidate, declarative mutations,
+  multi-metric objective, constraints and train/validation/holdout semantics.
+- Runtime: candidate evaluation uses the Core Agent Benchmark Matrix with
+  frozen suite/policy; limits and security regressions fail closed; durable
+  SQLite schema v68 preserves run/candidate metadata and explicit promotion.
+- IPC/UI: authenticated additive command 222/event 67, generated bindings and
+  Electron metadata-only offline lab projection.
+- Checks: focused Rust contract, cargo check/clippy, protocol check, Electron
+  typecheck and full Electron regression; evidence excludes credentials, raw
+  benchmark output, prompts, absolute paths and PII.
 ## Plan 70 — Code Diagnostics Feedback Loop v1 (2026-09-02)
 
 - Contract: Core-owned registered providers, bounded versioned diagnostics,

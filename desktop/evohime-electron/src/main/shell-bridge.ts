@@ -442,6 +442,11 @@ function dispatch(
       if (operation === null || workspaceRootId === null || diagnosticsPayload === null || baselineSnapshotId === null || idempotencyKey === null || expectedRevision === null || workspaceRootId.length > 128 || diagnosticsPayload.length > 512 * 1024) return failure('invalid-payload', 'Некорректная операция Code Diagnostics.')
       return accepted(client.send({ codeDiagnosticsFeedbackLoop: { schemaVersion: 1, requestId: randomUUID(), operation, workspaceRootId, payload: Buffer.from(diagnosticsPayload, 'utf8'), baselineSnapshotId, expectedRevision, idempotencyKey } }))
     }
+    case 'core.workflowOptimizationLab': {
+      const value=asRecord(payload); const operation=['evaluate','save_run','get_run','validate_candidate','promote'].includes(String(value['operation']))?String(value['operation']):null; const runId=asBoundedString(value['runId']); const optimizationPayload=asBoundedString(value['payload']); const idempotencyKey=asBoundedString(value['idempotencyKey']); const expectedRevision=value['expectedRevision']===undefined?0:asNonNegativeInteger(value['expectedRevision']);
+      if(operation===null||runId===null||optimizationPayload===null||idempotencyKey===null||expectedRevision===null||runId.length>128||optimizationPayload.length>128*1024)return failure('invalid-payload','Некорректная операция Workflow Optimization Lab.')
+      return accepted(client.send({workflowOptimizationLab:{schemaVersion:1,requestId:randomUUID(),operation,runId,payload:Buffer.from(optimizationPayload,'utf8'),expectedRevision,idempotencyKey}}))
+    }
 
     case 'core.createAnalysisKernel': {
       const value = asRecord(payload)

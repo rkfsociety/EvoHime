@@ -6,6 +6,7 @@ pub mod experience_replay_library;
 pub mod schema_driven_agent_configuration;
 pub mod sensitive_data_guardrails;
 pub mod team_sop_protocols;
+pub mod workflow_optimization_lab;
 pub mod workspace_bootstrap_manifest;
 
 pub const AGENT_IDENTITY_PROMPT: &str =
@@ -1330,6 +1331,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    WorkflowOptimizationLab {
+        operation: String,
+        run_id: String,
+        payload: Vec<u8>,
+        expected_revision: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -1982,6 +1991,12 @@ pub enum CoreEvent {
     },
     CodeDiagnosticsFeedbackLoop {
         workspace_root_id: String,
+        operation: String,
+        revision: u64,
+        projection_json: String,
+    },
+    WorkflowOptimizationLab {
+        run_id: String,
         operation: String,
         revision: u64,
         projection_json: String,
@@ -3076,6 +3091,7 @@ impl EventJournal {
             CoreEvent::CodeDiagnosticsFeedbackLoop {
                 workspace_root_id, ..
             } => workspace_root_id,
+            CoreEvent::WorkflowOptimizationLab { run_id, .. } => run_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3108,6 +3124,7 @@ impl EventJournal {
             CoreEvent::CodeDiagnosticsFeedbackLoop { .. } => {
                 "code_diagnostics_feedback_loop.result"
             }
+            CoreEvent::WorkflowOptimizationLab { .. } => "workflow_optimization_lab.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -11519,6 +11536,51 @@ impl TaskCoordinator {
                 let event = CoreEvent::CodeDiagnosticsFeedbackLoop {
                     workspace_root_id,
                     operation: event_operation,
+                    revision: expected_revision,
+                    projection_json,
+                };
+                let journal = state.lock().await.journal.clone();
+                if let Some(journal) = journal {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::WorkflowOptimizationLab {
+                operation,
+                run_id,
+                payload,
+                expected_revision,
+                idempotency_key: _,
+                reply,
+            } => {
+                let result = async {
+                    let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;
+                    let database=journal.database().lock().await;
+                    use evohime_local_storage::workflow_optimization_lab_store as store;
+                    match operation.as_str() {
+                        "evaluate" => {
+                            let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_benchmark_request".to_string())?;
+                            let candidate: crate::workflow_optimization_lab::Candidate = serde_json::from_value(value.get("candidate").cloned().ok_or_else(|| "candidate_missing".to_string())?).map_err(|_| "invalid_candidate".to_string())?;
+                            let request: crate::workflow_optimization_lab::BenchmarkEvaluationRequest = serde_json::from_value(value).map_err(|_| "invalid_benchmark_request".to_string())?;
+                            let report = crate::workflow_optimization_lab::evaluate_candidate(&run_id, &candidate, &request).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":"evaluated","run_id":run_id,"report":report,"revision":expected_revision.saturating_add(1)})).map_err(|e| e.to_string())
+                        }
+                        "save_run" => { let run:crate::workflow_optimization_lab::OptimizationRun=serde_json::from_slice(&payload).map_err(|_|"invalid_optimization_run".to_string())?; crate::workflow_optimization_lab::validate_run(&run).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&run).map_err(|e|e.to_string())?; let saved=store::put_run(database.connection(),&run.id,&json,&run.content_hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":if saved{"stored"}else{"duplicate"},"run_id":run.id,"revision":1})).map_err(|e|e.to_string()) }
+                        "get_run" => { let json=store::get_run(database.connection(),&run_id).map_err(|e|e.to_string())?.ok_or_else(||"run_not_found".to_string())?; serde_json::to_vec(&serde_json::json!({"status":"ok","run":serde_json::from_slice::<serde_json::Value>(&json).map_err(|_|"corrupt_run".to_string())?,"revision":expected_revision})).map_err(|e|e.to_string()) }
+                        "validate_candidate" => { let c:crate::workflow_optimization_lab::Candidate=serde_json::from_slice(&payload).map_err(|_|"invalid_candidate".to_string())?; crate::workflow_optimization_lab::validate_candidate(&c,crate::workflow_optimization_lab::Split::Validation).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"validated","candidate_id":c.id,"revision":expected_revision})).map_err(|e|e.to_string()) }
+                        "promote" => { let c:crate::workflow_optimization_lab::Candidate=serde_json::from_slice(&payload).map_err(|_|"invalid_candidate".to_string())?; let run_json=store::get_run(database.connection(),&run_id).map_err(|e|e.to_string())?.ok_or_else(||"run_not_found".to_string())?; let run:crate::workflow_optimization_lab::OptimizationRun=serde_json::from_slice(&run_json).map_err(|_|"corrupt_run".to_string())?; crate::workflow_optimization_lab::promotion_allowed(&run,&c,true,true).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"promoted","run_id":run_id,"candidate_id":c.id,"revision":expected_revision.saturating_add(1)})).map_err(|e|e.to_string()) }
+                        _ => Err("unsupported_optimization_operation".into()),
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::WorkflowOptimizationLab {
+                    run_id,
+                    operation,
                     revision: expected_revision,
                     projection_json,
                 };

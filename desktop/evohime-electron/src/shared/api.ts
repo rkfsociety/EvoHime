@@ -1059,6 +1059,7 @@ export const RENDERER_COMMANDS = [
   'core.experienceReplayLibrary',
   'core.runtimeInterventionPipeline',
   'core.codeDiagnosticsFeedbackLoop',
+  'core.workflowOptimizationLab',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
   'core.executeAnalysisKernel',
@@ -1355,6 +1356,7 @@ export interface CommandPayloads {
   'core.experienceReplayLibrary': { operation: 'write' | 'list' | 'context'; scope: string; scopeId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.runtimeInterventionPipeline': { operation: 'evaluate'; runId: string; payload: string; idempotencyKey: string }
   'core.codeDiagnosticsFeedbackLoop': { operation: 'register_provider' | 'snapshot' | 'delta' | 'gate'; workspaceRootId: string; payload: string; baselineSnapshotId?: string; expectedRevision?: number; idempotencyKey: string }
+  'core.workflowOptimizationLab': { operation: 'evaluate' | 'save_run' | 'get_run' | 'validate_candidate' | 'promote'; runId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
   'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
@@ -1835,6 +1837,7 @@ export interface CommandResults {
   'core.experienceReplayLibrary': { accepted: boolean }
   'core.runtimeInterventionPipeline': { accepted: boolean }
   'core.codeDiagnosticsFeedbackLoop': { accepted: boolean }
+  'core.workflowOptimizationLab': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }
   'core.executeAnalysisKernel': { accepted: boolean }

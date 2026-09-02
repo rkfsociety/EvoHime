@@ -1668,3 +1668,14 @@ schema v67, а quality gate возвращает только typed passed/block
 commands, credentials и arbitrary code actions не получают capabilities.
 Authenticated additive IPC использует command 221/event 66, Electron получает
 bounded metadata projection и не вычисляет state machine.
+
+## Workflow Optimization Lab v1 (план 71)
+
+Offline-only lab хранит versioned OptimizationRun/Candidate и declarative
+mutations в SQLite schema v68. Candidate evaluation проходит через
+Core-owned Agent Benchmark Matrix с frozen suite/policy; train/validation/
+holdout разделены, security regression блокирует результат, а лимиты run
+ограничивают rounds, candidates, cost, tokens и wall time. Promotion возможен
+только явным Core-checked action после holdout и не активируется автоматически.
+Authenticated additive IPC использует command 222/event 67; Electron показывает
+bounded metadata projection без optimizer tools или production authority.

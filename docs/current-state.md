@@ -865,3 +865,9 @@ workspace/file binding, durable SQLite schema v67, snapshots и deterministic
 introduced/resolved/persisting delta, typed quality gate, authenticated IPC
 command 221/event 66 и Electron Problems projection. Stale refs, oversized или
 неcanonical input отклоняются; renderer не получает authority или raw output.
+План 71 закрыт 2 сентября 2026 года: Workflow Optimization Lab v1.
+Добавлены bounded OptimizationRun/Candidate, declarative search constraints,
+Benchmark Matrix evaluation, durable SQLite schema v68, security hard rejection,
+explicit holdout-gated promotion, authenticated IPC command 222/event 67 и
+Electron metadata-only panel. Лаборатория offline-only и не может сама менять
+production workflow.
