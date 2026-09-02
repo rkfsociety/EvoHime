@@ -28,7 +28,7 @@ $manifest = New-NativePackageManifest -Architecture 'x64' -OsMinimum 'Windows 10
 $cargoProfile = if ($Configuration -eq 'Debug') { 'debug' } else { 'release' }
 $cargoArguments = @('build', '--locked')
 if ($Configuration -eq 'Release') { $cargoArguments += '--release' }
-$cargoArguments += @('-p', 'evohime-core', '-p', 'evohime-supervisor', '-p', 'evohime-updater', '-p', 'evohime-receipts', '-p', 'evohime-listener')
+$cargoArguments += @('-p', 'evohime-core', '-p', 'evohime-cli', '-p', 'evohime-supervisor', '-p', 'evohime-updater', '-p', 'evohime-receipts', '-p', 'evohime-listener')
 $electronBuilderArguments = @('electron-builder', '--dir', '--config', 'electron-builder.yml')
 if ($Version) {
     if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "Некорректная версия Electron package: $Version" }
@@ -53,7 +53,7 @@ if (-not $SkipBuild) {
 
 New-Item -ItemType Directory -Force -Path $resolvedOutput | Out-Null
 $cargoTarget = Join-Path $repoRoot "target\$cargoProfile"
-$requiredNative = @('evohime-core.exe', 'evohime-supervisor.exe', 'evohime-analysis-worker.exe', 'evohime-listener.exe', 'evohime-transaction.exe', 'evohime-verify.exe')
+$requiredNative = @('evohime-core.exe', 'eva.exe', 'evohime-supervisor.exe', 'evohime-analysis-worker.exe', 'evohime-listener.exe', 'evohime-transaction.exe', 'evohime-verify.exe')
 foreach ($component in $requiredNative) {
     $destination = Join-Path $resolvedOutput $component
     $source = if ($SkipBuild) { $destination } else { Join-Path $cargoTarget $component }

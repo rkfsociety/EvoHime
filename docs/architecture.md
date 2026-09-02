@@ -1742,3 +1742,18 @@ Core-authoritative metadata и serialized manifest; ephemeral render errors не
 становятся authority. Authenticated additive IPC использует command 227/event
 72, Electron получает metadata-only projection и не вычисляет lifecycle или
 capabilities.
+
+## Headless Core CLI v1 (план 77)
+
+Официальный Windows companion binary `eva.exe` является authenticated
+клиентом существующего Core, а не вторым agent runtime. Он читает только
+защищённый launch context, проходит named-pipe session proof с ролью `cli` и
+переиспользует существующие Core `StartTask`, `StartWorkflow`, status,
+cancel и event/replay contracts; SQLite и model/tool runtime CLI напрямую не
+открывает. Контракт `evohime.cli.event/v1` ограничивает prompt, workspace и
+event projections, отделяет stdout NDJSON от stderr diagnostics и redacts
+secrets, credentials, prompts, tokens, hidden reasoning и raw output.
+Поддерживаются human/one-shot, `--json` NDJSON, bounded stdin, detached
+acceptance, watch с reconnect от последнего sequence, status, cancel и
+typed unavailable для неподдержанного resume. Exit codes versioned (0–8),
+а `eva.exe` включён в Windows package без Node/Python runtime.

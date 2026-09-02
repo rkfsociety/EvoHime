@@ -32,7 +32,7 @@ pub const PIPE_NAME_STEM: &str = "evohime-core-";
 /// Roles a client may claim in the handshake. Every role is still subject to
 /// Core's own capability and policy checks; the role only narrows what the
 /// transport accepts.
-pub const ALLOWED_CLIENT_ROLES: [&str; 3] = ["shell", "compatibility-shell", "listener"];
+pub const ALLOWED_CLIENT_ROLES: [&str; 4] = ["shell", "compatibility-shell", "listener", "cli"];
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum SessionError {

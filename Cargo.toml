@@ -17,5 +17,6 @@ members = [
   "crates/evohime-eval",
   "crates/evohime-receipts",
   "crates/evohime-model-provenance",
+  "crates/evohime-cli",
 ]
 resolver = "2"

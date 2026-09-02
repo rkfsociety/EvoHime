@@ -18,6 +18,7 @@ function New-NativePackageManifest {
             ui         = 'EvoHime.exe'
             browser_backend = 'EvoHime.exe'
             core       = 'evohime-core.exe'
+            cli        = 'eva.exe'
             supervisor = 'evohime-supervisor.exe'
             analysis_worker = 'evohime-analysis-worker.exe'
             listener   = 'evohime-listener.exe'

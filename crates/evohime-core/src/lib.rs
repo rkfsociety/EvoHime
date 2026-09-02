@@ -6,6 +6,7 @@ pub mod core_topic_subscription_event_bus;
 pub mod declarative_agent_component_registry;
 pub mod dependency_aware_task_graph;
 pub mod experience_replay_library;
+pub mod headless_core_cli;
 pub mod safe_ui_extension_framework;
 pub mod schema_driven_agent_configuration;
 pub mod sensitive_data_guardrails;

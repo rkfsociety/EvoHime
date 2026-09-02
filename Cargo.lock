@@ -706,6 +706,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "evohime-cli"
+version = "0.1.0"
+dependencies = [
+ "evohime-core",
+ "evohime-desktop-ipc",
+ "prost",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "evohime-context-budget"
 version = "0.1.0"
 dependencies = [

@@ -904,3 +904,12 @@ authenticated IPC command 227/event 72 и metadata-only Electron UI.
 Arbitrary renderer code, shell/filesystem/network bindings и auto-enable после
 restart запрещены; focused Rust/storage/Electron checks и полный Electron
 regression пройдены.
+
+План 77 закрыт 2 сентября 2026 года: Headless Core CLI v1. Добавлены Core
+contract для bounded RunRequest и стабильных terminal events, роль
+authenticated `cli`, Rust companion binary `eva.exe`, human/one-shot и NDJSON
+вывод, bounded stdin, detached run acceptance, status/watch/cancel и
+reconnect по event cursor. CLI использует существующие Core task/workflow
+contracts, не получает прямой доступ к БД или runtime, redacts sensitive
+projection и поставляется в Windows package; `resume` возвращает typed
+unavailable, поскольку безопасный task-resume contract в Core ещё не объявлен.

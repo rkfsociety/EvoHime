@@ -366,6 +366,20 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   check/clippy, protocol check, Electron typecheck and full Electron regression.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
 
+## Plan 77 — Headless Core CLI v1 (2026-09-02)
+
+- Contract: Core-owned bounded RunRequest, `evohime.cli.event/v1`, explicit
+  human/one-shot/NDJSON modes, stable exit-code mapping and redacted payloads.
+- Runtime/client: authenticated named-pipe role `cli`, existing Core task and
+  workflow commands, detached acceptance, status/watch/cancel and reconnect
+  from event cursor; no direct DB or second agent runtime.
+- Packaging: official Windows `eva.exe` companion is included in the native
+  package; Node/Python are not required by the CLI.
+- Checks: CLI unit tests (3), Core contract tests (2), cargo check/fmt/clippy,
+  package smoke, protocol check, Electron typecheck and full Electron
+  regression: 99 files passed, 523 tests passed, 2 skipped. Evidence excludes
+  secrets, raw prompts/outputs, absolute paths and PII.
+
 ## Plan 76 — Safe UI Extension Framework v1 (2026-09-02)
 
 - Contract: versioned bounded `UiExtensionManifest`, declarative contribution
