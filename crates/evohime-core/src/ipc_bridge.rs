@@ -2494,6 +2494,18 @@ impl IpcBridge {
                     self.write_response(writer, "workspace_bootstrap_manifest.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::TeamCoordinationPolicies(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "validate_policy".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_team_coordination_policies(operation, request)
+                        .await?;
+                    self.write_response(writer, "team_coordination_policies.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -6885,6 +6897,34 @@ impl IpcBridge {
                 operation,
                 project_id: request.project_id,
                 workspace_id: request.workspace_id,
+                payload: request.payload,
+                expected_version: request.expected_version,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_team_coordination_policies(
+        &self,
+        operation: String,
+        request: generated::TeamCoordinationPoliciesCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::TeamCoordinationPolicies {
+                operation,
+                team_id: request.team_id,
                 payload: request.payload,
                 expected_version: request.expected_version,
                 idempotency_key: request.idempotency_key,

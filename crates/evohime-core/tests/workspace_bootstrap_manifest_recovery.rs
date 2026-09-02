@@ -1,6 +1,6 @@
 use evohime_core::workspace_bootstrap_manifest::{
-    run_bounded, with_content_hash, BootstrapManifestError, BootstrapStep,
-    BootstrapStepKind, NetworkRequirement, StepIdempotency, WorkspaceBootstrapManifest,
+    run_bounded, with_content_hash, BootstrapManifestError, BootstrapStep, BootstrapStepKind,
+    NetworkRequirement, StepIdempotency, WorkspaceBootstrapManifest,
 };
 
 fn manifest(network: NetworkRequirement, kind: BootstrapStepKind) -> WorkspaceBootstrapManifest {
@@ -29,7 +29,10 @@ fn manifest(network: NetworkRequirement, kind: BootstrapStepKind) -> WorkspaceBo
 async fn network_requirement_is_denied_before_process_dispatch() {
     let value = run_bounded(
         std::path::Path::new("."),
-        &manifest(NetworkRequirement::GeneralInternet, BootstrapStepKind::RunCommand),
+        &manifest(
+            NetworkRequirement::GeneralInternet,
+            BootstrapStepKind::RunCommand,
+        ),
     )
     .await;
     assert_eq!(value, Err(BootstrapManifestError::NetworkDenied));
@@ -39,7 +42,10 @@ async fn network_requirement_is_denied_before_process_dispatch() {
 async fn unsupported_file_effect_is_not_silently_executed() {
     let value = run_bounded(
         std::path::Path::new("."),
-        &manifest(NetworkRequirement::None, BootstrapStepKind::CopyTemplateIfMissing),
+        &manifest(
+            NetworkRequirement::None,
+            BootstrapStepKind::CopyTemplateIfMissing,
+        ),
     )
     .await;
     assert_eq!(value, Err(BootstrapManifestError::UnsupportedEffect));
