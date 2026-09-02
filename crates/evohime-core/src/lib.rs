@@ -17,6 +17,7 @@ pub mod reasoning_operator_library;
 pub mod safe_ui_extension_framework;
 pub mod schema_driven_agent_configuration;
 pub mod sensitive_data_guardrails;
+pub mod standing_approval_profiles;
 pub mod team_coordinator;
 pub mod team_sop_protocols;
 pub mod typed_context_references;
@@ -1481,6 +1482,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    StandingApprovalProfiles {
+        operation: String,
+        profile_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     GetTaskSnapshot {
         project_id: String,
         task_id: String,
@@ -2232,6 +2241,12 @@ pub enum CoreEvent {
     },
     CustomizationInventory {
         item_id: String,
+        operation: String,
+        version: u64,
+        projection_json: String,
+    },
+    StandingApprovalProfiles {
+        profile_id: String,
         operation: String,
         version: u64,
         projection_json: String,
@@ -3343,6 +3358,7 @@ impl EventJournal {
             CoreEvent::ReasoningOperatorLibrary { operator_id, .. } => operator_id,
             CoreEvent::OutputGuardrailPipeline { pipeline_id, .. } => pipeline_id,
             CoreEvent::CustomizationInventory { item_id, .. } => item_id,
+            CoreEvent::StandingApprovalProfiles { profile_id, .. } => profile_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3398,6 +3414,7 @@ impl EventJournal {
             CoreEvent::ReasoningOperatorLibrary { .. } => "reasoning_operator_library.result",
             CoreEvent::OutputGuardrailPipeline { .. } => "output_guardrail_pipeline.result",
             CoreEvent::CustomizationInventory { .. } => "customization_inventory.result",
+            CoreEvent::StandingApprovalProfiles { .. } => "standing_approval_profiles.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -13387,6 +13404,44 @@ impl TaskCoordinator {
                     .unwrap_or_else(|| "{}".into());
                 let event = CoreEvent::CustomizationInventory {
                     item_id,
+                    operation,
+                    version: expected_version,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::StandingApprovalProfiles {
+                operation,
+                profile_id,
+                payload,
+                expected_version,
+                reply,
+                ..
+            } => {
+                let result = async {
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    use crate::standing_approval_profiles as profiles;
+                    use evohime_local_storage::standing_approval_profiles_store as store;
+                    match operation.as_str() {
+                        "list" => { let mut values:Vec<profiles::StandingApprovalProfile>=Vec::new(); for row in store::list(database.connection()).map_err(|_|"storage_failed".to_string())? { if let Ok(p)=serde_json::from_slice(&row){values.push(p)} } serde_json::to_vec(&serde_json::json!({"schema_version":1,"profiles":values,"redacted":true})).map_err(|_|"serialization_failed".to_string()) }
+                        "create"|"update" => { let p:profiles::StandingApprovalProfile=serde_json::from_slice(&payload).map_err(|_|"invalid_profile".to_string())?; profiles::validate(&p).map_err(|e|e.to_string())?; if !profile_id.is_empty()&&p.id!=profile_id{return Err("profile_id_mismatch".into())}; let j=serde_json::to_vec(&p).map_err(|_|"serialization_failed".to_string())?; store::put(database.connection(),&p.id,p.version,p.enabled,&j,crate::task_memory::now_millis() as i64).map_err(|_|"storage_failed".to_string())?; serde_json::to_vec(&serde_json::json!({"schema_version":1,"profile_id":p.id,"version":p.version,"status":"saved","redacted":true})).map_err(|_|"serialization_failed".to_string()) }
+                        "revoke" => { if expected_version==0{return Err("expected_version_required".into())}; database.connection().execute("UPDATE standing_approval_profiles SET enabled=0, version=version+1 WHERE id=?1 AND version=?2",rusqlite::params![profile_id,expected_version]).map_err(|_|"storage_failed".to_string())?; serde_json::to_vec(&serde_json::json!({"schema_version":1,"profile_id":profile_id,"version":expected_version+1,"status":"revoked","redacted":true})).map_err(|_|"serialization_failed".to_string()) }
+                        "match" => { let req:profiles::ApprovalRequest=serde_json::from_slice(&payload).map_err(|_|"invalid_approval_request".to_string())?; let mut decisions=Vec::new(); for row in store::list(database.connection()).map_err(|_|"storage_failed".to_string())? { if let Ok(p)=serde_json::from_slice(&row){ if let Ok(d)=profiles::match_request(&p,&req){decisions.push(d)} } } let approved=decisions.iter().find(|d|d.approved).cloned(); serde_json::to_vec(&serde_json::json!({"schema_version":1,"profile_id":approved.as_ref().and_then(|d|d.profile_id.clone()),"approved":approved.is_some(),"reason":approved.map(|d|d.reason).unwrap_or_else(||"no_match".into()),"execution_policy_required":true,"redacted":true})).map_err(|_|"serialization_failed".to_string()) }
+                        _=>Err("unsupported_standing_approval_operation".into())
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::StandingApprovalProfiles {
+                    profile_id,
                     operation,
                     version: expected_version,
                     projection_json,

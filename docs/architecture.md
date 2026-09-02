@@ -550,6 +550,14 @@ audit log (`crate::audit::contains_secret`), а не всегда пустой �
 
 Semantic Repository Map из плана 86 закрыт evidence reuse этого canonical workspace index; отдельная graph database или второй authority не создаются.
 
+## Standing Approval Profiles v1 (план 87)
+
+Core хранит versioned scoped profiles (schema 1, storage 85) с bounded rules,
+subject/action/resource/risk/foreground matching, expiry и use limits. Critical
+risk всегда hard-deny; match возвращает объяснимую причину и не расширяет
+capabilities. Additive authenticated IPC tags 239/84 дают list/create/update/
+revoke/match, а каждое решение требует дальнейшей проверки ExecutionPolicy.
+
 ## Memory Extraction
 
 Извлечение фактов из диалога реализовано в `crates/evohime-core/src/memory_extraction.rs`. Этот раздел — канонический контракт: исходный план удалён из `docs/plans/` после реализации, как того требует правило каталога.

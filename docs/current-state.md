@@ -1005,3 +1005,8 @@ authenticated IPC 238/83 и единый metadata-only Customize catalog в Elec
 metadata, deterministic bounded retrieval, incremental hashes, redaction,
 token budget и authenticated IPC уже подтверждены тестами и канонической
 архитектурой. Второй Semantic Repository Map не создавался.
+
+План 87 закрыт 2 сентября 2026 года: Standing Approval Profiles v1 добавил
+Core validator/matcher, storage schema 85, expiry/use limits, fail-closed
+critical-risk handling, authenticated IPC 239/84 и metadata-only Electron
+surface. Профиль не выдаёт capability и не заменяет ExecutionPolicy.

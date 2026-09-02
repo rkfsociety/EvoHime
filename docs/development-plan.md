@@ -407,3 +407,7 @@ bounded metadata, protocol/typecheck и verification checks.
 План 86 закрыт 2 сентября 2026 года через evidence reuse canonical workspace
 index/RAG implementation; комплект `86-0` … `86-4` удалён после live-review,
 focused/recovery/Electron verification и проверки синхронизации.
+
+План 87 закрыт 2 сентября 2026 года. Standing Approval Profiles перенесены в
+Core/storage/IPC/UI; комплект `87-0` … `87-4` удалён после contract, matcher,
+expiry/use-limit, protocol/typecheck и regression verification.

@@ -2886,6 +2886,18 @@ impl IpcBridge {
                     self.write_response(writer, "customization_inventory.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::StandingApprovalProfiles(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "list".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_standing_approval_profiles(operation, request)
+                        .await?;
+                    self.write_response(writer, "standing_approval_profiles.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -7865,6 +7877,34 @@ impl IpcBridge {
             .dispatch(CoreCommand::CustomizationInventory {
                 operation,
                 item_id: request.item_id,
+                payload: request.payload,
+                expected_version: request.expected_version,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_standing_approval_profiles(
+        &self,
+        operation: String,
+        request: generated::StandingApprovalProfilesCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::StandingApprovalProfiles {
+                operation,
+                profile_id: request.profile_id,
                 payload: request.payload,
                 expected_version: request.expected_version,
                 idempotency_key: request.idempotency_key,
