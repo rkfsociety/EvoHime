@@ -2242,3 +2242,14 @@ bounded `/v1/models` loopback probe с точным model id; approved profile
 преобразуется в существующие `local-managed` gateway/resilience references,
 session capability остаётся ephemeral. Unknown, unverified, staging, traversal,
 stale revision и health mismatch fail closed.
+
+## Architecture Snapshot & Drift Review v1
+
+Core владеет bounded metadata-only снимком компонентов, связей, границ,
+evidence и coverage. Extraction читает только allowlist манифестов, IPC proto и
+архитектурной документации, не исполняет файлы и не передаёт renderer исходный
+текст. Evidence содержит revision и SHA-256; candidate/unsupported/stale не
+повышаются до verified автоматически. Снимки хранятся в SQLite schema 89,
+refresh не удаляет последнюю принятую запись при ошибке. Delta сравнивает все
+архитектурные поверхности, review требует baseline hash, а неизвестные
+IPC-операции отклоняются fail-closed (command 258/event 103).

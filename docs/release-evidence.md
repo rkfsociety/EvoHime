@@ -860,3 +860,15 @@ local-managed gateway/resilience mapping, optimistic durable records и redacted
 IPC 257/event 102. Старые release-evidence, license, stall, privacy, receipt,
 automation и evaluation gates прошли; credentials, prompts, outputs, executable
 paths и model bytes отсутствуют в projections.
+
+## Plan 117 — Architecture Snapshot & Drift Review v1 (2026-09-03)
+
+Contract: bounded Core-owned snapshot with typed provenance and coverage;
+candidate/unsupported facts remain non-verified. Extraction uses a fixed
+allowlist, never executes repository content, and stores SHA-256 evidence refs.
+SQLite schema 89 preserves the last accepted snapshot on refresh failure.
+Deterministic delta covers components, relationships, boundaries and coverage;
+review is baseline-hash fenced. Authenticated additive IPC command 258/event 103
+and a bounded metadata-only Electron panel are included; unknown operations are
+rejected. Focused Core/storage tests, rustfmt/check, protocol/typecheck and the
+focused panel test passed before plan closure.

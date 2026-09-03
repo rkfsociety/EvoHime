@@ -1157,3 +1157,12 @@ resilience, authenticated IPC 256/101 и bounded Electron UI. Purpose и policy
 hash входят в model-call trace, retry/fallback не дублируются; комплект
 `115-0` … `115-4` удалён после свежих contract, storage, check/clippy,
 protocol/typecheck, Electron regression и diff-check проверок.
+
+План 117 закрыт 3 сентября 2026 года: Architecture Snapshot & Drift Review v1
+добавил Core-owned metadata-only снимки с типизированными фактами, evidence
+revision/hash, bounded diagnostics/omissions и deterministic delta/review для
+компонентов, связей, границ и coverage. Extraction ограничен allowlist и не
+исполняет содержимое; ошибка refresh не удаляет последнюю принятую запись.
+Добавлены SQLite schema 89, authenticated additive IPC command 258/event 103 и
+metadata-only Electron panel; неизвестные операции отклоняются fail-closed.
+Runtime reachability и произвольные source symbols остаются явными unsupported.

@@ -87,6 +87,7 @@ import { PolicyAwareToolResultCachePanel } from './PolicyAwareToolResultCachePan
 import { CodeAnchoredIntentMarkersPanel } from './CodeAnchoredIntentMarkersPanel'
 import { ModelPurposeRoutingPanel } from './ModelPurposeRoutingPanel'
 import { LocalModelRuntimeManagerPanel } from './LocalModelRuntimeManagerPanel'
+import { ArchitectureSnapshotPanel } from './ArchitectureSnapshotPanel'
 import { DeclarativeRuntimeComponentsPanel } from './DeclarativeRuntimeComponentsPanel'
 import { GuidedCalibrationSessionsPanel } from './GuidedCalibrationSessionsPanel'
 import { ExtensionConformanceKitPanel } from './ExtensionConformanceKitPanel'
@@ -116,7 +117,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'memory-views-recall' | 'model-edit-protocol-registry' | 'remote-conversation-channels' | 'prompt-cache-planner' | 'declarative-runtime-components' | 'guided-calibration-sessions' | 'extension-conformance-kit' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'dependency-aware-task-graph' | 'core-topic-subscription-event-bus' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'durable-remote-task-bridge' | 'message-intervention-policies' | 'batch-invocation-runtime' | 'policy-aware-tool-result-cache' | 'code-anchored-intent-markers' | 'model-purpose-routing' | 'local-model-runtime-manager' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'memory-views-recall' | 'model-edit-protocol-registry' | 'remote-conversation-channels' | 'prompt-cache-planner' | 'declarative-runtime-components' | 'guided-calibration-sessions' | 'extension-conformance-kit' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'dependency-aware-task-graph' | 'core-topic-subscription-event-bus' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'durable-remote-task-bridge' | 'message-intervention-policies' | 'batch-invocation-runtime' | 'policy-aware-tool-result-cache' | 'code-anchored-intent-markers' | 'model-purpose-routing' | 'local-model-runtime-manager' | 'architecture-snapshot' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -169,6 +170,7 @@ const DEVELOPER_GROUPS: readonly DeveloperViewGroup[] = [
   { id: 'code-anchored-intent-markers', label: 'Code Intent Markers', icon: '▤' },
   { id: 'model-purpose-routing', label: 'Model Purpose Routing', icon: '◇' },
   { id: 'local-model-runtime-manager', label: 'Local Model Runtime', icon: '◉' },
+  { id: 'architecture-snapshot', label: 'Architecture Snapshot', icon: '⌘' },
     ]
   },
   {
@@ -575,6 +577,7 @@ export function App(): React.JSX.Element {
               {view === 'code-anchored-intent-markers' ? <CodeAnchoredIntentMarkersPanel connection={connection} /> : null}
               {view === 'model-purpose-routing' ? <ModelPurposeRoutingPanel connection={connection} /> : null}
               {view === 'local-model-runtime-manager' ? <LocalModelRuntimeManagerPanel connection={connection} /> : null}
+              {view === 'architecture-snapshot' ? <ArchitectureSnapshotPanel connection={connection} workspace={workspace} /> : null}
               {view === 'declarative-runtime-components' ? <DeclarativeRuntimeComponentsPanel connection={connection} events={events} /> : null}
               {view === 'guided-calibration-sessions' ? <GuidedCalibrationSessionsPanel connection={connection} events={events} /> : null}
               {view === 'extension-conformance-kit' ? <ExtensionConformanceKitPanel connection={connection} events={events} /> : null}

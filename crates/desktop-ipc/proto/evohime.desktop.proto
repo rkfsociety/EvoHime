@@ -1908,6 +1908,7 @@ message CommandEnvelope {
     CodeAnchoredIntentMarkersCommand code_anchored_intent_markers = 255;
     ModelPurposeRoutingCommand model_purpose_routing = 256;
     LocalModelRuntimeManagerCommand local_model_runtime_manager = 257;
+    ArchitectureSnapshotCommand architecture_snapshot = 258;
   }
 }
 
@@ -2060,6 +2061,7 @@ message EventEnvelope {
   CodeAnchoredIntentMarkersEvent code_anchored_intent_markers = 100;
   ModelPurposeRoutingEvent model_purpose_routing = 101;
   LocalModelRuntimeManagerEvent local_model_runtime_manager = 102;
+  ArchitectureSnapshotEvent architecture_snapshot = 103;
   }
 }
 
@@ -3243,6 +3245,18 @@ message LocalModelRuntimeManagerEvent {
   uint32 schema_version = 1; string operation = 2; uint64 version = 3;
   string status = 4; string error_code = 5; bytes projection_json = 6;
   bool truncated = 7;
+}
+
+// Plan 117: bounded Core-owned architecture snapshot and drift projection.
+message ArchitectureSnapshotCommand {
+  uint32 schema_version = 1; string operation = 2; string snapshot_id = 3;
+  string workspace_root = 4; bytes payload = 5; uint64 expected_version = 6;
+  string idempotency_key = 7;
+}
+message ArchitectureSnapshotEvent {
+  uint32 schema_version = 1; string snapshot_id = 2; string operation = 3;
+  uint64 version = 4; string status = 5; string error_code = 6;
+  bytes projection_json = 7; bool truncated = 8;
 }
 
 // The server emits this when the requested sequence is no longer retained.

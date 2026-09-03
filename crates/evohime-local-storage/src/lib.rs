@@ -14,6 +14,7 @@ pub mod ambient_store;
 pub mod analysis_kernel;
 pub mod approval_policy_profiles_store;
 pub mod architect_editor_model_pipeline_store;
+pub mod architecture_snapshot_store;
 pub mod artifact_handoff_registry_store;
 pub mod artifact_store;
 pub mod automation_store;
@@ -101,7 +102,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 89;
+pub const SCHEMA_VERSION: u32 = 90;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -629,6 +630,7 @@ impl LocalDatabase {
         policy_aware_tool_result_cache_store::install_schema(&connection)?;
         model_purpose_routing_store::install_schema(&connection)?;
         local_model_runtime_manager_store::install_schema(&connection)?;
+        architecture_snapshot_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }

@@ -867,6 +867,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::LocalModelRuntimeManager { operation, version, .. } => println!(
             "local_model_runtime_manager.result: {operation} version={version}"
         ),
+        evohime_core::CoreEvent::ArchitectureSnapshot { snapshot_id, operation, version, .. } => println!(
+            "architecture_snapshot.result {snapshot_id}: {operation} version={version}"
+        ),
         evohime_core::CoreEvent::AgentGitChangeSets { change_set_id, operation, version, .. } => println!(
             "agent_git_change_sets.result {change_set_id}: {operation} version={version}"
         ),

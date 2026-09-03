@@ -538,3 +538,11 @@ supervised loopback health gate, local-managed gateway/resilience mapping,
 recovery metadata, authenticated IPC 257/102 и bounded Electron projection.
 Старые Actions и локальные release/security/automation gates проверены; комплект
 `116-0` … `116-4` удалён после fresh evidence.
+
+План 117 (issue #97, Architecture Snapshot & Drift Review) закрыт 3 сентября
+2026 года. Добавлены bounded Core-owned snapshot/evidence/coverage contracts,
+allowlisted non-executing extraction, deterministic delta/review, SQLite schema
+89, authenticated IPC 258/103 и metadata-only Electron surface. Подтверждены
+Rust full tests/clippy/fmt, Electron protocol/typecheck/full regression,
+documentation/native-package gates и diff-check; комплект `117-0` … `117-4`
+удалён.
