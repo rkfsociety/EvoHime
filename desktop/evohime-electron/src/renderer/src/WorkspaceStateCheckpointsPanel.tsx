@@ -51,12 +51,33 @@ export function WorkspaceStateCheckpointsPanel({ connection, events }: { readonl
   }
 
   return <section aria-label="Workspace State Checkpoints" className="plan-artifact-panel">
-    <h3>Workspace State Checkpoints</h3>
-    <p>Bounded metadata-only projection состояния workspace. Восстановление требует явного действия и выполняется Core.</p>
-    <label>Проект <input value={projectId} onChange={(event) => setProjectId(event.target.value)} maxLength={256} /></label>
-    <label>Задача <input value={taskId} onChange={(event) => setTaskId(event.target.value)} maxLength={256} /></label>
-    <label>Checkpoint <input value={checkpointId} onChange={(event) => setCheckpointId(event.target.value)} maxLength={256} /></label>
-    <div><button type="button" onClick={() => void invoke('create')}>Создать</button><button type="button" onClick={() => void invoke('compare')}>Сравнить</button><button type="button" onClick={() => void invoke('restore')}>Восстановить workspace</button><button type="button" onClick={() => void invoke('restore_task')}>Восстановить задачу</button><button type="button" onClick={() => void invoke('restore_both')}>Восстановить оба</button></div>
+    <h3>Контрольные точки проекта (Workspace Checkpoints)</h3>
+    <p className="plan-artifact-panel__intro">Это сохранённый снимок состояния файлов проекта. Он нужен, чтобы перед рискованными изменениями зафиксировать рабочее состояние, сравнить его с текущим и при необходимости безопасно вернуться назад.</p>
+    <div className="plan-artifact-panel__guide">
+      <h4>Как это работает</h4>
+      <ol>
+        <li>Укажите идентификатор проекта и нажмите «Создать контрольную точку».</li>
+        <li>После изменений укажите ID этой точки и нажмите «Сравнить с точкой».</li>
+        <li>Если нужно вернуться назад, выберите восстановление workspace, задачи или обоих состояний.</li>
+      </ol>
+      <p className="plan-artifact-panel__hint">Сохраняются только ограниченные метаданные и состояние обычных файлов. `.git`, зависимости, build-кэши и ссылки не включаются.</p>
+      <p className="plan-artifact-panel__hint">Восстановление может изменить файлы. Если файл успел измениться после создания точки, Core остановит операцию и покажет конфликт вместо молчаливой перезаписи.</p>
+    </div>
+    <div className="plan-artifact-panel__lookup">
+      <label htmlFor="workspace-checkpoint-project">Идентификатор проекта</label>
+      <input id="workspace-checkpoint-project" value={projectId} onChange={(event) => setProjectId(event.target.value)} maxLength={256} placeholder="Проект, например project-1" />
+      <label htmlFor="workspace-checkpoint-task">Идентификатор задачи <span className="plan-artifact-panel__hint">необязательно</span></label>
+      <input id="workspace-checkpoint-task" value={taskId} onChange={(event) => setTaskId(event.target.value)} maxLength={256} placeholder="Заполняйте для состояния конкретной задачи" />
+      <label htmlFor="workspace-checkpoint-id">Идентификатор контрольной точки <span className="plan-artifact-panel__hint">нужен для сравнения и восстановления</span></label>
+      <input id="workspace-checkpoint-id" value={checkpointId} onChange={(event) => setCheckpointId(event.target.value)} maxLength={256} placeholder="ID точки, созданной ранее" />
+    </div>
+    <div className="plan-artifact-panel__lookup-row">
+      <button type="button" onClick={() => void invoke('create')}>Создать контрольную точку</button>
+      <button type="button" onClick={() => void invoke('compare')}>Сравнить с точкой</button>
+      <button type="button" onClick={() => void invoke('restore')}>Восстановить файлы проекта</button>
+      <button type="button" onClick={() => void invoke('restore_task')}>Восстановить состояние задачи</button>
+      <button type="button" onClick={() => void invoke('restore_both')}>Восстановить всё</button>
+    </div>
     {projection ? <p role="status">{projection.state} · файлов: {projection.fileCount} · конфликтов: {projection.conflictCount} · {projection.snapshotHash}</p> : null}
     {message ? <p role="status">{message}</p> : null}
   </section>
