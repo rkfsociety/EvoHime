@@ -1535,6 +1535,27 @@ authenticated memory IPC commands и metadata-only Electron OperationsPanel
 hidden reasoning не передаются в renderer. Restart/recovery не повторяет
 внешние эффекты вслепую.
 
+### Memory Views & Adaptive Recall v1 (план 96)
+
+План 96 закрыт 3 сентября 2026 года. `memory_views_and_adaptive_recall`
+добавляет Core-owned hierarchical `LogicalMemoryScope` и versioned
+`MemoryView`: view содержит только разрешённые logical roots, bounded depth и
+раздельные `read`/`write` права. Shared read-only view валиден (`read=true,
+write=false`), write без read запрещён; scope traversal проверяется Core и не
+использует path naming как ACL.
+
+`RecallMode` поддерживает `Shallow`, `Deep` и `Auto`; Auto выбирает глубину по
+typed `QueryComplexity`, а Deep дополнительно ограничивается `view.max_depth`.
+`rank_candidates` отбрасывает scope вне view до вычисления score и возвращает
+детерминированный explainable composite из lexical/freshness/provenance.
+Каждый recall фиксирует `read_barrier_generation`, задавая явную consistency
+boundary для background ingestion. Durable view revisions и recall barriers
+хранятся аддитивно и optimistic/idempotency-fenced в
+`memory_views_and_adaptive_recall_*` tables. Authenticated command 244/event 89
+и Electron developer panel показывают только bounded metadata, причины,
+scope IDs и score breakdown; raw memory body, prompt, credentials и hidden
+reasoning не пересекают IPC.
+
 **Causal Collaboration Bus v1 (план 51).** Core-owned typed messages are
 scoped to an active TeamSession and its pinned protocol hash. Sender identity
 and peer routes are derived by Core; the bus extends the retained-child

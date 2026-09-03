@@ -408,6 +408,17 @@ function dispatch(
       return accepted(client.send({ teamCoordinationPolicies: { schemaVersion: 1, requestId: randomUUID(), teamId, operation, payload: Buffer.from(policyPayload, 'utf8'), expectedVersion, idempotencyKey } }))
     }
 
+    case 'core.memoryViewsAndAdaptiveRecall': {
+      const value = asRecord(payload)
+      const operation = ['save_view', 'inspect', 'recall'].includes(String(value['operation'])) ? String(value['operation']) : null
+      const viewId = asBoundedString(value['viewId'])
+      const viewPayload = value['payload'] === '' && operation === 'inspect' ? '' : asBoundedString(value['payload'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion'])
+      if (operation === null || viewId === null || viewPayload === null || idempotencyKey === null || expectedVersion === null || viewPayload.length > 256 * 1024) return failure('invalid-payload', 'Некорректная операция Memory View и Adaptive Recall.')
+      return accepted(client.send({ memoryViewsAndAdaptiveRecall: { schemaVersion: 1, operation, viewId, payload: Buffer.from(viewPayload, 'utf8'), expectedVersion, idempotencyKey } }))
+    }
+
     case 'core.typedAgentHandoffContract': {
       const value = asRecord(payload)
       const operation = ['propose', 'transition', 'get'].includes(String(value['operation'])) ? String(value['operation']) : null

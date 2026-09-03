@@ -2944,6 +2944,20 @@ impl IpcBridge {
                     self.write_response(writer, "conversation_bridge_adapters.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::MemoryViewsAndAdaptiveRecall(
+                    request,
+                )) => {
+                    let operation = if request.operation.is_empty() {
+                        "inspect".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_memory_views_and_adaptive_recall(operation, request)
+                        .await?;
+                    self.write_response(writer, "memory_views_and_adaptive_recall.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -8062,6 +8076,33 @@ impl IpcBridge {
             expected_revision: request.expected_revision,
             idempotency_key: request.idempotency_key,
             correlation_id: request.correlation_id,
+            reply,
+        })
+        .await
+        .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_memory_views_and_adaptive_recall(
+        &self,
+        operation: String,
+        request: generated::MemoryViewsAndAdaptiveRecallCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let c = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        c.dispatch(CoreCommand::MemoryViewsAndAdaptiveRecall {
+            operation,
+            view_id: request.view_id,
+            payload: request.payload,
+            expected_version: request.expected_version,
+            idempotency_key: request.idempotency_key,
             reply,
         })
         .await

@@ -777,6 +777,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::TeamCoordinationPolicies { team_id, operation, status, .. } => println!(
             "team_coordination_policies.result {team_id}: {operation} {status}"
         ),
+        evohime_core::CoreEvent::MemoryViewsAndAdaptiveRecall { view_id, operation, .. } => println!(
+            "memory_views_and_adaptive_recall.result {view_id}: {operation}"
+        ),
         evohime_core::CoreEvent::TypedAgentHandoffContract { handoff_id, operation, state, .. } => println!(
             "typed_agent_handoff_contract.result {handoff_id}: {operation} {state}"
         ),

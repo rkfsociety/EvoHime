@@ -683,6 +683,15 @@ renderer не получает.
   metadata-only governance projection; renderer не получает raw body,
   credentials или authority state-machine.
 
+План 96 закрыт 3 сентября 2026 года: Core создаёт и валидирует hierarchical
+`MemoryView` с отдельными read/write rights и несколькими logical scopes;
+read-only shared view поддержан явно. `Shallow`/`Deep`/`Auto` recall bounded
+по view depth, composite score объясняется компонентами и scope проверяется до
+ranking. View revision и read-barrier recall state сохраняются в additive
+idempotency/version-fenced storage tables. Authenticated command 244/event 89
+и Electron-панель показывают фактические Core scope/view и причины retrieval;
+renderer не получает memory bodies, secrets или authority.
+
 ## Causal Collaboration Bus v1 (план 51, реализован 2026-09-01)
 
 - Core validates a typed envelope and pins routing to an active TeamSession

@@ -364,6 +364,13 @@ focused/recovery/storage evidence перенесены в каноническу
 Комплект `95-0` … `95-4` удалён после end-to-end проверки. Следующий
 незавершённый этап выбирается из `docs/plans` по следующему номеру.
 
+План 96 закрыт 3 сентября 2026 года. Memory Views & Adaptive Recall v1
+перенесён в `docs/architecture.md` и `docs/current-state.md`: hierarchical
+scopes, Core-owned read/write views, bounded Shallow/Deep/Auto recall,
+explainable composite retrieval, read-barrier semantics, durable fencing,
+authenticated IPC и metadata-only UI подтверждены свежими проверками.
+Комплект `96-0` … `96-4` удалён после end-to-end реализации.
+
 План 80 закрыт 2 сентября 2026 года. Project Instruction Stack v1 перенесён
 в `docs/architecture.md` и `docs/current-state.md`; комплект `80-0` … `80-4`
 удалён после end-to-end реализации и проверок. Следующий незавершённый этап

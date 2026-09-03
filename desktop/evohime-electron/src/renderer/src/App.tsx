@@ -77,6 +77,7 @@ import { ApprovalPolicyProfilesPanel } from './ApprovalPolicyProfilesPanel'
 import { CheckpointForkingPanel } from './CheckpointForkingPanel'
 import { PrivacyTelemetryGovernancePanel } from './PrivacyTelemetryGovernancePanel'
 import { ConversationBridgeAdaptersPanel } from './ConversationBridgeAdaptersPanel'
+import { MemoryViewsAndAdaptiveRecallPanel } from './MemoryViewsAndAdaptiveRecallPanel'
 import { WorkbenchPanel } from './WorkbenchPanel'
 import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
 
@@ -103,7 +104,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'core-topic-subscription-event-bus' | 'dependency-aware-task-graph' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'memory-views-recall' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'core-topic-subscription-event-bus' | 'dependency-aware-task-graph' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -136,6 +137,7 @@ const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'composable-termination-conditions', label: 'Termination', icon: '⏹' },
   { id: 'workspace-bootstrap-manifest', label: 'Bootstrap Manifest', icon: '⌂' },
   { id: 'team-coordination-policies', label: 'Team Coordination', icon: '⇄' },
+  { id: 'memory-views-recall', label: 'Memory Views', icon: '⌕' },
   { id: 'typed-agent-handoff-contract', label: 'Typed Handoff', icon: '⇢' },
   { id: 'schema-driven-agent-configuration', label: 'Schema Configuration', icon: '⚙' },
   { id: 'experience-replay-library', label: 'Experience Replay', icon: '↺' },
@@ -501,6 +503,7 @@ export function App(): React.JSX.Element {
               {view === 'composable-termination-conditions' ? <ComposableTerminationConditionsPanel connection={connection} events={events} /> : null}
               {view === 'workspace-bootstrap-manifest' ? <WorkspaceBootstrapManifestPanel connection={connection} events={events} /> : null}
               {view === 'team-coordination-policies' ? <TeamCoordinationPoliciesPanel connection={connection} events={events} /> : null}
+              {view === 'memory-views-recall' ? <MemoryViewsAndAdaptiveRecallPanel connection={connection} events={events} /> : null}
               {view === 'typed-agent-handoff-contract' ? <TypedAgentHandoffContractPanel connection={connection} events={events} /> : null}
               {view === 'schema-driven-agent-configuration' ? <SchemaDrivenAgentConfigurationPanel connection={connection} events={events} /> : null}
               {view === 'experience-replay-library' ? <ExperienceReplayLibraryPanel connection={connection} events={events} /> : null}

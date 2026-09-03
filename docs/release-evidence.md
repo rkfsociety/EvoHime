@@ -403,6 +403,25 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   check/clippy, protocol check, Electron typecheck and full Electron regression.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
 
+## Plan 96 — Memory Views & Adaptive Recall v1 (2026-09-03)
+
+- Contract: Core-owned hierarchical logical scopes and versioned MemoryView
+  with bounded roots/depth, separate read/write rights and explicit shared
+  read-only support; invalid hierarchy, control input and write-without-read
+  fail closed.
+- Runtime: Shallow/Deep/Auto modes are typed and bounded by the view; Core
+  applies deterministic explainable composite lexical/freshness/provenance
+  scoring only after scope authorization. Each decision records a read-barrier
+  generation for explicit background-ingestion consistency semantics.
+- Durability/client: additive idempotency/version-fenced view and barrier
+  tables; authenticated command 244/event 89; Electron metadata-only panel
+  for save/inspect/recall. Memory bodies, secrets, prompts and hidden
+  reasoning remain outside the projection.
+- Checks: Core contract 4/4 plus external contract 2/2 and recovery 1/1,
+  local-storage 1/1, strict clippy, cargo check/fmt, protocol/typecheck,
+  focused UI 1/1 and full Electron regression 107 passed files / 531 passed
+  tests / 2 source-update tests skipped. Evidence is redacted.
+
 ## Plan 101 — Knowledge Source Registry v1 (2026-09-02)
 
 - Contract: separate versioned KnowledgeSource/Binding/View/Chunk/Hit types,

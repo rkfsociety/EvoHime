@@ -1077,6 +1077,7 @@ pub mod memory_domain;
 pub mod memory_extraction;
 pub mod memory_governance;
 pub mod memory_retrieval;
+pub mod memory_views_and_adaptive_recall;
 pub mod model_resilience_policy;
 pub mod observability;
 pub mod permission_rules;
@@ -1716,6 +1717,16 @@ pub enum CoreCommand {
         approval_id: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    /// Creates/inspects a Core-owned MemoryView and records bounded adaptive
+    /// recall decisions. The payload contains no memory bodies or credentials.
+    MemoryViewsAndAdaptiveRecall {
+        operation: String,
+        view_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     /// Reads one memory record including its body. `sensitive`, forgotten and
     /// empty records come back redacted: `ListMemory` never carries a body,
     /// and this is the only path that can.
@@ -2308,6 +2319,12 @@ pub enum CoreEvent {
         operation: String,
         bridge_id: String,
         revision: u64,
+        projection_json: String,
+    },
+    MemoryViewsAndAdaptiveRecall {
+        operation: String,
+        view_id: String,
+        version: u64,
         projection_json: String,
     },
     /// Bounded durable routing decision projection.
@@ -3422,6 +3439,7 @@ impl EventJournal {
             CoreEvent::CheckpointForking { fork_run_id, .. } => fork_run_id,
             CoreEvent::PrivacyTelemetryGovernance { category, .. } => category,
             CoreEvent::ConversationBridgeAdapters { bridge_id, .. } => bridge_id,
+            CoreEvent::MemoryViewsAndAdaptiveRecall { view_id, .. } => view_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3482,6 +3500,9 @@ impl EventJournal {
             CoreEvent::CheckpointForking { .. } => "checkpoint_forking.result",
             CoreEvent::PrivacyTelemetryGovernance { .. } => "privacy_telemetry_governance.result",
             CoreEvent::ConversationBridgeAdapters { .. } => "conversation_bridge_adapters.result",
+            CoreEvent::MemoryViewsAndAdaptiveRecall { .. } => {
+                "memory_views_and_adaptive_recall.result"
+            }
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -3504,6 +3525,9 @@ impl EventJournal {
             }
             CoreEvent::TeamCoordinationPolicies { .. } => {
                 serde_json::to_vec(event).expect("team coordination projection serializes")
+            }
+            CoreEvent::MemoryViewsAndAdaptiveRecall { .. } => {
+                serde_json::to_vec(event).expect("memory view projection serializes")
             }
             CoreEvent::TypedAgentHandoffContract { .. } => {
                 serde_json::to_vec(event).expect("handoff projection serializes")
@@ -15113,6 +15137,80 @@ impl TaskCoordinator {
                     .map_err(|error| error.to_string())
                 }
                 .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::MemoryViewsAndAdaptiveRecall {
+                operation,
+                view_id,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let event_operation = operation.clone();
+                let event_view_id = view_id.clone();
+                let result = async {
+                    use crate::memory_views_and_adaptive_recall as v;
+                    use evohime_local_storage::memory_views_and_adaptive_recall_store as store;
+                    if view_id.is_empty() || idempotency_key.is_empty() || idempotency_key.len() > 128 {
+                        return Err("invalid_memory_view_request".to_string());
+                    }
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let db = journal.database().lock().await;
+                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_memory_view_payload".to_string())?;
+                    match operation.as_str() {
+                        "save_view" => {
+                            let view: v::MemoryView = serde_json::from_value(value.get("view").cloned().ok_or_else(|| "view_required".to_string())?).map_err(|_| "invalid_memory_view".to_string())?;
+                            if view.id != view_id { return Err("view_id_mismatch".into()); }
+                            v::validate_view(&view).map_err(|e| e.to_string())?;
+                            let json = serde_json::to_vec(&view).map_err(|_| "serialization_failed".to_string())?;
+                            let hash = v::canonical_hash(&view).map_err(|e| e.to_string())?;
+                            let saved = store::save_view(db.connection(), store::ViewInput { view_id: &view.id, owner_scope: &view.owner_scope, revision: view.revision, view_json: &json, content_hash: &hash, expected_version, idempotency_key: &idempotency_key, now_ms: memory_now_ms() as i64 }).map_err(|_| "storage_failed".to_string())?;
+                            if !saved { return Err("stale_version_or_idempotency_conflict".into()); }
+                            serde_json::to_vec(&serde_json::json!({"status":"view_saved","view_id":view.id,"revision":view.revision,"content_hash":hash,"rights":view.rights,"scope_count":view.scopes.len(),"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "inspect" => {
+                            let record = store::load_view(db.connection(), &view_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "view_not_found".to_string())?;
+                            let view: v::MemoryView = serde_json::from_slice(&record.view_json).map_err(|_| "corrupt_memory_view".to_string())?;
+                            v::validate_view(&view).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":"view","view_id":view.id,"revision":record.revision,"owner_scope":record.owner_scope,"rights":view.rights,"root_scope_ids":view.root_scope_ids,"scope_count":view.scopes.len(),"content_hash":record.content_hash,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "recall" => {
+                            let record = store::load_view(db.connection(), &view_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "view_not_found".to_string())?;
+                            let view: v::MemoryView = serde_json::from_slice(&record.view_json).map_err(|_| "corrupt_memory_view".to_string())?;
+                            v::validate_view(&view).map_err(|e| e.to_string())?;
+                            let policy: v::AdaptiveRecallPolicy = serde_json::from_value(value.get("policy").cloned().ok_or_else(|| "recall_policy_required".to_string())?).map_err(|_| "invalid_recall_policy".to_string())?;
+                            let mode: v::RecallMode = serde_json::from_value(value.get("mode").cloned().ok_or_else(|| "recall_mode_required".to_string())?).map_err(|_| "invalid_recall_mode".to_string())?;
+                            let complexity: v::QueryComplexity = serde_json::from_value(value.get("complexity").cloned().unwrap_or_else(|| serde_json::json!("unknown"))).map_err(|_| "invalid_query_complexity".to_string())?;
+                            let query = value.get("query").and_then(serde_json::Value::as_str).ok_or_else(|| "query_required".to_string())?;
+                            v::authorize_read(&view, value.get("scope_id").and_then(serde_json::Value::as_str).unwrap_or(&view.root_scope_ids[0])).map_err(|e| e.to_string())?;
+                            let barrier_generation = value.get("read_barrier_generation").and_then(serde_json::Value::as_u64).ok_or_else(|| "read_barrier_required".to_string())?;
+                            let decision = v::decide_recall(&view, &policy, mode, complexity, query, barrier_generation).map_err(|e| e.to_string())?;
+                            let candidates: Vec<v::RecallCandidate> = value.get("candidates").cloned().map(|items| serde_json::from_value(items).map_err(|_| "invalid_recall_candidates".to_string())).transpose()?.unwrap_or_default();
+                            let ranked = v::rank_candidates(&view, candidates).map_err(|e| e.to_string())?;
+                            let json = serde_json::to_vec(&decision).map_err(|_| "serialization_failed".to_string())?;
+                            let saved = store::save_recall(db.connection(), store::RecallInput { view_id: &view_id, view_revision: record.revision, barrier_generation, decision_json: &json, expected_version, idempotency_key: &idempotency_key, now_ms: memory_now_ms() as i64 }).map_err(|_| "storage_failed".to_string())?;
+                            if !saved { return Err("stale_version_or_idempotency_conflict".into()); }
+                            serde_json::to_vec(&serde_json::json!({"status":"recall_planned","view_id":view_id,"view_revision":record.revision,"decision":decision,"ranked_candidates":ranked,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        _ => Err("unsupported_memory_view_operation".into()),
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::MemoryViewsAndAdaptiveRecall {
+                    operation: event_operation,
+                    view_id: event_view_id,
+                    version: expected_version.saturating_add(1),
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
                 let _ = reply.send(result);
             }
             CoreCommand::GetMemory { id, reply } => {

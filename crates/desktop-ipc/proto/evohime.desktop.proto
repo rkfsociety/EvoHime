@@ -1894,6 +1894,7 @@ message CommandEnvelope {
     CheckpointForkingCommand checkpoint_forking = 241;
     PrivacyTelemetryGovernanceCommand privacy_telemetry_governance = 242;
     ConversationBridgeAdaptersCommand conversation_bridge_adapters = 243;
+    MemoryViewsAndAdaptiveRecallCommand memory_views_and_adaptive_recall = 244;
   }
 }
 
@@ -2032,6 +2033,7 @@ message EventEnvelope {
     CheckpointForkingEvent checkpoint_forking = 86;
     PrivacyTelemetryGovernanceEvent privacy_telemetry_governance = 87;
     ConversationBridgeAdaptersEvent conversation_bridge_adapters = 88;
+    MemoryViewsAndAdaptiveRecallEvent memory_views_and_adaptive_recall = 89;
   }
 }
 
@@ -2353,6 +2355,9 @@ message PrivacyTelemetryGovernanceCommand { uint32 schema_version=1; string oper
 message PrivacyTelemetryGovernanceEvent { uint32 schema_version=1; string operation=2; string category=3; uint64 version=4; string status=5; string error_code=6; bytes projection_json=7; }
 message ConversationBridgeAdaptersCommand { uint32 schema_version=1; string operation=2; string bridge_id=3; bytes payload=4; uint64 expected_revision=5; string idempotency_key=6; string correlation_id=7; }
 message ConversationBridgeAdaptersEvent { uint32 schema_version=1; string operation=2; string bridge_id=3; uint64 revision=4; string status=5; string error_code=6; bytes projection_json=7; }
+// Plan 96: bounded Core-owned MemoryView and adaptive recall surface.
+message MemoryViewsAndAdaptiveRecallCommand { uint32 schema_version=1; string operation=2; string view_id=3; bytes payload=4; uint64 expected_version=5; string idempotency_key=6; }
+message MemoryViewsAndAdaptiveRecallEvent { uint32 schema_version=1; string operation=2; string view_id=3; uint64 version=4; string status=5; string error_code=6; bytes projection_json=7; }
 
 // Plan 64: bounded metadata-only Workspace Bootstrap Manifest surface.
 message WorkspaceBootstrapManifestCommand {
