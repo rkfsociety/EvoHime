@@ -1,4 +1,4 @@
-name: Windows CI
+name: Быстрые проверки и ручной выпуск EvoHime
 
 # Push и pull request получают быстрый feedback: документация, Rust fmt/clippy
 # и Electron protocol/typecheck. Полный release-контур (тесты, package,
