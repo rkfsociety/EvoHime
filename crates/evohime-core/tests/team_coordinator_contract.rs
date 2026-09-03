@@ -113,3 +113,55 @@ fn policy_is_fail_closed_and_serialization_hash_is_deterministic() {
         canonical_hash(&policy).unwrap()
     );
 }
+
+#[test]
+fn termination_gate_blocks_routing_before_candidate_selection() {
+    let mut policy = evohime_core::composable_termination_conditions::TerminationPolicy {
+        schema_version: 1,
+        id: "stop-policy".into(),
+        version: 1,
+        expression:
+            evohime_core::composable_termination_conditions::TerminationExpression::Condition {
+                id: "stop".into(),
+                kind: evohime_core::composable_termination_conditions::ConditionKind::StopEvent,
+                threshold: 1,
+                text: None,
+            },
+        hard_stop: true,
+        content_hash: String::new(),
+    };
+    policy.content_hash =
+        evohime_core::composable_termination_conditions::canonical_hash(&policy).unwrap();
+    let state = evohime_core::composable_termination_conditions::TerminationState {
+        schema_version: 1,
+        policy_version: 1,
+        event_cursor: String::new(),
+        outcome: evohime_core::composable_termination_conditions::TerminalOutcome::Continue,
+        triggered_condition_id: None,
+        triggered_event_id: None,
+        reason_code: None,
+        evidence_refs: vec![],
+        version: 1,
+    };
+    let event = evohime_core::composable_termination_conditions::TerminationEvent {
+        event_id: "event-1".into(),
+        kind: "stop".into(),
+        source: "core".into(),
+        messages: 0,
+        turns: 0,
+        tool_calls: 0,
+        input_tokens: 0,
+        output_tokens: 0,
+        cost_micros: 0,
+        elapsed_ms: 0,
+        idle_ms: 0,
+        goal_state: None,
+        workflow_state: None,
+        signal: None,
+        handoff_reached: false,
+    };
+    assert_eq!(
+        termination_allows_routing(Some(&policy), Some(&state), Some(&event)),
+        Err(CoordinatorError::TerminationReached)
+    );
+}

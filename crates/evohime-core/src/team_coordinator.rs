@@ -216,6 +216,29 @@ pub enum CoordinatorError {
     GateRequired,
     #[error("decomposition contains a cycle or invalid child")]
     InvalidDecomposition,
+    #[error("termination condition blocks team routing")]
+    TerminationReached,
+    #[error("termination condition is invalid")]
+    TerminationInvalid,
+}
+
+pub fn termination_allows_routing(
+    policy: Option<&crate::composable_termination_conditions::TerminationPolicy>,
+    state: Option<&crate::composable_termination_conditions::TerminationState>,
+    event: Option<&crate::composable_termination_conditions::TerminationEvent>,
+) -> Result<(), CoordinatorError> {
+    match (policy, state, event) {
+        (None, None, None) => Ok(()),
+        (Some(policy), Some(state), Some(event)) => {
+            match crate::composable_termination_conditions::evaluate_policy(policy, state, event)
+                .map_err(|_| CoordinatorError::TerminationInvalid)?
+            {
+                Some(_) => Err(CoordinatorError::TerminationReached),
+                None => Ok(()),
+            }
+        }
+        _ => Err(CoordinatorError::TerminationInvalid),
+    }
 }
 
 fn valid_text(value: &str) -> bool {
@@ -361,6 +384,17 @@ pub fn propose_assignment(
         expected_output_contract: item.required_output_contract.clone(),
         coordinator_revision: item.revision,
     })
+}
+
+pub fn propose_assignment_with_termination(
+    item: &TeamWorkItem,
+    candidates: &[ParticipantCandidate],
+    policy: Option<&crate::composable_termination_conditions::TerminationPolicy>,
+    state: Option<&crate::composable_termination_conditions::TerminationState>,
+    event: Option<&crate::composable_termination_conditions::TerminationEvent>,
+) -> Result<DelegationProposal, CoordinatorError> {
+    termination_allows_routing(policy, state, event)?;
+    propose_assignment(item, candidates)
 }
 
 pub fn validate_proposal(

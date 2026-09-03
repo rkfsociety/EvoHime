@@ -802,3 +802,9 @@ rollback without committed instances. Disabled probes with effects, unknown
 API versions, security assertion failures and instance mismatches fail closed.
 No extension code, credentials, network or trust/capability grant is executed;
 IPC 250/event 95 exposes only redacted bounded metadata.
+
+Plan 99: existing termination contract evidence from Plan 63 plus Team
+Coordinator routing-gate contract 1/1; Core check, termination/coordinator
+focused tests and `git diff --check` passed. Guarded routing evaluates the
+Core-owned policy/state/event before candidate selection; terminal decisions
+fail closed, while UI evaluation exposes bounded reason/counters only.

@@ -1665,6 +1665,11 @@ SQLite schema v61 stores policy and state with optimistic version fencing;
 authenticated additive IPC command 214/event 60 and the Electron panel expose
 only bounded metadata and validation/evaluation results. Renderer does not
 evaluate conditions or own termination authority.
+
+The follow-up routing contract is also Core-owned: guarded Team Coordinator
+proposals evaluate the pinned termination policy/state/event before candidate
+selection. A terminal decision fails closed with a typed coordinator outcome;
+the evaluation projection includes only bounded reason and counter metadata.
 ## Workspace Bootstrap Manifest v1 (план 64)
 
 Core принимает versioned `WorkspaceBootstrapManifest` только через

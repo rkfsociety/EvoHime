@@ -318,6 +318,13 @@ replay-safe state, first-trigger evidence, hard-stop precedence, schema v61,
 authenticated IPC command 214/event 60 и metadata-only Electron projection.
 Контракт и подтверждённое состояние перенесены в
 `docs/architecture.md` и `docs/current-state.md`; комплект плана удалён.
+План 99 (issue #79, Composable Termination Conditions follow-up) закрыт 3
+сентября 2026 года после live-review: базовый Core-owned AST, durable
+replay-safe state, typed events/evidence, `Any`/`All`, hard-stop precedence и
+metadata-only UI уже были реализованы планом 63; дополнительно в существующий
+Team Coordinator добавлен Core termination gate перед выбором кандидата, а
+evaluation projection теперь содержит bounded reason/counters. Комплект плана
+удалён после focused contract и routing-gate tests.
 План 64 закрыт 2 сентября 2026 года. Следующий незавершённый этап выбирается
 из `docs/plans` по следующему номеру.
 

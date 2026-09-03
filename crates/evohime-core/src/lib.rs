@@ -11653,7 +11653,21 @@ impl TaskCoordinator {
                             let state_value: composable_termination_conditions::TerminationState = serde_json::from_value(value["state"].clone()).map_err(|e| e.to_string())?;
                             let event: composable_termination_conditions::TerminationEvent = serde_json::from_value(value["event"].clone()).map_err(|e| e.to_string())?;
                             let decision = composable_termination_conditions::evaluate_policy(&policy, &state_value, &event).map_err(|e| e.to_string())?;
-                            serde_json::to_vec(&serde_json::json!({"status":"evaluated","decision":decision})).map_err(|e| e.to_string())
+                            serde_json::to_vec(&serde_json::json!({
+                                "status": "evaluated",
+                                "decision": decision,
+                                "hard_stop": policy.hard_stop,
+                                "counters": {
+                                    "messages": event.messages,
+                                    "turns": event.turns,
+                                    "tool_calls": event.tool_calls,
+                                    "input_tokens": event.input_tokens,
+                                    "output_tokens": event.output_tokens,
+                                    "cost_micros": event.cost_micros,
+                                    "elapsed_ms": event.elapsed_ms,
+                                    "idle_ms": event.idle_ms,
+                                },
+                            })).map_err(|e| e.to_string())
                         }
                         "save_state" => {
                             let state_value: composable_termination_conditions::TerminationState = serde_json::from_value(value["state"].clone()).map_err(|e| e.to_string())?;
@@ -12886,8 +12900,27 @@ impl TaskCoordinator {
                                 })
                                 .transpose()?
                                 .unwrap_or_default();
-                            let proposal = coordinator::propose_assignment(&item, &candidates)
-                                .map_err(|e| e.to_string())?;
+                            let termination = request.get("termination");
+                            let termination_policy = termination
+                                .map(|value| serde_json::from_value(value["policy"].clone()))
+                                .transpose()
+                                .map_err(|_| "invalid_termination_policy")?;
+                            let termination_state = termination
+                                .map(|value| serde_json::from_value(value["state"].clone()))
+                                .transpose()
+                                .map_err(|_| "invalid_termination_state")?;
+                            let termination_event = termination
+                                .map(|value| serde_json::from_value(value["event"].clone()))
+                                .transpose()
+                                .map_err(|_| "invalid_termination_event")?;
+                            let proposal = coordinator::propose_assignment_with_termination(
+                                &item,
+                                &candidates,
+                                termination_policy.as_ref(),
+                                termination_state.as_ref(),
+                                termination_event.as_ref(),
+                            )
+                            .map_err(|e| e.to_string())?;
                             serde_json::to_vec(&proposal)
                                 .map_err(|_| "serialization_failed".to_string())
                         }
