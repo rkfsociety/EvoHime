@@ -843,6 +843,12 @@ Focused termination и coordinator contract tests проходят.
 typed `allow/block/redact/redirect/escalate` verdicts и bounded projection
 patches. Authenticated IPC и Electron panel не получают raw payload,
 credentials или executable interceptor code.
+План 111 закрыт 3 сентября 2026 года как совместимый follow-up плана 80:
+Project Instruction Stack является canonical Project Guidance Registry и
+discovery adapter. `ProjectGuidanceDocument`, derived trust class и стабильный
+Prompt Cache segment для compiled snapshot теперь явно доступны Core; guidance
+остаётся scoped, hash/revision-bound, hierarchical и untrusted, без повышения
+security authority.
 План 64 закрыт 2 сентября 2026 года: Workspace Bootstrap Manifest v1. Добавлены
 bounded Core manifest/validator, allowlisted discovery, exact trust/hash
 проверка, schema v62 preparation cache с fingerprint invalidation, single-flight

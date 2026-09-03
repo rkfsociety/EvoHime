@@ -1940,6 +1940,12 @@ hash/revision, diagnostics и budget. Перед model call Core pin-ит snapsh
 hash, добавляет bounded untrusted project-instruction context и включает
 rule hash/revision в model provenance; authority не расширяется.
 
+Plan 111 confirms this stack as the Project Guidance Registry compatibility
+surface: `ProjectGuidanceDocument` is an alias over the canonical rule record,
+trust is derived from the allowlisted source and sensitivity class, and the
+compiled snapshot has a stable Prompt Cache segment. This adds no second store
+or authority and keeps guidance below system/user security policy.
+
 ## Workspace Sets v1 (план 100)
 
 Workspace Set — Core-owned bounded объединение до 8 самостоятельных roots без

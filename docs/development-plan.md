@@ -332,6 +332,13 @@ human escalation verdict и fail-closed delivery gate в Collaboration Bus.
 Authenticated IPC и metadata-only Electron panel добавлены без raw payload,
 credentials или executable interceptor code; focused Core/UI/protocol gates
 пройдены, комплект плана удалён.
+План 111 (issue #91, Project Guidance Registry) закрыт 3 сентября 2026 года
+как follow-up к плану 80 без создания второй authority: существующий
+Project Instruction Stack принят как registry/discovery adapter, получил
+явный `ProjectGuidanceDocument` alias и derived trust projection, а guidance
+snapshot получил стабильный Prompt Cache segment. Scope/hash/source revision,
+hierarchical precedence, separation от Skills/Bootstrap и metadata-only UI
+подтверждены существующими и focused tests; комплект плана удалён.
 План 64 закрыт 2 сентября 2026 года. Следующий незавершённый этап выбирается
 из `docs/plans` по следующему номеру.
 

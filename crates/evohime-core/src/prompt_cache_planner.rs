@@ -84,6 +84,19 @@ pub fn segment(
         bytes: content.len(),
     })
 }
+
+pub fn guidance_segment(
+    snapshot: &crate::project_instruction_stack::InstructionSnapshot,
+) -> Result<PromptSegment, PromptCacheError> {
+    segment(
+        "project-guidance",
+        &snapshot.content_hash,
+        true,
+        1,
+        "project-guidance-v1",
+        "untrusted",
+    )
+}
 pub fn build_plan(
     mut segments: Vec<PromptSegment>,
     profile: &ProviderCacheProfile,
@@ -155,5 +168,25 @@ mod tests {
         let s = segment("s", "x", true, 1, "v", "public").unwrap();
         assert!(build_plan(vec![s.clone()], &p, "ctx-1", "v", 2).is_err());
         assert!(build_plan(vec![s], &p, "ctx-2", "v", 0).is_ok());
+    }
+
+    #[test]
+    fn guidance_projection_has_a_stable_cache_segment() {
+        let snapshot = crate::project_instruction_stack::InstructionSnapshot {
+            schema_version: 1,
+            workspace_root: "workspace-bound".into(),
+            active_rules: vec![],
+            inactive_relevant_rules: vec![],
+            diagnostics: vec![],
+            source_hashes: vec![],
+            total_bytes: 0,
+            estimated_tokens: 0,
+            created_at_ms: 1,
+            content_hash: "a".repeat(64),
+        };
+        let first = guidance_segment(&snapshot).unwrap();
+        let second = guidance_segment(&snapshot).unwrap();
+        assert_eq!(first.content_hash, second.content_hash);
+        assert!(first.stable);
     }
 }

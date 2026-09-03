@@ -815,3 +815,10 @@ Core check/clippy, protocol check, Electron typecheck and `git diff --check`
 passed. Fixed hook ordering and route/sensitivity/phase/duplicate guards are
 Core-owned; verdicts are bounded and redacted, with no secrets, raw payload or
 executable interceptor code in storage or IPC.
+
+Plan 111: Project Instruction Stack focused contract 2/2, Prompt Cache
+guidance-segment 1/1, existing project-instruction UI 1/1 and typecheck passed;
+Core check, protocol check and `git diff --check` passed. Live-review confirmed
+that registry/discovery, hierarchical precedence, scope/hash/source revision,
+trust derivation and bounded metadata projection reuse the canonical plan-80
+authority; no duplicate storage, Skills authority or secret content was added.

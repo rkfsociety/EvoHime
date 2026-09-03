@@ -53,6 +53,10 @@ pub struct ProjectRule {
     pub parsed_metadata: BTreeMap<String, String>,
 }
 
+/// Canonical Project Guidance Registry document.  The existing instruction
+/// stack is the storage and precedence authority for this alias.
+pub type ProjectGuidanceDocument = ProjectRule;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectInstructionStackPolicy {
     pub schema_version: u32,
@@ -100,6 +104,15 @@ pub struct ProjectRuleProjection {
     pub content_hash: String,
     pub source_revision: u64,
     pub why_active: String,
+    pub trust_class: String,
+}
+
+pub fn trust_class(rule: &ProjectRule) -> &'static str {
+    match rule.source_kind {
+        SourceKind::Global | SourceKind::Workspace | SourceKind::Nested | SourceKind::Compatible => {
+            if rule.sensitivity == "sensitive" { "allowlisted_sensitive" } else { "allowlisted_untrusted" }
+        }
+    }
 }
 
 pub fn project_rule(rule: &ProjectRule, why_active: &str) -> ProjectRuleProjection {
@@ -116,6 +129,7 @@ pub fn project_rule(rule: &ProjectRule, why_active: &str) -> ProjectRuleProjecti
         content_hash: rule.content_hash.clone(),
         source_revision: rule.source_revision,
         why_active: why_active.to_owned(),
+        trust_class: trust_class(rule).to_owned(),
     }
 }
 
@@ -571,6 +585,13 @@ pub fn global_rules_root_from_env() -> Option<PathBuf> {
     std::env::var_os("APPDATA").map(|value| PathBuf::from(value).join("EvoHime").join("rules"))
 }
 
+pub fn discover_guidance(
+    root: &Path,
+    global_root: Option<&Path>,
+) -> Result<Vec<ProjectGuidanceDocument>, InstructionError> {
+    discover_rules(root, global_root)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -599,6 +620,7 @@ mod tests {
             &["crates/generated/lib.rs".into()],
             &[]
         ));
+        assert_eq!(trust_class(&rule), "allowlisted_untrusted");
     }
     #[test]
     fn snapshot_hash_and_budget_are_deterministic() {

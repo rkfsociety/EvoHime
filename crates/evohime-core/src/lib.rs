@@ -6104,7 +6104,7 @@ impl ToolAgent {
         workspace_root: &std::path::Path,
         task_id: &str,
     ) -> Result<(String, Vec<evohime_model_provenance::SourceRef>, String), AgentRunError> {
-        let rules = crate::project_instruction_stack::discover_rules(
+        let rules = crate::project_instruction_stack::discover_guidance(
             workspace_root,
             crate::project_instruction_stack::global_rules_root_from_env().as_deref(),
         )
@@ -6123,6 +6123,8 @@ impl ToolAgent {
         .map_err(|error| {
             AgentRunError::Internal(format!("project instruction compilation failed: {error}"))
         })?;
+        let guidance_cache_segment = crate::prompt_cache_planner::guidance_segment(&snapshot)
+            .map_err(|error| AgentRunError::Internal(format!("guidance cache segment failed: {error}")))?;
 
         if let Some(journal) = &self.journal {
             let snapshot_json = serde_json::to_vec(&snapshot).map_err(|error| {
@@ -6186,6 +6188,7 @@ impl ToolAgent {
             serde_json::json!({
                 "task_id": task_id,
                 "snapshot_hash": snapshot.content_hash,
+                "guidance_cache_segment_hash": guidance_cache_segment.content_hash,
                 "rule_hashes": snapshot.source_hashes,
                 "active_rules": snapshot.active_rules.len(),
                 "total_bytes": snapshot.total_bytes,
