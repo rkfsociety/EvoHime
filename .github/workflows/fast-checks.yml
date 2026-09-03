@@ -5,7 +5,6 @@ name: Быстрые проверки EvoHime
 # и запускается только вручную.
 on:
   push:
-    branches: [main]
   pull_request:
 
 permissions:
