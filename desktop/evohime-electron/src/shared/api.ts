@@ -1490,7 +1490,7 @@ export interface CommandPayloads {
   'core.planArtifactCreate': { artifactJson: string; idempotencyKey: string }
   'core.planArtifactRead': { artifactId: string }
   'core.planArtifactAction': { operation: 'transition' | 'execute'; artifactId: string; expectedVersion: number; status?: string; policySnapshotHash?: string; taskId?: string; workflowRunId?: string; correlationId: string; idempotencyKey: string }
-  'core.workspaceStateCheckpoint': { operation: 'create' | 'compare' | 'restore' | 'restore_task' | 'restore_both'; projectId: string; taskId?: string; checkpointId?: string; expectedVersion?: number; idempotencyKey: string }
+  'core.workspaceStateCheckpoint': { operation: 'list' | 'create' | 'compare' | 'restore' | 'restore_task' | 'restore_both'; projectId: string; taskId?: string; checkpointId?: string; expectedVersion?: number; idempotencyKey: string }
   'core.incrementalChangeProtocol': { operation: 'create' | 'apply' | 'cancel' | 'unknown'; runId: string; payload?: string; expectedVersion?: number; observedFingerprint?: string; idempotencyKey: string }
   'core.revisionSafeWorkspaceFiles': { operation: 'read'; projectId: string; logicalPath: string; content?: string; expectedHash?: string; idempotencyKey: string }
   'core.taskWorktreeIsolation': { operation: 'create' | 'ready' | 'integrating' | 'cleanup_pending'; projectId: string; taskId: string; worktreeId: string; branch: string; baseCommit: string; expectedVersion?: number; idempotencyKey: string }

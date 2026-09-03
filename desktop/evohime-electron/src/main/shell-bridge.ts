@@ -321,7 +321,7 @@ function dispatch(
 
     case 'core.workspaceStateCheckpoint': {
       const value = asRecord(payload)
-      const operation = value['operation'] === 'create' || value['operation'] === 'compare' || value['operation'] === 'restore' || value['operation'] === 'restore_task' || value['operation'] === 'restore_both'
+      const operation = value['operation'] === 'list' || value['operation'] === 'create' || value['operation'] === 'compare' || value['operation'] === 'restore' || value['operation'] === 'restore_task' || value['operation'] === 'restore_both'
         ? value['operation'] : null
       const projectId = asBoundedString(value['projectId'])
       const taskId = value['taskId'] === undefined ? '' : asBoundedString(value['taskId'])

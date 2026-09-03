@@ -700,6 +700,26 @@ impl LocalDatabase {
             .optional()?)
     }
 
+    pub fn get_project_by_workspace_path(
+        &self,
+        workspace_path: &str,
+    ) -> Result<Option<ProjectRecord>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, title, workspace_path, source_ref, version FROM projects WHERE workspace_path = ?1 LIMIT 1",
+        )?;
+        Ok(statement
+            .query_row([workspace_path], |row| {
+                Ok(ProjectRecord {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    workspace_path: row.get(2)?,
+                    source_ref: row.get(3)?,
+                    version: row.get(4)?,
+                })
+            })
+            .optional()?)
+    }
+
     pub fn get_project_policy(
         &self,
         project_id: &str,

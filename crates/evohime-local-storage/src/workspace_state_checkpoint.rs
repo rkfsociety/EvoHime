@@ -20,6 +20,15 @@ pub struct WorkspaceCheckpointRecord {
     pub pinned: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceCheckpointSummary {
+    pub checkpoint_id: String,
+    pub task_id: Option<String>,
+    pub snapshot_hash: String,
+    pub created_at_ms: i64,
+    pub pinned: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RestoreJournalRecord {
     pub operation_id: String,
@@ -105,6 +114,27 @@ pub fn get_checkpoint(
             },
         )
         .optional()
+}
+
+pub fn list_checkpoint_summaries(
+    connection: &Connection,
+    workspace_id: &str,
+) -> rusqlite::Result<Vec<WorkspaceCheckpointSummary>> {
+    let mut statement = connection.prepare(
+        "SELECT checkpoint_id,task_id,snapshot_hash,created_at_ms,pinned
+         FROM workspace_state_checkpoints
+         WHERE workspace_id=?1 ORDER BY created_at_ms DESC LIMIT 256",
+    )?;
+    let rows = statement.query_map([workspace_id], |row| {
+        Ok(WorkspaceCheckpointSummary {
+            checkpoint_id: row.get(0)?,
+            task_id: row.get(1)?,
+            snapshot_hash: row.get(2)?,
+            created_at_ms: row.get(3)?,
+            pinned: row.get::<_, i64>(4)? != 0,
+        })
+    })?;
+    rows.collect()
 }
 
 pub fn append_restore_journal(

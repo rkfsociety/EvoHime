@@ -4049,6 +4049,14 @@ impl EventJournal {
         database.get_project(id)
     }
 
+    pub async fn get_project_by_workspace_path(
+        &self,
+        workspace_path: &str,
+    ) -> Result<Option<evohime_local_storage::ProjectRecord>, StorageError> {
+        let database = self.database.lock().await;
+        database.get_project_by_workspace_path(workspace_path)
+    }
+
     /// Persists one redacted, bounded research evidence record against the
     /// real `research_evidence` table (SCHEMA_VERSION 8).
     pub async fn save_research_evidence(
@@ -11552,12 +11560,31 @@ impl TaskCoordinator {
                 let journal = state.lock().await.journal.clone();
                 let result = async {
                     let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
-                    let project = journal.get_project(&project_id).await.map_err(|e| e.to_string())?
-                        .ok_or_else(|| "project not found".to_string())?;
-                    let root = std::path::PathBuf::from(&project.workspace_path);
+                    let root = journal.get_project(&project_id).await.map_err(|e| e.to_string())?
+                        .or(journal.get_project_by_workspace_path(&project_id).await.map_err(|e| e.to_string())?)
+                        .map(|project| std::path::PathBuf::from(project.workspace_path))
+                        .unwrap_or_else(|| std::path::PathBuf::from(&project_id));
+                    if !root.is_dir() {
+                        return Err("project workspace not found".to_string());
+                    }
                     let workspace_id = crate::task_memory::workspace_scope_id(&root);
                     let now = crate::task_memory::now_millis() as i64;
                     match operation.as_str() {
+                        "list" => {
+                            let summaries = {
+                                let database = journal.database().lock().await;
+                                evohime_local_storage::workspace_state_checkpoint::list_checkpoint_summaries(
+                                    database.connection(), &workspace_id)
+                                    .map_err(|e| e.to_string())?
+                            };
+                            serde_json::to_vec(&serde_json::json!({
+                                "schema_version": 1,
+                                "operation": "list",
+                                "project_id": project_id,
+                                "state": "listed",
+                                "checkpoints": summaries,
+                            })).map_err(|e| e.to_string())
+                        }
                         "create" => {
                             let id = checkpoint_id.unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
                             let checkpoint = crate::workspace_state_checkpoints::capture(

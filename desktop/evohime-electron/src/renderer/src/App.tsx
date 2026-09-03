@@ -562,7 +562,7 @@ export function App(): React.JSX.Element {
               {view === 'causal-collaboration' ? <CausalCollaborationBusPanel /> : null}
               {view === 'human-work-items' ? <HumanWorkItemsPanel /> : null}
               {view === 'plan-artifacts' ? <PlanArtifactPanel connection={connection} events={events} /> : null}
-              {view === 'workspace-checkpoints' ? <WorkspaceStateCheckpointsPanel connection={connection} events={events} /> : null}
+              {view === 'workspace-checkpoints' ? <WorkspaceStateCheckpointsPanel connection={connection} events={events} workspace={workspace} /> : null}
               {view === 'incremental-change' ? <IncrementalChangeProtocolPanel connection={connection} events={events} /> : null}
               {view === 'revision-safe-files' ? <RevisionSafeWorkspaceFilesPanel connection={connection} events={events} /> : null}
               {view === 'task-worktree-isolation' ? <TaskWorktreeIsolationPanel connection={connection} events={events} /> : null}
