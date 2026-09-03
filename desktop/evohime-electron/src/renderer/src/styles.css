@@ -3207,13 +3207,18 @@ body {
 }
 
 .account__developer-menu {
-  position: absolute;
+  /* The developer catalog is a side drawer, not an expanding submenu. Keep
+     it inside the application viewport even when its grouped content is
+     taller than the window (Electron CSS width can differ under DPI scale). */
+  position: fixed;
+  top: 12px;
   right: auto;
-  bottom: 0;
-  left: calc(100% + 9px);
+  bottom: 44px;
+  left: calc(var(--sidebar-width) + 9px);
   z-index: 51;
   width: min(360px, calc(100vw - var(--sidebar-width) - 32px));
-  max-height: calc(100vh - 24px);
+  max-height: none;
+  box-sizing: border-box;
   padding: 12px;
   overflow-y: auto;
   border: 1px solid var(--border);
@@ -3254,12 +3259,9 @@ body {
 
 @media (max-width: 900px) {
   .account__developer-menu {
-    position: fixed;
     right: 12px;
-    bottom: 12px;
     left: auto;
     width: min(360px, calc(100vw - 24px));
-    max-height: calc(100vh - 24px);
   }
 }
 
