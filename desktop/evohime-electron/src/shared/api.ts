@@ -356,6 +356,7 @@ export interface WorkspaceStateCheckpointProjection {
   readonly fileCount: number
   readonly snapshotHash: string
   readonly errorCode: string
+  readonly errorMessage?: string
 }
 
 export interface CoreEvent {

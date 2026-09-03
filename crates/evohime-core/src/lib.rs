@@ -11587,9 +11587,28 @@ impl TaskCoordinator {
                         }
                         "create" => {
                             let id = checkpoint_id.unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
-                            let checkpoint = crate::workspace_state_checkpoints::capture(
-                                &root, id.clone(), workspace_id.clone(), task_id.clone())
-                                .map_err(|e| e.to_string())?;
+                            let checkpoint = match crate::workspace_state_checkpoints::capture(
+                                &root, id.clone(), workspace_id.clone(), task_id.clone()) {
+                                Ok(checkpoint) => checkpoint,
+                                Err(error) => {
+                                    let error_text = error.to_string();
+                                    let error_code = if error_text.contains("bounded limit") {
+                                        "workspace_checkpoint_limit_exceeded"
+                                    } else {
+                                        "workspace_checkpoint_capture_failed"
+                                    };
+                                    return serde_json::to_vec(&serde_json::json!({
+                                        "schema_version": 1,
+                                        "operation": "create",
+                                        "checkpoint_id": id,
+                                        "project_id": project_id,
+                                        "task_id": task_id,
+                                        "state": "failed",
+                                        "error_code": error_code,
+                                        "message": error_text,
+                                    })).map_err(|e| e.to_string());
+                                }
+                            };
                             let json = serde_json::to_vec(&checkpoint).map_err(|e| e.to_string())?;
                             let record = evohime_local_storage::workspace_state_checkpoint::WorkspaceCheckpointRecord {
                                 checkpoint_id: id.clone(), workspace_id: workspace_id.clone(), task_id: task_id.clone(),

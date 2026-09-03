@@ -47,7 +47,8 @@ export function WorkspaceStateCheckpointsPanel({ connection, events, workspace }
         conflictCount: Number(raw['conflict_count'] ?? raw['conflictCount'] ?? 0),
         fileCount: Number(raw['file_count'] ?? raw['fileCount'] ?? 0),
         snapshotHash: String(raw['snapshot_hash'] ?? raw['snapshotHash'] ?? ''),
-        errorCode: String(raw['error_code'] ?? raw['errorCode'] ?? '')
+        errorCode: String(raw['error_code'] ?? raw['errorCode'] ?? ''),
+        errorMessage: String(raw['message'] ?? '')
       }
       if (value.operation) setProjection(value)
     } catch {
@@ -116,6 +117,7 @@ export function WorkspaceStateCheckpointsPanel({ connection, events, workspace }
       <button type="button" onClick={() => void invoke('restore_both')}>Восстановить всё</button>
     </div>
     {projection ? <p role="status">{projection.state} · файлов: {projection.fileCount} · конфликтов: {projection.conflictCount} · {projection.snapshotHash}</p> : null}
+    {projection?.errorCode ? <p role="alert">{projection.errorCode === 'workspace_checkpoint_limit_exceeded' ? 'Контрольная точка не создана: рабочая папка превышает ограничение снимка (до 4096 файлов, 64 МБ всего, не более 1 МБ на файл). Исключите большие/сгенерированные файлы или выберите меньшую папку.' : projection.errorMessage || `Операция отклонена: ${projection.errorCode}`}</p> : null}
     {message ? <p role="status">{message}</p> : null}
   </section>
 }
