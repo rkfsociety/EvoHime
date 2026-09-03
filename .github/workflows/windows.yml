@@ -1,8 +1,10 @@
 name: Windows CI
 
-# Клиент обновляется из исходников по коммитам, а постоянный релиз содержит
-# последний проверенный установщик. Workflow публикует его только после
-# успешной сборки и acceptance-проверок на push в main или ручном запуске.
+# Push и pull request получают быстрый feedback: документация, Rust fmt/clippy
+# и Electron protocol/typecheck. Полный release-контур (тесты, package,
+# installer, upgrade/rollback smoke и публикация) запускается только вручную
+# через Run workflow и обновляет постоянный release лишь после всех acceptance
+# проверок.
 on:
   push:
     branches: [main]
@@ -130,6 +132,7 @@ jobs:
     needs: [changes, documentation, rust-fast]
     if: >-
       always()
+      && github.event_name == 'workflow_dispatch'
       && needs.changes.outputs.native == 'true'
       && needs.rust-fast.result == 'success'
       && (needs.documentation.result == 'success' || needs.documentation.result == 'skipped')
@@ -210,6 +213,7 @@ jobs:
     needs: [changes, documentation, rust-heavy, electron-fast]
     if: >-
       always()
+      && github.event_name == 'workflow_dispatch'
       && needs.changes.outputs.native == 'true'
       && needs.rust-heavy.result == 'success'
       && needs.electron-fast.result == 'success'
@@ -247,6 +251,7 @@ jobs:
     needs: [changes, documentation, rust-heavy, electron-heavy]
     if: >-
       always()
+      && github.event_name == 'workflow_dispatch'
       && (needs.changes.outputs.windows == 'true' || needs.changes.outputs.native == 'true')
       && !contains(needs.*.result, 'failure')
       && !contains(needs.*.result, 'cancelled')
@@ -300,6 +305,7 @@ jobs:
     # его остановить: needs.* даёт skipped, поэтому условие пишется явно.
     if: >-
       !cancelled()
+      && github.event_name == 'workflow_dispatch'
       && !contains(needs.*.result, 'failure')
       && needs.changes.outputs.native == 'true'
     runs-on: windows-latest
@@ -456,8 +462,7 @@ jobs:
     if: >-
       !cancelled() &&
       needs.build-native.result == 'success' &&
-      (github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+      github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     permissions:
       contents: write
