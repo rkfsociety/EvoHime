@@ -353,6 +353,24 @@ describe('task timeline', () => {
     })
   })
 
+  it('offers stop while Core is still accepting the task', async () => {
+    let resolveStart: (() => void) | undefined
+    const startPending = new Promise<void>((resolve) => { resolveStart = resolve })
+    respond = (command) => command === 'core.startTask' ? startPending.then(() => ok({ accepted: true })) : ok([])
+
+    render(<TaskTimeline connection="connected" events={[]} workspace="C:\\work\\repo" chatId="chat-1" onChatTouched={() => {}} onChatOpened={() => {}} identityName={null} chatRevision={0} />)
+    await userEvent.type(await screen.findByLabelText('Задача'), 'Останови запуск')
+    await userEvent.click(screen.getByRole('button', { name: 'Запустить задачу' }))
+
+    const stop = await screen.findByRole('button', { name: 'Остановить задачу' })
+    expect(stop.hasAttribute('disabled')).toBe(false)
+    await userEvent.click(stop)
+    await waitFor(() => expect(calls.filter((call) => call.command === 'core.stopTask')).toHaveLength(1))
+
+    resolveStart?.()
+    await waitFor(() => expect(calls.filter((call) => call.command === 'core.stopTask')).toHaveLength(2))
+  })
+
   it('shows the unfinished tool directly in the chat and turns the composer into stop', async () => {
     const view = render(
       <TaskTimeline

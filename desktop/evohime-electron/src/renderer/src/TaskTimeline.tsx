@@ -66,6 +66,8 @@ export function TaskTimeline({
   const [chat, setChat] = useState<ChatRecord | null>(null)
   const [prompt, setPrompt] = useState('')
   const [taskId, setTaskId] = useState<string | null>(null)
+  const [startingTaskId, setStartingTaskId] = useState<string | null>(null)
+  const [stopRequested, setStopRequested] = useState(false)
   const [sentPrompt, setSentPrompt] = useState<string | null>(null)
   const [sentPromptAtMs, setSentPromptAtMs] = useState<number | null>(null)
   const [commandError, setCommandError] = useState<string | null>(null)
@@ -81,6 +83,7 @@ export function TaskTimeline({
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const entryTimes = useRef(new Map<string, number>())
+  const cancelRequestedTaskId = useRef<string | null>(null)
 
   useEffect(() => {
     // Chat-local transient state must not leak into another conversation.
@@ -88,6 +91,9 @@ export function TaskTimeline({
     // task because both were kept outside the persisted ChatRecord.
     setChat(null)
     setTaskId(null)
+    setStartingTaskId(null)
+    setStopRequested(false)
+    cancelRequestedTaskId.current = null
     setSentPrompt(null)
     setSentPromptAtMs(null)
     setCommandError(null)
@@ -211,9 +217,14 @@ export function TaskTimeline({
       .slice(0, MAX_RENDERED_ITEMS)
   }, [chat?.taskIds, conversationLog?.events, events, taskId])
 
+  const activeTaskEvents = useMemo(
+    () => taskId === null ? taskEvents : taskEvents.filter((event) => event.taskId === taskId),
+    [taskEvents, taskId]
+  )
+
   const { entries, approval, finished } = useMemo(
-    () => buildTranscript(taskEvents),
-    [taskEvents]
+    () => buildTranscript(activeTaskEvents),
+    [activeTaskEvents]
   )
 
   const conversation = useMemo(() => {
@@ -292,6 +303,10 @@ export function TaskTimeline({
     const nextTaskId = makeTaskId()
     const clientMessageId = globalThis.crypto.randomUUID()
     const text = prompt.trim()
+    cancelRequestedTaskId.current = null
+    setTaskId(nextTaskId)
+    setStartingTaskId(nextTaskId)
+    setStopRequested(false)
     setBusy(true)
     setCommandError(null)
 
@@ -301,6 +316,8 @@ export function TaskTimeline({
     if (targetChatId === null) {
       const created = await api.invoke('chat.create', { workspacePath: workspace })
       if (!created.ok) {
+        setTaskId(null)
+        setStartingTaskId(null)
         setBusy(false)
         setCommandError(created.message)
         return
@@ -326,10 +343,15 @@ export function TaskTimeline({
     })
     setBusy(false)
     if (!outcome.ok) {
+      setTaskId(null)
+      setStartingTaskId(null)
+      setStopRequested(false)
+      cancelRequestedTaskId.current = null
       setConversationLog((current) => current ? markOptimisticFailed(current, clientMessageId) : current)
       setCommandError(outcome.message)
       return
     }
+    setStartingTaskId(null)
     setTaskId(nextTaskId)
     setSentPrompt(text)
     setSentPromptAtMs(Date.now())
@@ -342,10 +364,15 @@ export function TaskTimeline({
     })
     if (stored.ok && stored.value) setChat(stored.value)
     onChatTouched()
+    if (cancelRequestedTaskId.current === nextTaskId) {
+      await api.invoke('core.stopTask', { taskId: nextTaskId })
+    }
   }, [api, chatId, onChatOpened, onChatTouched, prompt, providerMode, workspace])
 
   const stop = useCallback(async () => {
     if (!api || !taskId) return
+    cancelRequestedTaskId.current = taskId
+    setStopRequested(true)
     setBusy(true)
     const outcome = await api.invoke('core.stopTask', { taskId })
     setBusy(false)
@@ -371,7 +398,7 @@ export function TaskTimeline({
 
   const connected = CONNECTED_STATES.includes(connection)
   const canStart = connected && workspace !== null && prompt.trim().length > 0 && !busy
-  const running = taskId !== null && !finished
+  const running = taskId !== null && (startingTaskId === taskId || !finished)
   // Запрос разрешения может прийти раньше любой другой записи ленты.
   const empty =
     entries.length === 0 && sentPrompt === null && approval === null && conversation.length === 0
@@ -502,12 +529,12 @@ export function TaskTimeline({
             <button
               type="button"
               className={`composer__send${running ? ' composer__send--stop' : ''}`}
-              aria-label={running ? 'Остановить задачу' : 'Запустить задачу'}
+              aria-label={running ? (stopRequested ? 'Остановка задачи' : 'Остановить задачу') : 'Запустить задачу'}
               onClick={() => {
                 if (running) void stop()
                 else if (canStart) void start()
               }}
-              disabled={running ? busy || !connected : !canStart}
+              disabled={running ? stopRequested || !connected : !canStart}
             >
               {running ? '■' : '↑'}
             </button>
