@@ -1052,3 +1052,9 @@ revision-fenced revoke, inbound dedup bounded queue, typed remote-command
 allowlist и redacted outbound projection. Используются schema 89 и
 authenticated IPC 243/88; provider network ingress и credentials в контур не
 входят.
+
+План 97 закрыт 3 сентября 2026 года: Model Edit Protocol Registry реализован
+в Core/storage/runtime, добавлены authenticated IPC 245/90 и metadata-only UI.
+Подтверждены четыре typed protocol kind, hash/revision precondition,
+parse/dry-run, stale/ambiguous fail-closed и bounded repair feedback; effect
+остаётся в approved Revision-Safe Workspace Files boundary.

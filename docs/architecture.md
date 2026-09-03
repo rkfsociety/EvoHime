@@ -2051,3 +2051,13 @@ Workflow и UiExtension без объединения runtime semantics. Schema 
 authenticated additive IPC tags 238/83 поддерживают bounded list/register/remove;
 owner registries сохраняют authority, grants и side-effect policies. Renderer
 видит только redacted metadata projection.
+
+## Model Edit Protocol Registry v1 (план 97)
+
+Core хранит versioned SEARCH/REPLACE, bounded patch, structured JSON и
+whole-file протоколы с `model_profile_id`. Каждое определение требует SHA-256
+precondition; parse и dry-run выполняются до effect, stale/ambiguous edits
+отклоняются fail-closed. Repair feedback ограничен тремя попытками. Реальная
+запись делегируется approved `filesystem.write`/`filesystem.patch` через
+Revision-Safe Workspace Files, а IPC 245/event 90 и Electron показывают только
+redacted metadata.

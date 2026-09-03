@@ -733,3 +733,8 @@ metadata-only and contains no credentials, prompts or raw output.
   metadata-only panel and typed bridge API. Evidence: Core 3/3, storage 1/1,
   clippy `-D warnings`, protocol/typecheck, focused UI 1/1 and full Electron
   regression 530 passed/2 skipped; `git diff --check` passed.
+
+Plan 97: Core unit 3/3, external contract 1/1, recovery 1/1, storage fence 1/1;
+Core check/clippy, protocol check, typecheck и focused UI 1/1 passed. Projection
+не содержит credentials, prompts, hidden reasoning, host paths или raw output;
+direct apply требует approved Revision-Safe tool boundary.

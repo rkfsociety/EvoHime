@@ -53,6 +53,7 @@ pub mod invocation_presets_store;
 pub mod knowledge_source_registry_project_role_store;
 pub mod memory_store;
 pub mod memory_views_and_adaptive_recall_store;
+pub mod model_edit_protocol_registry_store;
 pub mod model_limit_store;
 pub mod model_provenance;
 pub mod output_guardrail_pipeline_store;
@@ -609,6 +610,7 @@ impl LocalDatabase {
         privacy_telemetry_store::install_schema(&connection)?;
         conversation_bridge_adapters_store::install_schema(&connection)?;
         memory_views_and_adaptive_recall_store::install_schema(&connection)?;
+        model_edit_protocol_registry_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }

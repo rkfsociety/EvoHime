@@ -1078,6 +1078,7 @@ pub mod memory_extraction;
 pub mod memory_governance;
 pub mod memory_retrieval;
 pub mod memory_views_and_adaptive_recall;
+pub mod model_edit_protocol_registry;
 pub mod model_resilience_policy;
 pub mod observability;
 pub mod permission_rules;
@@ -1727,6 +1728,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    ModelEditProtocolRegistry {
+        operation: String,
+        protocol_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     /// Reads one memory record including its body. `sensitive`, forgotten and
     /// empty records come back redacted: `ListMemory` never carries a body,
     /// and this is the only path that can.
@@ -2324,6 +2333,12 @@ pub enum CoreEvent {
     MemoryViewsAndAdaptiveRecall {
         operation: String,
         view_id: String,
+        version: u64,
+        projection_json: String,
+    },
+    ModelEditProtocolRegistry {
+        operation: String,
+        protocol_id: String,
         version: u64,
         projection_json: String,
     },
@@ -3440,6 +3455,7 @@ impl EventJournal {
             CoreEvent::PrivacyTelemetryGovernance { category, .. } => category,
             CoreEvent::ConversationBridgeAdapters { bridge_id, .. } => bridge_id,
             CoreEvent::MemoryViewsAndAdaptiveRecall { view_id, .. } => view_id,
+            CoreEvent::ModelEditProtocolRegistry { protocol_id, .. } => protocol_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3503,6 +3519,7 @@ impl EventJournal {
             CoreEvent::MemoryViewsAndAdaptiveRecall { .. } => {
                 "memory_views_and_adaptive_recall.result"
             }
+            CoreEvent::ModelEditProtocolRegistry { .. } => "model_edit_protocol_registry.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -3528,6 +3545,9 @@ impl EventJournal {
             }
             CoreEvent::MemoryViewsAndAdaptiveRecall { .. } => {
                 serde_json::to_vec(event).expect("memory view projection serializes")
+            }
+            CoreEvent::ModelEditProtocolRegistry { .. } => {
+                serde_json::to_vec(event).expect("model edit projection serializes")
             }
             CoreEvent::TypedAgentHandoffContract { .. } => {
                 serde_json::to_vec(event).expect("handoff projection serializes")
@@ -15204,6 +15224,68 @@ impl TaskCoordinator {
                 let event = CoreEvent::MemoryViewsAndAdaptiveRecall {
                     operation: event_operation,
                     view_id: event_view_id,
+                    version: expected_version.saturating_add(1),
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::ModelEditProtocolRegistry {
+                operation,
+                protocol_id,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let event_operation = operation.clone();
+                let event_protocol_id = protocol_id.clone();
+                let result = async {
+                    use crate::model_edit_protocol_registry as v;
+                    use evohime_local_storage::model_edit_protocol_registry_store as store;
+                    if protocol_id.is_empty() || idempotency_key.is_empty() || idempotency_key.len() > 128 { return Err("invalid_model_edit_request".into()); }
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let db = journal.database().lock().await;
+                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_model_edit_payload".to_string())?;
+                    match operation.as_str() {
+                        "register" => {
+                            let definition: v::EditProtocolDefinition = serde_json::from_value(value.get("definition").cloned().ok_or_else(|| "definition_required".to_string())?).map_err(|_| "invalid_edit_protocol".to_string())?;
+                            if definition.protocol_id != protocol_id { return Err("protocol_id_mismatch".into()); }
+                            v::validate(&definition).map_err(|e| e.to_string())?;
+                            let json = serde_json::to_vec(&definition).map_err(|_| "serialization_failed".to_string())?;
+                            let content_hash = v::canonical_hash(&definition).map_err(|e| e.to_string())?;
+                            let saved = store::save(db.connection(), store::DefinitionInput { protocol_id: &protocol_id, revision: definition.revision, model_profile_id: &definition.model_profile_id, definition_json: &json, content_hash: &content_hash, idempotency_key: &idempotency_key, expected_version, now_ms: crate::task_memory::now_millis() as i64 }).map_err(|_| "storage_failed".to_string())?;
+                            if !saved { return Err("stale_version_or_idempotency_conflict".into()); }
+                            serde_json::to_vec(&serde_json::json!({"status":"registered","protocol_id":protocol_id,"revision":definition.revision,"model_profile_id":definition.model_profile_id,"content_hash":content_hash,"redacted":true})).map_err(|_| "serialization_failed".into())
+                        }
+                        "inspect" => {
+                            let record = store::load(db.connection(), &protocol_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "protocol_not_found".to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":"registered","protocol_id":protocol_id,"revision":record.revision,"model_profile_id":record.model_profile_id,"content_hash":record.content_hash,"version":record.version,"redacted":true})).map_err(|_| "serialization_failed".into())
+                        }
+                        "preflight" | "apply" => {
+                            let record = store::load(db.connection(), &protocol_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "protocol_not_found".to_string())?;
+                            if expected_version != record.version { return Err("stale_protocol_version".into()); }
+                            let definition: v::EditProtocolDefinition = serde_json::from_slice(&record.definition_json).map_err(|_| "corrupt_edit_protocol".to_string())?;
+                            let original = value.get("original").and_then(serde_json::Value::as_str).ok_or_else(|| "original_required".to_string())?;
+                            let preflight = v::preflight(&definition, original).map_err(|e| e.to_string())?;
+                            if operation == "apply" { return Err("apply_requires_approved_revision_safe_files_tool".into()); }
+                            serde_json::to_vec(&serde_json::json!({"status":"preflight_ok","protocol_id":protocol_id,"version":record.version,"preflight":preflight,"mutation":"not_dispatched","redacted":true})).map_err(|_| "serialization_failed".into())
+                        }
+                        "repair_feedback" => { let error_code = value.get("error_code").and_then(serde_json::Value::as_str).unwrap_or("edit_failed"); let attempt = value.get("attempt").and_then(serde_json::Value::as_u64).unwrap_or(0) as u8; let feedback = v::repair_feedback(&v::EditProtocolError::Invalid("edit_failed"), attempt).map_err(|_| format!("{error_code}:repair_exhausted"))?; serde_json::to_vec(&feedback).map_err(|_| "serialization_failed".into()) }
+                        _ => Err("unsupported_model_edit_operation".into()),
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::ModelEditProtocolRegistry {
+                    operation: event_operation,
+                    protocol_id: event_protocol_id,
                     version: expected_version.saturating_add(1),
                     projection_json,
                 };

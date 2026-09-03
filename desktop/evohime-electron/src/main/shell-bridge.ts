@@ -356,6 +356,17 @@ function dispatch(
       return accepted(client.send({ revisionSafeWorkspaceFiles: { schemaVersion: 1, requestId: randomUUID(), ownerScope: projectId, operation, logicalPath, content: Buffer.from(content, 'utf8'), expectedHash, idempotencyKey } }))
     }
 
+    case 'core.modelEditProtocolRegistry': {
+      const value = asRecord(payload)
+      const operation = ['register', 'inspect', 'preflight', 'apply', 'repair_feedback'].includes(String(value['operation'])) ? String(value['operation']) : null
+      const protocolId = asBoundedString(value['protocolId'])
+      const body = value['payload'] === undefined ? '' : asBoundedString(value['payload'])
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (operation === null || protocolId === null || body === null || expectedVersion === null || idempotencyKey === null || body.length > 4 * 1024 * 1024) return failure('invalid-payload', 'Некорректная операция Model Edit Protocol Registry.')
+      return accepted(client.send({ modelEditProtocolRegistry: { schemaVersion: 1, operation, protocolId, payload: Buffer.from(body, 'utf8'), expectedVersion, idempotencyKey } }))
+    }
+
     case 'core.taskWorktreeIsolation': {
       const value = asRecord(payload)
       const operation = ['create', 'ready', 'integrating', 'cleanup_pending'].includes(String(value['operation'])) ? String(value['operation']) : null

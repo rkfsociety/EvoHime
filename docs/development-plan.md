@@ -446,3 +446,7 @@ Core CLI v1 из плана 77; добавлено безопасное `resume`
 План 94 закрыт 3 сентября 2026 года. Conversation Bridge Adapters перенесены
 в Core/storage/IPC/UI; комплект `94-0` … `94-4` удалён после contract,
 principal/revoke/dedup проверок, protocol/typecheck и полного Electron regression.
+
+План 97 закрыт 3 сентября 2026 года. Реализованы Core contract/storage/runtime,
+additive IPC 245/90, Electron projection и recovery tests; комплект `97-0` …
+`97-4` удалён после verification.

@@ -1895,6 +1895,7 @@ message CommandEnvelope {
     PrivacyTelemetryGovernanceCommand privacy_telemetry_governance = 242;
     ConversationBridgeAdaptersCommand conversation_bridge_adapters = 243;
     MemoryViewsAndAdaptiveRecallCommand memory_views_and_adaptive_recall = 244;
+    ModelEditProtocolRegistryCommand model_edit_protocol_registry = 245;
   }
 }
 
@@ -2034,6 +2035,7 @@ message EventEnvelope {
     PrivacyTelemetryGovernanceEvent privacy_telemetry_governance = 87;
     ConversationBridgeAdaptersEvent conversation_bridge_adapters = 88;
     MemoryViewsAndAdaptiveRecallEvent memory_views_and_adaptive_recall = 89;
+    ModelEditProtocolRegistryEvent model_edit_protocol_registry = 90;
   }
 }
 
@@ -2358,6 +2360,8 @@ message ConversationBridgeAdaptersEvent { uint32 schema_version=1; string operat
 // Plan 96: bounded Core-owned MemoryView and adaptive recall surface.
 message MemoryViewsAndAdaptiveRecallCommand { uint32 schema_version=1; string operation=2; string view_id=3; bytes payload=4; uint64 expected_version=5; string idempotency_key=6; }
 message MemoryViewsAndAdaptiveRecallEvent { uint32 schema_version=1; string operation=2; string view_id=3; uint64 version=4; string status=5; string error_code=6; bytes projection_json=7; }
+message ModelEditProtocolRegistryCommand { uint32 schema_version=1; string operation=2; string protocol_id=3; bytes payload=4; uint64 expected_version=5; string idempotency_key=6; }
+message ModelEditProtocolRegistryEvent { uint32 schema_version=1; string operation=2; string protocol_id=3; uint64 version=4; string status=5; string error_code=6; bytes projection_json=7; }
 
 // Plan 64: bounded metadata-only Workspace Bootstrap Manifest surface.
 message WorkspaceBootstrapManifestCommand {

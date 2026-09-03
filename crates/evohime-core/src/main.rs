@@ -780,6 +780,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::MemoryViewsAndAdaptiveRecall { view_id, operation, .. } => println!(
             "memory_views_and_adaptive_recall.result {view_id}: {operation}"
         ),
+        evohime_core::CoreEvent::ModelEditProtocolRegistry { protocol_id, operation, .. } => println!(
+            "model_edit_protocol_registry.result {protocol_id}: {operation}"
+        ),
         evohime_core::CoreEvent::TypedAgentHandoffContract { handoff_id, operation, state, .. } => println!(
             "typed_agent_handoff_contract.result {handoff_id}: {operation} {state}"
         ),

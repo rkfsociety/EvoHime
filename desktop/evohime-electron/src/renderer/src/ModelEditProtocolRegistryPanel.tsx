@@ -1,0 +1,10 @@
+import { useEffect, useState } from 'react'
+import { useShellApi } from './shell-api'
+import type { ConnectionState } from '@shared/api'
+
+export function ModelEditProtocolRegistryPanel({ connection, events }: { readonly connection: ConnectionState; readonly events: readonly { readonly eventType: string; readonly payload: string }[] }): React.JSX.Element {
+  const api = useShellApi(); const [id, setId] = useState(''); const [payload, setPayload] = useState(''); const [result, setResult] = useState(''); const [message, setMessage] = useState('')
+  useEffect(() => { const event = events.find((item) => item.eventType === 'model_edit_protocol_registry.result'); if (event) setResult(event.payload) }, [events])
+  const send = async (operation: 'register' | 'inspect' | 'preflight' | 'apply' | 'repair_feedback'): Promise<void> => { if (!api || connection !== 'connected' || !id.trim() || (operation !== 'inspect' && !payload.trim())) { setMessage('Нужны подключение, protocol ID и bounded JSON.'); return }; const response = await api.invoke('core.modelEditProtocolRegistry', { operation, protocolId: id.trim(), payload: payload.trim(), expectedVersion: 0, idempotencyKey: crypto.randomUUID() }); if (!response.ok) setMessage(response.message) }
+  return <section aria-label="Model Edit Protocol Registry"><h3>Model Edit Protocol Registry</h3><p>Core выполняет parse, dry-run и hash/revision preflight; fuzzy edits отклоняются, файловый effect остаётся в approved Revision-Safe boundary.</p><label>Protocol ID <input value={id} onChange={(event) => setId(event.target.value)} maxLength={128} /></label><label>Definition/preflight JSON <textarea value={payload} onChange={(event) => setPayload(event.target.value)} maxLength={4 * 1024 * 1024} /></label><div>{(['register', 'inspect', 'preflight', 'apply', 'repair_feedback'] as const).map((operation) => <button key={operation} type="button" onClick={() => void send(operation)}>{operation}</button>)}</div>{result ? <pre>{result}</pre> : null}{message ? <p role="status">{message}</p> : null}</section>
+}
