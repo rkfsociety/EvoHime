@@ -125,6 +125,11 @@ interface ViewDescriptor {
   readonly icon: string
 }
 
+interface DeveloperViewGroup {
+  readonly label: string
+  readonly views: readonly ViewDescriptor[]
+}
+
 /**
  * Tool sections only. The conversation is not a nav row: it is reached by
  * opening a chat, which is where the user already looks for it.
@@ -140,7 +145,10 @@ const USER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'human-work-items', label: 'Задачи для человека', icon: '☑' },
 ]
 
-const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
+const DEVELOPER_GROUPS: readonly DeveloperViewGroup[] = [
+  {
+    label: 'Рабочий процесс',
+    views: [
   { id: 'plan-artifacts', label: 'Plan Artifacts', icon: '◇' },
   { id: 'workspace-checkpoints', label: 'Workspace Checkpoints', icon: '▣' },
   { id: 'incremental-change', label: 'Incremental Change', icon: 'Δ' },
@@ -150,6 +158,11 @@ const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'composable-termination-conditions', label: 'Termination', icon: '⏹' },
   { id: 'workspace-bootstrap-manifest', label: 'Bootstrap Manifest', icon: '⌂' },
   { id: 'team-coordination-policies', label: 'Team Coordination', icon: '⇄' },
+    ]
+  },
+  {
+    label: 'Модели и контекст',
+    views: [
   { id: 'memory-views-recall', label: 'Memory Views', icon: '⌕' },
   { id: 'model-edit-protocol-registry', label: 'Model Edit Protocols', icon: '✎' },
   { id: 'remote-conversation-channels', label: 'Remote Channels', icon: '⇄' },
@@ -158,6 +171,11 @@ const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'code-anchored-intent-markers', label: 'Code Intent Markers', icon: '▤' },
   { id: 'model-purpose-routing', label: 'Model Purpose Routing', icon: '◇' },
   { id: 'local-model-runtime-manager', label: 'Local Model Runtime', icon: '◉' },
+    ]
+  },
+  {
+    label: 'Компоненты и расширения',
+    views: [
   { id: 'declarative-runtime-components', label: 'Runtime Components', icon: '◈' },
   { id: 'guided-calibration-sessions', label: 'Guided Calibration', icon: '◌' },
   { id: 'extension-conformance-kit', label: 'Extension Conformance', icon: '✓' },
@@ -173,6 +191,11 @@ const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'typed-context-references', label: 'Context Refs', icon: '@' },
   { id: 'safe-ui-extension-framework', label: 'UI Extensions', icon: '⊞' },
   { id: 'capability-workbench', label: 'Capability Workbench', icon: '⚒' },
+    ]
+  },
+  {
+    label: 'Команды и интеграции',
+    views: [
   { id: 'team-coordinator', label: 'Team Coordinator', icon: '◈' },
   { id: 'project-instruction-stack', label: 'Project Instructions', icon: '☷' },
   { id: 'workspace-sets', label: 'Workspace Sets', icon: '▦' },
@@ -182,6 +205,11 @@ const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'batch-invocation-runtime', label: 'Batch Invocations', icon: '▤' },
   { id: 'agent-git-change-sets', label: 'Agent Git Changes', icon: '⑂' },
   { id: 'architect-editor-pipeline', label: 'Architect / Editor', icon: '⇢' },
+    ]
+  },
+  {
+    label: 'Политики и диагностика',
+    views: [
   { id: 'event-visualizer-registry', label: 'Event Visualizers', icon: '▦' },
   { id: 'customization-inventory', label: 'Customization', icon: '◈' },
   { id: 'standing-approval-profiles', label: 'Standing Approvals', icon: '✓' },
@@ -202,7 +230,11 @@ const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'artifact-handoff-registry', label: 'Артефакты и передачи', icon: '◇' },
   { id: 'team-sop', label: 'Team SOP', icon: '∷' },
   { id: 'causal-collaboration', label: 'Collaboration Bus', icon: '⇆' },
+    ]
+  }
 ]
+
+const DEVELOPER_VIEWS: readonly ViewDescriptor[] = DEVELOPER_GROUPS.flatMap((group) => group.views)
 
 const VIEWS: readonly ViewDescriptor[] = [...USER_VIEWS, ...DEVELOPER_VIEWS]
 
@@ -378,35 +410,44 @@ export function App(): React.JSX.Element {
                   }}
                 />
               ))}
-              <button
-                type="button"
-                className="account__menu-item"
-                role="menuitem"
-                aria-expanded={developerMenuOpen}
-                aria-haspopup="menu"
-                onClick={() => setDeveloperMenuOpen((value) => !value)}
-              >
-                <span aria-hidden="true">⌘</span>
-                Интерфейс разработчика
-                <span className="account__menu-chevron" aria-hidden="true">
-                  {developerMenuOpen ? '⌃' : '⌄'}
-                </span>
-              </button>
-              {developerMenuOpen ? (
-                <div className="account__developer-menu" role="menu" aria-label="Интерфейс разработчика">
-                  {DEVELOPER_VIEWS.map((item) => (
-                    <NavItem
-                      key={item.id}
-                      view={item}
-                      active={item.id === view}
-                      onSelect={(id) => {
-                        setView(id)
-                        setAccountMenuOpen(false)
-                      }}
-                    />
-                  ))}
-                </div>
-              ) : null}
+              <div className="account__developer-trigger">
+                <button
+                  type="button"
+                  className="account__menu-item"
+                  role="menuitem"
+                  aria-expanded={developerMenuOpen}
+                  aria-haspopup="menu"
+                  onClick={() => setDeveloperMenuOpen((value) => !value)}
+                >
+                  <span aria-hidden="true">⌘</span>
+                  Интерфейс разработчика
+                  <span className="account__menu-chevron" aria-hidden="true">
+                    {developerMenuOpen ? '›' : '‹'}
+                  </span>
+                </button>
+                {developerMenuOpen ? (
+                  <div className="account__developer-menu" role="menu" aria-label="Интерфейс разработчика">
+                    <div className="account__developer-heading">Интерфейс разработчика</div>
+                    {DEVELOPER_GROUPS.map((group) => (
+                      <section className="account__developer-group" key={group.label} aria-label={group.label}>
+                        <h3>{group.label}</h3>
+                        {group.views.map((item) => (
+                          <NavItem
+                            key={item.id}
+                            view={item}
+                            active={item.id === view}
+                            onSelect={(id) => {
+                              setView(id)
+                              setAccountMenuOpen(false)
+                              setDeveloperMenuOpen(false)
+                            }}
+                          />
+                        ))}
+                      </section>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
               <button
                 type="button"
                 className="account__menu-item"
