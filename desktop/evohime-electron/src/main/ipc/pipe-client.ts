@@ -13,6 +13,7 @@ import type {
   WorkspaceSetsProjection,
   KnowledgeSourceRegistryProjection,
   DurableRemoteTaskBridgeProjection,
+  MessageInterventionPoliciesProjection,
   AgentGitChangeSetsProjection,
   ArchitectEditorPipelineProjection,
   EventVisualizerRegistryProjection,
@@ -583,6 +584,7 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       , workspaceSets: decodeWorkspaceSets(event.workspaceSets)
       , knowledgeSourceRegistry: decodeKnowledgeSourceRegistry(event.knowledgeSourceRegistry)
       , durableRemoteTaskBridge: decodeDurableRemoteTaskBridge(event.durableRemoteTaskBridge)
+      , messageInterventionPolicies: decodeMessageInterventionPolicies(event.messageInterventionPolicies)
       , agentGitChangeSets: decodeAgentGitChangeSets(event.agentGitChangeSets)
       , architectEditorPipeline: decodeArchitectEditorPipeline(event.architectEditorPipeline)
       , eventVisualizerRegistry: decodeEventVisualizerRegistry(event.eventVisualizerRegistry)
@@ -823,6 +825,14 @@ function decodeDurableRemoteTaskBridge(projected: evohime.desktop.v1.IDurableRem
   let projection: unknown = null
   try { projection = JSON.parse(raw) } catch { projection = null }
   return { schemaVersion: Number(projected.schemaVersion ?? 0), remoteTaskId: projected.remoteTaskId ?? '', operation: projected.operation ?? '', version: Number(projected.version ?? 0), status: projected.status ?? '', errorCode: projected.errorCode ?? '', projection }
+}
+
+function decodeMessageInterventionPolicies(projected: evohime.desktop.v1.IMessageInterventionPoliciesEvent | null | undefined): MessageInterventionPoliciesProjection | null {
+  if (!projected) return null
+  const raw = decodePayload(projected.projectionJson)
+  let projection: unknown = null
+  try { projection = JSON.parse(raw) } catch { projection = null }
+  return { schemaVersion: Number(projected.schemaVersion ?? 0), operation: projected.operation ?? '', version: Number(projected.version ?? 0), status: projected.status ?? '', errorCode: projected.errorCode ?? '', projection }
 }
 
 function decodeAgentGitChangeSets(projected: evohime.desktop.v1.IAgentGitChangeSetsEvent | null | undefined): AgentGitChangeSetsProjection | null {

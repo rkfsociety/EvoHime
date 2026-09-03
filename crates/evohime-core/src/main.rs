@@ -849,6 +849,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::DurableRemoteTaskBridge { remote_task_id, operation, version, .. } => println!(
             "durable_remote_task_bridge.result {remote_task_id}: {operation} version={version}"
         ),
+        evohime_core::CoreEvent::MessageInterventionPolicies { operation, version, .. } => println!(
+            "message_intervention_policies.result: {operation} version={version}"
+        ),
         evohime_core::CoreEvent::AgentGitChangeSets { change_set_id, operation, version, .. } => println!(
             "agent_git_change_sets.result {change_set_id}: {operation} version={version}"
         ),

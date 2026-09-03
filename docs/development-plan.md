@@ -325,6 +325,13 @@ metadata-only UI уже были реализованы планом 63; доп�
 Team Coordinator добавлен Core termination gate перед выбором кандидата, а
 evaluation projection теперь содержит bounded reason/counters. Комплект плана
 удалён после focused contract и routing-gate tests.
+План 110 (issue #90, Message Intervention Policies) закрыт 3 сентября 2026
+года. Добавлены versioned Core-owned hooks с фиксированным порядком,
+route/sensitivity/phase/duplicate guards, bounded typed projection patches,
+human escalation verdict и fail-closed delivery gate в Collaboration Bus.
+Authenticated IPC и metadata-only Electron panel добавлены без raw payload,
+credentials или executable interceptor code; focused Core/UI/protocol gates
+пройдены, комплект плана удалён.
 План 64 закрыт 2 сентября 2026 года. Следующий незавершённый этап выбирается
 из `docs/plans` по следующему номеру.
 

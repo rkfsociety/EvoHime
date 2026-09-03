@@ -574,6 +574,15 @@ function dispatch(
       if (operation === null || remoteTaskId === null || taskPayload === null || expectedVersion === null || idempotencyKey === null || remoteTaskId.length > 128 || taskPayload.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Durable Remote Task Bridge.')
       return accepted(client.send({durableRemoteTaskBridge:{schemaVersion:1,remoteTaskId,operation,payload:Buffer.from(taskPayload,'utf8'),expectedVersion,idempotencyKey}}))
     }
+    case 'core.messageInterventionPolicies': {
+      const value = asRecord(payload)
+      const operation = String(value['operation']) === 'evaluate' ? 'evaluate' : null
+      const interventionPayload = asBoundedString(value['payload'])
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion'])
+      const idempotencyKey = value['idempotencyKey'] === undefined ? randomUUID() : asBoundedString(value['idempotencyKey'])
+      if (operation === null || interventionPayload === null || expectedVersion === null || idempotencyKey === null || interventionPayload.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Message Intervention Policies.')
+      return accepted(client.send({messageInterventionPolicies:{schemaVersion:1,operation,payload:Buffer.from(interventionPayload,'utf8'),expectedVersion,idempotencyKey}}))
+    }
     case 'core.agentGitChangeSets': {
       const value = asRecord(payload)
       const operations = ['observe', 'candidate', 'get_candidate', 'commit', 'undo', 'keep']

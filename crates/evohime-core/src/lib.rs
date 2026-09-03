@@ -1051,6 +1051,7 @@ pub mod build;
 pub mod capability_registry;
 pub mod capability_selection;
 pub mod causal_collaboration_bus;
+pub mod message_intervention_policies;
 pub mod child_contracts;
 pub mod child_roles;
 pub mod child_runtime;
@@ -1449,6 +1450,13 @@ pub enum CoreCommand {
     DurableRemoteTaskBridge {
         operation: String,
         remote_task_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    MessageInterventionPolicies {
+        operation: String,
         payload: Vec<u8>,
         expected_version: u64,
         idempotency_key: String,
@@ -2320,6 +2328,11 @@ pub enum CoreEvent {
     },
     DurableRemoteTaskBridge {
         remote_task_id: String,
+        operation: String,
+        version: u64,
+        projection_json: String,
+    },
+    MessageInterventionPolicies {
         operation: String,
         version: u64,
         projection_json: String,
@@ -3534,6 +3547,7 @@ impl EventJournal {
             CoreEvent::WorkspaceSets { set_id, .. } => set_id,
             CoreEvent::KnowledgeSourceRegistryProjectRole { source_id, .. } => source_id,
             CoreEvent::DurableRemoteTaskBridge { remote_task_id, .. } => remote_task_id,
+            CoreEvent::MessageInterventionPolicies { operation, .. } => operation,
             CoreEvent::AgentGitChangeSets { change_set_id, .. } => change_set_id,
             CoreEvent::ArchitectEditorModelPipeline { pipeline_id, .. } => pipeline_id,
             CoreEvent::EventVisualizerRegistry { visualizer_id, .. } => visualizer_id,
@@ -3602,6 +3616,7 @@ impl EventJournal {
                 "knowledge_source_registry.result"
             }
             CoreEvent::DurableRemoteTaskBridge { .. } => "durable_remote_task_bridge.result",
+            CoreEvent::MessageInterventionPolicies { .. } => "message_intervention_policies.result",
             CoreEvent::AgentGitChangeSets { .. } => "agent_git_change_sets.result",
             CoreEvent::ArchitectEditorModelPipeline { .. } => "architect_editor_pipeline.result",
             CoreEvent::EventVisualizerRegistry { .. } => "event_visualizer_registry.result",
@@ -13566,6 +13581,46 @@ impl TaskCoordinator {
                 }.await;
                 let projection_json = result.as_ref().ok().and_then(|bytes| String::from_utf8(bytes.clone()).ok()).unwrap_or_else(|| "{}".into());
                 let event = CoreEvent::DurableRemoteTaskBridge { remote_task_id: event_task_id, operation: event_operation, version: expected_version, projection_json };
+                if let Some(journal) = state.lock().await.journal.clone() { let _ = journal.record(&event).await; }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::MessageInterventionPolicies {
+                operation,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let event_operation = operation.clone();
+                let result = async {
+                    if idempotency_key.is_empty() || idempotency_key.len() > 128 {
+                        return Err("invalid_intervention_idempotency_key".into());
+                    }
+                    if expected_version > 1 {
+                        return Err("intervention_stale_version".into());
+                    }
+                    let value: serde_json::Value = serde_json::from_slice(&payload)
+                        .map_err(|_| "invalid_intervention_payload".to_string())?;
+                    let policy: crate::message_intervention_policies::MessageInterventionPolicy =
+                        serde_json::from_value(value.get("policy").cloned().ok_or_else(|| "intervention_policy_required".to_string())?)
+                            .map_err(|_| "invalid_intervention_policy".to_string())?;
+                    let context: crate::message_intervention_policies::MessageInterventionContext =
+                        serde_json::from_value(value.get("context").cloned().ok_or_else(|| "intervention_context_required".to_string())?)
+                            .map_err(|_| "invalid_intervention_context".to_string())?;
+                    let seen = value.get("seen").and_then(serde_json::Value::as_bool).unwrap_or(false);
+                    let verdict = crate::message_intervention_policies::evaluate(&policy, &context, seen)
+                        .map_err(|e| e.to_string())?;
+                    serde_json::to_vec(&serde_json::json!({
+                        "status": "evaluated",
+                        "operation": operation,
+                        "version": 1,
+                        "verdict": verdict,
+                        "redacted": true,
+                    })).map_err(|_| "serialization_failed".to_string())
+                }.await;
+                let projection_json = result.as_ref().ok().and_then(|bytes| String::from_utf8(bytes.clone()).ok()).unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::MessageInterventionPolicies { operation: event_operation, version: expected_version, projection_json };
                 if let Some(journal) = state.lock().await.journal.clone() { let _ = journal.record(&event).await; }
                 let _ = state.lock().await.events.send(event);
                 let _ = reply.send(result);

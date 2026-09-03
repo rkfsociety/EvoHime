@@ -1902,6 +1902,7 @@ message CommandEnvelope {
     GuidedCalibrationSessionsCommand guided_calibration_sessions = 249;
     ExtensionConformanceKitCommand extension_conformance_kit = 250;
     DurableRemoteTaskBridgeCommand durable_remote_task_bridge = 251;
+    MessageInterventionPoliciesCommand message_intervention_policies = 252;
   }
 }
 
@@ -2048,6 +2049,7 @@ message EventEnvelope {
     GuidedCalibrationSessionsEvent guided_calibration_sessions = 94;
     ExtensionConformanceKitEvent extension_conformance_kit = 95;
     DurableRemoteTaskBridgeEvent durable_remote_task_bridge = 96;
+    MessageInterventionPoliciesEvent message_intervention_policies = 97;
   }
 }
 
@@ -3167,6 +3169,25 @@ message DurableRemoteTaskBridgeEvent {
   string error_code = 6;
   bytes projection_json = 7;
   bool truncated = 8;
+}
+
+// Plan 110: metadata-only pre-delivery intervention evaluation.
+message MessageInterventionPoliciesCommand {
+  uint32 schema_version = 1;
+  string operation = 2;
+  bytes payload = 3;
+  uint64 expected_version = 4;
+  string idempotency_key = 5;
+  string correlation_id = 6;
+}
+message MessageInterventionPoliciesEvent {
+  uint32 schema_version = 1;
+  string operation = 2;
+  uint64 version = 3;
+  string status = 4;
+  string error_code = 5;
+  bytes projection_json = 6;
+  bool truncated = 7;
 }
 
 // The server emits this when the requested sequence is no longer retained.

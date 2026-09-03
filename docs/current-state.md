@@ -837,6 +837,12 @@ termination contract дополнен обязательным для guarded ro
 Team Coordinator; terminal decision блокирует выбор участника до candidate
 selection, а evaluation projection отдаёт только bounded reason/counters.
 Focused termination и coordinator contract tests проходят.
+План 110 закрыт 3 сентября 2026 года: Message Intervention Policies v1
+добавляет Core-owned metadata-only hooks перед доставкой Collaboration Bus,
+фиксированный порядок и fail-closed route/sensitivity/phase/duplicate guards,
+typed `allow/block/redact/redirect/escalate` verdicts и bounded projection
+patches. Authenticated IPC и Electron panel не получают raw payload,
+credentials или executable interceptor code.
 План 64 закрыт 2 сентября 2026 года: Workspace Bootstrap Manifest v1. Добавлены
 bounded Core manifest/validator, allowlisted discovery, exact trust/hash
 проверка, schema v62 preparation cache с fingerprint invalidation, single-flight

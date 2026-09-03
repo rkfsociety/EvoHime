@@ -1670,6 +1670,17 @@ The follow-up routing contract is also Core-owned: guarded Team Coordinator
 proposals evaluate the pinned termination policy/state/event before candidate
 selection. A terminal decision fails closed with a typed coordinator outcome;
 the evaluation projection includes only bounded reason and counter metadata.
+
+## Message Intervention Policies v1 (план 110)
+
+Before a Collaboration Bus delivery reaches recipient context, Core may evaluate
+a versioned metadata-only hook policy. Hooks use deterministic priority ordering
+and validate route, sensitivity, phase and idempotency guards. Verdicts are
+typed (`allow`, `block`, `redact`, `redirect`, `escalate`); projection patches
+are allowlisted strings, and failures are fail-closed. No interceptor can grant
+capabilities, change sender identity, execute imported code or receive secret
+payloads. The authenticated command/event and Electron panel expose only the
+bounded verdict projection.
 ## Workspace Bootstrap Manifest v1 (план 64)
 
 Core принимает versioned `WorkspaceBootstrapManifest` только через

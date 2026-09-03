@@ -808,3 +808,10 @@ Coordinator routing-gate contract 1/1; Core check, termination/coordinator
 focused tests and `git diff --check` passed. Guarded routing evaluates the
 Core-owned policy/state/event before candidate selection; terminal decisions
 fail closed, while UI evaluation exposes bounded reason/counters only.
+
+Plan 110: Core unit 2/2, external contract 2/2, Collaboration Bus pre-delivery
+integration 1/1, UI focused 1/1 and shell bridge regression 56/56 passed;
+Core check/clippy, protocol check, Electron typecheck and `git diff --check`
+passed. Fixed hook ordering and route/sensitivity/phase/duplicate guards are
+Core-owned; verdicts are bounded and redacted, with no secrets, raw payload or
+executable interceptor code in storage or IPC.

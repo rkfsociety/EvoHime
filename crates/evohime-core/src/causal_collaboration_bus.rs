@@ -158,6 +158,33 @@ pub fn route_allowed(
     Ok(())
 }
 
+pub fn route_with_intervention(
+    message: &CollaborationMessage,
+    allowed_routes: &BTreeSet<String>,
+    policy: &crate::message_intervention_policies::MessageInterventionPolicy,
+    seen: bool,
+) -> Result<crate::message_intervention_policies::InterventionVerdict, BusError> {
+    route_allowed(message, allowed_routes)?;
+    let context = crate::message_intervention_policies::MessageInterventionContext {
+        team_session_id: message.session_id.clone(),
+        sender: message.provenance_id.clone(),
+        recipients: vec![match &message.receiver {
+            Address::RoleSlot { slot_id } | Address::DirectRoleInstance { slot_id, .. } => slot_id.clone(),
+            Address::ProtocolGroup => "protocol_group".into(),
+            Address::Parent => "parent".into(),
+        }],
+        message_kind: serde_json::to_string(&message.kind).map_err(|_| BusError::Invalid("kind"))?.trim_matches('"').to_owned(),
+        contract_ref: None,
+        payload_metadata: format!("bytes={}", message.payload.len()),
+        sensitivity: match message.sensitivity { Sensitivity::Public => crate::message_intervention_policies::SensitivityClass::Public, Sensitivity::Internal => crate::message_intervention_policies::SensitivityClass::Internal, Sensitivity::Secret => crate::message_intervention_policies::SensitivityClass::Secret },
+        phase: crate::message_intervention_policies::HookPhase::BeforeDelivery,
+        causation_id: Some(message.causation_id.clone()),
+        routing_snapshot_hash: message.protocol_hash.clone(),
+        idempotency_key: message.idempotency_key.clone(),
+    };
+    crate::message_intervention_policies::evaluate(policy, &context, seen).map_err(|error| match error { crate::message_intervention_policies::InterventionError::Duplicate => BusError::Duplicate, _ => BusError::ForbiddenRoute })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,5 +234,31 @@ mod tests {
         let mut x = m();
         x.payload = vec![0; MAX_PAYLOAD_BYTES + 1];
         assert_eq!(validate(&x), Err(BusError::TooLarge));
+    }
+
+    #[test]
+    fn intervention_runs_before_delivery_and_can_redact_projection() {
+        let mut policy = crate::message_intervention_policies::MessageInterventionPolicy {
+            schema_version: 1,
+            id: "p".into(),
+            version: 1,
+            hooks: vec![crate::message_intervention_policies::MessageInterventionHook {
+                id: "h".into(),
+                version: 1,
+                priority: 1,
+                phases: vec![crate::message_intervention_policies::HookPhase::BeforeDelivery],
+                action: crate::message_intervention_policies::InterventionAction::Redact,
+                failure_mode: crate::message_intervention_policies::FailureMode::FailClosed,
+                allowed_routes: vec!["b".into()],
+                allowed_sensitivity: vec![crate::message_intervention_policies::SensitivityClass::Internal],
+                message_kinds: vec!["notice".into()],
+            }],
+            content_hash: String::new(),
+        };
+        policy.content_hash = crate::message_intervention_policies::canonical_hash(&policy).unwrap();
+        let mut routes = BTreeSet::new();
+        routes.insert("b".into());
+        let verdict = route_with_intervention(&m(), &routes, &policy, false).unwrap();
+        assert_eq!(verdict.action, crate::message_intervention_policies::InterventionAction::Redact);
     }
 }
