@@ -13338,6 +13338,40 @@ impl TaskCoordinator {
                     use evohime_local_storage::knowledge_source_registry_project_role_store as store;
                     let policy = knowledge::default_policy();
                     match operation.as_str() {
+                        "collection_register" => {
+                            let collection: knowledge::KnowledgeCollection = serde_json::from_slice(&payload).map_err(|_| "invalid_knowledge_collection".to_string())?;
+                            knowledge::validate_collection(&collection, &policy).map_err(|e| e.to_string())?;
+                            for source_id in &collection.source_ids {
+                                if store::get_source(database.connection(), source_id).map_err(|_| "storage_failed".to_string())?.is_none() {
+                                    return Err("knowledge_source_not_found".into());
+                                }
+                            }
+                            let json = serde_json::to_vec(&collection).map_err(|_| "serialization_failed".to_string())?;
+                            if !store::put_collection(database.connection(), &collection.id, collection.version, &collection.content_hash, &json, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())? {
+                                return Err("knowledge_collection_stale_version".into());
+                            }
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"collection_id":collection.id,"version":collection.version,"source_count":collection.source_ids.len(),"status":collection.status,"scope":collection.scope,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "collection_get" => {
+                            let json = store::get_collection(database.connection(), &source_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "knowledge_collection_not_found".to_string())?;
+                            let collection: knowledge::KnowledgeCollection = serde_json::from_slice(&json).map_err(|_| "corrupt_knowledge_collection".to_string())?;
+                            knowledge::validate_collection(&collection, &policy).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"collection_id":collection.id,"version":collection.version,"source_count":collection.source_ids.len(),"status":collection.status,"scope":collection.scope,"content_hash":collection.content_hash,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "collection_view" => {
+                            let request: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_knowledge_collection_view".to_string())?;
+                            let collection_json = store::get_collection(database.connection(), &source_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "knowledge_collection_not_found".to_string())?;
+                            let collection: knowledge::KnowledgeCollection = serde_json::from_slice(&collection_json).map_err(|_| "corrupt_knowledge_collection".to_string())?;
+                            let target_kind: knowledge::TargetKind = serde_json::from_value(request.get("target_kind").cloned().unwrap_or(serde_json::json!("project"))).map_err(|_| "invalid_knowledge_target".to_string())?;
+                            let target_id = request.get("target_id").and_then(serde_json::Value::as_str).ok_or_else(|| "invalid_knowledge_target".to_string())?;
+                            let sources = collection.source_ids.iter().filter_map(|id| store::get_source(database.connection(), id).ok().flatten()).filter_map(|json| serde_json::from_slice::<knowledge::KnowledgeSource>(&json).ok()).collect::<Vec<_>>();
+                            let mut bindings = Vec::new();
+                            for id in &collection.source_ids {
+                                bindings.extend(store::list_bindings(database.connection(), id, knowledge::MAX_BINDINGS_PER_SOURCE).map_err(|_| "storage_failed".to_string())?.into_iter().filter_map(|json| serde_json::from_slice::<knowledge::KnowledgeBinding>(&json).ok()));
+                            }
+                            let view = knowledge::build_collection_view(&collection, &sources, &bindings, target_kind, target_id, knowledge::Sensitivity::Internal, None, &policy).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"collection_id":collection.id,"version":collection.version,"view_id":view.id,"source_ids":view.source_ids,"content_hash":view.content_hash,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
                         "register" => {
                             let source: knowledge::KnowledgeSource = serde_json::from_slice(&payload).map_err(|_| "invalid_knowledge_source".to_string())?;
                             knowledge::validate_source(&source, &policy).map_err(|e| e.to_string())?;

@@ -613,6 +613,9 @@ impl LocalDatabase {
         checkpoint_forking_store::install_schema(&connection)?;
         privacy_telemetry_store::install_schema(&connection)?;
         conversation_bridge_adapters_store::install_schema(&connection)?;
+        // Plan 109: collection metadata extends the existing Knowledge Source
+        // Registry without creating a second source/chunk authority.
+        knowledge_source_registry_project_role_store::install_schema(&connection)?;
         memory_views_and_adaptive_recall_store::install_schema(&connection)?;
         model_edit_protocol_registry_store::install_schema(&connection)?;
         remote_conversation_channels_store::install_schema(&connection)?;
@@ -3824,6 +3827,15 @@ mod tests {
             )
             .expect("UI extension table query");
         assert_eq!(has_ui_extension_table, 1);
+        let has_knowledge_collections_table: i64 = database
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='knowledge_collections'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("knowledge collection table query");
+        assert_eq!(has_knowledge_collections_table, 1);
         let has_workbench_table: i64 = database
             .connection()
             .query_row(

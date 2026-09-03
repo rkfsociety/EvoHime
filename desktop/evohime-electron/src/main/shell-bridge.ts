@@ -554,7 +554,7 @@ function dispatch(
     }
     case 'core.knowledgeSourceRegistry': {
       const value = asRecord(payload)
-      const operations = ['register', 'get', 'bind', 'index', 'retrieve']
+      const operations = ['register', 'get', 'bind', 'index', 'retrieve', 'collection_register', 'collection_get', 'collection_view']
       const operation = operations.includes(String(value['operation'])) ? String(value['operation']) : null
       const sourceId = asBoundedString(value['sourceId'])
       const sourcePayload = value['payload'] === undefined ? '' : asBoundedString(value['payload'])

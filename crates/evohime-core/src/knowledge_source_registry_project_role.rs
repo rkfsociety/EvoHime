@@ -136,6 +136,29 @@ pub struct KnowledgeHit {
     pub trust_class: String,
 }
 
+/// A bounded, versioned set of references to existing KnowledgeSource records.
+/// It never owns or duplicates source/chunk content.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KnowledgeCollection {
+    pub schema_version: u32,
+    pub id: String,
+    pub version: u64,
+    pub source_ids: Vec<String>,
+    pub retrieval_profile: String,
+    pub scope: String,
+    pub status: CollectionStatus,
+    pub content_hash: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CollectionStatus {
+    Registered,
+    Ready,
+    Stale,
+    Disabled,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KnowledgePolicy {
     pub schema_version: u32,
@@ -260,6 +283,40 @@ pub fn validate_binding(
     Ok(())
 }
 
+pub fn validate_collection(
+    collection: &KnowledgeCollection,
+    policy: &KnowledgePolicy,
+) -> Result<(), KnowledgeError> {
+    validate_policy(policy)?;
+    if collection.schema_version != SCHEMA_VERSION {
+        return Err(KnowledgeError::UnsupportedVersion(
+            collection.schema_version,
+        ));
+    }
+    if !valid_id(&collection.id)
+        || !valid_id(&collection.retrieval_profile)
+        || !valid_id(&collection.scope)
+        || collection.content_hash.is_empty()
+        || collection.source_ids.is_empty()
+        || collection.source_ids.len() > policy.max_sources
+    {
+        return Err(KnowledgeError::InvalidIdentifier);
+    }
+    let mut unique = BTreeSet::new();
+    if collection
+        .source_ids
+        .iter()
+        .any(|source_id| !valid_id(source_id) || !unique.insert(source_id))
+    {
+        return Err(KnowledgeError::DuplicateIdentity);
+    }
+    let bytes = serde_json::to_vec(collection).map_err(|_| KnowledgeError::Serialization)?;
+    if bytes.len() > MAX_SOURCE_BYTES {
+        return Err(KnowledgeError::ContentLimit);
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn build_view(
     id: String,
@@ -307,6 +364,37 @@ pub fn build_view(
     let bytes = serde_json::to_vec(&view).map_err(|_| KnowledgeError::Serialization)?;
     view.content_hash = hex::encode(Sha256::digest(bytes));
     Ok(view)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn build_collection_view(
+    collection: &KnowledgeCollection,
+    sources: &[KnowledgeSource],
+    bindings: &[KnowledgeBinding],
+    target_kind: TargetKind,
+    target_id: &str,
+    max_sensitivity: Sensitivity,
+    expires_at_ms: Option<i64>,
+    policy: &KnowledgePolicy,
+) -> Result<KnowledgeView, KnowledgeError> {
+    validate_collection(collection, policy)?;
+    let selected = sources
+        .iter()
+        .filter(|source| collection.source_ids.iter().any(|id| id == &source.id))
+        .cloned()
+        .collect::<Vec<_>>();
+    build_view(
+        format!("view-{}-{}", collection.id, collection.version),
+        format!("collection:{}", collection.id),
+        &selected,
+        bindings,
+        target_kind,
+        target_id,
+        max_sensitivity,
+        collection.retrieval_profile.clone(),
+        expires_at_ms,
+        policy,
+    )
 }
 
 pub fn validate_hit(
@@ -405,5 +493,53 @@ mod tests {
         )
         .unwrap();
         assert!(v.source_ids.is_empty());
+    }
+
+    #[test]
+    fn collection_is_bounded_unique_and_versioned() {
+        let collection = KnowledgeCollection {
+            schema_version: SCHEMA_VERSION,
+            id: "collection-1".into(),
+            version: 1,
+            source_ids: vec!["source-1".into(), "source-2".into()],
+            retrieval_profile: "keyword".into(),
+            scope: "project:project-1".into(),
+            status: CollectionStatus::Ready,
+            content_hash: "hash".into(),
+        };
+        assert!(validate_collection(&collection, &default_policy()).is_ok());
+        let mut duplicate = collection;
+        duplicate.source_ids.push("source-1".into());
+        assert_eq!(
+            validate_collection(&duplicate, &default_policy()),
+            Err(KnowledgeError::DuplicateIdentity)
+        );
+        let source = source(SourceStatus::Ready, Sensitivity::Internal);
+        let binding = KnowledgeBinding {
+            source_id: source.id.clone(),
+            target_kind: TargetKind::Project,
+            target_id: "project-1".into(),
+            access_mode: AccessMode::ReadOnly,
+            retrieval_profile_id: None,
+            priority: 1,
+        };
+        assert_eq!(
+            build_collection_view(
+                &KnowledgeCollection {
+                    source_ids: vec![source.id.clone()],
+                    ..duplicate
+                },
+                &[source],
+                &[binding],
+                TargetKind::Project,
+                "project-1",
+                Sensitivity::Internal,
+                None,
+                &default_policy()
+            )
+            .unwrap()
+            .source_ids,
+            vec!["source-1"]
+        );
     }
 }

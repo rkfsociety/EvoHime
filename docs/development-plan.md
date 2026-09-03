@@ -363,6 +363,11 @@ routes, durable session-pinned snapshots, authenticated projection и
 focused/recovery/storage evidence перенесены в каноническую документацию.
 Комплект `95-0` … `95-4` удалён после end-to-end проверки. Следующий
 незавершённый этап выбирается из `docs/plans` по следующему номеру.
+План 109 закрывает bounded KnowledgeCollection поверх registry v1: collection
+хранит только versioned source references и retrieval policy, без второго
+индекса или parser/fetch runtime. Контракт перенесён в architecture/current-state
+после focused contract/storage/IPC/UI проверок; комплект `109-0` … `109-4`
+удалён после полного завершения.
 
 План 96 закрыт 3 сентября 2026 года. Memory Views & Adaptive Recall v1
 перенесён в `docs/architecture.md` и `docs/current-state.md`: hierarchical

@@ -439,6 +439,18 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   focused UI test, full Electron regression and native package smoke PASS.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
 
+## Plan 109 — KnowledgeCollection bindings (2026-09-03)
+
+- Contract/runtime: Core-owned versioned bounded collection of unique source
+  references with retrieval profile and scope; no source/chunk duplication and
+  no second RAG authority.
+- Storage/IPC/UI: monotonic collection metadata in the existing Knowledge
+  Source Registry store, authenticated `collection_register` and
+  `collection_get`, and metadata-only reuse of the existing Electron panel.
+- Checks: focused Core contract, local-storage monotonic revision, protocol,
+  typecheck and Electron regression; evidence excludes raw corpus, credentials,
+  prompts, outputs, absolute paths and PII.
+
 ## Plan 100 — Workspace Sets v1 (2026-09-02)
 
 - Contract: versioned bounded WorkspaceSet with up to 8 roots, unique aliases,

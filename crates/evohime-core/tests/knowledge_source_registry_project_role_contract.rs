@@ -56,3 +56,18 @@ fn ready_view_carries_only_authorized_sources_and_hit_provenance() {
     assert!(knowledge::validate_hit(&hit, &view, &policy).is_ok());
     assert_eq!(hit.source_revision, 3);
 }
+
+#[test]
+fn collection_contract_contains_only_bounded_source_references() {
+    let collection = knowledge::KnowledgeCollection {
+        schema_version: knowledge::SCHEMA_VERSION,
+        id: "docs".into(),
+        version: 1,
+        source_ids: vec!["manual".into()],
+        retrieval_profile: "keyword".into(),
+        scope: "project:p".into(),
+        status: knowledge::CollectionStatus::Ready,
+        content_hash: "collection-hash".into(),
+    };
+    assert!(knowledge::validate_collection(&collection, &knowledge::default_policy()).is_ok());
+}

@@ -1962,6 +1962,13 @@ parser scripts/macros и embedded fetch не исполняются. Authenticat
 command 232/event 77 и Electron Knowledge Sources panel передают только
 redacted metadata; raw chunks/credentials/prompts/outputs остаются Core-owned.
 
+План 109 добавляет поверх этого registry `KnowledgeCollection`: versioned
+bounded список source IDs с retrieval profile и scope. Коллекция не копирует
+источники или chunks; Core проверяет уникальность, существование источников и
+монотонную версию, а `collection_register`/`collection_get` возвращают только
+redacted metadata через существующую authenticated surface. Parser/fetch,
+vector backend и отдельная UI authority не добавляются.
+
 Лимиты: 128 sources, 32 bindings/source, 1 024 chunks/source, 64 KiB source
 и chunk, 128 hits/query, 256 KiB evidence и 16 384 view tokens. Secret source
 не входит в lower-sensitivity view, stale source не считается Ready, а

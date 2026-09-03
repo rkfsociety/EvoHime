@@ -1476,7 +1476,7 @@ export interface CommandPayloads {
   'core.teamCoordinator': { operation: 'create' | 'get' | 'list' | 'propose' | 'assign' | 'consult' | 'review' | 'decompose' | 'reassign' | 'cancel'; workItemId: string; payload: string; expectedRevision?: number; idempotencyKey?: string }
   'core.projectInstructionStack': { operation: 'discover' | 'compile' | 'get' | 'toggle'; workspaceRoot: string; payload?: string; relevantPaths?: readonly string[]; expectedRevision?: number; idempotencyKey?: string }
   'core.workspaceSets': { operation: 'create' | 'get' | 'update' | 'bind' | 'search'; setId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
-  'core.knowledgeSourceRegistry': { operation: 'register' | 'get' | 'bind' | 'index' | 'retrieve'; sourceId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
+  'core.knowledgeSourceRegistry': { operation: 'register' | 'get' | 'bind' | 'index' | 'retrieve' | 'collection_register' | 'collection_get' | 'collection_view'; sourceId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.agentGitChangeSets': { operation: 'observe' | 'candidate' | 'get_candidate' | 'commit' | 'undo' | 'keep'; changeSetId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.architectEditorPipeline': { operation: 'create' | 'get' | 'accept_intent'; pipelineId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.eventVisualizerRegistry': { operation: 'list' | 'register' | 'resolve'; visualizerId?: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
