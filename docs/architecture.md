@@ -2178,3 +2178,16 @@ additive transactional schema и optimistic fence. Authenticated additive IPC
 command 253/event 98 и Electron panel передают только redacted aggregate и
 per-item metadata; raw input, credentials и capability authority в projection
 не входят.
+## Policy-Aware Tool Result Cache v1 (план 113)
+
+Core-owned cache result contract разрешает только trusted metadata для
+read-only tools; default `Never`, mutating/network tools и tools с secret refs
+не кэшируются в MVP. Ключ детерминированно включает schema/tool version,
+input hash, resource scope, authority scope и policy hash. Entries содержат
+только result/provenance refs, observed time и TTL; `RequireFresh` всегда
+обходит cache, а drift и invalidation делают entry непригодной.
+
+SQLite schema v89 хранит bounded versioned entries с optimistic fence; eviction
+ограничивает cache 512 записями. IPC command 254/event 99 и Electron panel
+передают только redacted metadata. Cache не создаёт capability, не заменяет
+effect execution и не содержит raw credentials или raw tool result.

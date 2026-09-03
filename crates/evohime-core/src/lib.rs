@@ -1093,6 +1093,7 @@ pub mod plan_artifact;
 pub mod policy_gate;
 pub mod prd;
 pub mod prompt_cache_planner;
+pub mod policy_aware_tool_result_cache;
 pub mod provider_resilience;
 pub mod remote_conversation_channels;
 pub mod retained_child;
@@ -1466,6 +1467,14 @@ pub enum CoreCommand {
     BatchInvocationRuntime {
         operation: String,
         batch_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    PolicyAwareToolResultCache {
+        operation: String,
+        cache_key: String,
         payload: Vec<u8>,
         expected_version: u64,
         idempotency_key: String,
@@ -2240,6 +2249,12 @@ pub enum CoreEvent {
         manifest_id: String,
         revision: u64,
         content_hash: String,
+        projection_json: String,
+    },
+    PolicyAwareToolResultCache {
+        operation: String,
+        cache_key: String,
+        version: u64,
         projection_json: String,
     },
     TypedAgentHandoffContract {
@@ -3559,6 +3574,7 @@ impl EventJournal {
             CoreEvent::DurableRemoteTaskBridge { remote_task_id, .. } => remote_task_id,
             CoreEvent::MessageInterventionPolicies { operation, .. } => operation,
             CoreEvent::BatchInvocationRuntime { batch_id, .. } => batch_id,
+            CoreEvent::PolicyAwareToolResultCache { cache_key, .. } => cache_key,
             CoreEvent::AgentGitChangeSets { change_set_id, .. } => change_set_id,
             CoreEvent::ArchitectEditorModelPipeline { pipeline_id, .. } => pipeline_id,
             CoreEvent::EventVisualizerRegistry { visualizer_id, .. } => visualizer_id,
@@ -3629,6 +3645,7 @@ impl EventJournal {
             CoreEvent::DurableRemoteTaskBridge { .. } => "durable_remote_task_bridge.result",
             CoreEvent::MessageInterventionPolicies { .. } => "message_intervention_policies.result",
             CoreEvent::BatchInvocationRuntime { .. } => "batch_invocation_runtime.result",
+            CoreEvent::PolicyAwareToolResultCache { .. } => "policy_aware_tool_result_cache.result",
             CoreEvent::AgentGitChangeSets { .. } => "agent_git_change_sets.result",
             CoreEvent::ArchitectEditorModelPipeline { .. } => "architect_editor_pipeline.result",
             CoreEvent::EventVisualizerRegistry { .. } => "event_visualizer_registry.result",
@@ -13727,6 +13744,25 @@ impl TaskCoordinator {
                 }
                 let _ = state.lock().await.events.send(event);
                 let _ = reply.send(result);
+            }
+            CoreCommand::PolicyAwareToolResultCache { operation, cache_key, payload, expected_version, idempotency_key, reply } => {
+                let event_key = cache_key.clone(); let event_operation = operation.clone();
+                let result = async {
+                    if idempotency_key.is_empty() { return Err("invalid_cache_idempotency_key".into()); }
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    use crate::policy_aware_tool_result_cache as cache;
+                    use evohime_local_storage::policy_aware_tool_result_cache_store as store;
+                    let policy = cache::default_policy();
+                    match operation.as_str() {
+                        "inspect" => serde_json::to_vec(&serde_json::json!({"status":"available","cache_key":cache_key,"default_cacheability":"never","max_entries":policy.max_entries,"redacted":true})).map_err(|_| "serialization_failed".to_string()),
+                        "put" => { let entry: cache::CacheEntry = serde_json::from_slice(&payload).map_err(|_| "invalid_cache_entry".to_string())?; cache::validate_entry(&entry, &policy, crate::task_memory::now_millis() as i64, cache::Freshness::UseCache).map_err(|e| e.to_string())?; let json=serde_json::to_vec(&entry).map_err(|_| "serialization_failed".to_string())?; if !store::put(database.connection(), &cache_key, expected_version.max(1), &json, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())? { return Err("cache_stale_version".into()); } serde_json::to_vec(&serde_json::json!({"status":"stored","cache_key":cache_key,"redacted":true})).map_err(|_| "serialization_failed".to_string()) },
+                        "get" => { let hit=store::get(database.connection(), &cache_key).map_err(|_| "storage_failed".to_string())?.and_then(|(_,json)|serde_json::from_slice::<cache::CacheEntry>(&json).ok()).and_then(|entry|cache::validate_entry(&entry,&policy,crate::task_memory::now_millis() as i64,cache::Freshness::UseCache).ok().map(|_|entry)); serde_json::to_vec(&serde_json::json!({"status":if hit.is_some(){"hit"}else{"miss"},"cache_key":cache_key,"provenance_ref":hit.map(|e|e.provenance_ref),"redacted":true})).map_err(|_| "serialization_failed".to_string()) },
+                        "invalidate" => { if let Some((version,json))=store::get(database.connection(), &cache_key).map_err(|_| "storage_failed".to_string())? { let mut entry:cache::CacheEntry=serde_json::from_slice(&json).map_err(|_|"corrupt_cache".to_string())?; entry.status=cache::CacheStatus::Invalidated; let json=serde_json::to_vec(&entry).map_err(|_|"serialization_failed".to_string())?; if !store::put(database.connection(),&cache_key,version+1,&json,crate::task_memory::now_millis() as i64).map_err(|_|"storage_failed".to_string())? {return Err("cache_stale_version".into())}; } serde_json::to_vec(&serde_json::json!({"status":"invalidated","cache_key":cache_key,"redacted":true})).map_err(|_|"serialization_failed".to_string()) },
+                        _ => Err("unsupported_cache_operation".into()),
+                    }
+                }.await;
+                let projection_json=result.as_ref().ok().and_then(|b|String::from_utf8(b.clone()).ok()).unwrap_or_else(||"{}".into()); let event=CoreEvent::PolicyAwareToolResultCache{cache_key:event_key,operation:event_operation,version:expected_version,projection_json}; if let Some(journal)=state.lock().await.journal.clone(){let _=journal.record(&event).await;} let _=state.lock().await.events.send(event); let _=reply.send(result);
             }
             CoreCommand::ArchitectEditorModelPipeline {
                 operation,

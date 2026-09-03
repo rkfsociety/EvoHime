@@ -829,3 +829,9 @@ Evidence covers bounded validated inputs, stable item/run refs, optimistic
 durable transitions, restart-to-unknown recovery without blind retry, aggregate
 and per-item redacted projection, and additive authenticated IPC command 253 /
 event 98. No raw input, credentials, or capability authority is exposed.
+Plan 113: Core cache contract/recovery and storage fence tests passed; default
+Never, read-only manifest gating, authority-aware key, RequireFresh, TTL,
+provenance, invalidation and bounded eviction are covered. Core check/clippy,
+protocol check, typecheck, focused bridge/UI checks and full Electron regression
+passed: 117 files, 541 tests passed, 2 E2E tests skipped by configuration.
+No raw credentials or tool result bytes cross the projection.

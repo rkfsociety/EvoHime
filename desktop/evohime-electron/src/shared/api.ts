@@ -402,6 +402,7 @@ export interface CoreEvent {
   readonly durableRemoteTaskBridge?: DurableRemoteTaskBridgeProjection | null
   readonly messageInterventionPolicies?: MessageInterventionPoliciesProjection | null
   readonly batchInvocationRuntime?: BatchInvocationRuntimeProjection | null
+  readonly policyAwareToolResultCache?: PolicyAwareToolResultCacheProjection | null
   readonly agentGitChangeSets?: AgentGitChangeSetsProjection | null
   readonly architectEditorPipeline?: ArchitectEditorPipelineProjection | null
   readonly eventVisualizerRegistry?: EventVisualizerRegistryProjection | null
@@ -479,6 +480,10 @@ export interface MessageInterventionPoliciesProjection {
 }
 export interface BatchInvocationRuntimeProjection {
   readonly schemaVersion: number; readonly batchId: string; readonly operation: string
+  readonly version: number; readonly status: string; readonly errorCode: string; readonly projection: unknown
+}
+export interface PolicyAwareToolResultCacheProjection {
+  readonly schemaVersion: number; readonly operation: string; readonly cacheKey: string
   readonly version: number; readonly status: string; readonly errorCode: string; readonly projection: unknown
 }
 
@@ -1181,6 +1186,7 @@ export const RENDERER_COMMANDS = [
   'core.durableRemoteTaskBridge',
   'core.messageInterventionPolicies',
   'core.batchInvocationRuntime',
+  'core.policyAwareToolResultCache',
   'core.agentGitChangeSets',
   'core.architectEditorPipeline',
   'core.eventVisualizerRegistry',
@@ -1509,6 +1515,7 @@ export interface CommandPayloads {
   'core.durableRemoteTaskBridge': { operation: 'submit' | 'status' | 'cancel' | 'poll' | 'result'; remoteTaskId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.messageInterventionPolicies': { operation: 'evaluate'; payload: string; expectedVersion?: number; idempotencyKey?: string }
   'core.batchInvocationRuntime': { operation: 'create' | 'get' | 'start' | 'resume' | 'result'; batchId: string; payload: string; expectedVersion?: number; idempotencyKey?: string }
+  'core.policyAwareToolResultCache': { operation: 'inspect' | 'put' | 'get' | 'invalidate'; cacheKey: string; payload: string; expectedVersion?: number; idempotencyKey?: string }
   'core.agentGitChangeSets': { operation: 'observe' | 'candidate' | 'get_candidate' | 'commit' | 'undo' | 'keep'; changeSetId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.architectEditorPipeline': { operation: 'create' | 'get' | 'accept_intent'; pipelineId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.eventVisualizerRegistry': { operation: 'list' | 'register' | 'resolve'; visualizerId?: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
@@ -2020,6 +2027,7 @@ export interface CommandResults {
   'core.durableRemoteTaskBridge': { accepted: boolean }
   'core.messageInterventionPolicies': { accepted: boolean }
   'core.batchInvocationRuntime': { accepted: boolean }
+  'core.policyAwareToolResultCache': { accepted: boolean }
   'core.knowledgeSourceRegistry': { accepted: boolean }
   'core.agentGitChangeSets': { accepted: boolean }
   'core.architectEditorPipeline': { accepted: boolean }

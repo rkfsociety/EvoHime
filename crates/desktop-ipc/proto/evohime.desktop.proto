@@ -1904,6 +1904,7 @@ message CommandEnvelope {
     DurableRemoteTaskBridgeCommand durable_remote_task_bridge = 251;
     MessageInterventionPoliciesCommand message_intervention_policies = 252;
     BatchInvocationRuntimeCommand batch_invocation_runtime = 253;
+    PolicyAwareToolResultCacheCommand policy_aware_tool_result_cache = 254;
   }
 }
 
@@ -2052,6 +2053,7 @@ message EventEnvelope {
     DurableRemoteTaskBridgeEvent durable_remote_task_bridge = 96;
     MessageInterventionPoliciesEvent message_intervention_policies = 97;
     BatchInvocationRuntimeEvent batch_invocation_runtime = 98;
+    PolicyAwareToolResultCacheEvent policy_aware_tool_result_cache = 99;
   }
 }
 
@@ -3199,6 +3201,15 @@ message BatchInvocationRuntimeEvent {
   uint32 schema_version = 1; string batch_id = 2; string operation = 3;
   uint64 version = 4; string status = 5; string error_code = 6;
   bytes projection_json = 7; bool truncated = 8;
+}
+message PolicyAwareToolResultCacheCommand {
+  uint32 schema_version = 1; string operation = 2; string cache_key = 3;
+  bytes payload = 4; uint64 expected_version = 5; string idempotency_key = 6;
+}
+message PolicyAwareToolResultCacheEvent {
+  uint32 schema_version = 1; string operation = 2; uint64 version = 3;
+  string status = 4; string error_code = 5; bytes projection_json = 6;
+  bool truncated = 7;
 }
 
 // The server emits this when the requested sequence is no longer retained.

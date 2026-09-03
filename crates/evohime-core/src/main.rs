@@ -855,6 +855,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::BatchInvocationRuntime { batch_id, operation, version, .. } => println!(
             "batch_invocation_runtime.result {batch_id}: {operation} version={version}"
         ),
+        evohime_core::CoreEvent::PolicyAwareToolResultCache { cache_key, operation, version, .. } => println!(
+            "policy_aware_tool_result_cache.result {cache_key}: {operation} version={version}"
+        ),
         evohime_core::CoreEvent::AgentGitChangeSets { change_set_id, operation, version, .. } => println!(
             "agent_git_change_sets.result {change_set_id}: {operation} version={version}"
         ),

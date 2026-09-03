@@ -1127,3 +1127,8 @@ bounded start/concurrency/attempts, optimistic transitions и restart recovery
 command 253/event 98 и metadata-only Electron projection подтверждены
 focused Rust storage/recovery/contract и Electron regression проверками;
 комплект плана удалён.
+План 113 закрыт 3 сентября 2026 года: Core contract, trusted read-only
+metadata, bounded TTL/eviction, SQLite store, additive IPC command 254/event 99
+и metadata-only Electron surface реализованы. Recovery/security/runtime,
+protocol, typecheck и полный Electron regression подтверждены; комплект плана
+удалён.

@@ -65,6 +65,7 @@ pub mod privacy_telemetry_store;
 pub mod project_instruction_stack_store;
 pub mod batch_invocation_runtime_store;
 pub mod prompt_cache_planner_store;
+pub mod policy_aware_tool_result_cache_store;
 pub mod reasoning_operator_library_store;
 pub mod reconciliation_verifier;
 pub mod refinement_store;
@@ -623,6 +624,7 @@ impl LocalDatabase {
         model_edit_protocol_registry_store::install_schema(&connection)?;
         remote_conversation_channels_store::install_schema(&connection)?;
         prompt_cache_planner_store::install_schema(&connection)?;
+        policy_aware_tool_result_cache_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }

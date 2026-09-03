@@ -513,3 +513,8 @@ transitions, restart recovery с unknown outcome без blind retry, aggregate �
 per-item redacted projection, additive authenticated IPC и Electron panel.
 Focused contract/recovery/storage, clippy, protocol, typecheck и полный
 Electron regression suite пройдены; комплект 112.0–112.4 удалён.
+План 113 (issue #93, Policy-Aware Tool Result Cache) закрыт 3 сентября 2026
+года. Реализованы default `Never`, trusted read-only metadata,
+authority-aware key, TTL/RequireFresh, provenance, invalidation, bounded
+storage/eviction, Core runtime, authenticated IPC и metadata-only Electron UI;
+focused и полный regression gates пройдены, комплект 113.0–113.4 удалён.
