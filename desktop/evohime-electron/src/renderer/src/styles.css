@@ -1949,6 +1949,61 @@ body {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.plan-artifact-panel {
+  display: grid;
+  gap: 12px;
+  max-width: 860px;
+}
+
+.plan-artifact-panel h3,
+.plan-artifact-panel h4,
+.plan-artifact-panel p {
+  margin: 0;
+}
+
+.plan-artifact-panel h4 {
+  color: var(--fg);
+  font-size: 14px;
+}
+
+.plan-artifact-panel__intro,
+.plan-artifact-panel__hint {
+  color: var(--fg-muted);
+}
+
+.plan-artifact-panel__guide {
+  display: grid;
+  gap: 7px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-raised) 88%, var(--accent));
+}
+
+.plan-artifact-panel__guide ol {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--fg-muted);
+}
+
+.plan-artifact-panel__lookup {
+  display: grid;
+  gap: 6px;
+}
+
+.plan-artifact-panel__lookup-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.plan-artifact-panel__lookup-row input {
+  min-width: min(320px, 100%);
+  flex: 1;
+}
+
 .status-chip {
   flex: 0 0 auto;
   padding: 4px 9px;

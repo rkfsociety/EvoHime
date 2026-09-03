@@ -12,11 +12,22 @@ describe('PlanArtifactPanel', () => {
   it('renders bounded projection and sends explicit Core action', async () => {
     const invoke = installApi()
     render(<PlanArtifactPanel connection="connected" events={[{ eventType: 'plan_artifact.result', payload: JSON.stringify(projection) }]} />)
-    fireEvent.change(screen.getByLabelText('Идентификатор'), { target: { value: 'plan-1' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Прочитать' }))
+    fireEvent.change(screen.getByLabelText('Идентификатор плана'), { target: { value: 'plan-1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Прочитать план' }))
     expect(invoke).toHaveBeenCalledWith('core.planArtifactRead', { artifactId: 'plan-1' })
-    expect(screen.getByText('Проверить код (low)')).toBeTruthy()
+    expect(screen.getByText('Проверить код · риск: low')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Принять план' }))
     expect(await vi.waitFor(() => invoke.mock.calls.some(([command]) => command === 'core.planArtifactAction'))).toBe(true)
+  })
+
+  it('explains the purpose and current workflow before a plan is loaded', () => {
+    installApi()
+    render(<PlanArtifactPanel connection="connected" events={[]} />)
+
+    expect(screen.getByText(/Здесь хранится утверждённый план работы агента/)).toBeTruthy()
+    expect(screen.getByText('Для чего это нужно')).toBeTruthy()
+    expect(screen.getByText('Как пользоваться')).toBeTruthy()
+    expect(screen.getByText(/Сейчас планы создаются другими сценариями Core/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Прочитать план' })).toBeTruthy()
   })
 })
