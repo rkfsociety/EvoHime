@@ -1072,6 +1072,12 @@ durable storage schema 90, повторную policy/capability проверку
 rehydration и reconciliation-only путь для unknown outcome. Добавлены
 authenticated IPC 248/93 и metadata-only Electron panel.
 
+План 107 закрыт 3 сентября 2026 года: Guided Calibration Sessions v1 добавил
+durable session/iteration contracts, structured human feedback с provenance,
+dataset/replay hashes, bounded lifecycle и consolidation через Continual
+Refinement без прямой активации. Raw prompts/output не сохраняются; добавлены
+schema 91, authenticated IPC 249/94 и metadata-only Electron UI.
+
 План 97 закрыт 3 сентября 2026 года: Model Edit Protocol Registry реализован
 в Core/storage/runtime, добавлены authenticated IPC 245/90 и metadata-only UI.
 Подтверждены четыре typed protocol kind, hash/revision precondition,

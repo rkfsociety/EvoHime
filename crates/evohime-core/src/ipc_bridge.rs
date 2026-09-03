@@ -3008,6 +3008,18 @@ impl IpcBridge {
                     self.write_response(writer, "declarative_runtime_components.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::GuidedCalibrationSessions(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "inspect".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_guided_calibration_sessions(operation, request)
+                        .await?;
+                    self.write_response(writer, "guided_calibration_sessions.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -8204,6 +8216,33 @@ impl IpcBridge {
         c.dispatch(CoreCommand::DeclarativeRuntimeComponents {
             operation,
             component_id: request.component_id,
+            payload: request.payload,
+            expected_version: request.expected_version,
+            idempotency_key: request.idempotency_key,
+            reply,
+        })
+        .await
+        .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_guided_calibration_sessions(
+        &self,
+        operation: String,
+        request: generated::GuidedCalibrationSessionsCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let c = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        c.dispatch(CoreCommand::GuidedCalibrationSessions {
+            operation,
+            session_id: request.session_id,
             payload: request.payload,
             expected_version: request.expected_version,
             idempotency_key: request.idempotency_key,

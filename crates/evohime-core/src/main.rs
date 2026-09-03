@@ -792,6 +792,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::DeclarativeRuntimeComponents { component_id, operation, version, .. } => println!(
             "declarative_runtime_components.result {component_id}: {operation} version={version}"
         ),
+        evohime_core::CoreEvent::GuidedCalibrationSessions { session_id, operation, version, .. } => println!(
+            "guided_calibration_sessions.result {session_id}: {operation} version={version}"
+        ),
         evohime_core::CoreEvent::TypedAgentHandoffContract { handoff_id, operation, state, .. } => println!(
             "typed_agent_handoff_contract.result {handoff_id}: {operation} {state}"
         ),

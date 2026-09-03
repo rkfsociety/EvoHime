@@ -47,6 +47,7 @@ pub mod experience_replay_library_store;
 pub mod external_coding_agent_adapter_store;
 pub mod feedback_store;
 pub mod goal;
+pub mod guided_calibration_sessions_store;
 pub mod human_work_items_store;
 pub mod incremental_change_protocol_store;
 pub mod integration_provider_store;
@@ -3781,6 +3782,10 @@ impl LocalDatabase {
         if current < 90 {
             declarative_runtime_components_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 90;")?;
+        }
+        if current < 91 {
+            guided_calibration_sessions_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 91;")?;
         }
         transaction.commit()?;
         Ok(())

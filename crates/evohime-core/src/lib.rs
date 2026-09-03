@@ -1066,6 +1066,7 @@ pub mod execution_backend_registry;
 pub mod export;
 pub mod external_coding_agent_adapter;
 pub mod goal;
+pub mod guided_calibration_sessions;
 pub mod human_work_items;
 pub mod incremental_change_protocol;
 pub mod integration_provider_runtime;
@@ -1763,6 +1764,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    GuidedCalibrationSessions {
+        operation: String,
+        session_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     /// Reads one memory record including its body. `sensitive`, forgotten and
     /// empty records come back redacted: `ListMemory` never carries a body,
     /// and this is the only path that can.
@@ -2384,6 +2393,12 @@ pub enum CoreEvent {
     DeclarativeRuntimeComponents {
         operation: String,
         component_id: String,
+        version: u64,
+        projection_json: String,
+    },
+    GuidedCalibrationSessions {
+        operation: String,
+        session_id: String,
         version: u64,
         projection_json: String,
     },
@@ -3504,6 +3519,7 @@ impl EventJournal {
             CoreEvent::RemoteConversationChannels { connection_id, .. } => connection_id,
             CoreEvent::PromptCachePlanner { plan_id, .. } => plan_id,
             CoreEvent::DeclarativeRuntimeComponents { component_id, .. } => component_id,
+            CoreEvent::GuidedCalibrationSessions { session_id, .. } => session_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3573,6 +3589,7 @@ impl EventJournal {
             CoreEvent::DeclarativeRuntimeComponents { .. } => {
                 "declarative_runtime_components.result"
             }
+            CoreEvent::GuidedCalibrationSessions { .. } => "guided_calibration_sessions.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -15483,6 +15500,48 @@ impl TaskCoordinator {
                 let event = CoreEvent::DeclarativeRuntimeComponents {
                     operation: event_operation,
                     component_id: event_component_id,
+                    version: expected_version.saturating_add(1),
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::GuidedCalibrationSessions {
+                operation,
+                session_id,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let event_operation = operation.clone();
+                let event_session_id = session_id.clone();
+                let result = async {
+                    use crate::guided_calibration_sessions as v;
+                    use evohime_local_storage::guided_calibration_sessions_store as store;
+                    if session_id.is_empty() || idempotency_key.is_empty() || idempotency_key.len() > 128 { return Err("invalid_calibration_request".into()); }
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?; let db = journal.database().lock().await;
+                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_calibration_payload".to_string())?;
+                    match operation.as_str() {
+                        "create" => { let owner=value.get("owner_scope").and_then(serde_json::Value::as_str).ok_or_else(||"owner_scope_required".to_string())?; let subject=value.get("subject_ref").and_then(serde_json::Value::as_str).ok_or_else(||"subject_ref_required".to_string())?; let actor=value.get("actor_ref").and_then(serde_json::Value::as_str).ok_or_else(||"actor_ref_required".to_string())?; let policy=value.get("policy_snapshot_hash").and_then(serde_json::Value::as_str).ok_or_else(||"policy_snapshot_hash_required".to_string())?; let s=v::new_session(session_id.clone(),owner.into(),subject.into(),actor.into(),policy.into()); v::validate_session(&s).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&s).map_err(|_|"serialization_failed".to_string())?; if !store::save(db.connection(),store::SaveInput{id:&session_id,expected:expected_version,revision:s.revision,json:&json,dataset_hash:&s.dataset_hash,idempotency_key:&idempotency_key,now:crate::task_memory::now_millis() as i64}).map_err(|_|"storage_failed".to_string())? {return Err("stale_version_or_idempotency_conflict".into())}; serde_json::to_vec(&serde_json::json!({"status":"created","session_id":session_id,"revision":s.revision,"dataset_hash":s.dataset_hash,"redacted":true})).map_err(|_|"serialization_failed".into()) }
+                        "inspect" | "replay" => { let (revision,json,dataset)=store::load(db.connection(),&session_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"session_not_found".to_string())?; let s:v::CalibrationSession=serde_json::from_slice(&json).map_err(|_|"corrupt_calibration_session".to_string())?; v::validate_session(&s).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"available","session_id":session_id,"revision":revision,"iteration_count":s.iterations.len(),"candidate_count":s.candidates.len(),"dataset_hash":dataset,"redacted":true})).map_err(|_|"serialization_failed".into()) }
+                        "iteration" => { let (revision, json, _)=store::load(db.connection(),&session_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"session_not_found".to_string())?; let mut s:v::CalibrationSession=serde_json::from_slice(&json).map_err(|_|"corrupt_calibration_session".to_string())?; let i:v::CalibrationIteration=serde_json::from_value(value.get("iteration").cloned().ok_or_else(||"iteration_required".to_string())?).map_err(|_|"invalid_calibration_iteration".to_string())?; v::add_iteration(&mut s,i).map_err(|e|e.to_string())?; let out=serde_json::to_vec(&s).map_err(|_|"serialization_failed".to_string())?; if !store::save(db.connection(),store::SaveInput{id:&session_id,expected:expected_version.max(revision),revision:s.revision,json:&out,dataset_hash:&s.dataset_hash,idempotency_key:&idempotency_key,now:crate::task_memory::now_millis() as i64}).map_err(|_|"storage_failed".to_string())? {return Err("stale_version_or_idempotency_conflict".into())}; serde_json::to_vec(&serde_json::json!({"status":"iteration_recorded","session_id":session_id,"revision":s.revision,"iteration_count":s.iterations.len(),"dataset_hash":s.dataset_hash,"redacted":true})).map_err(|_|"serialization_failed".into()) }
+                        "consolidate" => { let (revision,json,_)=store::load(db.connection(),&session_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"session_not_found".to_string())?; let mut s:v::CalibrationSession=serde_json::from_slice(&json).map_err(|_|"corrupt_calibration_session".to_string())?; let pattern=value.get("pattern_key").and_then(serde_json::Value::as_str).ok_or_else(||"pattern_key_required".to_string())?; let guidance=value.get("guidance_text").and_then(serde_json::Value::as_str).ok_or_else(||"guidance_required".to_string())?; let candidate_id=value.get("candidate_id").and_then(serde_json::Value::as_str).ok_or_else(||"candidate_id_required".to_string())?; let c=v::consolidate(&s,candidate_id,pattern,guidance).map_err(|e|e.to_string())?; let source=s.iterations.iter().filter(|i|c.source_iteration_ids.contains(&i.iteration_id)).collect::<Vec<_>>(); let evidence=source.iter().filter_map(|i|i.feedback.as_ref().map(|f|crate::refinement::EvidenceRefV1{source_id:f.provenance_ref.clone(),source_kind:"calibration_feedback".into(),owner_scope:crate::refinement::OwnerScope::Session,content_hash:f.correction_hash.clone(),observed_at_ms:crate::task_memory::now_millis() as i64,redacted:true})).collect::<Vec<_>>(); let task_ids=source.iter().map(|i|i.task_ref.clone()).collect::<Vec<_>>(); let rc=crate::refinement::RefinementCandidateV1::new(c.refinement_candidate_id.clone(),crate::refinement::CandidateKind::Memory,"session_guidance",crate::refinement::OwnerScope::Session,pattern,"guided calibration guidance","human-confirmed repeated feedback",guidance,task_ids,evidence,s.policy_snapshot_hash.clone(),idempotency_key.clone()).map_err(|e|e.to_string())?; crate::refinement::RefinementService::new(db.connection(),crate::refinement::AdmissionPolicy::default()).propose_memory(rc,crate::task_memory::now_millis() as i64)?; s.candidates.push(c.clone()); s.revision=revision.saturating_add(1); s.dataset_hash=v::dataset_hash(&s).map_err(|e|e.to_string())?; let out=serde_json::to_vec(&s).map_err(|_|"serialization_failed".to_string())?; if !store::save(db.connection(),store::SaveInput{id:&session_id,expected:revision,revision:s.revision,json:&out,dataset_hash:&s.dataset_hash,idempotency_key:&idempotency_key,now:crate::task_memory::now_millis() as i64}).map_err(|_|"storage_failed".to_string())? {return Err("stale_version_or_idempotency_conflict".into())}; serde_json::to_vec(&serde_json::json!({"status":"candidate_proposed_for_refinement","session_id":session_id,"candidate_id":c.candidate_id,"guidance_hash":c.guidance_hash,"refinement_candidate_id":c.refinement_candidate_id,"redacted":true})).map_err(|_|"serialization_failed".into()) }
+                        "close" => { let (revision,json,_)=store::load(db.connection(),&session_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"session_not_found".to_string())?; let mut s:v::CalibrationSession=serde_json::from_slice(&json).map_err(|_|"corrupt_calibration_session".to_string())?; s.status=if value.get("cancelled").and_then(serde_json::Value::as_bool).unwrap_or(false){v::SessionStatus::Cancelled}else{v::SessionStatus::Completed}; s.revision=revision.saturating_add(1); let out=serde_json::to_vec(&s).map_err(|_|"serialization_failed".to_string())?; if !store::save(db.connection(),store::SaveInput{id:&session_id,expected:revision,revision:s.revision,json:&out,dataset_hash:&s.dataset_hash,idempotency_key:&idempotency_key,now:crate::task_memory::now_millis() as i64}).map_err(|_|"storage_failed".to_string())? {return Err("stale_version_or_idempotency_conflict".into())}; serde_json::to_vec(&serde_json::json!({"status":"closed","session_id":session_id,"revision":s.revision,"redacted":true})).map_err(|_|"serialization_failed".into()) }
+                        _ => Err("unsupported_calibration_operation".into()),
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::GuidedCalibrationSessions {
+                    operation: event_operation,
+                    session_id: event_session_id,
                     version: expected_version.saturating_add(1),
                     projection_json,
                 };

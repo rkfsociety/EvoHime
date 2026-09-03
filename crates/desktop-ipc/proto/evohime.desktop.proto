@@ -1899,6 +1899,7 @@ message CommandEnvelope {
     RemoteConversationChannelsCommand remote_conversation_channels = 246;
     PromptCachePlannerCommand prompt_cache_planner = 247;
     DeclarativeRuntimeComponentsCommand declarative_runtime_components = 248;
+    GuidedCalibrationSessionsCommand guided_calibration_sessions = 249;
   }
 }
 
@@ -2042,6 +2043,7 @@ message EventEnvelope {
     RemoteConversationChannelsEvent remote_conversation_channels = 91;
     PromptCachePlannerEvent prompt_cache_planner = 92;
     DeclarativeRuntimeComponentsEvent declarative_runtime_components = 93;
+    GuidedCalibrationSessionsEvent guided_calibration_sessions = 94;
   }
 }
 
@@ -2374,6 +2376,8 @@ message PromptCachePlannerCommand { uint32 schema_version=1; string operation=2;
 message PromptCachePlannerEvent { uint32 schema_version=1; string operation=2; string plan_id=3; uint64 version=4; string status=5; string error_code=6; bytes projection_json=7; }
 message DeclarativeRuntimeComponentsCommand { uint32 schema_version=1; string operation=2; string component_id=3; bytes payload=4; uint64 expected_version=5; string idempotency_key=6; }
 message DeclarativeRuntimeComponentsEvent { uint32 schema_version=1; string operation=2; string component_id=3; uint64 version=4; string status=5; string error_code=6; bytes projection_json=7; }
+message GuidedCalibrationSessionsCommand { uint32 schema_version=1; string operation=2; string session_id=3; bytes payload=4; uint64 expected_version=5; string idempotency_key=6; }
+message GuidedCalibrationSessionsEvent { uint32 schema_version=1; string operation=2; string session_id=3; uint64 version=4; string status=5; string error_code=6; bytes projection_json=7; }
 
 // Plan 64: bounded metadata-only Workspace Bootstrap Manifest surface.
 message WorkspaceBootstrapManifestCommand {

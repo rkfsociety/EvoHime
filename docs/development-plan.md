@@ -464,3 +464,9 @@ Electron projection и recovery/eval tests завершены; комплект 
 validation/rehydration/reconciliation, schema 90, IPC 248/93 и bounded UI.
 Комплект `106-0` … `106-4` удалён после свежих contract/recovery/storage,
 protocol/typecheck/UI и diff-check проверок.
+
+План 107 закрыт 3 сентября 2026 года. Guided Calibration Sessions перенесены
+в Core/storage/runtime/IPC/UI; consolidation создаёт candidates только через
+Continual Refinement, session guidance не становится global автоматически.
+Комплект `107-0` … `107-4` удалён после contract/recovery/storage,
+protocol/typecheck, Electron regression и diff-check проверок.

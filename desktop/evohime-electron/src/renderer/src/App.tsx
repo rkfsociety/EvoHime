@@ -82,6 +82,7 @@ import { ModelEditProtocolRegistryPanel } from './ModelEditProtocolRegistryPanel
 import { RemoteConversationChannelsPanel } from './RemoteConversationChannelsPanel'
 import { PromptCachePlannerPanel } from './PromptCachePlannerPanel'
 import { DeclarativeRuntimeComponentsPanel } from './DeclarativeRuntimeComponentsPanel'
+import { GuidedCalibrationSessionsPanel } from './GuidedCalibrationSessionsPanel'
 import { WorkbenchPanel } from './WorkbenchPanel'
 import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
 
@@ -108,7 +109,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'memory-views-recall' | 'model-edit-protocol-registry' | 'remote-conversation-channels' | 'prompt-cache-planner' | 'declarative-runtime-components' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'core-topic-subscription-event-bus' | 'dependency-aware-task-graph' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'memory-views-recall' | 'model-edit-protocol-registry' | 'remote-conversation-channels' | 'prompt-cache-planner' | 'declarative-runtime-components' | 'guided-calibration-sessions' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'core-topic-subscription-event-bus' | 'dependency-aware-task-graph' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -146,6 +147,7 @@ const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'remote-conversation-channels', label: 'Remote Channels', icon: '⇄' },
   { id: 'prompt-cache-planner', label: 'Prompt Cache', icon: '▤' },
   { id: 'declarative-runtime-components', label: 'Runtime Components', icon: '◈' },
+  { id: 'guided-calibration-sessions', label: 'Guided Calibration', icon: '◌' },
   { id: 'typed-agent-handoff-contract', label: 'Typed Handoff', icon: '⇢' },
   { id: 'schema-driven-agent-configuration', label: 'Schema Configuration', icon: '⚙' },
   { id: 'experience-replay-library', label: 'Experience Replay', icon: '↺' },
@@ -516,6 +518,7 @@ export function App(): React.JSX.Element {
               {view === 'remote-conversation-channels' ? <RemoteConversationChannelsPanel connection={connection} events={events} /> : null}
               {view === 'prompt-cache-planner' ? <PromptCachePlannerPanel connection={connection} events={events} /> : null}
               {view === 'declarative-runtime-components' ? <DeclarativeRuntimeComponentsPanel connection={connection} events={events} /> : null}
+              {view === 'guided-calibration-sessions' ? <GuidedCalibrationSessionsPanel connection={connection} events={events} /> : null}
               {view === 'typed-agent-handoff-contract' ? <TypedAgentHandoffContractPanel connection={connection} events={events} /> : null}
               {view === 'schema-driven-agent-configuration' ? <SchemaDrivenAgentConfigurationPanel connection={connection} events={events} /> : null}
               {view === 'experience-replay-library' ? <ExperienceReplayLibraryPanel connection={connection} events={events} /> : null}

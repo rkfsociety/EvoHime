@@ -757,3 +757,12 @@ versioned envelope is hashed deterministically, rehydration rejects stale
 policy/capabilities, and unknown outcome cannot jump directly to success. IPC
 248/event 93 is additive and the renderer receives bounded redacted projections
 only.
+
+Plan 107: Core unit 2/2, external contract/recovery 1/1 each, storage fence
+1/1; Core check/clippy, protocol check, Electron typecheck and focused UI 1/1
+passed. Full Electron regression was run after the previous plan and the new
+surface is included in the same bounded renderer model. Repeated independent
+feedback is required before consolidation; the resulting candidate is
+persisted by Continual Refinement as `proposed_for_refinement`, never activated
+by Guided Calibration. Raw prompts/output, credentials and hidden reasoning
+are excluded from storage and IPC projections; IPC 249/event 94 is additive.

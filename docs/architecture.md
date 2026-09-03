@@ -2093,3 +2093,16 @@ credential refs. Canonical SHA-256, bounded limits и explicit 0-to-1 migration
 Durable configs сохраняются в schema 90 с optimistic revision/idempotency fence.
 Authenticated IPC 248/event 93 и Electron panel передают только redacted
 metadata; provider registry, storage и effect authority остаются Core-owned.
+
+## Guided Calibration Sessions v1 (план 107)
+
+`CalibrationSession` — Core-owned supervised loop с bounded iterations,
+baseline/revised hashes, structured human feedback и provenance refs. Raw
+prompts/output не сохраняются; dataset хранит только hashes и redacted notes.
+Session guidance остаётся scoped к сессии. После повторного независимого
+feedback `consolidate` создаёт durable `RefinementCandidateV1` через
+существующий Continual Refinement pipeline со статусом
+`proposed_for_refinement`; прямой activation отсутствует. Session lifecycle,
+dataset hash, replay metadata и candidates защищены optimistic
+revision/idempotency fence в schema 91. Additive authenticated IPC 249/event
+94 и Electron panel показывают только bounded metadata.
