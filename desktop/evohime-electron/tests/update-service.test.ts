@@ -11,6 +11,7 @@ import { UpdateService, type UpdateServiceDeps } from '../src/main/update/update
 
 const INSTALLED = 'a'.repeat(40)
 const REMOTE = 'b'.repeat(40)
+const RELEASE = 'c'.repeat(40)
 
 const roots: string[] = []
 
@@ -100,6 +101,7 @@ function harness(
     // override these.
     selectGreen: async () => ({ commit: REMOTE, tipState: 'success' as const }),
     publishedInstallerCommit: async () => REMOTE,
+    commitState: async () => 'success',
     productChanges: async () => true,
     // No test may shell out to the real gh CLI for a credential.
     resolveToken: async () => null,
@@ -169,7 +171,7 @@ describe('launch gate', () => {
       writeFileSync(join(staging, 'evohime.build.json'), JSON.stringify({ commit, branch: 'main', builtAtMs: 2 }))
       return { installer: join(staging, 'EvoHime-Setup.exe'), marker: { commit, branch: 'main', builtAtMs: 2 } }
     })
-    const test = harness({ downloadInstaller, remoteBranchHead: async () => REMOTE }, INSTALLED, { launchPolicy: 'installer' })
+    const test = harness({ downloadInstaller }, INSTALLED, { launchPolicy: 'installer' })
 
     await expect(test.service.runLaunchGate()).resolves.toBe('continue')
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -180,27 +182,39 @@ describe('launch gate', () => {
     expect(test.service.status.blocking).toBe(false)
   })
 
-  it('waits when CI is green but the shared installer is still from an older commit', async () => {
-    const downloadInstaller = vi.fn()
+  it('uses a green published installer even when main already has a newer green commit', async () => {
+    const selectGreen = vi.fn(async () => ({ commit: REMOTE, tipState: 'success' as const }))
     const test = harness({
-      downloadInstaller,
-      remoteBranchHead: async () => REMOTE,
-      publishedInstallerCommit: async () => INSTALLED
+      selectGreen,
+      publishedInstallerCommit: async () => RELEASE,
+      commitState: async (_apiBase, commit) => commit === RELEASE ? 'success' : 'failure'
+    }, INSTALLED, { launchPolicy: 'installer' })
+
+    const status = await test.service.check()
+
+    expect(status.phase).toBe('available')
+    expect(status.remoteCommit).toBe(RELEASE)
+    expect(status.message).toContain('опубликованного release')
+    expect(selectGreen).not.toHaveBeenCalled()
+  })
+
+  it('does not use a published installer whose CI is not green', async () => {
+    const test = harness({
+      publishedInstallerCommit: async () => RELEASE,
+      commitState: async () => 'pending'
     }, INSTALLED, { launchPolicy: 'installer' })
 
     const status = await test.service.check()
 
     expect(status.phase).toBe('up-to-date')
     expect(status.remoteCommit).toBeNull()
-    expect(status.message).toContain('ещё публикуется')
-    expect(downloadInstaller).not.toHaveBeenCalled()
+    expect(status.message).toContain('ожидает завершения')
   })
 
   it('does not keep showing a staged installer after that commit is installed', async () => {
     const downloadInstaller = vi.fn()
     const test = harness({
       downloadInstaller,
-      remoteBranchHead: async () => REMOTE,
       publishedInstallerCommit: async () => REMOTE
     }, REMOTE, { launchPolicy: 'installer' })
     mkdirSync(test.config.stagingDirectory, { recursive: true })

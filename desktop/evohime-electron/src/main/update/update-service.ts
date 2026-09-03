@@ -19,7 +19,7 @@ import { buildStagedPackage, clearDerivedState } from './builder'
 import { runBuildWorker } from './build-worker'
 import {
   githubApiBase,
-  readBranchHead,
+  readCommitState,
   selectGreenCommit,
   touchesProductCode,
   type CommitCheckState
@@ -57,7 +57,7 @@ export interface UpdateServiceDeps {
   readonly detect?: typeof detectToolchain
   readonly ensure?: typeof ensureToolchain
   readonly remoteHead?: typeof readRemoteHead
-  readonly remoteBranchHead?: typeof readBranchHead
+  readonly commitState?: typeof readCommitState
   readonly selectGreen?: typeof selectGreenCommit
   readonly productChanges?: typeof touchesProductCode
   readonly resolveToken?: typeof resolveGithubToken
@@ -175,7 +175,6 @@ export class UpdateService {
     })
 
     try {
-      let tip: string
       if (config.launchPolicy === 'installer') {
         const apiBase = githubApiBase(config.repositoryUrl)
         if (!apiBase) {
@@ -186,25 +185,45 @@ export class UpdateService {
             checkedAtMs: this.time()
           })
         }
-        tip = await (this.deps.remoteBranchHead ?? readBranchHead)(apiBase, config.branch, {
-          token: await this.githubToken()
-        })
-      } else {
-        const toolchain = await (this.deps.detect ?? detectToolchain)({})
-        const git = toolPath(toolchain, 'git')
-        if (!git) {
-          return this.patch({
-            phase: 'available',
-            message: 'Git не установлен — обновление требует установки инструментов сборки.',
-            remoteCommit: null,
-            checkedAtMs: this.time()
-          })
-        }
-        tip = await (this.deps.remoteHead ?? readRemoteHead)(
-          { directory: config.sourceDirectory, repositoryUrl: config.repositoryUrl, branch: config.branch },
-          { git }
+        const token = await this.githubToken()
+        const published = await (this.deps.publishedInstallerCommit ?? readReleaseInstallerCommit)(
+          config.repositoryUrl,
+          config.branch,
+          token
         )
+        if (config.requireGreenCommit) {
+          const state = await (this.deps.commitState ?? readCommitState)(apiBase, published, { token })
+          if (state !== 'success') {
+            this.deps.log('info', 'update.installer_not_green', { published, state })
+            return this.patch({
+              phase: 'up-to-date',
+              message: installerWaitingMessage(state),
+              remoteCommit: null,
+              checkedAtMs: this.time()
+            })
+          }
+        }
+
+        return this.checkCandidate({
+          commit: published,
+          message: 'Доступно обновление из опубликованного release.'
+        }, installedCommit)
       }
+
+      const toolchain = await (this.deps.detect ?? detectToolchain)({})
+      const git = toolPath(toolchain, 'git')
+      if (!git) {
+        return this.patch({
+          phase: 'available',
+          message: 'Git не установлен — обновление требует установки инструментов сборки.',
+          remoteCommit: null,
+          checkedAtMs: this.time()
+        })
+      }
+      const tip = await (this.deps.remoteHead ?? readRemoteHead)(
+        { directory: config.sourceDirectory, repositoryUrl: config.repositoryUrl, branch: config.branch },
+        { git }
+      )
       const candidate = await this.greenCandidate(tip)
       if (!candidate.commit) {
         this.deps.log('info', 'update.checked', { green: false })
@@ -216,55 +235,45 @@ export class UpdateService {
         })
       }
 
-      if (installedCommit !== null && installedCommit === candidate.commit) {
-        this.deps.log('info', 'update.checked', { upToDate: true, green: true })
-        return this.patch({
-          phase: 'up-to-date',
-          message: 'Установлена последняя версия.',
-          remoteCommit: candidate.commit,
-          checkedAtMs: this.time()
-        })
-      }
-
-      if (config.launchPolicy === 'installer') {
-        const published = await (this.deps.publishedInstallerCommit ?? readReleaseInstallerCommit)(
-          config.repositoryUrl,
-          config.branch,
-          await this.githubToken()
-        )
-        if (published !== candidate.commit) {
-          this.deps.log('info', 'update.installer_pending', { candidate: candidate.commit, published })
-          return this.patch({
-            phase: 'up-to-date',
-            message: 'Проверенный установщик для последнего зелёного коммита ещё публикуется.',
-            remoteCommit: null,
-            checkedAtMs: this.time()
-          })
-        }
-      }
-
-      if (installedCommit !== null && !(await this.changesProduct(installedCommit, candidate.commit))) {
-        // Документация и планы не меняют собранный клиент: тратить на них
-        // минуты пересборки незачем.
-        this.deps.log('info', 'update.checked', { upToDate: true, documentationOnly: true })
-        return this.patch({
-          phase: 'up-to-date',
-          message: 'Новые коммиты не трогают код клиента — пересборка не нужна.',
-          remoteCommit: candidate.commit,
-          checkedAtMs: this.time()
-        })
-      }
-
-      this.deps.log('info', 'update.checked', { upToDate: false, green: true })
-      return this.patch({
-        phase: 'available',
-        message: candidate.message,
-        remoteCommit: candidate.commit,
-        checkedAtMs: this.time()
-      })
+      return this.checkCandidate({ commit: candidate.commit, message: candidate.message }, installedCommit)
     } catch (error) {
       return this.fail('Не удалось проверить обновления', error)
     }
+  }
+
+  private async checkCandidate(
+    candidate: { readonly commit: string; readonly message: string },
+    installedCommit: string | null
+  ): Promise<UpdateStatus> {
+    if (installedCommit !== null && installedCommit === candidate.commit) {
+      this.deps.log('info', 'update.checked', { upToDate: true, green: true })
+      return this.patch({
+        phase: 'up-to-date',
+        message: 'Установлена последняя версия.',
+        remoteCommit: candidate.commit,
+        checkedAtMs: this.time()
+      })
+    }
+
+    if (installedCommit !== null && !(await this.changesProduct(installedCommit, candidate.commit))) {
+      // Документация и планы не меняют собранный клиент: тратить на них
+      // минуты пересборки незачем.
+      this.deps.log('info', 'update.checked', { upToDate: true, documentationOnly: true })
+      return this.patch({
+        phase: 'up-to-date',
+        message: 'Новые коммиты не трогают код клиента — пересборка не нужна.',
+        remoteCommit: candidate.commit,
+        checkedAtMs: this.time()
+      })
+    }
+
+    this.deps.log('info', 'update.checked', { upToDate: false, green: true })
+    return this.patch({
+      phase: 'available',
+      message: candidate.message,
+      remoteCommit: candidate.commit,
+      checkedAtMs: this.time()
+    })
   }
 
   /**
@@ -720,6 +729,18 @@ function waitingMessage(tipState: CommitCheckState): string {
       // A cancelled or missing run is not a failure: the verdict simply never
       // arrived, and an unverified commit is not installed.
       return 'Проверки свежих коммитов не завершились — обновление отложено.'
+  }
+}
+
+/** The release manifest is authoritative, but its commit still needs green CI. */
+function installerWaitingMessage(state: CommitCheckState): string {
+  switch (state) {
+    case 'pending':
+      return 'Опубликованный установщик ожидает завершения проверок CI.'
+    case 'failure':
+      return 'Проверки CI опубликованного установщика завершились ошибкой — обновление отложено.'
+    default:
+      return 'Не удалось подтвердить проверки CI опубликованного установщика — обновление отложено.'
   }
 }
 
