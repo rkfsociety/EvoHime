@@ -1133,6 +1133,7 @@ export const RENDERER_COMMANDS = [
   'core.modelEditProtocolRegistry',
   'core.remoteConversationChannels',
   'core.promptCachePlanner',
+  'core.declarativeRuntimeComponents',
   'core.typedAgentHandoffContract',
   'core.schemaDrivenAgentConfiguration',
   'core.experienceReplayLibrary',
@@ -1455,6 +1456,7 @@ export interface CommandPayloads {
   'core.modelEditProtocolRegistry': { operation: 'register' | 'inspect' | 'preflight' | 'apply' | 'repair_feedback'; protocolId: string; payload: string; expectedVersion?: number; idempotencyKey: string }
   'core.remoteConversationChannels': { operation: 'save' | 'inspect' | 'pair' | 'admit' | 'revoke'; connectionId: string; payload: string; expectedVersion?: number; idempotencyKey: string }
   'core.promptCachePlanner': { operation: 'plan' | 'inspect' | 'metric'; planId: string; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'core.declarativeRuntimeComponents': { operation: 'save' | 'inspect' | 'rehydrate' | 'transition'; componentId: string; payload: string; expectedVersion?: number; idempotencyKey: string }
   'core.typedAgentHandoffContract': { operation: 'propose' | 'transition' | 'get'; handoffId: string; packetJson: string; actor: string; reason: string; expectedVersion?: number; idempotencyKey: string }
   'core.schemaDrivenAgentConfiguration': { operation: 'get_schema' | 'get_snapshot' | 'apply'; scope: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.experienceReplayLibrary': { operation: 'write' | 'list' | 'context'; scope: string; scopeId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
@@ -1961,6 +1963,7 @@ export interface CommandResults {
   'core.modelEditProtocolRegistry': { accepted: boolean }
   'core.remoteConversationChannels': { accepted: boolean }
   'core.promptCachePlanner': { accepted: boolean }
+  'core.declarativeRuntimeComponents': { accepted: boolean }
   'core.typedAgentHandoffContract': { accepted: boolean }
   'core.schemaDrivenAgentConfiguration': { accepted: boolean }
   'core.experienceReplayLibrary': { accepted: boolean }

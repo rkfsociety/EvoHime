@@ -57,7 +57,7 @@ Electron main/preload bridge, bounded renderer projection и focused tests.
 - План 69.0 — Runtime Intervention Pipeline: Core-owned middleware for agent messages and tool boundaries.
 - План 74.0 — Declarative Agent Component Registry: versioned runtime components with schema-safe loading.
 - План 76.0 — Safe UI Extension Framework: declarative pages, panels и themes без renderer authority.
-- План 106.0 — Declarative Runtime Components: versioned component config, provider registry и safe rehydration.
+- План 106 — закрытый Declarative Runtime Components: versioned component config, provider registry и safe rehydration; используется как готовый runtime contract.
 - UI/diagnostics integration может быть добавлена после Core contract без изменения authority boundary.
 
 ## Короткая фиксация требований issue

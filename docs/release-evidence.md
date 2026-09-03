@@ -749,3 +749,11 @@ Plan 105: Core unit 2/2, external contract/recovery 1/1 each, storage metrics
 1/1; Core check, protocol/typecheck и focused UI 1/1 passed. Cache keys include
 segment hashes and context/policy versions; secrets, raw prompts and credentials
 не попадают в storage или IPC projection, keepalive default is zero.
+
+Plan 106: Core contract 3/3, external contract/recovery 1/1 each, storage
+optimistic fence 1/1; `cargo fmt --all -- --check`, Core/local-storage/IPC
+check, protocol check, Electron typecheck и focused UI 1/1 passed. The
+versioned envelope is hashed deterministically, rehydration rejects stale
+policy/capabilities, and unknown outcome cannot jump directly to success. IPC
+248/event 93 is additive and the renderer receives bounded redacted projections
+only.

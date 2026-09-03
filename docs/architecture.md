@@ -2080,3 +2080,16 @@ Cache key не меняет instruction или security semantics; secret segmen
 отклоняются. Keepalive выключен по умолчанию и ограничен bounded profile policy.
 Measured metrics хранятся отдельно от raw prompts; authenticated IPC 247/event
 92 и Electron показывают только metadata.
+
+## Declarative Runtime Components v1 (план 106)
+
+`ComponentConfig` является versioned data-only envelope поверх существующего
+Core Component Registry/provider descriptor из плана 74. DefinitionConfig,
+RuntimeState и SecretBindings разделены; секреты представлены только opaque
+credential refs. Canonical SHA-256, bounded limits и explicit 0-to-1 migration
+делают конфигурацию пригодной для provenance. Перед rehydration Core повторно
+проверяет registry, policy version и capability allowlist; unknown outcome
+переходит только через reconciliation и не объявляется успехом автоматически.
+Durable configs сохраняются в schema 90 с optimistic revision/idempotency fence.
+Authenticated IPC 248/event 93 и Electron panel передают только redacted
+metadata; provider registry, storage и effect authority остаются Core-owned.

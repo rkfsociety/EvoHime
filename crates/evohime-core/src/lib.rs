@@ -9,6 +9,7 @@ pub mod conversation_bridge_adapters;
 pub mod core_topic_subscription_event_bus;
 pub mod customization_inventory;
 pub mod declarative_agent_component_registry;
+pub mod declarative_runtime_components;
 pub mod dependency_aware_task_graph;
 pub mod event_visualizer_registry;
 pub mod experience_replay_library;
@@ -1754,6 +1755,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    DeclarativeRuntimeComponents {
+        operation: String,
+        component_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     /// Reads one memory record including its body. `sensitive`, forgotten and
     /// empty records come back redacted: `ListMemory` never carries a body,
     /// and this is the only path that can.
@@ -2369,6 +2378,12 @@ pub enum CoreEvent {
     PromptCachePlanner {
         operation: String,
         plan_id: String,
+        version: u64,
+        projection_json: String,
+    },
+    DeclarativeRuntimeComponents {
+        operation: String,
+        component_id: String,
         version: u64,
         projection_json: String,
     },
@@ -3488,6 +3503,7 @@ impl EventJournal {
             CoreEvent::ModelEditProtocolRegistry { protocol_id, .. } => protocol_id,
             CoreEvent::RemoteConversationChannels { connection_id, .. } => connection_id,
             CoreEvent::PromptCachePlanner { plan_id, .. } => plan_id,
+            CoreEvent::DeclarativeRuntimeComponents { component_id, .. } => component_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3554,6 +3570,9 @@ impl EventJournal {
             CoreEvent::ModelEditProtocolRegistry { .. } => "model_edit_protocol_registry.result",
             CoreEvent::RemoteConversationChannels { .. } => "remote_conversation_channels.result",
             CoreEvent::PromptCachePlanner { .. } => "prompt_cache_planner.result",
+            CoreEvent::DeclarativeRuntimeComponents { .. } => {
+                "declarative_runtime_components.result"
+            }
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -15401,6 +15420,75 @@ impl TaskCoordinator {
                 if let Some(journal) = state.lock().await.journal.clone() {
                     let _ = journal.record(&event).await;
                 };
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::DeclarativeRuntimeComponents {
+                operation,
+                component_id,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let event_operation = operation.clone();
+                let event_component_id = component_id.clone();
+                let result = async {
+                    use crate::declarative_runtime_components as v;
+                    use evohime_local_storage::declarative_runtime_components_store as store;
+                    if component_id.is_empty() || idempotency_key.is_empty() || idempotency_key.len() > 128 { return Err("invalid_declarative_component_request".into()); }
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let db = journal.database().lock().await;
+                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_declarative_component_payload".to_string())?;
+                    match operation.as_str() {
+                        "save" => {
+                            let config: v::ComponentConfig = serde_json::from_value(value.get("config").cloned().ok_or_else(|| "config_required".to_string())?).map_err(|_| "invalid_component_config".to_string())?;
+                            let providers: crate::declarative_agent_component_registry::Registry = serde_json::from_value(value.get("registry").cloned().ok_or_else(|| "registry_required".to_string())?).map_err(|_| "invalid_provider_registry".to_string())?;
+                            if config.component_id != component_id { return Err("component_id_mismatch".into()); }
+                            v::validate(&config, &providers).map_err(|e| e.to_string())?;
+                            let json = serde_json::to_vec(&config).map_err(|_| "serialization_failed".to_string())?;
+                            if !store::save(db.connection(), store::SaveInput { id: &component_id, expected: expected_version, revision: config.revision, json: &json, hash: &config.content_hash, idem: &idempotency_key, now: crate::task_memory::now_millis() as i64 }).map_err(|_| "storage_failed".to_string())? { return Err("stale_version_or_idempotency_conflict".into()); }
+                            serde_json::to_vec(&serde_json::json!({"status":"saved","component_id":component_id,"revision":config.revision,"content_hash":config.content_hash,"redacted":true})).map_err(|_| "serialization_failed".into())
+                        }
+                        "inspect" => {
+                            let (revision, _, hash) = store::load(db.connection(), &component_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "component_not_found".to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":"stored","component_id":component_id,"revision":revision,"content_hash":hash,"redacted":true})).map_err(|_| "serialization_failed".into())
+                        }
+                        "rehydrate" => {
+                            let (_, json, _) = store::load(db.connection(), &component_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "component_not_found".to_string())?;
+                            let config: v::ComponentConfig = serde_json::from_slice(&json).map_err(|_| "corrupt_component".to_string())?;
+                            let providers: crate::declarative_agent_component_registry::Registry = serde_json::from_value(value.get("registry").cloned().ok_or_else(|| "registry_required".to_string())?).map_err(|_| "invalid_provider_registry".to_string())?;
+                            let policy: v::PolicySnapshot = serde_json::from_value(value.get("policy").cloned().ok_or_else(|| "policy_required".to_string())?).map_err(|_| "invalid_policy_snapshot".to_string())?;
+                            v::rehydrate(&config, &providers, &policy).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":"rehydrated","component_id":component_id,"revision":config.revision,"state":config.runtime_state,"redacted":true})).map_err(|_| "serialization_failed".into())
+                        }
+                        "transition" => {
+                            let (revision, json, _) = store::load(db.connection(), &component_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "component_not_found".to_string())?;
+                            let mut config: v::ComponentConfig = serde_json::from_slice(&json).map_err(|_| "corrupt_component".to_string())?;
+                            let next: v::RuntimeState = serde_json::from_value(value.get("state").cloned().ok_or_else(|| "state_required".to_string())?).map_err(|_| "invalid_state".to_string())?;
+                            v::validate_transition(&config.runtime_state, &next).map_err(|e| e.to_string())?;
+                            config.runtime_state = next; config.revision = revision.saturating_add(1); config.content_hash = v::canonical_hash(&config).map_err(|e| e.to_string())?;
+                            let out = serde_json::to_vec(&config).map_err(|_| "serialization_failed".to_string())?;
+                            if !store::save(db.connection(), store::SaveInput { id: &component_id, expected: expected_version.max(revision), revision: config.revision, json: &out, hash: &config.content_hash, idem: &idempotency_key, now: crate::task_memory::now_millis() as i64 }).map_err(|_| "storage_failed".to_string())? { return Err("stale_version_or_idempotency_conflict".into()); }
+                            serde_json::to_vec(&serde_json::json!({"status":"transitioned","component_id":component_id,"revision":config.revision,"state":config.runtime_state,"redacted":true})).map_err(|_| "serialization_failed".into())
+                        }
+                        _ => Err("unsupported_declarative_component_operation".into()),
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::DeclarativeRuntimeComponents {
+                    operation: event_operation,
+                    component_id: event_component_id,
+                    version: expected_version.saturating_add(1),
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
                 let _ = state.lock().await.events.send(event);
                 let _ = reply.send(result);
             }

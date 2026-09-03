@@ -1065,6 +1065,13 @@ PromptSegments, deterministic stable/dynamic ordering, profile-driven cache
 capabilities, exact revision/policy invalidation, bounded keepalive и durable
 redacted metrics. Добавлены authenticated IPC 247/92 и metadata-only UI.
 
+План 106 закрыт 3 сентября 2026 года: Declarative Runtime Components v1
+добавил versioned `ComponentConfig` поверх registry плана 74, раздельные
+definition/state/secret refs, deterministic hash и migration, optimistic
+durable storage schema 90, повторную policy/capability проверку при
+rehydration и reconciliation-only путь для unknown outcome. Добавлены
+authenticated IPC 248/93 и metadata-only Electron panel.
+
 План 97 закрыт 3 сентября 2026 года: Model Edit Protocol Registry реализован
 в Core/storage/runtime, добавлены authenticated IPC 245/90 и metadata-only UI.
 Подтверждены четыре typed protocol kind, hash/revision precondition,

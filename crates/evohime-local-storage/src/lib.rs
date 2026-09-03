@@ -36,6 +36,7 @@ pub mod conversation_event_log_store;
 pub mod core_topic_subscription_event_bus_store;
 pub mod customization_inventory_store;
 pub mod declarative_agent_component_registry_store;
+pub mod declarative_runtime_components_store;
 pub mod dependency_aware_task_graph_store;
 pub mod event_trigger_runtime_store;
 pub mod event_visualizer_registry_store;
@@ -3776,6 +3777,10 @@ impl LocalDatabase {
         if current < 89 {
             conversation_bridge_adapters_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 89;")?;
+        }
+        if current < 90 {
+            declarative_runtime_components_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 90;")?;
         }
         transaction.commit()?;
         Ok(())

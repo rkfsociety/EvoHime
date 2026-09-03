@@ -458,3 +458,9 @@ durable storage, pairing/admission/revoke recovery, additive IPC 246/91 и UI;
 План 105 закрыт 3 сентября 2026 года: Core planner/storage/runtime, IPC 247/92,
 Electron projection и recovery/eval tests завершены; комплект `105-0` … `105-4`
 удалён после verification.
+
+План 106 закрыт 3 сентября 2026 года. Declarative Runtime Components
+реализован как data-only envelope поверх registry плана 74; добавлены Core
+validation/rehydration/reconciliation, schema 90, IPC 248/93 и bounded UI.
+Комплект `106-0` … `106-4` удалён после свежих contract/recovery/storage,
+protocol/typecheck/UI и diff-check проверок.
