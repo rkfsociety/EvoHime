@@ -843,3 +843,10 @@ exact revision/range and bounded content hashes, provenance/stale/traversal
 fail-closed behavior, ephemeral debounce/dedup gate, redacted projection and
 explicit routing into ordinary `StartTask` (IPC 255/event 100). No marker,
 prompt or source text is persisted or exposed through the projection.
+Plan 115: Model Purpose Routing contract and storage-fence tests, Core
+check/clippy, protocol/typecheck, focused UI and full Electron regression
+passed. Evidence covers 13 typed purposes, canonical policy hash, SQLite
+optimistic versioning, loaded policy affecting profile hint and NoTools ceiling,
+purpose/policy provenance metadata, and separate Model Resilience retry/fallback.
+IPC 256/event 101 is bounded and redacted; no credentials, prompts or hidden
+reasoning cross the policy or renderer surface.

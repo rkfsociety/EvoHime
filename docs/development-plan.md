@@ -525,3 +525,8 @@ revision/range, классифицирует provenance и пропускает 
 обычный task path; existing/imported/agent-generated markers inert. Добавлены
 IPC 255/100 и bounded Electron UI, state остаётся ephemeral; комплект
 114.0–114.4 удалён.
+План 115 (issue #95, Model Purpose Routing) закрыт 3 сентября 2026 года.
+Реализованы typed purpose registry, versioned policy, Core/SQLite storage,
+purpose-aware routing поверх gateway, tool ceiling/context policy, provenance
+purpose/hash, additive IPC 256/101 и bounded Electron UI; retry/fallback
+остались в Model Resilience Policy. Комплект `115-0` … `115-4` удалён.

@@ -1906,6 +1906,7 @@ message CommandEnvelope {
     BatchInvocationRuntimeCommand batch_invocation_runtime = 253;
     PolicyAwareToolResultCacheCommand policy_aware_tool_result_cache = 254;
     CodeAnchoredIntentMarkersCommand code_anchored_intent_markers = 255;
+    ModelPurposeRoutingCommand model_purpose_routing = 256;
   }
 }
 
@@ -2055,7 +2056,8 @@ message EventEnvelope {
     MessageInterventionPoliciesEvent message_intervention_policies = 97;
     BatchInvocationRuntimeEvent batch_invocation_runtime = 98;
     PolicyAwareToolResultCacheEvent policy_aware_tool_result_cache = 99;
-    CodeAnchoredIntentMarkersEvent code_anchored_intent_markers = 100;
+  CodeAnchoredIntentMarkersEvent code_anchored_intent_markers = 100;
+  ModelPurposeRoutingEvent model_purpose_routing = 101;
   }
 }
 
@@ -3218,6 +3220,15 @@ message CodeAnchoredIntentMarkersCommand {
   string revision = 4; bytes payload = 5; string idempotency_key = 6;
 }
 message CodeAnchoredIntentMarkersEvent {
+  uint32 schema_version = 1; string operation = 2; uint64 version = 3;
+  string status = 4; string error_code = 5; bytes projection_json = 6;
+  bool truncated = 7;
+}
+message ModelPurposeRoutingCommand {
+  uint32 schema_version = 1; string operation = 2; bytes payload = 3;
+  uint64 expected_version = 4; string idempotency_key = 5;
+}
+message ModelPurposeRoutingEvent {
   uint32 schema_version = 1; string operation = 2; uint64 version = 3;
   string status = 4; string error_code = 5; bytes projection_json = 6;
   bool truncated = 7;

@@ -1086,6 +1086,7 @@ pub mod memory_retrieval;
 pub mod memory_views_and_adaptive_recall;
 pub mod model_edit_protocol_registry;
 pub mod model_resilience_policy;
+pub mod model_purpose_routing;
 pub mod observability;
 pub mod permission_rules;
 pub mod plan;
@@ -1482,6 +1483,7 @@ pub enum CoreCommand {
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
     CodeAnchoredIntentMarkers { operation: String, file_path: String, revision: String, payload: Vec<u8>, idempotency_key: String, reply: oneshot::Sender<Result<Vec<u8>, String>> },
+    ModelPurposeRouting { operation: String, payload: Vec<u8>, expected_version: u64, idempotency_key: String, reply: oneshot::Sender<Result<Vec<u8>, String>> },
     AgentGitChangeSets {
         operation: String,
         change_set_id: String,
@@ -2260,6 +2262,7 @@ pub enum CoreEvent {
         projection_json: String,
     },
     CodeAnchoredIntentMarkers { operation: String, version: u64, projection_json: String },
+    ModelPurposeRouting { operation: String, version: u64, projection_json: String },
     TypedAgentHandoffContract {
         handoff_id: String,
         operation: String,
@@ -3579,6 +3582,7 @@ impl EventJournal {
             CoreEvent::BatchInvocationRuntime { batch_id, .. } => batch_id,
             CoreEvent::PolicyAwareToolResultCache { cache_key, .. } => cache_key,
             CoreEvent::CodeAnchoredIntentMarkers { operation, .. } => operation,
+            CoreEvent::ModelPurposeRouting { operation, .. } => operation,
             CoreEvent::AgentGitChangeSets { change_set_id, .. } => change_set_id,
             CoreEvent::ArchitectEditorModelPipeline { pipeline_id, .. } => pipeline_id,
             CoreEvent::EventVisualizerRegistry { visualizer_id, .. } => visualizer_id,
@@ -3651,6 +3655,7 @@ impl EventJournal {
             CoreEvent::BatchInvocationRuntime { .. } => "batch_invocation_runtime.result",
             CoreEvent::PolicyAwareToolResultCache { .. } => "policy_aware_tool_result_cache.result",
             CoreEvent::CodeAnchoredIntentMarkers { .. } => "code_anchored_intent_markers.result",
+            CoreEvent::ModelPurposeRouting { .. } => "model_purpose_routing.result",
             CoreEvent::AgentGitChangeSets { .. } => "agent_git_change_sets.result",
             CoreEvent::ArchitectEditorModelPipeline { .. } => "architect_editor_pipeline.result",
             CoreEvent::EventVisualizerRegistry { .. } => "event_visualizer_registry.result",
@@ -8174,7 +8179,7 @@ impl ToolAgent {
                     "task_id": ledger.task_id,
                     "model": ledger.model,
                     "source": ledger.profile_version,
-                    "purpose": ledger.profile_version,
+                    "purpose": model_purpose_routing::purpose_for_task_class(None).as_str(),
                     "input_tokens": actual_prompt_tokens,
                     "output_tokens": actual_completion_tokens
                 }),
@@ -8198,6 +8203,27 @@ impl ToolAgent {
         estimated_input_tokens: u32,
     ) -> Result<ProvenancedModelResult, AgentRunError> {
         let resilience_policy = model_resilience_policy::builtin_policy();
+        let purpose = model_purpose_routing::purpose_for_task_class(task_class);
+        let purpose_policy = if let Some(journal) = &self.journal {
+            let database = journal.database().lock().await;
+            evohime_local_storage::model_purpose_routing_store::get(
+                database.connection(),
+                model_purpose_routing::CONTRACT_ID,
+            )
+            .ok()
+            .flatten()
+            .and_then(|(_, _, json)| serde_json::from_slice(&json).ok())
+            .filter(|policy: &model_purpose_routing::ModelPurposeRoutingPolicy| policy.validate().is_ok())
+            .unwrap_or_else(model_purpose_routing::builtin_policy)
+        } else {
+            model_purpose_routing::builtin_policy()
+        };
+        let purpose_route = purpose_policy
+            .route(purpose)
+            .map_err(|error| AgentRunError::Internal(error.to_string()))?;
+        let purpose_hash = purpose_policy
+            .canonical_hash()
+            .map_err(|error| AgentRunError::Internal(error.to_string()))?;
         let resilience_hash = resilience_policy
             .canonical_hash()
             .map_err(|error| AgentRunError::Internal(error.to_string()))?;
@@ -8228,16 +8254,25 @@ impl ToolAgent {
                     "timeout_secs": config.model_timeout_secs,
                     "resilience_policy": model_resilience_policy::CONTRACT_ID,
                     "resilience_policy_hash": resilience_hash.clone(),
+                    "purpose": purpose.as_str(),
+                    "purpose_profile_ref": purpose_route.profile_ref,
+                    "purpose_policy_hash": purpose_hash.clone(),
                 }),
             );
 
+            let policy_route_hint = (purpose_route.profile_ref != "default")
+                .then(|| purpose_route.profile_ref.clone());
+            let effective_specs: &[ToolSpec] = match purpose_route.requirements.tool_ceiling {
+                model_purpose_routing::ToolCeiling::NoTools => &[],
+                _ => specs,
+            };
             let routing_request = RoutingRequest {
                 required_capabilities: vec!["chat".into()],
                 max_cost_micros_per_1k_tokens: None,
                 max_latency_ms: None,
                 required_privacy: PrivacyClass::Internal,
                 allow_fallback: true,
-                preferred_route: preferred_route.map(str::to_owned),
+                preferred_route: policy_route_hint.or_else(|| preferred_route.map(str::to_owned)),
                 task_class: task_class.map(str::to_owned),
                 offline: false,
                 allow_cloud: true,
@@ -8340,7 +8375,7 @@ impl ToolAgent {
                         &routing_request,
                         self.selected_model.get().as_deref(),
                         &provider_messages,
-                        specs,
+                        effective_specs,
                     ),
                 )
                 .await
@@ -13696,6 +13731,38 @@ impl TaskCoordinator {
                     }
                 }.await;
                 let projection_json = result.as_ref().ok().and_then(|bytes| String::from_utf8(bytes.clone()).ok()).unwrap_or_else(|| "{}".into()); let event = CoreEvent::BatchInvocationRuntime { batch_id: event_id, operation: event_operation, version: expected_version, projection_json }; if let Some(journal) = state.lock().await.journal.clone() { let _ = journal.record(&event).await; } let _ = state.lock().await.events.send(event); let _ = reply.send(result);
+            }
+            CoreCommand::ModelPurposeRouting { operation, payload, expected_version, idempotency_key, reply } => {
+                let result = async {
+                    if idempotency_key.is_empty() { return Err("invalid_model_purpose_idempotency_key".into()); }
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    use evohime_local_storage::model_purpose_routing_store as store;
+                    match operation.as_str() {
+                        "get" => {
+                            let stored = store::get(database.connection(), crate::model_purpose_routing::CONTRACT_ID).map_err(|_| "storage_failed".to_string())?;
+                            let (version, hash, policy) = stored
+                                .and_then(|(version, hash, json)| serde_json::from_slice(&json).ok().map(|policy| (version, hash, policy)))
+                                .unwrap_or_else(|| { let policy = crate::model_purpose_routing::builtin_policy(); let hash = policy.canonical_hash().unwrap_or_default(); (policy.version, hash, policy) });
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"policy_id":crate::model_purpose_routing::CONTRACT_ID,"version":version,"content_hash":hash,"routes":policy.routes,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "put" => {
+                            let policy: crate::model_purpose_routing::ModelPurposeRoutingPolicy = serde_json::from_slice(&payload).map_err(|_| "invalid_model_purpose_policy".to_string())?;
+                            policy.validate().map_err(|e| e.to_string())?;
+                            if policy.version != expected_version.saturating_add(1) && expected_version != 0 { return Err("stale_model_purpose_policy".into()); }
+                            let json = serde_json::to_vec(&policy).map_err(|_| "serialization_failed".to_string())?;
+                            let hash = policy.canonical_hash().map_err(|e| e.to_string())?;
+                            if !store::put(database.connection(), &policy.policy_id, policy.version, &hash, &json, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())? { return Err("stale_model_purpose_policy".into()); }
+                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"policy_id":policy.policy_id,"version":policy.version,"content_hash":hash,"route_count":policy.routes.len(),"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        _ => Err("unsupported_model_purpose_operation".into()),
+                    }
+                }.await;
+                let projection_json = result.as_ref().ok().and_then(|b| String::from_utf8(b.clone()).ok()).unwrap_or_else(|| "{}".into());
+                let event_version = serde_json::from_str::<serde_json::Value>(&projection_json).ok().and_then(|v| v.get("version").and_then(serde_json::Value::as_u64)).unwrap_or(expected_version);
+                let event = CoreEvent::ModelPurposeRouting { operation: operation.clone(), version: event_version, projection_json };
+                if let Some(journal) = state.lock().await.journal.clone() { let _ = journal.record(&event).await; }
+                let _ = state.lock().await.events.send(event); let _ = reply.send(result);
             }
             CoreCommand::CodeAnchoredIntentMarkers { operation, file_path, revision, payload, idempotency_key, reply } => {
                 let result = async {

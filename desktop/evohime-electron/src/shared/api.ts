@@ -404,6 +404,7 @@ export interface CoreEvent {
   readonly batchInvocationRuntime?: BatchInvocationRuntimeProjection | null
   readonly policyAwareToolResultCache?: PolicyAwareToolResultCacheProjection | null
   readonly codeAnchoredIntentMarkers?: CodeAnchoredIntentMarkersProjection | null
+  readonly modelPurposeRouting?: ModelPurposeRoutingProjection | null
   readonly agentGitChangeSets?: AgentGitChangeSetsProjection | null
   readonly architectEditorPipeline?: ArchitectEditorPipelineProjection | null
   readonly eventVisualizerRegistry?: EventVisualizerRegistryProjection | null
@@ -488,6 +489,7 @@ export interface PolicyAwareToolResultCacheProjection {
   readonly version: number; readonly status: string; readonly errorCode: string; readonly projection: unknown
 }
 export interface CodeAnchoredIntentMarkersProjection { readonly schemaVersion: number; readonly operation: string; readonly version: number; readonly status: string; readonly errorCode: string; readonly projection: unknown }
+export interface ModelPurposeRoutingProjection { readonly schemaVersion: number; readonly operation: string; readonly version: number; readonly status: string; readonly errorCode: string; readonly projection: unknown }
 
 export interface AgentGitChangeSetsProjection {
   readonly schemaVersion: number
@@ -1190,6 +1192,7 @@ export const RENDERER_COMMANDS = [
   'core.batchInvocationRuntime',
   'core.policyAwareToolResultCache',
   'core.codeAnchoredIntentMarkers',
+  'core.modelPurposeRouting',
   'core.agentGitChangeSets',
   'core.architectEditorPipeline',
   'core.eventVisualizerRegistry',
@@ -1520,6 +1523,7 @@ export interface CommandPayloads {
   'core.batchInvocationRuntime': { operation: 'create' | 'get' | 'start' | 'resume' | 'result'; batchId: string; payload: string; expectedVersion?: number; idempotencyKey?: string }
   'core.policyAwareToolResultCache': { operation: 'inspect' | 'put' | 'get' | 'invalidate'; cacheKey: string; payload: string; expectedVersion?: number; idempotencyKey?: string }
   'core.codeAnchoredIntentMarkers': { operation: 'scan' | 'propose'; filePath: string; revision: string; payload: string; idempotencyKey?: string }
+  'core.modelPurposeRouting': { operation: 'get' | 'put'; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.agentGitChangeSets': { operation: 'observe' | 'candidate' | 'get_candidate' | 'commit' | 'undo' | 'keep'; changeSetId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.architectEditorPipeline': { operation: 'create' | 'get' | 'accept_intent'; pipelineId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.eventVisualizerRegistry': { operation: 'list' | 'register' | 'resolve'; visualizerId?: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
@@ -2033,6 +2037,7 @@ export interface CommandResults {
   'core.batchInvocationRuntime': { accepted: boolean }
   'core.policyAwareToolResultCache': { accepted: boolean }
   'core.codeAnchoredIntentMarkers': { accepted: boolean }
+  'core.modelPurposeRouting': { accepted: boolean }
   'core.knowledgeSourceRegistry': { accepted: boolean }
   'core.agentGitChangeSets': { accepted: boolean }
   'core.architectEditorPipeline': { accepted: boolean }

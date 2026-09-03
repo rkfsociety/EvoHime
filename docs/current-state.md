@@ -1141,3 +1141,10 @@ validation, ephemeral debounce/dedup/loop guard и переход явным д�
 обычный `StartTask`; marker не хранится durable и не расширяет capabilities.
 Комплект `114-0` … `114-4` удалён после свежих contract, check/clippy,
 protocol/typecheck, Electron regression и diff-check проверок.
+План 115 закрыт 3 сентября 2026 года: Model Purpose Routing v1 добавил
+Core-owned registry из 13 purposes, versioned SQLite policy с optimistic fence,
+purpose-aware profile/tool/context resolution поверх существующего gateway и
+resilience, authenticated IPC 256/101 и bounded Electron UI. Purpose и policy
+hash входят в model-call trace, retry/fallback не дублируются; комплект
+`115-0` … `115-4` удалён после свежих contract, storage, check/clippy,
+protocol/typecheck, Electron regression и diff-check проверок.

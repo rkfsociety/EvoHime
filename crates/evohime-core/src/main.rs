@@ -861,6 +861,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::CodeAnchoredIntentMarkers { operation, version, .. } => println!(
             "code_anchored_intent_markers.result: {operation} version={version}"
         ),
+        evohime_core::CoreEvent::ModelPurposeRouting { operation, version, .. } => println!(
+            "model_purpose_routing.result: {operation} version={version}"
+        ),
         evohime_core::CoreEvent::AgentGitChangeSets { change_set_id, operation, version, .. } => println!(
             "agent_git_change_sets.result {change_set_id}: {operation} version={version}"
         ),

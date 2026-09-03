@@ -2206,3 +2206,20 @@ IPC command 255/event 100 additive и metadata-only: raw prompt не возвр�
 в renderer projection. Пути traversal, stale revision, oversized ranges,
 неизвестные операции и untrusted provenance fail closed. Marker не создаёт
 capability/approval, не исполняет код комментария и не хранится в SQLite.
+
+## Model Purpose Routing v1 (план 115)
+
+`ModelPurposeRoutingPolicy` — Core-owned versioned registry из 13 typed
+`ModelCallPurpose`. Каждый route задаёт registered profile ref, required
+capabilities/privacy, tool ceiling и context policy; canonical hash фиксирует
+policy snapshot. Валидированная policy хранится аддитивно в SQLite с
+optimistic version fence, а при model call загружается Core и применяется к
+следующему вызову.
+
+Purpose routing формирует только primary route/profile hint и ограничивает
+tools; `Model Resilience Policy` остаётся единственным владельцем retry и
+fallback. Model-call trace/provenance содержит purpose и policy hash, raw
+prompts, credentials и hidden reasoning не входят в policy или renderer
+projection. Authenticated IPC command 256/event 101 и Electron panel дают
+bounded get/put surface; invalid policy, stale version и unsafe
+tool/context combination отклоняются до эффекта.
