@@ -518,3 +518,10 @@ Electron regression suite пройдены; комплект 112.0–112.4 уд�
 authority-aware key, TTL/RequireFresh, provenance, invalidation, bounded
 storage/eviction, Core runtime, authenticated IPC и metadata-only Electron UI;
 focused и полный regression gates пройдены, комплект 113.0–113.4 удалён.
+
+План 114 (issue #94, Code-Anchored Intent Markers) закрыт 3 сентября 2026
+года. Core принимает только typed comment ranges, связывает markers с
+revision/range, классифицирует provenance и пропускает явное предложение в
+обычный task path; existing/imported/agent-generated markers inert. Добавлены
+IPC 255/100 и bounded Electron UI, state остаётся ephemeral; комплект
+114.0–114.4 удалён.

@@ -1132,3 +1132,12 @@ metadata, bounded TTL/eviction, SQLite store, additive IPC command 254/event 99
 и metadata-only Electron surface реализованы. Recovery/security/runtime,
 protocol, typecheck и полный Electron regression подтверждены; комплект плана
 удалён.
+
+План 114 закрыт 3 сентября 2026 года: Code-Anchored Intent Markers v1
+реализованы в Core, additive authenticated IPC 255/100 и metadata-only
+Electron surface. Подтверждены typed `Question`/`EditRequest`, comment-range
+parsing, exact revision/range binding, provenance fail-closed, stale/traversal
+validation, ephemeral debounce/dedup/loop guard и переход явным действием в
+обычный `StartTask`; marker не хранится durable и не расширяет capabilities.
+Комплект `114-0` … `114-4` удалён после свежих contract, check/clippy,
+protocol/typecheck, Electron regression и diff-check проверок.

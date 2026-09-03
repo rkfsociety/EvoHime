@@ -835,3 +835,11 @@ provenance, invalidation and bounded eviction are covered. Core check/clippy,
 protocol check, typecheck, focused bridge/UI checks and full Electron regression
 passed: 117 files, 541 tests passed, 2 E2E tests skipped by configuration.
 No raw credentials or tool result bytes cross the projection.
+
+Plan 114: Code-Anchored Intent Markers contract tests, Core check/clippy,
+protocol check, Electron typecheck and full Electron regression passed.
+Evidence covers typed Question/EditRequest parsing from supplied comment ranges,
+exact revision/range and bounded content hashes, provenance/stale/traversal
+fail-closed behavior, ephemeral debounce/dedup gate, redacted projection and
+explicit routing into ordinary `StartTask` (IPC 255/event 100). No marker,
+prompt or source text is persisted or exposed through the projection.

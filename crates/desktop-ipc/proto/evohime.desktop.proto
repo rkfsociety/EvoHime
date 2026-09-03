@@ -1905,6 +1905,7 @@ message CommandEnvelope {
     MessageInterventionPoliciesCommand message_intervention_policies = 252;
     BatchInvocationRuntimeCommand batch_invocation_runtime = 253;
     PolicyAwareToolResultCacheCommand policy_aware_tool_result_cache = 254;
+    CodeAnchoredIntentMarkersCommand code_anchored_intent_markers = 255;
   }
 }
 
@@ -2054,6 +2055,7 @@ message EventEnvelope {
     MessageInterventionPoliciesEvent message_intervention_policies = 97;
     BatchInvocationRuntimeEvent batch_invocation_runtime = 98;
     PolicyAwareToolResultCacheEvent policy_aware_tool_result_cache = 99;
+    CodeAnchoredIntentMarkersEvent code_anchored_intent_markers = 100;
   }
 }
 
@@ -3207,6 +3209,15 @@ message PolicyAwareToolResultCacheCommand {
   bytes payload = 4; uint64 expected_version = 5; string idempotency_key = 6;
 }
 message PolicyAwareToolResultCacheEvent {
+  uint32 schema_version = 1; string operation = 2; uint64 version = 3;
+  string status = 4; string error_code = 5; bytes projection_json = 6;
+  bool truncated = 7;
+}
+message CodeAnchoredIntentMarkersCommand {
+  uint32 schema_version = 1; string operation = 2; string file_path = 3;
+  string revision = 4; bytes payload = 5; string idempotency_key = 6;
+}
+message CodeAnchoredIntentMarkersEvent {
   uint32 schema_version = 1; string operation = 2; uint64 version = 3;
   string status = 4; string error_code = 5; bytes projection_json = 6;
   bool truncated = 7;

@@ -2191,3 +2191,18 @@ SQLite schema v89 хранит bounded versioned entries с optimistic fence; ev
 ограничивает cache 512 записями. IPC command 254/event 99 и Electron panel
 передают только redacted metadata. Cache не создаёт capability, не заменяет
 effect execution и не содержит raw credentials или raw tool result.
+
+## Code-Anchored Intent Markers v1 (план 114)
+
+Core принимает только типизированные comment ranges и связывает каждый
+`CodeIntentMarker` с логическим путём, точной revision и диапазоном строк.
+Поддерживаются `EditRequest` (`EVA!`) и `Question` (`EVA?`); marker содержит
+bounded text, content hash, optional symbol и provenance. Сканирование
+существующего репозитория инертно, ограничено ephemeral debounce/dedup gate и
+не выдаёт право на запуск. Только отдельное явное действие пользователя
+проходит trusted provenance и передаёт prompt в обычный `StartTask` путь.
+
+IPC command 255/event 100 additive и metadata-only: raw prompt не возвращается
+в renderer projection. Пути traversal, stale revision, oversized ranges,
+неизвестные операции и untrusted provenance fail closed. Marker не создаёт
+capability/approval, не исполняет код комментария и не хранится в SQLite.

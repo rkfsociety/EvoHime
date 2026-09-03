@@ -1094,6 +1094,7 @@ pub mod policy_gate;
 pub mod prd;
 pub mod prompt_cache_planner;
 pub mod policy_aware_tool_result_cache;
+pub mod code_anchored_intent_markers;
 pub mod provider_resilience;
 pub mod remote_conversation_channels;
 pub mod retained_child;
@@ -1480,6 +1481,7 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    CodeAnchoredIntentMarkers { operation: String, file_path: String, revision: String, payload: Vec<u8>, idempotency_key: String, reply: oneshot::Sender<Result<Vec<u8>, String>> },
     AgentGitChangeSets {
         operation: String,
         change_set_id: String,
@@ -2257,6 +2259,7 @@ pub enum CoreEvent {
         version: u64,
         projection_json: String,
     },
+    CodeAnchoredIntentMarkers { operation: String, version: u64, projection_json: String },
     TypedAgentHandoffContract {
         handoff_id: String,
         operation: String,
@@ -3575,6 +3578,7 @@ impl EventJournal {
             CoreEvent::MessageInterventionPolicies { operation, .. } => operation,
             CoreEvent::BatchInvocationRuntime { batch_id, .. } => batch_id,
             CoreEvent::PolicyAwareToolResultCache { cache_key, .. } => cache_key,
+            CoreEvent::CodeAnchoredIntentMarkers { operation, .. } => operation,
             CoreEvent::AgentGitChangeSets { change_set_id, .. } => change_set_id,
             CoreEvent::ArchitectEditorModelPipeline { pipeline_id, .. } => pipeline_id,
             CoreEvent::EventVisualizerRegistry { visualizer_id, .. } => visualizer_id,
@@ -3646,6 +3650,7 @@ impl EventJournal {
             CoreEvent::MessageInterventionPolicies { .. } => "message_intervention_policies.result",
             CoreEvent::BatchInvocationRuntime { .. } => "batch_invocation_runtime.result",
             CoreEvent::PolicyAwareToolResultCache { .. } => "policy_aware_tool_result_cache.result",
+            CoreEvent::CodeAnchoredIntentMarkers { .. } => "code_anchored_intent_markers.result",
             CoreEvent::AgentGitChangeSets { .. } => "agent_git_change_sets.result",
             CoreEvent::ArchitectEditorModelPipeline { .. } => "architect_editor_pipeline.result",
             CoreEvent::EventVisualizerRegistry { .. } => "event_visualizer_registry.result",
@@ -10100,6 +10105,8 @@ pub struct TaskCoordinator {
 }
 
 struct CoordinatorState {
+    command_tx: mpsc::Sender<CoreCommand>,
+    marker_gate: crate::code_anchored_intent_markers::MarkerGate,
     tasks: HashMap<String, ActiveTask>,
     workspace_index_cancellations: HashMap<String, CancellationToken>,
     backup_cancellations: HashMap<String, CancellationToken>,
@@ -10183,6 +10190,8 @@ impl TaskCoordinator {
         let (commands, mut command_rx) = mpsc::channel(buffer.max(1));
         let (events, event_rx) = broadcast::channel(buffer.max(1));
         let state = Arc::new(Mutex::new(CoordinatorState {
+            command_tx: commands.clone(),
+            marker_gate: crate::code_anchored_intent_markers::MarkerGate::default(),
             tasks: HashMap::new(),
             workspace_index_cancellations: HashMap::new(),
             backup_cancellations: HashMap::new(),
@@ -13687,6 +13696,31 @@ impl TaskCoordinator {
                     }
                 }.await;
                 let projection_json = result.as_ref().ok().and_then(|bytes| String::from_utf8(bytes.clone()).ok()).unwrap_or_else(|| "{}".into()); let event = CoreEvent::BatchInvocationRuntime { batch_id: event_id, operation: event_operation, version: expected_version, projection_json }; if let Some(journal) = state.lock().await.journal.clone() { let _ = journal.record(&event).await; } let _ = state.lock().await.events.send(event); let _ = reply.send(result);
+            }
+            CoreCommand::CodeAnchoredIntentMarkers { operation, file_path, revision, payload, idempotency_key, reply } => {
+                let result = async {
+                    if idempotency_key.is_empty() { return Err("invalid_marker_idempotency_key".into()); }
+                    let ranges: Vec<crate::code_anchored_intent_markers::CommentRange> = serde_json::from_slice(&payload).map_err(|_| "invalid_comment_ranges".to_string())?;
+                    if operation != "scan" && operation != "propose" { return Err("unsupported_marker_operation".into()); }
+                    let provenance = if operation == "scan" { crate::code_anchored_intent_markers::Provenance::ExistingRepository } else { crate::code_anchored_intent_markers::Provenance::UserTrusted };
+                    let mut markers = crate::code_anchored_intent_markers::parse_comment_ranges(&file_path, &revision, &ranges, provenance).map_err(|e| e.to_string())?;
+                    crate::code_anchored_intent_markers::deduplicate(&mut markers);
+                    if operation == "scan" {
+                        state.lock().await.marker_gate.admit_scan(&mut markers, crate::task_memory::now_millis());
+                    }
+                    if operation == "propose" {
+                        let marker = markers.first_mut().ok_or_else(|| "marker_not_found".to_string())?;
+                        crate::code_anchored_intent_markers::can_auto_propose(marker).map_err(|e| e.to_string())?;
+                        let task_id = format!("code-intent-{}", marker.marker_id);
+                        let prompt = format!("Code intent at {}:{}-{}: {}", marker.file_path, marker.range_start, marker.range_end, marker.text);
+                        marker.status = crate::code_anchored_intent_markers::MarkerStatus::Proposed;
+                        let command_tx = state.lock().await.command_tx.clone();
+                        command_tx.send(CoreCommand::StartTask { task_id: task_id.clone(), prompt, workspace_root: None, preferred_route_hint: None }).await.map_err(|_| "task_queue_closed".to_string())?;
+                        return serde_json::to_vec(&serde_json::json!({"status":"task_started","task_id":task_id,"marker_id":marker.marker_id,"redacted":true})).map_err(|_| "serialization_failed".to_string());
+                    }
+                    serde_json::to_vec(&serde_json::json!({"status":"candidates","count":markers.len(),"markers":markers.iter().map(|m|serde_json::json!({"marker_id":m.marker_id,"kind":m.kind,"range_start":m.range_start,"range_end":m.range_end,"revision":m.revision,"provenance":m.provenance})).collect::<Vec<_>>(),"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                }.await;
+                let projection_json=result.as_ref().ok().and_then(|b|String::from_utf8(b.clone()).ok()).unwrap_or_else(||"{}".into()); let event=CoreEvent::CodeAnchoredIntentMarkers{operation:operation.clone(),version:1,projection_json}; if let Some(journal)=state.lock().await.journal.clone(){let _=journal.record(&event).await;} let _=state.lock().await.events.send(event); let _=reply.send(result);
             }
             CoreCommand::AgentGitChangeSets {
                 operation,
