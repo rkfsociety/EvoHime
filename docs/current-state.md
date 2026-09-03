@@ -1053,6 +1053,13 @@ allowlist и redacted outbound projection. Используются schema 89 и
 authenticated IPC 243/88; provider network ingress и credentials в контур не
 входят.
 
+План 104 закрыт 3 сентября 2026 года: Core/storage contract для Remote
+Conversation Channels реализует lifecycle, TTL single-use pairing, identity
+binding, bounded admission/attachments, durable dedup и immediate revoke.
+Добавлены authenticated IPC 246/91 и metadata-only Electron projection;
+credentials — только opaque references, high-risk remote approval требует
+desktop grant.
+
 План 97 закрыт 3 сентября 2026 года: Model Edit Protocol Registry реализован
 в Core/storage/runtime, добавлены authenticated IPC 245/90 и metadata-only UI.
 Подтверждены четыре typed protocol kind, hash/revision precondition,

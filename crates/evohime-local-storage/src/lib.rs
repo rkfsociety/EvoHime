@@ -63,6 +63,7 @@ pub mod project_instruction_stack_store;
 pub mod reasoning_operator_library_store;
 pub mod reconciliation_verifier;
 pub mod refinement_store;
+pub mod remote_conversation_channels_store;
 pub mod research_store;
 pub mod retained_child_store;
 pub mod safe_ui_extension_framework_store;
@@ -611,6 +612,7 @@ impl LocalDatabase {
         conversation_bridge_adapters_store::install_schema(&connection)?;
         memory_views_and_adaptive_recall_store::install_schema(&connection)?;
         model_edit_protocol_registry_store::install_schema(&connection)?;
+        remote_conversation_channels_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }

@@ -738,3 +738,9 @@ Plan 97: Core unit 3/3, external contract 1/1, recovery 1/1, storage fence 1/1;
 Core check/clippy, protocol check, typecheck и focused UI 1/1 passed. Projection
 не содержит credentials, prompts, hidden reasoning, host paths или raw output;
 direct apply требует approved Revision-Safe tool boundary.
+
+Plan 104: Core unit 3/3, external contract/recovery 1/1 each, storage fence and
+dedup 1/1; Core check/clippy, protocol/typecheck and focused UI 1/1 passed.
+Redaction excludes provider tokens, prompts, credentials, host paths and raw
+conversation bodies from IPC/UI projection; high-risk remote approval is
+denied without desktop grant.

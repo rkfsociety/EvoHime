@@ -2970,6 +2970,18 @@ impl IpcBridge {
                     self.write_response(writer, "model_edit_protocol_registry.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::RemoteConversationChannels(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "inspect".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_remote_conversation_channels(operation, request)
+                        .await?;
+                    self.write_response(writer, "remote_conversation_channels.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -8088,6 +8100,33 @@ impl IpcBridge {
             expected_revision: request.expected_revision,
             idempotency_key: request.idempotency_key,
             correlation_id: request.correlation_id,
+            reply,
+        })
+        .await
+        .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_remote_conversation_channels(
+        &self,
+        operation: String,
+        request: generated::RemoteConversationChannelsCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let c = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        c.dispatch(CoreCommand::RemoteConversationChannels {
+            operation,
+            connection_id: request.connection_id,
+            payload: request.payload,
+            expected_version: request.expected_version,
+            idempotency_key: request.idempotency_key,
             reply,
         })
         .await

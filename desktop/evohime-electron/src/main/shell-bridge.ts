@@ -367,6 +367,13 @@ function dispatch(
       return accepted(client.send({ modelEditProtocolRegistry: { schemaVersion: 1, operation, protocolId, payload: Buffer.from(body, 'utf8'), expectedVersion, idempotencyKey } }))
     }
 
+    case 'core.remoteConversationChannels': {
+      const value = asRecord(payload); const operation = ['save','inspect','pair','admit','revoke'].includes(String(value['operation'])) ? String(value['operation']) : null
+      const connectionId = asBoundedString(value['connectionId']); const body = value['payload'] === undefined ? '' : asBoundedString(value['payload']); const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion']); const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if(operation === null || connectionId === null || body === null || expectedVersion === null || idempotencyKey === null || body.length > 512 * 1024) return failure('invalid-payload','Некорректная операция Remote Conversation Channels.')
+      return accepted(client.send({ remoteConversationChannels: { schemaVersion: 1, operation, connectionId, payload: Buffer.from(body,'utf8'), expectedVersion, idempotencyKey } }))
+    }
+
     case 'core.taskWorktreeIsolation': {
       const value = asRecord(payload)
       const operation = ['create', 'ready', 'integrating', 'cleanup_pending'].includes(String(value['operation'])) ? String(value['operation']) : null

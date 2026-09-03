@@ -1131,6 +1131,7 @@ export const RENDERER_COMMANDS = [
   'core.teamCoordinationPolicies',
   'core.memoryViewsAndAdaptiveRecall',
   'core.modelEditProtocolRegistry',
+  'core.remoteConversationChannels',
   'core.typedAgentHandoffContract',
   'core.schemaDrivenAgentConfiguration',
   'core.experienceReplayLibrary',
@@ -1451,6 +1452,7 @@ export interface CommandPayloads {
   'core.teamCoordinationPolicies': { operation: 'validate_policy' | 'save_policy' | 'select' | 'save_state' | 'select_strategy'; teamId: string; payload: string; expectedVersion?: number; idempotencyKey: string }
   'core.memoryViewsAndAdaptiveRecall': { operation: 'save_view' | 'inspect' | 'recall'; viewId: string; payload: string; expectedVersion?: number; idempotencyKey: string }
   'core.modelEditProtocolRegistry': { operation: 'register' | 'inspect' | 'preflight' | 'apply' | 'repair_feedback'; protocolId: string; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'core.remoteConversationChannels': { operation: 'save' | 'inspect' | 'pair' | 'admit' | 'revoke'; connectionId: string; payload: string; expectedVersion?: number; idempotencyKey: string }
   'core.typedAgentHandoffContract': { operation: 'propose' | 'transition' | 'get'; handoffId: string; packetJson: string; actor: string; reason: string; expectedVersion?: number; idempotencyKey: string }
   'core.schemaDrivenAgentConfiguration': { operation: 'get_schema' | 'get_snapshot' | 'apply'; scope: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.experienceReplayLibrary': { operation: 'write' | 'list' | 'context'; scope: string; scopeId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
@@ -1955,6 +1957,7 @@ export interface CommandResults {
   'core.teamCoordinationPolicies': { accepted: boolean }
   'core.memoryViewsAndAdaptiveRecall': { accepted: boolean }
   'core.modelEditProtocolRegistry': { accepted: boolean }
+  'core.remoteConversationChannels': { accepted: boolean }
   'core.typedAgentHandoffContract': { accepted: boolean }
   'core.schemaDrivenAgentConfiguration': { accepted: boolean }
   'core.experienceReplayLibrary': { accepted: boolean }

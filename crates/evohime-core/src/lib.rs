@@ -1087,6 +1087,7 @@ pub mod plan_artifact;
 pub mod policy_gate;
 pub mod prd;
 pub mod provider_resilience;
+pub mod remote_conversation_channels;
 pub mod retained_child;
 pub mod structured_response_contract;
 pub mod support_bundle;
@@ -1736,6 +1737,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    RemoteConversationChannels {
+        operation: String,
+        connection_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     /// Reads one memory record including its body. `sensitive`, forgotten and
     /// empty records come back redacted: `ListMemory` never carries a body,
     /// and this is the only path that can.
@@ -2339,6 +2348,12 @@ pub enum CoreEvent {
     ModelEditProtocolRegistry {
         operation: String,
         protocol_id: String,
+        version: u64,
+        projection_json: String,
+    },
+    RemoteConversationChannels {
+        operation: String,
+        connection_id: String,
         version: u64,
         projection_json: String,
     },
@@ -3456,6 +3471,7 @@ impl EventJournal {
             CoreEvent::ConversationBridgeAdapters { bridge_id, .. } => bridge_id,
             CoreEvent::MemoryViewsAndAdaptiveRecall { view_id, .. } => view_id,
             CoreEvent::ModelEditProtocolRegistry { protocol_id, .. } => protocol_id,
+            CoreEvent::RemoteConversationChannels { connection_id, .. } => connection_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3520,6 +3536,7 @@ impl EventJournal {
                 "memory_views_and_adaptive_recall.result"
             }
             CoreEvent::ModelEditProtocolRegistry { .. } => "model_edit_protocol_registry.result",
+            CoreEvent::RemoteConversationChannels { .. } => "remote_conversation_channels.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -3548,6 +3565,9 @@ impl EventJournal {
             }
             CoreEvent::ModelEditProtocolRegistry { .. } => {
                 serde_json::to_vec(event).expect("model edit projection serializes")
+            }
+            CoreEvent::RemoteConversationChannels { .. } => {
+                serde_json::to_vec(event).expect("remote channel projection serializes")
             }
             CoreEvent::TypedAgentHandoffContract { .. } => {
                 serde_json::to_vec(event).expect("handoff projection serializes")
@@ -15286,6 +15306,47 @@ impl TaskCoordinator {
                 let event = CoreEvent::ModelEditProtocolRegistry {
                     operation: event_operation,
                     protocol_id: event_protocol_id,
+                    version: expected_version.saturating_add(1),
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::RemoteConversationChannels {
+                operation,
+                connection_id,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let event_operation = operation.clone();
+                let event_connection_id = connection_id.clone();
+                let result = async {
+                    use crate::remote_conversation_channels as v; use evohime_local_storage::remote_conversation_channels_store as store;
+                    if connection_id.is_empty() || idempotency_key.is_empty() || idempotency_key.len() > 128 { return Err("invalid_remote_channel_request".into()); }
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?; let db = journal.database().lock().await;
+                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_remote_channel_payload".to_string())?;
+                    match operation.as_str() {
+                        "save" => { let connection: v::ChannelConnection = serde_json::from_value(value.get("connection").cloned().ok_or_else(|| "connection_required".to_string())?).map_err(|_| "invalid_channel_connection".to_string())?; if connection.connection_id != connection_id{return Err("connection_id_mismatch".into())}; v::validate_connection(&connection).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&connection).map_err(|_|"serialization_failed".to_string())?; let h=v::canonical_hash(&connection).map_err(|e|e.to_string())?; if !store::save(db.connection(),store::ConnectionInput{id:&connection_id,owner_scope:&connection.owner_scope,connection_json:&json,content_hash:&h,expected_version,idempotency_key:&idempotency_key,now_ms:crate::task_memory::now_millis() as i64}).map_err(|_|"storage_failed".to_string())?{return Err("stale_version_or_idempotency_conflict".into())}; serde_json::to_vec(&serde_json::json!({"status":"saved","connection_id":connection_id,"provider":connection.provider,"state":connection.state,"content_hash":h,"redacted":true})).map_err(|_|"serialization_failed".into()) }
+                        "inspect" => { let row=store::load(db.connection(),&connection_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"connection_not_found".to_string())?; serde_json::to_vec(&serde_json::json!({"status":"stored","connection_id":connection_id,"owner_scope":row.owner_scope,"content_hash":row.content_hash,"version":row.version,"redacted":true})).map_err(|_|"serialization_failed".into()) }
+                        "pair" => { let row=store::load(db.connection(),&connection_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"connection_not_found".to_string())?; let connection:v::ChannelConnection=serde_json::from_slice(&row.connection_json).map_err(|_|"corrupt_channel".to_string())?; let code=value.get("code").and_then(serde_json::Value::as_str).ok_or_else(||"pairing_code_required".to_string())?; let identity=value.get("external_identity").and_then(serde_json::Value::as_str).ok_or_else(||"external_identity_required".to_string())?; let now=crate::task_memory::now_millis() as i64; let ok=store::consume_pairing(db.connection(),&connection_id,&v::hash_pairing_code(code).map_err(|e|e.to_string())?,identity,now).map_err(|_|"storage_failed".to_string())?; if !ok{return Err("pairing_invalid_or_expired".into())}; if identity!=connection.external_identity{return Err("identity_mismatch".into())}; serde_json::to_vec(&serde_json::json!({"status":"paired","connection_id":connection_id,"redacted":true})).map_err(|_|"serialization_failed".into()) }
+                        "admit" => { let row=store::load(db.connection(),&connection_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"connection_not_found".to_string())?; let connection:v::ChannelConnection=serde_json::from_slice(&row.connection_json).map_err(|_|"corrupt_channel".to_string())?; let message:v::InboundMessage=serde_json::from_value(value.get("message").cloned().ok_or_else(||"message_required".to_string())?).map_err(|_|"invalid_message".to_string())?; let ok=store::claim_message(db.connection(),&connection_id,&message.message_id,crate::task_memory::now_millis() as i64).map_err(|_|"storage_failed".to_string())?; v::admit_message(&connection,&message,0,!ok,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"admitted","message_id":message.message_id,"redacted":true})).map_err(|_|"serialization_failed".into()) }
+                        "revoke" => { let row=store::load(db.connection(),&connection_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"connection_not_found".to_string())?; let mut connection:v::ChannelConnection=serde_json::from_slice(&row.connection_json).map_err(|_|"corrupt_channel".to_string())?; connection.state=v::ConnectionState::Revoked; connection.revision=connection.revision.saturating_add(1); let json=serde_json::to_vec(&connection).map_err(|_|"serialization_failed".to_string())?; let h=v::canonical_hash(&connection).map_err(|e|e.to_string())?; if !store::save(db.connection(),store::ConnectionInput{id:&connection_id,owner_scope:&connection.owner_scope,connection_json:&json,content_hash:&h,expected_version,idempotency_key:&idempotency_key,now_ms:crate::task_memory::now_millis() as i64}).map_err(|_|"storage_failed".to_string())?{return Err("stale_version_or_idempotency_conflict".into())}; serde_json::to_vec(&serde_json::json!({"status":"revoked","connection_id":connection_id,"redacted":true})).map_err(|_|"serialization_failed".into()) }
+                        _ => Err("unsupported_remote_channel_operation".into()),
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::RemoteConversationChannels {
+                    operation: event_operation,
+                    connection_id: event_connection_id,
                     version: expected_version.saturating_add(1),
                     projection_json,
                 };

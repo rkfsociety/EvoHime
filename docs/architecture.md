@@ -2061,3 +2061,13 @@ precondition; parse и dry-run выполняются до effect, stale/ambiguo
 запись делегируется approved `filesystem.write`/`filesystem.patch` через
 Revision-Safe Workspace Files, а IPC 245/event 90 и Electron показывают только
 redacted metadata.
+
+## Remote Conversation Channels v1 (план 104)
+
+Core-owned `ChannelConnection` фиксирует provider, owner scope, external
+identity, lifecycle revision и bounded queue/attachment limits. Pairing code
+хэшируется, имеет TTL и single-use durable claim; каждое inbound message
+проверяет identity, active/revocation state и dedup. Provider credentials
+представляются только opaque `credential_ref`; high-risk remote approval
+требует desktop grant. IPC 246/event 91 и Electron projection metadata-only;
+provider dispatch остаётся adapter boundary без DB/workspace authority.

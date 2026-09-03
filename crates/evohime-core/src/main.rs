@@ -783,6 +783,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::ModelEditProtocolRegistry { protocol_id, operation, .. } => println!(
             "model_edit_protocol_registry.result {protocol_id}: {operation}"
         ),
+        evohime_core::CoreEvent::RemoteConversationChannels { connection_id, operation, .. } => println!(
+            "remote_conversation_channels.result {connection_id}: {operation}"
+        ),
         evohime_core::CoreEvent::TypedAgentHandoffContract { handoff_id, operation, state, .. } => println!(
             "typed_agent_handoff_contract.result {handoff_id}: {operation} {state}"
         ),
