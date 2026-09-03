@@ -638,7 +638,23 @@ async fn run_supervisor_command_channel(
                     }
                 }
             }
-            "probe" => json!({"accepted": true, "processes": adapter_processes.len()}),
+            "probe" => {
+                let model_id = value
+                    .get("model_id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("");
+                if model_id.is_empty() || model_id.len() > 128 {
+                    json!({"accepted": false, "reason": "invalid_request"})
+                } else {
+                    let healthy = if let Some(process) = adapter_processes.get_mut(model_id) {
+                        provider_manager.is_running(model_id)
+                            && process.probe(model_id).await.is_ok()
+                    } else {
+                        false
+                    };
+                    json!({"accepted": healthy, "healthy": healthy, "model_id": model_id, "processes": adapter_processes.len(), "reason": if healthy { "" } else { "runtime_not_ready" }})
+                }
+            }
             _ => json!({"accepted": false, "reason": "unsupported_command"}),
         };
         channel

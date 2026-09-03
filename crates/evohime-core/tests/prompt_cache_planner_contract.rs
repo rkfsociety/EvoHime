@@ -1,2 +1,15 @@
 use evohime_core::prompt_cache_planner::*;
-#[test] fn segments_and_profile_build_a_stable_plan(){let p=ProviderCacheProfile{profile_id:"p".into(),cache_supported:true,min_prefix_tokens:1,max_keepalive_ms:10};let s=segment("stable","system",true,1,"policy","public").unwrap();let d=segment("dynamic","user",false,1,"policy","public").unwrap();let plan=build_plan(vec![d,s],&p,"ctx","policy",0).unwrap();assert_eq!(plan.segments[0].id,"stable");assert!(plan.cache_key.len()==64);}
+#[test]
+fn segments_and_profile_build_a_stable_plan() {
+    let p = ProviderCacheProfile {
+        profile_id: "p".into(),
+        cache_supported: true,
+        min_prefix_tokens: 1,
+        max_keepalive_ms: 10,
+    };
+    let s = segment("stable", "system", true, 1, "policy", "public").unwrap();
+    let d = segment("dynamic", "user", false, 1, "policy", "public").unwrap();
+    let plan = build_plan(vec![d, s], &p, "ctx", "policy", 0).unwrap();
+    assert_eq!(plan.segments[0].id, "stable");
+    assert!(plan.cache_key.len() == 64);
+}

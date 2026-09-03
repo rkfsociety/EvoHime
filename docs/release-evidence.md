@@ -850,3 +850,13 @@ optimistic versioning, loaded policy affecting profile hint and NoTools ceiling,
 purpose/policy provenance metadata, and separate Model Resilience retry/fallback.
 IPC 256/event 101 is bounded and redacted; no credentials, prompts or hidden
 reasoning cross the policy or renderer surface.
+
+Plan 116: manager contract/runtime/storage tests, Rust check/clippy, actionlint,
+protocol/typecheck, focused UI и полный Electron regression passed. Evidence
+covers privacy-safe hardware fingerprint, exact hash/revision validation,
+conservative fit/context, resumable bounded artifact verification, atomic
+promotion, supervisor Job Object lifecycle with loopback `/v1/models` probe,
+local-managed gateway/resilience mapping, optimistic durable records и redacted
+IPC 257/event 102. Старые release-evidence, license, stall, privacy, receipt,
+automation и evaluation gates прошли; credentials, prompts, outputs, executable
+paths и model bytes отсутствуют в projections.

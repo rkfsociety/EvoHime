@@ -1907,6 +1907,7 @@ message CommandEnvelope {
     PolicyAwareToolResultCacheCommand policy_aware_tool_result_cache = 254;
     CodeAnchoredIntentMarkersCommand code_anchored_intent_markers = 255;
     ModelPurposeRoutingCommand model_purpose_routing = 256;
+    LocalModelRuntimeManagerCommand local_model_runtime_manager = 257;
   }
 }
 
@@ -2058,6 +2059,7 @@ message EventEnvelope {
     PolicyAwareToolResultCacheEvent policy_aware_tool_result_cache = 99;
   CodeAnchoredIntentMarkersEvent code_anchored_intent_markers = 100;
   ModelPurposeRoutingEvent model_purpose_routing = 101;
+  LocalModelRuntimeManagerEvent local_model_runtime_manager = 102;
   }
 }
 
@@ -3229,6 +3231,15 @@ message ModelPurposeRoutingCommand {
   uint64 expected_version = 4; string idempotency_key = 5;
 }
 message ModelPurposeRoutingEvent {
+  uint32 schema_version = 1; string operation = 2; uint64 version = 3;
+  string status = 4; string error_code = 5; bytes projection_json = 6;
+  bool truncated = 7;
+}
+message LocalModelRuntimeManagerCommand {
+  uint32 schema_version = 1; string operation = 2; bytes payload = 3;
+  uint64 expected_version = 4; string idempotency_key = 5;
+}
+message LocalModelRuntimeManagerEvent {
   uint32 schema_version = 1; string operation = 2; uint64 version = 3;
   string status = 4; string error_code = 5; bytes projection_json = 6;
   bool truncated = 7;

@@ -530,3 +530,11 @@ IPC 255/100 и bounded Electron UI, state остаётся ephemeral; компл
 purpose-aware routing поверх gateway, tool ceiling/context policy, provenance
 purpose/hash, additive IPC 256/101 и bounded Electron UI; retry/fallback
 остались в Model Resilience Policy. Комплект `115-0` … `115-4` удалён.
+
+План 116 (issue #96, Local Model Runtime Manager) закрыт 3 сентября 2026 года.
+Добавлены Core-owned hardware/fit/catalog/runtime/artifact/session contracts,
+durable optimistic storage, verified resumable download и atomic install,
+supervised loopback health gate, local-managed gateway/resilience mapping,
+recovery metadata, authenticated IPC 257/102 и bounded Electron projection.
+Старые Actions и локальные release/security/automation gates проверены; комплект
+`116-0` … `116-4` удалён после fresh evidence.

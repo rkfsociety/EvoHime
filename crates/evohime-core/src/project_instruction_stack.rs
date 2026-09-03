@@ -109,8 +109,15 @@ pub struct ProjectRuleProjection {
 
 pub fn trust_class(rule: &ProjectRule) -> &'static str {
     match rule.source_kind {
-        SourceKind::Global | SourceKind::Workspace | SourceKind::Nested | SourceKind::Compatible => {
-            if rule.sensitivity == "sensitive" { "allowlisted_sensitive" } else { "allowlisted_untrusted" }
+        SourceKind::Global
+        | SourceKind::Workspace
+        | SourceKind::Nested
+        | SourceKind::Compatible => {
+            if rule.sensitivity == "sensitive" {
+                "allowlisted_sensitive"
+            } else {
+                "allowlisted_untrusted"
+            }
         }
     }
 }

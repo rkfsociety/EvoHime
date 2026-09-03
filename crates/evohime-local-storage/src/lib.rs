@@ -18,6 +18,7 @@ pub mod artifact_handoff_registry_store;
 pub mod artifact_store;
 pub mod automation_store;
 pub mod backup;
+pub mod batch_invocation_runtime_store;
 pub mod benchmark_store;
 pub mod browser_session_store;
 pub mod capability_selection_store;
@@ -54,19 +55,19 @@ pub mod incremental_change_protocol_store;
 pub mod integration_provider_store;
 pub mod invocation_presets_store;
 pub mod knowledge_source_registry_project_role_store;
+pub mod local_model_runtime_manager_store;
 pub mod memory_store;
 pub mod memory_views_and_adaptive_recall_store;
 pub mod model_edit_protocol_registry_store;
 pub mod model_limit_store;
 pub mod model_provenance;
+pub mod model_purpose_routing_store;
 pub mod output_guardrail_pipeline_store;
 pub mod plan_artifact;
+pub mod policy_aware_tool_result_cache_store;
 pub mod privacy_telemetry_store;
 pub mod project_instruction_stack_store;
-pub mod batch_invocation_runtime_store;
 pub mod prompt_cache_planner_store;
-pub mod policy_aware_tool_result_cache_store;
-pub mod model_purpose_routing_store;
 pub mod reasoning_operator_library_store;
 pub mod reconciliation_verifier;
 pub mod refinement_store;
@@ -627,6 +628,7 @@ impl LocalDatabase {
         prompt_cache_planner_store::install_schema(&connection)?;
         policy_aware_tool_result_cache_store::install_schema(&connection)?;
         model_purpose_routing_store::install_schema(&connection)?;
+        local_model_runtime_manager_store::install_schema(&connection)?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }

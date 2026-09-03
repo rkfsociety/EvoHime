@@ -18,6 +18,13 @@ use std::collections::BTreeMap;
 use tokio::process::{Child, Command};
 
 #[cfg(windows)]
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(windows)]
+use tokio::net::TcpStream;
+#[cfg(windows)]
+use tokio::time::{timeout, Duration};
+
+#[cfg(windows)]
 use crate::windows_supervisor::JobObject;
 
 pub const PORT_FIRST: u16 = 49_152;
@@ -50,6 +57,7 @@ pub enum LocalError {
     ResourceLimitExceeded,
     Timeout,
     Cancelled,
+    Unavailable,
     AuthenticationFailed,
     SessionExpired,
 }
@@ -294,6 +302,12 @@ impl LocalProviderManager {
     pub fn process_count(&self) -> usize {
         self.processes.len()
     }
+
+    pub fn is_running(&self, model_id: &str) -> bool {
+        self.processes
+            .get(model_id)
+            .is_some_and(|process| process.state == ProcessState::Running)
+    }
 }
 
 pub fn choose_port(occupied: &[u16]) -> Option<u16> {
@@ -310,6 +324,7 @@ pub fn choose_port(occupied: &[u16]) -> Option<u16> {
 pub struct LocalAdapterProcess {
     child: Child,
     _job: JobObject,
+    port: u16,
 }
 
 /// Generic external-agent process. The executable reference is resolved by the
@@ -391,7 +406,11 @@ impl LocalAdapterProcess {
             let _ = child.start_kill();
             return Err(LocalError::ResourceLimitExceeded);
         }
-        Ok(Self { child, _job: job })
+        Ok(Self {
+            child,
+            _job: job,
+            port,
+        })
     }
 
     pub async fn stop(&mut self) -> Result<(), LocalError> {
@@ -400,6 +419,60 @@ impl LocalAdapterProcess {
             .map_err(|_| LocalError::AlreadyCancelled)?;
         let _ = self.child.wait().await;
         Ok(())
+    }
+
+    /// Bounded OpenAI-compatible capability probe. Process existence alone is
+    /// not a health signal: the adapter must expose the requested model and a
+    /// valid models response on the supervisor-selected loopback port.
+    pub async fn probe(&mut self, model_id: &str) -> Result<(), LocalError> {
+        let port = self.port;
+        let result = timeout(Duration::from_secs(2), async {
+            let mut stream = TcpStream::connect(("127.0.0.1", port))
+                .await
+                .map_err(|_| LocalError::Unavailable)?;
+            let request = format!(
+                "GET /v1/models HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+            );
+            stream
+                .write_all(request.as_bytes())
+                .await
+                .map_err(|_| LocalError::Unavailable)?;
+            let mut body = Vec::with_capacity(16 * 1024);
+            let mut buffer = [0_u8; 4096];
+            while body.len() < 16 * 1024 {
+                let read = stream
+                    .read(&mut buffer)
+                    .await
+                    .map_err(|_| LocalError::Unavailable)?;
+                if read == 0 {
+                    break;
+                }
+                body.extend_from_slice(&buffer[..read]);
+            }
+            let text = std::str::from_utf8(&body).map_err(|_| LocalError::Unavailable)?;
+            let payload = text
+                .split_once("\r\n\r\n")
+                .map(|(_, payload)| payload)
+                .ok_or(LocalError::Unavailable)?;
+            if !text.starts_with("HTTP/1.1 200") && !text.starts_with("HTTP/1.0 200") {
+                return Err(LocalError::Unavailable);
+            }
+            let value: serde_json::Value =
+                serde_json::from_str(payload).map_err(|_| LocalError::Unavailable)?;
+            let models = value
+                .get("data")
+                .and_then(serde_json::Value::as_array)
+                .ok_or(LocalError::Unavailable)?;
+            if models.iter().any(|candidate| {
+                candidate.get("id").and_then(serde_json::Value::as_str) == Some(model_id)
+            }) {
+                Ok(())
+            } else {
+                Err(LocalError::ModelNotFound)
+            }
+        })
+        .await;
+        result.unwrap_or(Err(LocalError::Timeout))
     }
 }
 

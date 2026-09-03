@@ -1046,17 +1046,17 @@ pub mod ambient_proactivity;
 pub mod analysis_kernel;
 pub mod artifact_handoff_registry;
 pub mod audit;
+pub mod batch_invocation_runtime;
 pub mod browser_backend;
 pub mod build;
 pub mod capability_registry;
 pub mod capability_selection;
 pub mod causal_collaboration_bus;
-pub mod message_intervention_policies;
-pub mod batch_invocation_runtime;
 pub mod child_contracts;
 pub mod child_roles;
 pub mod child_runtime;
 pub mod child_workflow;
+pub mod code_anchored_intent_markers;
 pub mod context_budget;
 pub mod continuation;
 pub mod conversation_event_log;
@@ -1067,8 +1067,8 @@ pub mod evals;
 pub mod event_trigger_runtime;
 pub mod execution_backend_registry;
 pub mod export;
-pub mod external_coding_agent_adapter;
 pub mod extension_conformance_kit;
+pub mod external_coding_agent_adapter;
 pub mod goal;
 pub mod guided_calibration_sessions;
 pub mod human_work_items;
@@ -1078,24 +1078,25 @@ pub mod integration_provider_sdk;
 pub mod invocation_presets;
 #[cfg(windows)]
 mod listener_pipe;
+pub mod local_model_runtime_manager;
 pub mod memory_api;
 pub mod memory_domain;
 pub mod memory_extraction;
 pub mod memory_governance;
 pub mod memory_retrieval;
 pub mod memory_views_and_adaptive_recall;
+pub mod message_intervention_policies;
 pub mod model_edit_protocol_registry;
-pub mod model_resilience_policy;
 pub mod model_purpose_routing;
+pub mod model_resilience_policy;
 pub mod observability;
 pub mod permission_rules;
 pub mod plan;
 pub mod plan_artifact;
+pub mod policy_aware_tool_result_cache;
 pub mod policy_gate;
 pub mod prd;
 pub mod prompt_cache_planner;
-pub mod policy_aware_tool_result_cache;
-pub mod code_anchored_intent_markers;
 pub mod provider_resilience;
 pub mod remote_conversation_channels;
 pub mod retained_child;
@@ -1482,8 +1483,28 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
-    CodeAnchoredIntentMarkers { operation: String, file_path: String, revision: String, payload: Vec<u8>, idempotency_key: String, reply: oneshot::Sender<Result<Vec<u8>, String>> },
-    ModelPurposeRouting { operation: String, payload: Vec<u8>, expected_version: u64, idempotency_key: String, reply: oneshot::Sender<Result<Vec<u8>, String>> },
+    CodeAnchoredIntentMarkers {
+        operation: String,
+        file_path: String,
+        revision: String,
+        payload: Vec<u8>,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    ModelPurposeRouting {
+        operation: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    LocalModelRuntimeManager {
+        operation: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     AgentGitChangeSets {
         operation: String,
         change_set_id: String,
@@ -2261,8 +2282,21 @@ pub enum CoreEvent {
         version: u64,
         projection_json: String,
     },
-    CodeAnchoredIntentMarkers { operation: String, version: u64, projection_json: String },
-    ModelPurposeRouting { operation: String, version: u64, projection_json: String },
+    CodeAnchoredIntentMarkers {
+        operation: String,
+        version: u64,
+        projection_json: String,
+    },
+    ModelPurposeRouting {
+        operation: String,
+        version: u64,
+        projection_json: String,
+    },
+    LocalModelRuntimeManager {
+        operation: String,
+        version: u64,
+        projection_json: String,
+    },
     TypedAgentHandoffContract {
         handoff_id: String,
         operation: String,
@@ -2367,7 +2401,12 @@ pub enum CoreEvent {
         version: u64,
         projection_json: String,
     },
-    BatchInvocationRuntime { batch_id: String, operation: String, version: u64, projection_json: String },
+    BatchInvocationRuntime {
+        batch_id: String,
+        operation: String,
+        version: u64,
+        projection_json: String,
+    },
     AgentGitChangeSets {
         change_set_id: String,
         operation: String,
@@ -3583,6 +3622,7 @@ impl EventJournal {
             CoreEvent::PolicyAwareToolResultCache { cache_key, .. } => cache_key,
             CoreEvent::CodeAnchoredIntentMarkers { operation, .. } => operation,
             CoreEvent::ModelPurposeRouting { operation, .. } => operation,
+            CoreEvent::LocalModelRuntimeManager { operation, .. } => operation,
             CoreEvent::AgentGitChangeSets { change_set_id, .. } => change_set_id,
             CoreEvent::ArchitectEditorModelPipeline { pipeline_id, .. } => pipeline_id,
             CoreEvent::EventVisualizerRegistry { visualizer_id, .. } => visualizer_id,
@@ -3656,6 +3696,7 @@ impl EventJournal {
             CoreEvent::PolicyAwareToolResultCache { .. } => "policy_aware_tool_result_cache.result",
             CoreEvent::CodeAnchoredIntentMarkers { .. } => "code_anchored_intent_markers.result",
             CoreEvent::ModelPurposeRouting { .. } => "model_purpose_routing.result",
+            CoreEvent::LocalModelRuntimeManager { .. } => "local_model_runtime_manager.result",
             CoreEvent::AgentGitChangeSets { .. } => "agent_git_change_sets.result",
             CoreEvent::ArchitectEditorModelPipeline { .. } => "architect_editor_pipeline.result",
             CoreEvent::EventVisualizerRegistry { .. } => "event_visualizer_registry.result",
@@ -6163,7 +6204,9 @@ impl ToolAgent {
             AgentRunError::Internal(format!("project instruction compilation failed: {error}"))
         })?;
         let guidance_cache_segment = crate::prompt_cache_planner::guidance_segment(&snapshot)
-            .map_err(|error| AgentRunError::Internal(format!("guidance cache segment failed: {error}")))?;
+            .map_err(|error| {
+                AgentRunError::Internal(format!("guidance cache segment failed: {error}"))
+            })?;
 
         if let Some(journal) = &self.journal {
             let snapshot_json = serde_json::to_vec(&snapshot).map_err(|error| {
@@ -8213,7 +8256,11 @@ impl ToolAgent {
             .ok()
             .flatten()
             .and_then(|(_, _, json)| serde_json::from_slice(&json).ok())
-            .filter(|policy: &model_purpose_routing::ModelPurposeRoutingPolicy| policy.validate().is_ok())
+            .filter(
+                |policy: &model_purpose_routing::ModelPurposeRoutingPolicy| {
+                    policy.validate().is_ok()
+                },
+            )
             .unwrap_or_else(model_purpose_routing::builtin_policy)
         } else {
             model_purpose_routing::builtin_policy()
@@ -8260,8 +8307,8 @@ impl ToolAgent {
                 }),
             );
 
-            let policy_route_hint = (purpose_route.profile_ref != "default")
-                .then(|| purpose_route.profile_ref.clone());
+            let policy_route_hint =
+                (purpose_route.profile_ref != "default").then(|| purpose_route.profile_ref.clone());
             let effective_specs: &[ToolSpec] = match purpose_route.requirements.tool_ceiling {
                 model_purpose_routing::ToolCeiling::NoTools => &[],
                 _ => specs,
@@ -10445,6 +10492,7 @@ impl TaskCoordinator {
         self.state.lock().await.audit.records().to_vec()
     }
 
+    #[allow(clippy::needless_return)]
     async fn handle_command(state: Arc<Mutex<CoordinatorState>>, command: CoreCommand) {
         match command {
             CoreCommand::StartTask {
@@ -13599,65 +13647,188 @@ impl TaskCoordinator {
                     if idempotency_key.is_empty() {
                         return Err("invalid_remote_task_idempotency_key".to_string());
                     }
-                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let journal = state
+                        .lock()
+                        .await
+                        .journal
+                        .clone()
+                        .ok_or_else(|| "storage journal is not configured".to_string())?;
                     let database = journal.database().lock().await;
                     use crate::durable_remote_task_bridge as bridge;
                     use evohime_local_storage::durable_remote_task_bridge_store as store;
                     let policy = bridge::default_policy();
                     match operation.as_str() {
                         "submit" => {
-                            let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_remote_task_submit".to_string())?;
-                            let toolset: bridge::RemoteTaskToolset = serde_json::from_value(value.get("toolset").cloned().ok_or_else(|| "remote_task_toolset_required".to_string())?).map_err(|_| "invalid_remote_task_toolset".to_string())?;
-                            let request_bytes = value.get("request").map(serde_json::to_vec).transpose().map_err(|_| "invalid_remote_task_request".to_string())?.unwrap_or_default();
-                            let provenance_ref = value.get("provenance_ref").and_then(serde_json::Value::as_str).unwrap_or("core").to_owned();
-                            let record = bridge::build_record(remote_task_id.clone(), &toolset, value.get("operation").and_then(serde_json::Value::as_str).unwrap_or_default().to_owned(), &request_bytes, provenance_ref, crate::task_memory::now_millis() as i64, &policy).map_err(|e| e.to_string())?;
-                            let json = serde_json::to_vec(&record).map_err(|_| "serialization_failed".to_string())?;
-                            if !store::put_record(database.connection(), &record.id, record.version, &format!("{:?}", record.status), &record.content_hash, &json, record.updated_at_ms).map_err(|_| "storage_failed".to_string())? {
+                            let value: serde_json::Value = serde_json::from_slice(&payload)
+                                .map_err(|_| "invalid_remote_task_submit".to_string())?;
+                            let toolset: bridge::RemoteTaskToolset = serde_json::from_value(
+                                value
+                                    .get("toolset")
+                                    .cloned()
+                                    .ok_or_else(|| "remote_task_toolset_required".to_string())?,
+                            )
+                            .map_err(|_| "invalid_remote_task_toolset".to_string())?;
+                            let request_bytes = value
+                                .get("request")
+                                .map(serde_json::to_vec)
+                                .transpose()
+                                .map_err(|_| "invalid_remote_task_request".to_string())?
+                                .unwrap_or_default();
+                            let provenance_ref = value
+                                .get("provenance_ref")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or("core")
+                                .to_owned();
+                            let record = bridge::build_record(
+                                remote_task_id.clone(),
+                                &toolset,
+                                value
+                                    .get("operation")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_owned(),
+                                &request_bytes,
+                                provenance_ref,
+                                crate::task_memory::now_millis() as i64,
+                                &policy,
+                            )
+                            .map_err(|e| e.to_string())?;
+                            let json = serde_json::to_vec(&record)
+                                .map_err(|_| "serialization_failed".to_string())?;
+                            if !store::put_record(
+                                database.connection(),
+                                &record.id,
+                                record.version,
+                                &format!("{:?}", record.status),
+                                &record.content_hash,
+                                &json,
+                                record.updated_at_ms,
+                            )
+                            .map_err(|_| "storage_failed".to_string())?
+                            {
                                 return Err("remote_task_stale_version".into());
                             }
-                            serde_json::to_vec(&bridge::status_projection(&record)).map_err(|_| "serialization_failed".to_string())
+                            serde_json::to_vec(&bridge::status_projection(&record))
+                                .map_err(|_| "serialization_failed".to_string())
                         }
                         "status" => {
-                            let json = store::get_record(database.connection(), &remote_task_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "remote_task_not_found".to_string())?;
-                            let record: bridge::RemoteTaskRecord = serde_json::from_slice(&json).map_err(|_| "corrupt_remote_task".to_string())?;
-                            serde_json::to_vec(&bridge::status_projection(&record)).map_err(|_| "serialization_failed".to_string())
+                            let json = store::get_record(database.connection(), &remote_task_id)
+                                .map_err(|_| "storage_failed".to_string())?
+                                .ok_or_else(|| "remote_task_not_found".to_string())?;
+                            let record: bridge::RemoteTaskRecord = serde_json::from_slice(&json)
+                                .map_err(|_| "corrupt_remote_task".to_string())?;
+                            serde_json::to_vec(&bridge::status_projection(&record))
+                                .map_err(|_| "serialization_failed".to_string())
                         }
                         "cancel" | "poll" | "result" => {
-                            let json = store::get_record(database.connection(), &remote_task_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "remote_task_not_found".to_string())?;
-                            let mut record: bridge::RemoteTaskRecord = serde_json::from_slice(&json).map_err(|_| "corrupt_remote_task".to_string())?;
-                            if expected_version != 0 && expected_version != record.version { return Err("remote_task_stale_version".into()); }
+                            let json = store::get_record(database.connection(), &remote_task_id)
+                                .map_err(|_| "storage_failed".to_string())?
+                                .ok_or_else(|| "remote_task_not_found".to_string())?;
+                            let mut record: bridge::RemoteTaskRecord =
+                                serde_json::from_slice(&json)
+                                    .map_err(|_| "corrupt_remote_task".to_string())?;
+                            if expected_version != 0 && expected_version != record.version {
+                                return Err("remote_task_stale_version".into());
+                            }
                             let now = crate::task_memory::now_millis() as i64;
                             match operation.as_str() {
-                                "cancel" => { let version = record.version; bridge::cancel(&mut record, version, now).map_err(|e| e.to_string())?; }
+                                "cancel" => {
+                                    let version = record.version;
+                                    bridge::cancel(&mut record, version, now)
+                                        .map_err(|e| e.to_string())?;
+                                }
                                 "poll" => {
-                                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_remote_task_poll".to_string())?;
-                                    let owner = value.get("lease_owner").and_then(serde_json::Value::as_str).unwrap_or("core");
-                                    bridge::lease_for_poll(&mut record, owner, now, &policy).map_err(|e| e.to_string())?;
+                                    let value: serde_json::Value = serde_json::from_slice(&payload)
+                                        .map_err(|_| "invalid_remote_task_poll".to_string())?;
+                                    let owner = value
+                                        .get("lease_owner")
+                                        .and_then(serde_json::Value::as_str)
+                                        .unwrap_or("core");
+                                    bridge::lease_for_poll(&mut record, owner, now, &policy)
+                                        .map_err(|e| e.to_string())?;
                                 }
                                 "result" => {
-                                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_remote_task_result".to_string())?;
-                                    let status: bridge::RemoteTaskStatus = serde_json::from_value(value.get("status").cloned().ok_or_else(|| "remote_task_status_required".to_string())?).map_err(|_| "invalid_remote_task_status".to_string())?;
-                                    if !matches!(status, bridge::RemoteTaskStatus::InputRequired | bridge::RemoteTaskStatus::Completed | bridge::RemoteTaskStatus::Failed | bridge::RemoteTaskStatus::Cancelled | bridge::RemoteTaskStatus::Unknown) { return Err("invalid_remote_task_transition".into()); }
+                                    let value: serde_json::Value = serde_json::from_slice(&payload)
+                                        .map_err(|_| "invalid_remote_task_result".to_string())?;
+                                    let status: bridge::RemoteTaskStatus = serde_json::from_value(
+                                        value.get("status").cloned().ok_or_else(|| {
+                                            "remote_task_status_required".to_string()
+                                        })?,
+                                    )
+                                    .map_err(|_| "invalid_remote_task_status".to_string())?;
+                                    if !matches!(
+                                        status,
+                                        bridge::RemoteTaskStatus::InputRequired
+                                            | bridge::RemoteTaskStatus::Completed
+                                            | bridge::RemoteTaskStatus::Failed
+                                            | bridge::RemoteTaskStatus::Cancelled
+                                            | bridge::RemoteTaskStatus::Unknown
+                                    ) {
+                                        return Err("invalid_remote_task_transition".into());
+                                    }
                                     record.status = status;
-                                    record.transport_status = value.get("transport_status").and_then(serde_json::Value::as_str).unwrap_or("reported").to_owned();
-                                    record.result_artifact_ref = value.get("result_artifact_ref").and_then(serde_json::Value::as_str).map(str::to_owned);
+                                    record.transport_status = value
+                                        .get("transport_status")
+                                        .and_then(serde_json::Value::as_str)
+                                        .unwrap_or("reported")
+                                        .to_owned();
+                                    record.result_artifact_ref = value
+                                        .get("result_artifact_ref")
+                                        .and_then(serde_json::Value::as_str)
+                                        .map(str::to_owned);
                                     record.version += 1;
                                     record.updated_at_ms = now;
-                                    bridge::validate_record(&record, &bridge::RemoteTaskToolset { schema_version: 1, id: record.toolset_id.clone(), version: 1, provider_kind: bridge::RemoteProviderKind::Mcp, provider_ref: "trusted-adapter".into(), operation_names: vec![record.operation.clone()], content_hash: "trusted".into() }, &policy).map_err(|e| e.to_string())?;
+                                    bridge::validate_record(
+                                        &record,
+                                        &bridge::RemoteTaskToolset {
+                                            schema_version: 1,
+                                            id: record.toolset_id.clone(),
+                                            version: 1,
+                                            provider_kind: bridge::RemoteProviderKind::Mcp,
+                                            provider_ref: "trusted-adapter".into(),
+                                            operation_names: vec![record.operation.clone()],
+                                            content_hash: "trusted".into(),
+                                        },
+                                        &policy,
+                                    )
+                                    .map_err(|e| e.to_string())?;
                                 }
                                 _ => unreachable!(),
                             }
                             bridge::refresh_content_hash(&mut record).map_err(|e| e.to_string())?;
-                            let json = serde_json::to_vec(&record).map_err(|_| "serialization_failed".to_string())?;
-                            store::put_record(database.connection(), &record.id, record.version, &format!("{:?}", record.status), &record.content_hash, &json, record.updated_at_ms).map_err(|_| "storage_failed".to_string())?;
-                            serde_json::to_vec(&bridge::status_projection(&record)).map_err(|_| "serialization_failed".to_string())
+                            let json = serde_json::to_vec(&record)
+                                .map_err(|_| "serialization_failed".to_string())?;
+                            store::put_record(
+                                database.connection(),
+                                &record.id,
+                                record.version,
+                                &format!("{:?}", record.status),
+                                &record.content_hash,
+                                &json,
+                                record.updated_at_ms,
+                            )
+                            .map_err(|_| "storage_failed".to_string())?;
+                            serde_json::to_vec(&bridge::status_projection(&record))
+                                .map_err(|_| "serialization_failed".to_string())
                         }
                         _ => Err("unsupported_remote_task_operation".into()),
                     }
-                }.await;
-                let projection_json = result.as_ref().ok().and_then(|bytes| String::from_utf8(bytes.clone()).ok()).unwrap_or_else(|| "{}".into());
-                let event = CoreEvent::DurableRemoteTaskBridge { remote_task_id: event_task_id, operation: event_operation, version: expected_version, projection_json };
-                if let Some(journal) = state.lock().await.journal.clone() { let _ = journal.record(&event).await; }
+                }
+                .await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::DurableRemoteTaskBridge {
+                    remote_task_id: event_task_id,
+                    operation: event_operation,
+                    version: expected_version,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
                 let _ = state.lock().await.events.send(event);
                 let _ = reply.send(result);
             }
@@ -13679,60 +13850,423 @@ impl TaskCoordinator {
                     let value: serde_json::Value = serde_json::from_slice(&payload)
                         .map_err(|_| "invalid_intervention_payload".to_string())?;
                     let policy: crate::message_intervention_policies::MessageInterventionPolicy =
-                        serde_json::from_value(value.get("policy").cloned().ok_or_else(|| "intervention_policy_required".to_string())?)
-                            .map_err(|_| "invalid_intervention_policy".to_string())?;
+                        serde_json::from_value(
+                            value
+                                .get("policy")
+                                .cloned()
+                                .ok_or_else(|| "intervention_policy_required".to_string())?,
+                        )
+                        .map_err(|_| "invalid_intervention_policy".to_string())?;
                     let context: crate::message_intervention_policies::MessageInterventionContext =
-                        serde_json::from_value(value.get("context").cloned().ok_or_else(|| "intervention_context_required".to_string())?)
-                            .map_err(|_| "invalid_intervention_context".to_string())?;
-                    let seen = value.get("seen").and_then(serde_json::Value::as_bool).unwrap_or(false);
-                    let verdict = crate::message_intervention_policies::evaluate(&policy, &context, seen)
-                        .map_err(|e| e.to_string())?;
+                        serde_json::from_value(
+                            value
+                                .get("context")
+                                .cloned()
+                                .ok_or_else(|| "intervention_context_required".to_string())?,
+                        )
+                        .map_err(|_| "invalid_intervention_context".to_string())?;
+                    let seen = value
+                        .get("seen")
+                        .and_then(serde_json::Value::as_bool)
+                        .unwrap_or(false);
+                    let verdict =
+                        crate::message_intervention_policies::evaluate(&policy, &context, seen)
+                            .map_err(|e| e.to_string())?;
                     serde_json::to_vec(&serde_json::json!({
                         "status": "evaluated",
                         "operation": operation,
                         "version": 1,
                         "verdict": verdict,
                         "redacted": true,
-                    })).map_err(|_| "serialization_failed".to_string())
-                }.await;
-                let projection_json = result.as_ref().ok().and_then(|bytes| String::from_utf8(bytes.clone()).ok()).unwrap_or_else(|| "{}".into());
-                let event = CoreEvent::MessageInterventionPolicies { operation: event_operation, version: expected_version, projection_json };
-                if let Some(journal) = state.lock().await.journal.clone() { let _ = journal.record(&event).await; }
+                    }))
+                    .map_err(|_| "serialization_failed".to_string())
+                }
+                .await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::MessageInterventionPolicies {
+                    operation: event_operation,
+                    version: expected_version,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
                 let _ = state.lock().await.events.send(event);
                 let _ = reply.send(result);
             }
-            CoreCommand::BatchInvocationRuntime { operation, batch_id, payload, expected_version, idempotency_key, reply } => {
-                let event_id = batch_id.clone(); let event_operation = operation.clone();
+            CoreCommand::BatchInvocationRuntime {
+                operation,
+                batch_id,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let event_id = batch_id.clone();
+                let event_operation = operation.clone();
                 let result = async {
-                    if idempotency_key.is_empty() { return Err("invalid_batch_idempotency_key".into()); }
-                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    if idempotency_key.is_empty() {
+                        return Err("invalid_batch_idempotency_key".into());
+                    }
+                    let journal = state
+                        .lock()
+                        .await
+                        .journal
+                        .clone()
+                        .ok_or_else(|| "storage journal is not configured".to_string())?;
                     let database = journal.database().lock().await;
                     use crate::batch_invocation_runtime as batch;
                     use evohime_local_storage::batch_invocation_runtime_store as store;
                     let policy = batch::default_policy();
                     match operation.as_str() {
-                        "create" => { let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_batch_payload".to_string())?; let inputs: Vec<String> = serde_json::from_value(value.get("inputs").cloned().ok_or_else(|| "batch_inputs_required".to_string())?).map_err(|_| "invalid_batch_inputs".to_string())?; let definition_ref = value.get("definition_ref").and_then(serde_json::Value::as_str).unwrap_or_default().to_owned(); let definition_version = value.get("definition_version").and_then(serde_json::Value::as_u64).unwrap_or_default(); let max_concurrency = value.get("max_concurrency").and_then(serde_json::Value::as_u64).unwrap_or(1) as u32; let failure_policy = value.get("failure_policy").cloned().map(|v| serde_json::from_value(v).map_err(|_| "invalid_batch_failure_policy".to_string())).transpose()?.unwrap_or(batch::FailurePolicy::Continue); let value = batch::new_batch(batch_id.clone(), definition_ref, definition_version, inputs, max_concurrency, failure_policy, crate::task_memory::now_millis() as i64, &policy).map_err(|e| e.to_string())?; let json = serde_json::to_vec(&value).map_err(|_| "serialization_failed".to_string())?; if !store::put(database.connection(), &value.id, value.version, &format!("{:?}", value.status), &value.content_hash, &json, value.updated_at_ms).map_err(|_| "storage_failed".to_string())? { return Err("batch_duplicate".into()); } serde_json::to_vec(&batch::projection(&value)).map_err(|_| "serialization_failed".to_string()) }
+                        "create" => {
+                            let value: serde_json::Value = serde_json::from_slice(&payload)
+                                .map_err(|_| "invalid_batch_payload".to_string())?;
+                            let inputs: Vec<String> = serde_json::from_value(
+                                value
+                                    .get("inputs")
+                                    .cloned()
+                                    .ok_or_else(|| "batch_inputs_required".to_string())?,
+                            )
+                            .map_err(|_| "invalid_batch_inputs".to_string())?;
+                            let definition_ref = value
+                                .get("definition_ref")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or_default()
+                                .to_owned();
+                            let definition_version = value
+                                .get("definition_version")
+                                .and_then(serde_json::Value::as_u64)
+                                .unwrap_or_default();
+                            let max_concurrency = value
+                                .get("max_concurrency")
+                                .and_then(serde_json::Value::as_u64)
+                                .unwrap_or(1)
+                                as u32;
+                            let failure_policy = value
+                                .get("failure_policy")
+                                .cloned()
+                                .map(|v| {
+                                    serde_json::from_value(v)
+                                        .map_err(|_| "invalid_batch_failure_policy".to_string())
+                                })
+                                .transpose()?
+                                .unwrap_or(batch::FailurePolicy::Continue);
+                            let value = batch::new_batch(
+                                batch_id.clone(),
+                                definition_ref,
+                                definition_version,
+                                inputs,
+                                max_concurrency,
+                                failure_policy,
+                                crate::task_memory::now_millis() as i64,
+                                &policy,
+                            )
+                            .map_err(|e| e.to_string())?;
+                            let json = serde_json::to_vec(&value)
+                                .map_err(|_| "serialization_failed".to_string())?;
+                            if !store::put(
+                                database.connection(),
+                                &value.id,
+                                value.version,
+                                &format!("{:?}", value.status),
+                                &value.content_hash,
+                                &json,
+                                value.updated_at_ms,
+                            )
+                            .map_err(|_| "storage_failed".to_string())?
+                            {
+                                return Err("batch_duplicate".into());
+                            }
+                            serde_json::to_vec(&batch::projection(&value))
+                                .map_err(|_| "serialization_failed".to_string())
+                        }
                         "get" | "resume" | "start" => {
-                            let (version, json) = store::get(database.connection(), &batch_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "batch_not_found".to_string())?;
-                            let mut value: batch::BatchInvocation = serde_json::from_slice(&json).map_err(|_| "corrupt_batch".to_string())?;
+                            let (version, json) = store::get(database.connection(), &batch_id)
+                                .map_err(|_| "storage_failed".to_string())?
+                                .ok_or_else(|| "batch_not_found".to_string())?;
+                            let mut value: batch::BatchInvocation =
+                                serde_json::from_slice(&json)
+                                    .map_err(|_| "corrupt_batch".to_string())?;
                             if operation == "resume" {
-                                batch::resume_pending(&mut value, expected_version.max(version), crate::task_memory::now_millis() as i64, &policy).map_err(|e| e.to_string())?;
+                                batch::resume_pending(
+                                    &mut value,
+                                    expected_version.max(version),
+                                    crate::task_memory::now_millis() as i64,
+                                    &policy,
+                                )
+                                .map_err(|e| e.to_string())?;
                             } else if operation == "start" {
-                                batch::start_batch(&mut value, expected_version.max(version), crate::task_memory::now_millis() as i64, &policy).map_err(|e| e.to_string())?;
+                                batch::start_batch(
+                                    &mut value,
+                                    expected_version.max(version),
+                                    crate::task_memory::now_millis() as i64,
+                                    &policy,
+                                )
+                                .map_err(|e| e.to_string())?;
                             }
                             if operation != "get" {
-                                let json = serde_json::to_vec(&value).map_err(|_| "serialization_failed".to_string())?;
-                                if !store::put(database.connection(), &value.id, value.version, &format!("{:?}", value.status), &value.content_hash, &json, value.updated_at_ms).map_err(|_| "storage_failed".to_string())? { return Err("batch_stale_version".into()); }
+                                let json = serde_json::to_vec(&value)
+                                    .map_err(|_| "serialization_failed".to_string())?;
+                                if !store::put(
+                                    database.connection(),
+                                    &value.id,
+                                    value.version,
+                                    &format!("{:?}", value.status),
+                                    &value.content_hash,
+                                    &json,
+                                    value.updated_at_ms,
+                                )
+                                .map_err(|_| "storage_failed".to_string())?
+                                {
+                                    return Err("batch_stale_version".into());
+                                }
                             }
-                            serde_json::to_vec(&batch::projection(&value)).map_err(|_| "serialization_failed".to_string())
+                            serde_json::to_vec(&batch::projection(&value))
+                                .map_err(|_| "serialization_failed".to_string())
                         }
-                        "result" => { let (version, json) = store::get(database.connection(), &batch_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "batch_not_found".to_string())?; let mut value: batch::BatchInvocation = serde_json::from_slice(&json).map_err(|_| "corrupt_batch".to_string())?; let request: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_batch_result".to_string())?; let item_id = request.get("item_id").and_then(serde_json::Value::as_str).ok_or_else(|| "batch_item_required".to_string())?; let status: batch::ItemStatus = serde_json::from_value(request.get("status").cloned().ok_or_else(|| "batch_status_required".to_string())?).map_err(|_| "invalid_batch_status".to_string())?; let result_ref = request.get("result_ref").and_then(serde_json::Value::as_str).map(str::to_owned); let error_class = request.get("error_class").and_then(serde_json::Value::as_str).map(str::to_owned); batch::record_result(&mut value, item_id, expected_version.max(version), status, result_ref, error_class, crate::task_memory::now_millis() as i64, &policy).map_err(|e| e.to_string())?; let json = serde_json::to_vec(&value).map_err(|_| "serialization_failed".to_string())?; if !store::put(database.connection(), &value.id, value.version, &format!("{:?}", value.status), &value.content_hash, &json, value.updated_at_ms).map_err(|_| "storage_failed".to_string())? { return Err("batch_stale_version".into()); } serde_json::to_vec(&batch::projection(&value)).map_err(|_| "serialization_failed".to_string()) }
+                        "result" => {
+                            let (version, json) = store::get(database.connection(), &batch_id)
+                                .map_err(|_| "storage_failed".to_string())?
+                                .ok_or_else(|| "batch_not_found".to_string())?;
+                            let mut value: batch::BatchInvocation =
+                                serde_json::from_slice(&json)
+                                    .map_err(|_| "corrupt_batch".to_string())?;
+                            let request: serde_json::Value = serde_json::from_slice(&payload)
+                                .map_err(|_| "invalid_batch_result".to_string())?;
+                            let item_id = request
+                                .get("item_id")
+                                .and_then(serde_json::Value::as_str)
+                                .ok_or_else(|| "batch_item_required".to_string())?;
+                            let status: batch::ItemStatus = serde_json::from_value(
+                                request
+                                    .get("status")
+                                    .cloned()
+                                    .ok_or_else(|| "batch_status_required".to_string())?,
+                            )
+                            .map_err(|_| "invalid_batch_status".to_string())?;
+                            let result_ref = request
+                                .get("result_ref")
+                                .and_then(serde_json::Value::as_str)
+                                .map(str::to_owned);
+                            let error_class = request
+                                .get("error_class")
+                                .and_then(serde_json::Value::as_str)
+                                .map(str::to_owned);
+                            batch::record_result(
+                                &mut value,
+                                item_id,
+                                expected_version.max(version),
+                                status,
+                                result_ref,
+                                error_class,
+                                crate::task_memory::now_millis() as i64,
+                                &policy,
+                            )
+                            .map_err(|e| e.to_string())?;
+                            let json = serde_json::to_vec(&value)
+                                .map_err(|_| "serialization_failed".to_string())?;
+                            if !store::put(
+                                database.connection(),
+                                &value.id,
+                                value.version,
+                                &format!("{:?}", value.status),
+                                &value.content_hash,
+                                &json,
+                                value.updated_at_ms,
+                            )
+                            .map_err(|_| "storage_failed".to_string())?
+                            {
+                                return Err("batch_stale_version".into());
+                            }
+                            serde_json::to_vec(&batch::projection(&value))
+                                .map_err(|_| "serialization_failed".to_string())
+                        }
                         _ => Err("unsupported_batch_operation".into()),
                     }
-                }.await;
-                let projection_json = result.as_ref().ok().and_then(|bytes| String::from_utf8(bytes.clone()).ok()).unwrap_or_else(|| "{}".into()); let event = CoreEvent::BatchInvocationRuntime { batch_id: event_id, operation: event_operation, version: expected_version, projection_json }; if let Some(journal) = state.lock().await.journal.clone() { let _ = journal.record(&event).await; } let _ = state.lock().await.events.send(event); let _ = reply.send(result);
+                }
+                .await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::BatchInvocationRuntime {
+                    batch_id: event_id,
+                    operation: event_operation,
+                    version: expected_version,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
             }
-            CoreCommand::ModelPurposeRouting { operation, payload, expected_version, idempotency_key, reply } => {
+            CoreCommand::LocalModelRuntimeManager {
+                operation,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let result = async {
+                    if idempotency_key.is_empty() { return Err("invalid_local_model_manager_idempotency_key".into()); }
+                    let value: serde_json::Value = if payload.is_empty() { serde_json::json!({}) } else { serde_json::from_slice(&payload).map_err(|_| "invalid_local_model_manager_payload".to_string())? };
+                    match operation.as_str() {
+                        "hardware" => {
+                            let profile = crate::local_model_runtime_manager::discover_hardware().map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":"discovered","hardware":profile,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "start" => {
+                            let model_id = value.get("model_id").and_then(serde_json::Value::as_str).filter(|v| !v.is_empty()).ok_or_else(|| "model_id_required".to_string())?;
+                            let request_id = value.get("request_id").and_then(serde_json::Value::as_str).filter(|v| !v.is_empty()).ok_or_else(|| "request_id_required".to_string())?;
+                            #[cfg(windows)]
+                            { let response = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"launch","model_id":model_id,"request_id":request_id})).await.map_err(|_| "runtime_unavailable".to_string())?; if response.get("accepted") != Some(&serde_json::Value::Bool(true)) { return Err("runtime_unavailable".into()); } let health = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"probe","model_id":model_id})).await.map_err(|_| "health_gate_unavailable".to_string())?; if health.get("healthy") != Some(&serde_json::Value::Bool(true)) { let _ = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"stop","model_id":model_id,"request_id":request_id})).await; return Err("health_gate_failed".into()); } return serde_json::to_vec(&serde_json::json!({"status":"ready","model_id":model_id,"supervised":true,"health_gate":"passed","redacted":true})).map_err(|_| "serialization_failed".to_string()); }
+                            #[cfg(not(windows))]
+                            { let _ = (model_id, request_id); Err("runtime_unavailable".into()) }
+                        }
+                        "stop" => {
+                            let model_id = value.get("model_id").and_then(serde_json::Value::as_str).filter(|v| !v.is_empty()).ok_or_else(|| "model_id_required".to_string())?;
+                            let request_id = value.get("request_id").and_then(serde_json::Value::as_str).filter(|v| !v.is_empty()).ok_or_else(|| "request_id_required".to_string())?;
+                            #[cfg(windows)]
+                            { let response = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"stop","model_id":model_id,"request_id":request_id})).await.map_err(|_| "runtime_unavailable".to_string())?; if response.get("accepted") != Some(&serde_json::Value::Bool(true)) { return Err("runtime_unavailable".into()); } return serde_json::to_vec(&serde_json::json!({"status":"stopped","model_id":model_id,"supervised":true,"redacted":true})).map_err(|_| "serialization_failed".to_string()); }
+                            #[cfg(not(windows))]
+                            { let _ = (model_id, request_id); Err("runtime_unavailable".into()) }
+                        }
+                        "probe" => {
+                            let model_id = value.get("model_id").and_then(serde_json::Value::as_str).filter(|v| !v.is_empty()).ok_or_else(|| "model_id_required".to_string())?;
+                            #[cfg(windows)]
+                            { let response = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"probe","model_id":model_id})).await.map_err(|_| "health_gate_unavailable".to_string())?; if response.get("healthy") != Some(&serde_json::Value::Bool(true)) { return Err("health_gate_failed".into()); } return serde_json::to_vec(&serde_json::json!({"status":"ready","model_id":model_id,"health_gate":"passed","redacted":true})).map_err(|_| "serialization_failed".to_string()); }
+                            #[cfg(not(windows))]
+                            { let _ = model_id; Err("runtime_unavailable".into()) }
+                        }
+                        "verify_artifact" => {
+                            let state: crate::local_model_runtime_manager::ArtifactState = serde_json::from_value(value.get("state").cloned().ok_or_else(|| "state_required".to_string())?).map_err(|_| "invalid_artifact_state".to_string())?;
+                            let trust: crate::local_model_runtime_manager::TrustLevel = serde_json::from_value(value.get("trust").cloned().ok_or_else(|| "trust_required".to_string())?).map_err(|_| "invalid_trust".to_string())?;
+                            let observed = value.get("observed_hash").and_then(serde_json::Value::as_str).ok_or_else(|| "observed_hash_required".to_string())?;
+                            let expected = value.get("expected_hash").and_then(serde_json::Value::as_str).ok_or_else(|| "expected_hash_required".to_string())?;
+                            crate::local_model_runtime_manager::allow_artifact_promotion(state, trust, observed, expected).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":"verified","artifact_state":"installed","content_hash":expected,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "promote_artifact" => {
+                            let staging = value.get("staging_relative_path").and_then(serde_json::Value::as_str).ok_or_else(|| "staging_path_required".to_string())?;
+                            let destination = value.get("destination_relative_path").and_then(serde_json::Value::as_str).ok_or_else(|| "destination_path_required".to_string())?;
+                            let staging = std::path::Path::new(staging);
+                            let destination = std::path::Path::new(destination);
+                            crate::local_model_runtime_manager::validate_artifact_relative_path(staging).map_err(|e| e.to_string())?;
+                            crate::local_model_runtime_manager::validate_artifact_relative_path(destination).map_err(|e| e.to_string())?;
+                            let expected = value.get("expected_hash").and_then(serde_json::Value::as_str).ok_or_else(|| "expected_hash_required".to_string())?;
+                            let expected_size = value.get("expected_size_bytes").and_then(serde_json::Value::as_u64).ok_or_else(|| "expected_size_required".to_string())?;
+                            let root = std::env::var_os("EVOHIME_DATA_DIR").map(std::path::PathBuf::from).or_else(|| std::env::var_os("LOCALAPPDATA").map(|path| std::path::PathBuf::from(path).join("EvoHime"))).unwrap_or_else(|| std::path::PathBuf::from(".evohime"));
+                            let models_root = root.join("models");
+                            std::fs::create_dir_all(&models_root).map_err(|_| "artifact_root_unavailable".to_string())?;
+                            let staging_path = crate::local_model_runtime_manager::managed_artifact_path(&models_root, staging).map_err(|e| e.to_string())?;
+                            let destination_path = crate::local_model_runtime_manager::managed_artifact_path(&models_root, destination).map_err(|e| e.to_string())?;
+                            crate::local_model_runtime_manager::atomic_promote_verified_artifact(&staging_path, &destination_path, expected, expected_size).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":"installed","artifact_state":"installed","content_hash":expected,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "transition" => {
+                            let from: crate::local_model_runtime_manager::ArtifactState = serde_json::from_value(value.get("from").cloned().ok_or_else(|| "from_required".to_string())?).map_err(|_| "invalid_from_state".to_string())?;
+                            let to: crate::local_model_runtime_manager::ArtifactState = serde_json::from_value(value.get("to").cloned().ok_or_else(|| "to_required".to_string())?).map_err(|_| "invalid_to_state".to_string())?;
+                            crate::local_model_runtime_manager::allow_transition(from, to).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":"transitioned","from":from,"to":to,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "profile" => {
+                            let session: crate::local_model_runtime_manager::LocalModelRuntimeSession = serde_json::from_value(value.get("session").cloned().ok_or_else(|| "session_required".to_string())?).map_err(|_| "invalid_session".to_string())?;
+                            let descriptor: crate::local_model_runtime_manager::LocalModelDescriptor = serde_json::from_value(value.get("model").cloned().ok_or_else(|| "model_required".to_string())?).map_err(|_| "invalid_model".to_string())?;
+                            let runtime: crate::local_model_runtime_manager::LocalInferenceRuntime = serde_json::from_value(value.get("runtime").cloned().ok_or_else(|| "runtime_required".to_string())?).map_err(|_| "invalid_runtime".to_string())?;
+                            let profile = crate::local_model_runtime_manager::managed_profile(&session, &descriptor, &runtime).map_err(|e| e.to_string())?;
+                            let resilience = crate::local_model_runtime_manager::resilience_profile_ref(&profile);
+                            serde_json::to_vec(&serde_json::json!({"profile": profile, "resilience_profile": resilience, "redacted": true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "register_model" | "register_runtime" | "register_artifact" | "register_session" => {
+                            let (kind, record_id, revision, record_json) = match operation.as_str() {
+                                "register_model" => { let record: crate::local_model_runtime_manager::LocalModelDescriptor = serde_json::from_value(value.get("model").cloned().ok_or_else(|| "model_required".to_string())?).map_err(|_| "invalid_model".to_string())?; record.validate().map_err(|e| e.to_string())?; let id = format!("model:{}:{}", record.model_id, record.revision); ("model", id, record.revision, serde_json::to_vec(&record).map_err(|_| "serialization_failed".to_string())?) }
+                                "register_runtime" => { let record: crate::local_model_runtime_manager::LocalInferenceRuntime = serde_json::from_value(value.get("runtime").cloned().ok_or_else(|| "runtime_required".to_string())?).map_err(|_| "invalid_runtime".to_string())?; record.validate().map_err(|e| e.to_string())?; let id = format!("runtime:{}:{}", record.runtime_id, record.revision); ("runtime", id, record.revision, serde_json::to_vec(&record).map_err(|_| "serialization_failed".to_string())?) }
+                                "register_artifact" => { let record: crate::local_model_runtime_manager::LocalArtifactRecord = serde_json::from_value(value.get("artifact").cloned().ok_or_else(|| "artifact_required".to_string())?).map_err(|_| "invalid_artifact".to_string())?; record.validate().map_err(|e| e.to_string())?; let id = format!("artifact:{}:{}", record.model_id, record.model_revision); ("artifact", id, record.model_revision, serde_json::to_vec(&record).map_err(|_| "serialization_failed".to_string())?) }
+                                _ => { let record: crate::local_model_runtime_manager::LocalModelRuntimeSession = serde_json::from_value(value.get("session").cloned().ok_or_else(|| "session_required".to_string())?).map_err(|_| "invalid_session".to_string())?; record.validate().map_err(|e| e.to_string())?; let id = format!("session:{}", record.session_id); ("session", id, expected_version.max(1), serde_json::to_vec(&record).map_err(|_| "serialization_failed".to_string())?) }
+                            };
+                            let hash = crate::local_model_runtime_manager::canonical_hash(&record_json);
+                            let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?; let db = journal.database().lock().await;
+                            if !evohime_local_storage::local_model_runtime_manager_store::put_record(db.connection(), &record_id, kind, revision, &hash, &record_json, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())? { return Err("stale_local_model_manager_record".into()); }
+                            serde_json::to_vec(&serde_json::json!({"status":"registered","record_id":record_id,"record_kind":kind,"revision":revision,"content_hash":hash,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "recover" => {
+                            let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?; let db = journal.database().lock().await;
+                            let artifacts = evohime_local_storage::local_model_runtime_manager_store::list_records(db.connection(), "artifact", 256).map_err(|_| "storage_failed".to_string())?;
+                            let runtimes = evohime_local_storage::local_model_runtime_manager_store::list_records(db.connection(), "runtime", 256).map_err(|_| "storage_failed".to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":"reconciled","artifacts":artifacts.len(),"runtimes":runtimes.len(),"ready_requires_fresh_probe":true,"orphan_processes":"unavailable_until_identity_probe","redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "download_artifact" => {
+                            let url = value.get("url").and_then(serde_json::Value::as_str).ok_or_else(|| "artifact_url_required".to_string())?;
+                            let staging = value.get("staging_relative_path").and_then(serde_json::Value::as_str).ok_or_else(|| "staging_path_required".to_string())?;
+                            let expected = value.get("expected_hash").and_then(serde_json::Value::as_str).ok_or_else(|| "expected_hash_required".to_string())?;
+                            let expected_size = value.get("expected_size_bytes").and_then(serde_json::Value::as_u64).ok_or_else(|| "expected_size_required".to_string())?;
+                            let relative = std::path::Path::new(staging);
+                            crate::local_model_runtime_manager::validate_artifact_relative_path(relative).map_err(|e| e.to_string())?;
+                            let root = std::env::var_os("EVOHIME_DATA_DIR").map(std::path::PathBuf::from).or_else(|| std::env::var_os("LOCALAPPDATA").map(|path| std::path::PathBuf::from(path).join("EvoHime"))).unwrap_or_else(|| std::path::PathBuf::from(".evohime"));
+                            let models_root = root.join("models");
+                            std::fs::create_dir_all(&models_root).map_err(|_| "artifact_root_unavailable".to_string())?;
+                            let staging_path = crate::local_model_runtime_manager::managed_artifact_path(&models_root, relative).map_err(|e| e.to_string())?;
+                            crate::local_model_runtime_manager::download_verified_artifact(url, &staging_path, expected, expected_size, &tokio_util::sync::CancellationToken::new()).await.map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":"verified_staging","artifact_state":"verifying","staging_relative_path":staging,"expected_size_bytes":expected_size,"content_hash":expected,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "inspect" => serde_json::to_vec(&serde_json::json!({"schema_version":1,"contract_id":crate::local_model_runtime_manager::CONTRACT_ID,"status":"metadata_only","runtime_execution":"supervisor_boundary_required","artifact_download":"not_started","redacted":true})).map_err(|_| "serialization_failed".to_string()),
+                        "fit" => {
+                            let hardware: crate::local_model_runtime_manager::LocalHardwareProfile = serde_json::from_value(value.get("hardware").cloned().ok_or_else(|| "hardware_required".to_string())?).map_err(|_| "invalid_hardware".to_string())?;
+                            let model: crate::local_model_runtime_manager::LocalModelDescriptor = serde_json::from_value(value.get("model").cloned().ok_or_else(|| "model_required".to_string())?).map_err(|_| "invalid_model".to_string())?;
+                            let fit = crate::local_model_runtime_manager::compute_fit(&hardware, &model).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&fit).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "get_policy" => {
+                            let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?; let db = journal.database().lock().await;
+                            let stored = evohime_local_storage::local_model_runtime_manager_store::get(db.connection(), crate::local_model_runtime_manager::CONTRACT_ID).map_err(|_| "storage_failed".to_string())?;
+                            if let Some((version, hash, json)) = stored { return serde_json::to_vec(&serde_json::json!({"status":"loaded","version":version,"content_hash":hash,"policy":serde_json::from_slice::<serde_json::Value>(&json).unwrap_or(serde_json::json!({})),"redacted":true})).map_err(|_| "serialization_failed".to_string()); }
+                            serde_json::to_vec(&serde_json::json!({"status":"missing","version":0,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "save_policy" => {
+                            let policy: crate::local_model_runtime_manager::LocalModelManagerPolicy = serde_json::from_value(value.get("policy").cloned().ok_or_else(|| "policy_required".to_string())?).map_err(|_| "invalid_policy".to_string())?;
+                            policy.validate().map_err(|e| e.to_string())?;
+                            let json = serde_json::to_vec(&policy).map_err(|_| "serialization_failed".to_string())?; let hash = crate::local_model_runtime_manager::canonical_hash(&policy);
+                            let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?; let db = journal.database().lock().await;
+                            if !evohime_local_storage::local_model_runtime_manager_store::put(db.connection(), &policy.policy_id, policy.version, &hash, &json, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())? { return Err("stale_local_model_manager_policy".into()); }
+                            serde_json::to_vec(&serde_json::json!({"status":"saved","policy_id":policy.policy_id,"version":policy.version,"content_hash":hash,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        _ => Err("unsupported_local_model_manager_operation".into()),
+                    }
+                }.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let version = serde_json::from_str::<serde_json::Value>(&projection_json)
+                    .ok()
+                    .and_then(|v| v.get("version").and_then(serde_json::Value::as_u64))
+                    .unwrap_or(expected_version);
+                let event = CoreEvent::LocalModelRuntimeManager {
+                    operation: operation.clone(),
+                    version,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::ModelPurposeRouting {
+                operation,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
                 let result = async {
                     if idempotency_key.is_empty() { return Err("invalid_model_purpose_idempotency_key".into()); }
                     let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
@@ -13758,13 +14292,34 @@ impl TaskCoordinator {
                         _ => Err("unsupported_model_purpose_operation".into()),
                     }
                 }.await;
-                let projection_json = result.as_ref().ok().and_then(|b| String::from_utf8(b.clone()).ok()).unwrap_or_else(|| "{}".into());
-                let event_version = serde_json::from_str::<serde_json::Value>(&projection_json).ok().and_then(|v| v.get("version").and_then(serde_json::Value::as_u64)).unwrap_or(expected_version);
-                let event = CoreEvent::ModelPurposeRouting { operation: operation.clone(), version: event_version, projection_json };
-                if let Some(journal) = state.lock().await.journal.clone() { let _ = journal.record(&event).await; }
-                let _ = state.lock().await.events.send(event); let _ = reply.send(result);
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event_version = serde_json::from_str::<serde_json::Value>(&projection_json)
+                    .ok()
+                    .and_then(|v| v.get("version").and_then(serde_json::Value::as_u64))
+                    .unwrap_or(expected_version);
+                let event = CoreEvent::ModelPurposeRouting {
+                    operation: operation.clone(),
+                    version: event_version,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
             }
-            CoreCommand::CodeAnchoredIntentMarkers { operation, file_path, revision, payload, idempotency_key, reply } => {
+            CoreCommand::CodeAnchoredIntentMarkers {
+                operation,
+                file_path,
+                revision,
+                payload,
+                idempotency_key,
+                reply,
+            } => {
                 let result = async {
                     if idempotency_key.is_empty() { return Err("invalid_marker_idempotency_key".into()); }
                     let ranges: Vec<crate::code_anchored_intent_markers::CommentRange> = serde_json::from_slice(&payload).map_err(|_| "invalid_comment_ranges".to_string())?;
@@ -13787,7 +14342,21 @@ impl TaskCoordinator {
                     }
                     serde_json::to_vec(&serde_json::json!({"status":"candidates","count":markers.len(),"markers":markers.iter().map(|m|serde_json::json!({"marker_id":m.marker_id,"kind":m.kind,"range_start":m.range_start,"range_end":m.range_end,"revision":m.revision,"provenance":m.provenance})).collect::<Vec<_>>(),"redacted":true})).map_err(|_| "serialization_failed".to_string())
                 }.await;
-                let projection_json=result.as_ref().ok().and_then(|b|String::from_utf8(b.clone()).ok()).unwrap_or_else(||"{}".into()); let event=CoreEvent::CodeAnchoredIntentMarkers{operation:operation.clone(),version:1,projection_json}; if let Some(journal)=state.lock().await.journal.clone(){let _=journal.record(&event).await;} let _=state.lock().await.events.send(event); let _=reply.send(result);
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::CodeAnchoredIntentMarkers {
+                    operation: operation.clone(),
+                    version: 1,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
             }
             CoreCommand::AgentGitChangeSets {
                 operation,
@@ -13846,8 +14415,16 @@ impl TaskCoordinator {
                 let _ = state.lock().await.events.send(event);
                 let _ = reply.send(result);
             }
-            CoreCommand::PolicyAwareToolResultCache { operation, cache_key, payload, expected_version, idempotency_key, reply } => {
-                let event_key = cache_key.clone(); let event_operation = operation.clone();
+            CoreCommand::PolicyAwareToolResultCache {
+                operation,
+                cache_key,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let event_key = cache_key.clone();
+                let event_operation = operation.clone();
                 let result = async {
                     if idempotency_key.is_empty() { return Err("invalid_cache_idempotency_key".into()); }
                     let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
@@ -13863,7 +14440,22 @@ impl TaskCoordinator {
                         _ => Err("unsupported_cache_operation".into()),
                     }
                 }.await;
-                let projection_json=result.as_ref().ok().and_then(|b|String::from_utf8(b.clone()).ok()).unwrap_or_else(||"{}".into()); let event=CoreEvent::PolicyAwareToolResultCache{cache_key:event_key,operation:event_operation,version:expected_version,projection_json}; if let Some(journal)=state.lock().await.journal.clone(){let _=journal.record(&event).await;} let _=state.lock().await.events.send(event); let _=reply.send(result);
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::PolicyAwareToolResultCache {
+                    cache_key: event_key,
+                    operation: event_operation,
+                    version: expected_version,
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
             }
             CoreCommand::ArchitectEditorModelPipeline {
                 operation,
@@ -15966,9 +16558,33 @@ impl TaskCoordinator {
                 let _ = state.lock().await.events.send(event);
                 let _ = reply.send(result);
             }
-            CoreCommand::ExtensionConformanceKit { operation, subject_id, payload, expected_version, idempotency_key, reply } => {
-                let event_operation=operation.clone(); let event_subject_id=subject_id.clone();
-                let result=async { use crate::extension_conformance_kit as v; if subject_id.is_empty()||idempotency_key.is_empty()||expected_version>u64::MAX-1{return Err("invalid_conformance_request".into())}; let value:serde_json::Value=serde_json::from_slice(&payload).map_err(|_|"invalid_conformance_payload".to_string())?; match operation.as_str(){"run"=>{let d:v::ExtensionDescriptor=serde_json::from_value(value.get("descriptor").cloned().ok_or_else(||"descriptor_required".to_string())?).map_err(|_|"invalid_descriptor".to_string())?;let p:v::ConformanceProbe=serde_json::from_value(value.get("probe").cloned().ok_or_else(||"probe_required".to_string())?).map_err(|_|"invalid_probe".to_string())?;let fault:v::FaultMode=serde_json::from_value(value.get("fault").cloned().unwrap_or(serde_json::json!("none"))).map_err(|_|"invalid_fault".to_string())?;if d.subject_id!=subject_id{return Err("subject_id_mismatch".into())};let report=v::run(&d,&p,fault).map_err(|e|e.to_string())?;serde_json::to_vec(&report).map_err(|_|"serialization_failed".into())},"register"=>{let descriptors:Vec<v::ExtensionDescriptor>=serde_json::from_value(value.get("descriptors").cloned().ok_or_else(||"descriptors_required".to_string())?).map_err(|_|"invalid_descriptors".to_string())?;let fault:v::FaultMode=serde_json::from_value(value.get("fault").cloned().unwrap_or(serde_json::json!("none"))).map_err(|_|"invalid_fault".to_string())?;let mut t=v::RegistrationTransaction::default();for d in descriptors{t.stage(d).map_err(|e|e.to_string())?};let committed=t.commit(fault).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"registered_ephemeral","count":committed.len(),"redacted":true})).map_err(|_|"serialization_failed".into())},"inspect"=>serde_json::to_vec(&serde_json::json!({"status":"available","schema_version":v::SCHEMA_VERSION,"kinds":["integration_provider","external_agent_adapter","workbench","ui_extension","declarative_component_provider"],"production_execution":false,"redacted":true})).map_err(|_|"serialization_failed".into()),_=>Err("unsupported_conformance_operation".into())}}.await; let projection_json=result.as_ref().ok().and_then(|b|String::from_utf8(b.clone()).ok()).unwrap_or_else(||"{}".into());let event=CoreEvent::ExtensionConformanceKit{operation:event_operation,subject_id:event_subject_id,version:expected_version.saturating_add(1),projection_json};if let Some(journal)=state.lock().await.journal.clone(){let _=journal.record(&event).await;}let _=state.lock().await.events.send(event);let _=reply.send(result);
+            CoreCommand::ExtensionConformanceKit {
+                operation,
+                subject_id,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let event_operation = operation.clone();
+                let event_subject_id = subject_id.clone();
+                let result=async { use crate::extension_conformance_kit as v; if subject_id.is_empty()||idempotency_key.is_empty()||expected_version>u64::MAX-1{return Err("invalid_conformance_request".into())}; let value:serde_json::Value=serde_json::from_slice(&payload).map_err(|_|"invalid_conformance_payload".to_string())?; match operation.as_str(){"run"=>{let d:v::ExtensionDescriptor=serde_json::from_value(value.get("descriptor").cloned().ok_or_else(||"descriptor_required".to_string())?).map_err(|_|"invalid_descriptor".to_string())?;let p:v::ConformanceProbe=serde_json::from_value(value.get("probe").cloned().ok_or_else(||"probe_required".to_string())?).map_err(|_|"invalid_probe".to_string())?;let fault:v::FaultMode=serde_json::from_value(value.get("fault").cloned().unwrap_or(serde_json::json!("none"))).map_err(|_|"invalid_fault".to_string())?;if d.subject_id!=subject_id{return Err("subject_id_mismatch".into())};let report=v::run(&d,&p,fault).map_err(|e|e.to_string())?;serde_json::to_vec(&report).map_err(|_|"serialization_failed".into())},"register"=>{let descriptors:Vec<v::ExtensionDescriptor>=serde_json::from_value(value.get("descriptors").cloned().ok_or_else(||"descriptors_required".to_string())?).map_err(|_|"invalid_descriptors".to_string())?;let fault:v::FaultMode=serde_json::from_value(value.get("fault").cloned().unwrap_or(serde_json::json!("none"))).map_err(|_|"invalid_fault".to_string())?;let mut t=v::RegistrationTransaction::default();for d in descriptors{t.stage(d).map_err(|e|e.to_string())?};let committed=t.commit(fault).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"registered_ephemeral","count":committed.len(),"redacted":true})).map_err(|_|"serialization_failed".into())},"inspect"=>serde_json::to_vec(&serde_json::json!({"status":"available","schema_version":v::SCHEMA_VERSION,"kinds":["integration_provider","external_agent_adapter","workbench","ui_extension","declarative_component_provider"],"production_execution":false,"redacted":true})).map_err(|_|"serialization_failed".into()),_=>Err("unsupported_conformance_operation".into())}}.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::ExtensionConformanceKit {
+                    operation: event_operation,
+                    subject_id: event_subject_id,
+                    version: expected_version.saturating_add(1),
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
             }
             CoreCommand::GetMemory { id, reply } => {
                 let journal = state.lock().await.journal.clone();

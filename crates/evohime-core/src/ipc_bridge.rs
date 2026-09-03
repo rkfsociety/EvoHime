@@ -1019,10 +1019,18 @@ impl IpcBridge {
                                 schema_version: 1,
                                 remote_task_id: event.get("remote_task_id")?.as_str()?.to_owned(),
                                 operation: event.get("operation")?.as_str()?.to_owned(),
-                                version: event.get("version").and_then(serde_json::Value::as_u64).unwrap_or_default(),
+                                version: event
+                                    .get("version")
+                                    .and_then(serde_json::Value::as_u64)
+                                    .unwrap_or_default(),
                                 status: String::new(),
                                 error_code: String::new(),
-                                projection_json: event.get("projection_json").and_then(serde_json::Value::as_str).unwrap_or("{}").as_bytes().to_vec(),
+                                projection_json: event
+                                    .get("projection_json")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or("{}")
+                                    .as_bytes()
+                                    .to_vec(),
                                 truncated: false,
                             },
                         ))
@@ -1032,36 +1040,156 @@ impl IpcBridge {
                     .ok()
                     .and_then(|value| {
                         let event = value.get("MessageInterventionPolicies").unwrap_or(&value);
-                        Some(generated::event_envelope::Event::MessageInterventionPolicies(
-                            generated::MessageInterventionPoliciesEvent {
+                        Some(
+                            generated::event_envelope::Event::MessageInterventionPolicies(
+                                generated::MessageInterventionPoliciesEvent {
+                                    schema_version: 1,
+                                    operation: event.get("operation")?.as_str()?.to_owned(),
+                                    version: event
+                                        .get("version")
+                                        .and_then(serde_json::Value::as_u64)
+                                        .unwrap_or_default(),
+                                    status: String::new(),
+                                    error_code: String::new(),
+                                    projection_json: event
+                                        .get("projection_json")
+                                        .and_then(serde_json::Value::as_str)
+                                        .unwrap_or("{}")
+                                        .as_bytes()
+                                        .to_vec(),
+                                    truncated: false,
+                                },
+                            ),
+                        )
+                    })
+            } else if record.event_type == "batch_invocation_runtime.result" {
+                serde_json::from_slice::<serde_json::Value>(&record.payload)
+                    .ok()
+                    .and_then(|value| {
+                        let event = value.get("BatchInvocationRuntime").unwrap_or(&value);
+                        Some(generated::event_envelope::Event::BatchInvocationRuntime(
+                            generated::BatchInvocationRuntimeEvent {
                                 schema_version: 1,
+                                batch_id: event.get("batch_id")?.as_str()?.to_owned(),
                                 operation: event.get("operation")?.as_str()?.to_owned(),
-                                version: event.get("version").and_then(serde_json::Value::as_u64).unwrap_or_default(),
+                                version: event
+                                    .get("version")
+                                    .and_then(serde_json::Value::as_u64)
+                                    .unwrap_or_default(),
                                 status: String::new(),
                                 error_code: String::new(),
-                                projection_json: event.get("projection_json").and_then(serde_json::Value::as_str).unwrap_or("{}").as_bytes().to_vec(),
+                                projection_json: event
+                                    .get("projection_json")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or("{}")
+                                    .as_bytes()
+                                    .to_vec(),
                                 truncated: false,
                             },
                         ))
                     })
-            } else if record.event_type == "batch_invocation_runtime.result" {
-                serde_json::from_slice::<serde_json::Value>(&record.payload).ok().and_then(|value| {
-                    let event = value.get("BatchInvocationRuntime").unwrap_or(&value);
-                    Some(generated::event_envelope::Event::BatchInvocationRuntime(generated::BatchInvocationRuntimeEvent {
-                        schema_version: 1, batch_id: event.get("batch_id")?.as_str()?.to_owned(), operation: event.get("operation")?.as_str()?.to_owned(), version: event.get("version").and_then(serde_json::Value::as_u64).unwrap_or_default(), status: String::new(), error_code: String::new(), projection_json: event.get("projection_json").and_then(serde_json::Value::as_str).unwrap_or("{}").as_bytes().to_vec(), truncated: false,
-                    }))
-                })
             } else if record.event_type == "policy_aware_tool_result_cache.result" {
-                serde_json::from_slice::<serde_json::Value>(&record.payload).ok().and_then(|value| {
-                    let event = value.get("PolicyAwareToolResultCache").unwrap_or(&value);
-                    Some(generated::event_envelope::Event::PolicyAwareToolResultCache(generated::PolicyAwareToolResultCacheEvent {
-                        schema_version: 1, operation: event.get("operation")?.as_str()?.to_owned(), version: event.get("version").and_then(serde_json::Value::as_u64).unwrap_or_default(), status: String::new(), error_code: String::new(), projection_json: event.get("projection_json").and_then(serde_json::Value::as_str).unwrap_or("{}").as_bytes().to_vec(), truncated: false,
-                    }))
-                })
+                serde_json::from_slice::<serde_json::Value>(&record.payload)
+                    .ok()
+                    .and_then(|value| {
+                        let event = value.get("PolicyAwareToolResultCache").unwrap_or(&value);
+                        Some(
+                            generated::event_envelope::Event::PolicyAwareToolResultCache(
+                                generated::PolicyAwareToolResultCacheEvent {
+                                    schema_version: 1,
+                                    operation: event.get("operation")?.as_str()?.to_owned(),
+                                    version: event
+                                        .get("version")
+                                        .and_then(serde_json::Value::as_u64)
+                                        .unwrap_or_default(),
+                                    status: String::new(),
+                                    error_code: String::new(),
+                                    projection_json: event
+                                        .get("projection_json")
+                                        .and_then(serde_json::Value::as_str)
+                                        .unwrap_or("{}")
+                                        .as_bytes()
+                                        .to_vec(),
+                                    truncated: false,
+                                },
+                            ),
+                        )
+                    })
             } else if record.event_type == "code_anchored_intent_markers.result" {
-                serde_json::from_slice::<serde_json::Value>(&record.payload).ok().and_then(|value| { let event=value.get("CodeAnchoredIntentMarkers").unwrap_or(&value); Some(generated::event_envelope::Event::CodeAnchoredIntentMarkers(generated::CodeAnchoredIntentMarkersEvent{schema_version:1,operation:event.get("operation")?.as_str()?.to_owned(),version:event.get("version").and_then(serde_json::Value::as_u64).unwrap_or(1),status:String::new(),error_code:String::new(),projection_json:event.get("projection_json").and_then(serde_json::Value::as_str).unwrap_or("{}").as_bytes().to_vec(),truncated:false})) })
+                serde_json::from_slice::<serde_json::Value>(&record.payload)
+                    .ok()
+                    .and_then(|value| {
+                        let event = value.get("CodeAnchoredIntentMarkers").unwrap_or(&value);
+                        Some(generated::event_envelope::Event::CodeAnchoredIntentMarkers(
+                            generated::CodeAnchoredIntentMarkersEvent {
+                                schema_version: 1,
+                                operation: event.get("operation")?.as_str()?.to_owned(),
+                                version: event
+                                    .get("version")
+                                    .and_then(serde_json::Value::as_u64)
+                                    .unwrap_or(1),
+                                status: String::new(),
+                                error_code: String::new(),
+                                projection_json: event
+                                    .get("projection_json")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or("{}")
+                                    .as_bytes()
+                                    .to_vec(),
+                                truncated: false,
+                            },
+                        ))
+                    })
             } else if record.event_type == "model_purpose_routing.result" {
-                serde_json::from_slice::<serde_json::Value>(&record.payload).ok().and_then(|value| { let event=value.get("ModelPurposeRouting").unwrap_or(&value); Some(generated::event_envelope::Event::ModelPurposeRouting(generated::ModelPurposeRoutingEvent{schema_version:1,operation:event.get("operation")?.as_str()?.to_owned(),version:event.get("version").and_then(serde_json::Value::as_u64).unwrap_or(1),status:String::new(),error_code:String::new(),projection_json:event.get("projection_json").and_then(serde_json::Value::as_str).unwrap_or("{}").as_bytes().to_vec(),truncated:false})) })
+                serde_json::from_slice::<serde_json::Value>(&record.payload)
+                    .ok()
+                    .and_then(|value| {
+                        let event = value.get("ModelPurposeRouting").unwrap_or(&value);
+                        Some(generated::event_envelope::Event::ModelPurposeRouting(
+                            generated::ModelPurposeRoutingEvent {
+                                schema_version: 1,
+                                operation: event.get("operation")?.as_str()?.to_owned(),
+                                version: event
+                                    .get("version")
+                                    .and_then(serde_json::Value::as_u64)
+                                    .unwrap_or(1),
+                                status: String::new(),
+                                error_code: String::new(),
+                                projection_json: event
+                                    .get("projection_json")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or("{}")
+                                    .as_bytes()
+                                    .to_vec(),
+                                truncated: false,
+                            },
+                        ))
+                    })
+            } else if record.event_type == "local_model_runtime_manager.result" {
+                serde_json::from_slice::<serde_json::Value>(&record.payload)
+                    .ok()
+                    .and_then(|value| {
+                        let event = value.get("LocalModelRuntimeManager").unwrap_or(&value);
+                        Some(generated::event_envelope::Event::LocalModelRuntimeManager(
+                            generated::LocalModelRuntimeManagerEvent {
+                                schema_version: 1,
+                                operation: event.get("operation")?.as_str()?.to_owned(),
+                                version: event
+                                    .get("version")
+                                    .and_then(serde_json::Value::as_u64)
+                                    .unwrap_or(1),
+                                status: String::new(),
+                                error_code: String::new(),
+                                projection_json: event
+                                    .get("projection_json")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or("{}")
+                                    .as_bytes()
+                                    .to_vec(),
+                                truncated: false,
+                            },
+                        ))
+                    })
             } else {
                 execution_event
                     .map(|event| generated::event_envelope::Event::ExecutionEvent(Box::new(event)))
@@ -3074,32 +3202,103 @@ impl IpcBridge {
                         .await?;
                 }
                 Some(generated::command_envelope::Command::ExtensionConformanceKit(request)) => {
-                    let operation = if request.operation.is_empty() { "inspect".to_owned() } else { request.operation.clone() };
-                    let result = self.dispatch_extension_conformance_kit(operation, request).await?;
-                    self.write_response(writer, "extension_conformance_kit.result", result).await?;
+                    let operation = if request.operation.is_empty() {
+                        "inspect".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_extension_conformance_kit(operation, request)
+                        .await?;
+                    self.write_response(writer, "extension_conformance_kit.result", result)
+                        .await?;
                 }
                 Some(generated::command_envelope::Command::DurableRemoteTaskBridge(request)) => {
-                    let operation = if request.operation.is_empty() { "status".to_owned() } else { request.operation.clone() };
-                    let result = self.dispatch_durable_remote_task_bridge(operation, request).await?;
-                    self.write_response(writer, "durable_remote_task_bridge.result", result).await?;
+                    let operation = if request.operation.is_empty() {
+                        "status".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_durable_remote_task_bridge(operation, request)
+                        .await?;
+                    self.write_response(writer, "durable_remote_task_bridge.result", result)
+                        .await?;
                 }
-                Some(generated::command_envelope::Command::MessageInterventionPolicies(request)) => {
-                    let operation = if request.operation.is_empty() { "evaluate".to_owned() } else { request.operation.clone() };
-                    let result = self.dispatch_message_intervention_policies(operation, request).await?;
-                    self.write_response(writer, "message_intervention_policies.result", result).await?;
+                Some(generated::command_envelope::Command::MessageInterventionPolicies(
+                    request,
+                )) => {
+                    let operation = if request.operation.is_empty() {
+                        "evaluate".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_message_intervention_policies(operation, request)
+                        .await?;
+                    self.write_response(writer, "message_intervention_policies.result", result)
+                        .await?;
                 }
                 Some(generated::command_envelope::Command::BatchInvocationRuntime(request)) => {
-                    let operation = if request.operation.is_empty() { "get".to_owned() } else { request.operation.clone() };
-                    let result = self.dispatch_batch_invocation_runtime(operation, request).await?;
-                    self.write_response(writer, "batch_invocation_runtime.result", result).await?;
+                    let operation = if request.operation.is_empty() {
+                        "get".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_batch_invocation_runtime(operation, request)
+                        .await?;
+                    self.write_response(writer, "batch_invocation_runtime.result", result)
+                        .await?;
                 }
                 Some(generated::command_envelope::Command::PolicyAwareToolResultCache(request)) => {
-                    let operation = if request.operation.is_empty() { "inspect".to_owned() } else { request.operation.clone() };
-                    let result = self.dispatch_policy_aware_tool_result_cache(operation, request).await?;
-                    self.write_response(writer, "policy_aware_tool_result_cache.result", result).await?;
+                    let operation = if request.operation.is_empty() {
+                        "inspect".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_policy_aware_tool_result_cache(operation, request)
+                        .await?;
+                    self.write_response(writer, "policy_aware_tool_result_cache.result", result)
+                        .await?;
                 }
-                Some(generated::command_envelope::Command::CodeAnchoredIntentMarkers(request)) => { let operation=if request.operation.is_empty(){"scan".to_owned()}else{request.operation.clone()}; let result=self.dispatch_code_anchored_intent_markers(operation,request).await?; self.write_response(writer,"code_anchored_intent_markers.result",result).await?; }
-                Some(generated::command_envelope::Command::ModelPurposeRouting(request)) => { let operation=if request.operation.is_empty(){"get".to_owned()}else{request.operation.clone()}; let result=self.dispatch_model_purpose_routing(operation,request).await?; self.write_response(writer,"model_purpose_routing.result",result).await?; }
+                Some(generated::command_envelope::Command::CodeAnchoredIntentMarkers(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "scan".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_code_anchored_intent_markers(operation, request)
+                        .await?;
+                    self.write_response(writer, "code_anchored_intent_markers.result", result)
+                        .await?;
+                }
+                Some(generated::command_envelope::Command::ModelPurposeRouting(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "get".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_model_purpose_routing(operation, request)
+                        .await?;
+                    self.write_response(writer, "model_purpose_routing.result", result)
+                        .await?;
+                }
+                Some(generated::command_envelope::Command::LocalModelRuntimeManager(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "inspect".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_local_model_runtime_manager(operation, request)
+                        .await?;
+                    self.write_response(writer, "local_model_runtime_manager.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -8342,10 +8541,26 @@ impl IpcBridge {
         operation: String,
         request: generated::ExtensionConformanceKitCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
-        let c = self.coordinator.as_ref().ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let c = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
         let (reply, response) = oneshot::channel();
-        c.dispatch(CoreCommand::ExtensionConformanceKit { operation, subject_id: request.subject_id, payload: request.payload, expected_version: request.expected_version, idempotency_key: request.idempotency_key, reply }).await.map_err(|e| FrameError::Io(e.to_string()))?;
-        response.await.map_err(|_| FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from)
+        c.dispatch(CoreCommand::ExtensionConformanceKit {
+            operation,
+            subject_id: request.subject_id,
+            payload: request.payload,
+            expected_version: request.expected_version,
+            idempotency_key: request.idempotency_key,
+            reply,
+        })
+        .await
+        .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
     }
 
     async fn dispatch_durable_remote_task_bridge(
@@ -8353,10 +8568,26 @@ impl IpcBridge {
         operation: String,
         request: generated::DurableRemoteTaskBridgeCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
-        let c = self.coordinator.as_ref().ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let c = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
         let (reply, response) = oneshot::channel();
-        c.dispatch(CoreCommand::DurableRemoteTaskBridge { operation, remote_task_id: request.remote_task_id, payload: request.payload, expected_version: request.expected_version, idempotency_key: request.idempotency_key, reply }).await.map_err(|e| FrameError::Io(e.to_string()))?;
-        response.await.map_err(|_| FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from)
+        c.dispatch(CoreCommand::DurableRemoteTaskBridge {
+            operation,
+            remote_task_id: request.remote_task_id,
+            payload: request.payload,
+            expected_version: request.expected_version,
+            idempotency_key: request.idempotency_key,
+            reply,
+        })
+        .await
+        .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
     }
 
     async fn dispatch_message_intervention_policies(
@@ -8364,27 +8595,156 @@ impl IpcBridge {
         operation: String,
         request: generated::MessageInterventionPoliciesCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
-        let c = self.coordinator.as_ref().ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let c = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
         let (reply, response) = oneshot::channel();
-        c.dispatch(CoreCommand::MessageInterventionPolicies { operation, payload: request.payload, expected_version: request.expected_version, idempotency_key: request.idempotency_key, reply }).await.map_err(|e| FrameError::Io(e.to_string()))?;
-        response.await.map_err(|_| FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from)
+        c.dispatch(CoreCommand::MessageInterventionPolicies {
+            operation,
+            payload: request.payload,
+            expected_version: request.expected_version,
+            idempotency_key: request.idempotency_key,
+            reply,
+        })
+        .await
+        .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
     }
 
-    async fn dispatch_batch_invocation_runtime(&self, operation: String, request: generated::BatchInvocationRuntimeCommand) -> Result<Vec<u8>, IpcBridgeError> {
-        let c = self.coordinator.as_ref().ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+    async fn dispatch_batch_invocation_runtime(
+        &self,
+        operation: String,
+        request: generated::BatchInvocationRuntimeCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let c = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
         let (reply, response) = oneshot::channel();
-        c.dispatch(CoreCommand::BatchInvocationRuntime { operation, batch_id: request.batch_id, payload: request.payload, expected_version: request.expected_version, idempotency_key: request.idempotency_key, reply }).await.map_err(|e| FrameError::Io(e.to_string()))?;
-        response.await.map_err(|_| FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from)
+        c.dispatch(CoreCommand::BatchInvocationRuntime {
+            operation,
+            batch_id: request.batch_id,
+            payload: request.payload,
+            expected_version: request.expected_version,
+            idempotency_key: request.idempotency_key,
+            reply,
+        })
+        .await
+        .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
     }
 
-    async fn dispatch_policy_aware_tool_result_cache(&self, operation: String, request: generated::PolicyAwareToolResultCacheCommand) -> Result<Vec<u8>, IpcBridgeError> {
-        let c = self.coordinator.as_ref().ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+    async fn dispatch_policy_aware_tool_result_cache(
+        &self,
+        operation: String,
+        request: generated::PolicyAwareToolResultCacheCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let c = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
         let (reply, response) = oneshot::channel();
-        c.dispatch(CoreCommand::PolicyAwareToolResultCache { operation, cache_key: request.cache_key, payload: request.payload, expected_version: request.expected_version, idempotency_key: request.idempotency_key, reply }).await.map_err(|e| FrameError::Io(e.to_string()))?;
-        response.await.map_err(|_| FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from)
+        c.dispatch(CoreCommand::PolicyAwareToolResultCache {
+            operation,
+            cache_key: request.cache_key,
+            payload: request.payload,
+            expected_version: request.expected_version,
+            idempotency_key: request.idempotency_key,
+            reply,
+        })
+        .await
+        .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
     }
-    async fn dispatch_code_anchored_intent_markers(&self, operation:String, request:generated::CodeAnchoredIntentMarkersCommand)->Result<Vec<u8>,IpcBridgeError>{let c=self.coordinator.as_ref().ok_or_else(||FrameError::Io("core command queue is not configured".into()))?;let(reply,response)=oneshot::channel();c.dispatch(CoreCommand::CodeAnchoredIntentMarkers{operation,file_path:request.file_path,revision:request.revision,payload:request.payload,idempotency_key:request.idempotency_key,reply}).await.map_err(|e|FrameError::Io(e.to_string()))?;response.await.map_err(|_|FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from)}
-    async fn dispatch_model_purpose_routing(&self, operation:String, request:generated::ModelPurposeRoutingCommand)->Result<Vec<u8>,IpcBridgeError>{let c=self.coordinator.as_ref().ok_or_else(||FrameError::Io("core command queue is not configured".into()))?;let(reply,response)=oneshot::channel();c.dispatch(CoreCommand::ModelPurposeRouting{operation,payload:request.payload,expected_version:request.expected_version,idempotency_key:request.idempotency_key,reply}).await.map_err(|e|FrameError::Io(e.to_string()))?;response.await.map_err(|_|FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from)}
+    async fn dispatch_code_anchored_intent_markers(
+        &self,
+        operation: String,
+        request: generated::CodeAnchoredIntentMarkersCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let c = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        c.dispatch(CoreCommand::CodeAnchoredIntentMarkers {
+            operation,
+            file_path: request.file_path,
+            revision: request.revision,
+            payload: request.payload,
+            idempotency_key: request.idempotency_key,
+            reply,
+        })
+        .await
+        .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+    async fn dispatch_model_purpose_routing(
+        &self,
+        operation: String,
+        request: generated::ModelPurposeRoutingCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let c = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        c.dispatch(CoreCommand::ModelPurposeRouting {
+            operation,
+            payload: request.payload,
+            expected_version: request.expected_version,
+            idempotency_key: request.idempotency_key,
+            reply,
+        })
+        .await
+        .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+    async fn dispatch_local_model_runtime_manager(
+        &self,
+        operation: String,
+        request: generated::LocalModelRuntimeManagerCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let c = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        c.dispatch(CoreCommand::LocalModelRuntimeManager {
+            operation,
+            payload: request.payload,
+            expected_version: request.expected_version,
+            idempotency_key: request.idempotency_key,
+            reply,
+        })
+        .await
+        .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
 
     async fn dispatch_memory_views_and_adaptive_recall(
         &self,

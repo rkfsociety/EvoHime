@@ -42,7 +42,10 @@ fn context() -> MessageInterventionContext {
 fn typed_projection_patch_is_bounded_and_redacted() {
     let verdict = evaluate(&policy(), &context(), false).unwrap();
     assert_eq!(verdict.action, InterventionAction::Redact);
-    assert_eq!(verdict.projection_patches, vec!["payload_metadata=redacted"]);
+    assert_eq!(
+        verdict.projection_patches,
+        vec!["payload_metadata=redacted"]
+    );
     assert_eq!(verdict.redaction_status, "metadata_only");
 }
 

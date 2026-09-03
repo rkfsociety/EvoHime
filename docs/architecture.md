@@ -2223,3 +2223,19 @@ prompts, credentials и hidden reasoning не входят в policy или rend
 projection. Authenticated IPC command 256/event 101 и Electron panel дают
 bounded get/put surface; invalid policy, stale version и unsafe
 tool/context combination отклоняются до эффекта.
+
+## Local Model Runtime Manager v1 (план 116)
+
+Core владеет versioned hardware snapshot без tracking identifiers, immutable
+model/runtime/artifact/session metadata, conservative fit, activation policy и
+resource admission. Durable records используют optimistic revision fence;
+authenticated additive IPC command 257/event 102 отдаёт только redacted
+projection. Artifact download принимает HTTPS или loopback HTTP, bounded size,
+explicit range resume, streaming hash/size verification и atomic promotion в
+Core-managed root.
+
+Supervisor запускает allowlisted local adapter в Job Object. `Ready` требует
+bounded `/v1/models` loopback probe с точным model id; approved profile
+преобразуется в существующие `local-managed` gateway/resilience references,
+session capability остаётся ephemeral. Unknown, unverified, staging, traversal,
+stale revision и health mismatch fail closed.
