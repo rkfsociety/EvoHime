@@ -371,6 +371,29 @@ describe('task timeline', () => {
     await waitFor(() => expect(calls.filter((call) => call.command === 'core.stopTask')).toHaveLength(2))
   })
 
+  it('recovers the stop control from a running Core event after renderer state is lost', async () => {
+    render(
+      <TaskTimeline
+        connection="connected"
+        events={[event('task.started', { prompt: 'Продолжи работу' }, 'task-1')]}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    const stop = await screen.findByRole('button', { name: 'Остановить задачу' })
+    expect(stop.hasAttribute('disabled')).toBe(false)
+    await userEvent.click(stop)
+    await waitFor(() => expect(calls.at(-1)).toEqual({
+      command: 'core.stopTask',
+      payload: { taskId: 'task-1' }
+    }))
+  })
+
   it('shows the unfinished tool directly in the chat and turns the composer into stop', async () => {
     const view = render(
       <TaskTimeline

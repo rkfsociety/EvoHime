@@ -222,9 +222,29 @@ export function TaskTimeline({
     [taskEvents, taskId]
   )
 
+  // `taskId` is transient renderer state. After a reconnect or a renderer
+  // reload Core may already be working while the component has not restored
+  // that state yet. Recover the newest non-terminal task from Core events so
+  // the stop control cannot disappear while work is still running.
+  const inferredRunningTaskId = useMemo(() => {
+    const terminal = new Set<string>()
+    const activeEventTypes = new Set(['task.started', 'tool.started', 'agent.message.delta', 'approval.required'])
+    for (const event of taskEvents) {
+      if (event.taskId.length === 0) continue
+      if (event.eventType === 'task.completed' || event.eventType === 'task.failed' || event.eventType === 'task.stopped') {
+        terminal.add(event.taskId)
+        continue
+      }
+      if (activeEventTypes.has(event.eventType) && !terminal.has(event.taskId)) return event.taskId
+    }
+    return null
+  }, [taskEvents])
+
+  const activeTaskId = taskId ?? startingTaskId ?? inferredRunningTaskId
+
   const { entries, approval, finished } = useMemo(
-    () => buildTranscript(activeTaskEvents),
-    [activeTaskEvents]
+    () => buildTranscript(activeTaskId === null ? activeTaskEvents : activeTaskEvents.filter((event) => event.taskId === activeTaskId)),
+    [activeTaskEvents, activeTaskId]
   )
 
   const conversation = useMemo(() => {
@@ -370,14 +390,14 @@ export function TaskTimeline({
   }, [api, chatId, onChatOpened, onChatTouched, prompt, providerMode, workspace])
 
   const stop = useCallback(async () => {
-    if (!api || !taskId) return
-    cancelRequestedTaskId.current = taskId
+    if (!api || !activeTaskId) return
+    cancelRequestedTaskId.current = activeTaskId
     setStopRequested(true)
     setBusy(true)
-    const outcome = await api.invoke('core.stopTask', { taskId })
+    const outcome = await api.invoke('core.stopTask', { taskId: activeTaskId })
     setBusy(false)
     if (!outcome.ok) setCommandError(outcome.message)
-  }, [api, taskId])
+  }, [activeTaskId, api])
 
   const resolveApproval = useCallback(
     async (granted: boolean, cancel = false) => {
@@ -398,7 +418,7 @@ export function TaskTimeline({
 
   const connected = CONNECTED_STATES.includes(connection)
   const canStart = connected && workspace !== null && prompt.trim().length > 0 && !busy
-  const running = taskId !== null && (startingTaskId === taskId || !finished)
+  const running = activeTaskId !== null && (startingTaskId === activeTaskId || !finished)
   // Запрос разрешения может прийти раньше любой другой записи ленты.
   const empty =
     entries.length === 0 && sentPrompt === null && approval === null && conversation.length === 0
