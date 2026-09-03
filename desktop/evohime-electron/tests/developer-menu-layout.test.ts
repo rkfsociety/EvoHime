@@ -13,4 +13,11 @@ describe('developer menu layout', () => {
     expect(block).toContain('overflow-y: auto')
     expect(block).not.toContain('bottom: 0')
   })
+
+  it('does not expose the Core-only incremental change protocol in the UI', () => {
+    const app = readFileSync(resolve(__dirname, '../src/renderer/src/App.tsx'), 'utf8')
+
+    expect(app).not.toContain("id: 'incremental-change'")
+    expect(app).not.toContain("view === 'incremental-change'")
+  })
 })

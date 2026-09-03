@@ -800,8 +800,9 @@ versioned run, с exact refs на Plan Artifact/Workspace Checkpoint, optimistic
 version и scope fingerprint. SQLite schema v58 хранит только metadata и
 redacted evidence; stale drift, duplicate idempotency и terminal unknown-safe
 outcomes проверены focused tests. Authenticated IPC использует command 210/event
-57, Electron показывает metadata-only `IncrementalChangeProtocolPanel`; внешний
-effect базовым executor намеренно не выполняется.
+57. Контракт остаётся Core-owned внутренним pipeline для оркестратора; ручная
+Electron-панель удалена из пользовательского и developer UI. Внешний effect
+базовым executor намеренно не выполняется.
 
 План 60 закрыт 1 сентября 2026 года: Revision-Safe Workspace Files v1
 реализован в общей tool boundary. Typed namespaces, `FileRef` hash/revision,

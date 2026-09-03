@@ -1159,10 +1159,13 @@ versioned run metadata, fingerprints, redacted evidence и idempotency key;
 fingerprint; drift даёт `stale` без записи. `cancelled` и
 `unknown_reconciliation_required` terminal и не ретраятся автоматически.
 
-Authenticated IPC command 210/event 57 и Electron `IncrementalChangeProtocolPanel`
-передают bounded JSON и показывают metadata-only projection. Базовый executor
-не выполняет внешний effect; будущие adapters обязаны добавить отдельный
-policy/approval contract.
+Authenticated IPC command 210/event 57 остаётся внутренним Core-контрактом для
+оркестратора: модель не может сама придумать ссылки на plan/checkpoint и
+обойти их проверку. Electron не показывает ручную панель и не принимает
+bounded JSON от пользователя; Core использует протокол только после получения
+типизированных ссылок на Plan Artifact и Workspace State Checkpoint. Базовый
+executor не выполняет внешний effect; будущие adapters обязаны добавить
+отдельный policy/approval contract.
 
 ## Artifact Handoff Registry v1
 
