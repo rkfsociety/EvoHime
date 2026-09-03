@@ -117,7 +117,7 @@ export function WorkspaceStateCheckpointsPanel({ connection, events, workspace }
       <button type="button" onClick={() => void invoke('restore_both')}>Восстановить всё</button>
     </div>
     {projection ? <p role="status">{projection.state} · файлов: {projection.fileCount} · конфликтов: {projection.conflictCount} · {projection.snapshotHash}</p> : null}
-    {projection?.errorCode ? <p role="alert">{projection.errorCode === 'workspace_checkpoint_limit_exceeded' ? 'Контрольная точка не создана: рабочая папка превышает ограничение снимка (до 4096 файлов, 64 МБ всего, не более 1 МБ на файл). Исключите большие/сгенерированные файлы или выберите меньшую папку.' : projection.errorMessage || `Операция отклонена: ${projection.errorCode}`}</p> : null}
+    {projection?.errorCode ? <p role="alert">{projection.errorCode === 'workspace_checkpoint_file_too_large' ? 'Контрольная точка не создана: в проекте есть файл больше 1 МБ. Уберите его из рабочей папки или исключите большой/сгенерированный файл.' : projection.errorCode === 'workspace_checkpoint_snapshot_too_large' ? 'Контрольная точка не создана: снимок превышает общий лимит 64 МБ. Уберите большие/сгенерированные файлы или выберите меньшую папку.' : projection.errorCode === 'workspace_checkpoint_too_many_files' ? 'Контрольная точка не создана: в проекте больше 4096 файлов. Выберите меньшую папку или исключите сгенерированные файлы.' : projection.errorMessage || `Операция отклонена: ${projection.errorCode}`}</p> : null}
     {message ? <p role="status">{message}</p> : null}
   </section>
 }

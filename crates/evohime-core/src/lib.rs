@@ -11592,8 +11592,12 @@ impl TaskCoordinator {
                                 Ok(checkpoint) => checkpoint,
                                 Err(error) => {
                                     let error_text = error.to_string();
-                                    let error_code = if error_text.contains("bounded limit") {
-                                        "workspace_checkpoint_limit_exceeded"
+                                    let error_code = if error_text.contains("file_bytes") {
+                                        "workspace_checkpoint_file_too_large"
+                                    } else if error_text.contains("snapshot_bytes") {
+                                        "workspace_checkpoint_snapshot_too_large"
+                                    } else if error_text.contains("files") {
+                                        "workspace_checkpoint_too_many_files"
                                     } else {
                                         "workspace_checkpoint_capture_failed"
                                     };

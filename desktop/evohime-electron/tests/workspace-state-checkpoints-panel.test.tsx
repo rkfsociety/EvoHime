@@ -37,8 +37,8 @@ describe('WorkspaceStateCheckpointsPanel', () => {
 
   it('shows a readable Core error when the workspace exceeds checkpoint limits', () => {
     ;(window as unknown as { evohime: unknown }).evohime = { v1: { apiVersion: 1, invoke: vi.fn(), subscribe: () => () => {}, writeClipboardText: async () => true } }
-    render(<WorkspaceStateCheckpointsPanel connection="connected" events={[{ eventType: 'workspace_state_checkpoint.result', payload: JSON.stringify({ operation: 'create', state: 'failed', error_code: 'workspace_checkpoint_limit_exceeded' }) }]} workspace="C:\\work" />)
+    render(<WorkspaceStateCheckpointsPanel connection="connected" events={[{ eventType: 'workspace_state_checkpoint.result', payload: JSON.stringify({ operation: 'create', state: 'failed', error_code: 'workspace_checkpoint_file_too_large' }) }]} workspace="C:\\work" />)
 
-    expect(screen.getByRole('alert').textContent).toMatch(/до 4096 файлов, 64 МБ всего/)
+    expect(screen.getByRole('alert').textContent).toMatch(/файл больше 1 МБ/)
   })
 })
