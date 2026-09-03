@@ -27,7 +27,6 @@ jobs:
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       electron: ${{ steps.filter.outputs.electron }}
-      windows: ${{ steps.filter.outputs.windows }}
       native: ${{ steps.filter.outputs.native }}
       docs: ${{ steps.filter.outputs.docs }}
     steps:
@@ -53,15 +52,11 @@ jobs:
           rust=false
           electron=false
           tooling=false
-          winui=false
           if matches '^(crates/|Cargo\.(toml|lock)$)'; then rust=true; fi
           if matches '^(desktop/evohime-electron/|crates/desktop-ipc/proto/)'; then electron=true; fi
           if matches '^(scripts/|installer/|\.github/workflows/)'; then tooling=true; fi
-          if matches '^desktop/EvoHime\.'; then winui=true; fi
 
-          windows=false
           native=false
-          if [ "$tooling" = true ] || [ "$winui" = true ]; then windows=true; fi
           if [ "$rust" = true ] || [ "$electron" = true ] || [ "$tooling" = true ]; then native=true; fi
           docs=false
           if matches '^(docs/|README\.md$|AGENTS\.md$|SECURITY\.md$|\.codex/|installer/.*\.(md|txt)$|crates/.*/README\.md$|tests/.*/README\.md$)'; then docs=true; fi
@@ -69,7 +64,6 @@ jobs:
           {
             echo "rust=$rust"
             echo "electron=$electron"
-            echo "windows=$windows"
             echo "native=$native"
             echo "docs=$docs"
           } >> "$GITHUB_OUTPUT"
@@ -228,60 +222,11 @@ jobs:
       - name: Сборка распакованного Electron package
         run: npm run package
 
-  windows-package:
-    name: Windows — совместимость и пакет
-    needs: [changes, documentation, rust-heavy, electron-heavy]
-    if: >-
-      always()
-      && (needs.changes.outputs.windows == 'true' || needs.changes.outputs.native == 'true')
-      && !contains(needs.*.result, 'failure')
-      && !contains(needs.*.result, 'cancelled')
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable-x86_64-pc-windows-msvc
-      - name: Проверка manifest и идемпотентного staging
-        shell: pwsh
-        run: ./scripts/native-package.tests.ps1
-
-      # После package manifest проверяем compatibility runtime в том же
-      # последовательном Windows-этапе.
-      - name: Restore WinUI shell
-        shell: pwsh
-        run: dotnet restore desktop/EvoHime.Tests/EvoHime.Tests.csproj --nologo
-      - name: Сборка WinUI shell
-        shell: pwsh
-        run: dotnet build desktop/EvoHime.Tests/EvoHime.Tests.csproj -p:Platform=x64 --nologo --no-restore
-      - name: Restore IPC-тестов
-        shell: pwsh
-        run: dotnet restore desktop/EvoHime.IpcTests/EvoHime.IpcTests.csproj --nologo
-      - name: Сборка IPC-тестов
-        shell: pwsh
-        run: dotnet build desktop/EvoHime.IpcTests/EvoHime.IpcTests.csproj --nologo --no-restore
-      - name: Тесты WinUI shell с диагностикой зависаний
-        timeout-minutes: 10
-        shell: pwsh
-        run: >-
-          dotnet test desktop/EvoHime.IpcTests/EvoHime.IpcTests.csproj
-          --nologo --no-build --no-restore
-          --results-directory "$env:GITHUB_WORKSPACE\TestResults"
-          --logger "console;verbosity=detailed"
-          --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type mini
-      - name: Загрузка диагностики зависания WinUI
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: winui-test-diagnostics
-          path: TestResults
-          if-no-files-found: ignore
-
   build-native:
     name: Сборка — native package и smoke
     # electron-heavy тоже в needs: установщик упаковывает собранную им оболочку,
     # поэтому его падение обязано останавливать публикацию.
-    needs: [changes, documentation, rust-heavy, electron-heavy, windows-package]
+    needs: [changes, documentation, rust-heavy, electron-heavy]
     # Пропущенная зависимость не должна пропускать этот job, а упавшая — должна
     # его остановить: needs.* даёт skipped, поэтому условие пишется явно.
     if: >-

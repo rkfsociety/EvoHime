@@ -46,9 +46,9 @@ synthesis-модель. Per-request model overrides сохраняются. Со
 Правка работает по одному файлу: склеенный из нескольких планов документ
 нельзя однозначно разложить обратно.
 
-WinUI 3 больше не является пользовательской оболочкой пакета. Он сохранён как
-временный compatibility runtime и oracle для совместимости IPC до отдельного
-решения о его удалении.
+Electron — единственная пользовательская оболочка пакета. Renderer и main
+процессы Electron используют authenticated named-pipe transport к Rust Core;
+отдельного legacy desktop runtime в продукте нет.
 
 ## Оболочка
 
@@ -418,8 +418,8 @@ Approval rejection записывается как terminal durable state и н�
 изменение canonical call, scope или policy делает approval stale. Bounded
 preflight/postflight hooks получают только action/tool/input/snapshot hashes и
 typed outcome metadata. Acceptance покрывает отказ до side effect, повторную
-доставку, drift, redaction и recovery; старые compatibility clients продолжают
-читать прежние receipt decision values.
+доставку, drift, redaction и recovery; старые receipt decision values остаются
+читаемыми для миграции.
 
 ## Core-owned execution ledger
 

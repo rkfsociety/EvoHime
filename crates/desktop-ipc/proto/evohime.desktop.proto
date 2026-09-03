@@ -537,8 +537,8 @@ message UnquarantineReceiptAction {
   string checkpoint = 4;
 }
 
-// Stage 01.4: read-only, bounded chain listing. Roles shell and
-// compatibility-shell only; Core never returns raw canonical payload here.
+// Stage 01.4: read-only, bounded chain listing for the shell role; Core never
+// returns raw canonical payload here.
 message ListReceipts {
   string task_id = 1;
   string run_id = 2;

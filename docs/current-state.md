@@ -386,11 +386,11 @@ automation evidence без публикации credentials.
   --all-features -- -D warnings` прошли;
 - Electron `npm test`: 457 passed, 2 штатно skipped; protocol, typecheck,
   production build и bundle checks прошли;
-- C# compatibility tests, native-package smoke, automation/release evidence и
-  Windows release gates прошли в доступной проверке;
+- native-package smoke, automation/release evidence и Windows release gates
+  прошли в доступной проверке;
 - `cargo fmt --all -- --check` и `git diff --check` прошли.
 
-Package startup, installer, upgrade/rollback и Windows compatibility остаются
+Package startup, installer, upgrade/rollback и Windows acceptance остаются
 отдельными ручными release gates из `.github/workflows/windows.yml`. Source-update E2E
 запускается только с `EVOHIME_UPDATE_E2E=1`, поскольку выполняет реальную
 пересборку.
@@ -400,7 +400,7 @@ Package startup, installer, upgrade/rollback и Windows compatibility остаю
 выполняет `Документация`, `Rust — быстрые проверки` и `Electron — protocol и
 typecheck`. Ручной «Ручной выпуск EvoHime» запускается через `Run workflow`,
 проверяет весь продукт, затем последовательно выполняет Rust security-gates,
-Electron E2E/package, Windows compatibility, native acceptance и публикацию
+Electron E2E/package, Windows acceptance, native acceptance и публикацию
 постоянного installer release. Каждый этап останавливает последующие при
 ошибке.
 
@@ -410,13 +410,15 @@ Electron E2E/package, Windows compatibility, native acceptance и публика
 documentation/release gate реализованы и перенесены в этот документ и
 `architecture.md`. Дальнейшие изменения оформляются новым временным планом
 только после отдельного evidence review; до этого поддерживаются текущие
-Windows compatibility, package/installer и release gates.
+Windows acceptance, package/installer и release gates.
 
 ## Граница продукта
 
 Пользовательский продукт ограничен `EvoHime-Setup.exe`, `EvoHime.exe`, локальным Core, supervisor и данными в профиле Windows. Исследовательские и экспериментальные каталоги не входят в установочный runtime.
 
-Legacy web UI, HTTP server, browser launcher и PostgreSQL migrations удалены из репозитория. Electron UI и authenticated versioned named-pipe IPC — текущая пользовательская оболочка и transport boundary; WinUI остаётся временным compatibility runtime для совместимости и тестов.
+Legacy web UI, HTTP server, browser launcher, PostgreSQL migrations и прежняя
+desktop shell удалены из репозитория. Electron UI и authenticated versioned
+named-pipe IPC — единственная пользовательская оболочка и transport boundary.
 
 План 27 реализован в Core/storage/runtime surface: retained-child contract и
 registry находятся в `crates/evohime-core/src/retained_child.rs`, durable

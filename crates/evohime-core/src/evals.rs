@@ -1500,7 +1500,7 @@ mod ui_truthfulness {
     /// `provider_id`/`model_id` fields, even when they happen to look
     /// secret-shaped. If the label wording ever changed to interpolate them
     /// ("Provider {model_id} is configured"), this eval catches the
-    /// overclaim/leak before it reaches the WinUI panel.
+    /// overclaim/leak before it reaches the Electron panel.
     pub fn provider_check_never_echoes_probe_identifiers() -> Result<(), String> {
         let snapshot = healthy_snapshot();
         let report = DoctorReport::from_snapshot(&snapshot)

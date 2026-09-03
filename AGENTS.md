@@ -1,6 +1,6 @@
 # EvoHime — Agent Guide
 
-EvoHime — локальный Windows AI-agent. Текущий продукт — Electron desktop application с Rust Core, SQLite и Windows supervisor; WinUI 3 сохранён как compatibility runtime и oracle переходных тестов.
+EvoHime — локальный Windows AI-agent. Текущий продукт — Electron desktop application с Rust Core, SQLite и Windows supervisor.
 
 ## Общение
 
@@ -25,7 +25,6 @@ UI не обращается к workspace, SQLite или model provider напр
 - Windows 10 2004+ или Windows 11, x64;
 - PowerShell 7 или новее: скрипты сборки и запуска в Windows PowerShell 5.1 не
   работают и останавливаются с явной ошибкой;
-- .NET SDK 10;
 - Rust MSVC toolchain;
 - Node.js 22 LTS — только для разработки Electron shell; в продукт внешний
   Node.js не входит.
@@ -66,10 +65,6 @@ pwsh -File .\scripts\build-listener-runtime.ps1 -Rungs tiny   # быстрый �
 $pwsh = Join-Path $PSHOME 'pwsh.exe'
 & $pwsh -NoProfile -File scripts\native-package.tests.ps1
 
-# Desktop UI/IPC tests (в переходный период сохраняется compatibility suite)
-& 'C:\Program Files\dotnet\dotnet.exe' test desktop\EvoHime.Tests\EvoHime.Tests.csproj -p:Platform=x64
-& 'C:\Program Files\dotnet\dotnet.exe' test desktop\EvoHime.IpcTests\EvoHime.IpcTests.csproj
-
 # Rust Core foundation
 cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc
 cargo check -p evohime-supervisor
@@ -89,7 +84,7 @@ npm run package          # распакованный Windows package в release
 Real-Core E2E тесты требуют собранный Core: `cargo build -p evohime-core`
 (или `--release`); без бинарника они помечаются как пропущенные.
 
-Для текущих desktop-задач используй Windows launcher, Rust crates, Electron tests в `desktop/evohime-electron` и Windows packaging scripts. WinUI/IPC tests остаются compatibility suite. Подробные решения завершённой миграции хранятся в памяти проекта; активные работы описаны в `docs/development-plan.md`.
+Для текущих desktop-задач используй Electron shell в `desktop/evohime-electron`, Rust crates и Windows packaging scripts. Подробные решения завершённой миграции и активные работы описаны в `docs/development-plan.md`.
 Electron renderer — встроенная часть desktop-приложения, а не web-панель: HTTP server, browser launcher и внешний Node.js runtime не возвращаются в продукт.
 
 Если Rust-сборка останавливается на `prost-build` или другом crate, сначала проверь доступ Cargo к crates.io:
@@ -99,15 +94,13 @@ Resolve-DnsName index.crates.io
 Test-NetConnection index.crates.io -Port 443
 ```
 
-NuGet и crates.io — независимые источники: успешный `dotnet restore` не означает, что Rust-сборка сможет обновить registry.
-
 ## IPC
 
-Протокол редактируется в `crates/desktop-ipc/proto/evohime.desktop.proto`. Rust transport и Electron main/preload adapter должны сохранять совместимость major-версии, sequence replay и bounded frame size. Изменение протокола требует обновить обе стороны и compatibility tests; C# suite сохраняется только как временный compatibility oracle. Генерируемые TypeScript-типы проверяются `npm run check:protocol`.
+Протокол редактируется в `crates/desktop-ipc/proto/evohime.desktop.proto`. Rust transport и Electron main/preload adapter должны сохранять совместимость major-версии, sequence replay и bounded frame size. Изменение протокола требует обновить обе стороны и IPC regression tests. Генерируемые TypeScript-типы проверяются `npm run check:protocol`.
 
 Команды `workspace.*`, `chat.*`, `provider.*`, `identity.get` и `repository.get` обслуживает main-процесс: это локальное состояние оболочки, а не права. Всё, что доходит до Core, Core проверяет заново.
 
-Подключение к Core аутентифицируется: supervisor выдаёт launch context (`%LOCALAPPDATA%/EvoHime/runtime/session.json`, owner-only DACL) с именем pipe и session secret, Core выдаёт одноразовый nonce, клиент отвечает `HMAC-SHA256(secret, role | client_id | nonce)`. Роли: `shell` (Electron) и `compatibility-shell` (WinUI). Общий known-answer вектор proof продублирован в Rust, Electron и C# тестах — менять его можно только во всех трёх сразу.
+Подключение к Core аутентифицируется: supervisor выдаёт launch context (`%LOCALAPPDATA%/EvoHime/runtime/session.json`, owner-only DACL) с именем pipe и session secret, Core выдаёт одноразовый nonce, клиент отвечает `HMAC-SHA256(secret, role | client_id | nonce)`. Роли: `shell` (Electron), `listener` и `cli`. Общий known-answer вектор proof продублирован в Rust и Electron тестах — менять его можно только в обеих реализациях сразу.
 
 ## Данные и диагностика
 

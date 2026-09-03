@@ -901,9 +901,9 @@ fn main() {
 ///
 /// The supervisor passes a protected context file through
 /// `EVOHIME_LAUNCH_CONTEXT`. Without it Core keeps serving the legacy pipe
-/// name with a freshly generated secret and no identity binding, which is the
-/// developer and WinUI-compatibility path; such a connection is reported as
-/// unauthenticated in the log and in `core.started`.
+/// name with a freshly generated secret and no identity binding for local
+/// developer launches; such a connection is reported as unauthenticated in the
+/// log and in `core.started`.
 #[cfg(windows)]
 fn launch_context() -> Result<evohime_desktop_ipc::session::LaunchContext, std::io::Error> {
     use evohime_desktop_ipc::session::{

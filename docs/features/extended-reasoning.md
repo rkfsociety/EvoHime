@@ -14,5 +14,4 @@ Extended reasoning реализуется внутри Rust Core и model gatewa
 
 ```powershell
 cargo test --locked -p evohime-core -p evohime-model-gateway
-dotnet test desktop\EvoHime.Tests\EvoHime.Tests.csproj -p:Platform=x64
 ```

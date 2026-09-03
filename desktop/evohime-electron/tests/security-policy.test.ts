@@ -125,21 +125,20 @@ describe('launch contract', () => {
 
     expect(proof).toHaveLength(64)
     expect(handshakeProof({ ...base, clientId: 'other' }, nonce)).not.toBe(proof)
-    expect(handshakeProof({ ...base, clientRole: 'compatibility-shell' }, nonce)).not.toBe(proof)
+    expect(handshakeProof({ ...base, clientRole: 'listener' }, nonce)).not.toBe(proof)
     expect(handshakeProof(base, 'aa'.repeat(32))).not.toBe(proof)
     expect(handshakeProof({ ...base, secret: 'cd'.repeat(32) }, nonce)).not.toBe(proof)
   })
 
-  it('derives the shared cross-implementation proof vector', () => {
-    // The same vector is asserted by evohime_desktop_ipc::session and by the
-    // WinUI compatibility shell, so all three stay wire-compatible.
+  it('derives the shared Rust/Electron proof vector', () => {
+    // The same vector is asserted by evohime_desktop_ipc::session.
     const context = readLaunchContext({}, () => 'fixed-id', contextFile(PIPE, SECRET))
     expect(
       handshakeProof(
-        { ...context, clientRole: 'compatibility-shell', clientId: 'EvoHime.Desktop' },
+        { ...context, clientRole: 'shell', clientId: 'shell-1' },
         'cd'.repeat(32)
       )
-    ).toBe('e7c7b06966269a86caf38e32d01ceccf5f1e9c52ab1e6646ac486c6e074941f3')
+    ).toBe('736f6218169dbdeee94f2b5c92552114f4b4703bcbe96f6f06af1d66dc678c63')
   })
 
   it('rejects remote or malformed pipe names', () => {

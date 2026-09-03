@@ -12,8 +12,8 @@ import { isAbsolutePath, normalizePath } from './path-utils'
  * last picked and a bounded list of recent ones. Core stays the authority for
  * workspace scope and re-validates the path on every command that uses it.
  *
- * The file is separate from the WinUI shell's `settings.json` so the two shells
- * never fight over one identifier while the fallback is supported.
+ * The file is owned by the Electron shell and is kept separate from Core-owned
+ * state so local workspace identifiers remain stable across restarts.
  */
 
 export const MAX_RECENT_WORKSPACES = 10

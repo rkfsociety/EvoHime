@@ -43,7 +43,7 @@ if (Test-Path (Join-Path $root '.env')) {
     }
 }
 
-# WinUI сохраняет выбранный provider/model/key в DPAPI-файле текущего
+# Electron сохраняет выбранный provider/model/key в DPAPI-файле текущего
 # пользователя. Читаем его тем же Windows-механизмом, не показывая ключ.
 $settingsPath = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'EvoHime\provider-settings.bin'
 if (Test-Path -LiteralPath $settingsPath) {

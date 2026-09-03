@@ -32,7 +32,7 @@ pub const PIPE_NAME_STEM: &str = "evohime-core-";
 /// Roles a client may claim in the handshake. Every role is still subject to
 /// Core's own capability and policy checks; the role only narrows what the
 /// transport accepts.
-pub const ALLOWED_CLIENT_ROLES: [&str; 4] = ["shell", "compatibility-shell", "listener", "cli"];
+pub const ALLOWED_CLIENT_ROLES: [&str; 3] = ["shell", "listener", "cli"];
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum SessionError {
@@ -516,7 +516,7 @@ mod tests {
             HandshakeVerifier::new(context(), DEFAULT_NONCE_TTL_MS).expect("verifier");
         let nonce = verifier.issue_nonce(1_000).expect("nonce");
         let mut swapped = request(&verifier, &nonce.value);
-        swapped.client_role = "compatibility-shell".into();
+        swapped.client_role = "listener".into();
         assert_eq!(
             verifier.verify(&swapped, 1_100),
             Err(HandshakeRejection::ProofMismatch)
@@ -622,20 +622,13 @@ mod tests {
         );
     }
 
-    /// Pins the proof derivation across the three implementations: this crate,
-    /// the Electron adapter and the WinUI compatibility shell all assert the
-    /// same vector, so a change here breaks loudly instead of silently
-    /// splitting the transport in two.
+    /// Pins the proof derivation across the Rust and Electron implementations.
     #[test]
-    fn proof_matches_the_shared_cross_implementation_vector() {
+    fn proof_matches_the_shared_rust_electron_vector() {
         let secret = SessionSecret::parse(&"ab".repeat(SECRET_BYTES)).expect("secret");
         assert_eq!(
-            secret.proof(
-                "compatibility-shell",
-                "EvoHime.Desktop",
-                &"cd".repeat(NONCE_BYTES)
-            ),
-            "e7c7b06966269a86caf38e32d01ceccf5f1e9c52ab1e6646ac486c6e074941f3"
+            secret.proof("shell", "shell-1", &"cd".repeat(NONCE_BYTES)),
+            "736f6218169dbdeee94f2b5c92552114f4b4703bcbe96f6f06af1d66dc678c63"
         );
     }
 

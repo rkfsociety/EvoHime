@@ -44,7 +44,7 @@ Workflow/evidence adapters с отсутствующим provider остаютс
    blocking dependency; закрытый комплект переносить в каноническую
    документацию и удалять из `docs/plans/`.
 2. **Поддержка релиза.** Сохранять зелёными Rust/Electron/package gates и
-   Windows compatibility/installer acceptance.
+   Windows acceptance/installer acceptance.
 3. **Reliability и security.** Развивать credential, recovery, diagnostics и
    backup/restore UX только в существующих границах Core и main-процесса.
 4. **Совместимость.** Поддерживать Windows 10/11 CI; informative ARM64/Insider
@@ -77,8 +77,8 @@ typed IPC/UI и redacted packaged fault evidence; stage-комплект пла�
   проходят;
 - automation boundary и release evidence gates проходят без credentials и
   необезличенных данных;
-- Windows package, installer, upgrade, rollback и compatibility smoke проходят
-  в CI;
+- Windows package, installer, upgrade, rollback и acceptance smoke проходят в
+  ручном release workflow;
 - каждый закрытый open decision имеет код, focused test, redacted evidence и
   обновлённые `current-state.md`, `decision-register.md` и `release-evidence.md`;
 - `git diff --check` проходит, а task-only изменения зафиксированы коммитом.

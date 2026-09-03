@@ -23,16 +23,19 @@
 
 ### 2. Desktop quality и совместимость
 
-- сохранять compatibility tests UI/Core для каждого изменения IPC;
+- сохранять Electron/Core IPC tests для каждого изменения IPC;
 - поддерживать installer/package smoke, single-instance и Job Object checks;
 - поддерживать bounded logs, event replay и retention без возврата web runtime;
 - выполнять informative ARM64/Insider runs без изменения базового x64 release scope.
 
 ## Release workflow
 
-1. Push или pull request запускает проверки Rust, supervisor, Electron, evaluation, package smoke и Windows acceptance.
-2. Job `build-native` стартует только после успешных проверок.
-3. Собирается runtime в staging-каталог.
+1. Push или pull request запускает автоматический workflow «Быстрые проверки
+   EvoHime» с быстрыми Rust/Electron gates.
+2. Через `Run workflow` запускается «Ручной выпуск EvoHime»: полный Rust,
+   Electron, package, installer и Windows acceptance.
+3. Публикация постоянного installer release выполняется только в ручном
+   workflow после успешного полного прогона.
 4. Ручной запуск workflow после зелёной сборки обновляет единственный постоянный release `installer` и его `EvoHime-Setup.exe`.
 5. Новые версионные релизы и теги для этого цикла не создаются.
 

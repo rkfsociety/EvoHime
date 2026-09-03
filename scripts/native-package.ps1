@@ -28,20 +28,6 @@ function New-NativePackageManifest {
     }
 }
 
-function Get-DotNetExecutable {
-    $command = Get-Command dotnet -ErrorAction SilentlyContinue
-    if ($null -ne $command) {
-        return $command.Source
-    }
-
-    $knownPath = Join-Path ${env:ProgramFiles} 'dotnet\dotnet.exe'
-    if (Test-Path -LiteralPath $knownPath) {
-        return $knownPath
-    }
-
-    throw 'dotnet SDK не найден. Установите .NET SDK 10 и повторите сборку.'
-}
-
 function Invoke-NativeCommand {
     param(
         [Parameter(Mandatory)]

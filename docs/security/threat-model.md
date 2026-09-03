@@ -51,8 +51,8 @@ impersonation, а не из слов клиента), неизвестную р�
 повторно использованный или не совпавший nonce и неверный proof. Имя pipe
 считается непредсказуемым, но не секретом: защиту дают ACL и handshake.
 
-Роли транспорта: `shell` — Electron-оболочка, `compatibility-shell` — WinUI
-compatibility runtime. Core без launch context (запуск разработчика без
+Роли транспорта: `shell` — Electron-оболочка, `listener` и `cli` — внутренние
+клиенты соответствующих контуров. Core без launch context (запуск разработчика без
 supervisor) работает в неаутентифицированном режиме и явно помечает это в
 `core.started` и в логе соединения.
 
@@ -71,7 +71,7 @@ session, но не дают гарантий против вредоносног
 
 Публикация текущего установщика разрешена только после Rust tests, Electron
 typecheck/tests, protocol и bundle checks, deterministic evaluation и security
-gate, WinUI/IPC compatibility tests, package smoke, `git diff --check` и
+gate, package smoke, `git diff --check` и
 успешной Windows package compilation на Windows CI. Release job дополнительно
 выполняет startup/fault acceptance, install/upgrade/rollback smoke, repair
 protected-path/health-marker tests и проверку retention.

@@ -29,7 +29,7 @@ https://github.com/rkfsociety/EvoHime/releases/latest/download/EvoHime-Setup.exe
 
 Перед обновлением этого релиза Windows CI проверяет Rust и supervisor, Electron
 protocol/typecheck/tests/bundle, deterministic evaluation и security gate,
-совместимость WinUI/IPC, package startup, fault recovery, install/upgrade и
+IPC, package startup, fault recovery, install/upgrade и
 rollback. Source-update E2E запускается отдельно с явным флагом и не требуется
 для обычной первой установки.
 

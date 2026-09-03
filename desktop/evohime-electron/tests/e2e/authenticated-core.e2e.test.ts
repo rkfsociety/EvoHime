@@ -153,20 +153,6 @@ describe.runIf(coreExecutable !== null && process.platform === 'win32')(
       expect((await connected).protocol).toEqual({ major: 1, minor: 0 })
     }, 90_000)
 
-    it('accepts the WinUI compatibility role while the fallback is supported', async () => {
-      const started = startAuthenticatedCore('compat', currentUserSid())
-
-      const target = createClient(started.pipeName, started.secret, 'compatibility-shell')
-      const connected = waitForState(
-        target,
-        'connected',
-        (state) => state.connection === 'connected'
-      )
-      target.start()
-
-      expect((await connected).coreVersion).toBeTruthy()
-    }, 90_000)
-
     it('refuses an unknown client role', async () => {
       const started = startAuthenticatedCore('role', currentUserSid())
 

@@ -28,9 +28,8 @@ const HANDSHAKE_TIMEOUT_MS: u64 = 10_000;
 pub struct PipeServerConfig {
     pub context: LaunchContext,
     /// When false, a client that skips authentication is still served and the
-    /// connection is logged as unauthenticated. This keeps the WinUI
-    /// compatibility shell working until it is retired; the packaged
-    /// supervisor always enables enforcement.
+    /// connection is logged as unauthenticated. This is retained for local
+    /// developer launches; the packaged supervisor always enables enforcement.
     pub enforce_authentication: bool,
 }
 

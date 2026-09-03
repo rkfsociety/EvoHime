@@ -1,6 +1,6 @@
 # Политика безопасности EvoHime
 
-EvoHime — локальный single-user Windows-клиент. Пользовательский интерфейс не открывает сетевой порт: Electron main process общается с Rust Core через защищённый versioned Windows named pipe. WinUI сохранён только как compatibility runtime.
+EvoHime — локальный single-user Windows-клиент. Пользовательский интерфейс не открывает сетевой порт: Electron main process общается с Rust Core через защищённый versioned Windows named pipe.
 
 ## Защищаемые границы
 
@@ -39,7 +39,6 @@ EvoHime — локальный single-user Windows-клиент. Пользов�
 .\scripts\native-package.tests.ps1
 cargo test --locked -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc
 cd desktop\evohime-electron; npm run check:protocol; npm test; npm run build; npm run check:bundle
-dotnet test desktop\EvoHime.Tests\EvoHime.Tests.csproj -p:Platform=x64
 ```
 
 Релизный установщик собирается только отдельным job после успешных CI-проверок.
