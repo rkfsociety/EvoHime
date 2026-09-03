@@ -1,21 +1,16 @@
-name: Быстрые проверки и ручной выпуск EvoHime
+name: Ручной выпуск EvoHime
 
-# Push и pull request получают быстрый feedback: документация, Rust fmt/clippy
-# и Electron protocol/typecheck. Полный release-контур (тесты, package,
-# installer, upgrade/rollback smoke и публикация) запускается только вручную
-# через Run workflow и обновляет постоянный release лишь после всех acceptance
-# проверок.
+# Полный release-контур: тесты, package, installer, upgrade/rollback smoke и
+# публикация. Он запускается только вручную через Run workflow и обновляет
+# постоянный release лишь после всех acceptance-проверок.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: windows-ci-${{ github.workflow }}-${{ github.ref }}
+  group: manual-release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -44,19 +39,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Ручной запуск и всё, что не push, проверяются целиком.
-          if [ "${{ github.event_name }}" != 'push' ]; then
-            files='ALL'
-          else
-            before='${{ github.event.before }}'
-            if [ -z "$before" ] || [ "$before" = '0000000000000000000000000000000000000000' ] \
-               || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
-              # Первый или force-push: базы для сравнения нет, проверяем всё.
-              files='ALL'
-            else
-              files=$(git diff --name-only "$before" '${{ github.sha }}')
-            fi
-          fi
+          # Ручной выпуск всегда проверяет весь продукт.
+          files='ALL'
           echo "changed files:"; echo "$files"
 
           matches() {
@@ -132,7 +116,6 @@ jobs:
     needs: [changes, documentation, rust-fast]
     if: >-
       always()
-      && github.event_name == 'workflow_dispatch'
       && needs.changes.outputs.native == 'true'
       && needs.rust-fast.result == 'success'
       && (needs.documentation.result == 'success' || needs.documentation.result == 'skipped')
@@ -213,7 +196,6 @@ jobs:
     needs: [changes, documentation, rust-heavy, electron-fast]
     if: >-
       always()
-      && github.event_name == 'workflow_dispatch'
       && needs.changes.outputs.native == 'true'
       && needs.rust-heavy.result == 'success'
       && needs.electron-fast.result == 'success'
@@ -251,7 +233,6 @@ jobs:
     needs: [changes, documentation, rust-heavy, electron-heavy]
     if: >-
       always()
-      && github.event_name == 'workflow_dispatch'
       && (needs.changes.outputs.windows == 'true' || needs.changes.outputs.native == 'true')
       && !contains(needs.*.result, 'failure')
       && !contains(needs.*.result, 'cancelled')
@@ -305,7 +286,6 @@ jobs:
     # его остановить: needs.* даёт skipped, поэтому условие пишется явно.
     if: >-
       !cancelled()
-      && github.event_name == 'workflow_dispatch'
       && !contains(needs.*.result, 'failure')
       && needs.changes.outputs.native == 'true'
     runs-on: windows-latest
@@ -460,9 +440,8 @@ jobs:
     name: Публикация
     needs: build-native
     if: >-
-      !cancelled() &&
-      needs.build-native.result == 'success' &&
-      github.event_name == 'workflow_dispatch'
+      !cancelled()
+      && needs.build-native.result == 'success'
     runs-on: windows-latest
     permissions:
       contents: write

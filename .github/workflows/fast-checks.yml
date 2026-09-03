@@ -1,0 +1,136 @@
+name: Быстрые проверки EvoHime
+
+# Автоматический feedback для каждого push и pull request. Полный выпускной
+# контур с package, installer и публикацией находится отдельно в windows.yml
+# и запускается только вручную.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Что именно затронул коммит. Отбор делается здесь, а не через paths-ignore:
+  # пропущенный job остаётся видимым успешным check, в отличие от отсутствующего
+  # workflow run.
+  changes:
+    name: Изменения
+    runs-on: ubuntu-latest
+    outputs:
+      native: ${{ steps.filter.outputs.native }}
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Определение затронутых областей
+        id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != 'push' ]; then
+            files='ALL'
+          else
+            before='${{ github.event.before }}'
+            if [ -z "$before" ] || [ "$before" = '0000000000000000000000000000000000000000' ] \
+               || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
+              files='ALL'
+            else
+              files=$(git diff --name-only "$before" '${{ github.sha }}')
+            fi
+          fi
+          echo "changed files:"; echo "$files"
+
+          matches() {
+            if [ "$files" = 'ALL' ]; then
+              return 0
+            fi
+            echo "$files" | grep -Eq "$1"
+          }
+
+          tooling=false
+          rust=false
+          electron=false
+          if matches '^(crates/|Cargo\.(toml|lock)$)'; then rust=true; fi
+          if matches '^(desktop/evohime-electron/|crates/desktop-ipc/proto/)'; then electron=true; fi
+          if matches '^(scripts/|installer/|\.github/workflows/)'; then tooling=true; fi
+
+          native=false
+          if [ "$rust" = true ] || [ "$electron" = true ] || [ "$tooling" = true ]; then native=true; fi
+          docs=false
+          if matches '^(docs/|README\.md$|AGENTS\.md$|SECURITY\.md$|\.codex/|installer/.*\.(md|txt)$|crates/.*/README\.md$|tests/.*/README\.md$)'; then docs=true; fi
+
+          {
+            echo "native=$native"
+            echo "docs=$docs"
+          } >> "$GITHUB_OUTPUT"
+
+  documentation:
+    name: Документация
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Проверка ссылок и устаревших ссылок в документации
+        shell: pwsh
+        run: ./scripts/documentation.tests.ps1
+
+  # Условие — `native`, а не `rust`: правка script-гейта обязана прогонять
+  # соответствующие проверки.
+  rust-fast:
+    name: Rust — быстрые проверки
+    needs: changes
+    if: >-
+      always()
+      && needs.changes.outputs.native == 'true'
+    runs-on: windows-latest
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+      - name: Runtime Stall Guard — static report
+        shell: pwsh
+        run: ./scripts/runtime-stall-guard.tests.ps1
+      - name: Проверка форматирования Rust
+        run: cargo fmt --all -- --check
+      - name: Проверка lint всего Rust workspace
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+  # Запускается параллельно с rust-fast.
+  electron-fast:
+    name: Electron — protocol и typecheck
+    needs: changes
+    if: >-
+      always()
+      && needs.changes.outputs.native == 'true'
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop/evohime-electron
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Установка Electron-зависимостей без lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Разрешённые установщики зависимостей
+        run: node scripts/postinstall-allowlist.mjs
+      - name: Проверка generated IPC bindings против canonical proto
+        run: npm run check:protocol
+      - name: Typecheck main, preload и renderer
+        run: npm run typecheck
