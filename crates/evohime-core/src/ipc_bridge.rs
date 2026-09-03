@@ -2982,6 +2982,18 @@ impl IpcBridge {
                     self.write_response(writer, "remote_conversation_channels.result", result)
                         .await?;
                 }
+                Some(generated::command_envelope::Command::PromptCachePlanner(request)) => {
+                    let operation = if request.operation.is_empty() {
+                        "inspect".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let result = self
+                        .dispatch_prompt_cache_planner(operation, request)
+                        .await?;
+                    self.write_response(writer, "prompt_cache_planner.result", result)
+                        .await?;
+                }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
                         .review_tasks
@@ -8124,6 +8136,33 @@ impl IpcBridge {
         c.dispatch(CoreCommand::RemoteConversationChannels {
             operation,
             connection_id: request.connection_id,
+            payload: request.payload,
+            expected_version: request.expected_version,
+            idempotency_key: request.idempotency_key,
+            reply,
+        })
+        .await
+        .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_prompt_cache_planner(
+        &self,
+        operation: String,
+        request: generated::PromptCachePlannerCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let c = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        c.dispatch(CoreCommand::PromptCachePlanner {
+            operation,
+            plan_id: request.plan_id,
             payload: request.payload,
             expected_version: request.expected_version,
             idempotency_key: request.idempotency_key,

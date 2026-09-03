@@ -454,3 +454,7 @@ additive IPC 245/90, Electron projection и recovery tests; комплект `97
 План 104 закрыт 3 сентября 2026 года. Реализованы Core contract/runtime,
 durable storage, pairing/admission/revoke recovery, additive IPC 246/91 и UI;
 комплект `104-0` … `104-4` удалён после verification.
+
+План 105 закрыт 3 сентября 2026 года: Core planner/storage/runtime, IPC 247/92,
+Electron projection и recovery/eval tests завершены; комплект `105-0` … `105-4`
+удалён после verification.

@@ -374,6 +374,8 @@ function dispatch(
       return accepted(client.send({ remoteConversationChannels: { schemaVersion: 1, operation, connectionId, payload: Buffer.from(body,'utf8'), expectedVersion, idempotencyKey } }))
     }
 
+    case 'core.promptCachePlanner': { const value=asRecord(payload); const operation=['plan','inspect','metric'].includes(String(value['operation']))?String(value['operation']):null; const planId=asBoundedString(value['planId']); const body=value['payload']===undefined?'':asBoundedString(value['payload']); const expectedVersion=value['expectedVersion']===undefined?0:asNonNegativeInteger(value['expectedVersion']); const idempotencyKey=asBoundedString(value['idempotencyKey']); if(operation===null||planId===null||body===null||expectedVersion===null||idempotencyKey===null||body.length>512*1024)return failure('invalid-payload','Некорректная операция Prompt Cache Planner.'); return accepted(client.send({promptCachePlanner:{schemaVersion:1,operation,planId,payload:Buffer.from(body,'utf8'),expectedVersion,idempotencyKey}})) }
+
     case 'core.taskWorktreeIsolation': {
       const value = asRecord(payload)
       const operation = ['create', 'ready', 'integrating', 'cleanup_pending'].includes(String(value['operation'])) ? String(value['operation']) : null

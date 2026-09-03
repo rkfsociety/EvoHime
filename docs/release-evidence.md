@@ -744,3 +744,8 @@ dedup 1/1; Core check/clippy, protocol/typecheck and focused UI 1/1 passed.
 Redaction excludes provider tokens, prompts, credentials, host paths and raw
 conversation bodies from IPC/UI projection; high-risk remote approval is
 denied without desktop grant.
+
+Plan 105: Core unit 2/2, external contract/recovery 1/1 each, storage metrics
+1/1; Core check, protocol/typecheck и focused UI 1/1 passed. Cache keys include
+segment hashes and context/policy versions; secrets, raw prompts and credentials
+не попадают в storage или IPC projection, keepalive default is zero.

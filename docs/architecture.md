@@ -2071,3 +2071,12 @@ identity, lifecycle revision и bounded queue/attachment limits. Pairing code
 представляются только opaque `credential_ref`; high-risk remote approval
 требует desktop grant. IPC 246/event 91 и Electron projection metadata-only;
 provider dispatch остаётся adapter boundary без DB/workspace authority.
+
+## Prompt Cache Planner v1 (план 105)
+
+Core строит deterministic `PromptSegment` список с content hash, stable/dynamic
+флагом, exact context/policy revisions и profile-driven provider capabilities.
+Cache key не меняет instruction или security semantics; secret segments
+отклоняются. Keepalive выключен по умолчанию и ограничен bounded profile policy.
+Measured metrics хранятся отдельно от raw prompts; authenticated IPC 247/event
+92 и Electron показывают только metadata.

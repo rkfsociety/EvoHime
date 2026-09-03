@@ -1086,6 +1086,7 @@ pub mod plan;
 pub mod plan_artifact;
 pub mod policy_gate;
 pub mod prd;
+pub mod prompt_cache_planner;
 pub mod provider_resilience;
 pub mod remote_conversation_channels;
 pub mod retained_child;
@@ -1745,6 +1746,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    PromptCachePlanner {
+        operation: String,
+        plan_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     /// Reads one memory record including its body. `sensitive`, forgotten and
     /// empty records come back redacted: `ListMemory` never carries a body,
     /// and this is the only path that can.
@@ -2354,6 +2363,12 @@ pub enum CoreEvent {
     RemoteConversationChannels {
         operation: String,
         connection_id: String,
+        version: u64,
+        projection_json: String,
+    },
+    PromptCachePlanner {
+        operation: String,
+        plan_id: String,
         version: u64,
         projection_json: String,
     },
@@ -3472,6 +3487,7 @@ impl EventJournal {
             CoreEvent::MemoryViewsAndAdaptiveRecall { view_id, .. } => view_id,
             CoreEvent::ModelEditProtocolRegistry { protocol_id, .. } => protocol_id,
             CoreEvent::RemoteConversationChannels { connection_id, .. } => connection_id,
+            CoreEvent::PromptCachePlanner { plan_id, .. } => plan_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3537,6 +3553,7 @@ impl EventJournal {
             }
             CoreEvent::ModelEditProtocolRegistry { .. } => "model_edit_protocol_registry.result",
             CoreEvent::RemoteConversationChannels { .. } => "remote_conversation_channels.result",
+            CoreEvent::PromptCachePlanner { .. } => "prompt_cache_planner.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -3568,6 +3585,9 @@ impl EventJournal {
             }
             CoreEvent::RemoteConversationChannels { .. } => {
                 serde_json::to_vec(event).expect("remote channel projection serializes")
+            }
+            CoreEvent::PromptCachePlanner { .. } => {
+                serde_json::to_vec(event).expect("prompt cache projection serializes")
             }
             CoreEvent::TypedAgentHandoffContract { .. } => {
                 serde_json::to_vec(event).expect("handoff projection serializes")
@@ -15353,6 +15373,34 @@ impl TaskCoordinator {
                 if let Some(journal) = state.lock().await.journal.clone() {
                     let _ = journal.record(&event).await;
                 }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::PromptCachePlanner {
+                operation,
+                plan_id,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let event_operation = operation.clone();
+                let event_plan_id = plan_id.clone();
+                let result=async { use crate::prompt_cache_planner as v; if plan_id.is_empty()||idempotency_key.is_empty(){return Err("invalid_prompt_cache_request".into())}; let value:serde_json::Value=serde_json::from_slice(&payload).map_err(|_|"invalid_prompt_cache_payload".to_string())?; match operation.as_str(){"plan"=>{let segments:Vec<v::PromptSegment>=serde_json::from_value(value.get("segments").cloned().ok_or_else(||"segments_required".to_string())?).map_err(|_|"invalid_segments".to_string())?;let profile:v::ProviderCacheProfile=serde_json::from_value(value.get("profile").cloned().ok_or_else(||"profile_required".to_string())?).map_err(|_|"invalid_profile".to_string())?;let plan=v::build_plan(segments,&profile,value.get("context_revision").and_then(serde_json::Value::as_str).unwrap_or_default(),value.get("policy_version").and_then(serde_json::Value::as_str).unwrap_or_default(),value.get("keepalive_ms").and_then(serde_json::Value::as_i64).unwrap_or(0)).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"planned","plan_id":plan_id,"cache_key":plan.cache_key,"segment_count":plan.segments.len(),"provider_profile_id":plan.provider_profile_id,"keepalive_ms":plan.keepalive_ms,"redacted":true})).map_err(|_|"serialization_failed".into())},"metric"=>{let metric:v::CacheMetric=serde_json::from_value(value.get("metric").cloned().ok_or_else(||"metric_required".to_string())?).map_err(|_|"invalid_metric".to_string())?;v::validate_metric(&metric).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"metric_accepted","plan_id":plan_id,"cache_key":metric.cache_key,"hit":metric.hit,"cached_tokens":metric.cached_tokens,"redacted":true})).map_err(|_|"serialization_failed".into())},"inspect"=>serde_json::to_vec(&serde_json::json!({"status":"available","plan_id":plan_id,"version":expected_version,"idempotency_key_present":!idempotency_key.is_empty(),"redacted":true})).map_err(|_|"serialization_failed".into()),_=>Err("unsupported_prompt_cache_operation".into())}}.await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|b| String::from_utf8(b.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::PromptCachePlanner {
+                    operation: event_operation,
+                    plan_id: event_plan_id,
+                    version: expected_version.saturating_add(1),
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                };
                 let _ = state.lock().await.events.send(event);
                 let _ = reply.send(result);
             }
