@@ -63,6 +63,7 @@ pub mod output_guardrail_pipeline_store;
 pub mod plan_artifact;
 pub mod privacy_telemetry_store;
 pub mod project_instruction_stack_store;
+pub mod batch_invocation_runtime_store;
 pub mod prompt_cache_planner_store;
 pub mod reasoning_operator_library_store;
 pub mod reconciliation_verifier;
@@ -3730,6 +3731,7 @@ impl LocalDatabase {
         }
         if current < 76 {
             project_instruction_stack_store::install_schema(&transaction)?;
+            batch_invocation_runtime_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 76;")?;
         }
         if current < 77 {

@@ -401,6 +401,7 @@ export interface CoreEvent {
   readonly knowledgeSourceRegistry?: KnowledgeSourceRegistryProjection | null
   readonly durableRemoteTaskBridge?: DurableRemoteTaskBridgeProjection | null
   readonly messageInterventionPolicies?: MessageInterventionPoliciesProjection | null
+  readonly batchInvocationRuntime?: BatchInvocationRuntimeProjection | null
   readonly agentGitChangeSets?: AgentGitChangeSetsProjection | null
   readonly architectEditorPipeline?: ArchitectEditorPipelineProjection | null
   readonly eventVisualizerRegistry?: EventVisualizerRegistryProjection | null
@@ -475,6 +476,10 @@ export interface MessageInterventionPoliciesProjection {
   readonly status: string
   readonly errorCode: string
   readonly projection: unknown
+}
+export interface BatchInvocationRuntimeProjection {
+  readonly schemaVersion: number; readonly batchId: string; readonly operation: string
+  readonly version: number; readonly status: string; readonly errorCode: string; readonly projection: unknown
 }
 
 export interface AgentGitChangeSetsProjection {
@@ -1175,6 +1180,7 @@ export const RENDERER_COMMANDS = [
   'core.knowledgeSourceRegistry',
   'core.durableRemoteTaskBridge',
   'core.messageInterventionPolicies',
+  'core.batchInvocationRuntime',
   'core.agentGitChangeSets',
   'core.architectEditorPipeline',
   'core.eventVisualizerRegistry',
@@ -1502,6 +1508,7 @@ export interface CommandPayloads {
   'core.knowledgeSourceRegistry': { operation: 'register' | 'get' | 'bind' | 'index' | 'retrieve' | 'collection_register' | 'collection_get' | 'collection_view'; sourceId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.durableRemoteTaskBridge': { operation: 'submit' | 'status' | 'cancel' | 'poll' | 'result'; remoteTaskId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.messageInterventionPolicies': { operation: 'evaluate'; payload: string; expectedVersion?: number; idempotencyKey?: string }
+  'core.batchInvocationRuntime': { operation: 'create' | 'get' | 'start' | 'resume' | 'result'; batchId: string; payload: string; expectedVersion?: number; idempotencyKey?: string }
   'core.agentGitChangeSets': { operation: 'observe' | 'candidate' | 'get_candidate' | 'commit' | 'undo' | 'keep'; changeSetId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.architectEditorPipeline': { operation: 'create' | 'get' | 'accept_intent'; pipelineId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.eventVisualizerRegistry': { operation: 'list' | 'register' | 'resolve'; visualizerId?: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
@@ -2012,6 +2019,7 @@ export interface CommandResults {
   'core.workspaceSets': { accepted: boolean }
   'core.durableRemoteTaskBridge': { accepted: boolean }
   'core.messageInterventionPolicies': { accepted: boolean }
+  'core.batchInvocationRuntime': { accepted: boolean }
   'core.knowledgeSourceRegistry': { accepted: boolean }
   'core.agentGitChangeSets': { accepted: boolean }
   'core.architectEditorPipeline': { accepted: boolean }

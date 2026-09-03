@@ -822,3 +822,10 @@ Core check, protocol check and `git diff --check` passed. Live-review confirmed
 that registry/discovery, hierarchical precedence, scope/hash/source revision,
 trust derivation and bounded metadata projection reuse the canonical plan-80
 authority; no duplicate storage, Skills authority or secret content was added.
+Plan 112: Batch Invocation Runtime contract/recovery 2/2, storage fence 1/1,
+Electron focused panel/bridge checks and full Electron regression passed;
+Core check/clippy, protocol check, typecheck and `git diff --check` passed.
+Evidence covers bounded validated inputs, stable item/run refs, optimistic
+durable transitions, restart-to-unknown recovery without blind retry, aggregate
+and per-item redacted projection, and additive authenticated IPC command 253 /
+event 98. No raw input, credentials, or capability authority is exposed.

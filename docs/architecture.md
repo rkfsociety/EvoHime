@@ -2162,3 +2162,19 @@ unsupported version или injected fault откатывает весь набо
 запускает extension code, production credentials или network и не выдаёт trust
 или capabilities. Additive authenticated IPC 250/event 95 и Electron panel
 показывают только bounded report metadata; состояние harness ephemeral.
+## Batch Invocation Runtime v1 (план 112)
+
+Batch Invocation Runtime — Core-owned durable map-контур для одного immutable
+definition по bounded списку validated inputs. Schema v78 хранит versioned
+`BatchInvocation` и независимые `BatchItem`: input hash, стабильный item/run
+ref, attempts, result/error refs и Core status. Policy ограничивает до 256
+items, concurrency до 16, payload до 64 KiB и attempts; `start` выдаёт только
+bounded набор Running items, а optimistic version защищает transitions.
+
+Restart переводит незавершённый Running item в `unknown_after_restart` и не
+повторяет внешний effect вслепую; Pending items можно продолжить, а явная
+reconciliation-запись результата закрывает unknown. SQLite store использует
+additive transactional schema и optimistic fence. Authenticated additive IPC
+command 253/event 98 и Electron panel передают только redacted aggregate и
+per-item metadata; raw input, credentials и capability authority в projection
+не входят.

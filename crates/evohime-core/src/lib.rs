@@ -1052,6 +1052,7 @@ pub mod capability_registry;
 pub mod capability_selection;
 pub mod causal_collaboration_bus;
 pub mod message_intervention_policies;
+pub mod batch_invocation_runtime;
 pub mod child_contracts;
 pub mod child_roles;
 pub mod child_runtime;
@@ -1457,6 +1458,14 @@ pub enum CoreCommand {
     },
     MessageInterventionPolicies {
         operation: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    BatchInvocationRuntime {
+        operation: String,
+        batch_id: String,
         payload: Vec<u8>,
         expected_version: u64,
         idempotency_key: String,
@@ -2337,6 +2346,7 @@ pub enum CoreEvent {
         version: u64,
         projection_json: String,
     },
+    BatchInvocationRuntime { batch_id: String, operation: String, version: u64, projection_json: String },
     AgentGitChangeSets {
         change_set_id: String,
         operation: String,
@@ -3548,6 +3558,7 @@ impl EventJournal {
             CoreEvent::KnowledgeSourceRegistryProjectRole { source_id, .. } => source_id,
             CoreEvent::DurableRemoteTaskBridge { remote_task_id, .. } => remote_task_id,
             CoreEvent::MessageInterventionPolicies { operation, .. } => operation,
+            CoreEvent::BatchInvocationRuntime { batch_id, .. } => batch_id,
             CoreEvent::AgentGitChangeSets { change_set_id, .. } => change_set_id,
             CoreEvent::ArchitectEditorModelPipeline { pipeline_id, .. } => pipeline_id,
             CoreEvent::EventVisualizerRegistry { visualizer_id, .. } => visualizer_id,
@@ -3617,6 +3628,7 @@ impl EventJournal {
             }
             CoreEvent::DurableRemoteTaskBridge { .. } => "durable_remote_task_bridge.result",
             CoreEvent::MessageInterventionPolicies { .. } => "message_intervention_policies.result",
+            CoreEvent::BatchInvocationRuntime { .. } => "batch_invocation_runtime.result",
             CoreEvent::AgentGitChangeSets { .. } => "agent_git_change_sets.result",
             CoreEvent::ArchitectEditorModelPipeline { .. } => "architect_editor_pipeline.result",
             CoreEvent::EventVisualizerRegistry { .. } => "event_visualizer_registry.result",
@@ -13627,6 +13639,37 @@ impl TaskCoordinator {
                 if let Some(journal) = state.lock().await.journal.clone() { let _ = journal.record(&event).await; }
                 let _ = state.lock().await.events.send(event);
                 let _ = reply.send(result);
+            }
+            CoreCommand::BatchInvocationRuntime { operation, batch_id, payload, expected_version, idempotency_key, reply } => {
+                let event_id = batch_id.clone(); let event_operation = operation.clone();
+                let result = async {
+                    if idempotency_key.is_empty() { return Err("invalid_batch_idempotency_key".into()); }
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    use crate::batch_invocation_runtime as batch;
+                    use evohime_local_storage::batch_invocation_runtime_store as store;
+                    let policy = batch::default_policy();
+                    match operation.as_str() {
+                        "create" => { let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_batch_payload".to_string())?; let inputs: Vec<String> = serde_json::from_value(value.get("inputs").cloned().ok_or_else(|| "batch_inputs_required".to_string())?).map_err(|_| "invalid_batch_inputs".to_string())?; let definition_ref = value.get("definition_ref").and_then(serde_json::Value::as_str).unwrap_or_default().to_owned(); let definition_version = value.get("definition_version").and_then(serde_json::Value::as_u64).unwrap_or_default(); let max_concurrency = value.get("max_concurrency").and_then(serde_json::Value::as_u64).unwrap_or(1) as u32; let failure_policy = value.get("failure_policy").cloned().map(|v| serde_json::from_value(v).map_err(|_| "invalid_batch_failure_policy".to_string())).transpose()?.unwrap_or(batch::FailurePolicy::Continue); let value = batch::new_batch(batch_id.clone(), definition_ref, definition_version, inputs, max_concurrency, failure_policy, crate::task_memory::now_millis() as i64, &policy).map_err(|e| e.to_string())?; let json = serde_json::to_vec(&value).map_err(|_| "serialization_failed".to_string())?; if !store::put(database.connection(), &value.id, value.version, &format!("{:?}", value.status), &value.content_hash, &json, value.updated_at_ms).map_err(|_| "storage_failed".to_string())? { return Err("batch_duplicate".into()); } serde_json::to_vec(&batch::projection(&value)).map_err(|_| "serialization_failed".to_string()) }
+                        "get" | "resume" | "start" => {
+                            let (version, json) = store::get(database.connection(), &batch_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "batch_not_found".to_string())?;
+                            let mut value: batch::BatchInvocation = serde_json::from_slice(&json).map_err(|_| "corrupt_batch".to_string())?;
+                            if operation == "resume" {
+                                batch::resume_pending(&mut value, expected_version.max(version), crate::task_memory::now_millis() as i64, &policy).map_err(|e| e.to_string())?;
+                            } else if operation == "start" {
+                                batch::start_batch(&mut value, expected_version.max(version), crate::task_memory::now_millis() as i64, &policy).map_err(|e| e.to_string())?;
+                            }
+                            if operation != "get" {
+                                let json = serde_json::to_vec(&value).map_err(|_| "serialization_failed".to_string())?;
+                                if !store::put(database.connection(), &value.id, value.version, &format!("{:?}", value.status), &value.content_hash, &json, value.updated_at_ms).map_err(|_| "storage_failed".to_string())? { return Err("batch_stale_version".into()); }
+                            }
+                            serde_json::to_vec(&batch::projection(&value)).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "result" => { let (version, json) = store::get(database.connection(), &batch_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "batch_not_found".to_string())?; let mut value: batch::BatchInvocation = serde_json::from_slice(&json).map_err(|_| "corrupt_batch".to_string())?; let request: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_batch_result".to_string())?; let item_id = request.get("item_id").and_then(serde_json::Value::as_str).ok_or_else(|| "batch_item_required".to_string())?; let status: batch::ItemStatus = serde_json::from_value(request.get("status").cloned().ok_or_else(|| "batch_status_required".to_string())?).map_err(|_| "invalid_batch_status".to_string())?; let result_ref = request.get("result_ref").and_then(serde_json::Value::as_str).map(str::to_owned); let error_class = request.get("error_class").and_then(serde_json::Value::as_str).map(str::to_owned); batch::record_result(&mut value, item_id, expected_version.max(version), status, result_ref, error_class, crate::task_memory::now_millis() as i64, &policy).map_err(|e| e.to_string())?; let json = serde_json::to_vec(&value).map_err(|_| "serialization_failed".to_string())?; if !store::put(database.connection(), &value.id, value.version, &format!("{:?}", value.status), &value.content_hash, &json, value.updated_at_ms).map_err(|_| "storage_failed".to_string())? { return Err("batch_stale_version".into()); } serde_json::to_vec(&batch::projection(&value)).map_err(|_| "serialization_failed".to_string()) }
+                        _ => Err("unsupported_batch_operation".into()),
+                    }
+                }.await;
+                let projection_json = result.as_ref().ok().and_then(|bytes| String::from_utf8(bytes.clone()).ok()).unwrap_or_else(|| "{}".into()); let event = CoreEvent::BatchInvocationRuntime { batch_id: event_id, operation: event_operation, version: expected_version, projection_json }; if let Some(journal) = state.lock().await.journal.clone() { let _ = journal.record(&event).await; } let _ = state.lock().await.events.send(event); let _ = reply.send(result);
             }
             CoreCommand::AgentGitChangeSets {
                 operation,

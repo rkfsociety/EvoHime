@@ -506,3 +506,10 @@ protocol/typecheck, Electron regression и diff-check проверок.
 deterministic fault injection, IPC 250/95 и bounded UI. Комплект `108-0` …
 `108-4` удалён после focused contract/recovery, clippy, protocol/typecheck,
 Electron regression и diff-check проверок.
+План 112 (issue #92, Batch Invocation Runtime) закрыт 3 сентября 2026 года.
+Реализованы durable BatchInvocation/BatchItem contracts, validated inputs,
+отдельные item/run refs, bounded start и concurrency, optimistic storage
+transitions, restart recovery с unknown outcome без blind retry, aggregate и
+per-item redacted projection, additive authenticated IPC и Electron panel.
+Focused contract/recovery/storage, clippy, protocol, typecheck и полный
+Electron regression suite пройдены; комплект 112.0–112.4 удалён.

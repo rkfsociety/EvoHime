@@ -1120,3 +1120,10 @@ metadata-only Electron UI; production effects, credentials и trust grants не
 Подтверждены четыре typed protocol kind, hash/revision precondition,
 parse/dry-run, stale/ambiguous fail-closed и bounded repair feedback; effect
 остаётся в approved Revision-Safe Workspace Files boundary.
+План 112 закрыт 3 сентября 2026 года: Batch Invocation Runtime v1 добавляет
+durable Core-owned BatchInvocation/BatchItem, стабильные item/run refs,
+bounded start/concurrency/attempts, optimistic transitions и restart recovery
+с unknown outcome без blind retry. SQLite schema v78, authenticated IPC
+command 253/event 98 и metadata-only Electron projection подтверждены
+focused Rust storage/recovery/contract и Electron regression проверками;
+комплект плана удалён.

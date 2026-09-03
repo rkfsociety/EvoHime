@@ -583,6 +583,9 @@ function dispatch(
       if (operation === null || interventionPayload === null || expectedVersion === null || idempotencyKey === null || interventionPayload.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Message Intervention Policies.')
       return accepted(client.send({messageInterventionPolicies:{schemaVersion:1,operation,payload:Buffer.from(interventionPayload,'utf8'),expectedVersion,idempotencyKey}}))
     }
+    case 'core.batchInvocationRuntime': {
+      const value = asRecord(payload); const operations = ['create', 'get', 'start', 'resume', 'result']; const operation = operations.includes(String(value['operation'])) ? String(value['operation']) : null; const batchId = asBoundedString(value['batchId']); const batchPayload = value['payload'] === undefined ? '' : asBoundedString(value['payload']); const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion']); const idempotencyKey = value['idempotencyKey'] === undefined ? randomUUID() : asBoundedString(value['idempotencyKey']); if (operation === null || batchId === null || batchPayload === null || expectedVersion === null || idempotencyKey === null || batchId.length > 128 || batchPayload.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Batch Invocation Runtime.'); return accepted(client.send({batchInvocationRuntime:{schemaVersion:1,batchId,operation,payload:Buffer.from(batchPayload,'utf8'),expectedVersion,idempotencyKey}}))
+    }
     case 'core.agentGitChangeSets': {
       const value = asRecord(payload)
       const operations = ['observe', 'candidate', 'get_candidate', 'commit', 'undo', 'keep']

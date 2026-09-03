@@ -1044,6 +1044,13 @@ impl IpcBridge {
                             },
                         ))
                     })
+            } else if record.event_type == "batch_invocation_runtime.result" {
+                serde_json::from_slice::<serde_json::Value>(&record.payload).ok().and_then(|value| {
+                    let event = value.get("BatchInvocationRuntime").unwrap_or(&value);
+                    Some(generated::event_envelope::Event::BatchInvocationRuntime(generated::BatchInvocationRuntimeEvent {
+                        schema_version: 1, batch_id: event.get("batch_id")?.as_str()?.to_owned(), operation: event.get("operation")?.as_str()?.to_owned(), version: event.get("version").and_then(serde_json::Value::as_u64).unwrap_or_default(), status: String::new(), error_code: String::new(), projection_json: event.get("projection_json").and_then(serde_json::Value::as_str).unwrap_or("{}").as_bytes().to_vec(), truncated: false,
+                    }))
+                })
             } else {
                 execution_event
                     .map(|event| generated::event_envelope::Event::ExecutionEvent(Box::new(event)))
@@ -3069,6 +3076,11 @@ impl IpcBridge {
                     let operation = if request.operation.is_empty() { "evaluate".to_owned() } else { request.operation.clone() };
                     let result = self.dispatch_message_intervention_policies(operation, request).await?;
                     self.write_response(writer, "message_intervention_policies.result", result).await?;
+                }
+                Some(generated::command_envelope::Command::BatchInvocationRuntime(request)) => {
+                    let operation = if request.operation.is_empty() { "get".to_owned() } else { request.operation.clone() };
+                    let result = self.dispatch_batch_invocation_runtime(operation, request).await?;
+                    self.write_response(writer, "batch_invocation_runtime.result", result).await?;
                 }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
@@ -8337,6 +8349,13 @@ impl IpcBridge {
         let c = self.coordinator.as_ref().ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
         let (reply, response) = oneshot::channel();
         c.dispatch(CoreCommand::MessageInterventionPolicies { operation, payload: request.payload, expected_version: request.expected_version, idempotency_key: request.idempotency_key, reply }).await.map_err(|e| FrameError::Io(e.to_string()))?;
+        response.await.map_err(|_| FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_batch_invocation_runtime(&self, operation: String, request: generated::BatchInvocationRuntimeCommand) -> Result<Vec<u8>, IpcBridgeError> {
+        let c = self.coordinator.as_ref().ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        c.dispatch(CoreCommand::BatchInvocationRuntime { operation, batch_id: request.batch_id, payload: request.payload, expected_version: request.expected_version, idempotency_key: request.idempotency_key, reply }).await.map_err(|e| FrameError::Io(e.to_string()))?;
         response.await.map_err(|_| FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from)
     }
 
