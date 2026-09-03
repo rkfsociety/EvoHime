@@ -766,3 +766,13 @@ feedback is required before consolidation; the resulting candidate is
 persisted by Continual Refinement as `proposed_for_refinement`, never activated
 by Guided Calibration. Raw prompts/output, credentials and hidden reasoning
 are excluded from storage and IPC projections; IPC 249/event 94 is additive.
+
+Plan 108: Core unit 2/2, external contract 2/2, recovery 2/2; Core check,
+strict clippy, protocol check, Electron typecheck and focused UI 1/1 passed.
+The report is deterministic and hash/version-bound; specialized checks cover
+Integration Provider, External Agent Adapter and Workbench. Registration is
+ephemeral and atomic: injected before/after-prepare and duplicate faults return
+rollback without committed instances. Disabled probes with effects, unknown
+API versions, security assertion failures and instance mismatches fail closed.
+No extension code, credentials, network or trust/capability grant is executed;
+IPC 250/event 95 exposes only redacted bounded metadata.

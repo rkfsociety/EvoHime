@@ -2106,3 +2106,16 @@ feedback `consolidate` создаёт durable `RefinementCandidateV1` через
 dataset hash, replay metadata и candidates защищены optimistic
 revision/idempotency fence в schema 91. Additive authenticated IPC 249/event
 94 и Electron panel показывают только bounded metadata.
+
+## Extension Conformance Kit v1 (план 108)
+
+Core-owned in-memory harness проверяет versioned descriptors и bounded probes
+для Integration Provider, External Coding Agent Adapter, Workbench, UI
+Extension и Declarative Component Provider. Specialized suite, security
+assertions, instance isolation, disabled-path no-effect и deterministic fault
+modes входят в machine-readable `ConformanceReport` с hash/version binding.
+`RegistrationTransaction` использует staging и atomic commit; любой duplicate,
+unsupported version или injected fault откатывает весь набор. Harness не
+запускает extension code, production credentials или network и не выдаёт trust
+или capabilities. Additive authenticated IPC 250/event 95 и Electron panel
+показывают только bounded report metadata; состояние harness ephemeral.

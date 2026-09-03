@@ -1078,6 +1078,14 @@ dataset/replay hashes, bounded lifecycle и consolidation через Continual
 Refinement без прямой активации. Raw prompts/output не сохраняются; добавлены
 schema 91, authenticated IPC 249/94 и metadata-only Electron UI.
 
+План 108 закрыт 3 сентября 2026 года: Extension Conformance Kit v1 добавил
+versioned common harness, специализированные suites для Integration Provider,
+External Agent Adapter и Workbench, security/disabled/no-effect проверки,
+instance isolation, deterministic fault injection и ephemeral transactional
+registration с полным rollback. Добавлены authenticated IPC 250/95 и
+metadata-only Electron UI; production effects, credentials и trust grants не
+исполняются.
+
 План 97 закрыт 3 сентября 2026 года: Model Edit Protocol Registry реализован
 в Core/storage/runtime, добавлены authenticated IPC 245/90 и metadata-only UI.
 Подтверждены четыре typed protocol kind, hash/revision precondition,

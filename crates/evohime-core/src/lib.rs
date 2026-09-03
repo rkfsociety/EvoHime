@@ -1065,6 +1065,7 @@ pub mod event_trigger_runtime;
 pub mod execution_backend_registry;
 pub mod export;
 pub mod external_coding_agent_adapter;
+pub mod extension_conformance_kit;
 pub mod goal;
 pub mod guided_calibration_sessions;
 pub mod human_work_items;
@@ -1772,6 +1773,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    ExtensionConformanceKit {
+        operation: String,
+        subject_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     /// Reads one memory record including its body. `sensitive`, forgotten and
     /// empty records come back redacted: `ListMemory` never carries a body,
     /// and this is the only path that can.
@@ -2399,6 +2408,12 @@ pub enum CoreEvent {
     GuidedCalibrationSessions {
         operation: String,
         session_id: String,
+        version: u64,
+        projection_json: String,
+    },
+    ExtensionConformanceKit {
+        operation: String,
+        subject_id: String,
         version: u64,
         projection_json: String,
     },
@@ -3520,6 +3535,7 @@ impl EventJournal {
             CoreEvent::PromptCachePlanner { plan_id, .. } => plan_id,
             CoreEvent::DeclarativeRuntimeComponents { component_id, .. } => component_id,
             CoreEvent::GuidedCalibrationSessions { session_id, .. } => session_id,
+            CoreEvent::ExtensionConformanceKit { subject_id, .. } => subject_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3590,6 +3606,7 @@ impl EventJournal {
                 "declarative_runtime_components.result"
             }
             CoreEvent::GuidedCalibrationSessions { .. } => "guided_calibration_sessions.result",
+            CoreEvent::ExtensionConformanceKit { .. } => "extension_conformance_kit.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -15550,6 +15567,10 @@ impl TaskCoordinator {
                 }
                 let _ = state.lock().await.events.send(event);
                 let _ = reply.send(result);
+            }
+            CoreCommand::ExtensionConformanceKit { operation, subject_id, payload, expected_version, idempotency_key, reply } => {
+                let event_operation=operation.clone(); let event_subject_id=subject_id.clone();
+                let result=async { use crate::extension_conformance_kit as v; if subject_id.is_empty()||idempotency_key.is_empty()||expected_version>u64::MAX-1{return Err("invalid_conformance_request".into())}; let value:serde_json::Value=serde_json::from_slice(&payload).map_err(|_|"invalid_conformance_payload".to_string())?; match operation.as_str(){"run"=>{let d:v::ExtensionDescriptor=serde_json::from_value(value.get("descriptor").cloned().ok_or_else(||"descriptor_required".to_string())?).map_err(|_|"invalid_descriptor".to_string())?;let p:v::ConformanceProbe=serde_json::from_value(value.get("probe").cloned().ok_or_else(||"probe_required".to_string())?).map_err(|_|"invalid_probe".to_string())?;let fault:v::FaultMode=serde_json::from_value(value.get("fault").cloned().unwrap_or(serde_json::json!("none"))).map_err(|_|"invalid_fault".to_string())?;if d.subject_id!=subject_id{return Err("subject_id_mismatch".into())};let report=v::run(&d,&p,fault).map_err(|e|e.to_string())?;serde_json::to_vec(&report).map_err(|_|"serialization_failed".into())},"register"=>{let descriptors:Vec<v::ExtensionDescriptor>=serde_json::from_value(value.get("descriptors").cloned().ok_or_else(||"descriptors_required".to_string())?).map_err(|_|"invalid_descriptors".to_string())?;let fault:v::FaultMode=serde_json::from_value(value.get("fault").cloned().unwrap_or(serde_json::json!("none"))).map_err(|_|"invalid_fault".to_string())?;let mut t=v::RegistrationTransaction::default();for d in descriptors{t.stage(d).map_err(|e|e.to_string())?};let committed=t.commit(fault).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"registered_ephemeral","count":committed.len(),"redacted":true})).map_err(|_|"serialization_failed".into())},"inspect"=>serde_json::to_vec(&serde_json::json!({"status":"available","schema_version":v::SCHEMA_VERSION,"kinds":["integration_provider","external_agent_adapter","workbench","ui_extension","declarative_component_provider"],"production_execution":false,"redacted":true})).map_err(|_|"serialization_failed".into()),_=>Err("unsupported_conformance_operation".into())}}.await; let projection_json=result.as_ref().ok().and_then(|b|String::from_utf8(b.clone()).ok()).unwrap_or_else(||"{}".into());let event=CoreEvent::ExtensionConformanceKit{operation:event_operation,subject_id:event_subject_id,version:expected_version.saturating_add(1),projection_json};if let Some(journal)=state.lock().await.journal.clone(){let _=journal.record(&event).await;}let _=state.lock().await.events.send(event);let _=reply.send(result);
             }
             CoreCommand::GetMemory { id, reply } => {
                 let journal = state.lock().await.journal.clone();

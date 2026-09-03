@@ -470,3 +470,10 @@ protocol/typecheck/UI и diff-check проверок.
 Continual Refinement, session guidance не становится global автоматически.
 Комплект `107-0` … `107-4` удалён после contract/recovery/storage,
 protocol/typecheck, Electron regression и diff-check проверок.
+
+План 108 закрыт 3 сентября 2026 года. Extension Conformance Kit реализован
+как ephemeral Core harness поверх существующих provider/adapter/workbench
+контрактов; добавлены specialized/security suites, transactional staging,
+deterministic fault injection, IPC 250/95 и bounded UI. Комплект `108-0` …
+`108-4` удалён после focused contract/recovery, clippy, protocol/typecheck,
+Electron regression и diff-check проверок.
