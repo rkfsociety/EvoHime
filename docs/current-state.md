@@ -977,6 +977,13 @@ versioned `KnowledgeCollection` только как bounded уникальные
 существующие sources с retrieval profile/scope. Source/chunk content не
 дублируется, stale collection revision отклоняется, а collection metadata
 доступна через существующий authenticated IPC и metadata-only panel.
+План 98 закрывает Durable Remote Task Bridge v1: Core хранит versioned
+`RemoteTaskToolset/RemoteTaskRecord` для MCP и Integration Provider с отдельными
+task/transport statuses, bounded poll lease, cancel boundary, request hash,
+provenance и artifact-ref-only completion. Metadata переживает restart в
+`remote_task_records`; authenticated IPC command 251/event 96 и Electron panel
+показывают только redacted projection. Внешний transport остаётся за
+authorized adapters, blind retry unknown outcome запрещён.
 План 102 закрыт 2 сентября 2026 года: Agent Git Change Sets v1 реализует
 Core-owned bounded baseline, attribution и immutable commit-candidate metadata,
 durable schema 79, additive IPC 233/78, Electron projection и безопасные

@@ -68,6 +68,7 @@ import { TeamCoordinatorPanel } from './TeamCoordinatorPanel'
 import { ProjectInstructionStackPanel } from './ProjectInstructionStackPanel'
 import { WorkspaceSetsPanel } from './WorkspaceSetsPanel'
 import { KnowledgeSourceRegistryProjectRolePanel } from './KnowledgeSourceRegistryProjectRolePanel'
+import { DurableRemoteTaskBridgePanel } from './DurableRemoteTaskBridgePanel'
 import { AgentGitChangeSetsPanel } from './AgentGitChangeSetsPanel'
 import { ArchitectEditorModelPipelinePanel } from './ArchitectEditorModelPipelinePanel'
 import { EventVisualizerRegistryPanel } from './EventVisualizerRegistryPanel'
@@ -110,7 +111,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'memory-views-recall' | 'model-edit-protocol-registry' | 'remote-conversation-channels' | 'prompt-cache-planner' | 'declarative-runtime-components' | 'guided-calibration-sessions' | 'extension-conformance-kit' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'core-topic-subscription-event-bus' | 'dependency-aware-task-graph' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'incremental-change' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'memory-views-recall' | 'model-edit-protocol-registry' | 'remote-conversation-channels' | 'prompt-cache-planner' | 'declarative-runtime-components' | 'guided-calibration-sessions' | 'extension-conformance-kit' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'dependency-aware-task-graph' | 'core-topic-subscription-event-bus' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'durable-remote-task-bridge' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -166,6 +167,7 @@ const DEVELOPER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'project-instruction-stack', label: 'Project Instructions', icon: '☷' },
   { id: 'workspace-sets', label: 'Workspace Sets', icon: '▦' },
   { id: 'knowledge-source-registry', label: 'Knowledge Sources', icon: '⌘' },
+  { id: 'durable-remote-task-bridge', label: 'Remote Tasks', icon: '↗' },
   { id: 'agent-git-change-sets', label: 'Agent Git Changes', icon: '⑂' },
   { id: 'architect-editor-pipeline', label: 'Architect / Editor', icon: '⇢' },
   { id: 'event-visualizer-registry', label: 'Event Visualizers', icon: '▦' },
@@ -538,6 +540,7 @@ export function App(): React.JSX.Element {
               {view === 'project-instruction-stack' ? <ProjectInstructionStackPanel connection={connection} /> : null}
               {view === 'workspace-sets' ? <WorkspaceSetsPanel connection={connection} /> : null}
               {view === 'knowledge-source-registry' ? <KnowledgeSourceRegistryProjectRolePanel connection={connection} /> : null}
+              {view === 'durable-remote-task-bridge' ? <DurableRemoteTaskBridgePanel connection={connection} /> : null}
               {view === 'agent-git-change-sets' ? <AgentGitChangeSetsPanel connection={connection} /> : null}
               {view === 'architect-editor-pipeline' ? <ArchitectEditorModelPipelinePanel connection={connection} /> : null}
               {view === 'event-visualizer-registry' ? <EventVisualizerRegistryPanel connection={connection} /> : null}

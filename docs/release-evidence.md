@@ -451,6 +451,20 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   typecheck and Electron regression; evidence excludes raw corpus, credentials,
   prompts, outputs, absolute paths and PII.
 
+## Plan 98 — Durable Remote Task Bridge v1 (2026-09-03)
+
+- Contract/runtime: versioned Core-owned `RemoteTaskToolset` and
+  `RemoteTaskRecord`; submit/status/poll/result/cancel lifecycle, bounded
+  payload hash, poll lease, monotonic versions, separate transport status and
+  artifact-ref-only completed results.
+- Storage/IPC/UI: durable metadata table, authenticated additive command 251 /
+  event 96, replay mapping and metadata-only Electron panel. MCP and
+  Integration Provider use the same provider-neutral bridge; credentials/raw
+  provider payload stay outside the record and projection.
+- Checks: Core contract/recovery, storage monotonicity, cargo check/clippy,
+  protocol/typecheck, authenticated IPC and full Electron regression PASS.
+  Unknown outcomes are not success and are never blindly retried.
+
 ## Plan 100 — Workspace Sets v1 (2026-09-02)
 
 - Contract: versioned bounded WorkspaceSet with up to 8 roots, unique aliases,

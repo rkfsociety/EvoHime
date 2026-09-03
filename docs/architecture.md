@@ -1969,6 +1969,20 @@ bounded список source IDs с retrieval profile и scope. Коллекци�
 redacted metadata через существующую authenticated surface. Parser/fetch,
 vector backend и отдельная UI authority не добавляются.
 
+## Durable Remote Task Bridge v1 (план 98)
+
+`RemoteTaskToolset` и `RemoteTaskRecord` принадлежат Core и хранят только
+opaque task identity, provider/toolset ref, request hash, lifecycle status,
+transport status, lease/poll counters, provenance и optional artifact ref.
+Provider-neutral toolsets бывают MCP или Integration Provider; bridge не
+исполняет transport и не хранит credentials или raw provider payload. Typed
+операции `submit`, `status`, `poll`, `result` и `cancel` проходят bounded
+validation, monotonic version fence и Core event journal. Poll lease ограничен
+32 попытками; `Completed` без artifact ref отклоняется, `Unknown` не считается
+успехом и не запускает blind retry. Durable metadata хранится в
+`remote_task_records`, а authenticated IPC использует command 251/event 96 и
+metadata-only Electron projection.
+
 Лимиты: 128 sources, 32 bindings/source, 1 024 chunks/source, 64 KiB source
 и chunk, 128 hits/query, 256 KiB evidence и 16 384 view tokens. Secret source
 не входит в lower-sensitivity view, stale source не считается Ready, а

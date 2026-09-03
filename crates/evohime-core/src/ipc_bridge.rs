@@ -1009,6 +1009,24 @@ impl IpcBridge {
                             },
                         ))
                     })
+            } else if record.event_type == "durable_remote_task_bridge.result" {
+                serde_json::from_slice::<serde_json::Value>(&record.payload)
+                    .ok()
+                    .and_then(|value| {
+                        let event = value.get("DurableRemoteTaskBridge").unwrap_or(&value);
+                        Some(generated::event_envelope::Event::DurableRemoteTaskBridge(
+                            generated::DurableRemoteTaskBridgeEvent {
+                                schema_version: 1,
+                                remote_task_id: event.get("remote_task_id")?.as_str()?.to_owned(),
+                                operation: event.get("operation")?.as_str()?.to_owned(),
+                                version: event.get("version").and_then(serde_json::Value::as_u64).unwrap_or_default(),
+                                status: String::new(),
+                                error_code: String::new(),
+                                projection_json: event.get("projection_json").and_then(serde_json::Value::as_str).unwrap_or("{}").as_bytes().to_vec(),
+                                truncated: false,
+                            },
+                        ))
+                    })
             } else {
                 execution_event
                     .map(|event| generated::event_envelope::Event::ExecutionEvent(Box::new(event)))
@@ -3024,6 +3042,11 @@ impl IpcBridge {
                     let operation = if request.operation.is_empty() { "inspect".to_owned() } else { request.operation.clone() };
                     let result = self.dispatch_extension_conformance_kit(operation, request).await?;
                     self.write_response(writer, "extension_conformance_kit.result", result).await?;
+                }
+                Some(generated::command_envelope::Command::DurableRemoteTaskBridge(request)) => {
+                    let operation = if request.operation.is_empty() { "status".to_owned() } else { request.operation.clone() };
+                    let result = self.dispatch_durable_remote_task_bridge(operation, request).await?;
+                    self.write_response(writer, "durable_remote_task_bridge.result", result).await?;
                 }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
@@ -8270,6 +8293,17 @@ impl IpcBridge {
         let c = self.coordinator.as_ref().ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
         let (reply, response) = oneshot::channel();
         c.dispatch(CoreCommand::ExtensionConformanceKit { operation, subject_id: request.subject_id, payload: request.payload, expected_version: request.expected_version, idempotency_key: request.idempotency_key, reply }).await.map_err(|e| FrameError::Io(e.to_string()))?;
+        response.await.map_err(|_| FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_durable_remote_task_bridge(
+        &self,
+        operation: String,
+        request: generated::DurableRemoteTaskBridgeCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let c = self.coordinator.as_ref().ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        c.dispatch(CoreCommand::DurableRemoteTaskBridge { operation, remote_task_id: request.remote_task_id, payload: request.payload, expected_version: request.expected_version, idempotency_key: request.idempotency_key, reply }).await.map_err(|e| FrameError::Io(e.to_string()))?;
         response.await.map_err(|_| FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from)
     }
 

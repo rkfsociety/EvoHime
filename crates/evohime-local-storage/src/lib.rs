@@ -38,6 +38,7 @@ pub mod customization_inventory_store;
 pub mod declarative_agent_component_registry_store;
 pub mod declarative_runtime_components_store;
 pub mod dependency_aware_task_graph_store;
+pub mod durable_remote_task_bridge_store;
 pub mod event_trigger_runtime_store;
 pub mod event_visualizer_registry_store;
 pub mod execution_backend_registry_store;
@@ -616,6 +617,7 @@ impl LocalDatabase {
         // Plan 109: collection metadata extends the existing Knowledge Source
         // Registry without creating a second source/chunk authority.
         knowledge_source_registry_project_role_store::install_schema(&connection)?;
+        durable_remote_task_bridge_store::install_schema(&connection)?;
         memory_views_and_adaptive_recall_store::install_schema(&connection)?;
         model_edit_protocol_registry_store::install_schema(&connection)?;
         remote_conversation_channels_store::install_schema(&connection)?;

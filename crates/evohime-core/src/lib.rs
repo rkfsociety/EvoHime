@@ -11,6 +11,7 @@ pub mod customization_inventory;
 pub mod declarative_agent_component_registry;
 pub mod declarative_runtime_components;
 pub mod dependency_aware_task_graph;
+pub mod durable_remote_task_bridge;
 pub mod event_visualizer_registry;
 pub mod experience_replay_library;
 pub mod headless_core_cli;
@@ -1445,6 +1446,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    DurableRemoteTaskBridge {
+        operation: String,
+        remote_task_id: String,
+        payload: Vec<u8>,
+        expected_version: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     AgentGitChangeSets {
         operation: String,
         change_set_id: String,
@@ -2305,6 +2314,12 @@ pub enum CoreEvent {
     },
     KnowledgeSourceRegistryProjectRole {
         source_id: String,
+        operation: String,
+        version: u64,
+        projection_json: String,
+    },
+    DurableRemoteTaskBridge {
+        remote_task_id: String,
         operation: String,
         version: u64,
         projection_json: String,
@@ -3518,6 +3533,7 @@ impl EventJournal {
             CoreEvent::ProjectInstructionStack { workspace_root, .. } => workspace_root,
             CoreEvent::WorkspaceSets { set_id, .. } => set_id,
             CoreEvent::KnowledgeSourceRegistryProjectRole { source_id, .. } => source_id,
+            CoreEvent::DurableRemoteTaskBridge { remote_task_id, .. } => remote_task_id,
             CoreEvent::AgentGitChangeSets { change_set_id, .. } => change_set_id,
             CoreEvent::ArchitectEditorModelPipeline { pipeline_id, .. } => pipeline_id,
             CoreEvent::EventVisualizerRegistry { visualizer_id, .. } => visualizer_id,
@@ -3585,6 +3601,7 @@ impl EventJournal {
             CoreEvent::KnowledgeSourceRegistryProjectRole { .. } => {
                 "knowledge_source_registry.result"
             }
+            CoreEvent::DurableRemoteTaskBridge { .. } => "durable_remote_task_bridge.result",
             CoreEvent::AgentGitChangeSets { .. } => "agent_git_change_sets.result",
             CoreEvent::ArchitectEditorModelPipeline { .. } => "architect_editor_pipeline.result",
             CoreEvent::EventVisualizerRegistry { .. } => "event_visualizer_registry.result",
@@ -13441,6 +13458,82 @@ impl TaskCoordinator {
                 if let Some(journal) = state.lock().await.journal.clone() {
                     let _ = journal.record(&event).await;
                 }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::DurableRemoteTaskBridge {
+                operation,
+                remote_task_id,
+                payload,
+                expected_version,
+                idempotency_key,
+                reply,
+            } => {
+                let event_operation = operation.clone();
+                let event_task_id = remote_task_id.clone();
+                let result = async {
+                    if idempotency_key.is_empty() {
+                        return Err("invalid_remote_task_idempotency_key".to_string());
+                    }
+                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let database = journal.database().lock().await;
+                    use crate::durable_remote_task_bridge as bridge;
+                    use evohime_local_storage::durable_remote_task_bridge_store as store;
+                    let policy = bridge::default_policy();
+                    match operation.as_str() {
+                        "submit" => {
+                            let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_remote_task_submit".to_string())?;
+                            let toolset: bridge::RemoteTaskToolset = serde_json::from_value(value.get("toolset").cloned().ok_or_else(|| "remote_task_toolset_required".to_string())?).map_err(|_| "invalid_remote_task_toolset".to_string())?;
+                            let request_bytes = value.get("request").map(serde_json::to_vec).transpose().map_err(|_| "invalid_remote_task_request".to_string())?.unwrap_or_default();
+                            let provenance_ref = value.get("provenance_ref").and_then(serde_json::Value::as_str).unwrap_or("core").to_owned();
+                            let record = bridge::build_record(remote_task_id.clone(), &toolset, value.get("operation").and_then(serde_json::Value::as_str).unwrap_or_default().to_owned(), &request_bytes, provenance_ref, crate::task_memory::now_millis() as i64, &policy).map_err(|e| e.to_string())?;
+                            let json = serde_json::to_vec(&record).map_err(|_| "serialization_failed".to_string())?;
+                            if !store::put_record(database.connection(), &record.id, record.version, &format!("{:?}", record.status), &record.content_hash, &json, record.updated_at_ms).map_err(|_| "storage_failed".to_string())? {
+                                return Err("remote_task_stale_version".into());
+                            }
+                            serde_json::to_vec(&bridge::status_projection(&record)).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "status" => {
+                            let json = store::get_record(database.connection(), &remote_task_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "remote_task_not_found".to_string())?;
+                            let record: bridge::RemoteTaskRecord = serde_json::from_slice(&json).map_err(|_| "corrupt_remote_task".to_string())?;
+                            serde_json::to_vec(&bridge::status_projection(&record)).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "cancel" | "poll" | "result" => {
+                            let json = store::get_record(database.connection(), &remote_task_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "remote_task_not_found".to_string())?;
+                            let mut record: bridge::RemoteTaskRecord = serde_json::from_slice(&json).map_err(|_| "corrupt_remote_task".to_string())?;
+                            if expected_version != 0 && expected_version != record.version { return Err("remote_task_stale_version".into()); }
+                            let now = crate::task_memory::now_millis() as i64;
+                            match operation.as_str() {
+                                "cancel" => { let version = record.version; bridge::cancel(&mut record, version, now).map_err(|e| e.to_string())?; }
+                                "poll" => {
+                                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_remote_task_poll".to_string())?;
+                                    let owner = value.get("lease_owner").and_then(serde_json::Value::as_str).unwrap_or("core");
+                                    bridge::lease_for_poll(&mut record, owner, now, &policy).map_err(|e| e.to_string())?;
+                                }
+                                "result" => {
+                                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_remote_task_result".to_string())?;
+                                    let status: bridge::RemoteTaskStatus = serde_json::from_value(value.get("status").cloned().ok_or_else(|| "remote_task_status_required".to_string())?).map_err(|_| "invalid_remote_task_status".to_string())?;
+                                    if !matches!(status, bridge::RemoteTaskStatus::InputRequired | bridge::RemoteTaskStatus::Completed | bridge::RemoteTaskStatus::Failed | bridge::RemoteTaskStatus::Cancelled | bridge::RemoteTaskStatus::Unknown) { return Err("invalid_remote_task_transition".into()); }
+                                    record.status = status;
+                                    record.transport_status = value.get("transport_status").and_then(serde_json::Value::as_str).unwrap_or("reported").to_owned();
+                                    record.result_artifact_ref = value.get("result_artifact_ref").and_then(serde_json::Value::as_str).map(str::to_owned);
+                                    record.version += 1;
+                                    record.updated_at_ms = now;
+                                    bridge::validate_record(&record, &bridge::RemoteTaskToolset { schema_version: 1, id: record.toolset_id.clone(), version: 1, provider_kind: bridge::RemoteProviderKind::Mcp, provider_ref: "trusted-adapter".into(), operation_names: vec![record.operation.clone()], content_hash: "trusted".into() }, &policy).map_err(|e| e.to_string())?;
+                                }
+                                _ => unreachable!(),
+                            }
+                            bridge::refresh_content_hash(&mut record).map_err(|e| e.to_string())?;
+                            let json = serde_json::to_vec(&record).map_err(|_| "serialization_failed".to_string())?;
+                            store::put_record(database.connection(), &record.id, record.version, &format!("{:?}", record.status), &record.content_hash, &json, record.updated_at_ms).map_err(|_| "storage_failed".to_string())?;
+                            serde_json::to_vec(&bridge::status_projection(&record)).map_err(|_| "serialization_failed".to_string())
+                        }
+                        _ => Err("unsupported_remote_task_operation".into()),
+                    }
+                }.await;
+                let projection_json = result.as_ref().ok().and_then(|bytes| String::from_utf8(bytes.clone()).ok()).unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::DurableRemoteTaskBridge { remote_task_id: event_task_id, operation: event_operation, version: expected_version, projection_json };
+                if let Some(journal) = state.lock().await.journal.clone() { let _ = journal.record(&event).await; }
                 let _ = state.lock().await.events.send(event);
                 let _ = reply.send(result);
             }

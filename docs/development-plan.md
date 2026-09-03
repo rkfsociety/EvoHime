@@ -368,6 +368,9 @@ focused/recovery/storage evidence перенесены в каноническу
 индекса или parser/fetch runtime. Контракт перенесён в architecture/current-state
 после focused contract/storage/IPC/UI проверок; комплект `109-0` … `109-4`
 удалён после полного завершения.
+План 98 закрыт 3 сентября 2026 года. Durable Remote Task Bridge v1 перенесён
+в Core/storage/IPC/UI; комплект `98-0` … `98-4` удалён после contract,
+lease/cancel/recovery, redaction, protocol и Electron regression checks.
 
 План 96 закрыт 3 сентября 2026 года. Memory Views & Adaptive Recall v1
 перенесён в `docs/architecture.md` и `docs/current-state.md`: hierarchical

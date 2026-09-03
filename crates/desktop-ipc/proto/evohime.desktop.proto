@@ -1901,6 +1901,7 @@ message CommandEnvelope {
     DeclarativeRuntimeComponentsCommand declarative_runtime_components = 248;
     GuidedCalibrationSessionsCommand guided_calibration_sessions = 249;
     ExtensionConformanceKitCommand extension_conformance_kit = 250;
+    DurableRemoteTaskBridgeCommand durable_remote_task_bridge = 251;
   }
 }
 
@@ -2046,6 +2047,7 @@ message EventEnvelope {
     DeclarativeRuntimeComponentsEvent declarative_runtime_components = 93;
     GuidedCalibrationSessionsEvent guided_calibration_sessions = 94;
     ExtensionConformanceKitEvent extension_conformance_kit = 95;
+    DurableRemoteTaskBridgeEvent durable_remote_task_bridge = 96;
   }
 }
 
@@ -3143,6 +3145,28 @@ message ExecutionEvent {
   bytes body_json = 18;
   bool secrets_present = 19;
   string redaction_digest = 20;
+}
+
+// Plan 98: durable provider-neutral remote task lifecycle. Payloads are
+// bounded metadata envelopes; credentials and raw provider output stay out.
+message DurableRemoteTaskBridgeCommand {
+  uint32 schema_version = 1;
+  string remote_task_id = 2;
+  string operation = 3;
+  bytes payload = 4;
+  uint64 expected_version = 5;
+  string idempotency_key = 6;
+  string correlation_id = 7;
+}
+message DurableRemoteTaskBridgeEvent {
+  uint32 schema_version = 1;
+  string remote_task_id = 2;
+  string operation = 3;
+  uint64 version = 4;
+  string status = 5;
+  string error_code = 6;
+  bytes projection_json = 7;
+  bool truncated = 8;
 }
 
 // The server emits this when the requested sequence is no longer retained.

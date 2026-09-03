@@ -563,6 +563,17 @@ function dispatch(
       if (operation === null || sourceId === null || sourcePayload === null || expectedVersion === null || idempotencyKey === null || sourceId.length > 128 || sourcePayload.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Knowledge Source Registry.')
       return accepted(client.send({knowledgeSourceRegistry:{schemaVersion:1,sourceId,operation,payload:Buffer.from(sourcePayload,'utf8'),expectedVersion,idempotencyKey}}))
     }
+    case 'core.durableRemoteTaskBridge': {
+      const value = asRecord(payload)
+      const operations = ['submit', 'status', 'cancel', 'poll', 'result']
+      const operation = operations.includes(String(value['operation'])) ? String(value['operation']) : null
+      const remoteTaskId = asBoundedString(value['remoteTaskId'])
+      const taskPayload = value['payload'] === undefined ? '' : asBoundedString(value['payload'])
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion'])
+      const idempotencyKey = value['idempotencyKey'] === undefined ? randomUUID() : asBoundedString(value['idempotencyKey'])
+      if (operation === null || remoteTaskId === null || taskPayload === null || expectedVersion === null || idempotencyKey === null || remoteTaskId.length > 128 || taskPayload.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Durable Remote Task Bridge.')
+      return accepted(client.send({durableRemoteTaskBridge:{schemaVersion:1,remoteTaskId,operation,payload:Buffer.from(taskPayload,'utf8'),expectedVersion,idempotencyKey}}))
+    }
     case 'core.agentGitChangeSets': {
       const value = asRecord(payload)
       const operations = ['observe', 'candidate', 'get_candidate', 'commit', 'undo', 'keep']

@@ -399,6 +399,7 @@ export interface CoreEvent {
   readonly projectInstructionStack?: ProjectInstructionStackProjection | null
   readonly workspaceSets?: WorkspaceSetsProjection | null
   readonly knowledgeSourceRegistry?: KnowledgeSourceRegistryProjection | null
+  readonly durableRemoteTaskBridge?: DurableRemoteTaskBridgeProjection | null
   readonly agentGitChangeSets?: AgentGitChangeSetsProjection | null
   readonly architectEditorPipeline?: ArchitectEditorPipelineProjection | null
   readonly eventVisualizerRegistry?: EventVisualizerRegistryProjection | null
@@ -449,6 +450,16 @@ export interface WorkspaceSetsProjection {
 export interface KnowledgeSourceRegistryProjection {
   readonly schemaVersion: number
   readonly sourceId: string
+  readonly operation: string
+  readonly version: number
+  readonly status: string
+  readonly errorCode: string
+  readonly projection: unknown
+}
+
+export interface DurableRemoteTaskBridgeProjection {
+  readonly schemaVersion: number
+  readonly remoteTaskId: string
   readonly operation: string
   readonly version: number
   readonly status: string
@@ -1152,6 +1163,7 @@ export const RENDERER_COMMANDS = [
   'core.projectInstructionStack',
   'core.workspaceSets',
   'core.knowledgeSourceRegistry',
+  'core.durableRemoteTaskBridge',
   'core.agentGitChangeSets',
   'core.architectEditorPipeline',
   'core.eventVisualizerRegistry',
@@ -1477,6 +1489,7 @@ export interface CommandPayloads {
   'core.projectInstructionStack': { operation: 'discover' | 'compile' | 'get' | 'toggle'; workspaceRoot: string; payload?: string; relevantPaths?: readonly string[]; expectedRevision?: number; idempotencyKey?: string }
   'core.workspaceSets': { operation: 'create' | 'get' | 'update' | 'bind' | 'search'; setId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.knowledgeSourceRegistry': { operation: 'register' | 'get' | 'bind' | 'index' | 'retrieve' | 'collection_register' | 'collection_get' | 'collection_view'; sourceId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
+  'core.durableRemoteTaskBridge': { operation: 'submit' | 'status' | 'cancel' | 'poll' | 'result'; remoteTaskId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.agentGitChangeSets': { operation: 'observe' | 'candidate' | 'get_candidate' | 'commit' | 'undo' | 'keep'; changeSetId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.architectEditorPipeline': { operation: 'create' | 'get' | 'accept_intent'; pipelineId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.eventVisualizerRegistry': { operation: 'list' | 'register' | 'resolve'; visualizerId?: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
@@ -1985,6 +1998,7 @@ export interface CommandResults {
   'core.teamCoordinator': { accepted: boolean }
   'core.projectInstructionStack': { accepted: boolean }
   'core.workspaceSets': { accepted: boolean }
+  'core.durableRemoteTaskBridge': { accepted: boolean }
   'core.knowledgeSourceRegistry': { accepted: boolean }
   'core.agentGitChangeSets': { accepted: boolean }
   'core.architectEditorPipeline': { accepted: boolean }
