@@ -69,6 +69,23 @@ beforeEach(() => {
       if (command === 'workspace.list') {
         return ok({ selected: 'G:/github/EvoHime', options: [] })
       }
+      if (command === 'provider.get') {
+        return ok({
+          provider: 'literouter',
+          model: 'gpt-4o-mini:free',
+          baseUrl: '',
+          tier: 'free',
+          configured: true,
+          profiles: {
+            literouter: { model: 'gpt-4o-mini:free', baseUrl: '', tier: 'free', configured: true },
+            openai_compatible: { model: '', baseUrl: '', tier: 'paid', configured: false },
+            openai_responses: { model: '', baseUrl: '', tier: 'paid', configured: false }
+          }
+        })
+      }
+      if (command === 'codex.getStatus') {
+        return ok({ installed: false, installing: false, loggingIn: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: 1, error: null })
+      }
       return ok({ accepted: true })
     }) as EvoHimeApiV1['invoke'],
     subscribe: () => () => {},
@@ -99,12 +116,25 @@ describe('operations panel', () => {
       error: 'Выбранный workspace не является исходным репозиторием EvoHime.',
       updatedAtMs: 1
     }
-    render(<OperationsPanel connection="connected" events={[]} repair={repair} />)
+    render(
+      <OperationsPanel
+        connection="connected"
+        events={[
+          event('model.catalog', { models: ['gpt-4o-mini:free'] }),
+          event('model.config', { model: 'gpt-4o-mini:free' })
+        ]}
+        repair={repair}
+      />
+    )
 
     const button = await screen.findByRole('button', { name: 'Повторить' })
     await userEvent.click(button)
 
-    expect(calls.find((call) => call.command === 'repair.start')?.payload).toEqual({ workspacePath: '' })
+    expect(calls.find((call) => call.command === 'repair.start')?.payload).toEqual({
+      workspacePath: '',
+      provider: 'literouter',
+      model: 'gpt-4o-mini:free'
+    })
   })
 
   it('asks Core for the pending queue and conflicts once the workspace is known', async () => {

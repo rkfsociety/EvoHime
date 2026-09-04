@@ -30,6 +30,7 @@ import {
   normalizeApiKey,
   normalizeBaseUrl,
   normalizeModel,
+  isProviderKind,
   type ProviderStore
 } from './provider-store'
 import { isAllowedExternalUrl } from './security-policy'
@@ -1645,9 +1646,19 @@ function dispatch(
       // Repair always creates its own isolated checkout. An empty value is
       // intentional: the selected workspace must neither affect nor receive
       // repair changes.
-      const workspacePath = asOptionalBoundedString(asRecord(payload)['workspacePath'])
-      if (workspacePath === null) return failure('invalid-payload', 'Некорректный workspace для repair-run.')
-      return repair.start(workspacePath).then((value) => ({ ok: true, value }))
+      const value = asRecord(payload)
+      const workspacePath = asOptionalBoundedString(value['workspacePath'])
+      const providerValue = value['provider']
+      const provider = providerValue === 'codex_cli'
+        ? providerValue
+        : isProviderKind(providerValue)
+          ? providerValue
+          : null
+      const model = normalizeModel(value['model'])
+      if (workspacePath === null || provider === null || model === null || model.length === 0) {
+        return failure('invalid-payload', 'Для repair-run выбери провайдера и модель.')
+      }
+      return repair.start(workspacePath, { provider, model }).then((result) => ({ ok: true, value: result }))
     }
 
     case 'repair.cancel':

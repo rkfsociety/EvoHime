@@ -2608,6 +2608,49 @@ select:focus {
   color: var(--muted, #8d98aa);
 }
 
+.repair-selection {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 10px;
+  border: 1px solid var(--border, #2c3546);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface, #171c27) 72%, transparent);
+}
+
+.repair-selection__title {
+  color: var(--fg-muted, #a6afbf);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.repair-selection__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.repair-selection__controls .composer__provider,
+.repair-selection__controls .model-picker {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.repair-selection__controls .composer__provider select {
+  max-width: 190px;
+}
+
+.repair-selection__controls .model-picker__button {
+  max-width: 260px;
+}
+
+.repair-selection__controls .model-picker__menu {
+  bottom: auto;
+  top: calc(100% + 6px);
+}
+
 .operations-timeline {
   display: grid;
   gap: 8px;

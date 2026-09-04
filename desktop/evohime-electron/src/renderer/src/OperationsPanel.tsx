@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import type { AmbientProposal, AmbientProposalList, ConnectionState, CoreEvent, RepairStatus } from '@shared/api'
+import type { AmbientProposal, AmbientProposalList, ChatProviderMode, ConnectionState, CoreEvent, RepairStatus } from '@shared/api'
 
 import { useShellApi } from './shell-api'
+import { ChatProviderPicker } from './ChatProviderPicker'
+import { ModelPicker } from './ModelPicker'
 
 interface Props {
   readonly connection: ConnectionState
@@ -10,10 +12,28 @@ interface Props {
   readonly repair?: RepairStatus | null
 }
 
-function RepairCard({ status }: { readonly status: RepairStatus }): React.JSX.Element {
+const REPAIR_PROVIDER_LABELS: Record<ChatProviderMode, string> = {
+  literouter: 'LiteRouter',
+  openai_compatible: 'OpenAI API',
+  openai_responses: 'OpenAI Responses',
+  codex_cli: 'Codex CLI'
+}
+
+function initialRepairProvider(): ChatProviderMode {
+  const stored = window.localStorage.getItem('evohime.chat-provider-mode')
+  return stored === 'codex_cli' || stored === 'openai_compatible' || stored === 'openai_responses' || stored === 'literouter'
+    ? stored
+    : 'literouter'
+}
+
+function RepairCard({ status, connection, events }: { readonly status: RepairStatus; readonly connection: ConnectionState; readonly events: readonly CoreEvent[] }): React.JSX.Element {
   const api = useShellApi()
   const [message, setMessage] = useState('')
+  const [provider, setProvider] = useState<ChatProviderMode>(initialRepairProvider)
+  const [model, setModel] = useState('')
   const active = ['preparing', 'diagnosing', 'committing', 'pushing', 'waiting_ci'].includes(status.phase)
+  const connected = CONNECTED_STATES.includes(connection)
+  const selectionReady = connected && model.trim().length > 0
 
   const command = async (name: 'repair.start' | 'repair.cancel' | 'repair.commit' | 'repair.push' | 'repair.refreshCI', payload: unknown): Promise<void> => {
     if (!api) return
@@ -23,7 +43,7 @@ function RepairCard({ status }: { readonly status: RepairStatus }): React.JSX.El
 
   const retryable = status.phase === 'available' || (status.phase === 'failed' && status.errorCount >= 3)
   const action = retryable
-    ? { label: status.phase === 'failed' ? 'Повторить' : 'Починить', name: 'repair.start' as const, payload: { workspacePath: '' }, disabled: false }
+    ? { label: status.phase === 'failed' ? 'Повторить' : 'Починить', name: 'repair.start' as const, payload: { workspacePath: '', provider, model }, disabled: !selectionReady }
     : status.phase === 'ready_to_commit'
       ? { label: 'Применить и закоммитить', name: 'repair.commit' as const, payload: {}, disabled: false }
       : status.phase === 'ready_to_push'
@@ -38,6 +58,30 @@ function RepairCard({ status }: { readonly status: RepairStatus }): React.JSX.El
       <strong>{status.errorCount}</strong>
       <span>ошибок для анализа</span>
       <small>{status.summary}</small>
+      <div className="repair-selection" aria-label="Провайдер и модель самоисправления">
+        <span className="repair-selection__title">Чем анализировать</span>
+        <div className="repair-selection__controls">
+          <ChatProviderPicker
+            connection={connection}
+            value={provider}
+            onChange={(next) => {
+              setProvider(next)
+              setModel('')
+            }}
+            disabled={active}
+          />
+          <ModelPicker
+            connection={connection}
+            events={events}
+            provider={provider}
+            use="agent"
+            onModelChange={setModel}
+            disabled={active}
+          />
+        </div>
+        {model ? <small>Выбрано: {REPAIR_PROVIDER_LABELS[provider]} · {model}</small> : <small>Выбери доступную модель — без неё запуск запрещён.</small>}
+      </div>
+      {status.provider && status.model ? <small>Последний run: {REPAIR_PROVIDER_LABELS[status.provider]} · {status.model}</small> : null}
       {status.commit ? <small>commit {status.commit.slice(0, 12)} · CI: {status.ciState}</small> : null}
       {status.evidence?.slice(-4).map((entry) => (
         <small key={`${entry.phase}-${entry.atMs}`}>{entry.phase}: {entry.result} · {entry.detail}</small>
@@ -490,7 +534,7 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
         <span className={`status-pill status-pill--${connection}`}>{connection}</span>
       </div>
       <div className="operations-grid">
-        {repair ? <RepairCard status={repair} /> : null}
+        {repair ? <RepairCard status={repair} connection={connection} events={events} /> : null}
         <article className={`operations-card ${pending.length ? 'operations-card--warning' : ''}`}>
           <h3>Память: подтверждение</h3>
           <strong>{counts['pending_confirmation'] ?? 0}</strong>

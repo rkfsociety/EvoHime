@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
-import type { CoreEvent } from '@shared/api'
+import type { ChatProviderMode, CoreEvent } from '@shared/api'
 import type { RepairEvidenceEntry, RepairPhase, RepairStatus, RepairTestResult } from '@shared/api'
 
 import type { ShellLog } from './diagnostics/logger'
@@ -19,7 +19,7 @@ export interface RepairServiceOptions {
   readonly filePath: string
   readonly repairRoot: string
   readonly config: UpdateConfig
-  readonly startTask: (taskId: string, workspacePath: string, prompt: string) => boolean
+  readonly startTask: (taskId: string, workspacePath: string, prompt: string, selection: RepairModelSelection) => boolean
   readonly stopTask: (taskId: string) => boolean
   readonly emit: (status: RepairStatus) => void
   readonly log: ShellLog
@@ -27,6 +27,11 @@ export interface RepairServiceOptions {
   readonly readRemoteHead?: typeof readRemoteHead
   readonly syncCheckout?: typeof syncCheckout
   readonly runCommand?: typeof runCommand
+}
+
+export interface RepairModelSelection {
+  readonly provider: ChatProviderMode
+  readonly model: string
 }
 
 type RepairOperation = 'diagnose' | 'commit' | 'push'
@@ -83,11 +88,15 @@ export class RepairService {
     }
   }
 
-  async start(_workspacePath: string): Promise<RepairStatus> {
+  async start(_workspacePath: string, selection: RepairModelSelection): Promise<RepairStatus> {
     if (this.isActive()) return this.current
     if (this.current.errorCount < ERROR_THRESHOLD) {
       return this.fail('Пока недостаточно повторяющихся ошибок для repair-run.')
     }
+    if (selection.model.trim().length === 0) {
+      return this.fail('Перед repair-run выбери модель для анализа.')
+    }
+    const failureSummary = this.current.summary
     const repairId = randomUUID()
     // The checkout is isolated, so the only branch that can be published by a
     // separately approved push is the configured product branch.
@@ -97,6 +106,7 @@ export class RepairService {
     this.set({
       phase: 'preparing', repairId, workspacePath: directory, baseCommit: null, branch,
       taskId, commit: null, ciState: 'unknown', diffStat: '', tests: [], error: null,
+      provider: selection.provider, model: selection.model,
       summary: 'Готовлю изолированную копию репозитория…'
     })
 
@@ -124,7 +134,7 @@ export class RepairService {
       if (branchResult.code !== 0) throw new Error(describeFailure('Создание repair-ветки', branchResult))
       this.set({ phase: 'diagnosing', baseCommit, summary: 'Ева анализирует ошибки и готовит исправление.' })
       this.operation = 'diagnose'
-      const queued = this.options.startTask(taskId, directory, repairPrompt(this.current.summary, baseCommit))
+      const queued = this.options.startTask(taskId, directory, repairPrompt(failureSummary, baseCommit), selection)
       if (!queued) throw new Error('Core не принял repair-задачу.')
     } catch (error) {
       this.operation = null
@@ -142,10 +152,12 @@ export class RepairService {
 
   commit(): RepairStatus {
     if (this.current.phase !== 'ready_to_commit' || !this.current.workspacePath || !this.current.taskId) return this.current
+    const selection = this.selection()
+    if (!selection) return this.fail('Для commit repair-run не зафиксированы провайдер и модель.')
     this.operation = 'commit'
     const taskId = randomUUID()
     this.set({ phase: 'committing', taskId, summary: 'Ева проверяет diff и готовит commit.' })
-    const queued = this.options.startTask(taskId, this.current.workspacePath, commitPrompt(this.current.branch ?? ''))
+    const queued = this.options.startTask(taskId, this.current.workspacePath, commitPrompt(this.current.branch ?? ''), selection)
     if (!queued) {
       this.operation = null
       return this.fail('Core не принял commit-задачу.')
@@ -155,10 +167,12 @@ export class RepairService {
 
   push(): RepairStatus {
     if (this.current.phase !== 'ready_to_push' || !this.current.workspacePath || !this.current.taskId) return this.current
+    const selection = this.selection()
+    if (!selection) return this.fail('Для push repair-run не зафиксированы провайдер и модель.')
     this.operation = 'push'
     const taskId = randomUUID()
     this.set({ phase: 'pushing', taskId, summary: 'Ожидаю approval и отправляю repair commit в GitHub.' })
-    const queued = this.options.startTask(taskId, this.current.workspacePath, pushPrompt())
+    const queued = this.options.startTask(taskId, this.current.workspacePath, pushPrompt(), selection)
     if (!queued) {
       this.operation = null
       return this.fail('Core не принял push-задачу.')
@@ -216,6 +230,12 @@ export class RepairService {
     return ['preparing', 'diagnosing', 'committing', 'pushing', 'waiting_ci'].includes(this.current.phase)
   }
 
+  private selection(): RepairModelSelection | null {
+    const provider = this.current.provider
+    const model = this.current.model?.trim() ?? ''
+    return provider && model.length > 0 ? { provider, model } : null
+  }
+
   private set(patch: Partial<RepairStatus>): RepairStatus {
     const updatedAtMs = Date.now()
     const next = { ...this.current, ...patch, updatedAtMs }
@@ -252,7 +272,7 @@ export class RepairService {
 }
 
 function emptyStatus(): RepairStatus {
-  return { phase: 'idle', repairId: null, workspacePath: null, baseCommit: null, branch: null, taskId: null, errorCount: 0, repeatedPatterns: 0, summary: 'Ошибок для repair-run пока нет.', diffStat: '', tests: [], commit: null, ciState: 'unknown', error: null, updatedAtMs: 0, evidence: [] }
+  return { phase: 'idle', repairId: null, workspacePath: null, baseCommit: null, branch: null, taskId: null, errorCount: 0, repeatedPatterns: 0, summary: 'Ошибок для repair-run пока нет.', diffStat: '', tests: [], commit: null, ciState: 'unknown', error: null, updatedAtMs: 0, provider: null, model: null, evidence: [] }
 }
 
 function readStatus(filePath: string): RepairStatus {

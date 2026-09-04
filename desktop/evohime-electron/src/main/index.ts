@@ -127,8 +127,14 @@ if (process.argv.includes('--evohime-browser-backend')) {
       filePath: join(dataDirectory(), 'shell', 'repair.json'),
       repairRoot: join(dataDirectory(), 'repair'),
       config: updateConfig,
-      startTask: (taskId, workspacePath, prompt) => client?.send({
-        startTask: { taskId, prompt, workspacePath, preferredRouteHint: '' }
+      startTask: (taskId, workspacePath, prompt, selection) => client?.send({
+        startTask: {
+          taskId,
+          prompt,
+          workspacePath,
+          preferredRouteHint: selection.provider === 'codex_cli' ? 'codex_cli' : 'cloud',
+          executionKind: selection.provider === 'codex_cli' ? 'coding' : 'dialogue'
+        }
       }) === 'queued',
       stopTask: (taskId) => client?.send({ stopTask: { taskId } }) === 'queued',
       emit: (status) => {

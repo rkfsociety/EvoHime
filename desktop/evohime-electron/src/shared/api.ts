@@ -622,6 +622,9 @@ export interface RepairStatus {
   readonly ciState: RepairCheckState
   readonly error: string | null
   readonly updatedAtMs: number
+  /** Provider/model selected for the current or last repair run. */
+  readonly provider?: ChatProviderMode | null
+  readonly model?: string | null
   /** Bounded, redacted stage evidence for repair/update review. */
   readonly evidence?: readonly RepairEvidenceEntry[]
 }
@@ -1758,7 +1761,7 @@ export interface CommandPayloads {
   'codex.login': Record<string, never>
   'codex.selectModel': { model: string }
   'repair.getStatus': Record<string, never>
-  'repair.start': { workspacePath: string }
+  'repair.start': { workspacePath: string; provider: ChatProviderMode; model: string }
   'repair.cancel': Record<string, never>
   'repair.commit': Record<string, never>
   'repair.push': Record<string, never>

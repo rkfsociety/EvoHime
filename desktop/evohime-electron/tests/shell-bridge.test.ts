@@ -295,8 +295,16 @@ describe('renderer command surface', () => {
       log: () => {}
     })
 
-    await expect(invoke('repair.start', { workspacePath: '' })).resolves.toMatchObject({ ok: true })
-    expect(start).toHaveBeenCalledWith('')
+    await expect(invoke('repair.start', { workspacePath: '', provider: 'literouter', model: 'gpt-4o-mini:free' })).resolves.toMatchObject({ ok: true })
+    expect(start).toHaveBeenCalledWith('', { provider: 'literouter', model: 'gpt-4o-mini:free' })
+  })
+
+  it('не запускает repair-run без явного провайдера и модели', () => {
+    expect(invoke('repair.start', { workspacePath: '', provider: 'literouter', model: '' })).toMatchObject({
+      ok: false,
+      code: 'invalid-payload'
+    })
+    expect(sent).toHaveLength(0)
   })
 
   it('exposes only the documented channels', () => {

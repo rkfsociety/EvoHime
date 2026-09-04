@@ -106,9 +106,11 @@ describe('RepairService', () => {
     const directory = mkdtempSync(join(tmpdir(), 'evohime-repair-'))
     try {
       let startedWorkspace = ''
+      let startedSelection: { provider: string; model: string } | null = null
       const service = makeService(directory, {
-        startTask: (_taskId, workspacePath) => {
+        startTask: (_taskId, workspacePath, _prompt, selection) => {
           startedWorkspace = workspacePath
+          startedSelection = selection
           return true
         },
         readRemoteHead: async () => '0123456789abcdef0123456789abcdef01234567',
@@ -119,10 +121,16 @@ describe('RepairService', () => {
       service.observe(event('same failure'))
       service.observe(event('same failure'))
 
-      await service.start('C:\\Users\\roman\\Documents\\ordinary-project')
+      await service.start('C:\\Users\\roman\\Documents\\ordinary-project', {
+        provider: 'literouter',
+        model: 'gpt-4o-mini:free'
+      })
 
       expect(service.status.phase).toBe('diagnosing')
       expect(startedWorkspace).toContain('repair')
+      expect(startedSelection).toEqual({ provider: 'literouter', model: 'gpt-4o-mini:free' })
+      expect(service.status.provider).toBe('literouter')
+      expect(service.status.model).toBe('gpt-4o-mini:free')
       expect(service.status.error).toBeNull()
     } finally {
       rmSync(directory, { recursive: true, force: true })

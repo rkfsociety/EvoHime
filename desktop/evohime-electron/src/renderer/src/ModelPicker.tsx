@@ -10,9 +10,9 @@ import { capabilityForModel, sortModelsForUse, type ModelUse } from '@shared/mod
  * Model selection for the next task, shown in the composer.
  *
  * The list is the provider's own catalogue, filtered by the tier chosen in
- * settings — the shell never hardcodes model names. Selecting one sends a
- * bounded command to Core, which resolves the model per request, so a change
- * applies to the next task without restarting anything.
+ * settings — the shell never hardcodes model names. API selection sends a
+ * bounded command to Core, while Codex persists its selection and restarts
+ * Core before the next task.
  */
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
@@ -22,9 +22,11 @@ export interface ModelPickerProps {
   readonly events: readonly CoreEvent[]
   readonly provider: ChatProviderMode
   readonly use?: ModelUse
+  readonly onModelChange?: (model: string) => void
+  readonly disabled?: boolean
 }
 
-export function ModelPicker({ connection, events, provider = 'literouter', use = 'agent' }: ModelPickerProps & { readonly provider?: ChatProviderMode }): React.JSX.Element | null {
+export function ModelPicker({ connection, events, provider = 'literouter', use = 'agent', onModelChange, disabled = false }: ModelPickerProps & { readonly provider?: ChatProviderMode }): React.JSX.Element | null {
   const api = useShellApi()
   const connected = CONNECTED_STATES.includes(connection)
   const [tier, setTier] = useState<ModelTier | null>(null)
@@ -33,6 +35,16 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   const [codexModels, setCodexModels] = useState<readonly CodexModel[]>([])
   const [codexRateLimits, setCodexRateLimits] = useState<readonly CodexRateLimit[]>([])
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setTier(null)
+    setModels([])
+    setCurrent('')
+    setCodexModels([])
+    setCodexRateLimits([])
+    setError(null)
+    onModelChange?.('')
+  }, [onModelChange, provider])
 
   useEffect(() => {
     if (!api || provider === 'codex_cli') return
@@ -77,8 +89,11 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     if (provider === 'codex_cli') return
     if (!config) return
     const parsed = parseJson(config.payload)
-    if (typeof parsed['model'] === 'string') setCurrent(parsed['model'])
-  }, [config, provider])
+    if (typeof parsed['model'] === 'string') {
+      setCurrent(parsed['model'])
+      onModelChange?.(parsed['model'])
+    }
+  }, [config, onModelChange, provider])
 
   const select = useCallback(
     async (model: string) => {
@@ -88,8 +103,9 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
         ? await api.invoke('codex.selectModel', { model })
         : await api.invoke('core.selectModel', { model })
       if (!outcome.ok) setError(outcome.message)
+      else onModelChange?.(model)
     },
-    [api, provider]
+    [api, onModelChange, provider]
   )
 
   // A dropdown whose value is not in its own list still renders the first
@@ -97,11 +113,11 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   // default, which need not even exist in this tier. Commit to what is shown.
   useEffect(() => {
     const available = provider === 'codex_cli' ? codexModels.map((model) => model.id) : models
-    if (available.length === 0) return
+    if (disabled || available.length === 0) return
     if (current !== '' && available.includes(current)) return
     const first = available[0]
     if (first !== undefined) void select(first)
-  }, [codexModels, current, models, provider, select])
+  }, [codexModels, current, disabled, models, provider, select])
 
   if (!connected) {
     return null
@@ -128,6 +144,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
         models={visibleModels}
         current={known ? current : ''}
         onSelect={(model) => void select(model)}
+        disabled={disabled}
       />
       {provider !== 'codex_cli' && use === 'agent' && models.length > 0 ? (
         <span className="model-picker__hint" title={capabilityForModel(provider, current).reason}>агентские модели</span>
@@ -141,6 +158,7 @@ interface ModelDropdownProps {
   readonly models: readonly ModelOption[]
   readonly current: string
   readonly onSelect: (model: string) => void
+  readonly disabled?: boolean
 }
 
 interface ModelOption {
@@ -155,7 +173,7 @@ interface ModelOption {
  * grey text on white inside the dark composer. This one is styled by the app,
  * and a catalogue of dozens of models needs a filter anyway.
  */
-function ModelDropdown({ models, current, onSelect }: ModelDropdownProps): React.JSX.Element {
+function ModelDropdown({ models, current, onSelect, disabled = false }: ModelDropdownProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const root = useRef<HTMLDivElement | null>(null)
@@ -190,7 +208,7 @@ function ModelDropdown({ models, current, onSelect }: ModelDropdownProps): React
         className="model-picker__button"
         aria-label="Модель"
         aria-expanded={open}
-        disabled={models.length === 0}
+        disabled={disabled || models.length === 0}
         onClick={() => {
           setQuery('')
           setOpen((value) => !value)
