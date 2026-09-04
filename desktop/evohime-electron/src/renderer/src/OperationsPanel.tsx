@@ -19,6 +19,13 @@ const REPAIR_PROVIDER_LABELS: Record<ChatProviderMode, string> = {
   codex_cli: 'Codex CLI'
 }
 
+const REPAIR_SUMMARY_LIMIT = 220
+
+function boundedDiagnostic(value: string): string {
+  if (value.length <= REPAIR_SUMMARY_LIMIT) return value
+  return `${value.slice(0, REPAIR_SUMMARY_LIMIT).trimEnd()}…`
+}
+
 function initialRepairProvider(): ChatProviderMode {
   const stored = window.localStorage.getItem('evohime.chat-provider-mode')
   return stored === 'codex_cli' || stored === 'openai_compatible' || stored === 'openai_responses' || stored === 'literouter'
@@ -53,11 +60,28 @@ function RepairCard({ status, connection, events }: { readonly status: RepairSta
           : null
 
   return (
-    <article className={`operations-card${status.error ? ' operations-card--warning' : ''}`}>
+    <article className={`operations-card operations-card--repair${status.error ? ' operations-card--warning' : ''}`}>
+      <div className="operations-card__topline">
+        <span className="operations-card__eyebrow">Repair queue</span>
+        <span className="operations-card__phase">{status.phase}</span>
+      </div>
       <h3>Самоисправление</h3>
-      <strong>{status.errorCount}</strong>
-      <span>ошибок для анализа</span>
-      <small>{status.summary}</small>
+      <div className="operations-card__metric">
+        <strong>{status.errorCount}</strong>
+        <span>ошибок для анализа</span>
+      </div>
+      {status.summary ? (
+        <div className="operations-card__diagnostic">
+          <small>{boundedDiagnostic(status.summary)}</small>
+          {status.summary.length > REPAIR_SUMMARY_LIMIT ? (
+            <details>
+              <summary>Показать полный отчёт</summary>
+              <pre>{status.summary}</pre>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
+      {status.error ? <small className="operations-card__error">{boundedDiagnostic(status.error)}</small> : null}
       <div className="repair-selection" aria-label="Провайдер и модель самоисправления">
         <span className="repair-selection__title">Чем анализировать</span>
         <div className="repair-selection__controls">
@@ -526,8 +550,9 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
 
   return (
     <section className="panel operations-panel" aria-label="Память и автоматизация">
-      <div className="panel__header">
+      <div className="panel__header operations-panel__header">
         <div>
+          <p className="panel__eyebrow">Operations / Core state</p>
           <h2>Память и автоматизация</h2>
           <p>Только состояние, подтверждённое Core; локальные события не подменяются успехом.</p>
         </div>
@@ -570,8 +595,14 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
         </article>
       </div>
 
-      <section className="operations-timeline" aria-label="Локальный индекс workspace">
-        <h3>Локальные знания workspace</h3>
+      <section className="operations-section operations-section--knowledge" aria-label="Локальный индекс workspace">
+        <div className="operations-section__header">
+          <div>
+            <p className="panel__eyebrow">Workspace intelligence</p>
+            <h3>Локальные знания workspace</h3>
+          </div>
+          <span className="operations-section__hint">индекс Core</span>
+        </div>
         <p>
           {indexStatus
             ? `${indexStatus.indexed_files} файлов · ${indexStatus.chunks} фрагментов · ${indexStatus.excluded} исключено · поколение ${indexStatus.generation ?? '—'} · ${indexStatus.vector_mode}`
@@ -628,8 +659,14 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
 
       {message ? <p className="empty-state">{message}</p> : null}
 
-      <section className="operations-timeline" aria-label="Кандидаты continual refinement">
-        <h3>Continual refinement</h3>
+      <section className="operations-section" aria-label="Кандидаты continual refinement">
+        <div className="operations-section__header">
+          <div>
+            <p className="panel__eyebrow">Learning loop</p>
+            <h3>Continual refinement</h3>
+          </div>
+          <span className="operations-section__hint">bounded metadata</span>
+        </div>
         <p>Core показывает только bounded metadata. Содержимое и transcript в UI не передаются.</p>
         {refinementList.length === 0 ? <p className="empty-state">Кандидатов refinement нет.</p> : (
           <ol className="operations-timeline">
@@ -651,8 +688,14 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
         )}
       </section>
 
-      <section className="operations-timeline" aria-label="Предложения по услышанному">
-        <h3>Предложения по услышанному</h3>
+      <section className="operations-section" aria-label="Предложения по услышанному">
+        <div className="operations-section__header">
+          <div>
+            <p className="panel__eyebrow">Ambient suggestions</p>
+            <h3>Предложения по услышанному</h3>
+          </div>
+          <span className="operations-section__hint">только после клика</span>
+        </div>
         <p>
           Ева может предложить, но не может сделать. Любое из этих действий выполняется только
           твоим кликом.

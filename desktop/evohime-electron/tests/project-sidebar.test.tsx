@@ -7,9 +7,9 @@ import type { ChatSummary, CommandOutcome, EvoHimeApiV1, RendererCommand } from 
 import { ProjectSidebar } from '../src/renderer/src/ProjectSidebar'
 
 /**
- * The sidebar is how a user reaches their work: projects, the chats inside the
- * open project, and a way to start a new one. Chats are scoped to a project,
- * so switching projects must not leave the previous conversation open.
+ * The sidebar is the chat workspace: quick actions, the chats inside the open
+ * workspace, and a way to start a new one. Chats are scoped to a workspace,
+ * so switching workspaces must not leave the previous conversation open.
  */
 
 const calls: { command: string; payload: unknown }[] = []
@@ -70,6 +70,8 @@ function renderSidebar(overrides: Partial<Parameters<typeof ProjectSidebar>[0]> 
     chatId: null as string | null,
     onWorkspaceChange: vi.fn(),
     onChatChange: vi.fn(),
+    onScheduled: vi.fn(),
+    onPlugins: vi.fn(),
     revision: 0,
     ...overrides
   }
@@ -77,13 +79,21 @@ function renderSidebar(overrides: Partial<Parameters<typeof ProjectSidebar>[0]> 
 }
 
 describe('project sidebar', () => {
-  it('lists projects and the chats of the open one', async () => {
-    renderSidebar()
+  it('shows quick actions and the chats of the open workspace', async () => {
+    const { props } = renderSidebar()
 
-    expect(await screen.findByRole('button', { name: 'repo' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'other' })).toBeTruthy()
-    // Chats belong to the open project only.
+    expect(screen.getByRole('button', { name: /Новый чат/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Запланировано' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Плагины' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Чаты' })).toBeTruthy()
+    expect(await screen.findByRole('combobox', { name: 'Рабочая папка' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'repo' })).toBeNull()
+    // Chats belong to the open workspace only.
     await waitFor(() => expect(screen.getByRole('button', { name: 'Изучи проект' })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: 'Запланировано' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Плагины' }))
+    expect(props.onScheduled).toHaveBeenCalledOnce()
+    expect(props.onPlugins).toHaveBeenCalledOnce()
     expect(calls).toContainEqual({
       command: 'chat.list',
       payload: { workspacePath: 'C:\\work\\repo' }
@@ -93,7 +103,7 @@ describe('project sidebar', () => {
   it('creates a chat and opens it', async () => {
     const { props } = renderSidebar()
 
-    await userEvent.click(await screen.findByRole('button', { name: '+ Новый чат' }))
+    await userEvent.click(await screen.findByRole('button', { name: /Новый чат/ }))
 
     expect(calls).toContainEqual({
       command: 'chat.create',
@@ -105,7 +115,7 @@ describe('project sidebar', () => {
   it('closes the open chat when the project changes', async () => {
     const { props } = renderSidebar({ chatId: 'chat-1' })
 
-    await userEvent.click(await screen.findByRole('button', { name: 'other' }))
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Рабочая папка' }), 'C:\\work\\other')
 
     await waitFor(() => expect(props.onWorkspaceChange).toHaveBeenCalledWith('C:\\work\\other'))
     // A chat of the previous project must not stay open under the new one.
@@ -140,11 +150,13 @@ describe('project sidebar', () => {
         chatId={null}
         onWorkspaceChange={vi.fn()}
         onChatChange={vi.fn()}
+        onScheduled={vi.fn()}
+        onPlugins={vi.fn()}
         revision={0}
       />
     )
 
-    expect(await screen.findByText('недоступна')).toBeTruthy()
+    expect(await screen.findByRole('option', { name: 'repo · недоступна' })).toBeTruthy()
     expect(screen.getByText(/Папка недоступна/)).toBeTruthy()
   })
 })

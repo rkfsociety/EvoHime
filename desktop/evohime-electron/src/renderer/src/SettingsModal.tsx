@@ -12,12 +12,13 @@ import { DiagnosticsAndSupportBundlePanel } from './DiagnosticsAndSupportBundleP
 
 import type { ConnectionState, CoreEvent } from '@shared/api'
 
-type SettingsTab = 'provider' | 'integrations' | 'triggers' | 'workspace' | 'speech' | 'skills' | 'tools' | 'diagnostics' | 'appearance' | 'security'
+export type SettingsTab = 'provider' | 'integrations' | 'triggers' | 'workspace' | 'speech' | 'skills' | 'tools' | 'diagnostics' | 'appearance' | 'security'
 
 interface SettingsModalProps {
   readonly workspace: string | null
   readonly connection: ConnectionState
   readonly events: readonly CoreEvent[]
+  readonly initialTab?: SettingsTab
   readonly onClose: () => void
 }
 
@@ -34,8 +35,8 @@ const TABS: readonly { readonly id: SettingsTab; readonly label: string }[] = [
   { id: 'security', label: 'Безопасность' }
 ]
 
-export function SettingsModal({ workspace, connection, events, onClose }: SettingsModalProps): React.JSX.Element {
-  const [tab, setTab] = useState<SettingsTab>('provider')
+export function SettingsModal({ workspace, connection, events, initialTab = 'provider', onClose }: SettingsModalProps): React.JSX.Element {
+  const [tab, setTab] = useState<SettingsTab>(initialTab)
   const [providerSurface, setProviderSurface] = useState<'api' | 'codex'>('api')
 
   useEffect(() => {
@@ -111,7 +112,7 @@ function WorkspaceSettings({ workspace }: { readonly workspace: string | null })
   return (
     <section className="settings-info" aria-label="Рабочая область">
       <h3>Рабочая область</h3>
-      <p>Текущая папка проекта выбирается в левой панели и используется агентом для задач.</p>
+      <p>Текущая папка проекта выбирается в рабочем пространстве чатов и используется агентом для задач.</p>
       <dl className="settings-info__details">
         <dt>Открытая папка</dt>
         <dd>{workspace ?? 'не выбрана'}</dd>

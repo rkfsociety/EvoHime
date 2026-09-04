@@ -18,6 +18,8 @@ import { UpdateGate } from './UpdateGate'
 import { ProjectSidebar } from './ProjectSidebar'
 import { TaskTimeline } from './TaskTimeline'
 import { SettingsModal } from './SettingsModal'
+import type { SettingsTab } from './SettingsModal'
+import { ScheduledPanel } from './ScheduledPanel'
 import { OperationsPanel } from './OperationsPanel'
 import { PlanReviewPanel } from './PlanReviewPanel'
 import { WorkflowPanel } from './WorkflowPanel'
@@ -117,7 +119,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'memory-views-recall' | 'model-edit-protocol-registry' | 'remote-conversation-channels' | 'prompt-cache-planner' | 'declarative-runtime-components' | 'guided-calibration-sessions' | 'extension-conformance-kit' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'dependency-aware-task-graph' | 'core-topic-subscription-event-bus' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'durable-remote-task-bridge' | 'message-intervention-policies' | 'batch-invocation-runtime' | 'policy-aware-tool-result-cache' | 'code-anchored-intent-markers' | 'model-purpose-routing' | 'local-model-runtime-manager' | 'architecture-snapshot' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
+type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'memory-views-recall' | 'model-edit-protocol-registry' | 'remote-conversation-channels' | 'prompt-cache-planner' | 'declarative-runtime-components' | 'guided-calibration-sessions' | 'extension-conformance-kit' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'dependency-aware-task-graph' | 'core-topic-subscription-event-bus' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'durable-remote-task-bridge' | 'message-intervention-policies' | 'batch-invocation-runtime' | 'policy-aware-tool-result-cache' | 'code-anchored-intent-markers' | 'model-purpose-routing' | 'local-model-runtime-manager' | 'architecture-snapshot' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -236,7 +238,7 @@ const DEVELOPER_GROUPS: readonly DeveloperViewGroup[] = [
 
 const DEVELOPER_VIEWS: readonly ViewDescriptor[] = DEVELOPER_GROUPS.flatMap((group) => group.views)
 
-const VIEWS: readonly ViewDescriptor[] = [...USER_VIEWS, ...DEVELOPER_VIEWS]
+const VIEWS: readonly ViewDescriptor[] = [{ id: 'scheduled', label: 'Запланировано', icon: '◷' }, ...USER_VIEWS, ...DEVELOPER_VIEWS]
 
 /** Not a nav row: reached through the gear next to the account. */
 const SETTINGS_LABEL = 'Настройки'
@@ -255,6 +257,7 @@ export function App(): React.JSX.Element {
   const [repair, setRepair] = useState<RepairStatus | null>(null)
   const [traceOpen, setTraceOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('provider')
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [developerMenuOpen, setDeveloperMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -367,7 +370,7 @@ export function App(): React.JSX.Element {
 
   return (
     <div className={`shell${traceOpen ? ' shell--trace-open' : ''}${sidebarCollapsed ? ' shell--sidebar-collapsed' : ''}`}>
-      <nav className="sidebar" aria-label="Разделы">
+      <nav className="sidebar" aria-label="Чаты и навигация">
         <div className="sidebar__brand">
           <button
             type="button"
@@ -391,6 +394,15 @@ export function App(): React.JSX.Element {
               setChatId(id)
               // Picking a chat means going back to the conversation.
               if (id !== null) setView('chat')
+            }}
+            onScheduled={() => {
+              setView('scheduled')
+              setAccountMenuOpen(false)
+            }}
+            onPlugins={() => {
+              setSettingsTab('skills')
+              setSettingsOpen(true)
+              setAccountMenuOpen(false)
             }}
             revision={chatRevision}
           />
@@ -473,6 +485,7 @@ export function App(): React.JSX.Element {
                 role="menuitem"
                 aria-current={settingsOpen ? 'page' : undefined}
                 onClick={() => {
+                  setSettingsTab('provider')
                   setSettingsOpen(true)
                   setAccountMenuOpen(false)
                 }}
@@ -488,7 +501,7 @@ export function App(): React.JSX.Element {
       <main className="main">
         <header className="topbar">
           <h2 className="topbar__title">{title}</h2>
-          <span className="topbar__path">{workspace ?? 'папка не выбрана'}</span>
+          <span className="topbar__path" title={workspace ?? undefined}>{workspace ?? 'папка не выбрана'}</span>
           <span className="topbar__spacer" />
           {!workbenchVisible ? (
             <button type="button" className="topbar__panel-toggle" onClick={() => setWorkbenchVisible(true)}>
@@ -556,6 +569,7 @@ export function App(): React.JSX.Element {
               {view === 'overview' ? <OverviewPanel connection={connection} events={events} workspace={workspace} /> : null}
               {view === 'reviews' ? <PlanReviewPanel connection={connection} events={events} /> : null}
               {view === 'operations' ? <OperationsPanel connection={connection} events={events} repair={repair} /> : null}
+              {view === 'scheduled' ? <ScheduledPanel connection={connection} events={events} workspace={workspace} /> : null}
               {view === 'workflows' ? (
                 <>
                   <WorkflowPanel connection={connection} events={events} workspace={workspace} />
@@ -638,6 +652,7 @@ export function App(): React.JSX.Element {
           workspace={workspace}
           connection={connection}
           events={events}
+          initialTab={settingsTab}
           onClose={() => setSettingsOpen(false)}
         />
       ) : null}

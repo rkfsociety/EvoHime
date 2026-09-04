@@ -47,6 +47,8 @@
         "desktop/evohime-electron/src/renderer/src/App.tsx:500:580",
         "desktop/evohime-electron/src/renderer/src/ProjectSidebar.tsx",
         "desktop/evohime-electron/src/renderer/src/OperationsPanel.tsx",
+        "desktop/evohime-electron/src/renderer/src/ScheduledPanel.tsx",
+        "desktop/evohime-electron/src/renderer/src/SettingsModal.tsx",
         "desktop/evohime-electron/src/renderer/src/ChatProviderPicker.tsx",
         "desktop/evohime-electron/src/renderer/src/ModelPicker.tsx",
         "desktop/evohime-electron/src/renderer/src/CodexRateLimits.tsx",
@@ -60,19 +62,22 @@
         "desktop/evohime-electron/src/renderer/src/styles.css:1911:2107",
         "desktop/evohime-electron/src/renderer/src/styles.css:2127:2290",
         "desktop/evohime-electron/src/renderer/src/styles.css:2534:2686",
-        "desktop/evohime-electron/src/renderer/src/styles.css:3229:3360"
+        "desktop/evohime-electron/src/renderer/src/styles.css:3229:3360",
+        "desktop/evohime-electron/src/renderer/src/styles.css:3621:4321"
       ],
       "fingerprints": {
         ".superdesign/design-system.md": "6f63b70dd5075ad07feab6127da86223795b8c59f17701e10e8d0a53a602af3f",
-        "desktop/evohime-electron/src/renderer/src/App.tsx": "8c3bd9a39f1f3101d6d88324f3516642bcc3a9efa77dde754fff5f06841a54da",
-        "desktop/evohime-electron/src/renderer/src/ProjectSidebar.tsx": "136c2bb20fd5ff757f5048dbd3e59c8c959ec72f4036c889280c6dcb8edc682e",
-        "desktop/evohime-electron/src/renderer/src/OperationsPanel.tsx": "2236da98817967f79f165ae6e90166a0d6655e16b2152e5db399ab791df5329a",
+        "desktop/evohime-electron/src/renderer/src/App.tsx": "00d2839a5e50e31f2ec144a20c9cf74c2ac6070394bd127a64fe4f0ce38d4447",
+        "desktop/evohime-electron/src/renderer/src/ProjectSidebar.tsx": "bede1c034f4b1ab4de0f1240780b7a5a08c83181c8e5a5903ac1f59812d530df",
+        "desktop/evohime-electron/src/renderer/src/OperationsPanel.tsx": "582ec5b7001e64f90b259b906caa6732f63b60532b050f4900d3894418605243",
+        "desktop/evohime-electron/src/renderer/src/ScheduledPanel.tsx": "f07667f5e4f5c48dc8b8c4c1a7b687701a06e4dee2967fc694bb35191dabac2c",
+        "desktop/evohime-electron/src/renderer/src/SettingsModal.tsx": "102a0a749d659c2030857209d837dd415567666e9f6dca63473232188a6fd823",
         "desktop/evohime-electron/src/renderer/src/ChatProviderPicker.tsx": "5cb7ee7ba3083289b52717635838eaf44406c7384edd377671e460aed0f98c38",
         "desktop/evohime-electron/src/renderer/src/ModelPicker.tsx": "2df57a40d58be8ee171a5c21a778959937c88caecfde7a7075f0f2437723b03d",
         "desktop/evohime-electron/src/renderer/src/CodexRateLimits.tsx": "e1d0846512e3c7623b7255a099291dee9dd46177942036fb306f33dcd4118c8e",
         "desktop/evohime-electron/src/renderer/src/shell-api.ts": "4807520eabfae2eb39f6bf9db77e27f12e81e7ea13c4ab9bb8ff16e72ceab210",
         "desktop/evohime-electron/src/shared/model-capabilities.ts": "80628b3ba5ecbd0b3a40b61872b95869a23a7e7fde7fb0c840b852359914cd0e",
-        "desktop/evohime-electron/src/renderer/src/styles.css": "7d8af0098851ed0cc8aaeb4e25654765fb33d9009e4ae91a1ec08a37249af1ca"
+        "desktop/evohime-electron/src/renderer/src/styles.css": "1589064adb07d5fba0a09247940308085c15628e25caa6ac3eebfea3d0c15c6e"
       },
       "drafts": {
         "8cf039a0-3886-4cc5-8d83-d9108cc86b18": {
@@ -81,7 +86,7 @@
           "currentVersion": 3
         }
       },
-      "updatedAt": "2026-09-04T08:45:00.000Z"
+      "updatedAt": "2026-09-04T09:21:51.000Z"
     }
   }
 }
