@@ -38,7 +38,6 @@ describe('update progress', () => {
 
 describe('launch gate', () => {
   it('shows the running step and the last build line while it blocks', () => {
-    installApi()
     render(
       <UpdateGate
         status={status({
@@ -57,7 +56,7 @@ describe('launch gate', () => {
     expect(screen.getByText('Compiling evohime-core')).toBeTruthy()
     expect(within(screen.getByRole('region', { name: 'Текущий этап' })).getByText('Сборка Core')).toBeTruthy()
     expect(within(screen.getByRole('region', { name: 'Текущий этап' })).getByText('Компилирую Rust Core и supervisor.')).toBeTruthy()
-    expect(screen.getByText('0 из 6 этапов завершено')).toBeTruthy()
+    expect(screen.getByText('0 из 6 этапов')).toBeTruthy()
     expect(screen.getByText('main')).toBeTruthy()
     expect(screen.getByRole('progressbar')).toBeTruthy()
     expect(screen.getAllByText('Сборка Core').some((element) => element.closest('li')?.getAttribute('data-state') === 'active')).toBe(true)
@@ -70,13 +69,11 @@ describe('launch gate', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('lets the user drop the update and start the installed build', () => {
-    const invoke = installApi()
+  it('does not offer the regular shell while a launch update is running', () => {
     render(<UpdateGate status={status({ phase: 'preparing', blocking: true })} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Пропустить и запустить' }))
-
-    expect(invoke).toHaveBeenCalledWith('update.skip', {})
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getByText('Обычный интерфейс откроется после полного завершения обновления.')).toBeTruthy()
   })
 })
 

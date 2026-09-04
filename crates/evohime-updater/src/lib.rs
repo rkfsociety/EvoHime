@@ -5,6 +5,22 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+/// Keeps every process in the update chain detached from a console window.
+///
+/// Electron already sets `windowsHide` for the first worker, but the worker
+/// copies and re-executes itself before touching the installation. That second
+/// `CreateProcess` needs the flag too, otherwise Windows may create a console
+/// for the transaction while the shell is waiting for it to finish.
+pub fn configure_hidden_process(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct TransactionState {
     install_dir: PathBuf,
@@ -93,21 +109,27 @@ pub fn run_update(
             ),
         );
     }
-    let status = Command::new(installer)
-        .args([
-            "/VERYSILENT",
-            "/SUPPRESSMSGBOXES",
-            "/NORESTART",
-            "/CLOSEAPPLICATIONS",
-        ])
-        .arg(format!("/DIR={}", install_dir.display()))
-        .status();
+    let status = {
+        let mut command = Command::new(installer);
+        configure_hidden_process(&mut command);
+        command
+            .args([
+                "/VERYSILENT",
+                "/SUPPRESSMSGBOXES",
+                "/NORESTART",
+                "/CLOSEAPPLICATIONS",
+            ])
+            .arg(format!("/DIR={}", install_dir.display()))
+            .status()
+    };
 
     match status {
         Ok(status) if status.success() => match verify_installation(install_dir) {
             Ok(()) => {
                 if let Some(executable) = relaunch {
-                    if let Err(error) = Command::new(executable).current_dir(install_dir).spawn() {
+                    let mut command = Command::new(executable);
+                    configure_hidden_process(&mut command);
+                    if let Err(error) = command.current_dir(install_dir).spawn() {
                         return rollback_after_failure(transaction, error);
                     }
                 }
@@ -168,10 +190,9 @@ pub fn apply_staged(options: StagedApply<'_>) -> io::Result<()> {
     match outcome {
         Ok(()) => {
             if let Some(executable) = options.relaunch {
-                if let Err(error) = Command::new(executable)
-                    .current_dir(options.install_dir)
-                    .spawn()
-                {
+                let mut command = Command::new(executable);
+                configure_hidden_process(&mut command);
+                if let Err(error) = command.current_dir(options.install_dir).spawn() {
                     return rollback_after_failure(transaction, error);
                 }
             }

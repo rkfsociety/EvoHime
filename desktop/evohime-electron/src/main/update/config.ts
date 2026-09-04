@@ -19,9 +19,10 @@ export const DEFAULT_BRANCH = 'main'
 /**
  * What a launch does when the tracked branch moved ahead.
  *
- * `installer` downloads the installer produced by the green GitHub workflow.
- * `build` is retained as a development fallback. `apply-ready` only swaps a
- * package that a previous background run already staged.
+ * `installer` downloads the installer produced by the green GitHub workflow
+ * and applies it before the regular shell starts. `build` is retained as a
+ * development fallback. `apply-ready` only swaps a package that a previous
+ * background run already staged.
  */
 export type LaunchPolicy = 'installer' | 'build' | 'apply-ready' | 'off'
 
@@ -85,9 +86,9 @@ export function loadUpdateConfig(inputs: ConfigInputs): UpdateConfig {
   const launchPolicy =
     normalizeLaunchPolicy(environment['EVOHIME_UPDATE_LAUNCH_POLICY']) ??
     // Persisted user configurations must never select the local rebuild path:
-    // production updates download the CI installer and stay non-blocking.
-    // An environment override still permits developers to opt into the old
-    // path explicitly.
+    // production updates use the CI installer and the launch gate applies it
+    // before the regular shell is shown. An environment override still permits
+    // developers to opt into the local-build path explicitly.
     (configuredPolicy === 'build' ? 'installer' : configuredPolicy) ??
     'installer'
   const enabled =

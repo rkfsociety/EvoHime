@@ -157,14 +157,23 @@ if (process.argv.includes('--evohime-browser-backend')) {
       if (event.eventType === 'ambient.voice_command') overlay?.flashHeard()
     })
 
-    mainWindow = createMainWindow({ ...hardening, onRendererFailure: handleRendererFailure })
+    // Start the launch gate before the first window can become visible. The
+    // renderer will receive the current status through update.getStatus and
+    // paint the dedicated update surface while the gate is running.
+    updates = createUpdateService()
+    const launchGate = updates.runLaunchGate()
+
+    mainWindow = createMainWindow({
+      ...hardening,
+      onRendererFailure: handleRendererFailure,
+      showOnReady: () => !(updates?.status.blocking ?? false)
+    })
     tray = createTray({
       window: mainWindow,
       log,
       onToggleListening: requestAmbientListening
     })
     overlay = createOverlay()
-    updates = createUpdateService()
     listenerRuntime = createListenerRuntimeService()
 
     // The picker dialog is owned by the main process and opens modal to the
@@ -216,13 +225,20 @@ if (process.argv.includes('--evohime-browser-backend')) {
     // the installed build is always launchable.
     let gate: Awaited<ReturnType<UpdateService['runLaunchGate']>> = 'continue'
     try {
-      gate = await updates.runLaunchGate()
+      gate = await launchGate
     } catch (error) {
       log('error', 'shell.update_gate_failed', { error })
     }
     if (gate === 'applying') {
       log('info', 'shell.update_applying', {})
       return
+    }
+
+    // If the renderer finished loading while the gate was running, its
+    // ready-to-show callback deliberately kept it hidden. Show the normal
+    // shell only after the gate has released startup.
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+      mainWindow.show()
     }
 
     const launch = await ensureSupervisorSession()

@@ -7,15 +7,14 @@ import {
   updateProgress
 } from '@shared/update'
 
-import { useShellApi } from './shell-api'
 import './UpdateSurface.css'
 
 /**
  * Launch gate of the source updater.
  *
- * A local rebuild takes minutes, so the launch never looks frozen: the gate
- * names the running step, shows the last build line and lets the user drop the
- * update and start the installed build instead.
+ * A launch-time update is a first-class screen. It names the current stage,
+ * shows the last operation and keeps the regular shell hidden until the
+ * transaction is complete.
  */
 
 const STEP_MARKERS: Record<string, string> = {
@@ -31,7 +30,6 @@ interface UpdateGateProps {
 }
 
 export function UpdateGate({ status }: UpdateGateProps): React.JSX.Element | null {
-  const api = useShellApi()
   if (!status.blocking) return null
 
   const progress = updateProgress(status)
@@ -39,19 +37,34 @@ export function UpdateGate({ status }: UpdateGateProps): React.JSX.Element | nul
   const completed = completedUpdateSteps(status)
   const percent = progress === null ? null : Math.round(progress * 100)
 
+  const applying = status.phase === 'applying'
+
   return (
-    <div className="update-gate" role="dialog" aria-modal="true" aria-label="Обновление EvoHime">
+    <main className="update-gate" aria-label="Обновление EvoHime">
+      <div className="update-gate__orb update-gate__orb--one" aria-hidden="true" />
+      <div className="update-gate__orb update-gate__orb--two" aria-hidden="true" />
       <div className="update-gate__panel">
-        <p className="update-gate__eyebrow">Локальная сборка обновления</p>
-        <h2 className="update-gate__title">Обновляю Еву</h2>
-        <p className="update-gate__message">
-          {status.message}
-        </p>
+        <header className="update-gate__header">
+          <div className="update-gate__brand-mark" aria-hidden="true">E</div>
+          <div>
+            <p className="update-gate__brand">EvoHime</p>
+            <p className="update-gate__eyebrow">Обновление приложения</p>
+          </div>
+          <span className="update-gate__live">
+            <span className="update-gate__live-dot" aria-hidden="true" />
+            {applying ? 'Завершаю' : 'Выполняю'}
+          </span>
+        </header>
+
+        <div className="update-gate__intro">
+          <p className="update-gate__kicker">Подожди немного</p>
+          <h1 className="update-gate__title">{applying ? 'Завершаю обновление' : 'Обновляю Еву'}</h1>
+          <p className="update-gate__message">{status.message}</p>
+          <p className="update-gate__promise">Обычный интерфейс откроется после полного завершения обновления.</p>
+        </div>
 
         <div className="update-gate__meta">
-          <span>
-            Ветка <strong>{status.branch}</strong>
-          </span>
+          <span>Ветка <strong>{status.branch}</strong></span>
           <span className="update-gate__commits">
             {shortCommit(status.installedCommit)} → {shortCommit(status.remoteCommit)}
           </span>
@@ -60,7 +73,7 @@ export function UpdateGate({ status }: UpdateGateProps): React.JSX.Element | nul
         <div
           className={`update-progress${progress === null ? ' update-progress--indeterminate' : ''}`}
           role="progressbar"
-          aria-label="Прогресс пересборки"
+          aria-label="Прогресс обновления"
           {...(progress === null
             ? {}
             : { 'aria-valuenow': Math.round(progress * 100), 'aria-valuemin': 0, 'aria-valuemax': 100 })}
@@ -69,8 +82,8 @@ export function UpdateGate({ status }: UpdateGateProps): React.JSX.Element | nul
         </div>
 
         <div className="update-gate__progress-label">
-          <strong>{percent === null ? 'Подготавливаю сборку' : `${percent}% готово`}</strong>
-          <span>{completed} из {status.steps.length} этапов завершено</span>
+          <strong>{percent === null ? 'Подготавливаю обновление' : `${percent}% готово`}</strong>
+          <span>{completed} из {status.steps.length} этапов</span>
         </div>
 
         {activeStep ? (
@@ -98,21 +111,10 @@ export function UpdateGate({ status }: UpdateGateProps): React.JSX.Element | nul
         </ul>
 
         <div className="update-gate__detail" aria-live="polite">
-          <span>Последняя операция</span>
+          <span>Текущая операция</span>
           <code>{status.detail || 'Ожидаю запуска этапа…'}</code>
         </div>
-
-        <div className="update-gate__actions">
-          <button
-            type="button"
-            onClick={() => {
-              void api?.invoke('update.skip', {})
-            }}
-          >
-            Пропустить и запустить
-          </button>
-        </div>
       </div>
-    </div>
+    </main>
   )
 }

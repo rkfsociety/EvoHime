@@ -105,7 +105,10 @@ export class UpdateService {
       return 'continue'
     }
 
-    if (config.launchPolicy !== 'installer') this.patch({ blocking: true })
+    // The launch window is the updater surface itself. Keep the normal shell
+    // hidden until the complete transaction has either been applied or safely
+    // abandoned after a failed check/build.
+    this.patch({ blocking: true })
     const staged = this.stagedMarker()
     const checked = await this.check()
 
@@ -115,10 +118,9 @@ export class UpdateService {
       return this.releaseGate()
     }
 
-    // Installer updates are intentionally background-only: starting the shell
-    // must never wait for GitHub or for a multi-hundred-megabyte download.
-    // The periodic pass downloads the verified installer and then notifies the
-    // user that a restart is ready.
+    // A launch-time installer update is part of starting the product. Download
+    // and apply it while the update surface is visible; the regular shell must
+    // not start in the middle of that transaction.
     if (config.launchPolicy === 'installer') {
       const stagedInstaller = this.stagedInstallerMarker()
       if (
@@ -132,13 +134,14 @@ export class UpdateService {
           restartRequired: true
         })
       } else if (checked.phase === 'available') {
-        // Download immediately after discovery, but never block startup or
-        // show the build gate. The user only confirms the final apply/restart.
-        this.releaseGate()
-        void this.prepare()
-        return 'continue'
+        const prepared = await this.prepare()
+        if (this.skipped || prepared.phase !== 'ready') {
+          return this.releaseGate()
+        }
+      } else {
+        return this.releaseGate()
       }
-      return this.releaseGate()
+      return this.apply() ? 'applying' : this.releaseGate()
     }
 
     // A background run of the previous session may already have staged exactly

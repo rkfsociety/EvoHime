@@ -133,6 +133,38 @@ body {
   text-align: center;
 }
 
+.startup-screen {
+  display: grid;
+  min-height: 100vh;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  background: var(--bg-sunken);
+  color: var(--fg);
+}
+
+.startup-screen__mark {
+  width: 52px;
+  height: 52px;
+  border-radius: 17px;
+  font-size: 24px;
+}
+
+.startup-screen__brand,
+.startup-screen__message {
+  margin: 0;
+}
+
+.startup-screen__brand {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.startup-screen__message {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
 .shell--recovery h1 {
   font-size: 20px;
   margin: 0;

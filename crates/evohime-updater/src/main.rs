@@ -63,7 +63,9 @@ fn spawn_worker(args: &[String]) -> ExitCode {
     if let Err(error) = std::fs::copy(&current, &worker) {
         return report_error(error);
     }
-    let result = Command::new(&worker).arg("--worker").args(args).spawn();
+    let mut command = Command::new(&worker);
+    evohime_tx::configure_hidden_process(&mut command);
+    let result = command.arg("--worker").args(args).spawn();
     if let Err(error) = result {
         let _ = std::fs::remove_file(&worker);
         return report_error(error);

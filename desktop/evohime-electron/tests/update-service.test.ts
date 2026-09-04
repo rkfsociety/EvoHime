@@ -164,7 +164,7 @@ describe('update check', () => {
 })
 
 describe('launch gate', () => {
-  it('does not block startup while a CI installer downloads', async () => {
+  it('keeps startup blocked until a CI installer is downloaded and handed off', async () => {
     const downloadInstaller = vi.fn(async (_repository: string, _branch: string, commit: string, staging: string) => {
       mkdirSync(staging, { recursive: true })
       writeFileSync(join(staging, 'EvoHime-Setup.exe'), 'installer')
@@ -173,13 +173,14 @@ describe('launch gate', () => {
     })
     const test = harness({ downloadInstaller }, INSTALLED, { launchPolicy: 'installer' })
 
-    await expect(test.service.runLaunchGate()).resolves.toBe('continue')
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await expect(test.service.runLaunchGate()).resolves.toBe('applying')
     expect(downloadInstaller).toHaveBeenCalledTimes(1)
-    expect(test.quit).not.toHaveBeenCalled()
-    expect(test.service.status.phase).toBe('ready')
-    expect(test.service.status.restartRequired).toBe(true)
-    expect(test.service.status.blocking).toBe(false)
+    expect(test.quit).toHaveBeenCalledTimes(1)
+    expect(test.service.status.phase).toBe('applying')
+    expect(test.service.status.restartRequired).toBe(false)
+    expect(test.service.status.blocking).toBe(true)
+    const [, args] = test.spawnWorker.mock.calls[0] as [string, string[]]
+    expect(args).toContain('--installer')
   })
 
   it('uses a green published installer even when main already has a newer green commit', async () => {

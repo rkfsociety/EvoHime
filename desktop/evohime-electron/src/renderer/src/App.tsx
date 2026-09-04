@@ -343,6 +343,25 @@ export function App(): React.JSX.Element {
     )
   }
 
+  // Do not reveal the working shell while the main process is still deciding
+  // whether a launch-time update is required. The first frame is a small,
+  // neutral splash; once the status arrives, UpdateGate owns the whole window.
+  if (!update) {
+    return (
+      <main className="startup-screen" aria-label="Запуск EvoHime">
+        <div className="startup-screen__mark" aria-hidden="true">E</div>
+        <p className="startup-screen__brand">EvoHime</p>
+        <p className="startup-screen__message">Подготавливаю приложение…</p>
+      </main>
+    )
+  }
+
+  // This is intentionally a full-window surface, not an overlay over the
+  // shell. Core and supervisor are started only after this branch disappears.
+  if (update.blocking) {
+    return <UpdateGate status={update} />
+  }
+
   const connection = state?.connection ?? 'starting'
   const title = view === 'chat' ? 'Диалог' : (VIEWS.find((item) => item.id === view)?.label ?? 'Диалог')
 

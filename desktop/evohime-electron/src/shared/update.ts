@@ -58,8 +58,8 @@ export type UpdatePhase =
 export interface UpdateStatus {
   readonly phase: UpdatePhase
   /**
-   * True while the shell holds the UI back until the run finishes — the launch
-   * rebuild. A background rebuild of a running shell is never blocking.
+   * True while the shell holds the UI back until the launch-time update run
+   * finishes. A background rebuild of a running shell is never blocking.
    */
   readonly blocking: boolean
   /** Short Russian sentence for the status bar. */

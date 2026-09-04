@@ -36,7 +36,7 @@ CloseApplicationsFilter=EvoHime.exe
 
 [Tasks]
 ; Установщик CI уже собран и проверен на зелёном коммите. Клиент скачивает
-; этот установщик из постоянного GitHub Release и применяет его в фоне.
+; этот установщик из постоянного GitHub Release и применяет его до запуска Евы.
 Name: "autoupdate"; Description: "Обновлять автоматически из GitHub Release"; GroupDescription: "Обновления"
 
 [Files]
