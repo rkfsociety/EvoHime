@@ -49,6 +49,16 @@ describe('chat store', () => {
     expect(store.list('c:\\work\\ALPHA')).toHaveLength(1)
   })
 
+  it('keeps standalone chats separate from project chats', () => {
+    const store = newStore()
+    const standalone = store.create(null)!
+    store.create('C:\\work\\repo')
+
+    expect(store.list(null).map((chat) => chat.id)).toEqual([standalone.id])
+    expect(store.list('C:\\work\\repo')).toHaveLength(1)
+    expect(standalone.workspacePath).toBeNull()
+  })
+
   it('names a chat after its first prompt and remembers the task', () => {
     const store = newStore()
     const chat = store.create('C:\\work\\repo')

@@ -45,19 +45,19 @@ export class ChatStore {
     return join(dataDirectory, 'shell', 'chats.json')
   }
 
-  /** Chats of one workspace, most recently used first. */
-  list(workspacePath: string): ChatSummary[] {
-    const normalized = normalizeWorkspacePath(workspacePath)
-    if (normalized === null) return []
+  /** Chats of one workspace, or standalone chats, most recently used first. */
+  list(workspacePath: string | null): ChatSummary[] {
+    const normalized = normalizeChatWorkspacePath(workspacePath)
+    if (normalized === undefined) return []
     return this.read()
       .chats.filter((chat) => samePath(chat.workspacePath, normalized))
       .sort((left, right) => right.updatedMs - left.updatedMs)
       .map(summarize)
   }
 
-  create(workspacePath: string): ChatRecord | null {
-    const normalized = normalizeWorkspacePath(workspacePath)
-    if (normalized === null) return null
+  create(workspacePath: string | null): ChatRecord | null {
+    const normalized = normalizeChatWorkspacePath(workspacePath)
+    if (normalized === undefined) return null
     const stamp = this.now()
     const chat: ChatRecord = {
       id: this.newId(),
@@ -190,8 +190,8 @@ function parseChat(value: unknown): ChatRecord | null {
   if (typeof value !== 'object' || value === null) return null
   const record = value as Record<string, unknown>
   const id = typeof record['id'] === 'string' ? record['id'] : ''
-  const workspacePath = normalizeWorkspacePath(record['workspacePath'])
-  if (id.length === 0 || workspacePath === null) return null
+  const workspacePath = normalizeChatWorkspacePath(record['workspacePath'])
+  if (id.length === 0 || workspacePath === undefined) return null
   const messages: ChatMessage[] = []
   for (const item of Array.isArray(record['messages']) ? record['messages'] : []) {
     if (typeof item !== 'object' || item === null) continue
@@ -242,7 +242,13 @@ function numeric(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
-function samePath(left: string, right: string): boolean {
+function normalizeChatWorkspacePath(value: unknown): string | null | undefined {
+  if (value === null) return null
+  return normalizeWorkspacePath(value) ?? undefined
+}
+
+function samePath(left: string | null, right: string | null): boolean {
+  if (left === null || right === null) return left === right
   // Windows paths are case-insensitive; raw comparison would split one
   // workspace into two.
   return left.toLowerCase() === right.toLowerCase()

@@ -63,10 +63,7 @@ export function ProjectSidebar({
   }, [loadProjects])
 
   const loadChats = useCallback(async () => {
-    if (!api || workspace === null) {
-      setChats([])
-      return
-    }
+    if (!api) return
     const outcome = await api.invoke('chat.list', { workspacePath: workspace })
     if (outcome.ok) setChats(outcome.value)
   }, [api, workspace])
@@ -110,7 +107,7 @@ export function ProjectSidebar({
   )
 
   const createChat = useCallback(async () => {
-    if (!api || workspace === null) return
+    if (!api) return
     setBusy(true)
     const outcome = await api.invoke('chat.create', { workspacePath: workspace })
     setBusy(false)
@@ -143,7 +140,7 @@ export function ProjectSidebar({
           type="button"
           className="chat-rail__action chat-rail__action--primary"
           onClick={() => void createChat()}
-          disabled={busy || workspace === null}
+          disabled={busy}
         >
           <span className="chat-rail__action-icon" aria-hidden="true">＋</span>
           <span>Новый чат</span>
@@ -167,7 +164,7 @@ export function ProjectSidebar({
       <div className="chat-rail__heading">
         <div>
           <h2>Чаты</h2>
-          <small>{workspace ? basename(workspace) : 'Рабочая область не выбрана'}</small>
+          <small>{workspace ? basename(workspace) : 'Без проекта'}</small>
         </div>
         <button type="button" className="chat-rail__pick" onClick={() => void pick()} disabled={busy} title="Выбрать рабочую папку">
           ＋
@@ -202,9 +199,7 @@ export function ProjectSidebar({
         </p>
       ) : null}
 
-      {workspace === null ? (
-        <p className="chat-rail__empty">Выбери рабочую папку, чтобы увидеть чаты.</p>
-      ) : chats.length === 0 ? (
+      {chats.length === 0 ? (
         <p className="chat-rail__empty">Чатов пока нет. Начни с нового чата.</p>
       ) : (
         <ul className="chats__list">

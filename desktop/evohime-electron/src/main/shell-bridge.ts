@@ -25,6 +25,7 @@ import type { CodexService } from './codex-service'
 import type { RepairService } from './repair-service'
 import type { CorePipeClient } from './ipc/pipe-client'
 import type { ChatStore } from './chat-store'
+import { normalizeWorkspacePath } from './workspace-store'
 import { resolveIdentity, resolveRepository } from './identity'
 import {
   normalizeApiKey,
@@ -197,7 +198,7 @@ function dispatch(
       const value = asRecord(payload)
       const taskId = asGoalToken(value['taskId'])
       const prompt = asBoundedString(value['prompt'])
-      const workspacePath = asBoundedString(value['workspacePath'])
+      const workspacePath = asOptionalBoundedString(value['workspacePath'])
       const conversationId = value['conversationId'] === undefined ? '' : asGoalToken(value['conversationId'])
       const clientMessageId = value['clientMessageId'] === undefined ? '' : asGoalToken(value['clientMessageId'])
       const preferredRouteHint = value['preferredRouteHint'] === undefined || value['preferredRouteHint'] === null
@@ -1422,14 +1423,15 @@ function dispatch(
     }
 
     case 'chat.list': {
-      const workspacePath = asBoundedString(asRecord(payload)['workspacePath'])
-      if (workspacePath === null) return failure('invalid-payload', 'Некорректный путь проекта.')
+      const workspacePath = asOptionalWorkspacePath(asRecord(payload)['workspacePath'])
+      if (workspacePath === undefined) return failure('invalid-payload', 'Некорректный путь проекта.')
       return { ok: true, value: chats.list(workspacePath) }
     }
 
     case 'chat.create': {
-      const workspacePath = asBoundedString(asRecord(payload)['workspacePath'])
-      const chat = workspacePath === null ? null : chats.create(workspacePath)
+      const workspacePath = asOptionalWorkspacePath(asRecord(payload)['workspacePath'])
+      if (workspacePath === undefined) return failure('invalid-payload', 'Некорректный путь проекта.')
+      const chat = chats.create(workspacePath)
       if (chat === null) return failure('invalid-payload', 'Некорректный путь проекта.')
       return { ok: true, value: chat }
     }
@@ -2739,6 +2741,12 @@ function asTraceContent(value: unknown): string | null {
 function asOptionalBoundedString(value: unknown): string | null {
   if (value === undefined || value === '') return ''
   return asBoundedString(value)
+}
+
+function asOptionalWorkspacePath(value: unknown): string | null | undefined {
+  if (value === null || value === '') return null
+  if (typeof value !== 'string' || value.length > MAX_TEXT_FIELD_CHARS) return undefined
+  return normalizeWorkspacePath(value) ?? undefined
 }
 
 /** Scope kinds Core accepts for memory commands; anything else is refused here. */

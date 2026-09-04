@@ -338,6 +338,25 @@ describe('renderer command surface', () => {
     ])
   })
 
+  it('allows a dialogue task without a project workspace', () => {
+    const outcome = invoke('core.startTask', {
+      taskId: 'task-standalone',
+      prompt: 'поговори со мной',
+      workspacePath: ''
+    })
+
+    expect(outcome).toEqual({ ok: true, value: { accepted: true } })
+    expect(sent.at(-1)).toEqual({
+      startTask: {
+        taskId: 'task-standalone',
+        prompt: 'поговори со мной',
+        workspacePath: '',
+        preferredRouteHint: '',
+        executionKind: 'dialogue'
+      }
+    })
+  })
+
   it('forwards stable conversation ids and bounded cursor subscriptions', () => {
     expect(invoke('core.startTask', {
       taskId: 'task-conversation',

@@ -736,10 +736,10 @@ export interface ChatMessage {
   readonly atMs: number
 }
 
-/** A conversation of the shell, scoped to one workspace. */
+/** A conversation of the shell, optionally scoped to one workspace. */
 export interface ChatRecord {
   readonly id: string
-  readonly workspacePath: string
+  readonly workspacePath: string | null
   readonly title: string
   readonly createdMs: number
   readonly updatedMs: number
@@ -758,7 +758,7 @@ export interface WorkbenchPresentation {
 /** Row of the chat list: enough to render it without loading transcripts. */
 export interface ChatSummary {
   readonly id: string
-  readonly workspacePath: string
+  readonly workspacePath: string | null
   readonly title: string
   readonly updatedMs: number
   readonly messageCount: number
@@ -1744,8 +1744,8 @@ export interface CommandPayloads {
   }
   'identity.get': Record<string, never>
   'repository.get': { workspacePath: string }
-  'chat.list': { workspacePath: string }
-  'chat.create': { workspacePath: string }
+  'chat.list': { workspacePath: string | null }
+  'chat.create': { workspacePath: string | null }
   'chat.open': { chatId: string }
   'chat.appendPrompt': { chatId: string; taskId: string; clientMessageId?: string; prompt: string }
   'chat.remove': { chatId: string }

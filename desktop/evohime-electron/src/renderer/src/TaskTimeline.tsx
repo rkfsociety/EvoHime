@@ -290,7 +290,7 @@ export function TaskTimeline({
   }, [chat?.messages, conversationLog?.events, conversationLog?.optimistic, sentPrompt, sentPromptAtMs, taskId, taskEvents])
 
   const retryMessage = useCallback(async (clientMessageId: string) => {
-    if (!api || !workspace || !conversationLog) return
+    if (!api || !conversationLog) return
     const message = conversationLog.optimistic.find((item) => item.clientMessageId === clientMessageId)
     if (!message) return
     setConversationLog((current) => current ? markOptimisticRetry(current, clientMessageId) : current)
@@ -298,7 +298,7 @@ export function TaskTimeline({
     const outcome = await api.invoke('core.startTask', {
       taskId: message.taskId,
       prompt: message.content,
-      workspacePath: workspace,
+      workspacePath: workspace ?? '',
       conversationId: conversationLog.conversationId,
       clientMessageId,
       preferredRouteHint: providerMode === 'codex_cli' ? 'codex_cli' : 'cloud',
@@ -319,7 +319,7 @@ export function TaskTimeline({
   }, [entries.length, approval])
 
   const start = useCallback(async () => {
-    if (!api || !workspace || prompt.trim().length === 0) return
+    if (!api || prompt.trim().length === 0) return
     const nextTaskId = makeTaskId()
     const clientMessageId = globalThis.crypto.randomUUID()
     const text = prompt.trim()
@@ -355,7 +355,7 @@ export function TaskTimeline({
     const outcome = await api.invoke('core.startTask', {
       taskId: nextTaskId,
       prompt: text,
-      workspacePath: workspace,
+      workspacePath: workspace ?? '',
       conversationId: targetChatId,
       clientMessageId,
       preferredRouteHint: providerMode === 'codex_cli' ? 'codex_cli' : 'cloud',
@@ -417,7 +417,7 @@ export function TaskTimeline({
   )
 
   const connected = CONNECTED_STATES.includes(connection)
-  const canStart = connected && workspace !== null && prompt.trim().length > 0 && !busy
+  const canStart = connected && prompt.trim().length > 0 && !busy
   const running = activeTaskId !== null && (startingTaskId === activeTaskId || !finished)
   // Запрос разрешения может прийти раньше любой другой записи ленты.
   const empty =
@@ -522,13 +522,9 @@ export function TaskTimeline({
         <div ref={bottomRef} />
       </div>
 
-      {workspace === null ? null : (
       <div className="composer">
         <div className="composer__inner">
-          <RepositoryBar
-            workspace={workspace}
-            refreshKey={finished ? entries.length : 0}
-          />
+          {workspace !== null ? <RepositoryBar workspace={workspace} refreshKey={finished ? entries.length : 0} /> : null}
           <div className="composer__box">
             <label htmlFor="task-prompt" className="visually-hidden">Задача</label>
             <textarea
@@ -580,7 +576,6 @@ export function TaskTimeline({
           {commandError ? <p role="alert" className="shell__reason">{commandError}</p> : null}
         </div>
       </div>
-      )}
     </section>
   )
 }

@@ -62,10 +62,7 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe('task timeline', () => {
-  it('hides the composer until a project is picked, then makes it usable', async () => {
-    // Regression: the composer used to read the workspace once on mount, so a
-    // folder picked afterwards in the sidebar left it permanently disabled.
-    // With no project there is nothing it could do, so it is not shown at all.
+  it('keeps the composer usable without a project', async () => {
     const view = render(
       <TaskTimeline
         connection="connected"
@@ -78,7 +75,7 @@ describe('task timeline', () => {
         chatRevision={0}
       />
     )
-    expect(screen.queryByLabelText('Задача')).toBeNull()
+    expect(screen.getByLabelText('Задача').hasAttribute('disabled')).toBe(false)
 
     view.rerender(
       <TaskTimeline
@@ -94,6 +91,29 @@ describe('task timeline', () => {
     )
 
     expect(screen.getByLabelText('Задача').hasAttribute('disabled')).toBe(false)
+  })
+
+  it('starts a standalone dialogue with an empty workspace path', async () => {
+    const opened: string[] = []
+    render(
+      <TaskTimeline
+        connection="connected"
+        events={[]}
+        workspace={null}
+        chatId={null}
+        onChatTouched={() => {}}
+        onChatOpened={(id) => opened.push(id)}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    await userEvent.type(await screen.findByLabelText('Задача'), 'Поговори со мной')
+    await userEvent.click(screen.getByRole('button', { name: 'Запустить задачу' }))
+
+    await waitFor(() => expect(opened).toEqual(['chat-1']))
+    expect(calls.find((call) => call.command === 'chat.create')?.payload).toEqual({ workspacePath: null })
+    expect(calls.find((call) => call.command === 'core.startTask')?.payload).toMatchObject({ workspacePath: '' })
   })
 
   it('grows the composer with multiline text and shrinks after clearing', async () => {

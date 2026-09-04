@@ -79,6 +79,15 @@ function renderSidebar(overrides: Partial<Parameters<typeof ProjectSidebar>[0]> 
 }
 
 describe('project sidebar', () => {
+  it('creates and lists a standalone chat without a project', async () => {
+    const { props } = renderSidebar({ workspace: null })
+
+    await userEvent.click(await screen.findByRole('button', { name: /Новый чат/ }))
+
+    expect(calls).toContainEqual({ command: 'chat.create', payload: { workspacePath: null } })
+    await waitFor(() => expect(props.onChatChange).toHaveBeenCalledWith('chat-2'))
+  })
+
   it('shows quick actions and the chats of the open workspace', async () => {
     const { props } = renderSidebar()
 
