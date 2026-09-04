@@ -412,7 +412,9 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: evohime-windows-installer
-          path: installer-output
+          # Артефакт содержит installer-output/ и native-package/ относительно
+          # workspace: upload-artifact получил несколько путей из корня.
+          path: .
       - name: Обновление единственного release установщика
         shell: pwsh
         run: |
