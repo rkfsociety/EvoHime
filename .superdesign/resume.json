@@ -31,6 +31,51 @@
         }
       },
       "updatedAt": "2026-09-02T00:00:00.000Z"
+    },
+    "operations": {
+      "targetKind": "existing-ui",
+      "projectId": "85f50f7b-7ad8-481f-96b2-f6d2c2f2046a",
+      "baselineDraftId": "8cf039a0-3886-4cc5-8d83-d9108cc86b18",
+      "activeDraftId": "8cf039a0-3886-4cc5-8d83-d9108cc86b18",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [
+        "c2f64331-0fd3-463a-a2a5-776ea18d8cc2"
+      ],
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "desktop/evohime-electron/src/renderer/src/App.tsx:500:580",
+        "desktop/evohime-electron/src/renderer/src/OperationsPanel.tsx",
+        "desktop/evohime-electron/src/renderer/src/ChatProviderPicker.tsx",
+        "desktop/evohime-electron/src/renderer/src/ModelPicker.tsx",
+        "desktop/evohime-electron/src/renderer/src/CodexRateLimits.tsx",
+        "desktop/evohime-electron/src/renderer/src/shell-api.ts",
+        "desktop/evohime-electron/src/shared/model-capabilities.ts",
+        "desktop/evohime-electron/src/renderer/src/styles.css:1:125",
+        "desktop/evohime-electron/src/renderer/src/styles.css:620:800",
+        "desktop/evohime-electron/src/renderer/src/styles.css:939:965",
+        "desktop/evohime-electron/src/renderer/src/styles.css:1634:1807",
+        "desktop/evohime-electron/src/renderer/src/styles.css:1911:2107",
+        "desktop/evohime-electron/src/renderer/src/styles.css:2534:2686"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "e35ace6d551f8e6f106de09e13ba18a8e47d255dfb96181facc9bd280efd8ff8",
+        "desktop/evohime-electron/src/renderer/src/App.tsx": "8c3bd9a39f1f3101d6d88324f3516642bcc3a9efa77dde754fff5f06841a54da",
+        "desktop/evohime-electron/src/renderer/src/OperationsPanel.tsx": "2236da98817967f79f165ae6e90166a0d6655e16b2152e5db399ab791df5329a",
+        "desktop/evohime-electron/src/renderer/src/ChatProviderPicker.tsx": "5cb7ee7ba3083289b52717635838eaf44406c7384edd377671e460aed0f98c38",
+        "desktop/evohime-electron/src/renderer/src/ModelPicker.tsx": "2df57a40d58be8ee171a5c21a778959937c88caecfde7a7075f0f2437723b03d",
+        "desktop/evohime-electron/src/renderer/src/CodexRateLimits.tsx": "e1d0846512e3c7623b7255a099291dee9dd46177942036fb306f33dcd4118c8e",
+        "desktop/evohime-electron/src/renderer/src/shell-api.ts": "4807520eabfae2eb39f6bf9db77e27f12e81e7ea13c4ab9bb8ff16e72ceab210",
+        "desktop/evohime-electron/src/shared/model-capabilities.ts": "80628b3ba5ecbd0b3a40b61872b95869a23a7e7fde7fb0c840b852359914cd0e",
+        "desktop/evohime-electron/src/renderer/src/styles.css": "7d8af0098851ed0cc8aaeb4e25654765fb33d9009e4ae91a1ec08a37249af1ca"
+      },
+      "drafts": {
+        "8cf039a0-3886-4cc5-8d83-d9108cc86b18": {
+          "title": "EvoHime — Память и автоматизация",
+          "visualDirection": "спокойный тёмный dashboard с приоритетными summary cards и сгруппированными техническими секциями",
+          "currentVersion": 2
+        }
+      },
+      "updatedAt": "2026-09-04T08:45:00.000Z"
     }
   }
 }
