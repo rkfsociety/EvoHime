@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+pub mod component_manifest;
+
 /// Keeps every process in the update chain detached from a console window.
 ///
 /// Electron already sets `windowsHide` for the first worker, but the worker
@@ -23,11 +25,19 @@ pub fn configure_hidden_process(command: &mut Command) {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct TransactionState {
+    #[serde(default)]
+    operation_id: String,
     install_dir: PathBuf,
     backup_dir: PathBuf,
     phase: TransactionPhase,
     #[serde(default)]
     scope: TransactionScope,
+    #[serde(default)]
+    components: Vec<String>,
+    #[serde(default)]
+    ui_target: Option<PathBuf>,
+    #[serde(default)]
+    ui_previous_pointer: Option<Vec<u8>>,
 }
 
 /// What the transaction backed up, and therefore what a rollback restores.
@@ -55,10 +65,14 @@ pub struct RecoveryResult {
 }
 
 pub struct UpdateTransaction {
+    operation_id: String,
     install_dir: PathBuf,
     backup_dir: PathBuf,
     state_path: PathBuf,
     scope: TransactionScope,
+    components: Vec<String>,
+    ui_target: Option<PathBuf>,
+    ui_previous_pointer: Option<Vec<u8>>,
 }
 
 pub fn verify_installation(install_dir: &Path) -> io::Result<()> {
@@ -171,6 +185,7 @@ pub fn apply_staged(options: StagedApply<'_>) -> io::Result<()> {
     validate_absolute(options.staging, "staging directory")?;
     validate_absolute(options.install_dir, "install directory")?;
     verify_installation(options.staging)?;
+    validate_component_marker(options.staging)?;
 
     if let Some(pid) = options.wait_pid {
         wait_for_process_exit(pid, WAIT_FOR_SHELL);
@@ -206,6 +221,253 @@ pub fn apply_staged(options: StagedApply<'_>) -> io::Result<()> {
     }
 }
 
+/// Applies only the named files from a verified component staging directory.
+/// The old full-tree path remains the fallback for legacy packages.
+pub fn apply_selected_staged(
+    staging: &Path,
+    install_dir: &Path,
+    state_dir: &Path,
+    selected: &[String],
+) -> io::Result<()> {
+    validate_absolute(staging, "staging directory")?;
+    validate_absolute(install_dir, "install directory")?;
+    validate_component_marker_for(staging, Some(selected))?;
+    if selected.is_empty() || selected.len() > UpdateTransaction::SELECTABLE_COMPONENTS.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "selected component set is empty or too large",
+        ));
+    }
+    for path in selected {
+        if !UpdateTransaction::SELECTABLE_COMPONENTS.contains(&path.as_str())
+            || !staging.join(path).is_file()
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("unknown or missing selected component: {path}"),
+            ));
+        }
+    }
+    let transaction = UpdateTransaction::prepare_selected(install_dir, state_dir, selected)?;
+    let result = selected
+        .iter()
+        .try_for_each(|path| copy_file_resilient(&staging.join(path), &install_dir.join(path)));
+    match result {
+        Ok(()) => transaction.commit(),
+        Err(error) => rollback_after_failure(transaction, error),
+    }
+}
+
+/// Applies one release containing both native files and a renderer bundle.
+/// Native backup/commit and the active UI pointer are kept under one failure
+/// boundary; the previous pointer is restored if restart or health fails.
+pub fn apply_component_set_staged(
+    staging: &Path,
+    install_dir: &Path,
+    state_dir: &Path,
+    native_selected: &[String],
+    ui_version: Option<&str>,
+    wait_pid: Option<u32>,
+    relaunch: Option<&Path>,
+    health_file: Option<&Path>,
+) -> io::Result<()> {
+    if native_selected.is_empty() && ui_version.is_none() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "empty component set",
+        ));
+    }
+    validate_absolute(staging, "staging directory")?;
+    validate_absolute(install_dir, "install directory")?;
+    let mut marker_paths = native_selected.to_vec();
+    if ui_version.is_some() {
+        marker_paths.push("ui-bundle.zip".to_owned());
+    }
+    validate_component_marker_for(staging, Some(&marker_paths))?;
+    for path in native_selected {
+        if !UpdateTransaction::SELECTABLE_COMPONENTS.contains(&path.as_str())
+            || !staging.join(path).is_file()
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("unknown or missing selected component: {path}"),
+            ));
+        }
+    }
+    if let Some(version) = ui_version {
+        if !is_safe_version(version) || !staging.join("ui-bundle").join("index.html").is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid or incomplete UI component",
+            ));
+        }
+    }
+    if let Some(pid) = wait_pid {
+        wait_for_process_exit(pid, WAIT_FOR_SHELL);
+    }
+    wait_until_writable(install_dir, WAIT_FOR_UNLOCK)?;
+    let _ = UpdateTransaction::recover(state_dir)?;
+    clear_health_file(health_file)?;
+    let mut transaction =
+        UpdateTransaction::prepare_selected(install_dir, state_dir, native_selected)?;
+    let old_pointer = ui_version.and_then(|_| fs::read(install_dir.join("ui-active.json")).ok());
+    if let Some(version) = ui_version {
+        transaction.record_ui(
+            install_dir.join("ui-bundles").join(version),
+            old_pointer.clone(),
+        )?;
+    }
+    let mut new_ui_target = None;
+    let outcome = (|| {
+        for path in native_selected {
+            copy_file_resilient(&staging.join(path), &install_dir.join(path))?;
+        }
+        if let Some(version) = ui_version {
+            let bundles = install_dir.join("ui-bundles");
+            fs::create_dir_all(&bundles)?;
+            let target = bundles.join(version);
+            if target.exists() {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    "UI version already exists",
+                ));
+            }
+            let temporary = bundles.join(format!(".{version}.staging-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&temporary);
+            copy_tree(&staging.join("ui-bundle"), &temporary)?;
+            fs::rename(&temporary, &target)?;
+            let active = install_dir.join("ui-active.json");
+            let tmp = active.with_extension("json.tmp");
+            fs::write(
+                &tmp,
+                serde_json::to_vec(&serde_json::json!({"version": version}))
+                    .map_err(io::Error::other)?,
+            )?;
+            fs::rename(&tmp, &active)?;
+            new_ui_target = Some(target);
+        }
+        if let Some(executable) = relaunch {
+            let mut command = Command::new(executable);
+            configure_hidden_process(&mut command);
+            command.current_dir(install_dir).spawn()?;
+        }
+        wait_for_health(health_file)
+    })();
+    match outcome {
+        Ok(()) => transaction.commit(),
+        Err(error) => {
+            if let Some(target) = new_ui_target {
+                let _ = fs::remove_dir_all(target);
+            }
+            let active = install_dir.join("ui-active.json");
+            match old_pointer {
+                Some(bytes) => {
+                    let _ = fs::write(&active, bytes);
+                }
+                None => {
+                    let _ = fs::remove_file(&active);
+                }
+            }
+            rollback_after_failure(transaction, error)
+        }
+    }
+}
+
+/// Installs a renderer bundle without touching native files. The active
+/// pointer is the last write, so a crash before that write leaves the previous
+/// healthy UI selected.
+pub fn apply_ui_bundle_staged(
+    staging: &Path,
+    install_root: &Path,
+    version: &str,
+) -> io::Result<()> {
+    apply_ui_bundle_staged_with_restart(staging, install_root, version, None, None, None)
+}
+
+/// Applies a UI bundle and optionally performs the same controlled restart and
+/// health handshake as the native staged transaction.
+pub fn apply_ui_bundle_staged_with_restart(
+    staging: &Path,
+    install_root: &Path,
+    version: &str,
+    wait_pid: Option<u32>,
+    relaunch: Option<&Path>,
+    health_file: Option<&Path>,
+) -> io::Result<()> {
+    validate_absolute(staging, "UI staging directory")?;
+    validate_absolute(install_root, "UI install root")?;
+    if let Some(pid) = wait_pid {
+        wait_for_process_exit(pid, WAIT_FOR_SHELL);
+    }
+    wait_until_writable(install_root, WAIT_FOR_UNLOCK)?;
+    clear_health_file(health_file)?;
+    validate_component_marker_for(staging, Some(&["ui-bundle.zip".to_owned()]))?;
+    if !is_safe_version(version) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid UI bundle version",
+        ));
+    }
+    let source = staging.join("ui-bundle");
+    if !source.is_dir() || !source.join("index.html").is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "UI bundle is incomplete",
+        ));
+    }
+    let bundles = install_root.join("ui-bundles");
+    fs::create_dir_all(&bundles)?;
+    let temporary = bundles.join(format!(".{version}.staging-{}", std::process::id()));
+    if temporary.exists() {
+        fs::remove_dir_all(&temporary)?;
+    }
+    if let Err(error) = copy_tree(&source, &temporary) {
+        let _ = fs::remove_dir_all(&temporary);
+        return Err(error);
+    }
+    let target = bundles.join(version);
+    if target.exists() {
+        fs::remove_dir_all(&target)?;
+    }
+    if target.exists() {
+        let _ = fs::remove_dir_all(&temporary);
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "UI bundle version already exists",
+        ));
+    }
+    fs::rename(temporary, &target)?;
+    let active = install_root.join("ui-active.json");
+    let active_tmp = active.with_extension("json.tmp");
+    let pointer =
+        serde_json::to_vec(&serde_json::json!({"version": version})).map_err(io::Error::other)?;
+    if let Err(error) =
+        fs::write(&active_tmp, pointer).and_then(|()| fs::rename(&active_tmp, &active))
+    {
+        let _ = fs::remove_dir_all(&target);
+        let _ = fs::remove_file(&active_tmp);
+        return Err(error);
+    }
+    if let Some(executable) = relaunch {
+        let mut command = Command::new(executable);
+        configure_hidden_process(&mut command);
+        if let Err(error) = command.current_dir(install_root).spawn() {
+            let _ = fs::remove_dir_all(&target);
+            return Err(error);
+        }
+    }
+    wait_for_health(health_file)?;
+    Ok(())
+}
+
+fn is_safe_version(version: &str) -> bool {
+    !version.is_empty()
+        && version.len() <= 64
+        && version
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+}
+
 const WAIT_FOR_SHELL: Duration = Duration::from_secs(60);
 const WAIT_FOR_UNLOCK: Duration = Duration::from_secs(120);
 const RETRY_INTERVAL: Duration = Duration::from_millis(250);
@@ -215,6 +477,41 @@ fn clear_health_file(path: Option<&Path>) -> io::Result<()> {
     if let Some(path) = path {
         if path.exists() {
             fs::remove_file(path)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_component_marker(staging: &Path) -> io::Result<()> {
+    validate_component_marker_for(staging, None)
+}
+
+fn validate_component_marker_for(staging: &Path, selected: Option<&[String]>) -> io::Result<()> {
+    let marker = staging.join("evohime.components.json");
+    if !marker.is_file() {
+        return Ok(());
+    }
+    let manifest = component_manifest::Manifest::parse(&fs::read(&marker)?)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    for component in &manifest.components {
+        if let Some(selected) = selected {
+            if !selected.iter().any(|path| path == &component.path) {
+                continue;
+            }
+        }
+        let artifact = staging.join(&component.path);
+        if !artifact.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("component artifact is missing: {}", component.path),
+            ));
+        }
+        let bytes = fs::read(&artifact)?;
+        if !manifest.artifact_matches(component, &bytes) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("component artifact hash mismatch: {}", component.id),
+            ));
         }
     }
     Ok(())
@@ -295,20 +592,52 @@ impl UpdateTransaction {
         "evohime.manifest.json",
     ];
 
+    pub const SELECTABLE_COMPONENTS: [&'static str; 8] = [
+        "EvoHime.exe",
+        "evohime-core.exe",
+        "evohime-supervisor.exe",
+        "eva.exe",
+        "evohime-analysis-worker.exe",
+        "evohime-listener.exe",
+        "evohime-transaction.exe",
+        "evohime-verify.exe",
+    ];
+
     pub fn prepare(install_dir: &Path, state_dir: &Path) -> io::Result<Self> {
-        Self::prepare_with(install_dir, state_dir, TransactionScope::Components)
+        Self::prepare_selected(
+            install_dir,
+            state_dir,
+            &Self::COMPONENTS
+                .iter()
+                .map(|s| (*s).to_owned())
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    pub fn prepare_selected(
+        install_dir: &Path,
+        state_dir: &Path,
+        components: &[String],
+    ) -> io::Result<Self> {
+        Self::prepare_with(
+            install_dir,
+            state_dir,
+            TransactionScope::Components,
+            components.to_vec(),
+        )
     }
 
     /// Backs up the whole installation directory, for updates that replace more
     /// than the known components — a locally rebuilt package does.
     pub fn prepare_tree(install_dir: &Path, state_dir: &Path) -> io::Result<Self> {
-        Self::prepare_with(install_dir, state_dir, TransactionScope::Tree)
+        Self::prepare_with(install_dir, state_dir, TransactionScope::Tree, Vec::new())
     }
 
     fn prepare_with(
         install_dir: &Path,
         state_dir: &Path,
         scope: TransactionScope,
+        components: Vec<String>,
     ) -> io::Result<Self> {
         validate_absolute(install_dir, "install directory")?;
         validate_absolute(state_dir, "state directory")?;
@@ -337,10 +666,14 @@ impl UpdateTransaction {
         ));
         fs::create_dir_all(&backup_dir)?;
         let transaction = Self {
+            operation_id: format!("tx-{}-{}", timestamp_nanos(), std::process::id()),
             install_dir: install_dir.to_path_buf(),
             backup_dir,
             state_path,
             scope,
+            components,
+            ui_target: None,
+            ui_previous_pointer: None,
         };
         let backup = match scope {
             TransactionScope::Components => transaction.copy_current_components(),
@@ -358,8 +691,18 @@ impl UpdateTransaction {
         &self.backup_dir
     }
 
+    pub fn operation_id(&self) -> &str {
+        &self.operation_id
+    }
+
     pub fn state_path(&self) -> &Path {
         &self.state_path
+    }
+
+    fn record_ui(&mut self, target: PathBuf, previous_pointer: Option<Vec<u8>>) -> io::Result<()> {
+        self.ui_target = Some(target);
+        self.ui_previous_pointer = previous_pointer;
+        self.write_state(TransactionPhase::Installing)
     }
 
     pub fn commit(&self) -> io::Result<()> {
@@ -372,7 +715,7 @@ impl UpdateTransaction {
         self.write_state(TransactionPhase::RollbackRequired)?;
         match self.scope {
             TransactionScope::Components => {
-                for component in Self::COMPONENTS {
+                for component in &self.components {
                     let source = self.backup_dir.join(component);
                     let destination = self.install_dir.join(component);
                     restore_file(&source, &destination)?;
@@ -382,6 +725,19 @@ impl UpdateTransaction {
             // previous tree is what makes the installation work again, and
             // deleting unknown files is the riskier half of the operation.
             TransactionScope::Tree => copy_tree(&self.backup_dir, &self.install_dir)?,
+        }
+        if let Some(target) = &self.ui_target {
+            let _ = fs::remove_dir_all(target);
+        }
+        let active = self.install_dir.join("ui-active.json");
+        match &self.ui_previous_pointer {
+            Some(bytes) => {
+                fs::write(&active, bytes)?;
+            }
+            None if self.ui_target.is_some() => {
+                let _ = fs::remove_file(active);
+            }
+            None => {}
         }
         self.write_state(TransactionPhase::Restored)?;
         fs::remove_dir_all(&self.backup_dir)?;
@@ -397,10 +753,22 @@ impl UpdateTransaction {
         let state: TransactionState = serde_json::from_slice(&fs::read(&state_path)?)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         let transaction = Self {
+            operation_id: if state.operation_id.is_empty() {
+                "legacy".to_owned()
+            } else {
+                state.operation_id
+            },
             install_dir: state.install_dir,
             backup_dir: state.backup_dir,
             state_path,
             scope: state.scope,
+            components: if state.components.is_empty() {
+                Self::COMPONENTS.iter().map(|s| (*s).to_owned()).collect()
+            } else {
+                state.components
+            },
+            ui_target: state.ui_target,
+            ui_previous_pointer: state.ui_previous_pointer,
         };
         match state.phase {
             TransactionPhase::Committed => {
@@ -423,7 +791,7 @@ impl UpdateTransaction {
     }
 
     fn copy_current_components(&self) -> io::Result<()> {
-        for component in Self::COMPONENTS {
+        for component in &self.components {
             let source = self.install_dir.join(component);
             if !source.is_file() {
                 return Err(io::Error::new(
@@ -441,10 +809,14 @@ impl UpdateTransaction {
 
     fn write_state(&self, phase: TransactionPhase) -> io::Result<()> {
         let state = serde_json::to_vec_pretty(&TransactionState {
+            operation_id: self.operation_id.clone(),
             install_dir: self.install_dir.clone(),
             backup_dir: self.backup_dir.clone(),
             phase,
             scope: self.scope,
+            components: self.components.clone(),
+            ui_target: self.ui_target.clone(),
+            ui_previous_pointer: self.ui_previous_pointer.clone(),
         })
         .map_err(io::Error::other)?;
         let temporary = self.state_path.with_extension("json.tmp");
@@ -570,7 +942,10 @@ fn timestamp_nanos() -> u128 {
 
 #[cfg(test)]
 mod tests {
-    use super::{verify_installation, wait_for_health_with_limit, UpdateTransaction};
+    use super::{
+        apply_component_set_staged, verify_installation, wait_for_health_with_limit,
+        UpdateTransaction,
+    };
     use std::fs;
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -604,6 +979,48 @@ mod tests {
     }
 
     #[test]
+    fn component_set_updates_native_and_ui_together() {
+        let root = temp_dir("component-set");
+        let install = root.join("install");
+        let staging = root.join("staging");
+        let state = root.join("state");
+        write_components(&install, "old");
+        fs::create_dir_all(staging.join("ui-bundle")).unwrap();
+        fs::write(staging.join("EvoHime.exe"), "new:shell").unwrap();
+        fs::write(staging.join("ui-bundle/index.html"), "new:ui").unwrap();
+        fs::write(install.join("ui-active.json"), r#"{"version":"old"}"#).unwrap();
+        let selected = vec!["EvoHime.exe".to_owned()];
+        apply_component_set_staged(
+            &staging,
+            &install,
+            &state,
+            &selected,
+            Some("new"),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(install.join("EvoHime.exe")).unwrap(),
+            "new:shell"
+        );
+        assert_eq!(
+            fs::read_to_string(install.join("ui-bundles/new/index.html")).unwrap(),
+            "new:ui"
+        );
+        assert_eq!(
+            fs::read_to_string(install.join("ui-active.json")).unwrap(),
+            r#"{"version":"new"}"#
+        );
+        assert_eq!(
+            fs::read_to_string(install.join("evohime-core.exe")).unwrap(),
+            "old:evohime-core.exe"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn prepare_commit_removes_backup_and_state() {
         let root = temp_dir("commit");
         let install = root.join("install");
@@ -612,6 +1029,7 @@ mod tests {
 
         let transaction = UpdateTransaction::prepare(&install, &state).unwrap();
         assert!(transaction.backup_dir().exists());
+        assert!(transaction.operation_id().starts_with("tx-"));
         assert!(transaction.state_path().exists());
 
         transaction.commit().unwrap();
@@ -832,6 +1250,47 @@ mod tests {
         let error = verify_installation(&root).unwrap_err();
 
         assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn selected_apply_preserves_unselected_components() {
+        let root = temp_dir("selected");
+        let install = root.join("install");
+        let staging = root.join("staging");
+        let state = root.join("state");
+        write_components(&install, "old");
+        write_components(&staging, "new");
+        super::apply_selected_staged(&staging, &install, &state, &["EvoHime.exe".to_owned()])
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(install.join("EvoHime.exe")).unwrap(),
+            "new:EvoHime.exe"
+        );
+        assert_eq!(
+            fs::read_to_string(install.join("evohime-core.exe")).unwrap(),
+            "old:evohime-core.exe"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ui_bundle_apply_publishes_pointer_last() {
+        let root = temp_dir("ui-apply");
+        let staging = root.join("staging");
+        let install = root.join("install");
+        fs::create_dir_all(staging.join("ui-bundle/assets")).unwrap();
+        fs::write(staging.join("ui-bundle/index.html"), "new").unwrap();
+        fs::write(staging.join("ui-bundle/assets/app.js"), "app").unwrap();
+        super::apply_ui_bundle_staged(&staging, &install, "1.2.3").unwrap();
+        assert_eq!(
+            fs::read_to_string(install.join("ui-active.json")).unwrap(),
+            r#"{"version":"1.2.3"}"#
+        );
+        assert_eq!(
+            fs::read_to_string(install.join("ui-bundles/1.2.3/index.html")).unwrap(),
+            "new"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

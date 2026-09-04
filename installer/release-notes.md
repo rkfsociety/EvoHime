@@ -38,5 +38,6 @@ rollback. Source-update E2E запускается отдельно с явны�
 Версия установки определяется коммитом, из которого она собрана, а не номером версии: он виден в статус-баре клиента.
 
 План модульных релизов и выборочного обновления компонентов описан в
-[`../docs/plans/144-0-modular-release-and-component-update.md`](../docs/plans/144-0-modular-release-and-component-update.md).
+контракт модульных обновлений перенесён в [`../docs/architecture.md`](../docs/architecture.md),
+а release evidence — в [`../docs/release-evidence.md`](../docs/release-evidence.md).
 Пока план не закрыт, канал обновляет полный installer-пакет.

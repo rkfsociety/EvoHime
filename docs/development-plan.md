@@ -35,7 +35,7 @@ restart подтверждаются отдельно. Автоматическ�
 | 130–135 | task leases, context namespace, durable background execution, deterministic utilities, resource guard, code review | очередь |
 | 136–140 | static-analysis packs, context loadouts, skill updates, capability facade, authorized security assessment | очередь |
 | 141–143 | service graph, program optimizer, project knowledge notebook | очередь |
-| 144 | модульный manifest и выборочное обновление компонентов | предложено |
+| 144 | модульный manifest и выборочное обновление компонентов | реализовано |
 
 Планы 01–118 закрыты и удалены из временного каталога после переноса
 контрактов и evidence в канонические документы. Нельзя считать план закрытым
@@ -50,18 +50,17 @@ authenticated IPC 259/104, Electron projection/UI, startup recovery,
 focused/regression checks и переноса контракта в `architecture.md` и состояния
 в `current-state.md`. Schema v92 также активирует пропущенную migration v91.
 
-## План 144: модульные релизы
+## План 144: модульные релизы (реализован)
 
-План 144 — это предложение, а не текущий механизм обновления. Его scope:
+План 144 реализован в текущем checkout. Его scope:
 
 1. манифест компонентов с версиями, совместимостью и hash/signature metadata;
 2. выборочная транзакция обновления одного или нескольких компонентов;
 3. recovery, backup, health marker и rollback для частичного обновления;
 4. build pipeline, shell UI, verification и release evidence.
 
-До закрытия 144 действует один полный installer-релиз `installer`. План не
-разрешает самостоятельно менять updater, установленный клиент, release channel
-или security boundary.
+Full installer-релиз `installer` сохранён как fallback; реализация не меняет
+release channel, установленный клиент или security boundary.
 
 ## Правила реализации
 

@@ -69,6 +69,10 @@ export function UpdateGate({ status }: UpdateGateProps): React.JSX.Element | nul
             {shortCommit(status.installedCommit)} → {shortCommit(status.remoteCommit)}
           </span>
         </div>
+        <p className="update-gate__components">
+          Набор: <strong>{status.selectedComponents?.join(', ') || 'не выбран'}</strong>
+          {status.totalBytes ? ` · ${status.downloadedBytes ?? 0} / ${status.totalBytes} байт` : ''}
+        </p>
 
         <div
           className={`update-progress${progress === null ? ' update-progress--indeterminate' : ''}`}

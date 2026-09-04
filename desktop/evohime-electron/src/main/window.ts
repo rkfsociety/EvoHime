@@ -4,10 +4,13 @@ import { BrowserWindow } from 'electron'
 
 import { hardenWebContents, isProduction, type HardeningOptions } from './security'
 import { resourcePath } from './paths'
+import { resolveUiEntry } from './ui-bundle'
 
 /**
  * The single application window. It never gets Node integration, always runs a
- * sandboxed renderer, and only loads the packaged renderer entry point.
+ * sandboxed renderer, and only loads the packaged renderer entry point. The
+ * renderer is a separate build output so release tooling can version and
+ * replace it without rebuilding native code.
  */
 
 export interface WindowOptions extends HardeningOptions {
@@ -67,7 +70,12 @@ export function loadRenderer(window: BrowserWindow): Promise<void> {
   if (!isProduction() && devServerUrl) {
     return window.loadURL(devServerUrl)
   }
-  return window.loadFile(join(__dirname, '../renderer/index.html'))
+  const bundledRoot = join(__dirname, '..')
+  const installRoot = isProduction() ? join(process.resourcesPath, '..') : bundledRoot
+  return window.loadFile(resolveUiEntry({
+    root: installRoot,
+    fallback: join(bundledRoot, 'ui-bundle/index.html')
+  }))
 }
 
 /** Focuses the existing window for the single-instance handoff. */

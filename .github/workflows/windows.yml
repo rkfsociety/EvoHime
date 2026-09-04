@@ -271,7 +271,7 @@ jobs:
           $setup = Join-Path $env:GITHUB_WORKSPACE 'installer-output\EvoHime-Setup.exe'
           & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installPath"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($component in @('EvoHime.exe', 'resources\app.asar', 'resources\evohime-agent.ico', 'evohime-core.exe', 'evohime-supervisor.exe', 'evohime-listener.exe', 'evohime-transaction.exe', 'evohime-verify.exe', 'evohime.manifest.json', 'evohime.build.json')) {
+          foreach ($component in @('EvoHime.exe', 'resources\app.asar', 'resources\evohime-agent.ico', 'evohime-core.exe', 'evohime-supervisor.exe', 'evohime-listener.exe', 'evohime-transaction.exe', 'evohime-verify.exe', 'evohime.manifest.json', 'evohime.components.json', 'evohime.build.json')) {
             if (-not (Test-Path -LiteralPath (Join-Path $installPath $component))) { throw "Installed component missing: $component" }
           }
           # Маркер сборки — то, по чему установленный клиент понимает, отстал ли он от ветки.
@@ -351,6 +351,10 @@ jobs:
             throw 'Refused apply must leave the installation untouched.'
           }
 
+      - name: Smoke выборочного UI component apply
+        shell: pwsh
+        run: ./scripts/component-update.tests.ps1 -UpdaterPath "$env:GITHUB_WORKSPACE\native-package\evohime-transaction.exe"
+
       - name: Запись manifest установщика
         shell: pwsh
         run: |
@@ -376,6 +380,15 @@ jobs:
           path: |
             installer-output\EvoHime-Setup.exe
             installer-output\EvoHime-Setup.json
+            native-package\evohime.components.json
+            native-package\EvoHime.exe
+            native-package\evohime-core.exe
+            native-package\evohime-supervisor.exe
+            native-package\eva.exe
+            native-package\evohime-analysis-worker.exe
+            native-package\evohime-listener.exe
+            native-package\evohime-transaction.exe
+            native-package\evohime-verify.exe
           if-no-files-found: error
 
   # Один постоянный релиз с фиксированным тегом: файл в нём перезаписывается,
@@ -429,5 +442,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Не удалось загрузить установщик.' }
           gh release upload $env:RELEASE_TAG installer-output\EvoHime-Setup.json --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Не удалось загрузить манифест установщика.' }
+          $componentManifest = Get-ChildItem -LiteralPath $env:GITHUB_WORKSPACE -Filter 'evohime.components.json' -Recurse | Select-Object -First 1
+          if ($null -eq $componentManifest) { throw 'Component manifest artifact is missing.' }
+          gh release upload $env:RELEASE_TAG $componentManifest.FullName --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Не удалось загрузить component manifest.' }
+          Get-ChildItem -LiteralPath $env:GITHUB_WORKSPACE -Filter '*.exe' -Recurse |
+            Where-Object { $_.Name -in @('EvoHime.exe', 'evohime-core.exe', 'evohime-supervisor.exe', 'eva.exe', 'evohime-analysis-worker.exe', 'evohime-listener.exe', 'evohime-transaction.exe', 'evohime-verify.exe') } |
+            ForEach-Object {
+              gh release upload $env:RELEASE_TAG $_.FullName --clobber
+              if ($LASTEXITCODE -ne 0) { throw "Не удалось загрузить component artifact: $($_.Name)" }
+            }
           Write-Host "Установщик обновлён в релизе $env:RELEASE_TAG"
           exit 0

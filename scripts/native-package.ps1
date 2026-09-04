@@ -91,3 +91,37 @@ function Write-NativePackageManifest {
 
     $Manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $OutputPath -Encoding utf8NoBOM
 }
+
+function Write-ComponentManifest {
+    param(
+        [Parameter(Mandatory)] [string]$OutputPath,
+        [Parameter(Mandatory)] [string]$PackageRoot,
+        [Parameter(Mandatory)] [string]$Commit,
+        [string]$Version = '0.1.0'
+    )
+    $componentFiles = @(
+        @{ id = 'shell-host'; path = 'EvoHime.exe'; restart = 'shell' },
+        @{ id = 'ui-bundle'; path = 'ui-bundle.zip'; restart = 'shell' },
+        @{ id = 'core'; path = 'evohime-core.exe'; restart = 'core' },
+        @{ id = 'supervisor'; path = 'evohime-supervisor.exe'; restart = 'supervisor' },
+        @{ id = 'cli'; path = 'eva.exe'; restart = 'none' },
+        @{ id = 'analysis-worker'; path = 'evohime-analysis-worker.exe'; restart = 'core' },
+        @{ id = 'listener'; path = 'evohime-listener.exe'; restart = 'listener' },
+        @{ id = 'transaction'; path = 'evohime-transaction.exe'; restart = 'transaction' },
+        @{ id = 'verifier'; path = 'evohime-verify.exe'; restart = 'none' }
+    )
+    $components = foreach ($item in $componentFiles) {
+        $file = Join-Path $PackageRoot $item.path
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Component is missing: $file" }
+        $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+        [pscustomobject]@{
+            id = $item.id; version = $Version; artifact = $item.path; path = $item.path
+            size = [int64](Get-Item -LiteralPath $file).Length; sha256 = $hash
+            dependencies = @(); required = $true; protocol = 'desktop-ipc-v1'; restart = $item.restart
+        }
+    }
+    [pscustomobject]@{
+        schema = 'evohime.component-manifest.v1'; product = 'EvoHime'; release_id = $Commit
+        os = 'windows'; architecture = 'x64'; release_commit = $Commit; components = @($components)
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $OutputPath -Encoding utf8NoBOM
+}

@@ -7,8 +7,8 @@
 
 ## Текущий каталог
 
-В checkout сохранены планы 119–144. Для 119–143 существует обзор и четыре
-этапа; у 144 имена этапов уточняют отдельный scope:
+В checkout сохранены планы 119–143. Реализованный план 144 удалён после
+переноса контракта в канонические документы.
 
 | План | Тема | Состояние |
 | --- | --- | --- |
@@ -37,11 +37,11 @@
 | [141](141-0-runtime-service-graph.md) | Runtime service graph | незавершён |
 | [142](142-0-agent-program-optimizer.md) | Agent program optimizer | незавершён |
 | [143](143-0-project-knowledge-notebook.md) | Project knowledge notebook | незавершён |
-| [144](144-0-modular-release-and-component-update.md) | Modular release and component update | предложен |
+| 144 | Modular release and component update | реализован, контракт перенесён в канонические документы |
 
 Следующее новое направление получает номер `145`, если отдельное решение не
-изменит порядок. План 144 не заменяет текущий installer и не считается
-реализованным по наличию одного overview-файла.
+изменит порядок. План 144 не заменяет текущий installer, а добавляет
+совместимый selective-update путь и fallback.
 
 ## Формат этапов
 

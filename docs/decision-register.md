@@ -24,7 +24,7 @@ provider credentials или обещаний, не подтверждённых 
 | D-UI-01 | Основная навигация короткая; технические панели находятся в collapsed `Интерфейс разработчика` | Desktop shell | `App.tsx`, operations/sidebar tests |
 | D-MODEL-01 | API model selection действует со следующего Core-запроса; смена API-профиля и Codex model restart Core | Provider/shell | `ModelPicker`, `CodexService`, shell-bridge tests |
 | D-RELEASE-01 | Поставка выполняется одним постоянным full installer-релизом `installer` | Release | `installer/release-notes.md`, Windows workflow |
-| D-RELEASE-02 | Component manifest и selective update остаются предложением плана 144 до его полного закрытия | Release | `docs/plans/144-*` |
+| D-RELEASE-02 | Component manifest и selective update реализованы; full installer сохранён как fallback для старых и несовместимых выпусков | Release | `architecture.md`, `release-evidence.md`, `evohime-updater` |
 | D-REL-21 | Electron diagnostics — bounded redacted projection; recovery, approvals, backup/restore и effects остаются Core-owned | Reliability | `diagnostic-bundle.ts`, recovery projection tests |
 
 ## Закрытые acceptance records
@@ -53,8 +53,8 @@ provider credentials или обещаний, не подтверждённых 
 
 | ID | Вопрос | Когда закрывать |
 | --- | --- | --- |
-| O-RELEASE-01 | Какой минимальный component graph и compatibility policy нужен для selective update | В plan 144.1 |
-| O-RELEASE-02 | Как разделить package/recovery evidence без ослабления current full-installer rollback | В plan 144.2–144.4 |
+| O-RELEASE-01 | Какой минимальный component graph и compatibility policy нужен для selective update | `architecture.md`, `release-evidence.md` |
+| O-RELEASE-02 | Как разделить package/recovery evidence без ослабления current full-installer rollback | `architecture.md`, `release-evidence.md` |
 | O-COMPAT-01 | Нужен ли отдельный informative ARM64/Insider release job | При изменении release scope |
 
 ## Resource and contract budgets

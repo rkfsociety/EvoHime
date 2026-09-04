@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { unzipSync } from 'fflate'
 
 import { normalizeCommit, type BuildMarker } from './config'
 import { githubApiBase } from './commit-status'
@@ -8,8 +9,11 @@ import { githubApiBase } from './commit-status'
 const RELEASE_TAG = 'installer'
 const INSTALLER_ASSET = 'EvoHime-Setup.exe'
 const MANIFEST_ASSET = 'EvoHime-Setup.json'
+const COMPONENT_MANIFEST_ASSET = 'evohime.components.json'
 const MAX_MANIFEST_BYTES = 64 * 1024
 const MAX_INSTALLER_BYTES = 2 * 1024 * 1024 * 1024
+const MAX_UI_FILES = 512
+const MAX_UI_BYTES = 512 * 1024 * 1024
 const REQUEST_TIMEOUT_MS = 120_000
 
 export interface ReleaseInstallerManifest {
@@ -23,6 +27,25 @@ export interface ReleaseInstallerManifest {
 export interface DownloadedInstaller {
   readonly installer: string
   readonly marker: BuildMarker
+}
+
+export interface ReleaseComponentManifest {
+  readonly schema: 'evohime.component-manifest.v1'
+  readonly release_commit: string
+  readonly components: readonly {
+    readonly id: string
+    readonly artifact: string
+    readonly path: string
+    readonly size: number
+    readonly sha256: string
+    readonly required: boolean
+  }[]
+}
+
+export interface DownloadedComponents {
+  readonly manifest: ReleaseComponentManifest
+  readonly selected: readonly string[]
+  readonly files: readonly string[]
 }
 
 export interface ReleaseInstallerDeps {
@@ -113,6 +136,73 @@ export async function downloadReleaseInstaller(
   return { installer, marker }
 }
 
+/** Downloads only selected bounded component artifacts from the same release. */
+export async function downloadReleaseComponents(
+  repositoryUrl: string,
+  commit: string,
+  destination: string,
+  selected: readonly string[],
+  token: string | null,
+  deps: ReleaseInstallerDeps = {}
+): Promise<DownloadedComponents> {
+  const normalized = normalizeCommit(commit)
+  const apiBase = githubApiBase(repositoryUrl)
+  if (!normalized || !apiBase) throw new Error('GitHub components: некорректный repository или commit.')
+  if (selected.length === 0 || selected.length > 32 || selected.some((id) => !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id))) {
+    throw new Error('GitHub components: некорректный selected component set.')
+  }
+  const request = deps.fetch ?? globalThis.fetch
+  const headers = apiHeaders(token)
+  const release = await getJson(`${apiBase}/releases/tags/${RELEASE_TAG}`, request, headers)
+  const assets: readonly ReleaseAsset[] = Array.isArray(release.assets) ? release.assets : []
+  const manifestAsset = assets.find((asset) => asset.name === COMPONENT_MANIFEST_ASSET)
+  const manifestUrl = assetUrl(manifestAsset?.url, apiBase)
+  if (!manifestUrl) throw new Error('GitHub components: component manifest отсутствует.')
+  const text = await downloadText(manifestUrl, request, { ...headers, accept: 'application/octet-stream' })
+  if (text.length > MAX_MANIFEST_BYTES) throw new Error('GitHub components: манифест слишком большой.')
+  const manifest = parseComponentManifest(text, normalized)
+  const chosen = selected.map((id) => {
+    const component = manifest.components.find((candidate) => candidate.id === id)
+    if (!component) throw new Error(`GitHub components: компонент не найден: ${id}`)
+    return component
+  })
+  await mkdir(destination, { recursive: true })
+  const files: string[] = []
+  for (const component of chosen) {
+    const asset = assets.find((candidate) => candidate.name === component.artifact)
+    const url = assetUrl(asset?.url, apiBase)
+    if (!url) throw new Error(`GitHub components: артефакт отсутствует: ${component.artifact}`)
+    const target = join(destination, component.path)
+    await mkdir(dirname(target), { recursive: true })
+    const bytes = await downloadBytes(url, target, request, { ...headers, accept: 'application/octet-stream' }, deps.onProgress, component.size)
+    if (bytes !== component.size || (await sha256(target)) !== component.sha256) throw new Error(`GitHub components: hash mismatch: ${component.id}`)
+    if (component.id === 'ui-bundle') await extractUiArchive(target, destination)
+    files.push(target)
+  }
+  await writeFile(join(destination, COMPONENT_MANIFEST_ASSET), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+  return { manifest, selected: selected.slice(), files }
+}
+
+async function extractUiArchive(archivePath: string, destination: string): Promise<void> {
+  const archive = unzipSync(await readFile(archivePath))
+  const entries = Object.entries(archive)
+  if (entries.length === 0 || entries.length > MAX_UI_FILES) throw new Error('GitHub components: UI archive file count is outside bounds.')
+  let total = 0
+  for (const [name, bytes] of entries) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,259}$/.test(name) || name.includes('..') || name.includes('//') || name.endsWith('/')) throw new Error('GitHub components: unsafe UI archive path.')
+    total += bytes.byteLength
+    if (total > MAX_UI_BYTES) throw new Error('GitHub components: UI archive is too large after extraction.')
+    const target = join(destination, 'ui-bundle', name)
+    await mkdir(dirname(target), { recursive: true })
+    await writeFile(target, bytes)
+  }
+  if (!existsInArchive(entries, 'index.html')) throw new Error('GitHub components: UI archive has no index.html.')
+}
+
+function existsInArchive(entries: readonly [string, Uint8Array][], name: string): boolean {
+  return entries.some(([entry]) => entry === name || entry === `ui-bundle/${name}`)
+}
+
 function releaseAssetUrl(release: any, name: string, apiBase: string): string | null {
   const assets: readonly ReleaseAsset[] = Array.isArray(release?.assets) ? release.assets : []
   const asset = assets.find((candidate: ReleaseAsset) => candidate.name === name)
@@ -190,6 +280,21 @@ function parseManifest(text: string): ReleaseInstallerManifest {
     throw new Error('GitHub installer: некорректный манифест.')
   }
   return { commit, branch, asset: value.asset, sha256, size: value.size }
+}
+
+function parseComponentManifest(text: string, commit: string): ReleaseComponentManifest {
+  let value: any
+  try { value = JSON.parse(text) } catch { throw new Error('GitHub components: повреждённый манифест.') }
+  const components = Array.isArray(value?.components) ? value.components : []
+  if (value?.schema !== 'evohime.component-manifest.v1' || value?.release_commit !== commit || components.length === 0 || components.length > 32) {
+    throw new Error('GitHub components: некорректный манифест.')
+  }
+  for (const component of components) {
+    if (typeof component?.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(component.id) || typeof component?.artifact !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(component.artifact) || typeof component?.path !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,259}$/.test(component.path) || component.path.includes('..') || component.path.includes('//') || !Number.isSafeInteger(component.size) || component.size <= 0 || component.size > MAX_INSTALLER_BYTES || typeof component.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(component.sha256)) {
+      throw new Error('GitHub components: небезопасная запись компонента.')
+    }
+  }
+  return value as ReleaseComponentManifest
 }
 
 async function sha256(path: string): Promise<string> {

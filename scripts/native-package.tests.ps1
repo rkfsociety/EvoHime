@@ -32,6 +32,7 @@ Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-analysis-worker.exe') 
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-listener.exe') -Value 'listener'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-transaction.exe') -Value 'updater'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-verify.exe') -Value 'verifier'
+Set-Content -LiteralPath (Join-Path $packageRoot 'ui-bundle.zip') -Value 'ui-archive-fixture'
 
 $commit = 'a' * 40
 & (Join-Path $PSScriptRoot 'build-windows-native.ps1') -SkipBuild -OutputPath $packageRoot -Commit $commit | Out-Null
@@ -39,6 +40,12 @@ $commit = 'a' * 40
 if (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'evohime.manifest.json'))) {
     throw 'package manifest was not written'
 }
+$componentMarkerPath = Join-Path $packageRoot 'evohime.components.json'
+if (-not (Test-Path -LiteralPath $componentMarkerPath)) { throw 'component manifest was not written' }
+$componentMarker = Get-Content -LiteralPath $componentMarkerPath -Raw | ConvertFrom-Json
+if ($componentMarker.schema -ne 'evohime.component-manifest.v1') { throw 'component manifest schema mismatch' }
+if ($componentMarker.components.Count -ne 9) { throw 'component manifest inventory mismatch' }
+if ($componentMarker.components[0].sha256.Length -ne 64) { throw 'component manifest hash is missing' }
 
 # Маркер сборки: без него клиент не знает своей версии и пересобирается зря.
 $markerPath = Join-Path $packageRoot 'evohime.build.json'

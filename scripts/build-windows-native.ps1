@@ -84,8 +84,17 @@ if (-not $SkipBuild) {
     }
 }
 if (-not (Test-Path -LiteralPath $uiPackaged)) { throw "Electron UI не найден: $uiPackaged" }
+$uiBundleSource = Join-Path $electronRoot 'out\ui-bundle'
+$uiBundleArchive = Join-Path $resolvedOutput 'ui-bundle.zip'
+if (-not $SkipBuild) {
+    if (-not (Test-Path -LiteralPath $uiBundleSource)) { throw "UI bundle не найден: $uiBundleSource" }
+    if (Test-Path -LiteralPath $uiBundleArchive) { Remove-Item -LiteralPath $uiBundleArchive -Force }
+    Compress-Archive -Path (Join-Path $uiBundleSource '*') -DestinationPath $uiBundleArchive -CompressionLevel Optimal
+}
+if (-not (Test-Path -LiteralPath $uiBundleArchive)) { throw "UI bundle archive не найден: $uiBundleArchive" }
 
 Write-NativePackageManifest -OutputPath (Join-Path $resolvedOutput 'evohime.manifest.json') -Manifest $manifest
+Write-ComponentManifest -OutputPath (Join-Path $resolvedOutput 'evohime.components.json') -PackageRoot $resolvedOutput -Commit $(if ($Commit) { $Commit } else { (& git -C $repoRoot rev-parse HEAD).Trim() }) -Version $(if ($Version) { $Version } else { '0.1.0' })
 
 # Маркер сборки: установленный клиент по нему знает свой коммит и понимает,
 # отстал ли он от отслеживаемой ветки. Без маркера версия считается неизвестной

@@ -1744,6 +1744,14 @@ function dispatch(
     case 'update.prepare':
       return updates.prepare().then((value) => ({ ok: true, value }))
 
+    case 'update.prepareComponents': {
+      const value = asRecord(payload)
+      const selected = Array.isArray(value['selected']) && value['selected'].every((item) => typeof item === 'string')
+        ? value['selected'] as string[] : null
+      if (!selected) return failure('invalid-payload', 'Некорректный набор компонентов.')
+      return updates.prepareComponents(selected).then((result) => ({ ok: true, value: result }))
+    }
+
     case 'update.restart':
       return { ok: true, value: { accepted: updates.restart() } }
 

@@ -51,9 +51,9 @@ for (const file of files) {
 
 const mainBundle = files.find((file) => relative(file) === 'out/main/index.js')
 const preloadBundle = files.find((file) => relative(file) === 'out/preload/index.js')
-const rendererHtml = files.find((file) => relative(file) === 'out/renderer/index.html')
+const rendererHtml = files.find((file) => relative(file) === 'out/ui-bundle/index.html')
 const rendererScripts = files.filter(
-  (file) => relative(file).startsWith('out/renderer/assets/') && file.endsWith('.js')
+  (file) => relative(file).startsWith('out/ui-bundle/assets/') && file.endsWith('.js')
 )
 
 for (const [label, file] of [

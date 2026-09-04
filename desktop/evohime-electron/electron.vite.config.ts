@@ -55,6 +55,7 @@ export default defineConfig({
     },
     build: {
       sourcemap: false,
+      outDir: resolve(__dirname, 'out/ui-bundle'),
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/renderer/index.html') }
       }

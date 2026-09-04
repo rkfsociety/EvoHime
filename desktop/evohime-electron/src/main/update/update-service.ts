@@ -26,9 +26,10 @@ import {
 } from './commit-status'
 import { readBuildMarker, type UpdateConfig } from './config'
 import { resolveGithubToken } from './github-token'
-import { downloadReleaseInstaller, readReleaseInstallerCommit } from './release-installer'
+import { downloadReleaseComponents, downloadReleaseInstaller, readReleaseInstallerCommit } from './release-installer'
 import { readRemoteHead, syncCheckout } from './source-checkout'
 import { detectToolchain, ensureToolchain, toolPath, type ToolchainReport } from './toolchain'
+import { reportUpdateFailure } from './update-issue-reporter'
 
 /**
  * Orchestrates the update: check, download/build, stage, swap.
@@ -64,6 +65,7 @@ export interface UpdateServiceDeps {
   readonly sync?: typeof syncCheckout
   readonly build?: typeof buildStagedPackage
   readonly downloadInstaller?: typeof downloadReleaseInstaller
+  readonly downloadComponents?: typeof downloadReleaseComponents
   readonly publishedInstallerCommit?: typeof readReleaseInstallerCommit
   readonly reset?: typeof clearDerivedState
   readonly buildLog?: BuildLogWriter
@@ -78,6 +80,7 @@ export class UpdateService {
   private timer: { readonly cancel: () => void } | null = null
   private skipped = false
   private token: Promise<string | null> | null = null
+  private selectedComponentPaths: readonly string[] | null = null
 
   constructor(private readonly deps: UpdateServiceDeps) {
     this.current = deps.config.enabled
@@ -442,6 +445,31 @@ export class UpdateService {
     }
   }
 
+  /** Explicit component update entrypoint; the normal installer remains the default. */
+  async prepareComponents(selected: readonly string[]): Promise<UpdateStatus> {
+    if (!this.deps.config.enabled || this.running) return this.current
+    if (selected.length === 0 || selected.length > 32) return this.fail('Набор компонентов некорректен', new Error('empty or oversized selection'))
+    this.running = true
+    try {
+      const checked = this.current.remoteCommit ? this.current : await this.check()
+      const commit = checked.remoteCommit
+      if (!commit) return this.fail('Коммит обновления не подтверждён', new Error('missing green commit'))
+      const downloaded = await (this.deps.downloadComponents ?? downloadReleaseComponents)(
+        this.deps.config.repositoryUrl, commit, this.deps.config.stagingDirectory, selected,
+        await this.githubToken(), { onProgress: (downloadedBytes, totalBytes) => this.patch({ downloadedBytes, totalBytes: totalBytes || null, downloadProgress: totalBytes ? downloadedBytes / totalBytes : null }) }
+      )
+      const selectedPaths = downloaded.manifest.components
+        .filter((component) => selected.includes(component.id)).map((component) => component.path)
+      this.selectedComponentPaths = selectedPaths
+      if (selected.includes('ui-bundle')) this.selectedComponentPaths = ['__ui_bundle__', ...selectedPaths]
+      return this.patch({ phase: 'ready', message: 'Выбранные компоненты готовы — нужен перезапуск.', selectedComponents: selected.slice(), restartRequired: true, downloadProgress: 1 })
+    } catch (error) {
+      return this.fail('Скачивание компонентов не удалось', error)
+    } finally {
+      this.running = false
+    }
+  }
+
   /** Downloads the installer published by CI after its checks passed. */
   private async prepareInstaller(target: string): Promise<UpdateStatus> {
     const { config } = this.deps
@@ -449,8 +477,11 @@ export class UpdateService {
       phase: 'preparing',
       message: 'Скачиваю проверенный установщик…',
       steps: initialInstallerUpdateSteps(),
-      error: null,
-      downloadProgress: 0
+          error: null,
+          downloadProgress: 0,
+          selectedComponents: ['full-installer'],
+          downloadedBytes: 0,
+          totalBytes: null
     })
     this.step('download', 'active')
     try {
@@ -462,7 +493,11 @@ export class UpdateService {
         await this.githubToken(),
         {
           onProgress: (downloadedBytes, totalBytes) => {
-            if (totalBytes > 0) this.patch({ downloadProgress: Math.min(1, downloadedBytes / totalBytes) })
+            this.patch({
+              downloadedBytes,
+              totalBytes: totalBytes > 0 ? totalBytes : null,
+              ...(totalBytes > 0 ? { downloadProgress: Math.min(1, downloadedBytes / totalBytes) } : {})
+            })
           }
         }
       )
@@ -594,7 +629,8 @@ export class UpdateService {
     const installerMarker = this.stagedInstallerMarker()
     const worker = join(config.installDirectory, TRANSACTION_EXECUTABLE)
     const healthFile = join(config.stateDirectory, 'health.json')
-    if ((!marker && !installerMarker) || !exists(worker)) {
+    const hasComponents = this.selectedComponentPaths !== null
+    if ((!marker && !installerMarker && !hasComponents) || !exists(worker)) {
       this.deps.log('warn', 'update.apply_unavailable', { staged: marker !== null, installer: installerMarker !== null })
       return false
     }
@@ -620,7 +656,23 @@ export class UpdateService {
           '--relaunch', join(config.installDirectory, SHELL_EXECUTABLE),
           '--health-file', healthFile
         ]
-      : [
+      : hasComponents && this.selectedComponentPaths!.includes('__ui_bundle__')
+        ? [
+          '--apply-components', '--staging', config.stagingDirectory,
+          '--install-dir', config.installDirectory, '--state-dir', config.stateDirectory,
+          '--selected', this.selectedComponentPaths!.filter((path) => path !== '__ui_bundle__').join(','),
+          '--ui-version', this.current.remoteCommit ?? 'unknown',
+          '--wait-pid', String(process.pid),
+          '--relaunch', join(config.installDirectory, SHELL_EXECUTABLE),
+          '--health-file', healthFile
+        ]
+        : hasComponents
+        ? [
+          '--apply-staging', '--staging', config.stagingDirectory,
+          '--install-dir', config.installDirectory, '--state-dir', config.stateDirectory,
+          '--selected', this.selectedComponentPaths!.join(',')
+        ]
+        : [
           '--apply-staging', '--staging', config.stagingDirectory,
           '--install-dir', config.installDirectory, '--state-dir', config.stateDirectory,
           '--wait-pid', String(process.pid), '--relaunch', join(config.installDirectory, SHELL_EXECUTABLE),
@@ -689,7 +741,7 @@ export class UpdateService {
   private fail(prefix: string, error: unknown): UpdateStatus {
     const message = `${prefix}: ${redactError(error)}`
     this.deps.log('warn', 'update.failed', { reason: message })
-    return this.patch({
+    const next = this.patch({
       phase: 'failed',
       message: prefix,
       error: message,
@@ -697,6 +749,18 @@ export class UpdateService {
         step.state === 'active' ? { ...step, state: 'failed' as const } : step
       )
     })
+    void this.reportFailure(next)
+    return next
+  }
+
+  private async reportFailure(status: UpdateStatus): Promise<void> {
+    try {
+      const token = await this.githubToken()
+      const url = await reportUpdateFailure(this.deps.config, status, { token })
+      if (url) this.deps.log('info', 'update.failure_issue_created', { url })
+    } catch (error) {
+      this.deps.log('warn', 'update.failure_issue_failed', { reason: redactError(error) })
+    }
   }
 
   private patch(changes: Partial<UpdateStatus>): UpdateStatus {

@@ -82,6 +82,8 @@
 .update-gate__meta,
 .update-gate__progress-label { display: flex; justify-content: space-between; gap: 12px; color: var(--fg-muted, #9b9baa); font-size: 11px; }
 .update-gate__meta { margin: 0 0 10px; }
+.update-gate__components { margin: 0 0 12px; color: var(--fg-muted, #9b9baa); font-size: 11px; }
+.update-gate__components strong { color: var(--fg, #e8e8ef); font-weight: 600; }
 .update-gate__meta strong,
 .update-gate__progress-label strong { color: var(--fg, #e8e8ef); font-weight: 650; }
 .update-gate__commits { font-family: var(--mono, ui-monospace, monospace); }

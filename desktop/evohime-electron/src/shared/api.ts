@@ -1340,6 +1340,7 @@ export const RENDERER_COMMANDS = [
   'update.getStatus',
   'update.check',
   'update.prepare',
+  'update.prepareComponents',
   'update.restart',
   'update.skip',
   'listener.getRuntimeStatus',
@@ -1786,6 +1787,7 @@ export interface CommandPayloads {
   'update.getStatus': Record<string, never>
   'update.check': Record<string, never>
   'update.prepare': Record<string, never>
+  'update.prepareComponents': { selected: readonly string[] }
   'update.restart': Record<string, never>
   'update.skip': Record<string, never>
   'listener.getRuntimeStatus': Record<string, never>
@@ -2201,6 +2203,7 @@ export interface CommandResults {
   'update.getStatus': UpdateStatus
   'update.check': UpdateStatus
   'update.prepare': UpdateStatus
+  'update.prepareComponents': UpdateStatus
   /** `false` when nothing is staged, so the shell keeps running. */
   'update.restart': { accepted: boolean }
   /** Releases the launch gate without applying anything. */

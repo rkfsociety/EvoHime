@@ -77,6 +77,10 @@ export interface UpdateStatus {
   readonly checkedAtMs: number | null
   /** Fraction of the verified installer downloaded, when an installer is being fetched. */
   readonly downloadProgress: number | null
+  /** Components selected by the manifest for this operation. */
+  readonly selectedComponents?: readonly string[]
+  readonly downloadedBytes?: number | null
+  readonly totalBytes?: number | null
   /** True once a staged package is waiting for the restart. */
   readonly restartRequired: boolean
   /** Bounded stage evidence retained for rollback/update diagnostics. */
@@ -124,6 +128,9 @@ export function disabledUpdateStatus(branch = 'main'): UpdateStatus {
     error: null,
     checkedAtMs: null,
     downloadProgress: null,
+    selectedComponents: [],
+    downloadedBytes: null,
+    totalBytes: null,
     restartRequired: false,
     evidence: []
   }

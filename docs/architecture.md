@@ -705,6 +705,22 @@ Base URL принимается только по `https` либо по `http` �
 
 ## Обновления из исходников
 
+### Component manifest и отдельный UI bundle
+
+Native package дополнительно содержит `evohime.components.json` с bounded
+`evohime.component-manifest.v1`: identity релиза, component inventory, размеры
+и SHA-256 артефактов, зависимости и restart class. `evohime-updater` проверяет
+этот marker до staged apply и отказывает при небезопасном пути, неизвестной
+зависимости, цикле, неверном размере или хеше. Legacy `evohime.manifest.json`
+остаётся bootstrap-контрактом.
+
+Electron renderer собирается в отдельный `out/ui-bundle`; component downloader
+проверяет bounded archive, распаковывает его в versioned UI directory, а main
+process выбирает только validated version из `ui-active.json`. Повреждённый или
+неполный pointer возвращает bundled fallback. Mixed UI+native apply использует
+общий transaction journal с backup native-файлов и восстановлением UI pointer;
+при неподдерживаемом manifest клиент сохраняет full-installer fallback.
+
 Production-обновление использует постоянный GitHub Release: его manifest
 определяет конкретный installer commit, размер и SHA-256. Клиент принимает
 опубликованный installer, если этот commit прошёл CI; более новые commits в

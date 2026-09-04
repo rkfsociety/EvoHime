@@ -901,6 +901,25 @@ and a bounded metadata-only Electron panel are included; unknown operations are
 rejected. Focused Core/storage tests, rustfmt/check, protocol/typecheck and the
 focused panel test passed before plan closure.
 
+## Plan 144 — Modular component release (2026-09-04)
+
+Manifest/package: `cargo test -p evohime-updater` 18/18; native package smoke,
+component-update smoke (UI-only and mixed UI+native), license inventory and
+documentation gates passed. The component marker is hash-bound, bounded and
+published together with native artifacts and `ui-bundle.zip`.
+
+Transaction/runtime: selected native apply preserves unselected files; the
+mixed component-set test verifies native + versioned UI update, active-pointer
+publication and preservation of Core. Transaction state records operation ID,
+selected paths, backup scope, UI target and previous pointer for restart
+recovery. Full installer remains the compatibility fallback.
+
+Electron/CI: full Electron regression passed, including typecheck, production
+build, bundle security checks and generated protocol check. Windows workflow
+publishes the unified marker and component artifacts; no installed user client
+was touched. Authenticode and production CDN remain outside this checkout's
+release evidence.
+
 ## Plan 118 — Persistent Agent Organization Registry v1 (2026-09-04)
 
 Contract and storage: Core unit tests 6/6; local-storage registry roundtrip and

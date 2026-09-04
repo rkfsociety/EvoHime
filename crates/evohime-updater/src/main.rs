@@ -16,8 +16,63 @@ fn main() -> ExitCode {
     }
 
     let arguments = &args[1..];
-    let result = if arguments.iter().any(|arg| arg == "--apply-staging") {
+    let result = if arguments.iter().any(|arg| arg == "--apply-components") {
+        parse_component_set_args(arguments).and_then(|options| {
+            evohime_tx::apply_component_set_staged(
+                &options.staging,
+                &options.install_dir,
+                &options.state_dir,
+                &options.native_selected,
+                options.ui_version.as_deref(),
+                options.wait_pid,
+                options.relaunch.as_deref(),
+                options.health_file.as_deref(),
+            )
+            .map_err(|error| error.to_string())
+        })
+    } else if arguments.iter().any(|arg| arg == "--apply-ui") {
+        let staging = required(arguments, "--staging").map_err(|error| error.to_string());
+        let install_root = required(arguments, "--install-root").map_err(|error| error.to_string());
+        let version = optional(arguments, "--ui-version")
+            .ok_or_else(|| "missing argument: --ui-version".to_owned());
+        let wait_pid = optional(arguments, "--wait-pid")
+            .map(|value| {
+                value
+                    .parse::<u32>()
+                    .map_err(|_| "--wait-pid must be a process id".to_owned())
+            })
+            .transpose();
+        let relaunch = optional(arguments, "--relaunch").map(PathBuf::from);
+        let health_file = optional(arguments, "--health-file").map(PathBuf::from);
+        staging
+            .and_then(|staging| install_root.map(|root| (staging, root)))
+            .and_then(|(staging, root)| version.map(|version| (staging, root, version)))
+            .and_then(|values| match wait_pid {
+                Ok(pid) => Ok((values, pid)),
+                Err(error) => Err(error),
+            })
+            .and_then(|((staging, root, version), wait_pid)| {
+                evohime_tx::apply_ui_bundle_staged_with_restart(
+                    &staging,
+                    &root,
+                    &version,
+                    wait_pid,
+                    relaunch.as_deref(),
+                    health_file.as_deref(),
+                )
+                .map_err(|error| error.to_string())
+            })
+    } else if arguments.iter().any(|arg| arg == "--apply-staging") {
         parse_staged_args(arguments).and_then(|staged| {
+            if let Some(selected) = staged.selected {
+                return evohime_tx::apply_selected_staged(
+                    &staged.staging,
+                    &staged.install_dir,
+                    &staged.state_dir,
+                    &selected,
+                )
+                .map_err(|error| error.to_string());
+            }
             evohime_tx::apply_staged(evohime_tx::StagedApply {
                 staging: &staged.staging,
                 install_dir: &staged.install_dir,
@@ -51,6 +106,47 @@ fn main() -> ExitCode {
     }
 }
 
+struct ComponentSetArgs {
+    staging: PathBuf,
+    install_dir: PathBuf,
+    state_dir: PathBuf,
+    native_selected: Vec<String>,
+    ui_version: Option<String>,
+    wait_pid: Option<u32>,
+    relaunch: Option<PathBuf>,
+    health_file: Option<PathBuf>,
+}
+
+fn parse_component_set_args(args: &[String]) -> Result<ComponentSetArgs, String> {
+    let staging = required(args, "--staging")?;
+    let install_dir = required(args, "--install-dir")?;
+    let state_dir = optional(args, "--state-dir")
+        .map(PathBuf::from)
+        .unwrap_or_else(default_state_dir);
+    let native_selected = optional(args, "--selected")
+        .unwrap_or_default()
+        .split(',')
+        .filter(|v| !v.is_empty())
+        .map(str::to_owned)
+        .collect();
+    let wait_pid = optional(args, "--wait-pid")
+        .map(|v| {
+            v.parse::<u32>()
+                .map_err(|_| "--wait-pid must be a process id".to_owned())
+        })
+        .transpose()?;
+    Ok(ComponentSetArgs {
+        staging,
+        install_dir,
+        state_dir,
+        native_selected,
+        ui_version: optional(args, "--ui-version"),
+        wait_pid,
+        relaunch: optional(args, "--relaunch").map(PathBuf::from),
+        health_file: optional(args, "--health-file").map(PathBuf::from),
+    })
+}
+
 fn spawn_worker(args: &[String]) -> ExitCode {
     let worker = std::env::temp_dir().join(format!(
         "evohime-transaction-{}-worker.exe",
@@ -80,6 +176,7 @@ struct StagedArgs {
     wait_pid: Option<u32>,
     relaunch: Option<PathBuf>,
     health_file: Option<PathBuf>,
+    selected: Option<Vec<String>>,
 }
 
 fn parse_staged_args(args: &[String]) -> Result<StagedArgs, String> {
@@ -103,6 +200,8 @@ fn parse_staged_args(args: &[String]) -> Result<StagedArgs, String> {
         wait_pid,
         relaunch: optional(args, "--relaunch").map(PathBuf::from),
         health_file: optional(args, "--health-file").map(PathBuf::from),
+        selected: optional(args, "--selected")
+            .map(|value| value.split(',').map(str::to_owned).collect()),
     })
 }
 
