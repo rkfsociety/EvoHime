@@ -542,6 +542,7 @@ export function App(): React.JSX.Element {
                 connection={connection}
                 events={events}
                 workspace={workspace}
+                onWorkspaceChange={setWorkspace}
                 chatId={chatId}
                 onChatTouched={() => setChatRevision((value) => value + 1)}
                 onChatOpened={(id) => {

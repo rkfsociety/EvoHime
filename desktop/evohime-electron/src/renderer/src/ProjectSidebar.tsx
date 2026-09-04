@@ -8,9 +8,8 @@ import { useShellApi } from './shell-api'
  * Chat workspace and its chats.
  *
  * A project is a workspace the user picked; its chats live under it and are
- * loaded only for the open workspace. Picking a folder and checking whether it
- * still exists both happen in the main process — this component renders the
- * result and the failure cases while keeping the rail focused on chats.
+ * loaded only for the open workspace. Project selection happens in the chat
+ * composer; this component keeps the rail focused on navigation and chats.
  */
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
@@ -41,7 +40,6 @@ export function ProjectSidebar({
   const [projects, setProjects] = useState<readonly WorkspaceOption[]>([])
   const [chats, setChats] = useState<readonly ChatSummary[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
 
   const loadProjects = useCallback(async () => {
     if (!api) {
@@ -72,53 +70,6 @@ export function ProjectSidebar({
     void loadChats()
   }, [loadChats, revision])
 
-  const pick = useCallback(async () => {
-    if (!api) return
-    setBusy(true)
-    const outcome = await api.invoke('workspace.pick', {})
-    setBusy(false)
-    if (!outcome.ok) {
-      setError(outcome.message)
-      return
-    }
-    if (outcome.value.cancelled) return
-    setProjects(outcome.value.selection.options)
-    onWorkspaceChange(outcome.value.selection.selected)
-    onChatChange(null)
-  }, [api, onChatChange, onWorkspaceChange])
-
-  const select = useCallback(
-    async (path: string) => {
-      if (!api) return
-      setBusy(true)
-      const outcome = await api.invoke('workspace.select', { path })
-      setBusy(false)
-      if (!outcome.ok) {
-        setError(outcome.message)
-        return
-      }
-      setError(null)
-      setProjects(outcome.value.options)
-      onWorkspaceChange(outcome.value.selected)
-      // Chats belong to a project, so the open one cannot survive a switch.
-      onChatChange(null)
-    },
-    [api, onChatChange, onWorkspaceChange]
-  )
-
-  const createChat = useCallback(async () => {
-    if (!api) return
-    setBusy(true)
-    const outcome = await api.invoke('chat.create', { workspacePath: workspace })
-    setBusy(false)
-    if (!outcome.ok) {
-      setError(outcome.message)
-      return
-    }
-    await loadChats()
-    onChatChange(outcome.value.id)
-  }, [api, loadChats, onChatChange, workspace])
-
   const removeChat = useCallback(
     async (id: string) => {
       if (!api) return
@@ -139,8 +90,7 @@ export function ProjectSidebar({
         <button
           type="button"
           className="chat-rail__action chat-rail__action--primary"
-          onClick={() => void createChat()}
-          disabled={busy}
+          onClick={() => onChatChange(null)}
         >
           <span className="chat-rail__action-icon" aria-hidden="true">＋</span>
           <span>Новый чат</span>
@@ -166,32 +116,7 @@ export function ProjectSidebar({
           <h2>Чаты</h2>
           <small>{workspace ? basename(workspace) : 'Без проекта'}</small>
         </div>
-        <button type="button" className="chat-rail__pick" onClick={() => void pick()} disabled={busy} title="Выбрать рабочую папку">
-          ＋
-        </button>
       </div>
-
-      {projects.length > 0 ? (
-        <label className="chat-rail__workspace">
-          <span className="visually-hidden">Рабочая папка</span>
-          <select
-            value={workspace ?? ''}
-            onChange={(event) => void select(event.target.value)}
-            disabled={busy}
-            aria-label="Рабочая папка"
-          >
-            <option value="" disabled>
-              Выбери папку
-            </option>
-            {projects.map((project) => (
-              <option key={project.path} value={project.path}>
-                {basename(project.path)}{project.available ? '' : ' · недоступна'}
-              </option>
-            ))}
-          </select>
-          <span aria-hidden="true">⌄</span>
-        </label>
-      ) : null}
 
       {activeProject?.available === false ? (
         <p role="alert" className="chat-rail__warning">
