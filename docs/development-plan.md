@@ -25,16 +25,20 @@ restart подтверждаются отдельно. Автоматическ�
 
 ## Исполняемая очередь
 
-Незавершённые планы выполняются строго по числовому порядку и по этапам `0 → 4`:
+Незавершённые планы выполняются по графу зависимостей и по этапам `0 → 4`.
+Рекомендуемый порядок планов:
+
+`139 → 141 → 122 → 124 → 134 → 130 → 132 → 119 → 131 → 137 → 121 → 128 →
+125 → 129 → 120 → 123 → 133 → 135 → 136 → 140 → 143 → 138 → 127 → 142`.
 
 | Диапазон | Содержание | Статус |
 | --- | --- | --- |
 | 118 | persistent agent organization registry | реализован 2026-09-04 |
-| 119–123 | execution profiles, grounded research, calibration, evidence ledger, context compression | очередь |
-| 124–129 | project quality, provider routing, design review, remote control, local inference, model cascade | очередь |
-| 130–135 | task leases, context namespace, durable background execution, deterministic utilities, resource guard, code review | очередь |
-| 136–140 | static-analysis packs, context loadouts, skill updates, capability facade, authorized security assessment | очередь |
-| 141–143 | service graph, program optimizer, project knowledge notebook | очередь |
+| 119–123 | execution profiles, grounded research, calibration, evidence ledger, context compression | очередь по графу |
+| 124–129 | project quality, provider routing, design review, remote control, local inference, model cascade | очередь по графу |
+| 130–135 | task leases, context namespace, durable background execution, deterministic utilities, resource guard, code review | очередь по графу |
+| 136–140 | static-analysis packs, context loadouts, skill updates, capability facade, authorized security assessment | очередь по графу |
+| 141–143 | service graph, program optimizer, project knowledge notebook | очередь по графу |
 | 144 | модульный manifest и выборочное обновление компонентов | реализовано |
 
 Планы 01–118 закрыты и удалены из временного каталога после переноса
