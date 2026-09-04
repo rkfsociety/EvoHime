@@ -37,6 +37,14 @@ meaningful states; never hide an error behind decorative styling.
 - Responsive behavior collapses multi-column cards to one column below 900px.
 - Keep keyboard focus visible and preserve native control semantics.
 
+## Navigation shell
+
+- The left rail is a chat workspace, not a catalogue of every product section.
+- Keep the brand at the top; directly below it place only `Новый чат`, `Запланировано`, and `Плагины`.
+- The remaining rail space is the scrollable chat list for the selected workspace.
+- Pin the user profile with nickname and avatar to the bottom-left. Clicking the nickname opens a compact popover with settings and secondary navigation.
+- Do not duplicate the full developer/feature navigation in the rail.
+
 ## Operations view direction
 
 Use a clear page header with title, one-line explanation, and connection state.
