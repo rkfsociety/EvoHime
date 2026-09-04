@@ -3,7 +3,7 @@
 ## Application shell
 
 - Source: `desktop/evohime-electron/src/renderer/src/App.tsx`
-- Description: Three-zone desktop shell: project/chat sidebar, main workspace, persistent status bar; optional trace panel and right-side workbench/browser.
+- Description: Three-zone desktop shell: project/chat sidebar with quick actions, main workspace, persistent status bar; optional trace panel and right-side workbench/browser.
 
 ```tsx
 return (
@@ -26,6 +26,8 @@ return (
 ## Sidebar
 
 - Source: `desktop/evohime-electron/src/renderer/src/ProjectSidebar.tsx`
+- Includes workspace/chat navigation and the quick actions `Новый чат`,
+  `Запланировано` and `Плагины`; technical navigation stays in the developer menu.
 - Description: Workspace selector and chat list in the left rail; selecting a chat returns to the conversation view.
 
 ## Main conversation layout

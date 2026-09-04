@@ -12,6 +12,7 @@ EvoHime — локальный single-user Windows-клиент. Пользов�
 - SQLite и event journal принадлежат только Core;
 - ключ провайдера шифруется ОС (DPAPI через Electron `safeStorage`), хранится в `%LOCALAPPDATA%\EvoHime\shell\provider.json` с режимом `600` и передаётся Core только через окружение supervisor; renderer видит лишь признак «ключ задан», в логи значение не попадает. Если ОС не может зашифровать, ключ не сохраняется;
 - base URL провайдера принимается только по `https` либо по `http` на loopback, чтобы ключ не ушёл на произвольный хост;
+- выбор provider/model не является полномочием: Core повторно проверяет маршрут, а self-repair принимает только явно выбранную provider/model пару и отдельные approvals для каждого изменяющего этапа;
 - JSONL diagnostics редактируют секреты;
 - IPC использует major/minor compatibility и bounded frames;
 - локальное состояние оболочки (`shell\workspaces.json`, `shell\chats.json`) — только UI-группировка: оно не выдаёт прав, и Core заново проверяет каждую команду;

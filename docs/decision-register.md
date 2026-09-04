@@ -1,72 +1,82 @@
-# EvoHime — реестр зависимостей и решений
+# EvoHime — реестр решений
 
-Канонический register завершённых решений desktop-цикла 17–19. Здесь нет секретов, provider credentials или
-неподтверждённых обещаний поставки. Статус `accepted` означает решение,
-зафиксированное кодом и текущей архитектурой; `open` означает, что до release
-нужна отдельная проверка или интеграция.
+Обновлено: 2026-09-04.
 
-## Dependency graph
-
-| План | Блокирующие зависимости | Опциональные зависимости и fallback | Evidence / владелец |
-| --- | --- | --- | --- |
-| 07 | 01–06 | optional tool adapters; fail-closed unsupported fallback | Product/Core architecture |
-| 08 | 01–06 | — | Core + SQLite ledger tests |
-| 09 | 08 | — | Core policy/approval tests |
-| 10 | 08–09 | — | desktop IPC contract tests |
-| 11 | 08–10 | local embeddings; fallback FTS5 | Core RAG fixtures |
-| 12 | 08–11 | advisory judge; deterministic gate | eval gate scripts |
-| 13 | 10 | browser backend; typed `backend_unavailable` | Core adapter owner |
-| 14 | 10, 12 | voice/ambient backend; privacy-safe unsupported | Core listener owner |
-| 15 | 10, 12 | vision/document backend; typed `backend_unavailable` | Core adapter owner |
-| 16 | 08–12, existing workflow contracts | 13–15; automation remains Core-only without adapters | Core automation fixtures A01–A08 |
-| 17 | 07–16 current-state/architecture contracts | external backend never becomes blocking | Release owner |
-| 19 | 17, existing updater and authenticated Core startup | optional PR API; fallback is explicit push to configured product branch | Repair/update owner |
-| 22 | 19, current release evidence and authenticated Core boundaries | ARM64/Insider runners and extra GitHub API evidence remain optional | Reliability/security/release owner |
-
-Граф линейный для основного runtime: `01–06 → 07 → 08 → 09 → 10 → 11 → 12 →
-16 → 17`. Планы 13–15 реализуют optional adapters, подключаются через
-fail-closed boundaries и не образуют цикл или обязательную зависимость базового
-пакета.
+Канонический реестр решений текущего desktop-цикла. Здесь нет секретов,
+provider credentials или обещаний, не подтверждённых кодом. `accepted` означает,
+что решение зафиксировано реализацией и текущей архитектурой; `open` требует
+отдельного решения или integration work.
 
 ## Accepted decisions
 
-| Decision ID | Решение | Владелец | Evidence |
+| ID | Решение | Владелец | Evidence |
 | --- | --- | --- | --- |
-| D-IPC-01 | Core — единственный executor и source of truth; renderer получает только projection | Core | `docs/architecture.md`, authenticated named-pipe tests |
-| D-SQL-01 | SQLite schema changes are additive/transactional, backup precedes blocking migration, owner is `evohime-local-storage` | Storage | `LocalDatabase::migrate`, backup tests |
-| D-AUTO-01 | Automation does not reuse workflow lease ownership; automation uses its own fenced runtime and durable events | Core automation | `automation_runtime.rs`, `automation_store.rs` |
-| D-AUTO-02 | Simulation admits only fake-provider effects; host effects fail closed | Core automation | `automation_simulation.rs`, A06 |
-| D-OPT-01 | Missing browser/voice/vision adapter is typed unsupported and has no production side effect | Capability owner | architecture/current-state optional adapter sections |
-| D-RES-01 | Base package is local-only: no cloud control plane, public HTTP, external telemetry backend or mandatory GPU | Release | `AGENTS.md`, architecture boundaries |
-| D-LIC-01 | License/attribution inventory is a checked-in metadata document, never runtime input or secret storage | Release | `docs/licenses/` when third-party material is shipped |
-| D-SIGN-01 | Authenticode signing is outside the current release scope; manifest/hash is the documented trust root | Release | `docs/architecture.md`, `docs/release-evidence.md` |
-| D-REPAIR-01 | Self-repair is user-triggered only; diagnosis, commit, push and restart are separate approvals, and repair never edits the selected workspace | Repair/update | `docs/architecture.md`, `docs/current-state.md`, Electron repair tests |
-| D-UPDATE-01 | Installed package keeps its backup until the relaunched shell authenticates Core and writes bounded health-marker; timeout rolls back | Repair/update | `crates/evohime-updater`, health-marker tests, `docs/release-evidence.md` |
+| D-IPC-01 | Core — единственный executor и source of truth; renderer получает только typed IPC projection | Core | `docs/architecture.md`, authenticated named-pipe tests |
+| D-SQL-01 | SQLite migrations additive и transactional; backup создаётся до blocking migration | Storage | `evohime-local-storage`, migration tests |
+| D-AUTO-01 | Automation не использует lease workflow; у scheduler собственные fenced runtime и durable events | Core automation | automation runtime/store tests |
+| D-AUTO-02 | Simulation допускает только fake-provider effects; host effects fail closed | Core automation | simulation tests, eval fixtures |
+| D-OPT-01 | Отсутствующий browser/voice/vision adapter — typed `unavailable` без production side effect | Capability owner | `architecture.md`, optional adapter tests |
+| D-RES-01 | Базовый пакет local-only: без cloud control plane, public HTTP, external telemetry и mandatory GPU | Release | `AGENTS.md`, `SECURITY.md` |
+| D-LIC-01 | License/attribution inventory хранится в Git как metadata и не является runtime secret storage | Release | `docs/licenses/` |
+| D-SIGN-01 | Authenticode signing вне текущего release scope; trust root — manifest/hash evidence | Release | `architecture.md`, `release-evidence.md` |
+| D-REPAIR-01 | Self-repair запускается пользователем; provider/model обязательны, diagnose/commit/push/restart подтверждаются отдельно | Repair/update | `repair-service.ts`, Electron repair tests |
+| D-UPDATE-01 | Backup удерживается до authenticated Core health marker; timeout вызывает rollback | Repair/update | `evohime-updater`, health-marker tests |
+| D-UI-01 | Основная навигация короткая; технические панели находятся в collapsed `Интерфейс разработчика` | Desktop shell | `App.tsx`, operations/sidebar tests |
+| D-MODEL-01 | API model selection действует со следующего Core-запроса; смена API-профиля и Codex model restart Core | Provider/shell | `ModelPicker`, `CodexService`, shell-bridge tests |
+| D-RELEASE-01 | Поставка выполняется одним постоянным full installer-релизом `installer` | Release | `installer/release-notes.md`, Windows workflow |
+| D-RELEASE-02 | Component manifest и selective update остаются предложением плана 144 до его полного закрытия | Release | `docs/plans/144-*` |
+| D-REL-21 | Electron diagnostics — bounded redacted projection; recovery, approvals, backup/restore и effects остаются Core-owned | Reliability | `diagnostic-bundle.ts`, recovery projection tests |
 
-## Decision closure register
+## Закрытые acceptance records
 
-| Decision ID | Status | Owner | Closure criterion | Release impact |
-| --- | --- | --- | --- | --- |
-| O-AUTO-01 | accepted | Core automation | Scheduler timezone/missed-tick, durable cursor, additive IPC and focused gates are wired | closed by plan 18.1 evidence |
-| O-AUTO-02 | accepted | Core automation | Archive/restore transaction, checksum, bounded restore and retention sweep are covered by focused evidence | closed by plan 18.2 evidence |
-| O-LIC-01 | accepted | Release | Locked Cargo/npm metadata inventory and hash verification pass the CI gate | closed by plan 18.3 evidence |
-| O-REPAIR-01 | accepted | Repair/update | Isolated user-triggered repair, protected paths, separate commit/push/CI gates and health-gated rollback pass focused checks | closed by plan 19.0 evidence |
+| ID | Решение | Evidence |
+| --- | --- | --- |
+| O-AUTO-01 | Scheduler имеет timezone/missed-tick policy, durable cursor, additive IPC и focused gates | plan 18 evidence |
+| O-AUTO-02 | Archive/restore использует checksum, identity validation, bounded restore и retention sweep | automation store tests |
+| O-LIC-01 | Cargo/npm license inventory и hash verification проходят CI gate | `docs/licenses/` |
+| O-REPAIR-01 | Isolated user-triggered repair, protected paths, отдельные commit/push gates и health-gated rollback подтверждены | repair/update tests |
+
+## Dependency graph
+
+Закрытые планы 01–117 не являются текущей очередью и представлены только
+перенесёнными контрактами. Основная незавершённая последовательность:
+
+`118 → 119 → 120 → 121 → 122 → 123 → 124 → 125 → 126 → 127 → 128 → 129 →
+130 → 131 → 132 → 133 → 134 → 135 → 136 → 137 → 138 → 139 → 140 → 141 →
+142 → 143 → 144`.
+
+Планы с optional adapters подключаются через fail-closed boundaries и не должны
+становиться обязательной зависимостью базового Windows-пакета. Любая блокирующая
+ссылка на более поздний номер — ошибка, которую нужно исправить до реализации.
+
+## Open questions
+
+| ID | Вопрос | Когда закрывать |
+| --- | --- | --- |
+| O-RELEASE-01 | Какой минимальный component graph и compatibility policy нужен для selective update | В plan 144.1 |
+| O-RELEASE-02 | Как разделить package/recovery evidence без ослабления current full-installer rollback | В plan 144.2–144.4 |
+| O-COMPAT-01 | Нужен ли отдельный informative ARM64/Insider release job | При изменении release scope |
 
 ## Resource and contract budgets
 
-| Resource | Bound | Enforcement owner |
+| Ресурс | Ограничение | Владелец |
 | --- | --- | --- |
 | Automation input | 64 KiB | Core contract |
 | Automation activities | 64 | Core contract |
 | Automation command queue | 256 pending | Core runtime |
 | Automation progress | 1024 coalesced entries | Core runtime |
-| Provider call | 120 s deadline, at most 2 retry attempts | Core runtime |
-| Snapshot | 1 MiB, 64 per run | Core simulation/storage |
-| Durable history | 256 events per run | Core acceptance |
+| Provider call | 120 s deadline, максимум 2 retry attempts | Core runtime |
+| Snapshot | 1 MiB, 64 на run | Simulation/storage |
+| Durable history | 256 events на run | Acceptance |
 | Archive | 10,000 runs / 30 days | Release gate |
 | Simulation | fake provider only; no host/network/process/IPC | Core simulation |
 
-Каждое изменение schema или IPC обязано обновить owner, version, migration,
-rollback note и focused compatibility test в том же task-only коммите.
+При изменении schema или IPC в том же task-only коммите обновляются owner,
+version, migration, rollback note и focused compatibility test.
 
-| D-REL-21 | Electron diagnostics are a bounded redacted projection; Core remains source of truth for recovery, approval, backup/restore and effects | Reliability | `diagnostic-bundle.ts`, recovery projection tests, shell bridge and release audit |
+## Правило использования
+
+Реестр не заменяет исходный код или `current-state.md`. Если решение изменено,
+сначала обновите реализацию и тесты, затем этот файл, архитектурный контракт и
+release evidence. Непринятые варианты остаются в plan-файлах и не выдаются за
+часть продукта.

@@ -1,5 +1,7 @@
 # EvoHime — release evidence и rollback matrix
 
+Обновлено: 2026-09-04.
+
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
 typed outcomes, bounded metrics и recovery state; credentials, raw provider
@@ -8,6 +10,32 @@ output, transcripts, absolute paths и PII запрещены.
 ## Текущий статус выпуска
 
 Статус: `TECHNICAL_GATES_PASS / RELEASE_GREEN`.
+
+Статус относится к постоянному release channel `installer`; новый installer в
+этом документальном обновлении не публиковался. Текущий checkout дополнительно
+содержит shell follow-up для выбора provider/model в self-repair и новой
+навигации Electron.
+
+## Свежая проверка текущего checkout
+
+Перед обновлением документации выполнены:
+
+| Проверка | Результат |
+| --- | --- |
+| `scripts/documentation.tests.ps1` | PASS, 173 tracked text files |
+| `npm run check:protocol` | PASS |
+| `npm run typecheck` | PASS |
+| `npm test` | 120 файлов passed, 3 skipped; 548 тестов passed, 8 skipped |
+
+Пропущенные `authenticated-core.e2e`, `real-core.e2e` и `source-update.e2e`
+требуют собранного Core или явного флага. Этот прогон подтверждает текущий
+checkout, но не заменяет полный Windows package/installer acceptance.
+
+## Историческое evidence завершённых планов
+
+Разделы ниже сохраняют результаты отдельных планов и не должны читаться как
+новый общий счётчик тестов текущего checkout. Для актуального состояния
+используйте [`current-state.md`](current-state.md).
 
 ## Plan 78 — Capability Workbench v1 (2026-09-02)
 

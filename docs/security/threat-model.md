@@ -1,6 +1,6 @@
 # EvoHime — security threat model
 
-Дата: 2026-08-25. Пользовательские версионные релизы для текущего цикла не создаются.
+Дата: 2026-09-04. Пользовательские версионные релизы для текущего цикла не создаются.
 
 ## Граница доверия
 
@@ -19,7 +19,7 @@
 | Storage | SQLite WAL, transactional migrations, backup перед upgrade |
 | Recovery | event journal, sequence replay, supervisor restart budget |
 | External tools | отдельные permission scopes, host/path validation и approval |
-| Self-repair/update | user-only FSM, isolated canonical checkout, protected-path gate, separate commit/push approvals, CI check and post-restart health rollback |
+| Self-repair/update | user-only FSM, обязательные provider/model, isolated canonical checkout, protected-path gate, separate commit/push approvals, CI check and post-restart health rollback |
 
 ## Основные угрозы
 

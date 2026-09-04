@@ -1,6 +1,6 @@
 Здесь всегда лежат актуальные `EvoHime-Setup.exe` и его проверочный `EvoHime-Setup.json`. Это единственный релиз проекта — новые не создаются, файлы в нём перезаписываются после зелёной сборки `main`.
 
-**Канал обновления:** постоянный релиз `installer` · **актуально на:** 2026-08-25
+**Канал обновления:** постоянный релиз `installer` · **актуально на:** 2026-09-04
 
 **Постоянная ссылка на установщик:**
 https://github.com/rkfsociety/EvoHime/releases/latest/download/EvoHime-Setup.exe
@@ -18,6 +18,8 @@ https://github.com/rkfsociety/EvoHime/releases/latest/download/EvoHime-Setup.exe
   `update-state/health.json` за 90 секунд, transaction worker выполняет rollback.
 - self-repair не запускается по таймеру или автоматически после ошибки; commit,
   push и перезапуск требуют отдельных действий пользователя.
+- перед self-repair пользователь выбирает provider и model; эта пара сохраняется
+  в repair-run и используется на всех его этапах.
 
 ## Требования
 
@@ -34,3 +36,7 @@ rollback. Source-update E2E запускается отдельно с явны�
 для обычной первой установки.
 
 Версия установки определяется коммитом, из которого она собрана, а не номером версии: он виден в статус-баре клиента.
+
+План модульных релизов и выборочного обновления компонентов описан в
+[`../docs/plans/144-0-modular-release-and-component-update.md`](../docs/plans/144-0-modular-release-and-component-update.md).
+Пока план не закрыт, канал обновляет полный installer-пакет.

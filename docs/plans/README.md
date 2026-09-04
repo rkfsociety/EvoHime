@@ -1,169 +1,98 @@
 # Планы реализации
 
-Каталог `docs/plans/` хранит временные планы реализации. Каждое направление
-проходит ревью, выполняется по отдельным файлам этапов и удаляется после
-полного завершения. Контракт завершённого направления переносится в
-[`../architecture.md`](../architecture.md), а подтверждённое состояние — в
-[`../current-state.md`](../current-state.md).
+Каталог `docs/plans/` хранит незавершённые планы реализации. Обновлено:
+2026-09-04. Реализованный комплект переносится в канонические документы и
+удаляется из каталога; его наличие здесь означает, что направление ещё не
+закрыто.
 
-Планы 01–49 завершены и удалены после реализации. Для каждого незавершённого
-направления 50–144 существует обзорный файл `NN-0-slug.md` и четыре самостоятельных файла
-этапов `NN-1-slug.md` … `NN-4-slug.md`. Обзор фиксирует scope, контракт,
-зависимости, ограничения и исходные критерии; этапы содержат исполнимую
-декомпозицию, выходные артефакты, recovery и evidence gates. Следующее новое
-направление получает следующий свободный номер после 143 и тот же набор
-файлов.
+## Текущий каталог
 
-План 33 (issue #13, Integration Provider SDK) закрыт 30 августа 2026 года;
-его контракт и evidence перенесены в `../architecture.md` и
-`../current-state.md`. Будущие планы, ссылающиеся на 33, используют эти
-канонические разделы, а не удалённые stage-файлы.
+В checkout сохранены планы 118–144. Для 118–143 существует обзор и четыре
+этапа; у 144 имена этапов уточняют отдельный scope:
 
-План 36 (issue #16, Agent Benchmark Matrix) закрыт 31 августа 2026 года;
-его contract и evidence перенесены в канонические документы. Будущие планы,
-ссылающиеся на 36, используют эти разделы, а не удалённые stage-файлы.
+| План | Тема | Состояние |
+| --- | --- | --- |
+| [118](118-0-persistent-agent-organization-registry.md) | Persistent agent organization registry | незавершён |
+| [119](119-0-execution-environment-profiles.md) | Execution environment profiles | незавершён |
+| [120](120-0-grounded-research-workspace.md) | Grounded research workspace | незавершён |
+| [121](121-0-local-model-performance-calibration.md) | Local model performance calibration | незавершён |
+| [122](122-0-verification-evidence-ledger.md) | Verification evidence ledger | незавершён |
+| [123](123-0-content-aware-context-compression.md) | Content-aware context compression | незавершён |
+| [124](124-0-project-quality-contract.md) | Project quality contract | незавершён |
+| [125](125-0-free-provider-reliability-routing.md) | Free provider reliability routing | незавершён |
+| [126](126-0-design-intent-review-lane.md) | Design intent review lane | незавершён |
+| [127](127-0-remote-client-control-plane.md) | Remote client control plane | незавершён |
+| [128](128-0-local-inference-scheduler.md) | Local inference scheduler | незавершён |
+| [129](129-0-confidence-gated-model-cascade.md) | Confidence-gated model cascade | незавершён |
+| [130](130-0-task-ownership-lease-fencing.md) | Task ownership lease fencing | незавершён |
+| [131](131-0-unified-context-namespace.md) | Unified context namespace | незавершён |
+| [132](132-0-durable-background-execution-plane.md) | Durable background execution plane | незавершён |
+| [133](133-0-built-in-deterministic-developer-utilities.md) | Built-in deterministic developer utilities | незавершён |
+| [134](134-0-host-resource-telemetry-pressure-guard.md) | Host resource telemetry pressure guard | незавершён |
+| [135](135-0-code-review-lane.md) | Code review lane | незавершён |
+| [136](136-0-evidence-preserving-static-analysis-packs.md) | Evidence-preserving static analysis packs | незавершён |
+| [137](137-0-agent-context-loadouts.md) | Agent context loadouts | незавершён |
+| [138](138-0-skill-source-update-lifecycle.md) | Skill source update lifecycle | незавершён |
+| [139](139-0-kernel-capability-facade.md) | Kernel capability facade | незавершён |
+| [140](140-0-authorized-security-assessment-lane.md) | Authorized security assessment lane | незавершён |
+| [141](141-0-runtime-service-graph.md) | Runtime service graph | незавершён |
+| [142](142-0-agent-program-optimizer.md) | Agent program optimizer | незавершён |
+| [143](143-0-project-knowledge-notebook.md) | Project knowledge notebook | незавершён |
+| [144](144-0-modular-release-and-component-update.md) | Modular release and component update | предложен |
 
-План 38 (issue #18, Adaptive Tool Catalog) закрыт 31 августа 2026 года;
-его Core contract, bounded selection, cache policy и Electron projection
-перенесены в канонические документы.
+Следующее новое направление получает номер `145`, если отдельное решение не
+изменит порядок. План 144 не заменяет текущий installer и не считается
+реализованным по наличию одного overview-файла.
 
-План 39 (issue #19, Structured Response Contract) закрыт 31 августа 2026
-года; контракт и evidence перенесены в канонические документы.
-
-План 55 (issue #35, Agentic Browser Session) закрыт 1 сентября 2026 года;
-Core lifecycle, packaged backend, SSRF boundary, ArtifactStore transfers,
-authenticated IPC и metadata-only UI перенесены в канонические документы.
-Будущие планы, ссылающиеся на 55, используют эти разделы, а не удалённые
-stage-файлы.
-
-## Формат и порядок
+## Формат этапов
 
 Имя файла имеет формат `NN-M-slug.md`:
 
 - `NN` — номер направления;
-- `M` — этап внутри направления;
-- `M = 0` — обзор направления;
+- `M = 0` — обзор scope, контракта, ограничений и зависимостей;
 - `M = 1` — Core-контракт, schema и storage;
 - `M = 2` — runtime-интеграция и recovery;
 - `M = 3` — IPC, client projection и UI;
-- `M = 4` — verification, release-evidence и закрытие.
+- `M = 4` — verification, release evidence и закрытие.
 
-Порядок задаётся численно по паре `(NN, M)`, а не лексикографической сортировкой
-имён: сначала `24-0` … `24-4`, затем `25-0` … `25-4` и так далее. `NN-0`
-сначала проходит evidence review, затем этапы выполняются строго `NN-1` →
-`NN-2` → `NN-3` → `NN-4`. Блокирующая зависимость допускается только от более
-раннего номера направления или от более раннего этапа того же направления.
+Этапы выполняются строго `NN-1 → NN-2 → NN-3 → NN-4` после принятия overview.
+Блокирующая зависимость допускается только от более раннего номера плана или
+более раннего этапа того же плана. Зависимость от более позднего номера —
+ошибка нумерации и должна быть исправлена до реализации.
 
-Каждый этап обязан разделять зависимости на:
+Каждый файл этапа обязан явно разделять:
 
-1. **Блокирующие** — без них этап невыполним.
-2. **Опциональные** — без них этап всё равно выполняется, но документ должен
-   описывать предсказуемую деградацию.
+1. блокирующие зависимости;
+2. опциональные зависимости и fail-closed fallback;
+3. изменяемые контракты, migration/version и recovery;
+4. выходные артефакты и focused verification;
+5. критерии остановки, rollback и release evidence.
 
-Циклы зависимостей запрещены. Взаимная связь двух этапов допустима только
-если одна сторона блокирующая, а другая — опциональная с описанной деградацией.
+## Правило закрытия
 
-Этап нельзя считать выполненным по одному текстовому утверждению. Для него
-нужны фактические изменения в checkout, reproducible tests/evidence и запись
-подтверждённого контракта в канонической документации. Если требование уже
-реализовано, этап закрывается evidence review без повторного runtime.
+План закрывается только после полного набора `0–4`: код, integration, recovery,
+typed IPC/UI, tests, security/release evidence и каноническая документация.
+После закрытия:
 
-Stage-файлы не удаляются по отдельности: после полного закрытия направления
-переносится подтверждённый контракт, затем удаляется весь комплект `NN-0` …
-`NN-4`. До этого незавершённые или отдельно подтверждённые этапы сохраняются
-для трассировки зависимостей и evidence.
+- контракт переносится в [`../architecture.md`](../architecture.md);
+- фактический статус переносится в [`../current-state.md`](../current-state.md);
+- проверочные результаты — в [`../release-evidence.md`](../release-evidence.md);
+- временные файлы плана удаляются из этого каталога.
 
-## Результат ревью 2026-08-29
+Наличие старой ссылки на удалённый plan-файл не является доказательством
+незавершённой работы: такую ссылку нужно заменить ссылкой на канонический
+документ. Не дублируйте здесь общий статус реализации.
 
-- Проверен последовательный комплект `23-0` … `115-4`: 93 направления и 465
-  плановых файлов; для каждого направления подтверждены обзор и четыре этапа.
-- Проверены нумерованный порядок, issue-сопоставление, внутренние ссылки,
-  разделение blocking/optional dependencies, отсутствие циклов и forward
-  blocking dependencies, а также соответствие критериев обзора матрицам
-  stage 4.
-- Исправлены контракты и критерии `57-0` … `57-4`, синтаксическая ошибка в
-  `23-0`, устаревшая граница планов в `../current-state.md`, пути Rust-модулей
-  с дефисами и повторяющиеся `API..`; правило удаления этапов приведено к
-  удалению полного комплекта направления.
-- Stage 1–3 направлений `30` … `115` теперь содержат предметную
-  implementation-карту: module/storage surfaces, contract ownership,
-  runtime/recovery path, IPC/UI projection, test artifacts и трассировку
-  acceptance criteria. Общие safety/replay правила остаются шаблонными, а
-  issue-специфические решения зафиксированы в каждом комплекте `NN-1` … `NN-3`.
-- Явно заполнены 17 ранее пустых разделов optional dependencies в планах
-  `25`, `26`, `30`, `33`, `36`, `37` и `41`; в каждом зафиксировано отсутствие
-  дополнительных межплановых зависимостей.
-- Повторно проверен комплект `26-0` … `26-4` против issue #6 и live checkout:
-  добавлены предметные Core/storage/runtime/IPC/UI surfaces, acceptance-to-
-  contract matrix и reproducible evidence matrix. Уточнены owner scope/actor,
-  typed continuation request и gate payload, различие stop/pause/resume,
-  атомарный budget reservation, связь с существующим provenance/lease/Goal и
-  crash recovery. Для текущей schema v33 зафиксировано обязательное решение о
-  следующей additive revision (ожидаемо v34, но номер подтверждается перед
-  реализацией). Необоснованная ссылка на headless client убрана из обязательной
-  границы этапа 26.3.
+## Граф текущей очереди
 
-## Результат ревью планов 50–60 2026-09-01
+Основная последовательность: `118 → 119 → … → 143 → 144`. План 144 допускает
+только зависимости от уже принятых runtime/update контрактов и не блокирует
+текущий release channel до своего завершения. Опциональные adapter-направления
+не должны становиться обязательными для базового Windows-пакета.
 
-- Полностью проверены 11 направлений и 55 файлов `50-0` … `60-4` против issues
-  #30–#40, live code, `architecture.md`, `current-state.md` и соседних планов.
-- Greenfield-шаблоны привязаны к существующим owners: memory API/store,
-  retained-child/TeamProtocol, conversation event log, diagnostic bundle v1,
-  browser-session/CDP/SSRF, ArtifactStore, planning contracts, TaskCheckpoint,
-  workspace sandbox и filesystem tools.
-- Устранены ложные blocking/optional dependencies: stage-файлы сохраняют
-  реальные prerequisites, а более поздние integrations имеют явную typed
-  degradation без forward blocking cycles.
-- Для планов 55 и 60 зафиксирована обязательная миграция legacy runtime paths:
-  raw CDP/CSS selector и initial-URL-only SSRF не обходят BrowserSession
-  contract; filesystem read/write/patch не обходят revision-safe service,
-  default fuzzy patch apply запрещён.
-- Исправлены обрезанные criteria в `57-1`/`57-2`; для всех направлений
-  сохранены полные issue acceptance matrices и отдельные evidence/recovery
-  gates.
-- Комплект плана 57 закрыт 2026-09-01: подтверждённый Plan Artifact v1
-  перенесён в канонические `architecture.md`, `current-state.md`,
-  `development-plan.md` и `release-evidence.md`; файлы `57-0` … `57-4`
-  удалены согласно правилу закрытия полного направления.
-- Комплект плана 59 закрыт 2026-09-01: Incremental Change Protocol v1
-  перенесён в канонические документы; exact Plan Artifact/Workspace Checkpoint
-  refs, schema 58, stale fencing и metadata-only IPC/UI подтверждены тестами.
-  Файлы `59-0` … `59-4` удалены согласно правилу закрытия полного направления.
+## Проверка плана
 
-## Источники истины
-
-- [`../current-state.md`](../current-state.md) — что подтверждённо реализовано
-  в текущем checkout;
-- [`../architecture.md`](../architecture.md) — действующие контракты и
-  архитектурные границы;
-- [`../development-plan.md`](../development-plan.md) — исполняемый план
-  текущего desktop-цикла;
-- [`../roadmap.md`](../roadmap.md) — долгосрочные направления;
-- [`../release-evidence.md`](../release-evidence.md) — технические release-gates,
-  rollback evidence и оставшиеся решения, блокирующие выпуск.
-
-Этот файл не является источником статуса реализации и не заменяет указанные
-документы.
-
-## Текущий план
-
-Планы 01–25 реализованы и перенесены в канонические разделы
-[`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md).
-План 25 (Persistent Goals) закрыт и удалён после переноса контракта и evidence.
-Планы 26–29 были issue-derived направлениями в таком порядке:
-Continuation Policy, retained child contexts, Persistent Analysis Kernel,
-Continual Refinement; все четыре направления закрыты и перенесены в
-канонические документы. Планы 30–115
-следуют порядку issues #10–#95. Для каждого направления сначала выполняется
-`NN-0`, затем четыре stage-файла; межплановые блокирующие зависимости и
-опциональная деградация явно перечислены внутри соответствующих файлов.
-Направления 33–44 закрыты и исключены из списка незавершённых планов.
-Направления 45–60 закрыты; их contracts и evidence перенесены в канонические
-документы. Текущий незавершённый диапазон начинается с плана 63.
-Направление 44 (issue #24, Tool Simulation Runtime) закрыто 31 августа 2026
-года; его контракт и evidence перенесены в канонические документы.
-Направление 53 (issue #33, Diagnostics & Support Bundle) закрыто 1 сентября
-2026 года; его contract и evidence перенесены в канонические документы.
-
-Планы 60–63 закрыты после реализации и переноса контрактов в канонические
-документы; текущий незавершённый диапазон начинается с плана 64.
+Перед реализацией overview и после каждого этапа сверяйте план с кодом,
+`AGENTS.md`, [`architecture.md`](../architecture.md), security policy и
+release workflow. Минимальный gate: документационные ссылки разрешаются,
+`git diff --check` проходит, а критерии этапа подтверждены свежими тестами.

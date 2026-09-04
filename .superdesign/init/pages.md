@@ -20,6 +20,19 @@
   - `OverviewPanel.tsx`
   - `styles.css`
 
+## `operations`
+
+- `App.tsx`
+  - `OperationsPanel.tsx`
+  - `MemoryViewsAndAdaptiveRecallPanel.tsx`
+  - `styles.css`
+
+## `scheduled`
+
+- `App.tsx`
+  - `ScheduledPanel.tsx`
+  - `styles.css`
+
 ## `settings`
 
 - `App.tsx`
@@ -27,4 +40,5 @@
   - `ProviderForm.tsx`
   - `ModelPicker.tsx`
   - `PermissionModePicker.tsx`
+  - `ChatProviderPicker.tsx`
   - `styles.css`

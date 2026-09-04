@@ -1,6 +1,7 @@
 # LiteRouter — LLM-провайдер Евы
 
-Статус: активный OpenAI-compatible provider для локального Rust Core.
+Статус: активный OpenAI-compatible provider для локального Rust Core и текущий
+default route.
 
 Ева работает как локальный Windows-клиент, а Core при необходимости обращается к LiteRouter по HTTPS. LiteRouter не является частью установочного файла и не заменяет локальный Core.
 
@@ -15,6 +16,11 @@ LITEROUTER_MODEL=
 ```
 
 В пользовательском приложении ключ вводится в настройках, шифруется ОС (DPAPI через Electron `safeStorage`) и хранится в `%LOCALAPPDATA%\EvoHime\shell\provider.json`; Core получает его окружением от supervisor. Прямые переменные окружения допустимы только для локальной разработки (`.env`) и CI secrets. Не записывайте ключ в Git, SQLite, task events или diagnostics.
+
+Список моделей берётся динамически. Выбор API-модели из чата применяется к
+следующему запросу без перезапуска Core; переключение API-профиля или сохранение
+ключа обновляет окружение и перезапускает Core. Для self-repair provider и model
+выбираются явно до запуска repair-run.
 
 ## Поток данных
 

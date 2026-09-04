@@ -1,6 +1,7 @@
 # EvoHime — Windows desktop architecture
 
-Статус: текущая утверждённая архитектура продукта. Фактическое состояние реализации см. в [`current-state.md`](current-state.md).
+Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-09-04.
+Фактическое состояние реализации см. в [`current-state.md`](current-state.md).
 
 EvoHime — локальное Windows-приложение.
 Пользовательское короткое имя агента — «Ева».
@@ -61,11 +62,12 @@ Renderer состоит из панели проектов и чатов, лен
 | `TaskTimeline` + `ActivityLine` + `transcript.ts` | ход задачи, свёрнутый в читаемую ленту; ответы агента рендерятся Markdown |
 | `tool-names.ts` | русские подписи инструментов вместо служебных идентификаторов |
 | `RepositoryBar` | ветка и счётчики изменений открытого репозитория |
-| `ModelPicker` | выбор модели в чате; каталог разделён на free и paid |
+| `ModelPicker` | выбор API-модели для следующего запроса или модели Codex CLI; каталог приходит от выбранного backend |
 | `ProviderForm` / `CodexPanel` | единая поверхность настроек источника моделей с внутренними вкладками API и Codex CLI |
 | `PlanReviewPanel` | коллективное read-only ревью Markdown-плана несколькими моделями и synthesis-моделью; итог копируется в буфер или экспортируется в Markdown, история очищается кнопкой |
 | `RecoveryBanner` + `recovery-state.ts` | состояние восстановления, выведенное только из подтверждённых Core событий |
-| `OperationsPanel` | очередь подтверждения памяти и конфликты (только metadata), плюс read-only проекция child- и schedule-событий |
+| `OperationsPanel` | self-repair, память и конфликты, child-задачи, Pulse, индекс workspace, refinement и ambient proposals |
+| `ScheduledPanel` | отдельный список automation schedules: owner, UTC-время, revision, последний слот и enabled/paused |
 | `OverviewPanel`, `TracePanel` | сводка событий запуска и фильтруемая трасса |
 
 Бизнес-логики в renderer нет: он отображает состояние, полученное через IPC, и отправляет команды.
@@ -75,11 +77,11 @@ Renderer состоит из панели проектов и чатов, лен
 Текущий renderer использует единую тёмную палитру: фон приложения `#101218`,
 sidebar `#181b23`, поверхности `#191c25`, hover/active `#252b39`, границы
 `#343b4d`, основной акцент `#9b8cff`, вторичный акцент `#7595ff`. Sidebar
-содержит только бренд, выбранный workspace и чаты; постоянной навигации по
-глобальным инструментам нет. Пользовательские разделы «Обзор», «Ревью планов»,
+содержит бренд, выбранный workspace, чаты и быстрые действия «Новый чат»,
+«Запланировано» и «Плагины». Пользовательские разделы «Обзор», «Ревью планов»,
 «Память и Pulse», «Составные задачи», «Продолжения», «Анализ», «Слух» и
-«Задачи для человека», а также «Настройки» открываются из выпадающего меню
-пользователя вверх. Технические разделы (Workflow Package, бенчмарки,
+«Задачи для человека», «Запланировано», а также «Настройки» открываются из
+основной навигации или выпадающего меню пользователя. Технические разделы (Workflow Package, бенчмарки,
 middleware, structured response, политики защиты и выполнения, среды,
 симуляция инструментов, профили ролей, Team SOP и Collaboration Bus) не
 показываются в пользовательском списке: они доступны только внутри свёрнутого
@@ -682,6 +684,9 @@ SQLite находится в `%LOCALAPPDATA%\EvoHime` либо в `EVOHIME_DATA_
 credentials; каталог моделей рядом с композером запрашивается у выбранного
 провайдера. Выбор Codex передаёт отдельный IPC intent, Core принимает Codex только
 при явном этом режиме и запускает bounded `codex exec` в каноническом workspace.
+Выбор самой API-модели передаётся в Core для следующего запроса без перезапуска.
+Модель Codex сохраняется в `shell/codex.json` и после выбора перезапускает
+supervisor/Core, чтобы следующий запуск `codex exec` получил новую модель.
 Обычные dialogue-задачи не меняют backend. Codex stdout/stderr приходят как bounded `tool.output`, а
 отсутствующий CLI, пустая модель, отмена и ненулевой exit дают terminal failure
 без silent fallback.
@@ -694,7 +699,7 @@ Base URL принимается только по `https` либо по `http` �
 .\scripts\build-windows-native.ps1
 ```
 
-Для разработки используется `start-dev.ps1`; он читает `.env` по allow-list имён из `.env.example` и передаёт их только дочерним native-процессам. Для пользователя GitHub Actions собирает единственный `EvoHime-Setup.exe`. Установщик размещает внутренние `EvoHime.exe`, `evohime-core.exe`, `evohime-supervisor.exe`, `evohime-transaction.exe` и manifest в каталоге приложения и создаёт ровно один ярлык `EvoHime` на рабочем столе.
+Для разработки используется `start-dev.ps1`; он читает `.env` по allow-list имён из `.env.example` и передаёт их только дочерним native-процессам. Для пользователя GitHub Actions собирает единственный `EvoHime-Setup.exe`. Установщик размещает внутренние `EvoHime.exe`, `evohime-core.exe`, `evohime-supervisor.exe`, `eva.exe`, `evohime-analysis-worker.exe`, `evohime-listener.exe`, `evohime-transaction.exe`, `evohime-verify.exe` и manifest в каталоге приложения и создаёт ровно один ярлык `EvoHime` на рабочем столе.
 
 Пакет x64 предназначен для Windows 10 2004+ и Windows 11 и содержит bundled Electron runtime, Rust runtime и локальные компоненты; отдельная установка Node.js или браузера не требуется.
 
@@ -722,7 +727,7 @@ update.json          репозиторий, ветка, launchPolicy, инте�
 - `update.json` пишет установщик, репозиторий принимается только по `https`, ветка и интервал проверки нормализуются — конфигурация не может увести сборку на чужой источник или превратить проверку в busy loop;
 - при запуске main-процесс проводит update gate до старта Core и supervisor: собранный пакет нельзя подменить, пока они держат файлы открытыми. Главное окно сначала показывает отдельный экран обновления с этапами и последней операцией; обычный интерфейс становится видимым только после полной загрузки и применения пакета. Дочерние процессы update chain запускаются с Windows `CREATE_NO_WINDOW`;
 - у уже запущенного клиента фоновая проверка собирает обновление в staging и предлагает перезапуск баннером, не прерывая работу;
-- пользовательский repair-run доступен в `OperationsPanel` после bounded digest из трёх ошибок задач. Сама ошибка только показывает кнопку: `repair.start`, `repair.commit`, `repair.push`, `repair.refreshCI` и обновление запускаются отдельными кликами;
+- пользовательский repair-run доступен в `OperationsPanel` после bounded digest из трёх ошибок задач. Перед `repair.start` пользователь выбирает provider и model; пара сохраняется в repair status и переносится через diagnose, commit, push и restart. Сама ошибка только показывает кнопку: `repair.start`, `repair.commit`, `repair.push`, `repair.refreshCI` и обновление запускаются отдельными кликами;
 - repair-run работает в `%LOCALAPPDATA%\\EvoHime\\repair\\<repair-id>`, проверяет origin выбранного workspace и канонический URL EvoHime, а изменения `AGENTS.md`, `.codex`, workflows, updater, supervisor, receipt, security и `.env*` останавливает до ручного review;
 - transaction worker сохраняет backup до post-restart health handshake. Новая оболочка пишет `%LOCALAPPDATA%\\EvoHime\\update-state\\health.json` только после authenticated Core connection; отсутствие marker за 90 секунд вызывает rollback;
 - health-marker принимается только с точным bounded JSON-флагом `healthy:true`;

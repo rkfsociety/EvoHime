@@ -1,42 +1,61 @@
-# EvoHime — Windows desktop roadmap
+# EvoHime — roadmap
 
-Это краткая продуктовая карта, а не список отдельных задач. Детали текущего цикла находятся в [`development-plan.md`](development-plan.md), фактическая реализация — в [`current-state.md`](current-state.md).
+Обновлено: 2026-09-04.
 
-Актуальный roadmap описывает один локальный Windows-клиент Ева, распространяемый через `EvoHime-Setup.exe`. Пользователь запускает один ярлык `EvoHime`; внутренние Core и supervisor не являются отдельными продуктами.
+Это краткая продуктовая карта, а не список отдельных задач. Исполняемый порядок
+находится в [`development-plan.md`](development-plan.md), подтверждённое
+состояние — в [`current-state.md`](current-state.md), а детализация очереди — в
+[`plans/README.md`](plans/README.md).
 
-## Установочный канал
+## Текущий продукт
 
-Оболочка — Electron. Установщик публикуется в одном постоянном релизе
-`installer`, а актуальные commit и ветка сборки записываются в
-`evohime.build.json`; дальнейшие обновления выполняются из исходников.
+EvoHime — один локальный Windows-клиент Ева, распространяемый через постоянный
+`EvoHime-Setup.exe`. Пользователь выбирает workspace, чат, provider и model;
+получает поток событий и approval в Electron shell. Core и supervisor остаются
+внутренними компонентами.
 
-## Ближайшая работа
-
-Основные runtime-направления уже реализованы. Roadmap теперь ограничен
-поддержкой и hardening, а не повторным описанием закрытых планов:
+## Направления
 
 ### 1. Reliability и security hardening
 
 - улучшать отображение approval, recovery и bounded rollback evidence;
-- развивать credential, backup/restore и diagnostic UX в существующих границах;
+- развивать credential, backup/restore и diagnostic UX внутри текущих границ;
+- поддерживать authenticated Core startup, single-instance и Job Object checks;
 - проверять upgrade path на поддерживаемых Windows 10 и Windows 11.
 
 ### 2. Desktop quality и совместимость
 
-- сохранять Electron/Core IPC tests для каждого изменения IPC;
-- поддерживать installer/package smoke, single-instance и Job Object checks;
-- поддерживать bounded logs, event replay и retention без возврата web runtime;
+- сохранять Electron/Core IPC tests для каждого изменения протокола;
+- поддерживать package, installer, update-gate и fault-recovery smoke checks;
+- сохранять bounded logs, event replay и retention без возврата web runtime;
 - выполнять informative ARM64/Insider runs без изменения базового x64 release scope.
+
+### 3. Модульные релизы компонентов
+
+План [144](plans/144-0-modular-release-and-component-update.md) предлагает
+манифест компонентов, проверку совместимости и выборочную транзакцию обновления
+с recovery. Это долгосрочное направление: до его полного закрытия текущий
+installer обновляет пакет целиком, а не отдельные `core`, `supervisor` или
+Electron-компоненты.
+
+План 144 не разрешает удалённый control plane, автоматический self-repair,
+обход approval или изменение установленного клиента в рамках текущего
+checkout.
+
+## Ограничения roadmap
+
+- локальный Windows-first release остаётся базовым продуктом;
+- новые provider adapters и дополнительные платформы не становятся
+  блокирующими для базового пакета без отдельного принятого решения;
+- история закрытых планов хранится в release evidence, а не дублируется здесь.
 
 ## Release workflow
 
-1. Push или pull request запускает автоматический workflow «Быстрые проверки
-   EvoHime» с быстрыми Rust/Electron gates.
-2. Через `Run workflow` запускается «Ручной выпуск EvoHime»: полный Rust,
-   Electron, package, installer и Windows acceptance.
-3. Публикация постоянного installer release выполняется только в ручном
-   workflow после успешного полного прогона.
-4. Ручной запуск workflow после зелёной сборки обновляет единственный постоянный release `installer` и его `EvoHime-Setup.exe`.
-5. Новые версионные релизы и теги для этого цикла не создаются.
+1. Push или pull request запускает workflow быстрых Rust/Electron проверок.
+2. Ручной workflow выпускает полный Rust, Electron, package, installer и
+   Windows acceptance набор.
+3. Постоянный release `installer` обновляется только после зелёного полного
+   прогона; новые версионные теги текущим циклом не создаются.
 
-Закрытые этапы не дублируются здесь; фактическое состояние хранится в [`current-state.md`](current-state.md), а пошаговые работы — в [`development-plan.md`](development-plan.md).
+Карта workflow и команды проверки находятся в [`../AGENTS.md`](../AGENTS.md) и
+`.github/workflows/`.
