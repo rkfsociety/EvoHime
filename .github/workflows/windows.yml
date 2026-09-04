@@ -1,16 +1,24 @@
-name: Ручной выпуск EvoHime
+name: EvoHime — модульный CI и выпуск
 
-# Полный release-контур: тесты, package, installer, upgrade/rollback smoke и
-# публикация. Он запускается только вручную через Run workflow и обновляет
-# постоянный release лишь после всех acceptance-проверок.
+# Единый workflow для быстрых проверок, полного выпуска и listener runtime.
+# Граф изменений включает зависимые области: правка Core, IPC, Electron,
+# скриптов или установщика включает native-контур и его пересборку.
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
+    inputs:
+      publish_listener:
+        description: Опубликовать собранный listener runtime
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: manual-release-${{ github.ref }}
+  group: evohime-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -29,6 +37,8 @@ jobs:
       electron: ${{ steps.filter.outputs.electron }}
       native: ${{ steps.filter.outputs.native }}
       docs: ${{ steps.filter.outputs.docs }}
+      tooling: ${{ steps.filter.outputs.tooling }}
+      listener: ${{ steps.filter.outputs.listener }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -38,8 +48,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Ручной выпуск всегда проверяет весь продукт.
-          files='ALL'
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
+            files='ALL'
+          else
+            before="${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}"
+            if [ -z "$before" ] || [ "$before" = '0000000000000000000000000000000000000000' ] \
+               || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
+              files='ALL'
+            else
+              files=$(git diff --name-only "$before" '${{ github.sha }}')
+            fi
+          fi
           echo "changed files:"; echo "$files"
 
           matches() {
@@ -54,18 +73,22 @@ jobs:
           tooling=false
           if matches '^(crates/|Cargo\.(toml|lock)$)'; then rust=true; fi
           if matches '^(desktop/evohime-electron/|crates/desktop-ipc/proto/)'; then electron=true; fi
-          if matches '^(scripts/|installer/|\.github/workflows/)'; then tooling=true; fi
+          if matches '^(scripts/|installer/EvoHime\.iss$|\.github/workflows/)'; then tooling=true; fi
 
           native=false
           if [ "$rust" = true ] || [ "$electron" = true ] || [ "$tooling" = true ]; then native=true; fi
           docs=false
           if matches '^(docs/|README\.md$|AGENTS\.md$|SECURITY\.md$|\.codex/|installer/.*\.(md|txt)$|crates/.*/README\.md$|tests/.*/README\.md$)'; then docs=true; fi
+          listener=false
+          if matches '^(scripts/build-listener-runtime\.ps1|crates/evohime-listener/src/engine/whisper_dll\.rs|crates/evohime-listener/src/tools_dir\.rs|crates/evohime-listener/examples/)'; then listener=true; fi
 
           {
             echo "rust=$rust"
             echo "electron=$electron"
             echo "native=$native"
             echo "docs=$docs"
+            echo "tooling=$tooling"
+            echo "listener=$listener"
           } >> "$GITHUB_OUTPUT"
 
   documentation:
@@ -79,15 +102,13 @@ jobs:
         shell: pwsh
         run: ./scripts/documentation.tests.ps1
 
-  # Условие — `native`, а не `rust`: этот job исполняет гейты из scripts/, поэтому
-  # правка самого гейта обязана его запускать. Иначе коммит, меняющий только
-  # scripts/, доходил до сборки установщика, ни разу не прогнав эти гейты.
+  # Быстрые Rust-проверки запускаются только для Rust/tooling-изменений.
   rust-fast:
     name: Rust — быстрые проверки
     needs: changes
     if: >-
       always()
-      && needs.changes.outputs.native == 'true'
+      && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.tooling == 'true')
     runs-on: windows-latest
     env:
       CARGO_BUILD_JOBS: 2
@@ -110,6 +131,7 @@ jobs:
     needs: [changes, documentation, rust-fast]
     if: >-
       always()
+      && github.event_name == 'workflow_dispatch'
       && needs.changes.outputs.native == 'true'
       && needs.rust-fast.result == 'success'
       && (needs.documentation.result == 'success' || needs.documentation.result == 'skipped')
@@ -164,7 +186,7 @@ jobs:
     needs: changes
     if: >-
       always()
-      && needs.changes.outputs.native == 'true'
+      && needs.changes.outputs.electron == 'true'
     runs-on: windows-latest
     defaults:
       run:
@@ -190,6 +212,7 @@ jobs:
     needs: [changes, documentation, rust-heavy, electron-fast]
     if: >-
       always()
+      && github.event_name == 'workflow_dispatch'
       && needs.changes.outputs.native == 'true'
       && needs.rust-heavy.result == 'success'
       && needs.electron-fast.result == 'success'
@@ -231,6 +254,7 @@ jobs:
     # его остановить: needs.* даёт skipped, поэтому условие пишется явно.
     if: >-
       !cancelled()
+      && github.event_name == 'workflow_dispatch'
       && !contains(needs.*.result, 'failure')
       && needs.changes.outputs.native == 'true'
     runs-on: windows-latest
@@ -399,6 +423,7 @@ jobs:
     needs: build-native
     if: >-
       !cancelled()
+      && github.event_name == 'workflow_dispatch'
       && needs.build-native.result == 'success'
     runs-on: windows-latest
     permissions:
@@ -456,3 +481,60 @@ jobs:
             }
           Write-Host "Установщик обновлён в релизе $env:RELEASE_TAG"
           exit 0
+
+  listener-build:
+    name: Listener — сборка runtime
+    needs: changes
+    if: >-
+      always()
+      && needs.changes.outputs.listener == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+      - name: Сборка listener runtime
+        shell: pwsh
+        env:
+          RUNGS: ${{ github.event_name == 'workflow_dispatch' && 'small,base,tiny' || 'tiny' }}
+        run: ./scripts/build-listener-runtime.ps1 -Rungs ($env:RUNGS -split ',')
+      - name: Сохранение listener runtime
+        uses: actions/upload-artifact@v7
+        with:
+          name: evohime-listener-runtime
+          path: artifacts/listener-runtime
+          retention-days: 1
+
+  publish-listener:
+    name: Listener — публикация
+    needs: [changes, listener-build]
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      && inputs.publish_listener
+      && needs.listener-build.result == 'success'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: evohime-listener-runtime
+          path: listener-runtime-output
+      - name: Публикация listener runtime в постоянный release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: listener-runtime
+        run: |
+          $bundle = Join-Path $env:GITHUB_WORKSPACE 'listener-runtime-output'
+          $manifest = Join-Path $bundle 'listener-runtime.json'
+          if (-not (Test-Path -LiteralPath $manifest)) { throw 'В артефакте нет манифеста listener runtime.' }
+          gh release view $env:RELEASE_TAG 2>$null | Out-Null
+          if ($LASTEXITCODE -ne 0) { gh release create $env:RELEASE_TAG --title 'EvoHime — движок распознавания речи' --notes-file installer/listener-runtime-notes.md }
+          else { gh release edit $env:RELEASE_TAG --title 'EvoHime — движок распознавания речи' --notes-file installer/listener-runtime-notes.md }
+          Get-ChildItem -LiteralPath $bundle -File | ForEach-Object {
+            gh release upload $env:RELEASE_TAG $_.FullName --clobber
+            if ($LASTEXITCODE -ne 0) { throw "Не удалось загрузить $($_.Name)." }
+          }
