@@ -1216,6 +1216,47 @@ impl IpcBridge {
                             },
                         ))
                     })
+            } else if record.event_type == "persistent_agent_organization_registry.result" {
+                serde_json::from_slice::<serde_json::Value>(&record.payload)
+                    .ok()
+                    .map(|value| {
+                        let event = value
+                            .get("PersistentAgentOrganizationRegistry")
+                            .unwrap_or(&value);
+                        generated::event_envelope::Event::PersistentAgentOrganizationRegistry(
+                            generated::PersistentAgentOrganizationRegistryEvent {
+                                schema_version: 1,
+                                request_id: String::new(),
+                                agent_id: event
+                                    .get("agent_id")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_owned(),
+                                operation: event
+                                    .get("operation")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_owned(),
+                                revision: event
+                                    .get("revision")
+                                    .and_then(serde_json::Value::as_u64)
+                                    .unwrap_or_default(),
+                                status: event
+                                    .get("status")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_owned(),
+                                error_code: String::new(),
+                                projection_json: event
+                                    .get("projection_json")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or("{}")
+                                    .as_bytes()
+                                    .to_vec(),
+                                truncated: false,
+                            },
+                        )
+                    })
             } else {
                 execution_event
                     .map(|event| generated::event_envelope::Event::ExecutionEvent(Box::new(event)))
@@ -3336,6 +3377,29 @@ impl IpcBridge {
                         .await?;
                     self.write_response(writer, "architecture_snapshot.result", result)
                         .await?;
+                }
+                Some(
+                    generated::command_envelope::Command::PersistentAgentOrganizationRegistry(
+                        request,
+                    ),
+                ) => {
+                    let operation = if request.operation.is_empty() {
+                        "list".to_owned()
+                    } else {
+                        request.operation.clone()
+                    };
+                    let agent_id = request.agent_id.clone();
+                    let request_id = request.request_id.clone();
+                    let result = self
+                        .dispatch_persistent_agent_organization_registry(operation, request)
+                        .await?;
+                    self.write_persistent_agent_organization_registry_response(
+                        writer,
+                        &request_id,
+                        &agent_id,
+                        result,
+                    )
+                    .await?;
                 }
                 Some(generated::command_envelope::Command::StopPlanReview(request)) => {
                     let cancelled = self
@@ -8805,6 +8869,38 @@ impl IpcBridge {
         })
         .await
         .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_persistent_agent_organization_registry(
+        &self,
+        operation: String,
+        request: generated::PersistentAgentOrganizationRegistryCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::PersistentAgentOrganizationRegistry {
+                operation,
+                agent_id: request.agent_id,
+                owner_scope: request.owner_scope,
+                // Renderer input cannot select a privileged actor. Core-only
+                // recovery uses the internal EventJournal API directly.
+                actor: "user".into(),
+                payload: request.payload,
+                expected_revision: request.expected_revision,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
         response
             .await
             .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
@@ -15854,6 +15950,59 @@ impl IpcBridge {
         Ok(())
     }
 
+    async fn write_persistent_agent_organization_registry_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        request_id: &str,
+        agent_id: &str,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value = serde_json::from_slice(&payload).unwrap_or_default();
+        let operation = value
+            .get("operation")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let status = value
+            .get("status")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("ok")
+            .to_owned();
+        let revision = value
+            .get("revision")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or_default();
+        let encoded = generated::PersistentAgentOrganizationRegistryEvent {
+            schema_version: 1,
+            request_id: request_id.to_owned(),
+            agent_id: agent_id.to_owned(),
+            operation,
+            revision,
+            status,
+            error_code: String::new(),
+            projection_json: payload.clone(),
+            truncated: payload.len() > 64 * 1024,
+        };
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: "persistent_agent_organization_registry.result".into(),
+                payload,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: Some(
+                    generated::event_envelope::Event::PersistentAgentOrganizationRegistry(encoded),
+                ),
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
+    }
+
     async fn write_invocation_preset_response<W: AsyncWrite + Unpin>(
         &self,
         writer: &mut W,
@@ -16861,6 +17010,7 @@ fn core_info() -> generated::CoreInfo {
             "skills".into(),
             "goals".into(),
             "workflow_builder".into(),
+            "persistent_agent_organization_registry".into(),
         ],
         feature_flags: vec!["authenticated-ipc".into()],
         max_frame_bytes: evohime_desktop_ipc::MAX_FRAME_BYTES as u32,

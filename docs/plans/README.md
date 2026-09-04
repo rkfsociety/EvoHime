@@ -7,12 +7,11 @@
 
 ## Текущий каталог
 
-В checkout сохранены планы 118–144. Для 118–143 существует обзор и четыре
+В checkout сохранены планы 119–144. Для 119–143 существует обзор и четыре
 этапа; у 144 имена этапов уточняют отдельный scope:
 
 | План | Тема | Состояние |
 | --- | --- | --- |
-| [118](118-0-persistent-agent-organization-registry.md) | Persistent agent organization registry | незавершён |
 | [119](119-0-execution-environment-profiles.md) | Execution environment profiles | незавершён |
 | [120](120-0-grounded-research-workspace.md) | Grounded research workspace | незавершён |
 | [121](121-0-local-model-performance-calibration.md) | Local model performance calibration | незавершён |
@@ -85,7 +84,7 @@ typed IPC/UI, tests, security/release evidence и каноническая до�
 
 ## Граф текущей очереди
 
-Основная последовательность: `118 → 119 → … → 143 → 144`. План 144 допускает
+Основная последовательность: `119 → 120 → … → 143 → 144`. План 144 допускает
 только зависимости от уже принятых runtime/update контрактов и не блокирует
 текущий release channel до своего завершения. Опциональные adapter-направления
 не должны становиться обязательными для базового Windows-пакета.

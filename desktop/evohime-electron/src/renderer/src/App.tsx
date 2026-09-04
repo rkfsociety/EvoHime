@@ -95,6 +95,7 @@ import { GuidedCalibrationSessionsPanel } from './GuidedCalibrationSessionsPanel
 import { ExtensionConformanceKitPanel } from './ExtensionConformanceKitPanel'
 import { WorkbenchPanel } from './WorkbenchPanel'
 import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
+import { PersistentAgentOrganizationRegistryPanel } from './PersistentAgentOrganizationRegistryPanel'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -119,7 +120,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'memory-views-recall' | 'model-edit-protocol-registry' | 'remote-conversation-channels' | 'prompt-cache-planner' | 'declarative-runtime-components' | 'guided-calibration-sessions' | 'extension-conformance-kit' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'dependency-aware-task-graph' | 'core-topic-subscription-event-bus' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'durable-remote-task-bridge' | 'message-intervention-policies' | 'batch-invocation-runtime' | 'policy-aware-tool-result-cache' | 'code-anchored-intent-markers' | 'model-purpose-routing' | 'local-model-runtime-manager' | 'architecture-snapshot' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
+type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'tool-simulation' | 'agent-role-profiles' | 'persistent-agent-organization-registry' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'memory-views-recall' | 'model-edit-protocol-registry' | 'remote-conversation-channels' | 'prompt-cache-planner' | 'declarative-runtime-components' | 'guided-calibration-sessions' | 'extension-conformance-kit' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'dependency-aware-task-graph' | 'core-topic-subscription-event-bus' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'durable-remote-task-bridge' | 'message-intervention-policies' | 'batch-invocation-runtime' | 'policy-aware-tool-result-cache' | 'code-anchored-intent-markers' | 'model-purpose-routing' | 'local-model-runtime-manager' | 'architecture-snapshot' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -229,6 +230,7 @@ const DEVELOPER_GROUPS: readonly DeveloperViewGroup[] = [
   { id: 'execution-backends', label: 'Среды выполнения', icon: '⌘' },
   { id: 'tool-simulation', label: 'Симуляция инструментов', icon: '◇' },
   { id: 'agent-role-profiles', label: 'Профили ролей', icon: '◎' },
+  { id: 'persistent-agent-organization-registry', label: 'Организация агентов', icon: '♙' },
   { id: 'artifact-handoff-registry', label: 'Артефакты и передачи', icon: '◇' },
   { id: 'team-sop', label: 'Team SOP', icon: '∷' },
   { id: 'causal-collaboration', label: 'Collaboration Bus', icon: '⇆' },
@@ -590,6 +592,7 @@ export function App(): React.JSX.Element {
               {view === 'execution-backends' ? <ExecutionBackendRegistryPanel /> : null}
               {view === 'tool-simulation' ? <ToolSimulationRuntimePanel /> : null}
               {view === 'agent-role-profiles' ? <AgentRoleProfilesPanel /> : null}
+              {view === 'persistent-agent-organization-registry' ? <PersistentAgentOrganizationRegistryPanel connection={connection} /> : null}
               {view === 'artifact-handoff-registry' ? <ArtifactHandoffRegistryPanel /> : null}
               {view === 'team-sop' ? <TeamSopProtocolsPanel /> : null}
               {view === 'causal-collaboration' ? <CausalCollaborationBusPanel /> : null}

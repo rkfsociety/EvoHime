@@ -2261,3 +2261,43 @@ evidence и coverage. Extraction читает только allowlist маниф�
 refresh не удаляет последнюю принятую запись при ошибке. Delta сравнивает все
 архитектурные поверхности, review требует baseline hash, а неизвестные
 IPC-операции отклоняются fail-closed (command 258/event 103).
+
+## Persistent Agent Organization Registry v1 (план 118, реализован 2026-09-04)
+
+`PersistentAgent` — Core-owned durable identity, отделённая от
+`AgentRoleProfile` и от конкретного runtime `run`. Запись содержит только
+bounded metadata: стабильный id/revision, display name, exact role-profile
+reference (id/revision/hash), application/workspace/workspace-set/project
+scope, reporting parent, responsibility selectors, exact Goal references,
+policy references, lifecycle status и content hash. Credentials, prompts,
+transcripts, raw outputs, capabilities/grants и process handles не входят в
+контракт и не сохраняются.
+
+Lifecycle — `draft → active → paused|suspended → active` либо terminal
+`retired`; история revisions и reporting changes сохраняется append-only.
+Reporting graph проверяется до записи: self-link, cycle, missing/retired
+parent и cross-scope edge отклоняются. `AgentGoalBinding` фиксирует exact Goal
+revision и одну из ответственностей `owner`, `contributor`, `reviewer`.
+
+`AgentAssignment` ссылается только на уже существующий task/run/team-session/
+handoff. Новый scheduler, runtime или процесс из этого контракта не создаётся.
+Перед execution Core строит `ExecutionAgentSnapshot` с pinned agent revision,
+role-profile reference, reporting chain, optional exact Goal revision и
+accountability hash; missing or mismatched references дают typed broken
+binding, без fallback. Availability/activity — derived projection из
+assignment и существующих `runs`; cost остаётся `unavailable`, пока в Core не
+появится authoritative agent-keyed source.
+
+SQLite schema v92 добавляет metadata tables, immutable revision history,
+goal-bindings, assignments и idempotency outcomes. Migration 90→92 сначала
+активирует ранее неисполнявшуюся migration 91 для Guided Calibration, затем
+устанавливает registry v92 в одной транзакции с backup до миграции.
+
+Authenticated additive IPC использует command 259/event 104, protocol major
+1, bounded JSON, correlation/request id, owner scope, expected revision и
+idempotency key. Shell принудительно передаёт actor `user`; Core принимает
+только `user`/`core` и повторно проверяет actor, scope, revision, graph и
+references. Renderer получает только typed redacted projection в свёрнутой
+панели `Интерфейс разработчика`. При старте Core assignments с потерянным
+source переводятся в `unknown_after_restart`; неизвестное состояние не
+объявляется успешным и retired history не удаляется.

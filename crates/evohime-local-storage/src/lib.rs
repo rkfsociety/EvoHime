@@ -64,6 +64,7 @@ pub mod model_limit_store;
 pub mod model_provenance;
 pub mod model_purpose_routing_store;
 pub mod output_guardrail_pipeline_store;
+pub mod persistent_agent_registry_store;
 pub mod plan_artifact;
 pub mod policy_aware_tool_result_cache_store;
 pub mod privacy_telemetry_store;
@@ -102,7 +103,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 90;
+pub const SCHEMA_VERSION: u32 = 92;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -613,6 +614,7 @@ impl LocalDatabase {
         event_visualizer_registry_store::install_schema(&connection)?;
         reasoning_operator_library_store::install_schema(&connection)?;
         output_guardrail_pipeline_store::install_schema(&connection)?;
+        persistent_agent_registry_store::install_schema(&connection)?;
         customization_inventory_store::install_schema(&connection)?;
         standing_approval_profiles_store::install_schema(&connection)?;
         approval_policy_profiles_store::install_schema(&connection)?;
@@ -3822,6 +3824,10 @@ impl LocalDatabase {
             guided_calibration_sessions_store::install_schema(&transaction)?;
             transaction.execute_batch("PRAGMA user_version = 91;")?;
         }
+        if current < 92 {
+            persistent_agent_registry_store::install_schema(&transaction)?;
+            transaction.execute_batch("PRAGMA user_version = 92;")?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -4002,6 +4008,24 @@ mod tests {
         );
         assert!(database.has_events_table().expect("table exists"));
         for table in [
+            "persistent_agents",
+            "persistent_agent_revisions",
+            "persistent_agent_reporting_history",
+            "persistent_agent_goal_bindings",
+            "persistent_agent_assignments",
+            "persistent_agent_commands",
+        ] {
+            let exists: i64 = database
+                .connection()
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .expect("persistent agent table lookup");
+            assert_eq!(exists, 1, "{table} must exist in a fresh schema");
+        }
+        for table in [
             "continuation_policies",
             "continuation_runs",
             "continuation_attempts",
@@ -4038,6 +4062,40 @@ mod tests {
         assert!(metrics[0].recovery_hint);
         drop(database);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn schema_90_migrates_guided_calibration_and_persistent_agent_registry_atomically() {
+        let path = temp_database_path("persistent-agent-schema-90");
+        let backup = path.with_extension("db.bak");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&backup);
+        {
+            let connection = rusqlite::Connection::open(&path).expect("legacy db opens");
+            connection
+                .pragma_update(None, "user_version", 90_u32)
+                .expect("legacy version writes");
+            connection
+                .execute_batch("CREATE TABLE migration_marker(value TEXT NOT NULL);")
+                .expect("legacy marker writes");
+        }
+        let database = LocalDatabase::open(&path).expect("legacy db migrates");
+        assert_eq!(database.schema_version().unwrap(), SCHEMA_VERSION);
+        for table in ["guided_calibration_sessions", "persistent_agents"] {
+            let exists: i64 = database
+                .connection()
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(exists, 1, "{table} must be installed by 90->92");
+        }
+        assert!(backup.exists(), "migration backup must be retained");
+        drop(database);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&backup);
     }
 
     #[test]

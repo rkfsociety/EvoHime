@@ -75,6 +75,10 @@ async fn run() {
         eprintln!("evohime-core recovery failed: {error}");
         std::process::exit(1);
     }
+    if let Err(error) = journal.recover_persistent_agent_registry().await {
+        eprintln!("evohime-core persistent agent registry recovery failed: {error}");
+        std::process::exit(1);
+    }
     if let Err(error) = journal.recover_model_provenance_on_startup().await {
         eprintln!("evohime-core model provenance recovery failed: {error}");
         std::process::exit(1);
@@ -885,6 +889,7 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::CheckpointForking { fork_run_id, operation, version, .. } => println!("checkpoint_forking.result {fork_run_id}: {operation} version={version}"),
         evohime_core::CoreEvent::PrivacyTelemetryGovernance { category, operation, version, .. } => println!("privacy_telemetry_governance.result {category}: {operation} version={version}"),
         evohime_core::CoreEvent::ConversationBridgeAdapters { bridge_id, operation, revision, .. } => println!("conversation_bridge_adapters.result {bridge_id}: {operation} revision={revision}"),
+        evohime_core::CoreEvent::PersistentAgentOrganizationRegistry { agent_id, operation, revision, .. } => println!("persistent_agent_organization_registry.result {agent_id}: {operation} revision={revision}"),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             println!("review.history_cleared {marker_id}")
         }

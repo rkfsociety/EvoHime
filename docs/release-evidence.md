@@ -22,7 +22,7 @@ output, transcripts, absolute paths и PII запрещены.
 
 | Проверка | Результат |
 | --- | --- |
-| `scripts/documentation.tests.ps1` | PASS, 173 tracked text files |
+| `scripts/documentation.tests.ps1` | PASS, 168 tracked text files |
 | `npm run check:protocol` | PASS |
 | `npm run typecheck` | PASS |
 | `npm test` | 120 файлов passed, 3 skipped; 548 тестов passed, 8 skipped |
@@ -900,3 +900,31 @@ review is baseline-hash fenced. Authenticated additive IPC command 258/event 103
 and a bounded metadata-only Electron panel are included; unknown operations are
 rejected. Focused Core/storage tests, rustfmt/check, protocol/typecheck and the
 focused panel test passed before plan closure.
+
+## Plan 118 — Persistent Agent Organization Registry v1 (2026-09-04)
+
+Contract and storage: Core unit tests 6/6; local-storage registry roundtrip and
+idempotency 1/1; schema 90→92 migration 1/1. The migration backup is created
+before the transaction, Guided Calibration v91 is activated, and registry v92
+tables are installed atomically. Stable agent content hashes, lifecycle,
+scope-safe acyclic reporting, exact Goal/RoleProfile references and typed
+broken-binding outcomes are covered. No credentials, prompts, transcripts,
+raw output, grants or process handles are persisted.
+
+Runtime and recovery: assignments bind only existing task/run/team-session/
+handoff records; no second scheduler or execution runtime is introduced.
+Startup reconciliation maps assignments whose source disappeared to
+`unknown_after_restart`; unknown is never reported as successful. Agent-keyed
+cost is explicitly `unavailable` because no authoritative source exists.
+
+IPC/UI: authenticated additive protocol command 259/event 104, major 1,
+generated bindings, request/idempotency/revision/scope fields and shell-side
+actor pinning are wired end-to-end. The Electron panel is behind the collapsed
+`Интерфейс разработчика` menu and renders only bounded Core projection.
+Protocol check, TypeScript typecheck, focused panel test 1/1 and the full
+Electron regression passed: 121 files passed / 3 skipped and 549 tests passed
+/ 8 skipped. Workspace Rust tests passed (Core 814/814, local-storage 283/283,
+desktop-ipc 36/36, doctests 0), rustfmt, workspace Clippy, supervisor/updater check,
+production bundle checks, Electron package and native-package smoke passed.
+Documentation and Runtime Stall Guard gates also passed; `git diff --check`
+is the final release gate.

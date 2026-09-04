@@ -1909,6 +1909,7 @@ message CommandEnvelope {
     ModelPurposeRoutingCommand model_purpose_routing = 256;
     LocalModelRuntimeManagerCommand local_model_runtime_manager = 257;
     ArchitectureSnapshotCommand architecture_snapshot = 258;
+    PersistentAgentOrganizationRegistryCommand persistent_agent_organization_registry = 259;
   }
 }
 
@@ -2062,6 +2063,7 @@ message EventEnvelope {
   ModelPurposeRoutingEvent model_purpose_routing = 101;
   LocalModelRuntimeManagerEvent local_model_runtime_manager = 102;
   ArchitectureSnapshotEvent architecture_snapshot = 103;
+  PersistentAgentOrganizationRegistryEvent persistent_agent_organization_registry = 104;
   }
 }
 
@@ -3257,6 +3259,32 @@ message ArchitectureSnapshotEvent {
   uint32 schema_version = 1; string snapshot_id = 2; string operation = 3;
   uint64 version = 4; string status = 5; string error_code = 6;
   bytes projection_json = 7; bool truncated = 8;
+}
+
+// Plan 118: durable identity/accountability metadata for persistent agents.
+// The payload is bounded JSON; runtime state, grants, credentials and raw
+// model content remain outside the desktop contract.
+message PersistentAgentOrganizationRegistryCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string operation = 4;
+  string agent_id = 5;
+  string actor = 6;
+  bytes payload = 7;
+  uint64 expected_revision = 8;
+  string idempotency_key = 9;
+}
+message PersistentAgentOrganizationRegistryEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string agent_id = 3;
+  string operation = 4;
+  uint64 revision = 5;
+  string status = 6;
+  string error_code = 7;
+  bytes projection_json = 8;
+  bool truncated = 9;
 }
 
 // The server emits this when the requested sequence is no longer retained.

@@ -1091,6 +1091,7 @@ pub mod model_purpose_routing;
 pub mod model_resilience_policy;
 pub mod observability;
 pub mod permission_rules;
+pub mod persistent_agent_registry;
 pub mod plan;
 pub mod plan_artifact;
 pub mod policy_aware_tool_result_cache;
@@ -1852,6 +1853,16 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    PersistentAgentOrganizationRegistry {
+        operation: String,
+        agent_id: String,
+        owner_scope: String,
+        actor: String,
+        payload: Vec<u8>,
+        expected_revision: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     /// Reads one memory record including its body. `sensitive`, forgotten and
     /// empty records come back redacted: `ListMemory` never carries a body,
     /// and this is the only path that can.
@@ -2530,6 +2541,12 @@ pub enum CoreEvent {
         operation: String,
         subject_id: String,
         version: u64,
+        projection_json: String,
+    },
+    PersistentAgentOrganizationRegistry {
+        agent_id: String,
+        operation: String,
+        revision: u64,
         projection_json: String,
     },
     /// Bounded durable routing decision projection.
@@ -3659,6 +3676,7 @@ impl EventJournal {
             CoreEvent::DeclarativeRuntimeComponents { component_id, .. } => component_id,
             CoreEvent::GuidedCalibrationSessions { session_id, .. } => session_id,
             CoreEvent::ExtensionConformanceKit { subject_id, .. } => subject_id,
+            CoreEvent::PersistentAgentOrganizationRegistry { agent_id, .. } => agent_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -3738,6 +3756,9 @@ impl EventJournal {
             }
             CoreEvent::GuidedCalibrationSessions { .. } => "guided_calibration_sessions.result",
             CoreEvent::ExtensionConformanceKit { .. } => "extension_conformance_kit.result",
+            CoreEvent::PersistentAgentOrganizationRegistry { .. } => {
+                "persistent_agent_organization_registry.result"
+            }
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -16732,6 +16753,58 @@ impl TaskCoordinator {
                     operation: event_operation,
                     subject_id: event_subject_id,
                     version: expected_version.saturating_add(1),
+                    projection_json,
+                };
+                if let Some(journal) = state.lock().await.journal.clone() {
+                    let _ = journal.record(&event).await;
+                }
+                let _ = state.lock().await.events.send(event);
+                let _ = reply.send(result);
+            }
+            CoreCommand::PersistentAgentOrganizationRegistry {
+                operation,
+                agent_id,
+                owner_scope,
+                actor,
+                payload,
+                expected_revision,
+                idempotency_key,
+                reply,
+            } => {
+                let event_operation = operation.clone();
+                let event_agent_id = agent_id.clone();
+                let result = async {
+                    let journal = state
+                        .lock()
+                        .await
+                        .journal
+                        .clone()
+                        .ok_or_else(|| "storage journal is not configured".to_string())?;
+                    journal
+                        .persistent_agent_registry_command(
+                            crate::persistent_agent_registry::RegistryCommand {
+                                operation,
+                                agent_id,
+                                owner_scope,
+                                actor,
+                                payload,
+                                expected_revision,
+                                idempotency_key,
+                            },
+                        )
+                        .await
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+                let projection_json = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let event = CoreEvent::PersistentAgentOrganizationRegistry {
+                    agent_id: event_agent_id,
+                    operation: event_operation,
+                    revision: expected_revision,
                     projection_json,
                 };
                 if let Some(journal) = state.lock().await.journal.clone() {

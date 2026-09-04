@@ -408,6 +408,7 @@ export interface CoreEvent {
   readonly modelPurposeRouting?: ModelPurposeRoutingProjection | null
   readonly localModelRuntimeManager?: LocalModelRuntimeManagerProjection | null
   readonly architectureSnapshot?: ArchitectureSnapshotProjection | null
+  readonly persistentAgentOrganizationRegistry?: PersistentAgentOrganizationRegistryProjection | null
   readonly agentGitChangeSets?: AgentGitChangeSetsProjection | null
   readonly architectEditorPipeline?: ArchitectEditorPipelineProjection | null
   readonly eventVisualizerRegistry?: EventVisualizerRegistryProjection | null
@@ -495,6 +496,16 @@ export interface CodeAnchoredIntentMarkersProjection { readonly schemaVersion: n
 export interface ModelPurposeRoutingProjection { readonly schemaVersion: number; readonly operation: string; readonly version: number; readonly status: string; readonly errorCode: string; readonly projection: unknown }
 export interface LocalModelRuntimeManagerProjection { readonly schemaVersion: number; readonly operation: string; readonly version: number; readonly status: string; readonly errorCode: string; readonly projection: unknown }
 export interface ArchitectureSnapshotProjection { readonly schemaVersion: number; readonly snapshotId: string; readonly operation: string; readonly version: number; readonly status: string; readonly errorCode: string; readonly projection: unknown }
+export interface PersistentAgentOrganizationRegistryProjection {
+  readonly schemaVersion: number
+  readonly requestId: string
+  readonly agentId: string
+  readonly operation: string
+  readonly revision: number
+  readonly status: string
+  readonly errorCode: string
+  readonly projection: unknown
+}
 
 export interface AgentGitChangeSetsProjection {
   readonly schemaVersion: number
@@ -1203,6 +1214,7 @@ export const RENDERER_COMMANDS = [
   'core.modelPurposeRouting',
   'core.localModelRuntimeManager',
   'core.architectureSnapshot',
+  'core.persistentAgentOrganizationRegistry',
   'core.agentGitChangeSets',
   'core.architectEditorPipeline',
   'core.eventVisualizerRegistry',
@@ -1536,6 +1548,7 @@ export interface CommandPayloads {
   'core.modelPurposeRouting': { operation: 'get' | 'put'; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.localModelRuntimeManager': { operation: 'inspect' | 'hardware' | 'fit' | 'download_artifact' | 'save_policy' | 'get_policy' | 'start' | 'stop' | 'probe' | 'verify_artifact' | 'promote_artifact' | 'transition' | 'profile' | 'register_model' | 'register_runtime' | 'register_artifact' | 'register_session' | 'recover'; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.architectureSnapshot': { operation: 'current' | 'refresh' | 'rebuild' | 'inspect' | 'get' | 'evidence' | 'open_evidence' | 'upstream' | 'downstream' | 'route' | 'compare' | 'review'; snapshotId?: string; workspaceRoot: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
+  'core.persistentAgentOrganizationRegistry': { operation: 'list' | 'get' | 'history' | 'create' | 'revise' | 'activate' | 'pause' | 'suspend' | 'resume' | 'retire' | 'reporting_set' | 'goal_bind' | 'goal_unbind' | 'assignment_create' | 'assignment_cancel' | 'resolve' | 'availability' | 'activity' | 'recover'; agentId?: string; ownerScope: string; payload?: string; expectedRevision?: number; idempotencyKey?: string }
   'core.agentGitChangeSets': { operation: 'observe' | 'candidate' | 'get_candidate' | 'commit' | 'undo' | 'keep'; changeSetId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.architectEditorPipeline': { operation: 'create' | 'get' | 'accept_intent'; pipelineId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.eventVisualizerRegistry': { operation: 'list' | 'register' | 'resolve'; visualizerId?: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
@@ -2052,6 +2065,7 @@ export interface CommandResults {
   'core.modelPurposeRouting': { accepted: boolean }
   'core.localModelRuntimeManager': { accepted: boolean }
   'core.architectureSnapshot': { accepted: boolean }
+  'core.persistentAgentOrganizationRegistry': { accepted: boolean }
   'core.knowledgeSourceRegistry': { accepted: boolean }
   'core.agentGitChangeSets': { accepted: boolean }
   'core.architectEditorPipeline': { accepted: boolean }

@@ -29,18 +29,26 @@ restart подтверждаются отдельно. Автоматическ�
 
 | Диапазон | Содержание | Статус |
 | --- | --- | --- |
-| 118–123 | организации агента, execution profiles, grounded research, calibration, evidence ledger, context compression | очередь |
+| 118 | persistent agent organization registry | реализован 2026-09-04 |
+| 119–123 | execution profiles, grounded research, calibration, evidence ledger, context compression | очередь |
 | 124–129 | project quality, provider routing, design review, remote control, local inference, model cascade | очередь |
 | 130–135 | task leases, context namespace, durable background execution, deterministic utilities, resource guard, code review | очередь |
 | 136–140 | static-analysis packs, context loadouts, skill updates, capability facade, authorized security assessment | очередь |
 | 141–143 | service graph, program optimizer, project knowledge notebook | очередь |
 | 144 | модульный manifest и выборочное обновление компонентов | предложено |
 
-Планы 01–117 закрыты и удалены из временного каталога после переноса
+Планы 01–118 закрыты и удалены из временного каталога после переноса
 контрактов и evidence в канонические документы. Нельзя считать план закрытым
 по одному stage-файлу или по наличию кода: закрытие требует реализации,
 recovery, IPC/UI при наличии, focused tests, release evidence и обновления
 канонической документации.
+
+## План 118: Persistent Agent Organization Registry
+
+План 118 закрыт после итерационного ревью и реализации Core/storage/runtime,
+authenticated IPC 259/104, Electron projection/UI, startup recovery,
+focused/regression checks и переноса контракта в `architecture.md` и состояния
+в `current-state.md`. Schema v92 также активирует пропущенную migration v91.
 
 ## План 144: модульные релизы
 

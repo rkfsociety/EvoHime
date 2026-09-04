@@ -46,8 +46,8 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 - `Составные задачи`, `Продолжения`, `Анализ`, `Слух`, `Задачи для человека`;
 - `Запланировано` — список локальных automation schedules.
 
-Технические панели, включая runtime-контракты, execution backends, безопасность
-и диагностику, находятся в свёрнутом разделе `Интерфейс разработчика`. В
+Технические панели, включая runtime-контракты, execution backends, безопасность,
+диагностику и `Организацию агентов`, находятся в свёрнутом разделе `Интерфейс разработчика`. В
 верхней панели доступны `Рабочая панель`, `Открыть браузер`, `Трейс` и индикатор
 состояния. `UpdateGate` не показывает рабочую оболочку до завершения startup
 проверки обновления.
@@ -112,6 +112,14 @@ updater, supervisor, receipts, security-файлы и `.env*`. Push допуск
 - update transaction: `%LOCALAPPDATA%\EvoHime\update-state\`;
 - экспорт событий выполняется JSONL через `LocalDatabase::export_events_jsonl`.
 
+Persistent Agent Organization Registry v1 хранится в Core-owned SQLite schema
+92. Он сохраняет durable agent identity, reporting history, exact Goal/role
+profile references и assignments к уже существующим task/run/team-session/
+handoff; новый runtime или scheduler не создаётся. Startup recovery помечает
+потерянные assignment sources как `unknown_after_restart`. Cost projection
+сейчас явно `unavailable`, потому что agent-keyed authoritative ledger ещё не
+существует.
+
 Миграции SQLite транзакционны и создают backup до изменения схемы. Named pipe
 аутентифицируется launch context и HMAC proof; роли `shell`, `listener` и `cli`
 разделены. Approval, sandbox, таймауты, отмена, bounded frames и redacted
@@ -124,18 +132,28 @@ diagnostics обязательны для опасных операций. По�
 
 | Проверка | Результат |
 | --- | --- |
-| `scripts/documentation.tests.ps1` | PASS, 173 tracked text files |
+| `scripts/documentation.tests.ps1` | PASS, 168 tracked text files |
 | `npm run check:protocol` | PASS |
 | `npm run typecheck` | PASS |
-| `npm test` | 120 файлов passed, 3 skipped; 548 тестов passed, 8 skipped |
+| `npm test` | PASS, 121 files passed / 3 skipped; 549 tests passed / 8 skipped |
+| `cargo test -p evohime-core persistent_agent_registry --lib` | PASS, 6/6 |
+| `cargo test -p evohime-local-storage schema_90_migrates_guided_calibration_and_persistent_agent_registry_atomically --lib` | PASS, 1/1 |
+| `npm run test -- --run tests/persistent-agent-organization-registry.test.tsx` | PASS, 1/1 |
+| `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` | PASS, Core 815/815; local-storage 283/283; desktop-ipc 36/36; doctests 0 |
+| `cargo fmt --all -- --check` | PASS |
+| `cargo clippy --locked --workspace --all-targets -- -D warnings` | PASS |
+| `cargo check --locked -p evohime-supervisor -p evohime-updater` | PASS |
+| `npm run build` / `npm run check:bundle` | PASS |
+| `npm run package` / `scripts/native-package.tests.ps1` | PASS |
+| `scripts/runtime-stall-guard.tests.ps1` | PASS |
 
-Пропущены только real-Core/source-update E2E, которым в этом checkout не
+Пропущены только authenticated-core/real-Core/source-update E2E, которым в этом checkout не
 предоставлен собранный runtime или включающий их флаг. Это не означает, что
 релизный acceptance-прогон выполнен заново.
 
 ## Следующий незавершённый порядок
 
-Планы 118–143 остаются незавершённой очередью. План 144 — новый предложенный
+Планы 119–143 остаются незавершённой очередью. План 144 — новый предложенный
 этап модульных релизов и выборочного обновления компонентов; он не меняет
 текущий full-installer механизм до отдельной реализации и закрытия.
 Полный каталог, блокирующие и опциональные зависимости находятся в
