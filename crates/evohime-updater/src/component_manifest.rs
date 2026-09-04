@@ -232,10 +232,9 @@ mod tests {
     fn canonical_bytes_are_stable_and_unknown_fields_are_rejected() {
         let m = manifest();
         assert_eq!(m.canonical_bytes().unwrap(), m.canonical_bytes().unwrap());
-        let json = format!(
-            r#"{}"#,
-            String::from_utf8(m.canonical_bytes().unwrap()).unwrap()
-        );
+        let json = String::from_utf8(m.canonical_bytes().unwrap())
+            .unwrap()
+            .to_string();
         let invalid = json.trim_end_matches('}').to_owned() + ",\"extra\":true}";
         assert!(Manifest::parse(invalid.as_bytes()).is_err());
     }

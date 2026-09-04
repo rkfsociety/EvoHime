@@ -261,6 +261,7 @@ pub fn apply_selected_staged(
 /// Applies one release containing both native files and a renderer bundle.
 /// Native backup/commit and the active UI pointer are kept under one failure
 /// boundary; the previous pointer is restored if restart or health fails.
+#[allow(clippy::too_many_arguments)]
 pub fn apply_component_set_staged(
     staging: &Path,
     install_dir: &Path,
