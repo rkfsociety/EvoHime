@@ -85,7 +85,7 @@ Real-Core E2E тесты требуют собранный Core: `cargo build -p
 (или `--release`); без бинарника они помечаются как пропущенные.
 
 Для текущих desktop-задач используй Electron shell в `desktop/evohime-electron`, Rust crates и Windows packaging scripts. Подробные решения завершённой миграции и активные работы описаны в `docs/development-plan.md`.
-Electron renderer — встроенная часть desktop-приложения, а не web-панель: HTTP server, browser launcher и внешний Node.js runtime не возвращаются в продукт.
+Electron renderer — встроенная часть desktop-приложения. Отдельный сетевой web-runtime и внешний Node.js runtime не являются частью продукта.
 
 Если Rust-сборка останавливается на `prost-build` или другом crate, сначала проверь доступ Cargo к crates.io:
 

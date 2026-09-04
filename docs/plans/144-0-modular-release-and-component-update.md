@@ -25,7 +25,7 @@ Supervisor и остальных native-бинарников.
 - `evohime.manifest.json` перечисляет package-компоненты, а
   `evohime.build.json` связывает сборку с commit/веткой.
 - Основной release channel проверяет commit, размер и SHA-256 установщика.
-  Electron autoUpdater, Squirrel и второй update channel не добавляются.
+  Действующий full-installer канал сохраняется как fallback и источник истины.
 - Listener runtime уже имеет отдельную поставку файлов и собственный
   manifest/hash path; новый план не должен дублировать этот механизм.
 - Runtime registry из планов 74/106 — это Core-owned декларативные компоненты,
@@ -98,7 +98,7 @@ Supervisor и остальных native-бинарников.
 ## Non-goals
 
 Не входят отдельный процесс для каждого Rust crate, произвольный renderer
-plugin/runtime code, второй update channel, Electron autoUpdater/Squirrel,
+plugin/runtime code, дополнительный канал обновлений,
 обход Core policy/approval, UI-owned SQLite или миграции базы данных из UI,
 автоматическое обновление установленного клиента в рамках реализации плана,
 а также обязательное введение code signing или binary delta transport.

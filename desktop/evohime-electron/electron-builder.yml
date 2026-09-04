@@ -15,7 +15,7 @@ extraResources:
 asar: true
 # Inno Setup plus evohime-transaction.exe stay the only install/update/rollback
 # path (plan 0, stage 4): electron-builder only produces the unpacked payload,
-# and no autoUpdater/Squirrel channel is configured.
+# Update orchestration is handled by the transactional installer worker.
 win:
   icon: resources/evohime-agent.ico
   target:

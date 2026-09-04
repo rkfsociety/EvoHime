@@ -67,6 +67,6 @@
 
 Для текущей разработки используйте `start-dev.ps1` (нужен PowerShell 7 или новее: в Windows PowerShell 5.1 сборка не работает), native package tests, Electron checks и Windows CI. Electron shell живёт в `desktop/evohime-electron`; его protocol check, typecheck, unit-, contract- и real-Core E2E тесты запускаются через npm-команды и входят в CI. Установщик и пользовательский запуск работают через Electron `EvoHime.exe`.
 
-Веб-панель полностью выведена из продукта. Electron renderer — встроенный desktop UI; HTTP server и browser launcher не используются. `start-dev.ps1` собирает native package и открывает Electron `EvoHime.exe`; клиент сам запускает единственный скрытый supervisor, а supervisor — Core. `-SkipBuild` допустим только при наличии готового `.evohime-native\windows-x64`.
+Electron renderer — встроенный desktop UI, а отдельный сетевой web-runtime не используется. `start-dev.ps1` собирает native package и открывает Electron `EvoHime.exe`; клиент сам запускает единственный скрытый supervisor, а supervisor — Core. `-SkipBuild` допустим только при наличии готового `.evohime-native\windows-x64`.
 
 При изменении архитектуры, runtime-контрактов или статуса реализации обновляйте соответствующий канонический документ и дату состояния. Не дублируйте подробный план в `roadmap.md` и не добавляйте инструкции для отдельного web-продукта.

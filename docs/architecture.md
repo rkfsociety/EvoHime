@@ -49,7 +49,7 @@ synthesis-модель. Per-request model overrides сохраняются. Со
 
 Electron — единственная пользовательская оболочка пакета. Renderer и main
 процессы Electron используют authenticated named-pipe transport к Rust Core;
-отдельного legacy desktop runtime в продукте нет.
+второй desktop runtime в продукте не предусмотрен.
 
 ## Оболочка
 

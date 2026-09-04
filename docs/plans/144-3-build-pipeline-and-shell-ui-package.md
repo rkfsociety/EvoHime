@@ -69,6 +69,6 @@
 
 ## Не входит
 
-Не входят новый дизайн интерфейса, изменение Core features, Electron
-autoUpdater/Squirrel, публичный HTTP server, внешний Node/Python runtime или
+Не входят новый дизайн интерфейса, изменение Core features, дополнительный
+канал обновлений, публичный сетевой runtime, внешний Node/Python runtime или
 добавление arbitrary dynamic renderer code.
