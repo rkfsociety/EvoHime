@@ -73,8 +73,10 @@ New-Item -ItemType Directory -Force -Path $dataPath | Out-Null
 
 $previousCoreExe = $env:EVOHIME_CORE_EXE
 $previousDataDir = $env:EVOHIME_DATA_DIR
+$previousUpdateEnabled = $env:EVOHIME_UPDATE_ENABLED
 $env:EVOHIME_CORE_EXE = $corePath
 $env:EVOHIME_DATA_DIR = $dataPath
+$env:EVOHIME_UPDATE_ENABLED = '0'
 $ui = $null
 
 try {
@@ -96,5 +98,10 @@ finally {
         Remove-Item Env:EVOHIME_DATA_DIR -ErrorAction SilentlyContinue
     } else {
         $env:EVOHIME_DATA_DIR = $previousDataDir
+    }
+    if ($null -eq $previousUpdateEnabled) {
+        Remove-Item Env:EVOHIME_UPDATE_ENABLED -ErrorAction SilentlyContinue
+    } else {
+        $env:EVOHIME_UPDATE_ENABLED = $previousUpdateEnabled
     }
 }
