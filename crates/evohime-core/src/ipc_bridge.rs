@@ -15814,15 +15814,17 @@ impl IpcBridge {
                     let state = format!("{:?}", session.status).to_lowercase();
                     let _ = evohime_local_storage::team_sop_protocols_store::save_session(
                         database.connection(),
-                        &session.id,
-                        &session.snapshot.protocol_id,
-                        session.snapshot.version,
-                        &session.snapshot.content_hash,
-                        &snapshot,
-                        &state,
-                        &session.current_phase,
-                        session.version,
-                        chrono::Utc::now().timestamp_millis(),
+                        evohime_local_storage::team_sop_protocols_store::SaveSessionInput {
+                            id: &session.id,
+                            protocol_id: &session.snapshot.protocol_id,
+                            protocol_version: session.snapshot.version,
+                            hash: &session.snapshot.content_hash,
+                            snapshot: &snapshot,
+                            status: &state,
+                            phase: &session.current_phase,
+                            version: session.version,
+                            now_ms: chrono::Utc::now().timestamp_millis(),
+                        },
                     );
                 }
             }

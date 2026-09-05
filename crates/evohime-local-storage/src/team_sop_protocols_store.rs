@@ -36,20 +36,21 @@ pub fn save_protocol(
     tx.commit()?;
     Ok(true)
 }
-#[allow(clippy::too_many_arguments)]
-pub fn save_session(
-    c: &Connection,
-    id: &str,
-    protocol_id: &str,
-    protocol_version: u64,
-    hash: &str,
-    snapshot: &[u8],
-    status: &str,
-    phase: &str,
-    version: u64,
-    now: i64,
-) -> Result<(), rusqlite::Error> {
-    c.execute("INSERT INTO team_sop_sessions VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET status=excluded.status,current_phase=excluded.current_phase,version=excluded.version,updated_at_ms=excluded.updated_at_ms",params![id,protocol_id,protocol_version as i64,hash,snapshot,status,phase,version as i64,now])?;
+#[derive(Clone, Copy)]
+pub struct SaveSessionInput<'a> {
+    pub id: &'a str,
+    pub protocol_id: &'a str,
+    pub protocol_version: u64,
+    pub hash: &'a str,
+    pub snapshot: &'a [u8],
+    pub status: &'a str,
+    pub phase: &'a str,
+    pub version: u64,
+    pub now_ms: i64,
+}
+
+pub fn save_session(c: &Connection, input: SaveSessionInput<'_>) -> Result<(), rusqlite::Error> {
+    c.execute("INSERT INTO team_sop_sessions VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET status=excluded.status,current_phase=excluded.current_phase,version=excluded.version,updated_at_ms=excluded.updated_at_ms",params![input.id,input.protocol_id,input.protocol_version as i64,input.hash,input.snapshot,input.status,input.phase,input.version as i64,input.now_ms])?;
     Ok(())
 }
 pub fn load_all_json(c: &Connection) -> Result<Vec<Vec<u8>>, rusqlite::Error> {
