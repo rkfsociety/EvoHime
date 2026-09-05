@@ -207,6 +207,42 @@ struct ExternalAgentCommandPayload {
     executable_ref: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct PersistentAgentOrganizationResponse {
+    #[serde(default)]
+    operation: String,
+    #[serde(default = "default_ok_status")]
+    status: String,
+    #[serde(default)]
+    revision: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct InvocationPresetResponse {
+    #[serde(default)]
+    request_id: String,
+    #[serde(default)]
+    operation: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    preset_id: String,
+    #[serde(default)]
+    revision: u64,
+    #[serde(default)]
+    content_hash: String,
+    #[serde(default)]
+    error_code: String,
+    #[serde(default)]
+    preview: Option<serde_json::Value>,
+    #[serde(default)]
+    presets: Option<serde_json::Value>,
+}
+
+fn default_ok_status() -> String {
+    "ok".to_owned()
+}
+
 fn bounded_tool_error_code(error: &evohime_tool_runtime::ToolError) -> &'static str {
     match error {
         evohime_tool_runtime::ToolError::UnknownTool(_) => "unknown_tool",
@@ -16189,28 +16225,14 @@ impl IpcBridge {
         agent_id: &str,
         payload: Vec<u8>,
     ) -> Result<(), IpcBridgeError> {
-        let value: serde_json::Value = serde_json::from_slice(&payload).unwrap_or_default();
-        let operation = value
-            .get("operation")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default()
-            .to_owned();
-        let status = value
-            .get("status")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("ok")
-            .to_owned();
-        let revision = value
-            .get("revision")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or_default();
+        let value: PersistentAgentOrganizationResponse = serde_json::from_slice(&payload)?;
         let encoded = generated::PersistentAgentOrganizationRegistryEvent {
             schema_version: 1,
             request_id: request_id.to_owned(),
             agent_id: agent_id.to_owned(),
-            operation,
-            revision,
-            status,
+            operation: value.operation,
+            revision: value.revision,
+            status: value.status,
             error_code: String::new(),
             projection_json: payload.clone(),
             truncated: payload.len() > 64 * 1024,
@@ -16241,48 +16263,20 @@ impl IpcBridge {
         event_type: &str,
         payload: Vec<u8>,
     ) -> Result<(), IpcBridgeError> {
-        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let value: InvocationPresetResponse = serde_json::from_slice(&payload)?;
         let projection = value
-            .get("preview")
-            .or_else(|| value.get("presets"))
-            .cloned()
+            .preview
+            .or(value.presets)
             .unwrap_or(serde_json::Value::Null);
         let result = generated::InvocationPresetEvent {
             schema_version: 1,
-            request_id: value
-                .get("request_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .into(),
-            operation: value
-                .get("operation")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .into(),
-            status: value
-                .get("status")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .into(),
-            preset_id: value
-                .get("preset_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .into(),
-            revision: value
-                .get("revision")
-                .and_then(|v| v.as_u64())
-                .unwrap_or_default(),
-            content_hash: value
-                .get("content_hash")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .into(),
-            error_code: value
-                .get("error_code")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .into(),
+            request_id: value.request_id,
+            operation: value.operation,
+            status: value.status,
+            preset_id: value.preset_id,
+            revision: value.revision,
+            content_hash: value.content_hash,
+            error_code: value.error_code,
             projection_json: serde_json::to_vec(&projection).unwrap_or_default(),
         };
         transport::write_frame(
