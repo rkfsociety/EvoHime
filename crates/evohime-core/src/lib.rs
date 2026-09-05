@@ -3716,15 +3716,15 @@ impl EventJournal {
 
     pub async fn record_tool_metric(&self, metric: ToolMetric<'_>) -> Result<i64, StorageError> {
         let database = self.database.lock().await;
-        database.record_tool_metric(
-            metric.task_id,
-            metric.tool_name,
-            metric.iteration.min(i64::MAX as usize) as i64,
-            metric.ok,
-            metric.failure_kind,
-            metric.recovery_hint,
-            metric.escalated,
-        )
+        database.record_tool_metric(evohime_local_storage::ToolMetricInput {
+            task_id: metric.task_id,
+            tool_name: metric.tool_name,
+            iteration: metric.iteration.min(i64::MAX as usize) as i64,
+            ok: metric.ok,
+            failure_kind: metric.failure_kind,
+            recovery_hint: metric.recovery_hint,
+            escalated: metric.escalated,
+        })
     }
 
     pub async fn tool_metrics(

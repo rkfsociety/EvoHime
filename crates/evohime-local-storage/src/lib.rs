@@ -541,6 +541,16 @@ pub struct RecoveryTransitionInput<'a> {
     pub decision: &'a str,
 }
 
+pub struct ToolMetricInput<'a> {
+    pub task_id: &'a str,
+    pub tool_name: &'a str,
+    pub iteration: i64,
+    pub ok: bool,
+    pub failure_kind: Option<&'a str>,
+    pub recovery_hint: bool,
+    pub escalated: bool,
+}
+
 impl LocalDatabase {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
         Self::open_internal(path.as_ref(), false)
@@ -2125,29 +2135,18 @@ impl LocalDatabase {
         Ok(self.connection.last_insert_rowid())
     }
 
-    // Аргументы повторяют колонки строки метрики инструмента в SQLite.
-    #[allow(clippy::too_many_arguments)]
-    pub fn record_tool_metric(
-        &self,
-        task_id: &str,
-        tool_name: &str,
-        iteration: i64,
-        ok: bool,
-        failure_kind: Option<&str>,
-        recovery_hint: bool,
-        escalated: bool,
-    ) -> Result<i64, StorageError> {
+    pub fn record_tool_metric(&self, input: ToolMetricInput<'_>) -> Result<i64, StorageError> {
         self.connection.execute(
             "INSERT INTO run_tool_metrics(task_id, tool_name, iteration, ok, failure_kind, recovery_hint, escalated)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             rusqlite::params![
-                task_id,
-                tool_name,
-                iteration,
-                ok as i64,
-                failure_kind,
-                recovery_hint as i64,
-                escalated as i64
+                input.task_id,
+                input.tool_name,
+                input.iteration,
+                input.ok as i64,
+                input.failure_kind,
+                input.recovery_hint as i64,
+                input.escalated as i64
             ],
         )?;
         Ok(self.connection.last_insert_rowid())
@@ -3852,7 +3851,8 @@ mod tests {
     use super::{
         DiagnosticsSummary, ImportedTask, LocalDatabase, ModelRouteSnapshot, PolicySnapshot,
         RecoveryState, RecoveryTransitionInput, RoleRef, RunCheckpointRecord, RunEffectRecord,
-        RunRecord, RunSnapshots, SkillRef, StorageError, WorkItemRecord, SCHEMA_VERSION,
+        RunRecord, RunSnapshots, SkillRef, StorageError, ToolMetricInput, WorkItemRecord,
+        SCHEMA_VERSION,
     };
     use std::path::PathBuf;
 
@@ -4057,15 +4057,15 @@ mod tests {
             assert_eq!(exists, 1, "{table} must exist in a fresh schema");
         }
         let id = database
-            .record_tool_metric(
-                "task-1",
-                "filesystem.read",
-                2,
-                false,
-                Some("not_found"),
-                true,
-                false,
-            )
+            .record_tool_metric(ToolMetricInput {
+                task_id: "task-1",
+                tool_name: "filesystem.read",
+                iteration: 2,
+                ok: false,
+                failure_kind: Some("not_found"),
+                recovery_hint: true,
+                escalated: false,
+            })
             .expect("metric records");
         assert!(id > 0);
         let metrics = database
