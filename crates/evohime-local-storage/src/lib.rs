@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, Statement};
 use serde::{Deserialize, Serialize};
 
 pub mod agent_git_change_sets_store;
@@ -490,6 +490,29 @@ fn insert_ledger_event_row(
             event.state_after.map(|state| state.as_str()),
         ],
     )?;
+    Ok(connection.last_insert_rowid())
+}
+
+fn insert_ledger_event_row_cached(
+    statement: &mut Statement<'_>,
+    connection: &Connection,
+    event: &execution_ledger::ExecutionEventV1,
+) -> Result<i64, StorageError> {
+    let payload = serde_json::to_vec(event)?;
+    statement.execute(rusqlite::params![
+        event.task_id,
+        event.body.kind_str(),
+        payload,
+        event.event_id,
+        event.schema_version,
+        event.run_scope.as_str(),
+        event.run_id,
+        event.session_id,
+        event.action_id,
+        event.effect_id,
+        event.workflow_run_id,
+        event.state_after.map(|state| state.as_str()),
+    ])?;
     Ok(connection.last_insert_rowid())
 }
 
@@ -2248,6 +2271,67 @@ impl LocalDatabase {
         insert_ledger_event_row(&self.connection, event)
     }
 
+    /// Публикует несколько typed ledger events одной транзакцией. Внутри
+    /// транзакции INSERT и проверка terminal outcome используют cached
+    /// prepared statements, поэтому batch не создаёт отдельные BEGIN/COMMIT
+    /// и не компилирует один и тот же SQL для каждого события.
+    pub fn append_ledger_events(
+        &self,
+        events: &[execution_ledger::ExecutionEventV1],
+    ) -> Result<Vec<i64>, StorageError> {
+        if events.is_empty() {
+            return Ok(Vec::new());
+        }
+        for event in events {
+            event.validate()?;
+        }
+
+        let transaction = self.connection.unchecked_transaction()?;
+        let mut terminal_check = transaction.prepare_cached(
+            "SELECT state_after FROM events
+              WHERE action_id = ?1 AND state_after IS NOT NULL
+              ORDER BY sequence_id DESC LIMIT 1",
+        )?;
+        let mut insert = transaction.prepare_cached(
+            "INSERT INTO events(
+                task_id, event_type, payload, event_id, schema_version, run_scope,
+                run_id, session_id, action_id, effect_id, workflow_run_id, state_after
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        )?;
+
+        let mut sequence_ids = Vec::with_capacity(events.len());
+        for event in events {
+            if let (Some(action_id), Some(state)) = (event.action_id.as_deref(), event.state_after)
+            {
+                if state.is_terminal() {
+                    let previous: Option<String> = terminal_check
+                        .query_row([action_id], |row| row.get(0))
+                        .optional()?;
+                    let already_terminal = previous
+                        .as_deref()
+                        .and_then(execution_ledger::ActionState::parse)
+                        .is_some_and(execution_ledger::ActionState::is_terminal);
+                    if already_terminal {
+                        return Err(StorageError::LedgerContract(
+                            execution_ledger::LedgerContractError::DuplicateTerminalOutcome {
+                                action_id: action_id.to_string(),
+                            },
+                        ));
+                    }
+                }
+            }
+            sequence_ids.push(insert_ledger_event_row_cached(
+                &mut insert,
+                &transaction,
+                event,
+            )?);
+        }
+        drop(insert);
+        drop(terminal_check);
+        transaction.commit()?;
+        Ok(sequence_ids)
+    }
+
     /// Атомарно публикует typed ledger event и переводит связанный
     /// `workflow_run_nodes` узел из `from` в `to` — одна SQLite-транзакция,
     /// один `commit()`. Незаконный переход или узел, уже покинувший `from`
@@ -2387,6 +2471,7 @@ impl LocalDatabase {
             .collect::<Result<Vec<_>, _>>()?;
 
         let mut reconciled = Vec::new();
+        let mut reconciliation_events = Vec::new();
         for row in rows {
             let Some(previous) = execution_ledger::ActionState::parse(&row.state_after) else {
                 continue;
@@ -2449,9 +2534,10 @@ impl LocalDatabase {
                 },
                 redaction: execution_ledger::RedactionMeta::default(),
             };
-            self.append_ledger_event(&event)?;
+            reconciliation_events.push(event);
             reconciled.push((row.action_id, new_state));
         }
+        self.append_ledger_events(&reconciliation_events)?;
         Ok(reconciled)
     }
 
@@ -5775,6 +5861,64 @@ mod tests {
             serde_json::from_slice(&stored.payload).expect("payload decodes");
         assert_eq!(round_tripped, event);
         assert_eq!(stored.event_type, "ledger.tool_call");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn append_ledger_events_batches_rows_in_one_commit() {
+        let path = temp_database_path("ledger-append-batch");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        let first = sample_ledger_event(
+            "batch-event-1",
+            "batch-run",
+            "batch-action-1",
+            crate::execution_ledger::ActionState::Running,
+        );
+        let second = sample_ledger_event(
+            "batch-event-2",
+            "batch-run",
+            "batch-action-2",
+            crate::execution_ledger::ActionState::WaitingApproval,
+        );
+
+        let sequence_ids = database
+            .append_ledger_events(&[first, second])
+            .expect("batch appends");
+
+        assert_eq!(sequence_ids, vec![1, 2]);
+        assert_eq!(database.latest_event_sequence().expect("sequence reads"), 2);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn append_ledger_events_rolls_back_on_duplicate_terminal_outcome() {
+        let path = temp_database_path("ledger-append-batch-rollback");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        let first = sample_ledger_event(
+            "batch-terminal-1",
+            "batch-run",
+            "batch-action",
+            crate::execution_ledger::ActionState::Succeeded,
+        );
+        let second = sample_ledger_event(
+            "batch-terminal-2",
+            "batch-run",
+            "batch-action",
+            crate::execution_ledger::ActionState::Failed,
+        );
+
+        let error = database
+            .append_ledger_events(&[first, second])
+            .expect_err("duplicate terminal outcome rejects the whole batch");
+        assert!(matches!(
+            error,
+            StorageError::LedgerContract(
+                crate::execution_ledger::LedgerContractError::DuplicateTerminalOutcome { .. }
+            )
+        ));
+        assert_eq!(database.latest_event_sequence().expect("sequence reads"), 0);
         let _ = std::fs::remove_file(&path);
     }
 

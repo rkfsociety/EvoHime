@@ -713,6 +713,9 @@ pub fn install_schema(connection: &Connection) -> Result<(), LedgerContractError
                  ON events(run_scope, run_id, sequence_id) WHERE run_id IS NOT NULL;
              CREATE INDEX IF NOT EXISTS idx_events_action
                  ON events(action_id) WHERE action_id IS NOT NULL;
+             CREATE INDEX IF NOT EXISTS idx_events_action_terminal
+                 ON events(action_id, sequence_id DESC)
+                 WHERE action_id IS NOT NULL AND state_after IS NOT NULL;
              CREATE INDEX IF NOT EXISTS idx_events_effect
                  ON events(effect_id) WHERE effect_id IS NOT NULL;",
         )?;
