@@ -197,6 +197,16 @@ struct ArtifactHandoffPayload {
     consumer_identity: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct ExternalAgentCommandPayload {
+    #[serde(default)]
+    run_id: String,
+    #[serde(default)]
+    conversation_id: String,
+    #[serde(default)]
+    executable_ref: String,
+}
+
 fn bounded_tool_error_code(error: &evohime_tool_runtime::ToolError) -> &'static str {
     match error {
         evohime_tool_runtime::ToolError::UnknownTool(_) => "unknown_tool",
@@ -15794,17 +15804,16 @@ impl IpcBridge {
         match request.operation.as_str() {
             "list" | "status" => {}
             "start" => {
-                let payload: serde_json::Value = match serde_json::from_slice(&request.payload) {
-                    Ok(v) => v,
+                let payload: ExternalAgentCommandPayload = match serde_json::from_slice(
+                    &request.payload,
+                ) {
+                    Ok(value) => value,
                     Err(_) => {
                         return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"start","status":"rejected","state":"unavailable","error_code":"invalid_payload","projection_json":{"raw_payload":false}});
                     }
                 };
-                let run_id = payload.get("run_id").and_then(|v| v.as_str()).unwrap_or("");
-                let conversation_id = payload
-                    .get("conversation_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let run_id = payload.run_id.as_str();
+                let conversation_id = payload.conversation_id.as_str();
                 if run_id.is_empty() || conversation_id.is_empty() {
                     status = "rejected";
                     error_code = "invalid_run";
@@ -15814,10 +15823,7 @@ impl IpcBridge {
                     error_code = "duplicate_run";
                     state = *registry.runs.get(run_id).unwrap_or(&AgentState::Unknown);
                 } else {
-                    let executable_ref = payload
-                        .get("executable_ref")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
+                    let executable_ref = payload.executable_ref.as_str();
                     #[cfg(windows)]
                     let supervisor_result = crate::analysis_kernel::supervisor_command(
                         serde_json::json!({"op":"external_agent_start","run_id":run_id,"executable_ref":executable_ref}),
@@ -15847,11 +15853,23 @@ impl IpcBridge {
                 projection = serde_json::json!({"contract_id":CONTRACT_ID,"contract_version":CONTRACT_VERSION,"conversation_id":conversation_id,"run_id":run_id,"core_control_level":"supervised_opaque","raw_payload":false});
             }
             "cancel" => {
-                let run_id = serde_json::from_slice::<serde_json::Value>(&request.payload)
-                    .ok()
-                    .and_then(|v| v.get("run_id").and_then(|v| v.as_str()).map(str::to_owned));
-                if let Some(id) = run_id {
-                    if registry.runs.insert(id, AgentState::Cancelling).is_none() {
+                let payload: ExternalAgentCommandPayload = match serde_json::from_slice(
+                    &request.payload,
+                ) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        status = "rejected";
+                        error_code = "invalid_payload";
+                        state = AgentState::Unavailable;
+                        return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":status,"state":state,"protocol":CONTRACT_ID,"control_level":"supervised_opaque","error_code":error_code,"projection_json":projection});
+                    }
+                };
+                if !payload.run_id.is_empty() {
+                    if registry
+                        .runs
+                        .insert(payload.run_id, AgentState::Cancelling)
+                        .is_none()
+                    {
                         status = "not_found";
                         error_code = "run_not_found";
                     }
@@ -15870,12 +15888,7 @@ impl IpcBridge {
             let run_id = projection["run_id"]
                 .as_str()
                 .map(str::to_owned)
-                .unwrap_or_else(|| {
-                    serde_json::from_slice::<serde_json::Value>(&request.payload)
-                        .ok()
-                        .and_then(|v| v.get("run_id").and_then(|v| v.as_str()).map(str::to_owned))
-                        .unwrap_or_default()
-                });
+                .unwrap_or_default();
             let conversation_id = projection["conversation_id"]
                 .as_str()
                 .unwrap_or("")
