@@ -124,6 +124,64 @@ struct TeamSopProtocolsResponse {
     projection_json: serde_json::Value,
 }
 
+#[derive(Debug, Deserialize)]
+struct IpcResponseFields {
+    #[serde(default)]
+    request_id: String,
+    #[serde(default)]
+    operation: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    error_code: String,
+    #[serde(default)]
+    projection_json: serde_json::Value,
+    #[serde(default)]
+    state: String,
+    #[serde(default)]
+    run_id: String,
+    #[serde(default)]
+    revision: u64,
+    #[serde(default)]
+    version: u64,
+    #[serde(default)]
+    registry_version: u64,
+    #[serde(default)]
+    protocol: String,
+    #[serde(default)]
+    control_level: String,
+    #[serde(default)]
+    policy_id: String,
+    #[serde(default)]
+    policy_hash: String,
+    #[serde(default)]
+    attempts: u32,
+    #[serde(default)]
+    retries: u32,
+    #[serde(default)]
+    fallbacks: u32,
+    #[serde(default)]
+    terminal_outcome: String,
+    #[serde(default)]
+    profile_id: String,
+    #[serde(default)]
+    profile_hash: String,
+    #[serde(default)]
+    backend: String,
+    #[serde(default)]
+    network_policy: String,
+    #[serde(default)]
+    environment_policy: String,
+    #[serde(default)]
+    timeout_ms: u64,
+    #[serde(default)]
+    max_output_bytes: u64,
+    #[serde(default)]
+    contract_hash: String,
+    #[serde(default)]
+    strategy: String,
+}
+
 fn bounded_tool_error_code(error: &evohime_tool_runtime::ToolError) -> &'static str {
     match error {
         evohime_tool_runtime::ToolError::UnknownTool(_) => "unknown_tool",
@@ -15833,26 +15891,26 @@ impl IpcBridge {
         writer: &mut W,
         payload: Vec<u8>,
     ) -> Result<(), IpcBridgeError> {
-        let value: serde_json::Value = serde_json::from_slice(&payload)?;
-        let projection = serde_json::to_vec(&value["projection_json"])?;
+        let value: IpcResponseFields = serde_json::from_slice(&payload)?;
+        let projection = serde_json::to_vec(&value.projection_json)?;
         let result = generated::ExternalCodingAgentAdapterEvent {
             schema_version: 1,
-            request_id: value["request_id"].as_str().unwrap_or_default().into(),
-            operation: value["operation"].as_str().unwrap_or_default().into(),
-            status: value["status"].as_str().unwrap_or_default().into(),
-            state: value["state"].as_str().unwrap_or_default().into(),
-            conversation_id: value["projection_json"]["conversation_id"]
+            request_id: value.request_id,
+            operation: value.operation,
+            status: value.status,
+            state: value.state,
+            conversation_id: value.projection_json["conversation_id"]
                 .as_str()
                 .unwrap_or_default()
                 .into(),
-            run_id: value["projection_json"]["run_id"]
+            run_id: value.projection_json["run_id"]
                 .as_str()
                 .unwrap_or_default()
                 .into(),
-            protocol: value["protocol"].as_str().unwrap_or_default().into(),
-            control_level: value["control_level"].as_str().unwrap_or_default().into(),
+            protocol: value.protocol,
+            control_level: value.control_level,
             snapshot_hash: String::new(),
-            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+            error_code: value.error_code,
             projection_json: projection,
         };
         transport::write_frame(
@@ -15878,18 +15936,22 @@ impl IpcBridge {
         writer: &mut W,
         payload: Vec<u8>,
     ) -> Result<(), IpcBridgeError> {
-        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let value: IpcResponseFields = serde_json::from_slice(&payload)?;
         let result = generated::ExecutionBackendRegistryEvent {
             schema_version: 1,
-            request_id: value["request_id"].as_str().unwrap_or_default().into(),
-            operation: value["operation"].as_str().unwrap_or_default().into(),
-            status: value["projection_json"]["status"]
+            request_id: value.request_id,
+            operation: value.operation,
+            status: value.projection_json["status"]
                 .as_str()
-                .unwrap_or(value["status"].as_str().unwrap_or("rejected"))
+                .unwrap_or(if value.status.is_empty() {
+                    "rejected"
+                } else {
+                    &value.status
+                })
                 .into(),
-            registry_version: value["registry_version"].as_u64().unwrap_or_default(),
-            projection_json: serde_json::to_vec(&value["projection_json"])?,
-            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+            registry_version: value.registry_version,
+            projection_json: serde_json::to_vec(&value.projection_json)?,
+            error_code: value.error_code,
         };
         transport::write_frame(
             writer,
@@ -15916,23 +15978,20 @@ impl IpcBridge {
         writer: &mut W,
         payload: Vec<u8>,
     ) -> Result<(), IpcBridgeError> {
-        let value: serde_json::Value = serde_json::from_slice(&payload)?;
-        let projection = serde_json::to_vec(&value["projection_json"])?;
+        let value: IpcResponseFields = serde_json::from_slice(&payload)?;
+        let projection = serde_json::to_vec(&value.projection_json)?;
         let result = generated::ModelResiliencePolicyEvent {
             schema_version: 1,
-            request_id: value["request_id"].as_str().unwrap_or_default().into(),
-            operation: value["operation"].as_str().unwrap_or_default().into(),
-            status: value["status"].as_str().unwrap_or_default().into(),
-            policy_id: value["policy_id"].as_str().unwrap_or_default().into(),
-            policy_hash: value["policy_hash"].as_str().unwrap_or_default().into(),
-            attempts: value["attempts"].as_u64().unwrap_or_default() as u32,
-            retries: value["retries"].as_u64().unwrap_or_default() as u32,
-            fallbacks: value["fallbacks"].as_u64().unwrap_or_default() as u32,
-            terminal_outcome: value["terminal_outcome"]
-                .as_str()
-                .unwrap_or_default()
-                .into(),
-            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+            request_id: value.request_id,
+            operation: value.operation,
+            status: value.status,
+            policy_id: value.policy_id,
+            policy_hash: value.policy_hash,
+            attempts: value.attempts,
+            retries: value.retries,
+            fallbacks: value.fallbacks,
+            terminal_outcome: value.terminal_outcome,
+            error_code: value.error_code,
             projection_json: projection,
         };
         transport::write_frame(
@@ -15960,24 +16019,21 @@ impl IpcBridge {
         writer: &mut W,
         payload: Vec<u8>,
     ) -> Result<(), IpcBridgeError> {
-        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let value: IpcResponseFields = serde_json::from_slice(&payload)?;
         let result = generated::ExecutionPolicyProfilesEvent {
             schema_version: 1,
-            request_id: value["request_id"].as_str().unwrap_or_default().into(),
-            operation: value["operation"].as_str().unwrap_or_default().into(),
-            status: value["status"].as_str().unwrap_or_default().into(),
-            profile_id: value["profile_id"].as_str().unwrap_or_default().into(),
-            version: value["version"].as_u64().unwrap_or_default(),
-            profile_hash: value["profile_hash"].as_str().unwrap_or_default().into(),
-            backend: value["backend"].as_str().unwrap_or_default().into(),
-            network_policy: value["network_policy"].as_str().unwrap_or_default().into(),
-            environment_policy: value["environment_policy"]
-                .as_str()
-                .unwrap_or_default()
-                .into(),
-            timeout_ms: value["timeout_ms"].as_u64().unwrap_or_default(),
-            max_output_bytes: value["max_output_bytes"].as_u64().unwrap_or_default(),
-            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+            request_id: value.request_id,
+            operation: value.operation,
+            status: value.status,
+            profile_id: value.profile_id,
+            version: value.version,
+            profile_hash: value.profile_hash,
+            backend: value.backend,
+            network_policy: value.network_policy,
+            environment_policy: value.environment_policy,
+            timeout_ms: value.timeout_ms,
+            max_output_bytes: value.max_output_bytes,
+            error_code: value.error_code,
         };
         transport::write_frame(
             writer,
@@ -16004,18 +16060,18 @@ impl IpcBridge {
         writer: &mut W,
         payload: Vec<u8>,
     ) -> Result<(), IpcBridgeError> {
-        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let value: IpcResponseFields = serde_json::from_slice(&payload)?;
         let result = generated::StructuredResponseEvent {
             schema_version: 1,
-            request_id: value["request_id"].as_str().unwrap_or_default().into(),
-            operation: value["operation"].as_str().unwrap_or_default().into(),
-            status: value["status"].as_str().unwrap_or_default().into(),
-            run_id: value["run_id"].as_str().unwrap_or_default().into(),
-            revision: value["revision"].as_u64().unwrap_or_default(),
-            contract_hash: value["contract_hash"].as_str().unwrap_or_default().into(),
-            strategy: value["strategy"].as_str().unwrap_or_default().into(),
-            attempts: value["attempts"].as_u64().unwrap_or_default() as u32,
-            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+            request_id: value.request_id,
+            operation: value.operation,
+            status: value.status,
+            run_id: value.run_id,
+            revision: value.revision,
+            contract_hash: value.contract_hash,
+            strategy: value.strategy,
+            attempts: value.attempts,
+            error_code: value.error_code,
             projection_json: payload.clone(),
         };
         transport::write_frame(
@@ -16042,17 +16098,17 @@ impl IpcBridge {
         event_type: &str,
         payload: Vec<u8>,
     ) -> Result<(), IpcBridgeError> {
-        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let value: IpcResponseFields = serde_json::from_slice(&payload)?;
         let result = generated::AgentMiddlewarePipelineEvent {
             schema_version: 1,
-            request_id: value["request_id"].as_str().unwrap_or_default().into(),
-            operation: value["operation"].as_str().unwrap_or_default().into(),
-            status: value["status"].as_str().unwrap_or_default().into(),
-            run_id: value["run_id"].as_str().unwrap_or_default().into(),
-            revision: value["revision"].as_u64().unwrap_or_default(),
-            contract_hash: value["contract_hash"].as_str().unwrap_or_default().into(),
-            error_code: value["error_code"].as_str().unwrap_or_default().into(),
-            projection_json: serde_json::to_vec(&value).unwrap_or_default(),
+            request_id: value.request_id,
+            operation: value.operation,
+            status: value.status,
+            run_id: value.run_id,
+            revision: value.revision,
+            contract_hash: value.contract_hash,
+            error_code: value.error_code,
+            projection_json: serde_json::to_vec(&value.projection_json).unwrap_or_default(),
         };
         transport::write_frame(
             writer,
