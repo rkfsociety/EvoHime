@@ -62,18 +62,18 @@ pub fn put_idempotency(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn put_work_item(
-    connection: &Connection,
-    item_id: &str,
-    revision: i64,
-    status: &str,
-    assigned_instance_id: Option<&str>,
-    attempt: i64,
-    item_json: &[u8],
-    now_ms: i64,
-) -> rusqlite::Result<()> {
-    connection.execute("INSERT INTO team_coordinator_work_items(work_item_id,revision,status,assigned_instance_id,attempt,item_json,updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![item_id, revision, status, assigned_instance_id, attempt, item_json, now_ms])?;
+pub struct PutWorkItemInput<'a> {
+    pub item_id: &'a str,
+    pub revision: i64,
+    pub status: &'a str,
+    pub assigned_instance_id: Option<&'a str>,
+    pub attempt: i64,
+    pub item_json: &'a [u8],
+    pub now_ms: i64,
+}
+
+pub fn put_work_item(connection: &Connection, input: PutWorkItemInput<'_>) -> rusqlite::Result<()> {
+    connection.execute("INSERT INTO team_coordinator_work_items(work_item_id,revision,status,assigned_instance_id,attempt,item_json,updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![input.item_id, input.revision, input.status, input.assigned_instance_id, input.attempt, input.item_json, input.now_ms])?;
     Ok(())
 }
 
@@ -95,19 +95,22 @@ pub fn list_work_items(connection: &Connection, limit: usize) -> rusqlite::Resul
     rows.collect()
 }
 
-#[allow(clippy::too_many_arguments)]
+pub struct ReplaceWorkItemInput<'a> {
+    pub item_id: &'a str,
+    pub expected_revision: i64,
+    pub revision: i64,
+    pub status: &'a str,
+    pub assigned_instance_id: Option<&'a str>,
+    pub attempt: i64,
+    pub item_json: &'a [u8],
+    pub now_ms: i64,
+}
+
 pub fn replace_work_item(
     connection: &Connection,
-    item_id: &str,
-    expected_revision: i64,
-    revision: i64,
-    status: &str,
-    assigned_instance_id: Option<&str>,
-    attempt: i64,
-    item_json: &[u8],
-    now_ms: i64,
+    input: ReplaceWorkItemInput<'_>,
 ) -> rusqlite::Result<bool> {
-    Ok(connection.execute("UPDATE team_coordinator_work_items SET revision=?1,status=?2,assigned_instance_id=?3,attempt=?4,item_json=?5,updated_at_ms=?6 WHERE work_item_id=?7 AND revision=?8", params![revision, status, assigned_instance_id, attempt, item_json, now_ms, item_id, expected_revision])? == 1)
+    Ok(connection.execute("UPDATE team_coordinator_work_items SET revision=?1,status=?2,assigned_instance_id=?3,attempt=?4,item_json=?5,updated_at_ms=?6 WHERE work_item_id=?7 AND revision=?8", params![input.revision, input.status, input.assigned_instance_id, input.attempt, input.item_json, input.now_ms, input.item_id, input.expected_revision])? == 1)
 }
 
 pub fn put_assignment(
@@ -151,13 +154,47 @@ mod tests {
     fn work_item_update_is_revision_fenced_and_tables_are_additive() {
         let connection = Connection::open_in_memory().unwrap();
         install_schema(&connection).unwrap();
-        put_work_item(&connection, "w", 1, "unassigned", None, 0, b"{}", 1).unwrap();
-        assert!(
-            !replace_work_item(&connection, "w", 0, 2, "assigned", Some("a"), 1, b"{}", 2).unwrap()
-        );
-        assert!(
-            replace_work_item(&connection, "w", 1, 2, "assigned", Some("a"), 1, b"{}", 2).unwrap()
-        );
+        put_work_item(
+            &connection,
+            PutWorkItemInput {
+                item_id: "w",
+                revision: 1,
+                status: "unassigned",
+                assigned_instance_id: None,
+                attempt: 0,
+                item_json: b"{}",
+                now_ms: 1,
+            },
+        )
+        .unwrap();
+        assert!(!replace_work_item(
+            &connection,
+            ReplaceWorkItemInput {
+                item_id: "w",
+                expected_revision: 0,
+                revision: 2,
+                status: "assigned",
+                assigned_instance_id: Some("a"),
+                attempt: 1,
+                item_json: b"{}",
+                now_ms: 2
+            }
+        )
+        .unwrap());
+        assert!(replace_work_item(
+            &connection,
+            ReplaceWorkItemInput {
+                item_id: "w",
+                expected_revision: 1,
+                revision: 2,
+                status: "assigned",
+                assigned_instance_id: Some("a"),
+                attempt: 1,
+                item_json: b"{}",
+                now_ms: 2
+            }
+        )
+        .unwrap());
         assert_eq!(
             get_work_item(&connection, "w").unwrap(),
             Some(b"{}".to_vec())

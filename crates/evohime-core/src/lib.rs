@@ -12981,13 +12981,15 @@ impl TaskCoordinator {
                             let json = encode(&item)?;
                             store::put_work_item(
                                 database.connection(),
-                                &item.id,
-                                item.revision as i64,
-                                &status(&item),
-                                item.assigned_instance_id.as_deref(),
-                                item.attempt as i64,
-                                &json,
-                                now,
+                                store::PutWorkItemInput {
+                                    item_id: &item.id,
+                                    revision: item.revision as i64,
+                                    status: &status(&item),
+                                    assigned_instance_id: item.assigned_instance_id.as_deref(),
+                                    attempt: item.attempt as i64,
+                                    item_json: &json,
+                                    now_ms: now,
+                                },
                             )
                             .map_err(|e| {
                                 if matches!(e, rusqlite::Error::SqliteFailure(_, _)) {
@@ -13074,14 +13076,16 @@ impl TaskCoordinator {
                             let json = encode(&item)?;
                             if !store::replace_work_item(
                                 database.connection(),
-                                &item.id,
-                                expected_revision as i64,
-                                item.revision as i64,
-                                &status(&item),
-                                item.assigned_instance_id.as_deref(),
-                                item.attempt as i64,
-                                &json,
-                                now,
+                                store::ReplaceWorkItemInput {
+                                    item_id: &item.id,
+                                    expected_revision: expected_revision as i64,
+                                    revision: item.revision as i64,
+                                    status: &status(&item),
+                                    assigned_instance_id: item.assigned_instance_id.as_deref(),
+                                    attempt: item.attempt as i64,
+                                    item_json: &json,
+                                    now_ms: now,
+                                },
                             )
                             .map_err(|_| "storage_failed")?
                             {
@@ -13165,14 +13169,16 @@ impl TaskCoordinator {
                             let json = encode(&item)?;
                             if !store::replace_work_item(
                                 database.connection(),
-                                &item.id,
-                                expected_revision as i64,
-                                item.revision as i64,
-                                &status(&item),
-                                None,
-                                item.attempt as i64,
-                                &json,
-                                now,
+                                store::ReplaceWorkItemInput {
+                                    item_id: &item.id,
+                                    expected_revision: expected_revision as i64,
+                                    revision: item.revision as i64,
+                                    status: &status(&item),
+                                    assigned_instance_id: None,
+                                    attempt: item.attempt as i64,
+                                    item_json: &json,
+                                    now_ms: now,
+                                },
                             )
                             .map_err(|_| "storage_failed")?
                             {
@@ -13195,14 +13201,16 @@ impl TaskCoordinator {
                             let json = encode(&item)?;
                             if !store::replace_work_item(
                                 database.connection(),
-                                &item.id,
-                                expected_revision as i64,
-                                item.revision as i64,
-                                &status(&item),
-                                item.assigned_instance_id.as_deref(),
-                                item.attempt as i64,
-                                &json,
-                                now,
+                                store::ReplaceWorkItemInput {
+                                    item_id: &item.id,
+                                    expected_revision: expected_revision as i64,
+                                    revision: item.revision as i64,
+                                    status: &status(&item),
+                                    assigned_instance_id: item.assigned_instance_id.as_deref(),
+                                    attempt: item.attempt as i64,
+                                    item_json: &json,
+                                    now_ms: now,
+                                },
                             )
                             .map_err(|_| "storage_failed")?
                             {
