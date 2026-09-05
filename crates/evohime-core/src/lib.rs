@@ -124,6 +124,37 @@ struct AcceptIntentRequest {
     workspace_revision: String,
 }
 
+/// Типизированный запрос preflight для командного resource budget.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TeamBudgetPreflightRequest {
+    policy: crate::team_resource_budget::TeamBudgetPolicy,
+    state: crate::team_resource_budget::TeamBudgetState,
+    estimate: crate::team_resource_budget::ResourceLimits,
+    #[serde(default)]
+    reserve_access: bool,
+    #[serde(default)]
+    unknown_cost: bool,
+}
+
+/// Типизированный запрос evaluate для composable termination conditions.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TerminationEvaluateRequest {
+    policy: crate::composable_termination_conditions::TerminationPolicy,
+    state: crate::composable_termination_conditions::TerminationState,
+    event: crate::composable_termination_conditions::TerminationEvent,
+}
+
+/// Типизированный запрос сохранения termination state.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TerminationSaveStateRequest {
+    state: crate::composable_termination_conditions::TerminationState,
+    run_id: String,
+    policy_id: String,
+}
+
 /// Аргументы для policy-only preflight при построении каталога инструментов.
 /// Preflight не выполняет инструмент, но path-инструментам всё равно нужен
 /// существующий workspace-relative путь, иначе безопасный инструмент ошибочно
@@ -11371,10 +11402,9 @@ impl TaskCoordinator {
                 reply,
             } => {
                 let result = async {
-                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|e| e.to_string())?;
                     match operation.as_str() {
                         "validate_policy" | "save_policy" => {
-                            let policy: team_resource_budget::TeamBudgetPolicy = serde_json::from_value(value).map_err(|e| e.to_string())?;
+                            let policy: team_resource_budget::TeamBudgetPolicy = serde_json::from_slice(&payload).map_err(|e| e.to_string())?;
                             team_resource_budget::validate_hash(&policy).map_err(|e| e.to_string())?;
                             if operation == "save_policy" {
                                 let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
@@ -11386,7 +11416,7 @@ impl TaskCoordinator {
                             serde_json::to_vec(&serde_json::json!({"status":"valid","policy_id":policy.id,"policy_version":policy.version,"content_hash":policy.content_hash})).map_err(|e| e.to_string())
                         }
                         "save_state" => {
-                            let state_value: team_resource_budget::TeamBudgetState = serde_json::from_value(value).map_err(|e| e.to_string())?;
+                            let state_value: team_resource_budget::TeamBudgetState = serde_json::from_slice(&payload).map_err(|e| e.to_string())?;
                             if state_value.schema_version != team_resource_budget::SCHEMA_VERSION || state_value.team_session_id.is_empty() { return Err("invalid team budget state".to_string()); }
                             let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
                             let connection = journal.database().lock().await;
@@ -11396,7 +11426,7 @@ impl TaskCoordinator {
                             serde_json::to_vec(&serde_json::json!({"status":"saved","team_session_id":state_value.team_session_id,"version":state_value.version.saturating_add(1)})).map_err(|e| e.to_string())
                         }
                         "record_usage" => {
-                            let event: team_resource_budget::ResourceUsageEvent = serde_json::from_value(value).map_err(|e| e.to_string())?;
+                            let event: team_resource_budget::ResourceUsageEvent = serde_json::from_slice(&payload).map_err(|e| e.to_string())?;
                             if event.schema_version != team_resource_budget::SCHEMA_VERSION || event.id.is_empty() || event.team_session_id.is_empty() || event.run_id.is_empty() || event.operation_kind.is_empty() { return Err("invalid team resource usage event".to_string()); }
                             let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
                             let connection = journal.database().lock().await;
@@ -11405,11 +11435,8 @@ impl TaskCoordinator {
                             serde_json::to_vec(&serde_json::json!({"status":if inserted { "recorded" } else { "duplicate" },"usage_id":event.id,"uncertain":event.uncertain,"idempotency_key":idempotency_key})).map_err(|e| e.to_string())
                         }
                         "preflight" => {
-                            let request: serde_json::Value = value;
-                            let policy: team_resource_budget::TeamBudgetPolicy = serde_json::from_value(request["policy"].clone()).map_err(|e| e.to_string())?;
-                            let state: team_resource_budget::TeamBudgetState = serde_json::from_value(request["state"].clone()).map_err(|e| e.to_string())?;
-                            let estimate: team_resource_budget::ResourceLimits = serde_json::from_value(request["estimate"].clone()).map_err(|e| e.to_string())?;
-                            let decision = team_resource_budget::preflight_charge(&state, &policy, &estimate, request["reserve_access"].as_bool().unwrap_or(false), request["unknown_cost"].as_bool().unwrap_or(false)).map_err(|e| e.to_string())?;
+                            let request: TeamBudgetPreflightRequest = serde_json::from_slice(&payload).map_err(|e| e.to_string())?;
+                            let decision = team_resource_budget::preflight_charge(&request.state, &request.policy, &request.estimate, request.reserve_access, request.unknown_cost).map_err(|e| e.to_string())?;
                             serde_json::to_vec(&serde_json::json!({"status":format!("{decision:?}").to_lowercase()})).map_err(|e| e.to_string())
                         }
                         _ => Err("unsupported team resource budget operation".to_string()),
@@ -11426,10 +11453,9 @@ impl TaskCoordinator {
                 reply,
             } => {
                 let result = async {
-                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|e| e.to_string())?;
                     match operation.as_str() {
                         "validate_policy" | "save_policy" => {
-                            let policy: composable_termination_conditions::TerminationPolicy = serde_json::from_value(value).map_err(|e| e.to_string())?;
+                            let policy: composable_termination_conditions::TerminationPolicy = serde_json::from_slice(&payload).map_err(|e| e.to_string())?;
                             composable_termination_conditions::validate_hash(&policy).map_err(|e| e.to_string())?;
                             if operation == "save_policy" {
                                 let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
@@ -11441,30 +11467,29 @@ impl TaskCoordinator {
                             serde_json::to_vec(&serde_json::json!({"status":"valid","policy_id":policy.id,"content_hash":policy.content_hash})).map_err(|e| e.to_string())
                         }
                         "evaluate" => {
-                            let policy: composable_termination_conditions::TerminationPolicy = serde_json::from_value(value["policy"].clone()).map_err(|e| e.to_string())?;
-                            let state_value: composable_termination_conditions::TerminationState = serde_json::from_value(value["state"].clone()).map_err(|e| e.to_string())?;
-                            let event: composable_termination_conditions::TerminationEvent = serde_json::from_value(value["event"].clone()).map_err(|e| e.to_string())?;
-                            let decision = composable_termination_conditions::evaluate_policy(&policy, &state_value, &event).map_err(|e| e.to_string())?;
+                            let request: TerminationEvaluateRequest = serde_json::from_slice(&payload).map_err(|e| e.to_string())?;
+                            let decision = composable_termination_conditions::evaluate_policy(&request.policy, &request.state, &request.event).map_err(|e| e.to_string())?;
                             serde_json::to_vec(&serde_json::json!({
                                 "status": "evaluated",
                                 "decision": decision,
-                                "hard_stop": policy.hard_stop,
+                                "hard_stop": request.policy.hard_stop,
                                 "counters": {
-                                    "messages": event.messages,
-                                    "turns": event.turns,
-                                    "tool_calls": event.tool_calls,
-                                    "input_tokens": event.input_tokens,
-                                    "output_tokens": event.output_tokens,
-                                    "cost_micros": event.cost_micros,
-                                    "elapsed_ms": event.elapsed_ms,
-                                    "idle_ms": event.idle_ms,
+                                    "messages": request.event.messages,
+                                    "turns": request.event.turns,
+                                    "tool_calls": request.event.tool_calls,
+                                    "input_tokens": request.event.input_tokens,
+                                    "output_tokens": request.event.output_tokens,
+                                    "cost_micros": request.event.cost_micros,
+                                    "elapsed_ms": request.event.elapsed_ms,
+                                    "idle_ms": request.event.idle_ms,
                                 },
                             })).map_err(|e| e.to_string())
                         }
                         "save_state" => {
-                            let state_value: composable_termination_conditions::TerminationState = serde_json::from_value(value["state"].clone()).map_err(|e| e.to_string())?;
-                            let run_id = value["run_id"].as_str().ok_or_else(|| "run_id is required".to_string())?;
-                            let policy_id = value["policy_id"].as_str().ok_or_else(|| "policy_id is required".to_string())?;
+                            let request: TerminationSaveStateRequest = serde_json::from_slice(&payload).map_err(|e| e.to_string())?;
+                            let state_value = request.state;
+                            let run_id = request.run_id.as_str();
+                            let policy_id = request.policy_id.as_str();
                             let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
                             let connection = journal.database().lock().await;
                             let json = serde_json::to_string(&state_value).map_err(|e| e.to_string())?;
