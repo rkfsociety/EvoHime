@@ -62,6 +62,68 @@ struct TeamSopSessionPayload {
     workflow_run_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct AgenticBrowserSessionResponse {
+    #[serde(default)]
+    request_id: String,
+    #[serde(default)]
+    operation: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    session_id: String,
+    #[serde(default)]
+    revision: u64,
+    #[serde(default)]
+    control_owner: String,
+    #[serde(default)]
+    control_generation: u64,
+    #[serde(default)]
+    error_code: String,
+    #[serde(default)]
+    projection_json: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct HumanWorkItemsResponse {
+    #[serde(default)]
+    request_id: String,
+    #[serde(default)]
+    operation: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    item_id: String,
+    #[serde(default)]
+    revision: u64,
+    #[serde(default)]
+    state: String,
+    #[serde(default)]
+    error_code: String,
+    #[serde(default)]
+    projection_json: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct TeamSopProtocolsResponse {
+    #[serde(default)]
+    request_id: String,
+    #[serde(default)]
+    operation: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    session_id: String,
+    #[serde(default)]
+    version: u64,
+    #[serde(default)]
+    state: String,
+    #[serde(default)]
+    error_code: String,
+    #[serde(default)]
+    projection_json: serde_json::Value,
+}
+
 fn bounded_tool_error_code(error: &evohime_tool_runtime::ToolError) -> &'static str {
     match error {
         evohime_tool_runtime::ToolError::UnknownTool(_) => "unknown_tool",
@@ -15407,18 +15469,18 @@ impl IpcBridge {
         writer: &mut W,
         payload: Vec<u8>,
     ) -> Result<(), IpcBridgeError> {
-        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let value: AgenticBrowserSessionResponse = serde_json::from_slice(&payload)?;
         let result = generated::AgenticBrowserSessionEvent {
             schema_version: 1,
-            request_id: value["request_id"].as_str().unwrap_or_default().into(),
-            operation: value["operation"].as_str().unwrap_or_default().into(),
-            status: value["status"].as_str().unwrap_or_default().into(),
-            session_id: value["session_id"].as_str().unwrap_or_default().into(),
-            revision: value["revision"].as_u64().unwrap_or_default(),
-            control_owner: value["control_owner"].as_str().unwrap_or_default().into(),
-            control_generation: value["control_generation"].as_u64().unwrap_or_default(),
-            error_code: value["error_code"].as_str().unwrap_or_default().into(),
-            projection_json: serde_json::to_vec(&value["projection_json"])?,
+            request_id: value.request_id,
+            operation: value.operation,
+            status: value.status,
+            session_id: value.session_id,
+            revision: value.revision,
+            control_owner: value.control_owner,
+            control_generation: value.control_generation,
+            error_code: value.error_code,
+            projection_json: serde_json::to_vec(&value.projection_json)?,
         };
         transport::write_frame(
             writer,
@@ -15445,17 +15507,17 @@ impl IpcBridge {
         writer: &mut W,
         payload: Vec<u8>,
     ) -> Result<(), IpcBridgeError> {
-        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let value: HumanWorkItemsResponse = serde_json::from_slice(&payload)?;
         let result = generated::HumanWorkItemsEvent {
             schema_version: 1,
-            request_id: value["request_id"].as_str().unwrap_or_default().into(),
-            operation: value["operation"].as_str().unwrap_or_default().into(),
-            status: value["status"].as_str().unwrap_or_default().into(),
-            item_id: value["item_id"].as_str().unwrap_or_default().into(),
-            revision: value["revision"].as_u64().unwrap_or_default(),
-            state: value["state"].as_str().unwrap_or_default().into(),
-            error_code: value["error_code"].as_str().unwrap_or_default().into(),
-            projection_json: serde_json::to_vec(&value["projection_json"])?,
+            request_id: value.request_id,
+            operation: value.operation,
+            status: value.status,
+            item_id: value.item_id,
+            revision: value.revision,
+            state: value.state,
+            error_code: value.error_code,
+            projection_json: serde_json::to_vec(&value.projection_json)?,
         };
         transport::write_frame(
             writer,
@@ -15608,17 +15670,17 @@ impl IpcBridge {
         writer: &mut W,
         payload: Vec<u8>,
     ) -> Result<(), IpcBridgeError> {
-        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let value: TeamSopProtocolsResponse = serde_json::from_slice(&payload)?;
         let result = generated::TeamSopProtocolsEvent {
             schema_version: 1,
-            request_id: value["request_id"].as_str().unwrap_or_default().into(),
-            operation: value["operation"].as_str().unwrap_or_default().into(),
-            status: value["status"].as_str().unwrap_or_default().into(),
-            session_id: value["session_id"].as_str().unwrap_or_default().into(),
-            version: value["version"].as_u64().unwrap_or_default(),
-            state: value["state"].as_str().unwrap_or_default().into(),
-            error_code: value["error_code"].as_str().unwrap_or_default().into(),
-            projection_json: serde_json::to_vec(&value["projection_json"])?,
+            request_id: value.request_id,
+            operation: value.operation,
+            status: value.status,
+            session_id: value.session_id,
+            version: value.version,
+            state: value.state,
+            error_code: value.error_code,
+            projection_json: serde_json::to_vec(&value.projection_json)?,
         };
         transport::write_frame(
             writer,
