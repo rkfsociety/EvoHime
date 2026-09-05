@@ -1865,13 +1865,15 @@ impl IpcBridge {
         let mut database = self.journal.database().lock().await;
         evohime_local_storage::continuation_store::apply_transition_action(
             database.connection_mut(),
-            &request.run_id,
-            &request.idempotency_key,
-            "stop",
-            &request.expected_state,
-            "stopped",
-            "user_stop",
-            crate::task_memory::now_millis() as i64,
+            evohime_local_storage::continuation_store::TransitionActionInput {
+                run_id: &request.run_id,
+                idempotency_key: &request.idempotency_key,
+                action: "stop",
+                expected_state: &request.expected_state,
+                next_state: "stopped",
+                stop_reason: "user_stop",
+                now_ms: crate::task_memory::now_millis() as i64,
+            },
         )
         .map_err(|_| "storage_failed".to_string())
     }
@@ -1893,13 +1895,15 @@ impl IpcBridge {
         let mut database = self.journal.database().lock().await;
         evohime_local_storage::continuation_store::apply_transition_action(
             database.connection_mut(),
-            &run_id,
-            &idempotency_key,
-            action,
-            &expected_state,
-            next_state,
-            action,
-            crate::task_memory::now_millis() as i64,
+            evohime_local_storage::continuation_store::TransitionActionInput {
+                run_id: &run_id,
+                idempotency_key: &idempotency_key,
+                action,
+                expected_state: &expected_state,
+                next_state,
+                stop_reason: action,
+                now_ms: crate::task_memory::now_millis() as i64,
+            },
         )
         .map_err(|_| "storage_failed".to_string())
     }
@@ -1926,13 +1930,15 @@ impl IpcBridge {
         }
         let _action_result = evohime_local_storage::continuation_store::apply_transition_action(
             database.connection_mut(),
-            &request.run_id,
-            &request.idempotency_key,
-            "resume",
-            "paused",
-            "running",
-            "approval_resolution",
-            crate::task_memory::now_millis() as i64,
+            evohime_local_storage::continuation_store::TransitionActionInput {
+                run_id: &request.run_id,
+                idempotency_key: &request.idempotency_key,
+                action: "resume",
+                expected_state: "paused",
+                next_state: "running",
+                stop_reason: "approval_resolution",
+                now_ms: crate::task_memory::now_millis() as i64,
+            },
         )
         .map_err(|_| "storage_failed".to_string())?;
         evohime_local_storage::continuation_store::get_run(database.connection(), &request.run_id)

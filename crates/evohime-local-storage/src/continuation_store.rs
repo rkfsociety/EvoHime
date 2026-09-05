@@ -150,23 +150,27 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+pub struct TransitionActionInput<'a> {
+    pub run_id: &'a str,
+    pub idempotency_key: &'a str,
+    pub action: &'a str,
+    pub expected_state: &'a str,
+    pub next_state: &'a str,
+    pub stop_reason: &'a str,
+    pub now_ms: i64,
+}
+
 pub fn apply_transition_action(
     connection: &mut Connection,
-    run_id: &str,
-    idempotency_key: &str,
-    action: &str,
-    expected_state: &str,
-    next_state: &str,
-    stop_reason: &str,
-    now_ms: i64,
+    input: TransitionActionInput<'_>,
 ) -> rusqlite::Result<Vec<u8>> {
     let transaction = connection.transaction()?;
     if let Some(result) = transaction
         .query_row(
             "SELECT result_json FROM continuation_actions
              WHERE run_id=?1 AND idempotency_key=?2",
-            params![run_id, idempotency_key],
+            params![input.run_id, input.idempotency_key],
             |row| row.get::<_, Vec<u8>>(0),
         )
         .optional()?
@@ -176,11 +180,17 @@ pub fn apply_transition_action(
     let applied = transaction.execute(
         "UPDATE continuation_runs SET state=?3,stop_reason=?4,updated_at_ms=?5
          WHERE run_id=?1 AND state=?2",
-        params![run_id, expected_state, next_state, stop_reason, now_ms],
+        params![
+            input.run_id,
+            input.expected_state,
+            input.next_state,
+            input.stop_reason,
+            input.now_ms
+        ],
     )? == 1;
     let result = serde_json::to_vec(&serde_json::json!({
-        "run_id": run_id,
-        "action": action,
+        "run_id": input.run_id,
+        "action": input.action,
         "applied": applied,
         "deduplicated": false,
         "error_code": if applied { "" } else { "stale_action" }
@@ -190,7 +200,13 @@ pub fn apply_transition_action(
         "INSERT INTO continuation_actions
          (run_id,idempotency_key,action,result_json,created_at_ms)
          VALUES (?1,?2,?3,?4,?5)",
-        params![run_id, idempotency_key, action, result, now_ms],
+        params![
+            input.run_id,
+            input.idempotency_key,
+            input.action,
+            result,
+            input.now_ms
+        ],
     )?;
     transaction.commit()?;
     Ok(result)
@@ -673,26 +689,19 @@ mod tests {
         install_schema(&connection).unwrap();
         save_policy(&connection, &policy()).unwrap();
         create_run(&connection, &run()).unwrap();
-        let first = apply_transition_action(
-            &mut connection,
-            "r1",
-            "stop-1",
-            "stop",
-            "running",
-            "stopped",
-            "user_stop",
-            2,
-        )
-        .unwrap();
+        let input = TransitionActionInput {
+            run_id: "r1",
+            idempotency_key: "stop-1",
+            action: "stop",
+            expected_state: "running",
+            next_state: "stopped",
+            stop_reason: "user_stop",
+            now_ms: 2,
+        };
+        let first = apply_transition_action(&mut connection, input).unwrap();
         let duplicate = apply_transition_action(
             &mut connection,
-            "r1",
-            "stop-1",
-            "stop",
-            "running",
-            "stopped",
-            "user_stop",
-            3,
+            TransitionActionInput { now_ms: 3, ..input },
         )
         .unwrap();
         assert_eq!(first, duplicate);
