@@ -5580,21 +5580,17 @@ impl TaskExecutor for ModelAgent {
 /// following request without rebuilding the gateway or restarting Core. An
 /// empty value means "whatever the route is configured with".
 #[derive(Clone, Default)]
-pub struct SelectedModel(Arc<std::sync::RwLock<String>>);
+pub struct SelectedModel(Arc<std::sync::RwLock<Option<Arc<str>>>>);
 
 impl SelectedModel {
     pub fn set(&self, model: &str) {
         if let Ok(mut current) = self.0.write() {
-            *current = model.trim().to_string();
+            *current = (!model.trim().is_empty()).then(|| Arc::<str>::from(model.trim()));
         }
     }
 
-    pub fn get(&self) -> Option<String> {
-        self.0
-            .read()
-            .ok()
-            .map(|value| value.clone())
-            .filter(|value| !value.is_empty())
+    pub fn get(&self) -> Option<Arc<str>> {
+        self.0.read().ok().and_then(|value| value.clone())
     }
 }
 

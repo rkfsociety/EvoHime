@@ -10951,7 +10951,7 @@ impl IpcBridge {
             return Some(config.clone());
         };
         Some(ModelConfigSnapshot {
-            model,
+            model: model.to_string(),
             ..config.clone()
         })
     }
