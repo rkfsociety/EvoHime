@@ -17,17 +17,30 @@ pub fn install_schema(connection: &Connection) -> Result<(), StorageError> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+pub struct SaveRevisionInput<'a> {
+    pub owner_scope: &'a str,
+    pub id: &'a str,
+    pub revision: u64,
+    pub content_json: &'a str,
+    pub content_hash: &'a str,
+    pub state: &'a str,
+    pub now_ms: i64,
+}
+
 pub fn save_revision(
     connection: &Connection,
-    owner_scope: &str,
-    id: &str,
-    revision: u64,
-    content_json: &str,
-    content_hash: &str,
-    state: &str,
-    now_ms: i64,
+    input: SaveRevisionInput<'_>,
 ) -> Result<bool, StorageError> {
+    let SaveRevisionInput {
+        owner_scope,
+        id,
+        revision,
+        content_json,
+        content_hash,
+        state,
+        now_ms,
+    } = input;
     let changed = connection.execute(
         "INSERT OR IGNORE INTO invocation_presets (id, owner_scope, revision, content_json, content_hash, state, created_at_ms, updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?7)",
         params![id, owner_scope, revision as i64, content_json, content_hash, state, now_ms],
@@ -56,8 +69,32 @@ mod tests {
     fn revisions_are_immutable_and_idempotent() {
         let connection = Connection::open_in_memory().unwrap();
         install_schema(&connection).unwrap();
-        assert!(save_revision(&connection, "o", "p", 1, "{}", "h", "ready", 1).unwrap());
-        assert!(!save_revision(&connection, "o", "p", 1, "{bad}", "x", "ready", 2).unwrap());
+        assert!(save_revision(
+            &connection,
+            SaveRevisionInput {
+                owner_scope: "o",
+                id: "p",
+                revision: 1,
+                content_json: "{}",
+                content_hash: "h",
+                state: "ready",
+                now_ms: 1,
+            },
+        )
+        .unwrap());
+        assert!(!save_revision(
+            &connection,
+            SaveRevisionInput {
+                owner_scope: "o",
+                id: "p",
+                revision: 1,
+                content_json: "{bad}",
+                content_hash: "x",
+                state: "ready",
+                now_ms: 2,
+            },
+        )
+        .unwrap());
         assert_eq!(
             read_revision(&connection, "o", "p", 1).unwrap().unwrap().1,
             "h"
