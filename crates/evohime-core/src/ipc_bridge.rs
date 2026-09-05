@@ -219,6 +219,28 @@ struct AgentRoleRuntimePayload {
     requested_grants: Vec<String>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct ExecutionBackendPayload {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    kind: String,
+    #[serde(default)]
+    capabilities: Vec<String>,
+    #[serde(default)]
+    endpoint: Option<String>,
+    #[serde(default)]
+    auth_ref: Option<String>,
+    #[serde(default)]
+    backend_id: String,
+    #[serde(default)]
+    protocol_major: u32,
+    #[serde(default)]
+    protocol_minor: u32,
+    #[serde(default)]
+    capability_hash: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct PersistentAgentOrganizationResponse {
     #[serde(default)]
@@ -14206,10 +14228,10 @@ impl IpcBridge {
         {
             return serde_json::json!({"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"invalid_request"});
         }
-        let payload: serde_json::Value = if request.payload.is_empty() {
-            serde_json::json!({})
+        let payload: ExecutionBackendPayload = if request.payload.is_empty() {
+            ExecutionBackendPayload::default()
         } else {
-            match serde_json::from_slice(&request.payload) {
+            match serde_json::from_slice::<ExecutionBackendPayload>(&request.payload) {
                 Ok(v) => v,
                 Err(_) => {
                     return serde_json::json!({"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"invalid_payload"})
@@ -14265,27 +14287,19 @@ impl IpcBridge {
                 serde_json::json!({"status":"ok","registry_version":registry.version(),"default_backend_id":registry.default_id(),"backends":registry.entries().map(|b| serde_json::json!({"id":b.id,"kind":b.kind,"enabled":b.enabled,"health":b.health,"capability_count":b.capabilities.len(),"has_auth_ref":b.auth_ref.is_some()})).collect::<Vec<_>>()})
             }
             "register" => {
-                let id = payload["id"].as_str().unwrap_or_default().to_owned();
-                let kind = if payload["kind"].as_str() == Some("remote") {
+                let id = payload.id.clone();
+                let kind = if payload.kind == "remote" {
                     BackendKind::Remote
                 } else {
                     BackendKind::Local
                 };
-                let capabilities: Vec<String> = payload["capabilities"]
-                    .as_array()
-                    .map(|v| {
-                        v.iter()
-                            .filter_map(|x| x.as_str().map(str::to_owned))
-                            .collect()
-                    })
-                    .unwrap_or_default();
                 let backend = BackendDefinition {
                     id,
                     kind,
-                    endpoint: payload["endpoint"].as_str().map(str::to_owned),
-                    auth_ref: payload["auth_ref"].as_str().map(str::to_owned),
+                    endpoint: payload.endpoint.clone(),
+                    auth_ref: payload.auth_ref.clone(),
                     enabled: true,
-                    capabilities,
+                    capabilities: payload.capabilities.clone(),
                     version: 0,
                     health: HealthState::Registered,
                     health_failure: None,
@@ -14321,23 +14335,13 @@ impl IpcBridge {
                 }
             }
             "handshake" => {
-                let id = payload["backend_id"].as_str().unwrap_or_default();
+                let id = payload.backend_id.as_str();
                 let hs = crate::execution_backend_registry::CapabilityHandshake {
-                    protocol_major: payload["protocol_major"].as_u64().unwrap_or_default() as u32,
-                    protocol_minor: payload["protocol_minor"].as_u64().unwrap_or_default() as u32,
+                    protocol_major: payload.protocol_major,
+                    protocol_minor: payload.protocol_minor,
                     backend_id: id.into(),
-                    capabilities: payload["capabilities"]
-                        .as_array()
-                        .map(|v| {
-                            v.iter()
-                                .filter_map(|x| x.as_str().map(str::to_owned))
-                                .collect()
-                        })
-                        .unwrap_or_default(),
-                    capability_hash: payload["capability_hash"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .into(),
+                    capabilities: payload.capabilities.clone(),
+                    capability_hash: payload.capability_hash.clone(),
                 };
                 match registry.handshake(
                     id,
@@ -14351,7 +14355,7 @@ impl IpcBridge {
                 }
             }
             "remove" => {
-                let id = payload["id"].as_str().unwrap_or_default();
+                let id = payload.id.as_str();
                 if id.is_empty() || id == "local.core" {
                     serde_json::json!({"status":"rejected","error_code":"local_backend_required"})
                 } else if registry.remove(id, registry.version()).is_err() {
@@ -14365,7 +14369,7 @@ impl IpcBridge {
                 }
             }
             "set_default" => {
-                let id = payload["id"].as_str().unwrap_or_default();
+                let id = payload.id.as_str();
                 match registry.set_default(id, registry.version()) {
                     Ok(()) => {
                         let _ =
@@ -14379,7 +14383,7 @@ impl IpcBridge {
                 }
             }
             "disable" => {
-                let id = payload["id"].as_str().unwrap_or_default();
+                let id = payload.id.as_str();
                 if id == "local.core" {
                     serde_json::json!({"status":"rejected","error_code":"local_backend_required"})
                 } else if evohime_local_storage::execution_backend_registry_store::set_enabled(
@@ -14395,9 +14399,11 @@ impl IpcBridge {
                 }
             }
             "snapshot" => {
-                let id = payload["backend_id"]
-                    .as_str()
-                    .unwrap_or(registry.default_id());
+                let id = if payload.backend_id.is_empty() {
+                    registry.default_id()
+                } else {
+                    payload.backend_id.as_str()
+                };
                 if registry.entries().any(|b| b.id == id) {
                     serde_json::json!({"status":"ok","snapshot":{"backend_id":id,"registry_version":registry.version(),"handshake_hash":"pending","policy_hash":"core-policy-v1"}})
                 } else {
