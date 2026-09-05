@@ -30,12 +30,7 @@ pub fn discover_hardware() -> Result<LocalHardwareProfile, ManagerError> {
     if unsafe { GlobalMemoryStatusEx(&mut memory) } == 0 || memory.ullTotalPhys == 0 {
         return Err(ManagerError::Invalid("memory discovery"));
     }
-    let data_dir = std::env::var_os("EVOHIME_DATA_DIR")
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("LOCALAPPDATA").map(|path| PathBuf::from(path).join("EvoHime"))
-        })
-        .unwrap_or_else(|| PathBuf::from("."));
+    let data_dir = crate::get_data_directory();
     let mut wide: Vec<u16> = data_dir.as_os_str().encode_wide().collect();
     wide.push(0);
     let mut available = 0u64;

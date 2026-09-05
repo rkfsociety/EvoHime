@@ -70,16 +70,7 @@ impl ExportSummary {
 /// Exposed so memory `forget` can rotate the backup containers that still
 /// hold an already-erased statement.
 pub fn local_data_dir() -> PathBuf {
-    data_dir()
-}
-
-fn data_dir() -> PathBuf {
-    std::env::var_os("EVOHIME_DATA_DIR")
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("LOCALAPPDATA").map(|path| PathBuf::from(path).join("EvoHime"))
-        })
-        .unwrap_or_else(|| PathBuf::from(".evohime"))
+    crate::get_data_directory()
 }
 
 /// Derives a bounded scheduler liveness probe from the Core heartbeat file
@@ -87,7 +78,7 @@ fn data_dir() -> PathBuf {
 /// writes to and the supervisor watches for staleness.
 pub fn scheduler_probe() -> crate::doctor::SchedulerProbe {
     const STALE_THRESHOLD_MS: u64 = 5 * 60 * 1000; // matches supervisor's own tolerance window
-    let path = data_dir().join("core-heartbeat");
+    let path = crate::get_data_directory().join("core-heartbeat");
     let heartbeat_age_ms = fs::metadata(&path)
         .and_then(|meta| meta.modified())
         .ok()
@@ -148,7 +139,7 @@ fn export_jsonl_source(
 }
 
 fn export_tool_metrics(out: &mut impl Write) -> Result<u64, ExportError> {
-    let events_path = data_dir().join("events.db");
+    let events_path = crate::get_data_directory().join("events.db");
     if !events_path.exists() {
         return Ok(0);
     }
@@ -202,7 +193,7 @@ pub fn export_logs(destination: &Path) -> Result<ExportSummary, ExportError> {
         .truncate(true)
         .open(destination)?;
 
-    let logs_dir = data_dir().join("logs");
+    let logs_dir = crate::get_data_directory().join("logs");
     let mut sources_included = Vec::new();
     let mut lines_exported = 0u64;
 

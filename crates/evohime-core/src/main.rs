@@ -1,5 +1,12 @@
 #[cfg(windows)]
 fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("evohime_core=info")),
+        )
+        .with_target(false)
+        .init();
     std::thread::Builder::new()
         // Debug startup has a large async state machine. The default process
         // stack is too small on Windows and can overflow before Core finishes
@@ -27,21 +34,16 @@ async fn run() {
         match launch_context().and_then(evohime_core::PipeServerConfig::from_environment) {
             Ok(config) => Some(config),
             Err(error) => {
-                eprintln!("evohime-core launch context failed: {error}");
+                tracing::error!("evohime-core launch context failed: {error}");
                 std::process::exit(1);
             }
         }
     };
-    let data_dir = normalized_env_path("EVOHIME_DATA_DIR")
-        .or_else(|| {
-            std::env::var_os("LOCALAPPDATA")
-                .map(|path| std::path::PathBuf::from(path).join("EvoHime"))
-        })
-        .unwrap_or_else(|| std::path::PathBuf::from(".evohime"));
+    let data_dir = evohime_core::get_data_directory();
     let journal = match evohime_core::EventJournal::open(data_dir.join("events.db")) {
         Ok(journal) => journal,
         Err(error) => {
-            eprintln!("evohime-core storage failed: {error}");
+            tracing::error!("evohime-core storage failed: {error}");
             std::process::exit(1);
         }
     };
@@ -51,11 +53,11 @@ async fn run() {
     {
         let mut database = journal.database().lock().await;
         if let Err(error) = receipt_keys.startup_with_database(database.connection_mut()) {
-            eprintln!("evohime-core receipt key lifecycle failed: {error}");
+            tracing::error!("evohime-core receipt key lifecycle failed: {error}");
             std::process::exit(1);
         }
         if let Err(error) = evohime_receipts::runtime::recover_database(database.connection_mut()) {
-            eprintln!("evohime-core receipt recovery failed: {error}");
+            tracing::error!("evohime-core receipt recovery failed: {error}");
         }
         if receipt_keys.scheduled_rotation_due().unwrap_or(false) {
             let trusted = receipt_keys
@@ -75,37 +77,37 @@ async fn run() {
                     "scheduled",
                     "system",
                 ) {
-                    eprintln!("scheduled receipt key rotation failed: {error}");
+                    tracing::error!("scheduled receipt key rotation failed: {error}");
                 } else {
                     let _ = receipt_keys.record_rotation_check();
                 }
             } else {
-                eprintln!("scheduled receipt key rotation blocked: key.trust_required");
+                tracing::error!("scheduled receipt key rotation blocked: key.trust_required");
             }
         }
     }
     if let Err(error) = journal.recover_and_reconcile_after_restart().await {
-        eprintln!("evohime-core recovery failed: {error}");
+        tracing::error!("evohime-core recovery failed: {error}");
         std::process::exit(1);
     }
     if let Err(error) = journal.recover_persistent_agent_registry().await {
-        eprintln!("evohime-core persistent agent registry recovery failed: {error}");
+        tracing::error!("evohime-core persistent agent registry recovery failed: {error}");
         std::process::exit(1);
     }
     if let Err(error) = journal.recover_model_provenance_on_startup().await {
-        eprintln!("evohime-core model provenance recovery failed: {error}");
+        tracing::error!("evohime-core model provenance recovery failed: {error}");
         std::process::exit(1);
     }
     if let Err(error) = journal.recover_continuation_runs().await {
-        eprintln!("evohime-core continuation recovery failed: {error}");
+        tracing::error!("evohime-core continuation recovery failed: {error}");
         std::process::exit(1);
     }
     if let Err(error) = journal.recover_retained_children().await {
-        eprintln!("evohime-core retained child recovery failed: {error}");
+        tracing::error!("evohime-core retained child recovery failed: {error}");
         std::process::exit(1);
     }
     if let Err(error) = journal.recover_analysis_kernels().await {
-        eprintln!("evohime-core analysis-kernel recovery failed: {error}");
+        tracing::error!("evohime-core analysis-kernel recovery failed: {error}");
         std::process::exit(1);
     }
     let _model_provenance_retention_task =
@@ -179,7 +181,7 @@ async fn run() {
     }
     if let Some((prompt, workspace_root, approve_writes)) = console_request() {
         let Some(executor) = executor else {
-            eprintln!("evohime-core console: модель не настроена; проверьте .env");
+            tracing::error!("evohime-core console: модель не настроена; проверьте .env");
             std::process::exit(1);
         };
         let (coordinator, mut events) =
@@ -197,7 +199,7 @@ async fn run() {
             })
             .await
         {
-            eprintln!("evohime-core console: не удалось запустить задачу: {error}");
+            tracing::error!("evohime-core console: не удалось запустить задачу: {error}");
             std::process::exit(1);
         }
         while let Ok(event) = events.recv().await {
@@ -260,21 +262,21 @@ async fn run() {
         .record_ledger_core_start(bridge.core_instance_id())
         .await
     {
-        eprintln!("evohime-core ledger core_start failed: {error}");
+        tracing::error!("evohime-core ledger core_start failed: {error}");
     }
     if let Err(error) = bridge.journal().reconcile_ledger_on_startup().await {
-        eprintln!("evohime-core ledger reconciliation failed: {error}");
+        tracing::error!("evohime-core ledger reconciliation failed: {error}");
     }
     let logger = match evohime_core::StructuredLogger::open(data_dir.join("logs/core.jsonl")) {
         Ok(logger) => std::sync::Arc::new(logger),
         Err(error) => {
-            eprintln!("evohime-core logging failed: {error}");
+            tracing::error!("evohime-core logging failed: {error}");
             std::process::exit(1);
         }
     };
     let config = pipe_config.expect("console commands return before pipe startup");
     if let Err(error) = probe_supervisor(config.context()).await {
-        eprintln!("evohime-core supervisor lifecycle probe failed: {error}");
+        tracing::error!("evohime-core supervisor lifecycle probe failed: {error}");
     }
     let authenticated = config.context().is_authenticated();
     let _ = logger.write(
@@ -304,7 +306,7 @@ async fn run() {
                 match evohime_core::run_windows_listener_pipe(listener_context.clone(), std::sync::Arc::clone(&listener_bridge), std::sync::Arc::clone(&listener_logger)).await {
                     Ok(()) => {}
                     Err(error) => {
-                        eprintln!("evohime-core listener pipe restarted: {error}");
+                        tracing::error!("evohime-core listener pipe restarted: {error}");
                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     }
                 }
@@ -314,7 +316,7 @@ async fn run() {
         },
     };
     if let Err(error) = result {
-        eprintln!("evohime-core failed: {error}");
+        tracing::error!("evohime-core failed: {error}");
         std::process::exit(1);
     }
     heartbeat_task.abort();
@@ -382,15 +384,6 @@ async fn probe_supervisor(
 }
 
 #[cfg(windows)]
-fn normalized_env_path(name: &str) -> Option<std::path::PathBuf> {
-    std::env::var(name)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .map(std::path::PathBuf::from)
-}
-
-#[cfg(windows)]
 fn spawn_heartbeat(path: std::path::PathBuf) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         loop {
@@ -446,7 +439,9 @@ fn console_request() -> Option<(String, std::path::PathBuf, bool)> {
     }
     let prompt = prompt_parts.join(" ").trim().to_string();
     if prompt.is_empty() {
-        eprintln!("Использование: evohime-core.exe --console --workspace <path> --prompt <текст>");
+        tracing::error!(
+            "Использование: evohime-core.exe --console --workspace <path> --prompt <текст>"
+        );
         std::process::exit(2);
     }
     Some((prompt, workspace, approve_writes))
@@ -457,11 +452,11 @@ fn console_request() -> Option<(String, std::path::PathBuf, bool)> {
 #[cfg(windows)]
 async fn list_console_models(gateway_config: Option<evohime_model_gateway::ModelGatewayConfig>) {
     let Some(config) = gateway_config else {
-        eprintln!("evohime-core console: модель не настроена; проверьте .env");
+        tracing::error!("evohime-core console: модель не настроена; проверьте .env");
         std::process::exit(1);
     };
     let Some(route) = config.routes.get(&config.default_route) else {
-        eprintln!("evohime-core console: маршрут по умолчанию не найден");
+        tracing::error!("evohime-core console: маршрут по умолчанию не найден");
         std::process::exit(1);
     };
     match evohime_model_gateway::fetch_model_catalog(route).await {
@@ -478,7 +473,7 @@ async fn list_console_models(gateway_config: Option<evohime_model_gateway::Model
             }
         }
         Err(error) => {
-            eprintln!("evohime-core console: каталог не получен: {error}");
+            tracing::error!("evohime-core console: каталог не получен: {error}");
             std::process::exit(1);
         }
     }
@@ -519,7 +514,7 @@ fn console_review_request() -> Option<ConsoleReview> {
         .collect();
     let synthesis = value("--synthesis").unwrap_or_default();
     if reviewers.len() < evohime_core::plan_review::MIN_REVIEWERS || synthesis.is_empty() {
-        eprintln!(
+        tracing::error!(
             "Использование: evohime-core.exe --console --review-plan <план.md> --reviewers <модель1,модель2> --synthesis <модель> [--revise] [--out <файл.md>]"
         );
         std::process::exit(2);
@@ -539,20 +534,20 @@ async fn run_console_review(
     gateway_config: Option<evohime_model_gateway::ModelGatewayConfig>,
 ) {
     let Some(config) = gateway_config else {
-        eprintln!("evohime-core console: модель не настроена; проверьте .env");
+        tracing::error!("evohime-core console: модель не настроена; проверьте .env");
         std::process::exit(1);
     };
     let gateway = match evohime_model_gateway::ModelGateway::from_config(&config) {
         Ok(gateway) => std::sync::Arc::new(gateway),
         Err(error) => {
-            eprintln!("evohime-core console: провайдер не поднялся: {error}");
+            tracing::error!("evohime-core console: провайдер не поднялся: {error}");
             std::process::exit(1);
         }
     };
     let source = match std::fs::read_to_string(&request.plan) {
         Ok(source) => source,
         Err(error) => {
-            eprintln!("evohime-core console: план не прочитан: {error}");
+            tracing::error!("evohime-core console: план не прочитан: {error}");
             std::process::exit(1);
         }
     };
@@ -607,7 +602,7 @@ async fn run_console_review(
     let review_result = match review_result {
         Ok(result) => result,
         Err(error) => {
-            eprintln!(
+            tracing::error!(
                 "[{:>6.1}s] ✕ ревью не удалось: {error}",
                 started.elapsed().as_secs_f32()
             );
@@ -659,7 +654,7 @@ async fn run_console_review(
     let revised = match revised {
         Ok(result) => result,
         Err(error) => {
-            eprintln!(
+            tracing::error!(
                 "[{:>6.1}s] ✕ правка не удалась: {error}",
                 started.elapsed().as_secs_f32()
             );
@@ -673,16 +668,18 @@ async fn run_console_review(
         revised.revised_markdown.len()
     );
     if revised.revised_markdown.len() * 2 < source.len() {
-        eprintln!("⚠ исправленный план более чем вдвое короче исходного — вероятен обрыв ответа");
+        tracing::error!(
+            "⚠ исправленный план более чем вдвое короче исходного — вероятен обрыв ответа"
+        );
     }
     match request.out {
         Some(destination) => {
             if destination.extension().and_then(|value| value.to_str()) != Some("md") {
-                eprintln!("evohime-core console: --out принимает только .md");
+                tracing::error!("evohime-core console: --out принимает только .md");
                 std::process::exit(1);
             }
             if let Err(error) = std::fs::write(&destination, &revised.revised_markdown) {
-                eprintln!("evohime-core console: план не записан: {error}");
+                tracing::error!("evohime-core console: план не записан: {error}");
                 std::process::exit(1);
             }
             println!("записано: {}", destination.display());

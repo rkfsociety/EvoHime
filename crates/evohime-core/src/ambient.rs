@@ -228,10 +228,7 @@ pub fn save_control(data_dir: &Path, control: &AmbientControl) -> Result<(), Str
 /// Каталог данных Core: тот же, из которого поднимается всё остальное
 /// ambient-состояние.
 pub fn data_dir() -> PathBuf {
-    std::env::var_os("EVOHIME_DATA_DIR")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("LOCALAPPDATA").map(|p| PathBuf::from(p).join("EvoHime")))
-        .unwrap_or_else(|| PathBuf::from(".evohime"))
+    crate::get_data_directory()
 }
 
 #[cfg(windows)]

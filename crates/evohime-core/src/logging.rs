@@ -47,13 +47,7 @@ impl StructuredLogger {
 }
 
 fn audit_log_path() -> PathBuf {
-    let data_dir = std::env::var_os("EVOHIME_DATA_DIR")
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("LOCALAPPDATA").map(|path| PathBuf::from(path).join("EvoHime"))
-        })
-        .unwrap_or_else(|| PathBuf::from(".evohime"));
-    data_dir.join("logs").join("audit.jsonl")
+    crate::get_data_directory().join("logs").join("audit.jsonl")
 }
 
 pub(crate) fn append_audit_line(line: &str) {
@@ -70,16 +64,14 @@ pub(crate) fn append_audit_line(line: &str) {
 
 pub(crate) fn write_model_trace(event: &str, fields: serde_json::Value) {
     let policy = sensitive_data_guardrails::default_policy("local-trace");
-    let fields = sensitive_data_guardrails::redact_json(&policy, &fields)
-        .map(|(value, _)| value)
-        .unwrap_or_else(|_| serde_json::json!({"redaction_status":"blocked"}));
-    let data_dir = std::env::var_os("EVOHIME_DATA_DIR")
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("LOCALAPPDATA").map(|path| PathBuf::from(path).join("EvoHime"))
-        })
-        .unwrap_or_else(|| PathBuf::from(".evohime"));
-    let logs_dir = data_dir.join("logs");
+    let fields = match sensitive_data_guardrails::redact_json(&policy, &fields) {
+        Ok((value, _)) => value,
+        Err(error) => {
+            tracing::warn!(error = %error, event, "model trace redaction failed");
+            serde_json::json!({"redaction_status":"blocked"})
+        }
+    };
+    let logs_dir = crate::get_data_directory().join("logs");
     if fs::create_dir_all(&logs_dir).is_err() {
         return;
     }

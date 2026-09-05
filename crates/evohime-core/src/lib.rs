@@ -303,15 +303,18 @@ mod ipc_bridge;
 pub use ipc_bridge::{IpcBridge, IpcBridgeError, ModelConfigSnapshot};
 mod legacy_parser;
 pub use legacy_parser::visible_agent_text;
+#[cfg(test)]
 pub(crate) use legacy_parser::LEGACY_TOOL_NAMES;
 use legacy_parser::{
     parse_legacy_function_calls, parse_natural_tool_intent, parse_plain_tool_call,
     parse_tagged_tool_call, parse_xml_named_tool_call, strip_legacy_function_blocks,
 };
 mod logging;
-pub use logging::StructuredLogger;
 pub(crate) use logging::write_model_trace;
+pub use logging::StructuredLogger;
 use logging::{append_audit_line, redact_boundary_text, write_observability_hook};
+pub mod paths;
+pub use paths::get_data_directory;
 mod routing_trace;
 use routing_trace::{classify_routing_task, routing_failure_trace, routing_success_trace};
 
@@ -13663,7 +13666,7 @@ impl TaskCoordinator {
                             crate::local_model_runtime_manager::validate_artifact_relative_path(destination).map_err(|e| e.to_string())?;
                             let expected = value.get("expected_hash").and_then(serde_json::Value::as_str).ok_or_else(|| "expected_hash_required".to_string())?;
                             let expected_size = value.get("expected_size_bytes").and_then(serde_json::Value::as_u64).ok_or_else(|| "expected_size_required".to_string())?;
-                            let root = std::env::var_os("EVOHIME_DATA_DIR").map(std::path::PathBuf::from).or_else(|| std::env::var_os("LOCALAPPDATA").map(|path| std::path::PathBuf::from(path).join("EvoHime"))).unwrap_or_else(|| std::path::PathBuf::from(".evohime"));
+                            let root = crate::get_data_directory();
                             let models_root = root.join("models");
                             std::fs::create_dir_all(&models_root).map_err(|_| "artifact_root_unavailable".to_string())?;
                             let staging_path = crate::local_model_runtime_manager::managed_artifact_path(&models_root, staging).map_err(|e| e.to_string())?;
@@ -13710,7 +13713,7 @@ impl TaskCoordinator {
                             let expected_size = value.get("expected_size_bytes").and_then(serde_json::Value::as_u64).ok_or_else(|| "expected_size_required".to_string())?;
                             let relative = std::path::Path::new(staging);
                             crate::local_model_runtime_manager::validate_artifact_relative_path(relative).map_err(|e| e.to_string())?;
-                            let root = std::env::var_os("EVOHIME_DATA_DIR").map(std::path::PathBuf::from).or_else(|| std::env::var_os("LOCALAPPDATA").map(|path| std::path::PathBuf::from(path).join("EvoHime"))).unwrap_or_else(|| std::path::PathBuf::from(".evohime"));
+                            let root = crate::get_data_directory();
                             let models_root = root.join("models");
                             std::fs::create_dir_all(&models_root).map_err(|_| "artifact_root_unavailable".to_string())?;
                             let staging_path = crate::local_model_runtime_manager::managed_artifact_path(&models_root, relative).map_err(|e| e.to_string())?;

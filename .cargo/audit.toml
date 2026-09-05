@@ -1,0 +1,5 @@
+[advisories]
+ignore = []
+
+[database]
+path = "~/.cargo/advisory-db"
