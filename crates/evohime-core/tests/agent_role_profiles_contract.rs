@@ -1,6 +1,6 @@
 use evohime_core::agent_role_profiles::{
     effective_grants, AgentRoleProfile, AgentRoleProfilesRegistry, BudgetDefaults, ContractField,
-    ExecutionMode,
+    ExecutionMode, StartRuntimeInput,
 };
 
 fn profile() -> AgentRoleProfile {
@@ -37,15 +37,15 @@ fn run_pins_revision_and_hash() {
     let mut registry = AgentRoleProfilesRegistry::default();
     registry.create(profile(), "create").unwrap();
     let run = registry
-        .start(
-            "run-1".into(),
-            "tester",
-            1,
-            vec!["test.execute".into()],
-            &["test.execute".into()],
-            &["test.execute".into()],
-            &["test.execute".into()],
-        )
+        .start(StartRuntimeInput {
+            run_id: "run-1".into(),
+            profile_id: "tester",
+            revision: 1,
+            grants: vec!["test.execute".into()],
+            parent: &["test.execute".into()],
+            policy: &["test.execute".into()],
+            registry: &["test.execute".into()],
+        })
         .unwrap();
     assert_eq!(run.snapshot.revision, 1);
     assert!(!run.snapshot.content_hash.is_empty());

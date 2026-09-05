@@ -11,9 +11,10 @@ fn assert_startup_rejected(context: Option<&str>, dev_mode: Option<&str>) {
     let mut command = Command::new(env!("CARGO_BIN_EXE_evohime-core"));
     command
         .env("EVOHIME_DATA_DIR", directory.path())
+        .env("RUST_LOG", "info")
         .env_remove("EVOHIME_LAUNCH_CONTEXT")
         .env_remove("EVOHIME_DEV_MODE")
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if let Some(context) = context {
         std::fs::write(&context_path, context).unwrap();
@@ -37,7 +38,12 @@ fn assert_startup_rejected(context: Option<&str>, dev_mode: Option<&str>) {
     }
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("launch context failed"));
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(diagnostic.contains("launch context failed"));
     // Storage is opened before the pipe: its absence proves refusal happened
     // before either runtime initialization or pipe creation.
     assert!(!directory.path().join("events.db").exists());

@@ -1,6 +1,6 @@
 use evohime_core::agent_role_profiles::{
     AgentRoleProfile, AgentRoleProfilesRegistry, BudgetDefaults, ContractField, ExecutionMode,
-    RunState,
+    RunState, StartRuntimeInput,
 };
 
 fn profile() -> AgentRoleProfile {
@@ -37,27 +37,27 @@ fn duplicate_start_and_cancel_are_typed() {
     let mut r = AgentRoleProfilesRegistry::default();
     r.create(profile(), "c").unwrap();
     let first = r
-        .start(
-            "run".into(),
-            "reviewer",
-            1,
-            vec!["review".into()],
-            &["review".into()],
-            &["review".into()],
-            &["review".into()],
-        )
+        .start(StartRuntimeInput {
+            run_id: "run".into(),
+            profile_id: "reviewer",
+            revision: 1,
+            grants: vec!["review".into()],
+            parent: &["review".into()],
+            policy: &["review".into()],
+            registry: &["review".into()],
+        })
         .unwrap();
     assert_eq!(first.state, RunState::Pinned);
     assert!(r
-        .start(
-            "run".into(),
-            "reviewer",
-            1,
-            vec!["review".into()],
-            &["review".into()],
-            &["review".into()],
-            &["review".into()]
-        )
+        .start(StartRuntimeInput {
+            run_id: "run".into(),
+            profile_id: "reviewer",
+            revision: 1,
+            grants: vec!["review".into()],
+            parent: &["review".into()],
+            policy: &["review".into()],
+            registry: &["review".into()],
+        })
         .is_err());
     assert_eq!(r.cancel("run").unwrap().state, RunState::Cancelling);
 }
