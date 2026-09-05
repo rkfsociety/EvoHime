@@ -6817,15 +6817,17 @@ impl ToolAgent {
                 )
                 .unwrap_or_default(),
                 result_status: status.to_owned(),
-                result_hash: evohime_receipts::result_hash(&if outcome.ok {
+                result_hash: match evohime_receipts::result_hash(&if outcome.ok {
                     serde_json::json!({"status":"succeeded","output_digest":output_digest})
                 } else {
                     serde_json::json!({"status":"failed","error_category":"tool_error"})
-                })
-                .unwrap_or_else(|error| {
-                    tracing::warn!(%error, "tool result hash serialization failed");
-                    evohime_receipts::sha256_hex(b"tool_error")
-                }),
+                }) {
+                    Ok(hash) => hash,
+                    Err(error) => {
+                        tracing::warn!(%error, "tool result hash serialization failed");
+                        evohime_receipts::sha256_hex(b"tool_error")
+                    }
+                },
                 recovery_code: recovery_code.to_owned(),
                 created_at_ms: SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -8515,10 +8517,13 @@ impl ToolAgent {
     ) -> Result<String, AgentRunError> {
         let task_id = task_id.into();
         let prompt = prompt.into();
-        let task_uuid = uuid::Uuid::parse_str(&task_id).unwrap_or_else(|error| {
-            tracing::warn!(%error, task_id = %task_id, "non-UUID task id; generated runtime id");
-            uuid::Uuid::new_v4()
-        });
+        let task_uuid = match uuid::Uuid::parse_str(&task_id) {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::warn!(%error, task_id = %task_id, "non-UUID task id; generated runtime id");
+                uuid::Uuid::new_v4()
+            }
+        };
         let context = ToolContext {
             workspace_root: workspace_root.into(),
             task_id: task_uuid,
@@ -9681,11 +9686,13 @@ impl ToolAgent {
                         Err(error) => recovery::ToolOutcome::from_error(error),
                     }
                 };
-                let guarded_output =
-                    redact_boundary_text("tool", &outcome.output).unwrap_or_else(|error| {
+                let guarded_output = match redact_boundary_text("tool", &outcome.output) {
+                    Ok(value) => value,
+                    Err(error) => {
                         tracing::warn!(%error, "tool output redaction failed");
                         "<sensitive_data_blocked>".into()
-                    });
+                    }
+                };
                 let _ = events.send(CoreEvent::ToolOutput {
                     task_id: task_id.clone(),
                     tool_name: call.name.clone(),
@@ -10011,10 +10018,13 @@ impl TaskExecutor for ToolAgent {
             };
             let context = ToolContext {
                 workspace_root,
-                task_id: uuid::Uuid::parse_str(&task_id).unwrap_or_else(|error| {
-                    tracing::warn!(%error, task_id = %task_id, "non-UUID continuation task id; generated runtime id");
-                    uuid::Uuid::new_v4()
-                }),
+                task_id: match uuid::Uuid::parse_str(&task_id) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        tracing::warn!(%error, task_id = %task_id, "non-UUID continuation task id; generated runtime id");
+                        uuid::Uuid::new_v4()
+                    }
+                },
                 session_id: None,
                 progress_tx: None,
             };
