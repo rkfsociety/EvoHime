@@ -240,6 +240,26 @@ struct HumanWorkItemCommandPayload {
 }
 
 #[derive(Debug, Default, Deserialize)]
+struct AgenticBrowserSessionPayload {
+    #[serde(default)]
+    conversation_id: Option<String>,
+    #[serde(default)]
+    run_id: Option<String>,
+    #[serde(default)]
+    policy_hash: Option<String>,
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    expected_revision: Option<u64>,
+    #[serde(default)]
+    page_ref: Option<String>,
+    #[serde(default)]
+    element_ref: Option<String>,
+    #[serde(default)]
+    artifact_ref: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
 struct ExecutionBackendPayload {
     #[serde(default)]
     id: String,
@@ -15309,10 +15329,15 @@ impl IpcBridge {
         {
             return rejected("invalid_request");
         }
-        let payload: serde_json::Value = match serde_json::from_slice(&request.payload) {
+        let payload_json: serde_json::Value = match serde_json::from_slice(&request.payload) {
             Ok(value) => value,
             Err(_) => return rejected("invalid_payload"),
         };
+        let payload: AgenticBrowserSessionPayload =
+            match serde_json::from_value(payload_json.clone()) {
+                Ok(value) => value,
+                Err(_) => return rejected("invalid_payload"),
+            };
         if matches!(
             request.operation.as_str(),
             "legacy" | "legacy_selector" | "raw_cdp"
@@ -15322,13 +15347,14 @@ impl IpcBridge {
         let database = self.journal.database();
         let now = chrono::Utc::now().timestamp_millis();
         let (mut session, is_create) = if request.operation == "create" {
-            let conversation_id = payload["conversation_id"]
-                .as_str()
+            let conversation_id = payload
+                .conversation_id
+                .as_deref()
                 .unwrap_or(request.owner_scope.as_str());
             let Ok(mut session) = BrowserSession::new(
                 conversation_id,
-                payload["run_id"].as_str().map(str::to_owned),
-                payload["policy_hash"].as_str().unwrap_or("unknown"),
+                payload.run_id,
+                payload.policy_hash.as_deref().unwrap_or("unknown"),
             ) else {
                 return rejected("invalid_scope");
             };
@@ -15337,7 +15363,7 @@ impl IpcBridge {
             }
             (session, true)
         } else {
-            let Some(session_id) = payload["session_id"].as_str() else {
+            let Some(session_id) = payload.session_id.as_deref() else {
                 return rejected("session_required");
             };
             let Ok(database) = database.try_lock() else {
@@ -15369,8 +15395,8 @@ impl IpcBridge {
         };
         let mut operation_projection = serde_json::json!({});
         if !is_create
-            && payload["expected_revision"]
-                .as_u64()
+            && payload
+                .expected_revision
                 .is_some_and(|revision| revision != session.revision)
         {
             return rejected("stale_revision");
@@ -15379,8 +15405,8 @@ impl IpcBridge {
             request.operation.as_str(),
             "click" | "fill" | "select" | "press" | "download" | "upload"
         ) {
-            let page_ref = payload["page_ref"].as_str().unwrap_or_default();
-            let element_ref = payload["element_ref"].as_str().unwrap_or_default();
+            let page_ref = payload.page_ref.as_deref().unwrap_or_default();
+            let element_ref = payload.element_ref.as_deref().unwrap_or_default();
             if page_ref.is_empty() || page_ref.len() > 512 {
                 return rejected("invalid_page_ref");
             }
@@ -15438,12 +15464,12 @@ impl IpcBridge {
             let Some(backend) = backends.get_mut(&session.session_id.to_string()) else {
                 return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"unavailable","session_id":session.session_id,"revision":session.revision,"error_code":"browser_backend_unavailable","projection_json":{"raw_payload":false}});
             };
-            let mut backend_payload = payload.clone();
-            if let Some(element_ref) = payload["element_ref"].as_str() {
+            let mut backend_payload = payload_json;
+            if let Some(element_ref) = payload.element_ref.as_deref() {
                 backend_payload["ref"] = serde_json::Value::String(element_ref.to_string());
             }
             if operation == "upload" {
-                let Some(locator) = payload["artifact_ref"].as_str() else {
+                let Some(locator) = payload.artifact_ref.as_deref() else {
                     return rejected("artifact_required");
                 };
                 let Ok(database) = database.try_lock() else {
