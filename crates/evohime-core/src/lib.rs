@@ -306,6 +306,33 @@ struct RemoteChannelRequest {
     message: Option<crate::remote_conversation_channels::InboundMessage>,
 }
 
+/// Типизированный запрос сохранения memory view.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MemoryViewSaveRequest {
+    view: crate::memory_views_and_adaptive_recall::MemoryView,
+}
+
+/// Типизированный запрос adaptive recall.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MemoryRecallRequest {
+    policy: crate::memory_views_and_adaptive_recall::AdaptiveRecallPolicy,
+    mode: crate::memory_views_and_adaptive_recall::RecallMode,
+    #[serde(default = "default_query_complexity")]
+    complexity: crate::memory_views_and_adaptive_recall::QueryComplexity,
+    query: String,
+    #[serde(default)]
+    scope_id: Option<String>,
+    read_barrier_generation: u64,
+    #[serde(default)]
+    candidates: Vec<crate::memory_views_and_adaptive_recall::RecallCandidate>,
+}
+
+fn default_query_complexity() -> crate::memory_views_and_adaptive_recall::QueryComplexity {
+    crate::memory_views_and_adaptive_recall::QueryComplexity::Unknown
+}
+
 /// Аргументы для policy-only preflight при построении каталога инструментов.
 /// Preflight не выполняет инструмент, но path-инструментам всё равно нужен
 /// существующий workspace-relative путь, иначе безопасный инструмент ошибочно
@@ -16118,10 +16145,10 @@ impl TaskCoordinator {
                     }
                     let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
                     let db = journal.database().lock().await;
-                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_memory_view_payload".to_string())?;
                     match operation.as_str() {
                         "save_view" => {
-                            let view: v::MemoryView = serde_json::from_value(value.get("view").cloned().ok_or_else(|| "view_required".to_string())?).map_err(|_| "invalid_memory_view".to_string())?;
+                            let request: MemoryViewSaveRequest = serde_json::from_slice(&payload).map_err(|_| "invalid_memory_view_payload".to_string())?;
+                            let view = request.view;
                             if view.id != view_id { return Err("view_id_mismatch".into()); }
                             v::validate_view(&view).map_err(|e| e.to_string())?;
                             let json = serde_json::to_vec(&view).map_err(|_| "serialization_failed".to_string())?;
@@ -16137,20 +16164,16 @@ impl TaskCoordinator {
                             serde_json::to_vec(&serde_json::json!({"status":"view","view_id":view.id,"revision":record.revision,"owner_scope":record.owner_scope,"rights":view.rights,"root_scope_ids":view.root_scope_ids,"scope_count":view.scopes.len(),"content_hash":record.content_hash,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "recall" => {
+                            let request: MemoryRecallRequest = serde_json::from_slice(&payload).map_err(|_| "invalid_memory_view_payload".to_string())?;
                             let record = store::load_view(db.connection(), &view_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "view_not_found".to_string())?;
                             let view: v::MemoryView = serde_json::from_slice(&record.view_json).map_err(|_| "corrupt_memory_view".to_string())?;
                             v::validate_view(&view).map_err(|e| e.to_string())?;
-                            let policy: v::AdaptiveRecallPolicy = serde_json::from_value(value.get("policy").cloned().ok_or_else(|| "recall_policy_required".to_string())?).map_err(|_| "invalid_recall_policy".to_string())?;
-                            let mode: v::RecallMode = serde_json::from_value(value.get("mode").cloned().ok_or_else(|| "recall_mode_required".to_string())?).map_err(|_| "invalid_recall_mode".to_string())?;
-                            let complexity: v::QueryComplexity = serde_json::from_value(value.get("complexity").cloned().unwrap_or_else(|| serde_json::json!("unknown"))).map_err(|_| "invalid_query_complexity".to_string())?;
-                            let query = value.get("query").and_then(serde_json::Value::as_str).ok_or_else(|| "query_required".to_string())?;
-                            v::authorize_read(&view, value.get("scope_id").and_then(serde_json::Value::as_str).unwrap_or(&view.root_scope_ids[0])).map_err(|e| e.to_string())?;
-                            let barrier_generation = value.get("read_barrier_generation").and_then(serde_json::Value::as_u64).ok_or_else(|| "read_barrier_required".to_string())?;
-                            let decision = v::decide_recall(&view, &policy, mode, complexity, query, barrier_generation).map_err(|e| e.to_string())?;
-                            let candidates: Vec<v::RecallCandidate> = value.get("candidates").cloned().map(|items| serde_json::from_value(items).map_err(|_| "invalid_recall_candidates".to_string())).transpose()?.unwrap_or_default();
-                            let ranked = v::rank_candidates(&view, candidates).map_err(|e| e.to_string())?;
+                            let scope_id = request.scope_id.as_deref().unwrap_or(&view.root_scope_ids[0]);
+                            v::authorize_read(&view, scope_id).map_err(|e| e.to_string())?;
+                            let decision = v::decide_recall(&view, &request.policy, request.mode, request.complexity, &request.query, request.read_barrier_generation).map_err(|e| e.to_string())?;
+                            let ranked = v::rank_candidates(&view, request.candidates).map_err(|e| e.to_string())?;
                             let json = serde_json::to_vec(&decision).map_err(|_| "serialization_failed".to_string())?;
-                            let saved = store::save_recall(db.connection(), store::RecallInput { view_id: &view_id, view_revision: record.revision, barrier_generation, decision_json: &json, expected_version, idempotency_key: &idempotency_key, now_ms: memory_now_ms() as i64 }).map_err(|_| "storage_failed".to_string())?;
+                            let saved = store::save_recall(db.connection(), store::RecallInput { view_id: &view_id, view_revision: record.revision, barrier_generation: request.read_barrier_generation, decision_json: &json, expected_version, idempotency_key: &idempotency_key, now_ms: memory_now_ms() as i64 }).map_err(|_| "storage_failed".to_string())?;
                             if !saved { return Err("stale_version_or_idempotency_conflict".into()); }
                             serde_json::to_vec(&serde_json::json!({"status":"recall_planned","view_id":view_id,"view_revision":record.revision,"decision":decision,"ranked_candidates":ranked,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
