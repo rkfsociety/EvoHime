@@ -162,18 +162,31 @@ pub fn install_schema(connection: &Connection) -> Result<(), ConversationStoreEr
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+pub struct AcceptMessageInput<'a> {
+    pub conversation_id: &'a str,
+    pub workspace_id: &'a str,
+    pub task_id: &'a str,
+    pub client_message_id: &'a str,
+    pub authoritative_payload: &'a [u8],
+    pub renderer_payload: &'a [u8],
+    pub content_hash: &'a str,
+    pub timestamp_ms: i64,
+}
+
 pub fn accept_message(
     connection: &Connection,
-    conversation_id: &str,
-    workspace_id: &str,
-    task_id: &str,
-    client_message_id: &str,
-    authoritative_payload: &[u8],
-    renderer_payload: &[u8],
-    content_hash: &str,
-    timestamp_ms: i64,
+    input: AcceptMessageInput<'_>,
 ) -> Result<MessageAcceptance, ConversationStoreError> {
+    let AcceptMessageInput {
+        conversation_id,
+        workspace_id,
+        task_id,
+        client_message_id,
+        authoritative_payload,
+        renderer_payload,
+        content_hash,
+        timestamp_ms,
+    } = input;
     validate_id(conversation_id)?;
     validate_id(workspace_id)?;
     validate_id(task_id)?;
@@ -731,6 +744,32 @@ fn conversation_range(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn accept_message(
+        connection: &Connection,
+        conversation_id: &str,
+        workspace_id: &str,
+        task_id: &str,
+        client_message_id: &str,
+        authoritative_payload: &[u8],
+        renderer_payload: &[u8],
+        content_hash: &str,
+        timestamp_ms: i64,
+    ) -> Result<MessageAcceptance, ConversationStoreError> {
+        super::accept_message(
+            connection,
+            AcceptMessageInput {
+                conversation_id,
+                workspace_id,
+                task_id,
+                client_message_id,
+                authoritative_payload,
+                renderer_payload,
+                content_hash,
+                timestamp_ms,
+            },
+        )
+    }
 
     fn message_payload(text: &str) -> Vec<u8> {
         serde_json::to_vec(&serde_json::json!({"content": text})).unwrap()

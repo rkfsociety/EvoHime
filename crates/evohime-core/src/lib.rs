@@ -3244,14 +3244,16 @@ impl EventJournal {
         let database = self.database.lock().await;
         let acceptance = evohime_local_storage::conversation_event_log_store::accept_message(
             database.connection(),
-            conversation_id,
-            workspace_id,
-            task_id,
-            client_message_id,
-            &draft.authoritative_payload,
-            &draft.renderer_payload,
-            &content_hash,
-            task_memory::now_millis() as i64,
+            evohime_local_storage::conversation_event_log_store::AcceptMessageInput {
+                conversation_id,
+                workspace_id,
+                task_id,
+                client_message_id,
+                authoritative_payload: &draft.authoritative_payload,
+                renderer_payload: &draft.renderer_payload,
+                content_hash: &content_hash,
+                timestamp_ms: task_memory::now_millis() as i64,
+            },
         )?;
         let renderer = crate::conversation_event_log::renderer_event(&acceptance.event)
             .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
