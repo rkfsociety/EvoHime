@@ -410,6 +410,46 @@ struct AssignmentTerminationRequest {
     event: crate::composable_termination_conditions::TerminationEvent,
 }
 
+/// Типизированный запрос submit для durable remote task bridge.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RemoteTaskSubmitRequest {
+    toolset: crate::durable_remote_task_bridge::RemoteTaskToolset,
+    #[serde(default)]
+    request: serde_json::Value,
+    #[serde(default = "default_remote_provenance")]
+    provenance_ref: String,
+    #[serde(default)]
+    operation: String,
+}
+
+fn default_remote_provenance() -> String {
+    "core".into()
+}
+
+/// Типизированный запрос poll для durable remote task bridge.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RemoteTaskPollRequest {
+    #[serde(default = "default_remote_provenance")]
+    lease_owner: String,
+}
+
+/// Типизированный запрос result для durable remote task bridge.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RemoteTaskResultRequest {
+    status: crate::durable_remote_task_bridge::RemoteTaskStatus,
+    #[serde(default = "default_remote_transport_status")]
+    transport_status: String,
+    #[serde(default)]
+    result_artifact_ref: Option<String>,
+}
+
+fn default_remote_transport_status() -> String {
+    "reported".into()
+}
+
 /// Аргументы для policy-only preflight при построении каталога инструментов.
 /// Preflight не выполняет инструмент, но path-инструментам всё равно нужен
 /// существующий workspace-relative путь, иначе безопасный инструмент ошибочно
@@ -13545,36 +13585,16 @@ impl TaskCoordinator {
                     let policy = bridge::default_policy();
                     match operation.as_str() {
                         "submit" => {
-                            let value: serde_json::Value = serde_json::from_slice(&payload)
+                            let request: RemoteTaskSubmitRequest = serde_json::from_slice(&payload)
                                 .map_err(|_| "invalid_remote_task_submit".to_string())?;
-                            let toolset: bridge::RemoteTaskToolset = serde_json::from_value(
-                                value
-                                    .get("toolset")
-                                    .cloned()
-                                    .ok_or_else(|| "remote_task_toolset_required".to_string())?,
-                            )
-                            .map_err(|_| "invalid_remote_task_toolset".to_string())?;
-                            let request_bytes = value
-                                .get("request")
-                                .map(serde_json::to_vec)
-                                .transpose()
-                                .map_err(|_| "invalid_remote_task_request".to_string())?
-                                .unwrap_or_default();
-                            let provenance_ref = value
-                                .get("provenance_ref")
-                                .and_then(serde_json::Value::as_str)
-                                .unwrap_or("core")
-                                .to_owned();
+                            let request_bytes = serde_json::to_vec(&request.request)
+                                .map_err(|_| "invalid_remote_task_request".to_string())?;
                             let record = bridge::build_record(
                                 remote_task_id.clone(),
-                                &toolset,
-                                value
-                                    .get("operation")
-                                    .and_then(serde_json::Value::as_str)
-                                    .unwrap_or_default()
-                                    .to_owned(),
+                                &request.toolset,
+                                request.operation,
                                 &request_bytes,
-                                provenance_ref,
+                                request.provenance_ref,
                                 crate::task_memory::now_millis() as i64,
                                 &policy,
                             )
@@ -13624,24 +13644,23 @@ impl TaskCoordinator {
                                         .map_err(|e| e.to_string())?;
                                 }
                                 "poll" => {
-                                    let value: serde_json::Value = serde_json::from_slice(&payload)
-                                        .map_err(|_| "invalid_remote_task_poll".to_string())?;
-                                    let owner = value
-                                        .get("lease_owner")
-                                        .and_then(serde_json::Value::as_str)
-                                        .unwrap_or("core");
-                                    bridge::lease_for_poll(&mut record, owner, now, &policy)
-                                        .map_err(|e| e.to_string())?;
+                                    let request: RemoteTaskPollRequest =
+                                        serde_json::from_slice(&payload)
+                                            .map_err(|_| "invalid_remote_task_poll".to_string())?;
+                                    bridge::lease_for_poll(
+                                        &mut record,
+                                        &request.lease_owner,
+                                        now,
+                                        &policy,
+                                    )
+                                    .map_err(|e| e.to_string())?;
                                 }
                                 "result" => {
-                                    let value: serde_json::Value = serde_json::from_slice(&payload)
-                                        .map_err(|_| "invalid_remote_task_result".to_string())?;
-                                    let status: bridge::RemoteTaskStatus = serde_json::from_value(
-                                        value.get("status").cloned().ok_or_else(|| {
-                                            "remote_task_status_required".to_string()
-                                        })?,
-                                    )
-                                    .map_err(|_| "invalid_remote_task_status".to_string())?;
+                                    let request: RemoteTaskResultRequest =
+                                        serde_json::from_slice(&payload).map_err(|_| {
+                                            "invalid_remote_task_result".to_string()
+                                        })?;
+                                    let status = request.status;
                                     if !matches!(
                                         status,
                                         bridge::RemoteTaskStatus::InputRequired
@@ -13653,15 +13672,8 @@ impl TaskCoordinator {
                                         return Err("invalid_remote_task_transition".into());
                                     }
                                     record.status = status;
-                                    record.transport_status = value
-                                        .get("transport_status")
-                                        .and_then(serde_json::Value::as_str)
-                                        .unwrap_or("reported")
-                                        .to_owned();
-                                    record.result_artifact_ref = value
-                                        .get("result_artifact_ref")
-                                        .and_then(serde_json::Value::as_str)
-                                        .map(str::to_owned);
+                                    record.transport_status = request.transport_status;
+                                    record.result_artifact_ref = request.result_artifact_ref;
                                     record.version += 1;
                                     record.updated_at_ms = now;
                                     bridge::validate_record(
