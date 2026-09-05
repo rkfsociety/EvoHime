@@ -333,6 +333,38 @@ fn default_query_complexity() -> crate::memory_views_and_adaptive_recall::QueryC
     crate::memory_views_and_adaptive_recall::QueryComplexity::Unknown
 }
 
+/// Типизированные параметры prompt cache planner.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PromptCacheRequest {
+    #[serde(default)]
+    segments: Vec<crate::prompt_cache_planner::PromptSegment>,
+    #[serde(default)]
+    profile: Option<crate::prompt_cache_planner::ProviderCacheProfile>,
+    #[serde(default)]
+    context_revision: String,
+    #[serde(default)]
+    policy_version: String,
+    #[serde(default)]
+    keepalive_ms: i64,
+    #[serde(default)]
+    metric: Option<crate::prompt_cache_planner::CacheMetric>,
+}
+
+/// Типизированные параметры declarative runtime component.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DeclarativeComponentRequest {
+    #[serde(default)]
+    config: Option<crate::declarative_runtime_components::ComponentConfig>,
+    #[serde(default)]
+    registry: Option<crate::declarative_agent_component_registry::Registry>,
+    #[serde(default)]
+    policy: Option<crate::declarative_runtime_components::PolicySnapshot>,
+    #[serde(default)]
+    state: Option<crate::declarative_runtime_components::RuntimeState>,
+}
+
 /// Аргументы для policy-only preflight при построении каталога инструментов.
 /// Preflight не выполняет инструмент, но path-инструментам всё равно нужен
 /// существующий workspace-relative путь, иначе безопасный инструмент ошибочно
@@ -16310,7 +16342,7 @@ impl TaskCoordinator {
             } => {
                 let event_operation = operation.clone();
                 let event_plan_id = plan_id.clone();
-                let result=async { use crate::prompt_cache_planner as v; if plan_id.is_empty()||idempotency_key.is_empty(){return Err("invalid_prompt_cache_request".into())}; let value:serde_json::Value=serde_json::from_slice(&payload).map_err(|_|"invalid_prompt_cache_payload".to_string())?; match operation.as_str(){"plan"=>{let segments:Vec<v::PromptSegment>=serde_json::from_value(value.get("segments").cloned().ok_or_else(||"segments_required".to_string())?).map_err(|_|"invalid_segments".to_string())?;let profile:v::ProviderCacheProfile=serde_json::from_value(value.get("profile").cloned().ok_or_else(||"profile_required".to_string())?).map_err(|_|"invalid_profile".to_string())?;let plan=v::build_plan(segments,&profile,value.get("context_revision").and_then(serde_json::Value::as_str).unwrap_or_default(),value.get("policy_version").and_then(serde_json::Value::as_str).unwrap_or_default(),value.get("keepalive_ms").and_then(serde_json::Value::as_i64).unwrap_or(0)).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"planned","plan_id":plan_id,"cache_key":plan.cache_key,"segment_count":plan.segments.len(),"provider_profile_id":plan.provider_profile_id,"keepalive_ms":plan.keepalive_ms,"redacted":true})).map_err(|_|"serialization_failed".into())},"metric"=>{let metric:v::CacheMetric=serde_json::from_value(value.get("metric").cloned().ok_or_else(||"metric_required".to_string())?).map_err(|_|"invalid_metric".to_string())?;v::validate_metric(&metric).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"metric_accepted","plan_id":plan_id,"cache_key":metric.cache_key,"hit":metric.hit,"cached_tokens":metric.cached_tokens,"redacted":true})).map_err(|_|"serialization_failed".into())},"inspect"=>serde_json::to_vec(&serde_json::json!({"status":"available","plan_id":plan_id,"version":expected_version,"idempotency_key_present":!idempotency_key.is_empty(),"redacted":true})).map_err(|_|"serialization_failed".into()),_=>Err("unsupported_prompt_cache_operation".into())}}.await;
+                let result=async { use crate::prompt_cache_planner as v; if plan_id.is_empty()||idempotency_key.is_empty(){return Err("invalid_prompt_cache_request".into())}; let request:PromptCacheRequest=serde_json::from_slice(&payload).map_err(|_|"invalid_prompt_cache_payload".to_string())?; match operation.as_str(){"plan"=>{let segments=request.segments;let profile=request.profile.ok_or_else(||"profile_required".to_string())?;let plan=v::build_plan(segments,&profile,&request.context_revision,&request.policy_version,request.keepalive_ms).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"planned","plan_id":plan_id,"cache_key":plan.cache_key,"segment_count":plan.segments.len(),"provider_profile_id":plan.provider_profile_id,"keepalive_ms":plan.keepalive_ms,"redacted":true})).map_err(|_|"serialization_failed".into())},"metric"=>{let metric=request.metric.ok_or_else(||"metric_required".to_string())?;v::validate_metric(&metric).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"metric_accepted","plan_id":plan_id,"cache_key":metric.cache_key,"hit":metric.hit,"cached_tokens":metric.cached_tokens,"redacted":true})).map_err(|_|"serialization_failed".into())},"inspect"=>serde_json::to_vec(&serde_json::json!({"status":"available","plan_id":plan_id,"version":expected_version,"idempotency_key_present":!idempotency_key.is_empty(),"redacted":true})).map_err(|_|"serialization_failed".into()),_=>Err("unsupported_prompt_cache_operation".into())}}.await;
                 let projection_json = result
                     .as_ref()
                     .ok()
@@ -16344,11 +16376,11 @@ impl TaskCoordinator {
                     if component_id.is_empty() || idempotency_key.is_empty() || idempotency_key.len() > 128 { return Err("invalid_declarative_component_request".into()); }
                     let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
                     let db = journal.database().lock().await;
-                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_declarative_component_payload".to_string())?;
+                    let request: DeclarativeComponentRequest = serde_json::from_slice(&payload).map_err(|_| "invalid_declarative_component_payload".to_string())?;
                     match operation.as_str() {
                         "save" => {
-                            let config: v::ComponentConfig = serde_json::from_value(value.get("config").cloned().ok_or_else(|| "config_required".to_string())?).map_err(|_| "invalid_component_config".to_string())?;
-                            let providers: crate::declarative_agent_component_registry::Registry = serde_json::from_value(value.get("registry").cloned().ok_or_else(|| "registry_required".to_string())?).map_err(|_| "invalid_provider_registry".to_string())?;
+                            let config = request.config.ok_or_else(|| "config_required".to_string())?;
+                            let providers = request.registry.ok_or_else(|| "registry_required".to_string())?;
                             if config.component_id != component_id { return Err("component_id_mismatch".into()); }
                             v::validate(&config, &providers).map_err(|e| e.to_string())?;
                             let json = serde_json::to_vec(&config).map_err(|_| "serialization_failed".to_string())?;
@@ -16362,15 +16394,15 @@ impl TaskCoordinator {
                         "rehydrate" => {
                             let (_, json, _) = store::load(db.connection(), &component_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "component_not_found".to_string())?;
                             let config: v::ComponentConfig = serde_json::from_slice(&json).map_err(|_| "corrupt_component".to_string())?;
-                            let providers: crate::declarative_agent_component_registry::Registry = serde_json::from_value(value.get("registry").cloned().ok_or_else(|| "registry_required".to_string())?).map_err(|_| "invalid_provider_registry".to_string())?;
-                            let policy: v::PolicySnapshot = serde_json::from_value(value.get("policy").cloned().ok_or_else(|| "policy_required".to_string())?).map_err(|_| "invalid_policy_snapshot".to_string())?;
+                            let providers = request.registry.ok_or_else(|| "registry_required".to_string())?;
+                            let policy = request.policy.ok_or_else(|| "policy_required".to_string())?;
                             v::rehydrate(&config, &providers, &policy).map_err(|e| e.to_string())?;
                             serde_json::to_vec(&serde_json::json!({"status":"rehydrated","component_id":component_id,"revision":config.revision,"state":config.runtime_state,"redacted":true})).map_err(|_| "serialization_failed".into())
                         }
                         "transition" => {
                             let (revision, json, _) = store::load(db.connection(), &component_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "component_not_found".to_string())?;
                             let mut config: v::ComponentConfig = serde_json::from_slice(&json).map_err(|_| "corrupt_component".to_string())?;
-                            let next: v::RuntimeState = serde_json::from_value(value.get("state").cloned().ok_or_else(|| "state_required".to_string())?).map_err(|_| "invalid_state".to_string())?;
+                            let next = request.state.ok_or_else(|| "state_required".to_string())?;
                             v::validate_transition(&config.runtime_state, &next).map_err(|e| e.to_string())?;
                             config.runtime_state = next; config.revision = revision.saturating_add(1); config.content_hash = v::canonical_hash(&config).map_err(|e| e.to_string())?;
                             let out = serde_json::to_vec(&config).map_err(|_| "serialization_failed".to_string())?;
