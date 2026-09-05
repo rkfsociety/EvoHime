@@ -103,6 +103,27 @@ struct LocalModelRuntimeRequest {
     artifact: Option<crate::local_model_runtime_manager::LocalArtifactRecord>,
 }
 
+/// Типизированный запрос проверки approval policy.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PolicyDecisionRequest {
+    scope_id: String,
+    action_class: String,
+    resource: String,
+    risk: u8,
+    #[serde(default)]
+    now_ms: i64,
+}
+
+/// Типизированный запрос принятия pipeline intent.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AcceptIntentRequest {
+    intent: crate::architect_editor_model_pipeline::EditIntent,
+    #[serde(default)]
+    workspace_revision: String,
+}
+
 /// Аргументы для policy-only preflight при построении каталога инструментов.
 /// Preflight не выполняет инструмент, но path-инструментам всё равно нужен
 /// существующий workspace-relative путь, иначе безопасный инструмент ошибочно
@@ -14158,7 +14179,7 @@ impl TaskCoordinator {
                     use evohime_local_storage::architect_editor_model_pipeline_store as store;
                     match operation.as_str() {
                         "create" => { let p: pipeline::ModelPhasePipeline = serde_json::from_slice(&payload).map_err(|_| "invalid_pipeline".to_string())?; pipeline::validate_pipeline(&p).map_err(|e| e.to_string())?; let json=serde_json::to_vec(&p).map_err(|_| "serialization_failed".to_string())?; store::put(database.connection(),&p.id,p.schema_version,&p.content_hash,&json,crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())?; serde_json::to_vec(&serde_json::json!({"schema_version":1,"pipeline_id":p.id,"status":p.status,"same_model":p.same_model,"redacted":true})).map_err(|_| "serialization_failed".to_string()) }
-                        "accept_intent" => { let json=store::get(database.connection(),&pipeline_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "pipeline_not_found".to_string())?; let mut p:pipeline::ModelPhasePipeline=serde_json::from_slice(&json).map_err(|_| "corrupt_pipeline".to_string())?; let req:serde_json::Value=serde_json::from_slice(&payload).map_err(|_| "invalid_intent".to_string())?; let intent:pipeline::EditIntent=serde_json::from_value(req.get("intent").cloned().ok_or_else(|| "invalid_intent".to_string())?).map_err(|_| "invalid_intent".to_string())?; let rev=req.get("workspace_revision").and_then(|v|v.as_str()).unwrap_or_default(); pipeline::accept_intent(&mut p,intent,rev).map_err(|e| e.to_string())?; if expected_version!=0 && expected_version!=1 {return Err("pipeline_stale_version".into())}; serde_json::to_vec(&serde_json::json!({"schema_version":1,"pipeline_id":p.id,"status":p.status,"intent_ready":true,"redacted":true})).map_err(|_| "serialization_failed".to_string()) }
+                        "accept_intent" => { let json=store::get(database.connection(),&pipeline_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "pipeline_not_found".to_string())?; let mut p:pipeline::ModelPhasePipeline=serde_json::from_slice(&json).map_err(|_| "corrupt_pipeline".to_string())?; let req:AcceptIntentRequest=serde_json::from_slice(&payload).map_err(|_| "invalid_intent".to_string())?; pipeline::accept_intent(&mut p,req.intent,&req.workspace_revision).map_err(|e| e.to_string())?; if expected_version!=0 && expected_version!=1 {return Err("pipeline_stale_version".into())}; serde_json::to_vec(&serde_json::json!({"schema_version":1,"pipeline_id":p.id,"status":p.status,"intent_ready":true,"redacted":true})).map_err(|_| "serialization_failed".to_string()) }
                         "get" => { let json=store::get(database.connection(),&pipeline_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "pipeline_not_found".to_string())?; let p:pipeline::ModelPhasePipeline=serde_json::from_slice(&json).map_err(|_| "corrupt_pipeline".to_string())?; serde_json::to_vec(&serde_json::json!({"schema_version":1,"pipeline_id":p.id,"status":p.status,"workspace_revision":p.workspace_revision,"same_model":p.same_model,"intent_present":p.intent.is_some(),"redacted":true})).map_err(|_| "serialization_failed".to_string()) }
                         _ => Err("unsupported_architect_editor_operation".into())
                     }
@@ -14390,7 +14411,7 @@ impl TaskCoordinator {
                         "list" => { let mut values:Vec<policy::ApprovalPolicyProfile>=Vec::new(); for row in store::list(database.connection()).map_err(|_|"storage_failed".to_string())? { if let Ok(p)=serde_json::from_slice(&row){values.push(p)} } serde_json::to_vec(&serde_json::json!({"schema_version":1,"profiles":values,"redacted":true})).map_err(|_|"serialization_failed".to_string()) }
                         "create"|"update" => { let p:policy::ApprovalPolicyProfile=serde_json::from_slice(&payload).map_err(|_|"invalid_policy_profile".to_string())?; policy::validate(&p).map_err(|e|e.to_string())?; if !profile_id.is_empty()&&p.id!=profile_id{return Err("profile_id_mismatch".into())}; let j=serde_json::to_vec(&p).map_err(|_|"serialization_failed".to_string())?; store::put(database.connection(),&p.id,p.version,p.enabled,&j,crate::task_memory::now_millis() as i64).map_err(|_|"storage_failed".to_string())?; serde_json::to_vec(&serde_json::json!({"schema_version":1,"profile_id":p.id,"version":p.version,"status":"saved","redacted":true})).map_err(|_|"serialization_failed".to_string()) }
                         "revoke" => { if expected_version==0{return Err("expected_version_required".into())}; database.connection().execute("UPDATE approval_policy_profiles SET enabled=0, version=version+1 WHERE id=?1 AND version=?2",rusqlite::params![profile_id,expected_version]).map_err(|_|"storage_failed".to_string())?; serde_json::to_vec(&serde_json::json!({"schema_version":1,"profile_id":profile_id,"version":expected_version+1,"status":"revoked","redacted":true})).map_err(|_|"serialization_failed".to_string()) }
-                        "decide" => { let req:serde_json::Value=serde_json::from_slice(&payload).map_err(|_|"invalid_policy_request".to_string())?; let scope=req["scope_id"].as_str().ok_or_else(||"invalid_policy_request".to_string())?; let action=req["action_class"].as_str().ok_or_else(||"invalid_policy_request".to_string())?; let resource=req["resource"].as_str().ok_or_else(||"invalid_policy_request".to_string())?; let risk=req["risk"].as_u64().ok_or_else(||"invalid_policy_request".to_string())? as u8; let now=req["now_ms"].as_i64().unwrap_or(0); let mut decisions=Vec::new(); for row in store::list(database.connection()).map_err(|_|"storage_failed".to_string())? {if let Ok(p)=serde_json::from_slice::<policy::ApprovalPolicyProfile>(&row){decisions.push(policy::decide(&p,scope,action,resource,risk,now).map_err(|e|e.to_string())?)}} let d=decisions.into_iter().find(|x|!x.require_prompt).unwrap_or(policy::PolicyDecision{require_prompt:true,profile_id:None,reason:"prompt_required".into(),hard_requirement:risk>=3}); serde_json::to_vec(&serde_json::json!({"schema_version":1,"require_prompt":d.require_prompt,"profile_id":d.profile_id,"reason":d.reason,"hard_requirement":d.hard_requirement,"redacted":true})).map_err(|_|"serialization_failed".to_string()) }
+                        "decide" => { let req:PolicyDecisionRequest=serde_json::from_slice(&payload).map_err(|_|"invalid_policy_request".to_string())?; let mut decisions=Vec::new(); for row in store::list(database.connection()).map_err(|_|"storage_failed".to_string())? {if let Ok(p)=serde_json::from_slice::<policy::ApprovalPolicyProfile>(&row){decisions.push(policy::decide(&p,&req.scope_id,&req.action_class,&req.resource,req.risk,req.now_ms).map_err(|e|e.to_string())?)}} let d=decisions.into_iter().find(|x|!x.require_prompt).unwrap_or(policy::PolicyDecision{require_prompt:true,profile_id:None,reason:"prompt_required".into(),hard_requirement:req.risk>=3}); serde_json::to_vec(&serde_json::json!({"schema_version":1,"require_prompt":d.require_prompt,"profile_id":d.profile_id,"reason":d.reason,"hard_requirement":d.hard_requirement,"redacted":true})).map_err(|_|"serialization_failed".to_string()) }
                         _=>Err("unsupported_approval_policy_operation".into())
                     }
                 }.await;
