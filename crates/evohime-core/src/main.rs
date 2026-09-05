@@ -1,3 +1,11 @@
+use std::io::Write;
+
+macro_rules! console_line {
+    ($($arg:tt)*) => {{
+        let _ = writeln!(std::io::stdout(), $($arg)*);
+    }};
+}
+
 #[cfg(windows)]
 fn main() {
     tracing_subscriber::fmt()
@@ -215,7 +223,7 @@ async fn run() {
                 if let Ok(approval_id) = uuid::Uuid::parse_str(approval_id) {
                     let _ = tools.permissions().resolve(approval_id, granted).await;
                     let _ = approvals.resolve(approval_id, granted).await;
-                    println!(
+                    console_line!(
                         "{} approval: {}",
                         if granted { "✓" } else { "✕" },
                         if granted {
@@ -462,7 +470,7 @@ async fn list_console_models(gateway_config: Option<evohime_model_gateway::Model
     match evohime_model_gateway::fetch_model_catalog(route).await {
         Ok(models) => {
             for model in models {
-                println!(
+                console_line!(
                     "{}{}",
                     model.id,
                     model
@@ -563,7 +571,7 @@ async fn run_console_review(
         evohime_core::plan_context::read_linked_plans(std::slice::from_ref(&plan_path), &source)
             .await;
     let started = std::time::Instant::now();
-    println!(
+    console_line!(
         "план: {} ({} байт); рецензенты: {}; синтез: {}; соседних планов: {}",
         file_name,
         source.len(),
@@ -587,7 +595,7 @@ async fn run_console_review(
         review,
         tokio_util::sync::CancellationToken::new(),
         std::sync::Arc::new(move |progress: evohime_core::plan_review::ReviewProgress| {
-            println!(
+            console_line!(
                 "[{:>6.1}s] review.progress {} {} {}/{} {}",
                 clock.elapsed().as_secs_f32(),
                 progress.stage,
@@ -609,13 +617,13 @@ async fn run_console_review(
             std::process::exit(1);
         }
     };
-    println!(
+    console_line!(
         "[{:>6.1}s] ✓ ревью готово: {} байт итога",
         started.elapsed().as_secs_f32(),
         review_result.final_markdown.len()
     );
     if !request.revise {
-        println!("\n{}", review_result.final_markdown);
+        console_line!("\n{}", review_result.final_markdown);
         return;
     }
 
@@ -641,7 +649,7 @@ async fn run_console_review(
         tokio_util::sync::CancellationToken::new(),
         std::sync::Arc::new(
             move |progress: evohime_core::plan_review::RevisionProgress| {
-                println!(
+                console_line!(
                     "[{:>6.1}s] revision.progress {} {}",
                     clock.elapsed().as_secs_f32(),
                     progress.status,
@@ -661,7 +669,7 @@ async fn run_console_review(
             std::process::exit(1);
         }
     };
-    println!(
+    console_line!(
         "[{:>6.1}s] ✓ план исправлен: было {} байт, стало {}",
         started.elapsed().as_secs_f32(),
         source.len(),
@@ -682,9 +690,9 @@ async fn run_console_review(
                 tracing::error!("evohime-core console: план не записан: {error}");
                 std::process::exit(1);
             }
-            println!("записано: {}", destination.display());
+            console_line!("записано: {}", destination.display());
         }
-        None => println!("\n{}", revised.revised_markdown),
+        None => console_line!("\n{}", revised.revised_markdown),
     }
 }
 
@@ -698,35 +706,35 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
             estimated_tokens,
             context_limit_tokens,
             ..
-        } => println!(
+        } => console_line!(
             "Контекст: модель={model}; workspace={workspace_path}; инструментов={}; токены={estimated_tokens}/{context_limit_tokens}",
             tools.len()
         ),
-        evohime_core::CoreEvent::RoutingTrace { trace, .. } => println!(
+        evohime_core::CoreEvent::RoutingTrace { trace, .. } => console_line!(
             "routing.terminal: route={} status={:?} fallback={}",
             trace.selected_route.as_deref().unwrap_or("—"),
             trace.terminal_status,
             trace.fallback_count
         ),
-        evohime_core::CoreEvent::PendingRoutingApproval { route_id, expires_at_ms, .. } => println!(
+        evohime_core::CoreEvent::PendingRoutingApproval { route_id, expires_at_ms, .. } => console_line!(
             "routing.pending_approval: route={route_id} expires_at_ms={expires_at_ms}"
         ),
-        evohime_core::CoreEvent::TaskStarted { prompt, .. } => println!("\nЗапрос: {prompt}"),
+        evohime_core::CoreEvent::TaskStarted { prompt, .. } => console_line!("\nЗапрос: {prompt}"),
         evohime_core::CoreEvent::AssistantDelta { content, .. } => print!("{content}"),
         evohime_core::CoreEvent::ToolStarted { tool_name, .. } => {
-            println!("\n→ tool.started {tool_name}")
+            console_line!("\n→ tool.started {tool_name}")
         }
         evohime_core::CoreEvent::ToolOutput {
             tool_name, output, ..
-        } => println!("← tool.output {tool_name}\n{output}"),
+        } => console_line!("← tool.output {tool_name}\n{output}"),
         evohime_core::CoreEvent::ApprovalRequired {
             tool_name, permission, ..
-        } => println!("⚠ approval.required {tool_name}: {permission}"),
+        } => console_line!("⚠ approval.required {tool_name}: {permission}"),
         evohime_core::CoreEvent::TaskCompleted { final_message, .. } => {
-            println!("\n\n✓ Задача завершена\n{final_message}")
+            console_line!("\n\n✓ Задача завершена\n{final_message}")
         }
-        evohime_core::CoreEvent::TaskFailed { error, .. } => println!("\n\n✕ Задача завершена с ошибкой\n{error}"),
-        evohime_core::CoreEvent::TaskStopped { .. } => println!("\n\n■ Задача остановлена"),
+        evohime_core::CoreEvent::TaskFailed { error, .. } => console_line!("\n\n✕ Задача завершена с ошибкой\n{error}"),
+        evohime_core::CoreEvent::TaskStopped { .. } => console_line!("\n\n■ Задача остановлена"),
         evohime_core::CoreEvent::ReviewProgress {
             review_id,
             stage,
@@ -734,7 +742,7 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
             model,
             completed,
             total,
-        } => println!(
+        } => console_line!(
             "review.progress {review_id}: {stage} {status} {}/{} {}",
             completed,
             total,
@@ -744,26 +752,26 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
             revision_id,
             status,
             model,
-        } => println!("revision.progress {revision_id}: {status} {model}"),
-        evohime_core::CoreEvent::StorageProgress { operation_id, progress } => println!(
+        } => console_line!("revision.progress {revision_id}: {status} {model}"),
+        evohime_core::CoreEvent::StorageProgress { operation_id, progress } => console_line!(
             "storage.progress {operation_id}: {:?} {}/{}",
             progress.phase,
             progress.completed,
             progress.total.map_or_else(|| "?".into(), |value| value.to_string())
         ),
-        evohime_core::CoreEvent::WorkspaceIndexProgress { workspace_path, progress } => println!(
+        evohime_core::CoreEvent::WorkspaceIndexProgress { workspace_path, progress } => console_line!(
             "workspace.index_progress {workspace_path}: {} {}/{} chunks",
             progress.phase,
             progress.indexed_files,
             progress.chunks
         ),
-        evohime_core::CoreEvent::WorkspaceRetrievalProgress { workspace_path, progress } => println!(
+        evohime_core::CoreEvent::WorkspaceRetrievalProgress { workspace_path, progress } => console_line!(
             "workspace.retrieval_progress {workspace_path}: {} iteration={} results={}",
             progress.event_type,
             progress.iteration,
             progress.result_count
         ),
-        evohime_core::CoreEvent::ChildWorkflowProjection { projection, .. } => println!(
+        evohime_core::CoreEvent::ChildWorkflowProjection { projection, .. } => console_line!(
             "child.workflow {}: {:?} rev={} lease={} dead_letter={}",
             projection.child_task_id,
             projection.state,
@@ -771,134 +779,134 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
             projection.lease_live,
             projection.dead_letter
         ),
-        evohime_core::CoreEvent::WorkflowProgress { run_id, projection } => println!(
+        evohime_core::CoreEvent::WorkflowProgress { run_id, projection } => console_line!(
             "workflow.progress {run_id}: {} node={} attempt={} error={}",
             projection.event_type, projection.node_id, projection.attempt, projection.error_code
         ),
-        evohime_core::CoreEvent::WorkspaceBootstrapManifest { workspace_id, operation, status, .. } => println!(
+        evohime_core::CoreEvent::WorkspaceBootstrapManifest { workspace_id, operation, status, .. } => console_line!(
             "workspace_bootstrap_manifest.result {workspace_id}: {operation} {status}"
         ),
-        evohime_core::CoreEvent::TeamCoordinationPolicies { team_id, operation, status, .. } => println!(
+        evohime_core::CoreEvent::TeamCoordinationPolicies { team_id, operation, status, .. } => console_line!(
             "team_coordination_policies.result {team_id}: {operation} {status}"
         ),
-        evohime_core::CoreEvent::MemoryViewsAndAdaptiveRecall { view_id, operation, .. } => println!(
+        evohime_core::CoreEvent::MemoryViewsAndAdaptiveRecall { view_id, operation, .. } => console_line!(
             "memory_views_and_adaptive_recall.result {view_id}: {operation}"
         ),
-        evohime_core::CoreEvent::ModelEditProtocolRegistry { protocol_id, operation, .. } => println!(
+        evohime_core::CoreEvent::ModelEditProtocolRegistry { protocol_id, operation, .. } => console_line!(
             "model_edit_protocol_registry.result {protocol_id}: {operation}"
         ),
-        evohime_core::CoreEvent::RemoteConversationChannels { connection_id, operation, .. } => println!(
+        evohime_core::CoreEvent::RemoteConversationChannels { connection_id, operation, .. } => console_line!(
             "remote_conversation_channels.result {connection_id}: {operation}"
         ),
-        evohime_core::CoreEvent::PromptCachePlanner { plan_id, operation, .. } => println!(
+        evohime_core::CoreEvent::PromptCachePlanner { plan_id, operation, .. } => console_line!(
             "prompt_cache_planner.result {plan_id}: {operation}"
         ),
-        evohime_core::CoreEvent::DeclarativeRuntimeComponents { component_id, operation, version, .. } => println!(
+        evohime_core::CoreEvent::DeclarativeRuntimeComponents { component_id, operation, version, .. } => console_line!(
             "declarative_runtime_components.result {component_id}: {operation} version={version}"
         ),
-        evohime_core::CoreEvent::GuidedCalibrationSessions { session_id, operation, version, .. } => println!(
+        evohime_core::CoreEvent::GuidedCalibrationSessions { session_id, operation, version, .. } => console_line!(
             "guided_calibration_sessions.result {session_id}: {operation} version={version}"
         ),
-        evohime_core::CoreEvent::ExtensionConformanceKit { subject_id, operation, version, .. } => println!(
+        evohime_core::CoreEvent::ExtensionConformanceKit { subject_id, operation, version, .. } => console_line!(
             "extension_conformance_kit.result {subject_id}: {operation} version={version}"
         ),
-        evohime_core::CoreEvent::TypedAgentHandoffContract { handoff_id, operation, state, .. } => println!(
+        evohime_core::CoreEvent::TypedAgentHandoffContract { handoff_id, operation, state, .. } => console_line!(
             "typed_agent_handoff_contract.result {handoff_id}: {operation} {state}"
         ),
-        evohime_core::CoreEvent::SchemaDrivenAgentConfiguration { scope, operation, revision, .. } => println!(
+        evohime_core::CoreEvent::SchemaDrivenAgentConfiguration { scope, operation, revision, .. } => console_line!(
             "schema_driven_agent_configuration.result {scope}: {operation} revision={revision}"
         ),
-        evohime_core::CoreEvent::ExperienceReplayLibrary { scope, operation, revision, .. } => println!(
+        evohime_core::CoreEvent::ExperienceReplayLibrary { scope, operation, revision, .. } => console_line!(
             "experience_replay_library.result {scope}: {operation} revision={revision}"
         ),
-        evohime_core::CoreEvent::RuntimeInterventionPipeline { run_id, operation, .. } => println!(
+        evohime_core::CoreEvent::RuntimeInterventionPipeline { run_id, operation, .. } => console_line!(
             "runtime_intervention_pipeline.result {run_id}: {operation}"
         ),
-        evohime_core::CoreEvent::CodeDiagnosticsFeedbackLoop { workspace_root_id, operation, revision, .. } => println!(
+        evohime_core::CoreEvent::CodeDiagnosticsFeedbackLoop { workspace_root_id, operation, revision, .. } => console_line!(
             "code_diagnostics_feedback_loop.result {workspace_root_id}: {operation} revision={revision}"
         ),
-        evohime_core::CoreEvent::WorkflowOptimizationLab { run_id, operation, revision, .. } => println!(
+        evohime_core::CoreEvent::WorkflowOptimizationLab { run_id, operation, revision, .. } => console_line!(
             "workflow_optimization_lab.result {run_id}: {operation} revision={revision}"
         ),
-        evohime_core::CoreEvent::CoreTopicSubscriptionEventBus { operation, .. } => println!(
+        evohime_core::CoreEvent::CoreTopicSubscriptionEventBus { operation, .. } => console_line!(
             "core_topic_subscription_event_bus.result: {operation}"
         ),
-        evohime_core::CoreEvent::DependencyAwareTaskGraph { graph_id, operation, revision, .. } => println!(
+        evohime_core::CoreEvent::DependencyAwareTaskGraph { graph_id, operation, revision, .. } => console_line!(
             "dependency_aware_task_graph.result {graph_id}: {operation} revision={revision}"
         ),
-        evohime_core::CoreEvent::DeclarativeAgentComponentRegistry { registry_id, operation, revision, .. } => println!(
+        evohime_core::CoreEvent::DeclarativeAgentComponentRegistry { registry_id, operation, revision, .. } => console_line!(
             "declarative_agent_component_registry.result {registry_id}: {operation} revision={revision}"
         ),
-        evohime_core::CoreEvent::TypedContextReferences { ref_id, operation, .. } => println!(
+        evohime_core::CoreEvent::TypedContextReferences { ref_id, operation, .. } => console_line!(
             "typed_context_references.result {ref_id}: {operation}"
         ),
-        evohime_core::CoreEvent::SafeUiExtensionFramework { extension_id, operation, revision, .. } => println!(
+        evohime_core::CoreEvent::SafeUiExtensionFramework { extension_id, operation, revision, .. } => console_line!(
             "safe_ui_extension_framework.result {extension_id}: {operation} revision={revision}"
         ),
-        evohime_core::CoreEvent::CapabilityWorkbench { instance_id, operation, revision, .. } => println!(
+        evohime_core::CoreEvent::CapabilityWorkbench { instance_id, operation, revision, .. } => console_line!(
             "capability_workbench.result {instance_id}: {operation} revision={revision}"
         ),
-        evohime_core::CoreEvent::TeamCoordinator { work_item_id, operation, revision, .. } => println!(
+        evohime_core::CoreEvent::TeamCoordinator { work_item_id, operation, revision, .. } => console_line!(
             "team_coordinator.result {work_item_id}: {operation} revision={revision}"
         ),
-    evohime_core::CoreEvent::ProjectInstructionStack { workspace_root, operation, revision, .. } => println!(
+    evohime_core::CoreEvent::ProjectInstructionStack { workspace_root, operation, revision, .. } => console_line!(
             "project_instruction_stack.result {workspace_root}: {operation} revision={revision}"
         ),
-    evohime_core::CoreEvent::WorkspaceSets { set_id, operation, version, .. } => println!(
+    evohime_core::CoreEvent::WorkspaceSets { set_id, operation, version, .. } => console_line!(
             "workspace_sets.result {set_id}: {operation} version={version}"
         ),
-    evohime_core::CoreEvent::KnowledgeSourceRegistryProjectRole { source_id, operation, version, .. } => println!(
+    evohime_core::CoreEvent::KnowledgeSourceRegistryProjectRole { source_id, operation, version, .. } => console_line!(
             "knowledge_source_registry.result {source_id}: {operation} version={version}"
         ),
-        evohime_core::CoreEvent::DurableRemoteTaskBridge { remote_task_id, operation, version, .. } => println!(
+        evohime_core::CoreEvent::DurableRemoteTaskBridge { remote_task_id, operation, version, .. } => console_line!(
             "durable_remote_task_bridge.result {remote_task_id}: {operation} version={version}"
         ),
-        evohime_core::CoreEvent::MessageInterventionPolicies { operation, version, .. } => println!(
+        evohime_core::CoreEvent::MessageInterventionPolicies { operation, version, .. } => console_line!(
             "message_intervention_policies.result: {operation} version={version}"
         ),
-        evohime_core::CoreEvent::BatchInvocationRuntime { batch_id, operation, version, .. } => println!(
+        evohime_core::CoreEvent::BatchInvocationRuntime { batch_id, operation, version, .. } => console_line!(
             "batch_invocation_runtime.result {batch_id}: {operation} version={version}"
         ),
-        evohime_core::CoreEvent::PolicyAwareToolResultCache { cache_key, operation, version, .. } => println!(
+        evohime_core::CoreEvent::PolicyAwareToolResultCache { cache_key, operation, version, .. } => console_line!(
             "policy_aware_tool_result_cache.result {cache_key}: {operation} version={version}"
         ),
-        evohime_core::CoreEvent::CodeAnchoredIntentMarkers { operation, version, .. } => println!(
+        evohime_core::CoreEvent::CodeAnchoredIntentMarkers { operation, version, .. } => console_line!(
             "code_anchored_intent_markers.result: {operation} version={version}"
         ),
-        evohime_core::CoreEvent::ModelPurposeRouting { operation, version, .. } => println!(
+        evohime_core::CoreEvent::ModelPurposeRouting { operation, version, .. } => console_line!(
             "model_purpose_routing.result: {operation} version={version}"
         ),
-        evohime_core::CoreEvent::LocalModelRuntimeManager { operation, version, .. } => println!(
+        evohime_core::CoreEvent::LocalModelRuntimeManager { operation, version, .. } => console_line!(
             "local_model_runtime_manager.result: {operation} version={version}"
         ),
-        evohime_core::CoreEvent::ArchitectureSnapshot { snapshot_id, operation, version, .. } => println!(
+        evohime_core::CoreEvent::ArchitectureSnapshot { snapshot_id, operation, version, .. } => console_line!(
             "architecture_snapshot.result {snapshot_id}: {operation} version={version}"
         ),
-        evohime_core::CoreEvent::AgentGitChangeSets { change_set_id, operation, version, .. } => println!(
+        evohime_core::CoreEvent::AgentGitChangeSets { change_set_id, operation, version, .. } => console_line!(
             "agent_git_change_sets.result {change_set_id}: {operation} version={version}"
         ),
-        evohime_core::CoreEvent::ArchitectEditorModelPipeline { pipeline_id, operation, version, .. } => println!(
+        evohime_core::CoreEvent::ArchitectEditorModelPipeline { pipeline_id, operation, version, .. } => console_line!(
             "architect_editor_pipeline.result {pipeline_id}: {operation} version={version}"
         ),
-        evohime_core::CoreEvent::EventVisualizerRegistry { visualizer_id, operation, version, .. } => println!("event_visualizer_registry.result {visualizer_id}: {operation} version={version}"),
-        evohime_core::CoreEvent::ReasoningOperatorLibrary { operator_id, operation, version, .. } => println!("reasoning_operator_library.result {operator_id}: {operation} version={version}"),
-        evohime_core::CoreEvent::OutputGuardrailPipeline { pipeline_id, operation, version, .. } => println!("output_guardrail_pipeline.result {pipeline_id}: {operation} version={version}"),
-        evohime_core::CoreEvent::CustomizationInventory { item_id, operation, version, .. } => println!("customization_inventory.result {item_id}: {operation} version={version}"),
-        evohime_core::CoreEvent::StandingApprovalProfiles { profile_id, operation, version, .. } => println!("standing_approval_profiles.result {profile_id}: {operation} version={version}"),
-        evohime_core::CoreEvent::ApprovalPolicyProfiles { profile_id, operation, version, .. } => println!("approval_policy_profiles.result {profile_id}: {operation} version={version}"),
-        evohime_core::CoreEvent::CheckpointForking { fork_run_id, operation, version, .. } => println!("checkpoint_forking.result {fork_run_id}: {operation} version={version}"),
-        evohime_core::CoreEvent::PrivacyTelemetryGovernance { category, operation, version, .. } => println!("privacy_telemetry_governance.result {category}: {operation} version={version}"),
-        evohime_core::CoreEvent::ConversationBridgeAdapters { bridge_id, operation, revision, .. } => println!("conversation_bridge_adapters.result {bridge_id}: {operation} revision={revision}"),
-        evohime_core::CoreEvent::PersistentAgentOrganizationRegistry { agent_id, operation, revision, .. } => println!("persistent_agent_organization_registry.result {agent_id}: {operation} revision={revision}"),
+        evohime_core::CoreEvent::EventVisualizerRegistry { visualizer_id, operation, version, .. } => console_line!("event_visualizer_registry.result {visualizer_id}: {operation} version={version}"),
+        evohime_core::CoreEvent::ReasoningOperatorLibrary { operator_id, operation, version, .. } => console_line!("reasoning_operator_library.result {operator_id}: {operation} version={version}"),
+        evohime_core::CoreEvent::OutputGuardrailPipeline { pipeline_id, operation, version, .. } => console_line!("output_guardrail_pipeline.result {pipeline_id}: {operation} version={version}"),
+        evohime_core::CoreEvent::CustomizationInventory { item_id, operation, version, .. } => console_line!("customization_inventory.result {item_id}: {operation} version={version}"),
+        evohime_core::CoreEvent::StandingApprovalProfiles { profile_id, operation, version, .. } => console_line!("standing_approval_profiles.result {profile_id}: {operation} version={version}"),
+        evohime_core::CoreEvent::ApprovalPolicyProfiles { profile_id, operation, version, .. } => console_line!("approval_policy_profiles.result {profile_id}: {operation} version={version}"),
+        evohime_core::CoreEvent::CheckpointForking { fork_run_id, operation, version, .. } => console_line!("checkpoint_forking.result {fork_run_id}: {operation} version={version}"),
+        evohime_core::CoreEvent::PrivacyTelemetryGovernance { category, operation, version, .. } => console_line!("privacy_telemetry_governance.result {category}: {operation} version={version}"),
+        evohime_core::CoreEvent::ConversationBridgeAdapters { bridge_id, operation, revision, .. } => console_line!("conversation_bridge_adapters.result {bridge_id}: {operation} revision={revision}"),
+        evohime_core::CoreEvent::PersistentAgentOrganizationRegistry { agent_id, operation, revision, .. } => console_line!("persistent_agent_organization_registry.result {agent_id}: {operation} revision={revision}"),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
-            println!("review.history_cleared {marker_id}")
+            console_line!("review.history_cleared {marker_id}")
         }
     }
 }
 
 #[cfg(not(windows))]
 fn main() {
-    println!("evohime-core {}", evohime_core::CoreVersion::current());
+    console_line!("evohime-core {}", evohime_core::CoreVersion::current());
 }
 
 /// Resolves the launch context that binds this Core generation to one pipe,

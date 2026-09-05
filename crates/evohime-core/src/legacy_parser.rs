@@ -1,4 +1,5 @@
 use evohime_model_gateway::NativeToolCall;
+use std::borrow::Cow;
 
 pub(crate) const LEGACY_TOOL_NAMES: &[&str] = &[
     "agent.run",
@@ -66,13 +67,13 @@ const TOOL_CALL_MARKERS: [&str; 6] = [
 /// Models without native tool calling print the call itself into the message,
 /// so the prose ends where the first call begins. Sending the raw content to
 /// the shell would put XML in the middle of the conversation.
-pub fn visible_agent_text(content: &str) -> String {
+pub fn visible_agent_text<'a>(content: &'a str) -> Cow<'a, str> {
     let cut = TOOL_CALL_MARKERS
         .iter()
         .filter_map(|marker| content.find(marker))
         .min()
         .unwrap_or(content.len());
-    content[..cut].trim().to_string()
+    Cow::Borrowed(content[..cut].trim())
 }
 
 pub(crate) fn parse_legacy_function_calls(content: &str, iteration: usize) -> Vec<NativeToolCall> {

@@ -2,22 +2,30 @@ use evohime_model_gateway::ToolSpec;
 
 use crate::AgentRunError;
 
-// Аргументы — поля одной строки трассы маршрутизации; структура-обёртка здесь только продублировала бы её.
-#[allow(clippy::too_many_arguments)]
+pub(crate) const ROUTING_POLICY_VERSION: &str = "routing-policy-v1";
+pub(crate) const ROUTING_CATALOG_VERSION: &str = "builtin-v1";
+pub(crate) const ROUTING_EVENT_TERMINAL: &str = "terminal";
+pub(crate) const ROUTING_SNAPSHOT_FALLBACK: &str = "runtime-selection";
+
+pub(crate) struct RoutingSuccessInput<'a> {
+    pub run_id: &'a str,
+    pub selected_route: &'a str,
+    pub fallback_count: usize,
+    pub estimated_input_tokens: u32,
+    pub profile_version: &'a str,
+    pub context_ledger_hash: &'a str,
+    pub classification: &'a str,
+    pub decision: Option<&'a evohime_model_gateway::SnapshotRouteDecision>,
+    pub snapshot_hash: Option<&'a str>,
+    pub attempt_id: u32,
+    pub now_ms: u64,
+}
+
 pub(crate) fn routing_success_trace(
-    run_id: &str,
-    selected_route: &str,
-    fallback_count: usize,
-    estimated_input_tokens: u32,
-    profile_version: &str,
-    context_ledger_hash: &str,
-    classification: &str,
-    decision: Option<&evohime_model_gateway::SnapshotRouteDecision>,
-    snapshot_hash: Option<&str>,
-    attempt_id: u32,
-    now_ms: u64,
+    input: RoutingSuccessInput<'_>,
 ) -> evohime_model_gateway::RoutingTrace {
-    let candidates = decision
+    let candidates = input
+        .decision
         .map(|decision| {
             decision
                 .candidates
@@ -49,37 +57,41 @@ pub(crate) fn routing_success_trace(
         .unwrap_or_default();
     evohime_model_gateway::RoutingTrace {
         schema_version: 1,
-        trace_id: run_id.to_owned(),
-        run_id: run_id.to_owned(),
+        trace_id: input.run_id.to_owned(),
+        run_id: input.run_id.to_owned(),
         sequence: 1,
-        attempt_id,
-        now_ms,
-        policy_version: "routing-policy-v1".into(),
-        catalog_version: "builtin-v1".into(),
-        snapshot_hash: snapshot_hash.unwrap_or("runtime-selection").into(),
-        classification: classification.into(),
+        attempt_id: input.attempt_id,
+        now_ms: input.now_ms,
+        policy_version: ROUTING_POLICY_VERSION.into(),
+        catalog_version: ROUTING_CATALOG_VERSION.into(),
+        snapshot_hash: input
+            .snapshot_hash
+            .unwrap_or(ROUTING_SNAPSHOT_FALLBACK)
+            .into(),
+        classification: input.classification.into(),
         privacy_label: evohime_model_gateway::PrivacyLabel::NonSensitive,
         candidates,
-        selected_route: Some(selected_route.to_owned()),
-        reason_code: decision
+        selected_route: Some(input.selected_route.to_owned()),
+        reason_code: input
+            .decision
             .map(|decision| decision.reason_code.clone())
             .unwrap_or_else(|| {
-                if fallback_count > 0 {
+                if input.fallback_count > 0 {
                     "fallback_rank_preferred".into()
                 } else {
                     "only_candidate".into()
                 }
             }),
-        fallback_count: fallback_count as u32,
-        event: "terminal".into(),
+        fallback_count: input.fallback_count as u32,
+        event: ROUTING_EVENT_TERMINAL.into(),
         latency_ms: 0,
         terminal_status: Some(evohime_model_gateway::TerminalStatus::Success),
         safe_next_action: None,
         budget_id: None,
         budget_absent: true,
-        estimated_input_tokens,
-        profile_version: Some(profile_version.to_owned()),
-        context_ledger_hash: Some(context_ledger_hash.to_owned()),
+        estimated_input_tokens: input.estimated_input_tokens,
+        profile_version: Some(input.profile_version.to_owned()),
+        context_ledger_hash: Some(input.context_ledger_hash.to_owned()),
     }
 }
 
@@ -126,16 +138,16 @@ pub(crate) fn routing_failure_trace(
         sequence: 1,
         attempt_id: 0,
         now_ms: crate::task_memory::now_millis(),
-        policy_version: "routing-policy-v1".into(),
-        catalog_version: "builtin-v1".into(),
-        snapshot_hash: "runtime-selection".into(),
+        policy_version: ROUTING_POLICY_VERSION.into(),
+        catalog_version: ROUTING_CATALOG_VERSION.into(),
+        snapshot_hash: ROUTING_SNAPSHOT_FALLBACK.into(),
         classification: "complex".into(),
         privacy_label: evohime_model_gateway::PrivacyLabel::Unknown,
         candidates: Vec::new(),
         selected_route: None,
         reason_code: reason.into(),
         fallback_count: 0,
-        event: "terminal".into(),
+        event: ROUTING_EVENT_TERMINAL.into(),
         latency_ms: 0,
         terminal_status: Some(status),
         safe_next_action: action,

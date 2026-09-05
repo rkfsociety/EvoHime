@@ -1,6 +1,7 @@
 [package]
 name = "evohime-local-storage"
 version = "0.1.0"
+publish = false
 edition = "2021"
 
 [lib]

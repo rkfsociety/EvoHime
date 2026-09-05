@@ -34,14 +34,23 @@ pub mod workspace_sets;
 pub const AGENT_IDENTITY_PROMPT: &str =
     "Ты — Ева, AI-агент приложения EvoHime. Ева — короткое имя EvoHime; понимай обращения к тебе «Ева» и «EvoHime» как к одному агенту.";
 
+/// Канонические имена read-only filesystem-инструментов, используемые в
+/// policy preflight и в проверках обязательного исследовательского пути.
+const TOOL_FILESYSTEM_LIST: &str = "filesystem.list";
+const TOOL_FILESYSTEM_READ: &str = "filesystem.read";
+const TOOL_FILESYSTEM_SEARCH: &str = "filesystem.search";
+
+/// Идентификатор встроенной политики разрешений Core.
+const PERMISSION_POLICY_ID: &str = "permission-v1";
+
 /// Аргументы для policy-only preflight при построении каталога инструментов.
 /// Preflight не выполняет инструмент, но path-инструментам всё равно нужен
 /// существующий workspace-relative путь, иначе безопасный инструмент ошибочно
 /// выпадает из authorized snapshot.
 fn catalog_preflight_input(tool_name: &str) -> serde_json::Value {
     match tool_name {
-        "filesystem.read" | "filesystem.list" => serde_json::json!({ "path": "." }),
-        "filesystem.search" => serde_json::json!({
+        TOOL_FILESYSTEM_READ | TOOL_FILESYSTEM_LIST => serde_json::json!({ "path": "." }),
+        TOOL_FILESYSTEM_SEARCH => serde_json::json!({
             "query": "EvoHime",
             "path": "."
         }),
@@ -71,6 +80,30 @@ fn requires_workspace_research_catalog(prompt: &str) -> bool {
     ]
     .iter()
     .any(|marker| prompt.contains(marker))
+}
+
+/// Входные данные model-side MCP вызова. Разбор контракта происходит до
+/// обращения к registry, поэтому неизвестные или запрещённые поля не
+/// протекают дальше как неструктурированный JSON.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ModelMcpCallInput {
+    server_id: String,
+    tool_name: String,
+    #[serde(default)]
+    params: Option<serde_json::Value>,
+    #[serde(default)]
+    timeout_ms: Option<serde_json::Value>,
+    #[serde(default)]
+    url: Option<serde_json::Value>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ResolvedMcpInput {
+    url: String,
+    method: String,
+    params: serde_json::Value,
+    timeout_ms: serde_json::Value,
 }
 
 fn model_is_waiting_instead_of_reporting(content: &str) -> bool {
@@ -121,29 +154,21 @@ fn resolve_model_mcp_input(
     registry: &crate::workflow_registry::WorkflowRegistry,
     input: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let object = input
-        .as_object()
-        .ok_or_else(|| "mcp.call requires an object input".to_string())?;
-    if object.contains_key("url") {
+    let input: ModelMcpCallInput = serde_json::from_value(input)
+        .map_err(|error| format!("mcp.call invalid input: {error}"))?;
+    if input.url.is_some() {
         return Err("mcp.call model input cannot contain url".into());
     }
-    let server_id = object
-        .get("server_id")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| "mcp.call requires server_id".to_string())?;
-    let tool_name = object
-        .get("tool_name")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| "mcp.call requires tool_name".to_string())?;
     let endpoint = registry
-        .resolve_mcp_call(server_id, tool_name)
+        .resolve_mcp_call(&input.server_id, &input.tool_name)
         .map_err(|error| format!("mcp identity rejected: {}", error.code()))?;
-    Ok(serde_json::json!({
-        "url": endpoint,
-        "method": tool_name,
-        "params": object.get("params").cloned().unwrap_or(serde_json::Value::Null),
-        "timeout_ms": object.get("timeout_ms").cloned().unwrap_or(serde_json::Value::Null),
-    }))
+    serde_json::to_value(ResolvedMcpInput {
+        url: endpoint,
+        method: input.tool_name,
+        params: input.params.unwrap_or(serde_json::Value::Null),
+        timeout_ms: input.timeout_ms.unwrap_or(serde_json::Value::Null),
+    })
+    .map_err(|error| format!("mcp.call output serialization failed: {error}"))
 }
 
 /// Budget for a whole task: many model calls plus tool runs, so it has to be
@@ -264,9 +289,8 @@ fn classify_shell_verification(
 }
 
 // Аргументы — признаки выполненных требований поставки, по одному булеву на требование.
-#[allow(clippy::too_many_arguments)]
-fn delivery_next_step(
-    requirements: DeliveryRequirements,
+#[derive(Debug, Clone, Copy)]
+struct DeliveryProgress {
     research_done: bool,
     mutation_done: bool,
     verification_done: bool,
@@ -275,24 +299,29 @@ fn delivery_next_step(
     research_has_overview: bool,
     research_has_content: bool,
     research_has_search: bool,
+}
+
+fn delivery_next_step(
+    requirements: DeliveryRequirements,
+    progress: DeliveryProgress,
 ) -> &'static str {
-    if requirements.research && !research_done {
-        if !research_has_overview {
+    if requirements.research && !progress.research_done {
+        if !progress.research_has_overview {
             "НЕМЕДЛЕННО вызови read-only filesystem.list с полным JSON {\"path\":\".\"}. Не пиши отчёт."
-        } else if !research_has_content {
+        } else if !progress.research_has_content {
             "НЕМЕДЛЕННО прочитай один из ключевых файлов: filesystem.read с JSON {\"path\":\"Cargo.toml\"} или {\"path\":\"README.md\"}. Не повторяй filesystem.list и не пиши отчёт."
-        } else if !research_has_search {
+        } else if !progress.research_has_search {
             "НЕМЕДЛЕННО вызови filesystem.search с полным JSON {\"query\":\"TODO\",\"path\":\".\"} или найди по коду ключевой компонент. Не используй предположения о структуре вроде crates; путь должен существовать в текущем workspace. Не повторяй уже выполненное чтение и не пиши отчёт."
-        } else if research_observations < 3 {
+        } else if progress.research_observations < 3 {
             "НЕМЕДЛЕННО прочитай ещё один конкретный архитектурный файл через filesystem.read, например docs/architecture.md или docs/current-state.md. Не пиши отчёт."
         } else {
             "НЕМЕДЛЕННО подготовь итоговый отчёт по уже собранным данным. Не вызывай инструменты."
         }
-    } else if !mutation_done && requirements.mutation {
+    } else if !progress.mutation_done && requirements.mutation {
         "НЕМЕДЛЕННО вызови filesystem.patch или filesystem.write и внеси требуемое изменение. Не вызывай read/search и не пиши отчёт."
-    } else if !verification_done && requirements.verification {
+    } else if !progress.verification_done && requirements.verification {
         "НЕМЕДЛЕННО вызови shell.execute с полным JSON-объектом, например {\"program\":\"cargo\",\"args\":[\"test\"],\"cwd\":\".\"}. Не вызывай shell.execute с пустыми аргументами и не пиши отчёт."
-    } else if !commit_done && requirements.commit {
+    } else if !progress.commit_done && requirements.commit {
         "НЕМЕДЛЕННО вызови git.commit с task-only сообщением. Не пиши отчёт."
     } else {
         "НЕМЕДЛЕННО вызови следующий нужный read-only инструмент с полным JSON и продолжи исследование. Не пиши отчёт."
@@ -316,7 +345,9 @@ use logging::{append_audit_line, redact_boundary_text, write_observability_hook}
 pub mod paths;
 pub use paths::get_data_directory;
 mod routing_trace;
-use routing_trace::{classify_routing_task, routing_failure_trace, routing_success_trace};
+use routing_trace::{
+    classify_routing_task, routing_failure_trace, routing_success_trace, RoutingSuccessInput,
+};
 
 #[cfg(windows)]
 mod pipe_server;
@@ -1971,6 +2002,43 @@ fn error_category(error: &str) -> &'static str {
     }
 }
 
+/// Параметры одной метрики инструмента, записываемой в durable journal.
+#[derive(Debug, Clone, Copy)]
+pub struct ToolMetric<'a> {
+    pub task_id: &'a str,
+    pub tool_name: &'a str,
+    pub iteration: usize,
+    pub ok: bool,
+    pub failure_kind: Option<&'a str>,
+    pub recovery_hint: bool,
+    pub escalated: bool,
+}
+
+/// Параметры перехода durable recovery state machine.
+#[derive(Debug, Clone, Copy)]
+pub struct RecoveryTransition<'a> {
+    pub run_id: &'a str,
+    pub state: RecoveryState,
+    pub effect_id: &'a str,
+    pub idempotency_key: &'a str,
+    pub verifier: &'a str,
+    pub evidence_json: &'a [u8],
+    pub decision: &'a str,
+}
+
+/// Данные session-only заметки, которые никогда не становятся persistent memory.
+#[derive(Debug, Clone, Copy)]
+pub struct SessionMemoryNote<'a> {
+    pub id: &'a str,
+    pub session_id: &'a str,
+    pub scope: evohime_local_storage::memory_store::MemoryScope,
+    pub scope_id: &'a str,
+    pub kind: &'a str,
+    pub statement: &'a str,
+    pub created_at: &'a str,
+    pub expires_at: &'a str,
+}
+
 impl EventJournal {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, StorageError> {
         let path = path.as_ref().to_path_buf();
@@ -3181,27 +3249,16 @@ impl EventJournal {
         Ok(last_sequence)
     }
 
-    // Аргументы повторяют колонки строки метрики инструмента в SQLite.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn record_tool_metric(
-        &self,
-        task_id: &str,
-        tool_name: &str,
-        iteration: usize,
-        ok: bool,
-        failure_kind: Option<&str>,
-        recovery_hint: bool,
-        escalated: bool,
-    ) -> Result<i64, StorageError> {
+    pub async fn record_tool_metric(&self, metric: ToolMetric<'_>) -> Result<i64, StorageError> {
         let database = self.database.lock().await;
         database.record_tool_metric(
-            task_id,
-            tool_name,
-            iteration.min(i64::MAX as usize) as i64,
-            ok,
-            failure_kind,
-            recovery_hint,
-            escalated,
+            metric.task_id,
+            metric.tool_name,
+            metric.iteration.min(i64::MAX as usize) as i64,
+            metric.ok,
+            metric.failure_kind,
+            metric.recovery_hint,
+            metric.escalated,
         )
     }
 
@@ -3375,27 +3432,19 @@ impl EventJournal {
         })
     }
 
-    // Аргументы повторяют колонки перехода recovery в SQLite.
-    #[allow(clippy::too_many_arguments)]
     pub async fn transition_recovery(
         &self,
-        run_id: &str,
-        state: RecoveryState,
-        effect_id: &str,
-        idempotency_key: &str,
-        verifier: &str,
-        evidence_json: &[u8],
-        decision: &str,
+        transition: RecoveryTransition<'_>,
     ) -> Result<RunRecoveryRecord, StorageError> {
         let database = self.database.lock().await;
         database.transition_recovery(
-            run_id,
-            state,
-            effect_id,
-            idempotency_key,
-            verifier,
-            evidence_json,
-            decision,
+            transition.run_id,
+            transition.state,
+            transition.effect_id,
+            transition.idempotency_key,
+            transition.verifier,
+            transition.evidence_json,
+            transition.decision,
         )
     }
 
@@ -3720,29 +3769,21 @@ impl EventJournal {
 
     /// "Only for this session": a session-scoped row with automatic expiry
     /// that never becomes persistent memory.
-    #[allow(clippy::too_many_arguments)]
     pub async fn save_memory_session_note(
         &self,
-        id: &str,
-        session_id: &str,
-        scope: evohime_local_storage::memory_store::MemoryScope,
-        scope_id: &str,
-        kind: &str,
-        statement: &str,
-        created_at: &str,
-        expires_at: &str,
+        note: SessionMemoryNote<'_>,
     ) -> Result<(), String> {
         let database = self.database.lock().await;
         evohime_local_storage::memory_store::MemoryStoreSql::insert_session_note(
             database.connection(),
-            id,
-            session_id,
-            scope,
-            scope_id,
-            kind,
-            statement,
-            created_at,
-            expires_at,
+            note.id,
+            note.session_id,
+            note.scope,
+            note.scope_id,
+            note.kind,
+            note.statement,
+            note.created_at,
+            note.expires_at,
         )
         .map_err(|error| error.to_string())
     }
@@ -4810,38 +4851,40 @@ pub struct RoutingApprovalRegistry {
     pending: Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>>,
 }
 
+pub struct RoutingApprovalWait<'a> {
+    pub task_id: &'a str,
+    pub run_id: &'a str,
+    pub trace_id: &'a str,
+    pub route_id: &'a str,
+    pub timeout_ms: u64,
+    pub events: &'a broadcast::Sender<CoreEvent>,
+    pub cancellation: &'a CancellationToken,
+}
+
 impl RoutingApprovalRegistry {
-    // Аргументы — параметры ожидания решения: идентичность запроса, таймаут и каналы.
-    #[allow(clippy::too_many_arguments)]
     pub async fn wait_for_decision(
         &self,
-        task_id: &str,
-        run_id: &str,
-        trace_id: &str,
-        route_id: &str,
-        timeout_ms: u64,
-        events: &broadcast::Sender<CoreEvent>,
-        cancellation: &CancellationToken,
+        wait: RoutingApprovalWait<'_>,
     ) -> Result<bool, AgentRunError> {
         let (sender, receiver) = tokio::sync::oneshot::channel();
         self.pending
             .lock()
             .await
-            .insert(trace_id.to_owned(), sender);
-        let expires_at_ms = task_memory::now_millis().saturating_add(timeout_ms);
-        let _ = events.send(CoreEvent::PendingRoutingApproval {
-            task_id: task_id.to_owned(),
-            trace_id: trace_id.to_owned(),
-            run_id: run_id.to_owned(),
-            route_id: route_id.to_owned(),
+            .insert(wait.trace_id.to_owned(), sender);
+        let expires_at_ms = task_memory::now_millis().saturating_add(wait.timeout_ms);
+        let _ = wait.events.send(CoreEvent::PendingRoutingApproval {
+            task_id: wait.task_id.to_owned(),
+            trace_id: wait.trace_id.to_owned(),
+            run_id: wait.run_id.to_owned(),
+            route_id: wait.route_id.to_owned(),
             expires_at_ms,
         });
         let outcome = tokio::select! {
-            _ = cancellation.cancelled() => Err(AgentRunError::Cancelled),
-            result = tokio::time::timeout(std::time::Duration::from_millis(timeout_ms.max(1)), receiver) =>
+            _ = wait.cancellation.cancelled() => Err(AgentRunError::Cancelled),
+            result = tokio::time::timeout(std::time::Duration::from_millis(wait.timeout_ms.max(1)), receiver) =>
                 Ok(result.ok().and_then(Result::ok).unwrap_or(false)),
         };
-        self.pending.lock().await.remove(trace_id);
+        self.pending.lock().await.remove(wait.trace_id);
         outcome
     }
 
@@ -5389,10 +5432,13 @@ impl evohime_local_storage::model_provenance::ProvenanceBundleSigner for CoreRec
     fn key_id(&self) -> String {
         // Export callers already run after receipt-key startup. The trait is
         // synchronous, so keep a bounded owned fallback for diagnostics.
-        self.0
-            .load_signer()
-            .map(|(metadata, _)| metadata.key_id)
-            .unwrap_or_else(|_| "unknown".into())
+        match self.0.load_signer().map(|(metadata, _)| metadata.key_id) {
+            Ok(key_id) => key_id,
+            Err(error) => {
+                tracing::warn!(%error, "receipt signer key id unavailable");
+                "unknown".into()
+            }
+        }
     }
 
     fn sign_manifest_digest(
@@ -5468,25 +5514,85 @@ struct ProvenancedModelResult {
     response_id: Option<String>,
 }
 
-#[allow(clippy::too_many_arguments)]
-fn model_request_envelope(
-    logical_request_id: &str,
+struct ReceiptApprovalInput<'a> {
+    task_id: &'a str,
+    tool: &'a str,
+    permission: &'a str,
+    scope: &'a str,
+    input: &'a serde_json::Value,
+    preview: &'a evohime_permissions::ApprovalPreview,
+    approval_id: Uuid,
+}
+
+struct ReceiptClaimInput<'a> {
+    task_id: &'a str,
+    tool: &'a str,
+    permission: &'a str,
+    permission_value: evohime_permissions::Permission,
+    scope: &'a str,
+    input: &'a serde_json::Value,
+    preview: &'a evohime_permissions::ApprovalPreview,
+    approval_id: Uuid,
+}
+
+struct ReceiptRefuseInput<'a> {
+    task_id: &'a str,
+    tool: &'a str,
+    permission: &'a str,
+    scope: &'a str,
+    input: &'a serde_json::Value,
+    preview: &'a evohime_permissions::ApprovalPreview,
+    approval_id: Uuid,
+    code: &'a str,
+}
+
+struct AssembleModelContextInput<'a> {
+    runtime: &'a mut context_budget::ContextRuntime,
+    task_id: &'a str,
+    session_id: &'a str,
+    iteration: usize,
+    messages: &'a [ChatMessage],
+    specs: &'a [ToolSpec],
+    selected_model: Option<&'a str>,
+}
+
+struct CallModelInput<'a> {
+    task_id: &'a str,
+    messages: &'a [ChatMessage],
+    specs: &'a [ToolSpec],
+    source_refs: &'a [evohime_model_provenance::SourceRef],
+    workspace_root: &'a std::path::Path,
+    ledger: &'a evohime_context_budget::ledger::ContextLedgerEntry,
+    config: &'a ProviderResilienceConfig,
+    preferred_route: Option<&'a str>,
+    task_class: Option<&'a str>,
+    estimated_input_tokens: u32,
+}
+
+struct ModelRequestEnvelopeInput<'a> {
+    logical_request_id: &'a str,
     request_id: String,
     attempt: u32,
     parent_request_id: Option<String>,
     previous_request_hash: Option<String>,
-    ledger: &evohime_context_budget::ledger::ContextLedgerEntry,
-    messages: &[ChatMessage],
-    specs: &[ToolSpec],
-    source_refs: &[evohime_model_provenance::SourceRef],
-    route_snapshot_hash: &str,
+    ledger: &'a evohime_context_budget::ledger::ContextLedgerEntry,
+    messages: &'a [ChatMessage],
+    specs: &'a [ToolSpec],
+    source_refs: &'a [evohime_model_provenance::SourceRef],
+    route_snapshot_hash: &'a str,
+}
+
+fn model_request_envelope(
+    input: ModelRequestEnvelopeInput<'_>,
 ) -> Result<evohime_model_provenance::ModelRequestEnvelopeV1, String> {
-    let system_prompt = messages
+    let system_prompt = input
+        .messages
         .iter()
         .find(|message| message.role == ChatRole::System)
         .map(|message| message.content.clone())
         .unwrap_or_default();
-    let messages = messages
+    let messages = input
+        .messages
         .iter()
         .filter(|message| message.role != ChatRole::System)
         .map(|message| evohime_model_provenance::ModelMessage {
@@ -5494,7 +5600,8 @@ fn model_request_envelope(
             content: message.content.clone(),
         })
         .collect::<Vec<_>>();
-    let tools = specs
+    let tools = input
+        .specs
         .iter()
         .map(|spec| evohime_model_provenance::ToolSchema {
             name: spec.function.name.clone(),
@@ -5502,22 +5609,28 @@ fn model_request_envelope(
             input_schema: spec.function.parameters.clone(),
         })
         .collect::<Vec<_>>();
-    let selected_ids = ledger.selected_items.iter().map(|item| item.id.clone());
-    let dropped = ledger
+    let selected_ids = input
+        .ledger
+        .selected_items
+        .iter()
+        .map(|item| item.id.clone());
+    let dropped = input
+        .ledger
         .dropped_items
         .iter()
         .map(|item| (item.id.clone(), item.drop_reason.as_str().to_string()));
-    let mut summaries = ledger
+    let mut summaries = input
+        .ledger
         .compression
         .iter()
         .map(|record| (record.summary_id.clone(), Vec::new()))
         .collect::<Vec<_>>();
-    if !source_refs.is_empty() {
-        summaries.push(("workspace:evidence".into(), source_refs.to_vec()));
+    if !input.source_refs.is_empty() {
+        summaries.push(("workspace:evidence".into(), input.source_refs.to_vec()));
     }
     let projection = evohime_model_provenance::ContextProjection::from_ledger_parts(
-        ledger.id.clone(),
-        ledger.context_ledger_hash.clone(),
+        input.ledger.id.clone(),
+        input.ledger.context_ledger_hash.clone(),
         selected_ids,
         summaries,
         dropped,
@@ -5525,16 +5638,16 @@ fn model_request_envelope(
     .map_err(|error| error.to_string())?;
     Ok(evohime_model_provenance::ModelRequestEnvelopeV1 {
         version: evohime_model_provenance::CONTRACT_VERSION,
-        request_id,
-        logical_request_id: logical_request_id.to_string(),
-        attempt,
-        parent_request_id,
-        ledger_id: ledger.id.clone(),
+        request_id: input.request_id,
+        logical_request_id: input.logical_request_id.to_string(),
+        attempt: input.attempt,
+        parent_request_id: input.parent_request_id,
+        ledger_id: input.ledger.id.clone(),
         request_kind: evohime_model_provenance::RequestKind::Agent,
-        provider: ledger.provider.clone(),
-        model: ledger.model.clone(),
-        route_snapshot_hash: route_snapshot_hash.to_owned(),
-        policy_snapshot_hash: route_snapshot_hash.to_owned(),
+        provider: input.ledger.provider.clone(),
+        model: input.ledger.model.clone(),
+        route_snapshot_hash: input.route_snapshot_hash.to_owned(),
+        policy_snapshot_hash: input.route_snapshot_hash.to_owned(),
         route_policy_hash_shared: true,
         system_prompt,
         messages,
@@ -5547,7 +5660,7 @@ fn model_request_envelope(
             provider_options: serde_json::Map::new(),
         },
         context_projection: projection,
-        previous_request_hash,
+        previous_request_hash: input.previous_request_hash,
     })
 }
 
@@ -5738,7 +5851,7 @@ impl ToolAgent {
             manifest_hash: evohime_receipts::sha256_hex(tool.as_bytes()),
             workspace_anchors: vec![format!("scope:{scope}")],
             operation_scopes: vec![scope.into()],
-            permissions: vec!["permission-v1".into()],
+            permissions: vec![PERMISSION_POLICY_ID.into()],
             tool_identities: vec![tool.into()],
             network_routes: vec![],
             adapter_scopes: vec![],
@@ -5758,17 +5871,9 @@ impl ToolAgent {
         .map_err(|error| error.to_string())
     }
 
-    // Аргументы повторяют поля ActionRequest чека.
-    #[allow(clippy::too_many_arguments)]
     async fn receipt_prepare_approval(
         &self,
-        task_id: &str,
-        tool: &str,
-        permission: &str,
-        scope: &str,
-        input: &serde_json::Value,
-        preview: &evohime_permissions::ApprovalPreview,
-        approval_id: Uuid,
+        approval: ReceiptApprovalInput<'_>,
     ) -> Result<(), String> {
         let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else {
             return Ok(());
@@ -5776,18 +5881,24 @@ impl ToolAgent {
         let action_id = Uuid::now_v7();
         let request = ReceiptActionRequest {
             action_id,
-            task_id: task_id.to_owned(),
-            run_id: task_id.to_owned(),
-            tool_name: tool.to_owned(),
-            policy_id: format!("permission:{permission}"),
-            normalized_scope: scope.to_owned(),
-            input: input.clone(),
+            task_id: approval.task_id.to_owned(),
+            run_id: approval.task_id.to_owned(),
+            tool_name: approval.tool.to_owned(),
+            policy_id: format!("permission:{}", approval.permission),
+            normalized_scope: approval.scope.to_owned(),
+            input: approval.input.clone(),
             policy_decision: ReceiptPolicyDecision::ApprovalRequired,
-            approval_id: Some(approval_id),
+            approval_id: Some(approval.approval_id),
             parent_approval_ref: None,
-            preview: serde_json::to_string(preview).unwrap_or_else(|_| "approval".to_owned()),
+            preview: serde_json::to_string(approval.preview)
+                .map_err(|error| format!("approval preview serialization failed: {error}"))?,
         };
-        let capability = Self::capability_snapshot_for_action(action_id, task_id, tool, scope)?;
+        let capability = Self::capability_snapshot_for_action(
+            action_id,
+            approval.task_id,
+            approval.tool,
+            approval.scope,
+        )?;
         let mut database = journal.database().lock().await;
         let signer = CoreReceiptSigner(Arc::clone(keys));
         let mut runtime = ReceiptRuntime::new(database.connection_mut(), &signer)
@@ -5848,13 +5959,14 @@ impl ToolAgent {
             task_id: task_id.to_owned(),
             run_id: task_id.to_owned(),
             tool_name: tool.to_owned(),
-            policy_id: "permission-v1".into(),
+            policy_id: PERMISSION_POLICY_ID.into(),
             normalized_scope: scope.to_owned(),
             input: input.clone(),
             policy_decision: ReceiptPolicyDecision::Allow,
             approval_id: None,
             parent_approval_ref: None,
-            preview: serde_json::to_string(preview).unwrap_or_else(|_| "read".into()),
+            preview: serde_json::to_string(preview)
+                .map_err(|error| format!("read preview serialization failed: {error}"))?,
         };
         let capability =
             Self::capability_snapshot_for_action(request.action_id, task_id, tool, scope)?;
@@ -5907,32 +6019,23 @@ impl ToolAgent {
         Ok(Some(request))
     }
 
-    // Аргументы повторяют поля ActionRequest чека.
-    #[allow(clippy::too_many_arguments)]
     async fn receipt_claim_approval(
         &self,
-        task_id: &str,
-        tool: &str,
-        permission: &str,
-        permission_value: evohime_permissions::Permission,
-        scope: &str,
-        input: &serde_json::Value,
-        preview: &evohime_permissions::ApprovalPreview,
-        approval_id: Uuid,
+        approval: ReceiptClaimInput<'_>,
     ) -> Result<(Uuid, ReceiptActionRequest), String> {
         let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else {
             return Ok((
                 Uuid::nil(),
                 ReceiptActionRequest {
                     action_id: Uuid::nil(),
-                    task_id: task_id.to_owned(),
-                    run_id: task_id.to_owned(),
-                    tool_name: tool.to_owned(),
-                    policy_id: permission.to_owned(),
-                    normalized_scope: scope.to_owned(),
-                    input: input.clone(),
+                    task_id: approval.task_id.to_owned(),
+                    run_id: approval.task_id.to_owned(),
+                    tool_name: approval.tool.to_owned(),
+                    policy_id: approval.permission.to_owned(),
+                    normalized_scope: approval.scope.to_owned(),
+                    input: approval.input.clone(),
                     policy_decision: ReceiptPolicyDecision::ApprovalRequired,
-                    approval_id: Some(approval_id),
+                    approval_id: Some(approval.approval_id),
                     parent_approval_ref: None,
                     preview: String::new(),
                 },
@@ -5944,7 +6047,7 @@ impl ToolAgent {
                 .connection()
                 .query_row(
                     "SELECT action_id FROM receipt_approval_intents WHERE approval_id=?1",
-                    [approval_id.to_string()],
+                    [approval.approval_id.to_string()],
                     |row| row.get::<_, String>(0),
                 )
                 .map_err(|error| error.to_string())?
@@ -5953,24 +6056,33 @@ impl ToolAgent {
         };
         let request = ReceiptActionRequest {
             action_id,
-            task_id: task_id.to_owned(),
-            run_id: task_id.to_owned(),
-            tool_name: tool.to_owned(),
-            policy_id: format!("permission:{permission}"),
-            normalized_scope: scope.to_owned(),
-            input: input.clone(),
+            task_id: approval.task_id.to_owned(),
+            run_id: approval.task_id.to_owned(),
+            tool_name: approval.tool.to_owned(),
+            policy_id: format!("permission:{}", approval.permission),
+            normalized_scope: approval.scope.to_owned(),
+            input: approval.input.clone(),
             policy_decision: ReceiptPolicyDecision::ApprovalRequired,
-            approval_id: Some(approval_id),
+            approval_id: Some(approval.approval_id),
             parent_approval_ref: None,
-            preview: serde_json::to_string(preview).unwrap_or_else(|_| "approval".to_owned()),
+            preview: serde_json::to_string(approval.preview)
+                .map_err(|error| format!("approval preview serialization failed: {error}"))?,
         };
-        let capability = Self::capability_snapshot_for_action(action_id, task_id, tool, scope)?;
+        let capability = Self::capability_snapshot_for_action(
+            action_id,
+            approval.task_id,
+            approval.tool,
+            approval.scope,
+        )?;
         // Execution-gate policy recheck: a stale approval never bypasses a
         // policy that changed after Prepare. This is a global-mode recheck
         // (scope-specific rechecks are covered separately by the exact
         // call-hash comparison inside claim_approval_checked).
         let policy_ok = matches!(
-            self.tools.permissions().check(permission_value).await,
+            self.tools
+                .permissions()
+                .check(approval.permission_value)
+                .await,
             evohime_permissions::PermissionDecision::Allowed
                 | evohime_permissions::PermissionDecision::NeedsApproval
         );
@@ -5979,12 +6091,12 @@ impl ToolAgent {
         let mut runtime =
             ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| e.to_string())?;
         runtime
-            .grant_approval(approval_id)
+            .grant_approval(approval.approval_id)
             .map_err(|e| e.to_string())?;
         runtime
             .claim_approval_checked_with_binding(
                 &request,
-                approval_id,
+                approval.approval_id,
                 &capability.session_id,
                 &capability.snapshot_hash,
                 capability.policy_version,
@@ -5994,26 +6106,14 @@ impl ToolAgent {
         Ok((action_id, request))
     }
 
-    // Аргументы повторяют поля ActionRequest чека.
-    #[allow(clippy::too_many_arguments)]
-    async fn receipt_refuse_approval(
-        &self,
-        task_id: &str,
-        tool: &str,
-        permission: &str,
-        scope: &str,
-        input: &serde_json::Value,
-        preview: &evohime_permissions::ApprovalPreview,
-        approval_id: Uuid,
-        code: &str,
-    ) {
+    async fn receipt_refuse_approval(&self, refusal: ReceiptRefuseInput<'_>) {
         let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else {
             return;
         };
         let mut database = journal.database().lock().await;
         let action_id: Result<String, _> = database.connection().query_row(
             "SELECT action_id FROM receipt_approval_intents WHERE approval_id=?1",
-            [approval_id.to_string()],
+            [refusal.approval_id.to_string()],
             |row| row.get(0),
         );
         let Ok(action_id) = action_id else {
@@ -6024,22 +6124,28 @@ impl ToolAgent {
         };
         let request = ReceiptActionRequest {
             action_id,
-            task_id: task_id.to_owned(),
-            run_id: task_id.to_owned(),
-            tool_name: tool.to_owned(),
-            policy_id: format!("permission:{permission}"),
-            normalized_scope: scope.to_owned(),
-            input: input.clone(),
+            task_id: refusal.task_id.to_owned(),
+            run_id: refusal.task_id.to_owned(),
+            tool_name: refusal.tool.to_owned(),
+            policy_id: format!("permission:{}", refusal.permission),
+            normalized_scope: refusal.scope.to_owned(),
+            input: refusal.input.clone(),
             policy_decision: ReceiptPolicyDecision::ApprovalRequired,
-            approval_id: Some(approval_id),
+            approval_id: Some(refusal.approval_id),
             parent_approval_ref: None,
-            preview: serde_json::to_string(preview).unwrap_or_else(|_| "approval".to_owned()),
+            preview: match serde_json::to_string(refusal.preview) {
+                Ok(preview) => preview,
+                Err(error) => {
+                    tracing::warn!(%error, "approval preview serialization failed during refusal");
+                    "approval".to_owned()
+                }
+            },
         };
         let signer = CoreReceiptSigner(Arc::clone(keys));
         let Ok(mut runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) else {
             return;
         };
-        let _ = runtime.refuse(&request, code);
+        let _ = runtime.refuse(&request, refusal.code);
     }
 
     async fn execute_tool_with_receipt(
@@ -6058,7 +6164,7 @@ impl ToolAgent {
                         task_id: context.task_id.to_string(),
                         run_id: context.task_id.to_string(),
                         tool_name: name.to_owned(),
-                        policy_id: "permission-v1".into(),
+                        policy_id: PERMISSION_POLICY_ID.into(),
                         normalized_scope: String::new(),
                         input: input.clone(),
                         policy_decision: ReceiptPolicyDecision::Deny,
@@ -6098,8 +6204,8 @@ impl ToolAgent {
                     .map_err(evohime_tool_runtime::ToolError::Execution)?;
                 let read_only = matches!(
                     name,
-                    "filesystem.read"
-                        | "filesystem.list"
+                    TOOL_FILESYSTEM_READ
+                        | TOOL_FILESYSTEM_LIST
                         | "git.status"
                         | "git.diff"
                         | "workspace.list"
@@ -6254,7 +6360,10 @@ impl ToolAgent {
                 } else {
                     serde_json::json!({"status":"failed","error_category":"tool_error"})
                 })
-                .unwrap_or_else(|_| evohime_receipts::sha256_hex(b"tool_error")),
+                .unwrap_or_else(|error| {
+                    tracing::warn!(%error, "tool result hash serialization failed");
+                    evohime_receipts::sha256_hex(b"tool_error")
+                }),
                 recovery_code: recovery_code.to_owned(),
                 created_at_ms: SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -6488,16 +6597,16 @@ impl ToolAgent {
             if decision.session_only {
                 let expires_at = now_ms.saturating_add(extraction::SESSION_SUMMARY_GRACE_MS);
                 let _ = journal
-                    .save_memory_session_note(
-                        &uuid::Uuid::new_v4().to_string(),
-                        task_id,
-                        store_scope,
-                        &scope_id,
-                        candidate.kind.as_str(),
-                        &candidate.statement,
-                        &now_ms.to_string(),
-                        &expires_at.to_string(),
-                    )
+                    .save_memory_session_note(SessionMemoryNote {
+                        id: &uuid::Uuid::new_v4().to_string(),
+                        session_id: task_id,
+                        scope: store_scope,
+                        scope_id: &scope_id,
+                        kind: candidate.kind.as_str(),
+                        statement: &candidate.statement,
+                        created_at: &now_ms.to_string(),
+                        expires_at: &expires_at.to_string(),
+                    })
                     .await;
                 continue;
             }
@@ -7272,17 +7381,19 @@ impl ToolAgent {
     /// Artifact store и summarizer подключаются, только если у Core есть
     /// журнал: их отсутствие не блокирует сборку — соответствующие уровни
     /// лестницы немедленно считаются исчерпанными с diagnostic.
-    #[allow(clippy::too_many_arguments)]
     async fn assemble_model_context(
         &self,
-        runtime: &mut context_budget::ContextRuntime,
-        task_id: &str,
-        session_id: &str,
-        iteration: usize,
-        messages: &[ChatMessage],
-        specs: &[ToolSpec],
-        selected_model: Option<&str>,
+        input: AssembleModelContextInput<'_>,
     ) -> context_budget::AssembledContext {
+        let AssembleModelContextInput {
+            runtime,
+            task_id,
+            session_id,
+            iteration,
+            messages,
+            specs,
+            selected_model,
+        } = input;
         let model_call_id = format!("{task_id}-{iteration}");
         let now = task_memory::now_millis() as i64;
         let provider = self.gateway.provider_kind().as_str().to_string();
@@ -7607,21 +7718,23 @@ impl ToolAgent {
             .await;
     }
 
-    // Аргументы — параметры одного вызова модели: маршрут, сообщения, инструменты и бюджеты.
-    #[allow(clippy::too_many_arguments)]
+    // Параметры одного вызова модели: маршрут, сообщения, инструменты и бюджеты.
     async fn call_model_with_resilience(
         &self,
-        task_id: &str,
-        messages: &[ChatMessage],
-        specs: &[ToolSpec],
-        source_refs: &[evohime_model_provenance::SourceRef],
-        workspace_root: &std::path::Path,
-        ledger: &evohime_context_budget::ledger::ContextLedgerEntry,
-        config: &ProviderResilienceConfig,
-        preferred_route: Option<&str>,
-        task_class: Option<&str>,
-        estimated_input_tokens: u32,
+        input: CallModelInput<'_>,
     ) -> Result<ProvenancedModelResult, AgentRunError> {
+        let CallModelInput {
+            task_id,
+            messages,
+            specs,
+            source_refs,
+            workspace_root,
+            ledger,
+            config,
+            preferred_route,
+            task_class,
+            estimated_input_tokens,
+        } = input;
         let resilience_policy = model_resilience_policy::builtin_policy();
         let purpose = model_purpose_routing::purpose_for_task_class(task_class);
         let purpose_policy = if let Some(journal) = &self.journal {
@@ -7719,18 +7832,18 @@ impl ToolAgent {
                     .as_ref()
                     .map(|(id, hash)| (Some(id.clone()), Some(hash.clone())))
                     .unwrap_or((None, None));
-                let envelope = model_request_envelope(
-                    &logical_request_id,
-                    request_id.clone(),
-                    attempt + 1,
+                let envelope = model_request_envelope(ModelRequestEnvelopeInput {
+                    logical_request_id: &logical_request_id,
+                    request_id: request_id.clone(),
+                    attempt: attempt + 1,
                     parent_request_id,
                     previous_request_hash,
                     ledger,
                     messages,
                     specs,
                     source_refs,
-                    &route_snapshot_hash,
-                )
+                    route_snapshot_hash: &route_snapshot_hash,
+                })
                 .map_err(AgentRunError::Internal)?;
                 let record = journal
                     .commit_model_request(
@@ -7940,7 +8053,10 @@ impl ToolAgent {
     ) -> Result<String, AgentRunError> {
         let task_id = task_id.into();
         let prompt = prompt.into();
-        let task_uuid = uuid::Uuid::parse_str(&task_id).unwrap_or_else(|_| uuid::Uuid::new_v4());
+        let task_uuid = uuid::Uuid::parse_str(&task_id).unwrap_or_else(|error| {
+            tracing::warn!(%error, task_id = %task_id, "non-UUID task id; generated runtime id");
+            uuid::Uuid::new_v4()
+        });
         let context = ToolContext {
             workspace_root: workspace_root.into(),
             task_id: task_uuid,
@@ -8351,15 +8467,15 @@ impl ToolAgent {
             // Сборка контекста: selection -> compress/offload -> финальная
             // проверка бюджета -> ModelContext event -> model call.
             let assembled = self
-                .assemble_model_context(
-                    &mut context_runtime,
-                    &task_id,
-                    &context_session_id,
+                .assemble_model_context(AssembleModelContextInput {
+                    runtime: &mut context_runtime,
+                    task_id: &task_id,
+                    session_id: &context_session_id,
                     iteration,
-                    &messages,
-                    &specs,
-                    selected_model.as_deref(),
-                )
+                    messages: &messages,
+                    specs: &specs,
+                    selected_model: selected_model.as_deref(),
+                })
                 .await;
             if let Some(journal) = &self.journal {
                 if !assembled.ledger().compression.is_empty()
@@ -8405,7 +8521,18 @@ impl ToolAgent {
 
             let provenance_result = tokio::select! {
                 _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
-                result = self.call_model_with_resilience(&task_id, &messages, &specs, &provenance_source_refs, &context.workspace_root, assembled.ledger(), &resilience_config, preferred_route.as_deref(), Some(task_class), assembled.ledger().estimated_prompt_tokens) => result?,
+                result = self.call_model_with_resilience(CallModelInput {
+                    task_id: &task_id,
+                    messages: &messages,
+                    specs: &specs,
+                    source_refs: &provenance_source_refs,
+                    workspace_root: &context.workspace_root,
+                    ledger: assembled.ledger(),
+                    config: &resilience_config,
+                    preferred_route: preferred_route.as_deref(),
+                    task_class: Some(task_class),
+                    estimated_input_tokens: assembled.ledger().estimated_prompt_tokens,
+                }) => result?,
             };
             if let Some(attempt_trace) = provenance_result.result.attempt_trace.as_ref() {
                 write_model_trace(
@@ -8435,15 +8562,15 @@ impl ToolAgent {
                         .clamp(1, 120_000);
                     let trace_id = format!("{task_id}:routing:{iteration}");
                     let approved = registry
-                        .wait_for_decision(
-                            &task_id,
-                            &task_id,
-                            &trace_id,
-                            &provenance_result.result.selected_route,
+                        .wait_for_decision(RoutingApprovalWait {
+                            task_id: &task_id,
+                            run_id: &task_id,
+                            trace_id: &trace_id,
+                            route_id: &provenance_result.result.selected_route,
                             timeout_ms,
                             events,
-                            &cancellation,
-                        )
+                            cancellation: &cancellation,
+                        })
                         .await?;
                     if !approved {
                         return Err(AgentRunError::RoutingApprovalDeclined);
@@ -8453,31 +8580,31 @@ impl ToolAgent {
             }
             let _ = events.send(CoreEvent::RoutingTrace {
                 task_id: task_id.clone(),
-                trace: routing_success_trace(
-                    &task_id,
-                    &provenance_result.result.selected_route,
-                    provenance_result.result.fallback_chain.len(),
-                    assembled.ledger().estimated_prompt_tokens,
-                    &assembled.ledger().profile_version,
-                    &assembled.ledger().context_ledger_hash,
-                    task_class,
-                    provenance_result.result.decision.as_ref(),
-                    provenance_result.result.snapshot_hash.as_deref(),
-                    provenance_result
+                trace: routing_success_trace(RoutingSuccessInput {
+                    run_id: &task_id,
+                    selected_route: &provenance_result.result.selected_route,
+                    fallback_count: provenance_result.result.fallback_chain.len(),
+                    estimated_input_tokens: assembled.ledger().estimated_prompt_tokens,
+                    profile_version: &assembled.ledger().profile_version,
+                    context_ledger_hash: &assembled.ledger().context_ledger_hash,
+                    classification: task_class,
+                    decision: provenance_result.result.decision.as_ref(),
+                    snapshot_hash: provenance_result.result.snapshot_hash.as_deref(),
+                    attempt_id: provenance_result
                         .result
                         .attempt_trace
                         .as_ref()
                         .and_then(|trace| trace.attempts.last())
                         .map(|attempt| attempt.attempt_id)
                         .unwrap_or(0),
-                    provenance_result
+                    now_ms: provenance_result
                         .result
                         .attempt_trace
                         .as_ref()
                         .and_then(|trace| trace.attempts.last())
                         .map(|attempt| attempt.now_ms)
                         .unwrap_or_else(task_memory::now_millis),
-                ),
+                }),
             });
             let result = provenance_result.result.result;
             if let Some(usage) = result.usage.as_ref() {
@@ -8517,7 +8644,7 @@ impl ToolAgent {
                     // execute only the first new, valid safe call. The
                     // directory read below is also invalid for filesystem.read.
                     if let Some(call) = parsed_legacy_calls.into_iter().find(|call| {
-                        let invalid_directory_read = call.name == "filesystem.read"
+                        let invalid_directory_read = call.name == TOOL_FILESYSTEM_READ
                             && serde_json::from_str::<serde_json::Value>(&call.arguments)
                                 .ok()
                                 .and_then(|value| {
@@ -8590,7 +8717,7 @@ impl ToolAgent {
                 if !visible.is_empty() {
                     let _ = events.send(CoreEvent::AssistantDelta {
                         task_id: task_id.clone(),
-                        content: visible,
+                        content: visible.into_owned(),
                     });
                 }
             }
@@ -8658,14 +8785,16 @@ impl ToolAgent {
                 if !missing.is_empty() && iteration + 1 < self.max_iterations {
                     let next_step = delivery_next_step(
                         delivery_requirements,
-                        research_done,
-                        mutation_done,
-                        verification_done,
-                        commit_done,
-                        research_observations,
-                        research_has_overview,
-                        research_has_content,
-                        research_has_search,
+                        DeliveryProgress {
+                            research_done,
+                            mutation_done,
+                            verification_done,
+                            commit_done,
+                            research_observations,
+                            research_has_overview,
+                            research_has_content,
+                            research_has_search,
+                        },
                     );
                     let continuation = format!(
                         "Задача ещё не завершена. Не выполнены: {}. {next_step}",
@@ -8880,7 +9009,7 @@ impl ToolAgent {
                 } else if escalation_remaining.get(&call.name).copied().unwrap_or(0) > 0
                     && !matches!(
                         call.name.as_str(),
-                        "filesystem.read" | "filesystem.list" | "filesystem.search"
+                        TOOL_FILESYSTEM_READ | TOOL_FILESYSTEM_LIST | TOOL_FILESYSTEM_SEARCH
                     )
                 {
                     if let Some(remaining) = escalation_remaining.get_mut(&call.name) {
@@ -8969,15 +9098,15 @@ impl ToolAgent {
                                 preview,
                             } = *details;
                             if let Err(error) = self
-                                .receipt_prepare_approval(
-                                    &task_id,
-                                    &tool,
-                                    &format!("{permission:?}"),
-                                    &scope,
-                                    &input,
-                                    &preview,
+                                .receipt_prepare_approval(ReceiptApprovalInput {
+                                    task_id: &task_id,
+                                    tool: &tool,
+                                    permission: &format!("{permission:?}"),
+                                    scope: &scope,
+                                    input: &input,
+                                    preview: &preview,
                                     approval_id,
-                                )
+                                })
                                 .await
                             {
                                 recovery::ToolOutcome::from_error(
@@ -8998,32 +9127,32 @@ impl ToolAgent {
                                     result = receiver => result.unwrap_or(false),
                                 };
                                 if !granted {
-                                    self.receipt_refuse_approval(
-                                        &task_id,
-                                        &tool,
-                                        &format!("{permission:?}"),
-                                        &scope,
-                                        &input,
-                                        &preview,
+                                    self.receipt_refuse_approval(ReceiptRefuseInput {
+                                        task_id: &task_id,
+                                        tool: &tool,
+                                        permission: &format!("{permission:?}"),
+                                        scope: &scope,
+                                        input: &input,
+                                        preview: &preview,
                                         approval_id,
-                                        "approval_denied",
-                                    )
+                                        code: "approval_denied",
+                                    })
                                     .await;
                                     recovery::ToolOutcome::denied_by_user(
                                         "approval denied: mutation not performed",
                                     )
                                 } else {
                                     match self
-                                        .receipt_claim_approval(
-                                            &task_id,
-                                            &tool,
-                                            &format!("{permission:?}"),
-                                            permission,
-                                            &scope,
-                                            &input,
-                                            &preview,
+                                        .receipt_claim_approval(ReceiptClaimInput {
+                                            task_id: &task_id,
+                                            tool: &tool,
+                                            permission: &format!("{permission:?}"),
+                                            permission_value: permission,
+                                            scope: &scope,
+                                            input: &input,
+                                            preview: &preview,
                                             approval_id,
-                                        )
+                                        })
                                         .await
                                     {
                                         Ok((action_id, request)) => {
@@ -9090,8 +9219,11 @@ impl ToolAgent {
                         Err(error) => recovery::ToolOutcome::from_error(error),
                     }
                 };
-                let guarded_output = redact_boundary_text("tool", &outcome.output)
-                    .unwrap_or_else(|_| "<sensitive_data_blocked>".into());
+                let guarded_output =
+                    redact_boundary_text("tool", &outcome.output).unwrap_or_else(|error| {
+                        tracing::warn!(%error, "tool output redaction failed");
+                        "<sensitive_data_blocked>".into()
+                    });
                 let _ = events.send(CoreEvent::ToolOutput {
                     task_id: task_id.clone(),
                     tool_name: call.name.clone(),
@@ -9117,10 +9249,12 @@ impl ToolAgent {
                 }
                 if delivery_requirements.research && outcome.ok {
                     research_observations += 1;
-                    research_has_overview |= call.name == "filesystem.list";
-                    research_has_content |=
-                        matches!(call.name.as_str(), "filesystem.read" | "filesystem.search");
-                    research_has_search |= call.name == "filesystem.search";
+                    research_has_overview |= call.name == TOOL_FILESYSTEM_LIST;
+                    research_has_content |= matches!(
+                        call.name.as_str(),
+                        TOOL_FILESYSTEM_READ | TOOL_FILESYSTEM_SEARCH
+                    );
+                    research_has_search |= call.name == TOOL_FILESYSTEM_SEARCH;
                 }
                 write_model_trace(
                     "tool.output",
@@ -9150,7 +9284,7 @@ impl ToolAgent {
                     if *failures >= 3
                         && !matches!(
                             call.name.as_str(),
-                            "filesystem.read" | "filesystem.list" | "filesystem.search"
+                            TOOL_FILESYSTEM_READ | TOOL_FILESYSTEM_LIST | TOOL_FILESYSTEM_SEARCH
                         )
                     {
                         escalation_remaining.insert(call.name.clone(), 2);
@@ -9242,15 +9376,15 @@ impl ToolAgent {
                 );
                 if let Some(journal) = &self.journal {
                     let _ = journal
-                        .record_tool_metric(
-                            &task_id,
-                            &call.name,
+                        .record_tool_metric(ToolMetric {
+                            task_id: &task_id,
+                            tool_name: &call.name,
                             iteration,
-                            outcome.ok,
-                            outcome.kind.map(recovery::failure_kind_name),
-                            recovery_hint_added,
+                            ok: outcome.ok,
+                            failure_kind: outcome.kind.map(recovery::failure_kind_name),
+                            recovery_hint: recovery_hint_added,
                             escalated,
-                        )
+                        })
                         .await;
                 }
                 // План 01.2: внешние tool outputs — недоверенные данные. Они
@@ -9415,7 +9549,10 @@ impl TaskExecutor for ToolAgent {
             };
             let context = ToolContext {
                 workspace_root,
-                task_id: uuid::Uuid::parse_str(&task_id).unwrap_or_else(|_| uuid::Uuid::new_v4()),
+                task_id: uuid::Uuid::parse_str(&task_id).unwrap_or_else(|error| {
+                    tracing::warn!(%error, task_id = %task_id, "non-UUID continuation task id; generated runtime id");
+                    uuid::Uuid::new_v4()
+                }),
                 session_id: None,
                 progress_tx: None,
             };
@@ -16371,16 +16508,16 @@ impl TaskCoordinator {
                         let expires_at = now_ms
                             .saturating_add(crate::memory_extraction::SESSION_SUMMARY_GRACE_MS);
                         journal
-                            .save_memory_session_note(
-                                &uuid::Uuid::new_v4().to_string(),
-                                &session_id,
-                                record.scope,
-                                &record.scope_id,
-                                &record.extraction.kind,
-                                &statement,
-                                &now_ms.to_string(),
-                                &expires_at.to_string(),
-                            )
+                            .save_memory_session_note(SessionMemoryNote {
+                                id: &uuid::Uuid::new_v4().to_string(),
+                                session_id: &session_id,
+                                scope: record.scope,
+                                scope_id: &record.scope_id,
+                                kind: &record.extraction.kind,
+                                statement: &statement,
+                                created_at: &now_ms.to_string(),
+                                expires_at: &expires_at.to_string(),
+                            })
                             .await?;
                         let actual = journal
                             .transition_memory_state(
@@ -18606,15 +18743,15 @@ mod tests {
             let events = events.clone();
             tokio::spawn(async move {
                 registry
-                    .wait_for_decision(
-                        "task",
-                        "run",
-                        "trace",
-                        "cloud",
-                        1_000,
-                        &events,
-                        &cancellation,
-                    )
+                    .wait_for_decision(super::RoutingApprovalWait {
+                        task_id: "task",
+                        run_id: "run",
+                        trace_id: "trace",
+                        route_id: "cloud",
+                        timeout_ms: 1_000,
+                        events: &events,
+                        cancellation: &cancellation,
+                    })
                     .await
             })
         };
@@ -18625,15 +18762,15 @@ mod tests {
         assert!(waiting.await.unwrap().unwrap());
 
         let timeout_result = registry
-            .wait_for_decision(
-                "task",
-                "run",
-                "trace-timeout",
-                "cloud",
-                1,
-                &events,
-                &cancellation,
-            )
+            .wait_for_decision(super::RoutingApprovalWait {
+                task_id: "task",
+                run_id: "run",
+                trace_id: "trace-timeout",
+                route_id: "cloud",
+                timeout_ms: 1,
+                events: &events,
+                cancellation: &cancellation,
+            })
             .await
             .unwrap();
         assert!(!timeout_result);
@@ -19111,26 +19248,30 @@ mod tests {
         };
         assert!(super::delivery_next_step(
             requirements,
-            false,
-            false,
-            false,
-            false,
-            0,
-            false,
-            false,
-            false,
+            super::DeliveryProgress {
+                research_done: false,
+                mutation_done: false,
+                verification_done: false,
+                commit_done: false,
+                research_observations: 0,
+                research_has_overview: false,
+                research_has_content: false,
+                research_has_search: false,
+            },
         )
         .contains("read-only"));
         assert!(super::delivery_next_step(
             requirements,
-            true,
-            false,
-            false,
-            false,
-            5,
-            true,
-            true,
-            true,
+            super::DeliveryProgress {
+                research_done: true,
+                mutation_done: false,
+                verification_done: false,
+                commit_done: false,
+                research_observations: 5,
+                research_has_overview: true,
+                research_has_content: true,
+                research_has_search: true,
+            },
         )
         .contains("filesystem.patch"));
         assert!(super::delivery_next_step(
@@ -19138,14 +19279,16 @@ mod tests {
                 research: true,
                 ..requirements
             },
-            false,
-            false,
-            false,
-            false,
-            1,
-            true,
-            false,
-            false,
+            super::DeliveryProgress {
+                research_done: false,
+                mutation_done: false,
+                verification_done: false,
+                commit_done: false,
+                research_observations: 1,
+                research_has_overview: true,
+                research_has_content: false,
+                research_has_search: false,
+            },
         )
         .contains("Cargo.toml"));
     }
