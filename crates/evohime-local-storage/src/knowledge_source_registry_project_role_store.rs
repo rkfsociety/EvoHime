@@ -63,18 +63,19 @@ pub fn put_manifest(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn put_chunk(
-    c: &Connection,
-    id: &str,
-    source_id: &str,
-    revision: u64,
-    ordinal: u32,
-    locator: &str,
-    json: &[u8],
-    now: i64,
-) -> rusqlite::Result<()> {
-    c.execute("INSERT INTO knowledge_chunks(chunk_id,source_id,source_revision,ordinal,locator,chunk_json,updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(chunk_id) DO UPDATE SET source_id=excluded.source_id,source_revision=excluded.source_revision,ordinal=excluded.ordinal,locator=excluded.locator,chunk_json=excluded.chunk_json,updated_at_ms=excluded.updated_at_ms", params![id, source_id, revision as i64, ordinal as i64, locator, json, now])?;
+#[derive(Clone, Copy)]
+pub struct PutChunkInput<'a> {
+    pub id: &'a str,
+    pub source_id: &'a str,
+    pub revision: u64,
+    pub ordinal: u32,
+    pub locator: &'a str,
+    pub json: &'a [u8],
+    pub now_ms: i64,
+}
+
+pub fn put_chunk(c: &Connection, input: PutChunkInput<'_>) -> rusqlite::Result<()> {
+    c.execute("INSERT INTO knowledge_chunks(chunk_id,source_id,source_revision,ordinal,locator,chunk_json,updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(chunk_id) DO UPDATE SET source_id=excluded.source_id,source_revision=excluded.source_revision,ordinal=excluded.ordinal,locator=excluded.locator,chunk_json=excluded.chunk_json,updated_at_ms=excluded.updated_at_ms", params![input.id, input.source_id, input.revision as i64, input.ordinal as i64, input.locator, input.json, input.now_ms])?;
     Ok(())
 }
 

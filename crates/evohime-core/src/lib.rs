@@ -13564,7 +13564,7 @@ impl TaskCoordinator {
                             for chunk in &chunks {
                                 if chunk.source_id != source_id || chunk.content_projection.len() > knowledge::MAX_CHUNK_BYTES { return Err("invalid_knowledge_chunk".into()); }
                                 let json = serde_json::to_vec(chunk).map_err(|_| "serialization_failed".to_string())?;
-                                store::put_chunk(database.connection(), &chunk.id, &chunk.source_id, chunk.source_revision, chunk.ordinal, &chunk.locator, &json, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())?;
+                                store::put_chunk(database.connection(), store::PutChunkInput { id: &chunk.id, source_id: &chunk.source_id, revision: chunk.source_revision, ordinal: chunk.ordinal, locator: &chunk.locator, json: &json, now_ms: crate::task_memory::now_millis() as i64 }).map_err(|_| "storage_failed".to_string())?;
                             }
                             serde_json::to_vec(&serde_json::json!({"schema_version":1,"source_id":source_id,"indexed_chunks":chunks.len(),"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
