@@ -289,6 +289,17 @@ fn default_ok_status() -> String {
     "ok".to_owned()
 }
 
+fn error_response_payload(error_code: impl Into<String>) -> Vec<u8> {
+    let error_code = error_code.into();
+    match serde_json::to_vec(&serde_json::json!({"error_code": error_code})) {
+        Ok(payload) => payload,
+        Err(error) => {
+            tracing::error!(%error, "failed to serialize IPC error response");
+            br#"{"error_code":"serialization_failed"}"#.to_vec()
+        }
+    }
+}
+
 fn bounded_tool_error_code(error: &evohime_tool_runtime::ToolError) -> &'static str {
     match error {
         evohime_tool_runtime::ToolError::UnknownTool(_) => "unknown_tool",
@@ -4278,19 +4289,13 @@ impl IpcBridge {
                     self.write_response(
                         writer,
                         "continuation.policy",
-                        result.unwrap_or_else(|error| {
-                            serde_json::to_vec(&serde_json::json!({"error_code": error}))
-                                .unwrap_or_default()
-                        }),
+                        result.unwrap_or_else(error_response_payload),
                     )
                     .await?;
                 }
                 Some(generated::command_envelope::Command::StartContinuationRun(request)) => {
                     let result = self.dispatch_start_continuation(request).await;
-                    let payload = result.unwrap_or_else(|error| {
-                        serde_json::to_vec(&serde_json::json!({"error_code": error}))
-                            .unwrap_or_default()
-                    });
+                    let payload = result.unwrap_or_else(error_response_payload);
                     if serde_json::from_slice::<serde_json::Value>(&payload)
                         .ok()
                         .and_then(|v| v.get("run_id").cloned())
@@ -4304,10 +4309,7 @@ impl IpcBridge {
                 }
                 Some(generated::command_envelope::Command::GetContinuationRun(request)) => {
                     let result = self.dispatch_get_continuation(request).await;
-                    let payload = result.unwrap_or_else(|error| {
-                        serde_json::to_vec(&serde_json::json!({"error_code": error}))
-                            .unwrap_or_default()
-                    });
+                    let payload = result.unwrap_or_else(error_response_payload);
                     if serde_json::from_slice::<serde_json::Value>(&payload)
                         .ok()
                         .and_then(|v| v.get("run_id").cloned())
@@ -4321,10 +4323,7 @@ impl IpcBridge {
                 }
                 Some(generated::command_envelope::Command::StopContinuation(request)) => {
                     let result = self.dispatch_stop_continuation(request).await;
-                    let payload = result.unwrap_or_else(|error| {
-                        serde_json::to_vec(&serde_json::json!({"error_code": error}))
-                            .unwrap_or_default()
-                    });
+                    let payload = result.unwrap_or_else(error_response_payload);
                     if serde_json::from_slice::<serde_json::Value>(&payload)
                         .ok()
                         .and_then(|v| v.get("run_id").cloned())
@@ -4715,10 +4714,7 @@ impl IpcBridge {
                             "pause",
                         )
                         .await
-                        .unwrap_or_else(|error| {
-                            serde_json::to_vec(&serde_json::json!({"error_code": error}))
-                                .unwrap_or_default()
-                        });
+                        .unwrap_or_else(error_response_payload);
                     self.write_continuation_action(writer, payload).await?;
                 }
                 Some(generated::command_envelope::Command::ResumeContinuation(request)) => {
@@ -4747,8 +4743,7 @@ impl IpcBridge {
                             }))
                             .unwrap_or_default()
                         }
-                        Err(error) => serde_json::to_vec(&serde_json::json!({"error_code": error}))
-                            .unwrap_or_default(),
+                        Err(error) => error_response_payload(error),
                     };
                     self.write_continuation_action(writer, payload).await?;
                 }
