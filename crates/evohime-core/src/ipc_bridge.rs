@@ -13773,13 +13773,15 @@ impl IpcBridge {
                     .to_string();
                 match evohime_local_storage::invocation_presets_store::save_revision(
                     connection,
-                    &preset.owner_scope,
-                    &preset.id,
-                    preset.revision,
-                    &content,
-                    &preset.content_hash,
-                    &state,
-                    crate::task_memory::now_millis() as i64,
+                    evohime_local_storage::invocation_presets_store::SaveRevisionInput {
+                        owner_scope: &preset.owner_scope,
+                        id: &preset.id,
+                        revision: preset.revision,
+                        content_json: &content,
+                        content_hash: &preset.content_hash,
+                        state: &state,
+                        now_ms: crate::task_memory::now_millis() as i64,
+                    },
                 ) {
                     Ok(true) => {
                         serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"saved","preset_id":preset.id,"revision":preset.revision,"content_hash":preset.content_hash,"error_code":""})
@@ -13876,13 +13878,15 @@ impl IpcBridge {
                     .to_string();
                 match evohime_local_storage::invocation_presets_store::save_revision(
                     connection,
-                    &migrated.owner_scope,
-                    &migrated.id,
-                    migrated.revision,
-                    &content,
-                    &migrated.content_hash,
-                    &state,
-                    migrated.updated_at_ms,
+                    evohime_local_storage::invocation_presets_store::SaveRevisionInput {
+                        owner_scope: &migrated.owner_scope,
+                        id: &migrated.id,
+                        revision: migrated.revision,
+                        content_json: &content,
+                        content_hash: &migrated.content_hash,
+                        state: &state,
+                        now_ms: migrated.updated_at_ms,
+                    },
                 ) {
                     Ok(true) => {
                         serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"migrate","status":"migrated","preset_id":migrated.id,"revision":migrated.revision,"content_hash":migrated.content_hash,"error_code":""})
@@ -15967,19 +15971,22 @@ impl IpcBridge {
                 .to_owned();
             if !run_id.is_empty() && !conversation_id.is_empty() {
                 if let Ok(database) = self.journal.database().try_lock() {
-                    let _ =
-                        evohime_local_storage::external_coding_agent_adapter_store::record_event(
-                            database.connection(),
-                            &conversation_id,
-                            &run_id,
-                            serde_json::to_string(&state)
-                                .unwrap_or_default()
-                                .trim_matches('"'),
-                            status,
-                            &request.request_id,
-                            &request.idempotency_key,
-                            chrono::Utc::now().timestamp_millis(),
-                        );
+                    let state_json = serde_json::to_string(&state).unwrap_or_else(|error| {
+                        tracing::warn!(%error, "failed to serialize external agent state");
+                        String::new()
+                    });
+                    let _ = evohime_local_storage::external_coding_agent_adapter_store::record_event(
+                        database.connection(),
+                        evohime_local_storage::external_coding_agent_adapter_store::RecordEventInput {
+                            conversation_id: &conversation_id,
+                            run_id: &run_id,
+                            state: state_json.trim_matches('"'),
+                            outcome: status,
+                            correlation_id: &request.request_id,
+                            idempotency_key: &request.idempotency_key,
+                            now_ms: chrono::Utc::now().timestamp_millis(),
+                        },
+                    );
                 }
             }
         }

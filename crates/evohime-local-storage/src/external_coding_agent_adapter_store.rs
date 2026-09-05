@@ -6,35 +6,43 @@ pub fn install_schema(connection: &Connection) -> Result<(), StorageError> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn upsert_preset(
-    connection: &Connection,
-    id: &str,
-    revision: u64,
-    protocol: &str,
-    executable_ref: &str,
-    capabilities_json: &str,
-    slots_json: &str,
-    control_level: &str,
-    enabled: bool,
-    content_hash: &str,
-    now_ms: i64,
-) -> Result<bool, StorageError> {
-    Ok(connection.execute("INSERT INTO external_agent_presets(id,revision,protocol,executable_ref,capabilities_json,credential_slots_json,control_level,enabled,content_hash,updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,protocol=excluded.protocol,executable_ref=excluded.executable_ref,capabilities_json=excluded.capabilities_json,credential_slots_json=excluded.credential_slots_json,control_level=excluded.control_level,enabled=excluded.enabled,content_hash=excluded.content_hash,updated_at_ms=excluded.updated_at_ms", params![id, revision as i64, protocol, executable_ref, capabilities_json, slots_json, control_level, enabled as i64, content_hash, now_ms])? == 1)
+#[derive(Clone, Copy)]
+pub struct UpsertPresetInput<'a> {
+    pub id: &'a str,
+    pub revision: u64,
+    pub protocol: &'a str,
+    pub executable_ref: &'a str,
+    pub capabilities_json: &'a str,
+    pub slots_json: &'a str,
+    pub control_level: &'a str,
+    pub enabled: bool,
+    pub content_hash: &'a str,
+    pub now_ms: i64,
 }
 
-#[allow(clippy::too_many_arguments)]
+pub fn upsert_preset(
+    connection: &Connection,
+    input: UpsertPresetInput<'_>,
+) -> Result<bool, StorageError> {
+    Ok(connection.execute("INSERT INTO external_agent_presets(id,revision,protocol,executable_ref,capabilities_json,credential_slots_json,control_level,enabled,content_hash,updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,protocol=excluded.protocol,executable_ref=excluded.executable_ref,capabilities_json=excluded.capabilities_json,credential_slots_json=excluded.credential_slots_json,control_level=excluded.control_level,enabled=excluded.enabled,content_hash=excluded.content_hash,updated_at_ms=excluded.updated_at_ms", params![input.id, input.revision as i64, input.protocol, input.executable_ref, input.capabilities_json, input.slots_json, input.control_level, input.enabled as i64, input.content_hash, input.now_ms])? == 1)
+}
+
+#[derive(Clone, Copy)]
+pub struct RecordEventInput<'a> {
+    pub conversation_id: &'a str,
+    pub run_id: &'a str,
+    pub state: &'a str,
+    pub outcome: &'a str,
+    pub correlation_id: &'a str,
+    pub idempotency_key: &'a str,
+    pub now_ms: i64,
+}
+
 pub fn record_event(
     connection: &Connection,
-    conversation_id: &str,
-    run_id: &str,
-    state: &str,
-    outcome: &str,
-    correlation_id: &str,
-    idempotency_key: &str,
-    now_ms: i64,
+    input: RecordEventInput<'_>,
 ) -> Result<bool, StorageError> {
-    Ok(connection.execute("INSERT OR IGNORE INTO external_agent_events(conversation_id,run_id,state,outcome,correlation_id,idempotency_key,created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![conversation_id, run_id, state, outcome, correlation_id, idempotency_key, now_ms])? == 1)
+    Ok(connection.execute("INSERT OR IGNORE INTO external_agent_events(conversation_id,run_id,state,outcome,correlation_id,idempotency_key,created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![input.conversation_id, input.run_id, input.state, input.outcome, input.correlation_id, input.idempotency_key, input.now_ms])? == 1)
 }
 
 #[cfg(test)]
@@ -44,7 +52,16 @@ mod tests {
     fn event_delivery_is_idempotent() {
         let c = Connection::open_in_memory().unwrap();
         install_schema(&c).unwrap();
-        assert!(record_event(&c, "c", "r", "running", "", "x", "i", 1).unwrap());
-        assert!(!record_event(&c, "c", "r", "running", "", "x", "i", 2).unwrap());
+        let input = RecordEventInput {
+            conversation_id: "c",
+            run_id: "r",
+            state: "running",
+            outcome: "",
+            correlation_id: "x",
+            idempotency_key: "i",
+            now_ms: 1,
+        };
+        assert!(record_event(&c, input).unwrap());
+        assert!(!record_event(&c, RecordEventInput { now_ms: 2, ..input }).unwrap());
     }
 }
