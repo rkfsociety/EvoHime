@@ -2,9 +2,13 @@ use evohime_model_gateway::ToolSpec;
 
 use crate::AgentRunError;
 
+/// Версия контракта политики выбора маршрута.
 pub(crate) const ROUTING_POLICY_VERSION: &str = "routing-policy-v1";
+/// Версия встроенного каталога маршрутов.
 pub(crate) const ROUTING_CATALOG_VERSION: &str = "builtin-v1";
+/// Имя терминального события в трассировке маршрутизации.
 pub(crate) const ROUTING_EVENT_TERMINAL: &str = "terminal";
+/// Причина отката к локальному выбору runtime.
 pub(crate) const ROUTING_SNAPSHOT_FALLBACK: &str = "runtime-selection";
 
 pub(crate) struct RoutingSuccessInput<'a> {

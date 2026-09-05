@@ -1,6 +1,7 @@
 use evohime_model_gateway::NativeToolCall;
 use std::borrow::Cow;
 
+/// Имена инструментов, которые допускаются в legacy-тексте ответа модели.
 pub(crate) const LEGACY_TOOL_NAMES: &[&str] = &[
     "agent.run",
     "filesystem.list",
@@ -53,6 +54,7 @@ fn attribute_value(tag: &str, attribute: &str) -> Option<String> {
 
 /// Markers that begin a tool call a model printed as text instead of using the
 /// provider's tool-call field.
+/// Маркеры, которыми legacy-модель обозначает текстовый вызов инструмента.
 const TOOL_CALL_MARKERS: [&str; 6] = [
     "<function_calls>",
     "<invoke",
