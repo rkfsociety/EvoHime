@@ -10,8 +10,13 @@ macro_rules! console_line {
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("evohime_core=info")),
+            match tracing_subscriber::EnvFilter::try_from_default_env() {
+                Ok(filter) => filter,
+                Err(error) => {
+                    tracing::debug!(%error, "invalid RUST_LOG filter; using default");
+                    tracing_subscriber::EnvFilter::new("evohime_core=info")
+                }
+            },
         )
         .with_target(false)
         .init();

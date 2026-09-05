@@ -44,6 +44,65 @@ const TOOL_FILESYSTEM_SEARCH: &str = "filesystem.search";
 /// Идентификатор встроенной политики разрешений Core.
 const PERMISSION_POLICY_ID: &str = "permission-v1";
 
+/// Типизированные параметры операций над architecture snapshot.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ArchitectureSnapshotRequest {
+    #[serde(default)]
+    workspace_root: Option<String>,
+    #[serde(default)]
+    subject_id: Option<String>,
+    #[serde(default)]
+    source_revision: Option<String>,
+    #[serde(default)]
+    allowed_roots: Vec<String>,
+    #[serde(default)]
+    before: Option<crate::architecture_snapshot::ArchitectureSnapshot>,
+    #[serde(default)]
+    after: Option<crate::architecture_snapshot::ArchitectureSnapshot>,
+    #[serde(default)]
+    expected: Option<crate::architecture_snapshot::ExpectedArchitectureDelta>,
+    #[serde(default)]
+    actual: Option<crate::architecture_snapshot::ArchitectureDelta>,
+}
+
+/// Типизированные параметры операций локального model runtime manager.
+#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
+struct LocalModelRuntimeRequest {
+    #[serde(default)]
+    model_id: Option<String>,
+    #[serde(default)]
+    request_id: Option<String>,
+    #[serde(default)]
+    state: Option<crate::local_model_runtime_manager::ArtifactState>,
+    #[serde(default)]
+    trust: Option<crate::local_model_runtime_manager::TrustLevel>,
+    #[serde(default)]
+    observed_hash: Option<String>,
+    #[serde(default)]
+    expected_hash: Option<String>,
+    #[serde(default)]
+    staging_relative_path: Option<String>,
+    #[serde(default)]
+    destination_relative_path: Option<String>,
+    #[serde(default)]
+    expected_size_bytes: Option<u64>,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    from: Option<crate::local_model_runtime_manager::ArtifactState>,
+    #[serde(default)]
+    to: Option<crate::local_model_runtime_manager::ArtifactState>,
+    #[serde(default)]
+    session: Option<crate::local_model_runtime_manager::LocalModelRuntimeSession>,
+    #[serde(default)]
+    model: Option<crate::local_model_runtime_manager::LocalModelDescriptor>,
+    #[serde(default)]
+    runtime: Option<crate::local_model_runtime_manager::LocalInferenceRuntime>,
+    #[serde(default)]
+    artifact: Option<crate::local_model_runtime_manager::LocalArtifactRecord>,
+}
+
 /// Аргументы для policy-only preflight при построении каталога инструментов.
 /// Preflight не выполняет инструмент, но path-инструментам всё равно нужен
 /// существующий workspace-relative путь, иначе безопасный инструмент ошибочно
@@ -10886,8 +10945,13 @@ impl TaskCoordinator {
                             "sequence_id": event.sequence_id,
                             "event_type": event.event_type,
                             "created_at": event.created_at,
-                            "payload": serde_json::from_slice::<serde_json::Value>(&event.payload)
-                                .unwrap_or_else(|_| serde_json::json!({"raw_bytes": event.payload})),
+                            "payload": match serde_json::from_slice::<serde_json::Value>(&event.payload) {
+                                Ok(value) => value,
+                                Err(error) => {
+                                    tracing::debug!(%error, "event payload is not JSON; exposing raw bytes");
+                                    serde_json::json!({"raw_bytes": event.payload})
+                                }
+                            },
                         })).collect::<Vec<_>>(),
                     }))
                     .map_err(|error| error.to_string())
@@ -11158,7 +11222,14 @@ impl TaskCoordinator {
                                 let detail = serde_json::to_vec(&serde_json::json!({"conflict_count": conflicts.len()})).unwrap_or_default();
                                 let operation_id = format!("{}:conflict", if idempotency_key.is_empty() { uuid::Uuid::now_v7().to_string() } else { idempotency_key.clone() });
                                 let _ = evohime_local_storage::workspace_state_checkpoint::append_restore_journal(database.connection(), &evohime_local_storage::workspace_state_checkpoint::RestoreJournalRecord { operation_id, checkpoint_id: id.clone(), operation: operation.clone(), state: "conflict".into(), detail_json: detail, created_at_ms: now });
-                                return Err(serde_json::to_string(&serde_json::json!({"error_code":"workspace_conflict","conflict_count":conflicts.len()})).unwrap_or_else(|_| "workspace conflict".into()));
+                                let response = match serde_json::to_string(&serde_json::json!({"error_code":"workspace_conflict","conflict_count":conflicts.len()})) {
+                                    Ok(value) => value,
+                                    Err(error) => {
+                                        tracing::warn!(%error, "failed to serialize workspace conflict response");
+                                        "workspace conflict".into()
+                                    }
+                                };
+                                return Err(response);
                             }
                             crate::workspace_state_checkpoints::restore(&root, &checkpoint).map_err(|e| e.to_string())?;
                             let database = journal.database().lock().await;
@@ -13633,8 +13704,12 @@ impl TaskCoordinator {
                 let result = async {
                     if idempotency_key.is_empty() { return Err("invalid_architecture_snapshot_idempotency_key".into()); }
                     if workspace_root.len() > crate::architecture_snapshot::MAX_ID * 4 { return Err("workspace_root_too_long".into()); }
-                    let value: serde_json::Value = if payload.is_empty() { serde_json::json!({}) } else { serde_json::from_slice(&payload).map_err(|_| "invalid_architecture_snapshot_payload".to_string())? };
-                    let root = value.get("workspace_root").and_then(serde_json::Value::as_str).filter(|v| !v.is_empty()).unwrap_or(&workspace_root);
+                    let request: ArchitectureSnapshotRequest = if payload.is_empty() {
+                        ArchitectureSnapshotRequest::default()
+                    } else {
+                        serde_json::from_slice(&payload).map_err(|_| "invalid_architecture_snapshot_payload".to_string())?
+                    };
+                    let root = request.workspace_root.as_deref().filter(|v| !v.is_empty()).unwrap_or(&workspace_root);
                     let id = if snapshot_id.is_empty() { "architecture-current" } else { snapshot_id.as_str() };
                     match operation.as_str() {
                         "get" | "evidence" | "open_evidence" | "upstream" | "downstream" | "route" => {
@@ -13645,7 +13720,7 @@ impl TaskCoordinator {
                             let snapshot: crate::architecture_snapshot::ArchitectureSnapshot = serde_json::from_slice(&json).map_err(|_| "corrupt_architecture_snapshot".to_string())?;
                             if operation == "evidence" || operation == "open_evidence" { return serde_json::to_vec(&serde_json::json!({"status":"ok","snapshot_id":id,"evidence":snapshot.components.iter().flat_map(|c| c.evidence.iter()).collect::<Vec<_>>(),"open_mode":operation == "open_evidence","redacted":true})).map_err(|_| "serialization_failed".to_string()); }
                             if operation == "get" { return serde_json::to_vec(&serde_json::json!({"status":"ok","snapshot":snapshot,"redacted":true})).map_err(|_| "serialization_failed".to_string()); }
-                            let subject = value.get("subject_id").and_then(serde_json::Value::as_str).unwrap_or_default();
+                            let subject = request.subject_id.as_deref().unwrap_or_default();
                             let ids: Vec<&str> = match operation.as_str() {
                                 "upstream" => snapshot.relationships.iter().filter(|r| r.to == subject).map(|r| r.from.as_str()).take(64).collect(),
                                 "downstream" => snapshot.relationships.iter().filter(|r| r.from == subject).map(|r| r.to.as_str()).take(64).collect(),
@@ -13654,11 +13729,13 @@ impl TaskCoordinator {
                             serde_json::to_vec(&serde_json::json!({"status":"ok","operation":operation,"subject_id":subject,"related_ids":ids,"route_is_not_impact":true,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "refresh" | "rebuild" | "current" => {
-                            let revision = value.get("source_revision").and_then(serde_json::Value::as_str).unwrap_or("working-tree");
+                            let revision = request.source_revision.as_deref().unwrap_or("working-tree");
                             let root_path = std::path::Path::new(root);
-                            let allowed_roots = value.get("allowed_roots").and_then(serde_json::Value::as_array)
-                                .map(|items| items.iter().filter_map(serde_json::Value::as_str).map(str::to_owned).collect::<Vec<_>>())
-                                .unwrap_or_else(|| vec![root.to_owned()]);
+                            let allowed_roots = if request.allowed_roots.is_empty() {
+                                vec![root.to_owned()]
+                            } else {
+                                request.allowed_roots.clone()
+                            };
                             crate::architecture_snapshot_runtime::authorize_root(root_path, &allowed_roots).map_err(|e| e.to_string())?;
                             let workspace_identity = crate::architecture_snapshot_runtime::source_fingerprint(root_path, revision);
                             let snapshot = crate::architecture_snapshot_runtime::extract(root_path, &workspace_identity, revision, id).map_err(|e| e.to_string())?;
@@ -13671,14 +13748,14 @@ impl TaskCoordinator {
                             serde_json::to_vec(&serde_json::json!({"status":"accepted","snapshot_id":id,"snapshot_hash":hash,"projection":snapshot,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "compare" => {
-                            let before: crate::architecture_snapshot::ArchitectureSnapshot = serde_json::from_value(value.get("before").cloned().ok_or_else(|| "before_required".to_string())?).map_err(|_| "invalid_before_snapshot".to_string())?;
-                            let after: crate::architecture_snapshot::ArchitectureSnapshot = serde_json::from_value(value.get("after").cloned().ok_or_else(|| "after_required".to_string())?).map_err(|_| "invalid_after_snapshot".to_string())?;
+                            let before = request.before.ok_or_else(|| "before_required".to_string())?;
+                            let after = request.after.ok_or_else(|| "after_required".to_string())?;
                             let delta = crate::architecture_snapshot::delta(&before, &after).map_err(|e| e.to_string())?;
                             serde_json::to_vec(&serde_json::json!({"status":"compared","delta":delta,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "review" => {
-                            let expected: crate::architecture_snapshot::ExpectedArchitectureDelta = serde_json::from_value(value.get("expected").cloned().ok_or_else(|| "expected_required".to_string())?).map_err(|_| "invalid_expected_delta".to_string())?;
-                            let actual: crate::architecture_snapshot::ArchitectureDelta = serde_json::from_value(value.get("actual").cloned().ok_or_else(|| "actual_required".to_string())?).map_err(|_| "invalid_actual_delta".to_string())?;
+                            let expected = request.expected.ok_or_else(|| "expected_required".to_string())?;
+                            let actual = request.actual.ok_or_else(|| "actual_required".to_string())?;
                             let result = crate::architecture_snapshot::review(&expected, &actual).map_err(|e| e.to_string())?;
                             serde_json::to_vec(&serde_json::json!({"status":"reviewed","review":result,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
@@ -13692,8 +13769,13 @@ impl TaskCoordinator {
                         _ => Err("unsupported_architecture_snapshot_operation".into()),
                     }
                 }.await;
-                let projection_json = String::from_utf8(result.clone().unwrap_or_default())
-                    .unwrap_or_else(|_| "{}".into());
+                let projection_json = match String::from_utf8(result.clone().unwrap_or_default()) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        tracing::warn!(%error, "architecture snapshot projection is not UTF-8");
+                        "{}".into()
+                    }
+                };
                 let event = CoreEvent::ArchitectureSnapshot {
                     snapshot_id,
                     operation,
@@ -13715,46 +13797,51 @@ impl TaskCoordinator {
             } => {
                 let result = async {
                     if idempotency_key.is_empty() { return Err("invalid_local_model_manager_idempotency_key".into()); }
-                    let value: serde_json::Value = if payload.is_empty() { serde_json::json!({}) } else { serde_json::from_slice(&payload).map_err(|_| "invalid_local_model_manager_payload".to_string())? };
+                    let request: LocalModelRuntimeRequest = if payload.is_empty() {
+                        LocalModelRuntimeRequest::default()
+                    } else {
+                        serde_json::from_slice(&payload).map_err(|_| "invalid_local_model_manager_payload".to_string())?
+                    };
+                    let value = serde_json::to_value(&request).map_err(|_| "invalid_local_model_manager_payload".to_string())?;
                     match operation.as_str() {
                         "hardware" => {
                             let profile = crate::local_model_runtime_manager::discover_hardware().map_err(|e| e.to_string())?;
                             serde_json::to_vec(&serde_json::json!({"status":"discovered","hardware":profile,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "start" => {
-                            let model_id = value.get("model_id").and_then(serde_json::Value::as_str).filter(|v| !v.is_empty()).ok_or_else(|| "model_id_required".to_string())?;
-                            let request_id = value.get("request_id").and_then(serde_json::Value::as_str).filter(|v| !v.is_empty()).ok_or_else(|| "request_id_required".to_string())?;
+                            let model_id = request.model_id.as_deref().filter(|v| !v.is_empty()).ok_or_else(|| "model_id_required".to_string())?;
+                            let request_id = request.request_id.as_deref().filter(|v| !v.is_empty()).ok_or_else(|| "request_id_required".to_string())?;
                             #[cfg(windows)]
                             { let response = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"launch","model_id":model_id,"request_id":request_id})).await.map_err(|_| "runtime_unavailable".to_string())?; if response.get("accepted") != Some(&serde_json::Value::Bool(true)) { return Err("runtime_unavailable".into()); } let health = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"probe","model_id":model_id})).await.map_err(|_| "health_gate_unavailable".to_string())?; if health.get("healthy") != Some(&serde_json::Value::Bool(true)) { let _ = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"stop","model_id":model_id,"request_id":request_id})).await; return Err("health_gate_failed".into()); } return serde_json::to_vec(&serde_json::json!({"status":"ready","model_id":model_id,"supervised":true,"health_gate":"passed","redacted":true})).map_err(|_| "serialization_failed".to_string()); }
                             #[cfg(not(windows))]
                             { let _ = (model_id, request_id); Err("runtime_unavailable".into()) }
                         }
                         "stop" => {
-                            let model_id = value.get("model_id").and_then(serde_json::Value::as_str).filter(|v| !v.is_empty()).ok_or_else(|| "model_id_required".to_string())?;
-                            let request_id = value.get("request_id").and_then(serde_json::Value::as_str).filter(|v| !v.is_empty()).ok_or_else(|| "request_id_required".to_string())?;
+                            let model_id = request.model_id.as_deref().filter(|v| !v.is_empty()).ok_or_else(|| "model_id_required".to_string())?;
+                            let request_id = request.request_id.as_deref().filter(|v| !v.is_empty()).ok_or_else(|| "request_id_required".to_string())?;
                             #[cfg(windows)]
                             { let response = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"stop","model_id":model_id,"request_id":request_id})).await.map_err(|_| "runtime_unavailable".to_string())?; if response.get("accepted") != Some(&serde_json::Value::Bool(true)) { return Err("runtime_unavailable".into()); } return serde_json::to_vec(&serde_json::json!({"status":"stopped","model_id":model_id,"supervised":true,"redacted":true})).map_err(|_| "serialization_failed".to_string()); }
                             #[cfg(not(windows))]
                             { let _ = (model_id, request_id); Err("runtime_unavailable".into()) }
                         }
                         "probe" => {
-                            let model_id = value.get("model_id").and_then(serde_json::Value::as_str).filter(|v| !v.is_empty()).ok_or_else(|| "model_id_required".to_string())?;
+                            let model_id = request.model_id.as_deref().filter(|v| !v.is_empty()).ok_or_else(|| "model_id_required".to_string())?;
                             #[cfg(windows)]
                             { let response = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"probe","model_id":model_id})).await.map_err(|_| "health_gate_unavailable".to_string())?; if response.get("healthy") != Some(&serde_json::Value::Bool(true)) { return Err("health_gate_failed".into()); } return serde_json::to_vec(&serde_json::json!({"status":"ready","model_id":model_id,"health_gate":"passed","redacted":true})).map_err(|_| "serialization_failed".to_string()); }
                             #[cfg(not(windows))]
                             { let _ = model_id; Err("runtime_unavailable".into()) }
                         }
                         "verify_artifact" => {
-                            let state: crate::local_model_runtime_manager::ArtifactState = serde_json::from_value(value.get("state").cloned().ok_or_else(|| "state_required".to_string())?).map_err(|_| "invalid_artifact_state".to_string())?;
-                            let trust: crate::local_model_runtime_manager::TrustLevel = serde_json::from_value(value.get("trust").cloned().ok_or_else(|| "trust_required".to_string())?).map_err(|_| "invalid_trust".to_string())?;
-                            let observed = value.get("observed_hash").and_then(serde_json::Value::as_str).ok_or_else(|| "observed_hash_required".to_string())?;
-                            let expected = value.get("expected_hash").and_then(serde_json::Value::as_str).ok_or_else(|| "expected_hash_required".to_string())?;
+                            let state = request.state.ok_or_else(|| "state_required".to_string())?;
+                            let trust = request.trust.ok_or_else(|| "trust_required".to_string())?;
+                            let observed = request.observed_hash.as_deref().ok_or_else(|| "observed_hash_required".to_string())?;
+                            let expected = request.expected_hash.as_deref().ok_or_else(|| "expected_hash_required".to_string())?;
                             crate::local_model_runtime_manager::allow_artifact_promotion(state, trust, observed, expected).map_err(|e| e.to_string())?;
                             serde_json::to_vec(&serde_json::json!({"status":"verified","artifact_state":"installed","content_hash":expected,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "promote_artifact" => {
-                            let staging = value.get("staging_relative_path").and_then(serde_json::Value::as_str).ok_or_else(|| "staging_path_required".to_string())?;
-                            let destination = value.get("destination_relative_path").and_then(serde_json::Value::as_str).ok_or_else(|| "destination_path_required".to_string())?;
+                            let staging = request.staging_relative_path.as_deref().ok_or_else(|| "staging_path_required".to_string())?;
+                            let destination = request.destination_relative_path.as_deref().ok_or_else(|| "destination_path_required".to_string())?;
                             let staging = std::path::Path::new(staging);
                             let destination = std::path::Path::new(destination);
                             crate::local_model_runtime_manager::validate_artifact_relative_path(staging).map_err(|e| e.to_string())?;
@@ -14943,8 +15030,13 @@ impl TaskCoordinator {
                     let effective_scope =
                         crate::scope::restrict_to_policy(&policy, &proposal.scope).map_err(
                             |violations| {
-                                serde_json::to_string(&violations)
-                                    .unwrap_or_else(|_| "build policy violation".into())
+                                match serde_json::to_string(&violations) {
+                                    Ok(value) => value,
+                                    Err(error) => {
+                                        tracing::warn!(%error, "failed to serialize build policy violations");
+                                        "build policy violation".into()
+                                    }
+                                }
                             },
                         )?;
                     let effective_proposal = crate::build::BuildProposal {
@@ -18163,8 +18255,13 @@ fn validate_memory_idempotency_key(key: &str) -> Result<(), String> {
 /// Canonical subject of a stored record. Legacy rows have none, so the title
 /// stands in and gets normalized by the same versioned normalizer.
 fn memory_conflict_subject(record: &evohime_local_storage::memory_store::MemoryRecord) -> String {
-    crate::memory_extraction::normalize_subject(record.subject_for_conflict())
-        .unwrap_or_else(|_| record.subject_for_conflict().to_owned())
+    match crate::memory_extraction::normalize_subject(record.subject_for_conflict()) {
+        Ok(subject) => subject,
+        Err(error) => {
+            tracing::debug!(%error, "memory subject normalization failed; preserving original subject");
+            record.subject_for_conflict().to_owned()
+        }
+    }
 }
 
 /// Finds the active record a pending candidate conflicts with:

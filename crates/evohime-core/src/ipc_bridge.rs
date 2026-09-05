@@ -11033,11 +11033,27 @@ impl IpcBridge {
                             schema_version: 1,
                             action_id: request.action_id.to_string(),
                             pre_receipt_hash: pre_hash,
-                            tool_args_hash: evohime_receipts::runtime::canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input).unwrap_or_default(),
+                            tool_args_hash: evohime_receipts::runtime::canonical_call_hash(
+                                &request.tool_name,
+                                &request.normalized_scope,
+                                &request.input,
+                            )
+                            .unwrap_or_default(),
                             result_status: "failed".into(),
-                            result_hash: evohime_receipts::result_hash(&serde_json::json!({"status":"failed","error_category":"tool_error"})).unwrap_or_else(|_| evohime_receipts::sha256_hex(b"tool_error")),
+                            result_hash: match evohime_receipts::result_hash(
+                                &serde_json::json!({"status":"failed","error_category":"tool_error"}),
+                            ) {
+                                Ok(hash) => hash,
+                                Err(error) => {
+                                    tracing::warn!(%error, "failed to hash tool error receipt; using stable fallback");
+                                    evohime_receipts::sha256_hex(b"tool_error")
+                                }
+                            },
                             recovery_code: recovery_code.into(),
-                            created_at_ms: SystemTime::now().duration_since(UNIX_EPOCH).map(|value| value.as_millis() as i64).unwrap_or_default(),
+                            created_at_ms: SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .map(|value| value.as_millis() as i64)
+                                .unwrap_or_default(),
                             key_id,
                         };
                         if let Ok(plain) = serde_json::to_vec(&row) {
@@ -11133,8 +11149,13 @@ impl IpcBridge {
                             evohime_receipts::runtime::PolicyDecision::ApprovalRequired,
                         approval_id: Some(approval_id),
                         parent_approval_ref: None,
-                        preview: serde_json::to_string(&preview)
-                            .unwrap_or_else(|_| "approval".into()),
+                        preview: match serde_json::to_string(&preview) {
+                            Ok(value) => value,
+                            Err(error) => {
+                                tracing::warn!(%error, "failed to serialize approval preview");
+                                "approval".into()
+                            }
+                        },
                     };
                     let capability =
                         Self::terminal_capability_snapshot(durable_action_id, &context, &scope)
@@ -12016,9 +12037,15 @@ impl IpcBridge {
                 crate::analysis_kernel::KernelOperation::CsvSummary => {
                     serde_json::Value::String(String::from_utf8_lossy(&host_request.args).into())
                 }
-                _ => serde_json::from_slice(&host_request.args).unwrap_or_else(|_| {
-                    serde_json::Value::String(String::from_utf8_lossy(&host_request.args).into())
-                }),
+                _ => match serde_json::from_slice(&host_request.args) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        tracing::debug!(%error, "host operation arguments are not JSON; preserving text payload");
+                        serde_json::Value::String(
+                            String::from_utf8_lossy(&host_request.args).into(),
+                        )
+                    }
+                },
             };
             if let Err(error) = runtime.admit(&host_request, std::time::Instant::now()) {
                 return analysis_kernel_result_error(&request_id, kernel_error_code(&error));
@@ -14060,8 +14087,13 @@ impl IpcBridge {
                         } else {
                             "local"
                         };
-                        let caps = serde_json::to_string(&backend.capabilities)
-                            .unwrap_or_else(|_| "[]".into());
+                        let caps = match serde_json::to_string(&backend.capabilities) {
+                            Ok(value) => value,
+                            Err(error) => {
+                                tracing::warn!(backend_id = %backend.id, %error, "failed to serialize backend capabilities");
+                                "[]".into()
+                            }
+                        };
                         let _ = evohime_local_storage::execution_backend_registry_store::upsert(
                             database.connection(),
                             &backend.id,
@@ -16172,10 +16204,13 @@ fn skill_metadata_projection(
         required_capabilities: bounded_skill_list(metadata.required_capabilities),
         disable_model_invocation: metadata.disable_model_invocation,
         reference_count: metadata.reference_count.min(u32::MAX as usize) as u32,
-        validation_status: serde_json::to_string(&metadata.validation_status)
-            .unwrap_or_else(|_| "invalid".into())
-            .trim_matches('"')
-            .into(),
+        validation_status: match serde_json::to_string(&metadata.validation_status) {
+            Ok(value) => value.trim_matches('"').into(),
+            Err(error) => {
+                tracing::warn!(%error, "failed to serialize model validation status");
+                "invalid".into()
+            }
+        },
         validation_error_code: metadata.validation_error_code.unwrap_or_default(),
         warnings: metadata
             .warnings
@@ -16676,10 +16711,13 @@ async fn write_analysis_kernel_result<W: AsyncWrite + Unpin>(
 }
 
 fn checkpoint_status_text(status: crate::task_checkpoint::CheckpointStatus) -> String {
-    serde_json::to_string(&status)
-        .unwrap_or_else(|_| "unknown".into())
-        .trim_matches('"')
-        .to_owned()
+    match serde_json::to_string(&status) {
+        Ok(value) => value.trim_matches('"').to_owned(),
+        Err(error) => {
+            tracing::warn!(%error, "failed to serialize checkpoint status");
+            "unknown".into()
+        }
+    }
 }
 
 fn conversation_event_log_error(
@@ -16728,10 +16766,13 @@ fn conversation_event_log_error_with_earliest(
 }
 
 fn checkpoint_disposition_text(disposition: crate::task_checkpoint::RecoveryDisposition) -> String {
-    serde_json::to_string(&disposition)
-        .unwrap_or_else(|_| "blocked".into())
-        .trim_matches('"')
-        .to_owned()
+    match serde_json::to_string(&disposition) {
+        Ok(value) => value.trim_matches('"').to_owned(),
+        Err(error) => {
+            tracing::warn!(%error, "failed to serialize checkpoint disposition");
+            "blocked".into()
+        }
+    }
 }
 
 fn bounded_checkpoint_text(value: &str) -> String {
@@ -16807,10 +16848,13 @@ fn task_checkpoint_projection(
             kind: bounded_checkpoint_text(&reference.kind),
             id: bounded_checkpoint_text(&reference.id),
             content_hash: reference.content_hash.clone().unwrap_or_default(),
-            sensitivity: serde_json::to_string(&reference.sensitivity)
-                .unwrap_or_else(|_| "internal".into())
-                .trim_matches('"')
-                .to_owned(),
+            sensitivity: match serde_json::to_string(&reference.sensitivity) {
+                Ok(value) => value.trim_matches('"').to_owned(),
+                Err(error) => {
+                    tracing::warn!(%error, "failed to serialize checkpoint sensitivity");
+                    "internal".into()
+                }
+            },
         });
     }
     let policy_id = checkpoint
