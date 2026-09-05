@@ -253,6 +253,31 @@ struct InstructionStackToggleRequest {
     enabled: bool,
 }
 
+/// Типизированный envelope команд team coordination policies.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TeamCoordinationRequest {
+    team: crate::team_coordination_policies::TeamSpec,
+    #[serde(default)]
+    state: Option<crate::team_coordination_policies::TeamCoordinationState>,
+    #[serde(default)]
+    event_ids: Vec<String>,
+    #[serde(default)]
+    handoff_from: Option<String>,
+    #[serde(default)]
+    selector_role: Option<String>,
+    #[serde(default)]
+    event_type: Option<String>,
+    #[serde(default)]
+    strategy: Option<crate::team_coordination_policies::TeamCoordinationStrategy>,
+    #[serde(default)]
+    protocol_snapshot: Option<crate::team_sop_protocols::ProtocolSnapshot>,
+    #[serde(default)]
+    participant: Option<crate::team_coordination_policies::ParticipantIdentity>,
+    #[serde(default)]
+    strategy_state: Option<crate::team_coordination_policies::StrategySessionState>,
+}
+
 /// Аргументы для policy-only preflight при построении каталога инструментов.
 /// Preflight не выполняет инструмент, но path-инструментам всё равно нужен
 /// существующий workspace-relative путь, иначе безопасный инструмент ошибочно
@@ -11791,21 +11816,20 @@ impl TaskCoordinator {
                     if team_id.is_empty() || team_id.len() > crate::team_coordination_policies::MAX_TEXT || idempotency_key.is_empty() {
                         return Err("invalid coordination request".to_string());
                     }
-                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid coordination payload".to_string())?;
-                    let spec: crate::team_coordination_policies::TeamSpec = serde_json::from_value(value.get("team").cloned().ok_or_else(|| "team spec required".to_string())?).map_err(|_| "invalid team spec".to_string())?;
+                    let request: TeamCoordinationRequest = serde_json::from_slice(&payload).map_err(|_| "invalid coordination payload".to_string())?;
+                    let spec = request.team;
                     if spec.id != team_id { return Err("team identity mismatch".to_string()); }
                     crate::team_coordination_policies::validate_team(&spec).map_err(|e| e.to_string())?;
                     match operation.as_str() {
                         "validate_policy" => serde_json::to_vec(&serde_json::json!({"status":"valid","team_id":team_id,"revision":spec.revision,"content_hash":crate::team_coordination_policies::canonical_hash(&spec).map_err(|e| e.to_string())?})).map_err(|e| e.to_string()),
                         "select" => {
-                            let state: crate::team_coordination_policies::TeamCoordinationState = serde_json::from_value(value.get("state").cloned().ok_or_else(|| "state required".to_string())?).map_err(|_| "invalid coordination state".to_string())?;
-                            let event_ids: Vec<String> = value.get("event_ids").and_then(serde_json::Value::as_array).map(|items| items.iter().filter_map(serde_json::Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
-                            let (next, decision) = crate::team_coordination_policies::select_next(&spec, &state, value.get("handoff_from").and_then(serde_json::Value::as_str), value.get("selector_role").and_then(serde_json::Value::as_str), value.get("event_type").and_then(serde_json::Value::as_str), &event_ids).map_err(|e| e.to_string())?;
+                            let state = request.state.as_ref().ok_or_else(|| "state required".to_string())?;
+                            let (next, decision) = crate::team_coordination_policies::select_next(&spec, state, request.handoff_from.as_deref(), request.selector_role.as_deref(), request.event_type.as_deref(), &request.event_ids).map_err(|e| e.to_string())?;
                             serde_json::to_vec(&serde_json::json!({"status":"selected","team_id":team_id,"version":expected_version.saturating_add(1),"state":next,"decision":decision})).map_err(|e| e.to_string())
                         }
                         "save_state" => {
                             let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
-                            let state_value = value.get("state").cloned().ok_or_else(|| "state required".to_string())?;
+                            let state_value = request.state.ok_or_else(|| "state required".to_string())?;
                             let json = serde_json::to_vec(&state_value).map_err(|e| e.to_string())?;
                             let connection = journal.database().lock().await;
                             let saved = evohime_local_storage::team_coordination_policies_store::save_state(connection.connection(), &team_id, spec.revision, &json, expected_version, &idempotency_key, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
@@ -11821,28 +11845,26 @@ impl TaskCoordinator {
                             serde_json::to_vec(&serde_json::json!({"status":if saved {"saved"} else {"duplicate"},"team_id":team_id,"revision":spec.revision,"content_hash":hash})).map_err(|e| e.to_string())
                         }
                         "select_strategy" => {
-                            let strategy: crate::team_coordination_policies::TeamCoordinationStrategy = serde_json::from_value(value.get("strategy").cloned().ok_or_else(|| "strategy required".to_string())?).map_err(|_| "invalid coordination strategy".to_string())?;
+                            let strategy = request.strategy.ok_or_else(|| "strategy required".to_string())?;
                             crate::team_coordination_policies::validate_strategy(&strategy).map_err(|e| e.to_string())?;
                             if strategy.eligible_roles.iter().any(|role| !spec.members.iter().any(|member| member.role == *role)) {
                                 return Err("strategy eligible set exceeds team roster".to_string());
                             }
-                            let snapshot: crate::team_sop_protocols::ProtocolSnapshot = serde_json::from_value(value.get("protocol_snapshot").cloned().ok_or_else(|| "protocol snapshot required".to_string())?).map_err(|_| "invalid protocol snapshot".to_string())?;
+                            let snapshot = request.protocol_snapshot.ok_or_else(|| "protocol snapshot required".to_string())?;
                             if snapshot.protocol_id != strategy.protocol_id || snapshot.content_hash != strategy.protocol_hash {
                                 return Err("protocol snapshot mismatch".to_string());
                             }
                             let protocol: crate::team_sop_protocols::TeamProtocol = serde_json::from_slice(&snapshot.protocol_json).map_err(|_| "invalid protocol snapshot".to_string())?;
                             crate::team_sop_protocols::validate_protocol(&protocol).map_err(|e| e.to_string())?;
-                            let state_value = value.get("state").cloned().ok_or_else(|| "strategy state required".to_string())?;
-                            let strategy_state: crate::team_coordination_policies::StrategySessionState = serde_json::from_value(state_value).map_err(|_| "invalid strategy state".to_string())?;
-                            let participant = value.get("participant").cloned().map(|item| serde_json::from_value::<crate::team_coordination_policies::ParticipantIdentity>(item).map_err(|_| "invalid participant identity".to_string())).transpose()?;
-                            let handoff_from = value.get("handoff_from").and_then(serde_json::Value::as_str);
+                            let strategy_state = request.strategy_state.as_ref().ok_or_else(|| "strategy state required".to_string())?;
+                            let participant = request.participant.as_ref();
+                            let handoff_from = request.handoff_from.as_deref();
                             if matches!(&strategy.kind, crate::team_coordination_policies::TeamCoordinationStrategyKind::HandoffSwarm { .. } | crate::team_coordination_policies::TeamCoordinationStrategyKind::GraphDirected { .. }) {
                                 let from = handoff_from.ok_or_else(|| "handoff source required".to_string())?;
                                 let to = participant.as_ref().map(|item| item.role.as_str()).ok_or_else(|| "handoff target required".to_string())?;
                                 crate::team_coordination_policies::validate_protocol_route(&snapshot, from, to).map_err(|e| e.to_string())?;
                             }
-                            let event_ids: Vec<String> = value.get("event_ids").and_then(serde_json::Value::as_array).map(|items| items.iter().filter_map(serde_json::Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
-                            let (next, decision) = crate::team_coordination_policies::select_strategy(&strategy, &strategy_state, participant.as_ref(), handoff_from, &event_ids).map_err(|e| e.to_string())?;
+                            let (next, decision) = crate::team_coordination_policies::select_strategy(&strategy, strategy_state, participant, handoff_from, &request.event_ids).map_err(|e| e.to_string())?;
                             let strategy_json = serde_json::to_vec(&strategy).map_err(|e| e.to_string())?;
                             let next_json = serde_json::to_vec(&next).map_err(|e| e.to_string())?;
                             let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
