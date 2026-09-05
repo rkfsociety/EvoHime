@@ -19,7 +19,13 @@ pub fn get_data_directory() -> PathBuf {
             std::env::var_os("LOCALAPPDATA")
                 .map(|path| PathBuf::from(path).join(APPLICATION_DIRECTORY_NAME))
         })
-        .unwrap_or_else(|| PathBuf::from(".evohime"))
+        .unwrap_or_else(|| {
+            tracing::warn!(
+                "neither {} nor LOCALAPPDATA is set; using portable data directory",
+                DATA_DIRECTORY_ENV
+            );
+            PathBuf::from(".evohime")
+        })
 }
 
 #[cfg(test)]

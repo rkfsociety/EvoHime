@@ -31,6 +31,7 @@ pub mod workflow_optimization_lab;
 pub mod workspace_bootstrap_manifest;
 pub mod workspace_sets;
 
+/// Базовая identity-инструкция, добавляемая к каждому model context.
 pub const AGENT_IDENTITY_PROMPT: &str =
     "Ты — Ева, AI-агент приложения EvoHime. Ева — короткое имя EvoHime; понимай обращения к тебе «Ева» и «EvoHime» как к одному агенту.";
 
@@ -173,6 +174,7 @@ fn resolve_model_mcp_input(
 
 /// Budget for a whole task: many model calls plus tool runs, so it has to be
 /// larger than the per-request timeout in `ProviderResilienceConfig`.
+/// Максимальная длительность одной автономной задачи в секундах.
 pub const DEFAULT_TASK_TIMEOUT_SECONDS: u64 = 900;
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -5507,6 +5509,7 @@ pub struct ToolAgent {
     workflow_registry: Arc<crate::workflow_registry::WorkflowRegistry>,
 }
 
+/// Жёсткий предел циклов `model -> tool` для одной задачи.
 const DEFAULT_TOOL_ITERATIONS: usize = 32;
 
 struct ProvenancedModelResult {
@@ -18079,6 +18082,7 @@ JSON вида {\"candidates\":[...]} без markdown и пояснений. Ка
 /// к рабочему каталогу было бы выдумкой. Собственный scope делает связь
 /// честной, а очередь подтверждения дополняется ambient-кандидатами явно, а
 /// не тем, что они притворились записями текущего воркспейса.
+/// Стабильный scope ID для извлечённых из ambient-событий записей памяти.
 pub const AMBIENT_MEMORY_SCOPE_ID: &str = "ambient";
 
 /// Какие услышанные утверждения становятся ограниченным предложением (04.7).

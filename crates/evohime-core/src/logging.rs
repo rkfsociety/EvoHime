@@ -26,10 +26,13 @@ impl StructuredLogger {
     }
 
     pub fn write(&self, level: &str, event: &str, fields: Value) -> io::Result<()> {
-        let timestamp_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
+        let timestamp_ms = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(duration) => duration.as_millis(),
+            Err(error) => {
+                tracing::warn!(%error, "system clock is before Unix epoch");
+                0
+            }
+        };
         let record = json!({
             "timestamp_ms": timestamp_ms,
             "level": level,
@@ -53,12 +56,20 @@ fn audit_log_path() -> PathBuf {
 pub(crate) fn append_audit_line(line: &str) {
     let path = audit_log_path();
     if let Some(parent) = path.parent() {
-        if fs::create_dir_all(parent).is_err() {
+        if let Err(error) = fs::create_dir_all(parent) {
+            tracing::warn!(path = %parent.display(), %error, "audit log directory creation failed");
             return;
         }
     }
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
-        let _ = file.write_all(line.as_bytes());
+    match OpenOptions::new().create(true).append(true).open(&path) {
+        Ok(mut file) => {
+            if let Err(error) = file.write_all(line.as_bytes()) {
+                tracing::warn!(path = %path.display(), %error, "audit log write failed");
+            }
+        }
+        Err(error) => {
+            tracing::warn!(path = %path.display(), %error, "audit log open failed");
+        }
     }
 }
 
