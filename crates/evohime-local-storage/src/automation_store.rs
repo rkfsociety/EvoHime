@@ -265,18 +265,41 @@ pub fn restore_archive(
         "INSERT INTO automation_runs (run_id, definition_id, revision, owner_scope, idempotency_key, payload_hash, state, generation, permission_snapshot, approval_snapshot, created_at_ms, updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?11)",
         params![run.run_id, run.definition_id, run.revision as i64, run.owner_scope, run.idempotency_key, run.payload_hash, run.state, run.generation as i64, run.permission_snapshot, run.approval_snapshot, now_ms],
     )?;
+    let mut insert_event = tx.prepare_cached(
+        "INSERT INTO automation_run_events
+         (run_id, run_sequence, event_type, generation, payload_json, created_at_ms)
+         VALUES (?1,?2,?3,?4,?5,?6)",
+    )?;
     for event in payload.events {
-        tx.execute(
-            "INSERT INTO automation_run_events (run_id, run_sequence, event_type, generation, payload_json, created_at_ms) VALUES (?1,?2,?3,?4,?5,?6)",
-            params![run_id, event.run_sequence as i64, event.event_type, event.generation as i64, event.payload_json, event.created_at_ms],
-        )?;
+        insert_event.execute(params![
+            run_id,
+            event.run_sequence as i64,
+            event.event_type,
+            event.generation as i64,
+            event.payload_json,
+            event.created_at_ms,
+        ])?;
     }
+    drop(insert_event);
+    let mut insert_snapshot = tx.prepare_cached(
+        "INSERT INTO automation_snapshots
+         (snapshot_id, run_id, definition_revision, generation, event_sequence,
+          snapshot_json, checksum_sha256, created_at_ms)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+    )?;
     for snapshot in payload.snapshots {
-        tx.execute(
-            "INSERT INTO automation_snapshots (snapshot_id, run_id, definition_revision, generation, event_sequence, snapshot_json, checksum_sha256, created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-            params![snapshot.snapshot_id, snapshot.run_id, snapshot.definition_revision as i64, snapshot.generation as i64, snapshot.event_sequence as i64, snapshot.snapshot_json, snapshot.checksum_sha256, snapshot.created_at_ms],
-        )?;
+        insert_snapshot.execute(params![
+            snapshot.snapshot_id,
+            snapshot.run_id,
+            snapshot.definition_revision as i64,
+            snapshot.generation as i64,
+            snapshot.event_sequence as i64,
+            snapshot.snapshot_json,
+            snapshot.checksum_sha256,
+            snapshot.created_at_ms,
+        ])?;
     }
+    drop(insert_snapshot);
     tx.commit()?;
     Ok(true)
 }

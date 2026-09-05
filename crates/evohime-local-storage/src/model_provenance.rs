@@ -550,19 +550,27 @@ impl<'a> ModelProvenanceRepository<'a> {
                 ))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
+        let transaction = self.connection.unchecked_transaction()?;
+        let mut mark_shadow = transaction.prepare_cached(
+            "UPDATE context_shadowed_originals
+                SET source_state='metadata_hash_only'
+              WHERE shadow_id=?1 AND source_state='full'",
+        )?;
+        let mut clear_shadow = transaction
+            .prepare_cached("UPDATE context_shadow_blocks SET bytes=NULL WHERE content_hash=?1")?;
         let mut changed = 0;
         for (shadow_id, hash, size) in candidates {
             if remaining <= evohime_model_provenance::MAX_SHADOW_BYTES_PER_TASK {
                 break;
             }
-            self.connection.execute("UPDATE context_shadowed_originals SET source_state='metadata_hash_only' WHERE shadow_id=?1 AND source_state='full'", [&shadow_id])?;
-            self.connection.execute(
-                "UPDATE context_shadow_blocks SET bytes=NULL WHERE content_hash=?1",
-                [&hash],
-            )?;
+            mark_shadow.execute([&shadow_id])?;
+            clear_shadow.execute([&hash])?;
             remaining = remaining.saturating_sub(size);
             changed += 1;
         }
+        drop(clear_shadow);
+        drop(mark_shadow);
+        transaction.commit()?;
         Ok(changed)
     }
 
