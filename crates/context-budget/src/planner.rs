@@ -133,6 +133,21 @@ pub struct ContextPlanner {
     metrics: ContextMetrics,
 }
 
+struct RefusalInput<'a> {
+    request: &'a PlanRequest,
+    profile: ModelContextProfile,
+    tokenizer_version: &'a str,
+    stage: BudgetUnavailableStage,
+    required_tokens: u32,
+    available_tokens: u32,
+    missing_part: Option<crate::budget::MandatoryPart>,
+    mandatory_parts: Vec<MandatoryPartRecord>,
+    selected_items: Vec<SelectedItemRecord>,
+    fallback_estimator: bool,
+    ladder_levels_applied: Vec<crate::ladder::LadderLevel>,
+    started: std::time::Instant,
+}
+
 impl ContextPlanner {
     pub fn new(catalog: ProfileCatalog, primary: Option<Arc<dyn TokenEstimator>>) -> Self {
         Self {
@@ -199,20 +214,20 @@ impl ContextPlanner {
                             request.provider_window,
                         )
                     });
-                    return self.refuse(
+                    return self.refuse(RefusalInput {
                         request,
                         profile,
-                        "unavailable",
-                        BudgetUnavailableStage::EstimatorUnavailable,
-                        0,
-                        0,
-                        None,
-                        Vec::new(),
-                        Vec::new(),
-                        false,
-                        Vec::new(),
+                        tokenizer_version: "unavailable",
+                        stage: BudgetUnavailableStage::EstimatorUnavailable,
+                        required_tokens: 0,
+                        available_tokens: 0,
+                        missing_part: None,
+                        mandatory_parts: Vec::new(),
+                        selected_items: Vec::new(),
+                        fallback_estimator: false,
+                        ladder_levels_applied: Vec::new(),
                         started,
-                    );
+                    });
                 }
             };
 
@@ -232,20 +247,20 @@ impl ContextPlanner {
         // превышение.
         if profile.validate().is_err() {
             let started_at = started;
-            return self.refuse(
+            return self.refuse(RefusalInput {
                 request,
-                profile.clone(),
-                estimator.version(),
-                BudgetUnavailableStage::MandatoryOverflow,
-                profile.reserves_total(),
-                profile.hard_limit_tokens,
-                Some(crate::budget::MandatoryPart::SafetyPolicy),
-                Vec::new(),
-                Vec::new(),
+                profile: profile.clone(),
+                tokenizer_version: estimator.version(),
+                stage: BudgetUnavailableStage::MandatoryOverflow,
+                required_tokens: profile.reserves_total(),
+                available_tokens: profile.hard_limit_tokens,
+                missing_part: Some(crate::budget::MandatoryPart::SafetyPolicy),
+                mandatory_parts: Vec::new(),
+                selected_items: Vec::new(),
                 fallback_estimator,
-                Vec::new(),
-                started_at,
-            );
+                ladder_levels_applied: Vec::new(),
+                started: started_at,
+            });
         }
 
         let budget = ContextBudget::from_profile(&profile);
@@ -292,38 +307,38 @@ impl ContextPlanner {
         //    понятный отказ, а не бесконечное сокращение необязательной части.
         if mandatory_tokens > profile.absolute_mvc_max_limit {
             let missing = mvc.missing_part(profile.absolute_mvc_max_limit);
-            return self.refuse(
+            return self.refuse(RefusalInput {
                 request,
-                profile.clone(),
-                estimator.version(),
-                BudgetUnavailableStage::MandatoryOverflow,
-                mandatory_tokens,
-                budget_absolute_limit(&profile),
-                missing,
+                profile: profile.clone(),
+                tokenizer_version: estimator.version(),
+                stage: BudgetUnavailableStage::MandatoryOverflow,
+                required_tokens: mandatory_tokens,
+                available_tokens: budget_absolute_limit(&profile),
+                missing_part: missing,
                 mandatory_parts,
-                Vec::new(),
+                selected_items: Vec::new(),
                 fallback_estimator,
-                Vec::new(),
+                ladder_levels_applied: Vec::new(),
                 started,
-            );
+            });
         }
         if mandatory_tokens.saturating_add(reserves) > profile.hard_limit_tokens {
             let available = profile.hard_limit_tokens.saturating_sub(reserves);
             let missing = mvc.missing_part(available);
-            return self.refuse(
+            return self.refuse(RefusalInput {
                 request,
-                profile.clone(),
-                estimator.version(),
-                BudgetUnavailableStage::MandatoryOverflow,
-                mandatory_tokens.saturating_add(reserves),
-                profile.hard_limit_tokens,
-                missing,
+                profile: profile.clone(),
+                tokenizer_version: estimator.version(),
+                stage: BudgetUnavailableStage::MandatoryOverflow,
+                required_tokens: mandatory_tokens.saturating_add(reserves),
+                available_tokens: profile.hard_limit_tokens,
+                missing_part: missing,
                 mandatory_parts,
-                Vec::new(),
+                selected_items: Vec::new(),
                 fallback_estimator,
-                Vec::new(),
+                ladder_levels_applied: Vec::new(),
                 started,
-            );
+            });
         }
 
         // 6. Pruning до лестницы: дубликаты, вытесненные ревизии и истёкшие
@@ -438,16 +453,16 @@ impl ContextPlanner {
             .saturating_add(final_reserves);
         if total > profile.hard_limit_tokens {
             let missing = mvc.missing_part(profile.hard_limit_tokens);
-            let mut refusal = self.refuse(
+            let mut refusal = self.refuse(RefusalInput {
                 request,
-                profile.clone(),
-                estimator.version(),
-                BudgetUnavailableStage::DropsExhausted,
-                total,
-                profile.hard_limit_tokens,
-                missing,
+                profile: profile.clone(),
+                tokenizer_version: estimator.version(),
+                stage: BudgetUnavailableStage::DropsExhausted,
+                required_tokens: total,
+                available_tokens: profile.hard_limit_tokens,
+                missing_part: missing,
                 mandatory_parts,
-                ordered
+                selected_items: ordered
                     .iter()
                     .map(|item| SelectedItemRecord {
                         id: item.id.clone(),
@@ -455,9 +470,9 @@ impl ContextPlanner {
                     })
                     .collect(),
                 fallback_estimator,
-                ladder_outcome.levels_applied.clone(),
+                ladder_levels_applied: ladder_outcome.levels_applied.clone(),
                 started,
-            );
+            });
             refusal.diagnostics = ladder_outcome.diagnostics.clone();
             refusal.selected = ordered;
             refusal.dropped = dropped;
@@ -580,24 +595,24 @@ impl ContextPlanner {
             // Повторный отказ: каскад re-plan запрещён.
             self.metrics.record_replan("failed");
             let started = std::time::Instant::now();
-            let mut refusal = self.refuse(
+            let mut refusal = self.refuse(RefusalInput {
                 request,
-                previous.profile.clone(),
-                &previous.ledger.tokenizer_version,
-                BudgetUnavailableStage::ProviderReplanFailed,
-                previous.ledger.estimated_prompt_tokens,
-                previous.profile.hard_limit_tokens,
-                previous
+                profile: previous.profile.clone(),
+                tokenizer_version: &previous.ledger.tokenizer_version,
+                stage: BudgetUnavailableStage::ProviderReplanFailed,
+                required_tokens: previous.ledger.estimated_prompt_tokens,
+                available_tokens: previous.profile.hard_limit_tokens,
+                missing_part: previous
                     .ledger
                     .mandatory_parts
                     .first()
                     .map(|part| part.part),
-                previous.ledger.mandatory_parts.clone(),
-                previous.ledger.selected_items.clone(),
-                previous.fallback_estimator,
-                previous.ledger.ladder_levels_applied.clone(),
+                mandatory_parts: previous.ledger.mandatory_parts.clone(),
+                selected_items: previous.ledger.selected_items.clone(),
+                fallback_estimator: previous.fallback_estimator,
+                ladder_levels_applied: previous.ledger.ladder_levels_applied.clone(),
                 started,
-            );
+            });
             refusal.ledger.replan_of = Some(previous.ledger.id.clone());
             refusal.ledger.finalize_hash();
             return refusal;
@@ -649,22 +664,21 @@ impl ContextPlanner {
         drift
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn refuse(
-        &mut self,
-        request: &PlanRequest,
-        profile: ModelContextProfile,
-        tokenizer_version: &str,
-        stage: BudgetUnavailableStage,
-        required_tokens: u32,
-        available_tokens: u32,
-        missing_part: Option<crate::budget::MandatoryPart>,
-        mandatory_parts: Vec<MandatoryPartRecord>,
-        selected_items: Vec<SelectedItemRecord>,
-        fallback_estimator: bool,
-        ladder_levels_applied: Vec<crate::ladder::LadderLevel>,
-        started: std::time::Instant,
-    ) -> ContextPlan {
+    fn refuse(&mut self, input: RefusalInput<'_>) -> ContextPlan {
+        let RefusalInput {
+            request,
+            profile,
+            tokenizer_version,
+            stage,
+            required_tokens,
+            available_tokens,
+            missing_part,
+            mandatory_parts,
+            selected_items,
+            fallback_estimator,
+            ladder_levels_applied,
+            started,
+        } = input;
         self.metrics.record_budget_unavailable(stage);
         let budget = ContextBudget::from_profile(&profile);
         let unavailable = BudgetUnavailable::new(
