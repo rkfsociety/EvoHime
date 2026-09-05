@@ -235,6 +235,24 @@ fn default_project_target_kind() -> crate::knowledge_source_registry_project_rol
     crate::knowledge_source_registry_project_role::TargetKind::Project
 }
 
+/// Типизированные параметры компиляции project instruction stack.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InstructionStackCompileRequest {
+    #[serde(default)]
+    explicit_ids: Vec<String>,
+    #[serde(default)]
+    policy: Option<crate::project_instruction_stack::ProjectInstructionStackPolicy>,
+}
+
+/// Типизированные параметры включения или отключения project rule.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InstructionStackToggleRequest {
+    rule_id: String,
+    enabled: bool,
+}
+
 /// Аргументы для policy-only preflight при построении каталога инструментов.
 /// Preflight не выполняет инструмент, но path-инструментам всё равно нужен
 /// существующий workspace-relative путь, иначе безопасный инструмент ошибочно
@@ -13042,9 +13060,9 @@ impl TaskCoordinator {
                             serde_json::to_vec(&serde_json::json!({"schema_version":1,"rules":projection,"rule_count":projection.len(),"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "compile" => {
-                            let request: serde_json::Value = if payload.is_empty() { serde_json::json!({}) } else { serde_json::from_slice(&payload).map_err(|_| "invalid_stack_request")? };
-                            let explicit_ids: Vec<String> = request.get("explicit_ids").cloned().map(|value| serde_json::from_value(value).map_err(|_| "invalid_explicit_ids".to_string())).transpose()?.unwrap_or_default();
-                            let policy: stack::ProjectInstructionStackPolicy = request.get("policy").cloned().map(|value| serde_json::from_value(value).map_err(|_| "invalid_policy".to_string())).transpose()?.unwrap_or_else(stack::default_policy);
+                            let request: InstructionStackCompileRequest = if payload.is_empty() { InstructionStackCompileRequest::default() } else { serde_json::from_slice(&payload).map_err(|_| "invalid_stack_request")? };
+                            let explicit_ids = request.explicit_ids;
+                            let policy = request.policy.unwrap_or_else(stack::default_policy);
                             let snapshot = stack::compile_snapshot(&root, rules.clone(), &relevant_paths, &explicit_ids, &policy, now).map_err(|e| e.to_string())?;
                             let snapshot_id = uuid::Uuid::now_v7().to_string();
                             let snapshot_json = serde_json::to_vec(&snapshot).map_err(|_| "serialization_failed")?;
@@ -13058,13 +13076,11 @@ impl TaskCoordinator {
                             serde_json::to_vec(&stack::project_snapshot(&snapshot)).map_err(|_| "serialization_failed".to_string())
                         }
                         "toggle" => {
-                            let request: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_toggle")?;
-                            let rule_id = request.get("rule_id").and_then(serde_json::Value::as_str).ok_or("invalid_toggle")?;
-                            let enabled = request.get("enabled").and_then(serde_json::Value::as_bool).ok_or("invalid_toggle")?;
-                            let mut rule = rules.into_iter().find(|rule| rule.id == rule_id).ok_or("rule_not_found")?;
+                            let request: InstructionStackToggleRequest = serde_json::from_slice(&payload).map_err(|_| "invalid_toggle")?;
+                            let mut rule = rules.into_iter().find(|rule| rule.id == request.rule_id).ok_or("rule_not_found")?;
                             if rule.source_kind == stack::SourceKind::Global { return Err("global_rule_requires_user_scope".into()); }
                             if rule.source_revision != expected_revision && expected_revision != 0 { return Err("stale_rule_revision".into()); }
-                            rule.enabled = enabled; rule.source_revision = rule.source_revision.saturating_add(1);
+                            rule.enabled = request.enabled; rule.source_revision = rule.source_revision.saturating_add(1);
                             let json = serde_json::to_vec(&rule).map_err(|_| "serialization_failed")?;
                             store::put_rule(database.connection(), &rule.id, rule.source_revision as i64, &serde_json::to_string(&rule.source_kind).unwrap_or_default(), &rule.source_ref, &rule.content_hash, &json, now).map_err(|_| "storage_failed")?;
                             serde_json::to_vec(&stack::project_rule(&rule, "toggled")).map_err(|_| "serialization_failed".to_string())
