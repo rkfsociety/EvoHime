@@ -2361,54 +2361,44 @@ impl LocalDatabase {
                ) latest ON latest.action_id = e.action_id
                        AND latest.latest_sequence = e.sequence_id",
         )?;
-        #[allow(clippy::type_complexity)]
-        let rows: Vec<(
-            String,
-            Option<String>,
-            String,
-            String,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-        )> = statement
+        struct LedgerActionRow {
+            action_id: String,
+            effect_id: Option<String>,
+            state_after: String,
+            task_id: String,
+            run_scope: Option<String>,
+            run_id: Option<String>,
+            session_id: Option<String>,
+            workflow_run_id: Option<String>,
+        }
+        let rows: Vec<LedgerActionRow> = statement
             .query_map([], |row| {
-                Ok((
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
-                    row.get(5)?,
-                    row.get(6)?,
-                    row.get(7)?,
-                ))
+                Ok(LedgerActionRow {
+                    action_id: row.get(0)?,
+                    effect_id: row.get(1)?,
+                    state_after: row.get(2)?,
+                    task_id: row.get(3)?,
+                    run_scope: row.get(4)?,
+                    run_id: row.get(5)?,
+                    session_id: row.get(6)?,
+                    workflow_run_id: row.get(7)?,
+                })
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
         let mut reconciled = Vec::new();
-        for (
-            action_id,
-            effect_id,
-            state_after,
-            task_id,
-            run_scope,
-            run_id,
-            session_id,
-            workflow_run_id,
-        ) in rows
-        {
-            let Some(previous) = execution_ledger::ActionState::parse(&state_after) else {
+        for row in rows {
+            let Some(previous) = execution_ledger::ActionState::parse(&row.state_after) else {
                 continue;
             };
-            let Some(effect_id) = effect_id else {
+            let Some(effect_id) = row.effect_id else {
                 continue;
             };
             // Строки типизированного ledger всегда несут run_scope/run_id —
             // их проставляет append_ledger_event; отсутствие означает, что
             // это не typed row (не должно случиться при action_id IS NOT
             // NULL, но пропускаем, а не паникуем).
-            let (Some(run_scope), Some(run_id)) = (run_scope, run_id) else {
+            let (Some(run_scope), Some(run_id)) = (row.run_scope, row.run_id) else {
                 continue;
             };
             let Some(run_scope) = execution_ledger::RunScope::parse(&run_scope) else {
@@ -2439,28 +2429,28 @@ impl LocalDatabase {
                 sequence_id: None,
                 run_scope,
                 run_id,
-                session_id,
-                task_id,
+                session_id: row.session_id,
+                task_id: row.task_id,
                 created_at_ms: 0,
                 state_after: Some(new_state),
-                action_id: Some(action_id.clone()),
+                action_id: Some(row.action_id.clone()),
                 tool_call_id: None,
                 observation_id: None,
                 receipt_id: None,
                 failure_id: None,
-                workflow_run_id,
+                workflow_run_id: row.workflow_run_id,
                 node_id: None,
                 attempt_id: None,
                 effect_id: Some(effect_id),
                 model_request_id: None,
                 body: execution_ledger::ExecutionEventBody::RecoveryDecision {
                     decision: "startup_reconciliation".to_string(),
-                    evidence_digest: action_id.clone(),
+                    evidence_digest: row.action_id.clone(),
                 },
                 redaction: execution_ledger::RedactionMeta::default(),
             };
             self.append_ledger_event(&event)?;
-            reconciled.push((action_id, new_state));
+            reconciled.push((row.action_id, new_state));
         }
         Ok(reconciled)
     }
