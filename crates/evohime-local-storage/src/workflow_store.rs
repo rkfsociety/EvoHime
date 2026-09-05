@@ -750,35 +750,54 @@ pub fn list_attempts(
     Ok(records)
 }
 
+pub struct AppendEventRowInput<'a> {
+    pub run_id: &'a str,
+    pub node_id: &'a str,
+    pub attempt_id: &'a str,
+    pub event_type: &'a str,
+    pub payload_json: &'a str,
+    pub now_ms: i64,
+    pub ledger_sequence_id: Option<i64>,
+    pub ledger_event_id: Option<&'a str>,
+}
+
+pub struct AppendEventLinkedInput<'a> {
+    pub run_id: &'a str,
+    pub node_id: &'a str,
+    pub attempt_id: &'a str,
+    pub event_type: &'a str,
+    pub payload_json: &'a str,
+    pub now_ms: i64,
+    pub ledger_sequence_id: i64,
+    pub ledger_event_id: &'a str,
+}
+
 /// Shared row-insert: assigns the next `run_sequence` and appends one
 /// `workflow_run_events` row, optionally linked back to a global execution
 /// ledger row (план 08-2/08-4 `run_sequence` <-> `sequence_id`/`event_id`
 /// linkage). Takes `&Connection` so a caller already inside its own
 /// transaction (e.g. `LocalDatabase::append_ledger_event_with_node_transition`)
 /// can compose this atomically instead of nesting a second `BEGIN`.
-#[allow(clippy::too_many_arguments)]
 fn append_event_row(
     connection: &Connection,
-    run_id: &str,
-    node_id: &str,
-    attempt_id: &str,
-    event_type: &str,
-    payload_json: &str,
-    now_ms: i64,
-    ledger_sequence_id: Option<i64>,
-    ledger_event_id: Option<&str>,
+    input: AppendEventRowInput<'_>,
 ) -> Result<i64, WorkflowStoreError> {
-    bounded("event_type", event_type, MAX_ID_BYTES, true)?;
-    bounded("payload_json", payload_json, MAX_EVENT_PAYLOAD_BYTES, false)?;
+    bounded("event_type", input.event_type, MAX_ID_BYTES, true)?;
+    bounded(
+        "payload_json",
+        input.payload_json,
+        MAX_EVENT_PAYLOAD_BYTES,
+        false,
+    )?;
     let next: Option<i64> = connection
         .query_row(
             "SELECT next_sequence FROM workflow_runs WHERE run_id = ?1",
-            params![run_id],
+            params![input.run_id],
             |row| row.get(0),
         )
         .optional()?;
     let Some(next) = next else {
-        return Err(WorkflowStoreError::UnknownRun(run_id.to_string()));
+        return Err(WorkflowStoreError::UnknownRun(input.run_id.to_string()));
     };
     connection.execute(
         "INSERT INTO workflow_run_events (
@@ -786,20 +805,20 @@ fn append_event_row(
             ledger_sequence_id, ledger_event_id
         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
-            run_id,
+            input.run_id,
             next,
-            node_id,
-            attempt_id,
-            event_type,
-            payload_json,
-            now_ms,
-            ledger_sequence_id,
-            ledger_event_id
+            input.node_id,
+            input.attempt_id,
+            input.event_type,
+            input.payload_json,
+            input.now_ms,
+            input.ledger_sequence_id,
+            input.ledger_event_id
         ],
     )?;
     connection.execute(
         "UPDATE workflow_runs SET next_sequence = ?2 WHERE run_id = ?1",
-        params![run_id, next + 1],
+        params![input.run_id, next + 1],
     )?;
     Ok(next)
 }
@@ -817,14 +836,16 @@ pub fn append_event(
     let transaction = connection.unchecked_transaction()?;
     let next = append_event_row(
         &transaction,
-        run_id,
-        node_id,
-        attempt_id,
-        event_type,
-        payload_json,
-        now_ms,
-        None,
-        None,
+        AppendEventRowInput {
+            run_id,
+            node_id,
+            attempt_id,
+            event_type,
+            payload_json,
+            now_ms,
+            ledger_sequence_id: None,
+            ledger_event_id: None,
+        },
     )?;
     transaction.commit()?;
     Ok(next)
@@ -835,28 +856,22 @@ pub fn append_event(
 /// `connection` must already be inside the caller's transaction — this
 /// function never opens or commits one of its own, so the ledger event
 /// insert and this linkage row land atomically together.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn append_event_linked(
     connection: &Connection,
-    run_id: &str,
-    node_id: &str,
-    attempt_id: &str,
-    event_type: &str,
-    payload_json: &str,
-    now_ms: i64,
-    ledger_sequence_id: i64,
-    ledger_event_id: &str,
+    input: AppendEventLinkedInput<'_>,
 ) -> Result<i64, WorkflowStoreError> {
     append_event_row(
         connection,
-        run_id,
-        node_id,
-        attempt_id,
-        event_type,
-        payload_json,
-        now_ms,
-        Some(ledger_sequence_id),
-        Some(ledger_event_id),
+        AppendEventRowInput {
+            run_id: input.run_id,
+            node_id: input.node_id,
+            attempt_id: input.attempt_id,
+            event_type: input.event_type,
+            payload_json: input.payload_json,
+            now_ms: input.now_ms,
+            ledger_sequence_id: Some(input.ledger_sequence_id),
+            ledger_event_id: Some(input.ledger_event_id),
+        },
     )
 }
 

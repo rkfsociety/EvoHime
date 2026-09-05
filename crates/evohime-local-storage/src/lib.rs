@@ -2273,14 +2273,16 @@ impl LocalDatabase {
         let payload_json = serde_json::to_string(event)?;
         workflow_store::append_event_linked(
             &transaction,
-            run_id,
-            node_id,
-            event.attempt_id.as_deref().unwrap_or(""),
-            event.body.kind_str(),
-            &payload_json,
-            now_ms,
-            sequence_id,
-            &event.event_id,
+            workflow_store::AppendEventLinkedInput {
+                run_id,
+                node_id,
+                attempt_id: event.attempt_id.as_deref().unwrap_or(""),
+                event_type: event.body.kind_str(),
+                payload_json: &payload_json,
+                now_ms,
+                ledger_sequence_id: sequence_id,
+                ledger_event_id: &event.event_id,
+            },
         )?;
         transaction.commit()?;
         Ok(sequence_id)
