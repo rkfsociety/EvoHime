@@ -4241,14 +4241,16 @@ impl EventJournal {
         let database = self.database.lock().await;
         evohime_local_storage::memory_store::MemoryStoreSql::insert_session_note(
             database.connection(),
-            note.id,
-            note.session_id,
-            note.scope,
-            note.scope_id,
-            note.kind,
-            note.statement,
-            note.created_at,
-            note.expires_at,
+            evohime_local_storage::memory_store::InsertSessionNoteInput {
+                id: note.id,
+                session_id: note.session_id,
+                scope: note.scope,
+                scope_id: note.scope_id,
+                kind: note.kind,
+                statement: note.statement,
+                created_at: note.created_at,
+                expires_at: note.expires_at,
+            },
         )
         .map_err(|error| error.to_string())
     }

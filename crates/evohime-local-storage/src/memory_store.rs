@@ -364,6 +364,17 @@ fn redact_sensitive(value: &str) -> String {
 /// Parameterized SQL only; schema creation and migrations remain external.
 pub struct MemoryStoreSql;
 
+pub struct InsertSessionNoteInput<'a> {
+    pub id: &'a str,
+    pub session_id: &'a str,
+    pub scope: MemoryScope,
+    pub scope_id: &'a str,
+    pub kind: &'a str,
+    pub statement: &'a str,
+    pub created_at: &'a str,
+    pub expires_at: &'a str,
+}
+
 /// Installs the v31 typed-memory columns on every database open. It is
 /// intentionally idempotent and independent of the legacy migration ladder.
 pub fn install_schema(connection: &Connection) -> Result<(), MemoryStoreError> {
@@ -1077,39 +1088,30 @@ impl MemoryStoreSql {
 
     /// «Только на эту сессию»: отдельный session-scoped state с
     /// автоматическим expiry. Persistent row не создаётся.
-    // Аргументы повторяют колонки заметки сессии в SQLite.
-    #[allow(clippy::too_many_arguments)]
     pub fn insert_session_note(
         connection: &Connection,
-        id: &str,
-        session_id: &str,
-        scope: MemoryScope,
-        scope_id: &str,
-        kind: &str,
-        statement: &str,
-        created_at: &str,
-        expires_at: &str,
+        input: InsertSessionNoteInput<'_>,
     ) -> Result<(), MemoryStoreError> {
-        validate_required("id", id, MAX_ID_BYTES)?;
-        validate_required("session_id", session_id, MAX_ID_BYTES)?;
-        validate_required("scope_id", scope_id, MAX_SCOPE_ID_BYTES)?;
-        validate_required("kind", kind, MAX_ID_BYTES)?;
-        validate_required("statement", statement, MAX_CONTENT_BYTES)?;
-        validate_required("created_at", created_at, MAX_TIMESTAMP_BYTES)?;
-        validate_required("expires_at", expires_at, MAX_TIMESTAMP_BYTES)?;
+        validate_required("id", input.id, MAX_ID_BYTES)?;
+        validate_required("session_id", input.session_id, MAX_ID_BYTES)?;
+        validate_required("scope_id", input.scope_id, MAX_SCOPE_ID_BYTES)?;
+        validate_required("kind", input.kind, MAX_ID_BYTES)?;
+        validate_required("statement", input.statement, MAX_CONTENT_BYTES)?;
+        validate_required("created_at", input.created_at, MAX_TIMESTAMP_BYTES)?;
+        validate_required("expires_at", input.expires_at, MAX_TIMESTAMP_BYTES)?;
         connection.execute(
             "INSERT OR REPLACE INTO memory_session_notes
              (id, session_id, scope_kind, scope_id, kind, statement, created_at, expires_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
-                id,
-                session_id,
-                scope.as_str(),
-                scope_id,
-                kind,
-                redact_sensitive(statement),
-                created_at,
-                expires_at
+                input.id,
+                input.session_id,
+                input.scope.as_str(),
+                input.scope_id,
+                input.kind,
+                redact_sensitive(input.statement),
+                input.created_at,
+                input.expires_at
             ],
         )?;
         Ok(())
@@ -1689,14 +1691,16 @@ mod tests {
         schema(&connection);
         MemoryStoreSql::insert_session_note(
             &connection,
-            "note-1",
-            "session-1",
-            MemoryScope::Session,
-            "project-1",
-            "preference",
-            "только на эту сессию: краткие ответы",
-            "2026-08-14T00:00:00Z",
-            "2026-08-15T00:00:00Z",
+            InsertSessionNoteInput {
+                id: "note-1",
+                session_id: "session-1",
+                scope: MemoryScope::Session,
+                scope_id: "project-1",
+                kind: "preference",
+                statement: "только на эту сессию: краткие ответы",
+                created_at: "2026-08-14T00:00:00Z",
+                expires_at: "2026-08-15T00:00:00Z",
+            },
         )
         .expect("session note");
 
