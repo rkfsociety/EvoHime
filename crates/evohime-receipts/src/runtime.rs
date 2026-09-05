@@ -1460,6 +1460,20 @@ pub struct ReceiptRuntime<'a> {
     signer: &'a dyn ReceiptSigner,
 }
 
+/// Immutable fields required to append a signed model-request receipt.
+pub struct ModelRequestReceiptInput<'a> {
+    pub request_id: &'a str,
+    pub logical_request_id: &'a str,
+    pub ledger_id: &'a str,
+    pub attempt: u32,
+    pub provider: &'a str,
+    pub model: &'a str,
+    pub envelope_hash: &'a str,
+    pub context_projection_hash: &'a str,
+    pub route_snapshot_hash: &'a str,
+    pub policy_snapshot_hash: &'a str,
+}
+
 impl<'a> ReceiptRuntime<'a> {
     pub fn new(
         connection: &'a mut Connection,
@@ -1472,20 +1486,22 @@ impl<'a> ReceiptRuntime<'a> {
 
     /// Appends a request-commit receipt to the existing signed chain. Only
     /// identifiers and the immutable envelope hash are signed.
-    #[allow(clippy::too_many_arguments)]
     pub fn append_model_request_receipt(
         &mut self,
-        request_id: &str,
-        logical_request_id: &str,
-        ledger_id: &str,
-        attempt: u32,
-        provider: &str,
-        model: &str,
-        envelope_hash: &str,
-        context_projection_hash: &str,
-        route_snapshot_hash: &str,
-        policy_snapshot_hash: &str,
+        input: ModelRequestReceiptInput<'_>,
     ) -> Result<SignedModelRequestReceipt, RuntimeError> {
+        let ModelRequestReceiptInput {
+            request_id,
+            logical_request_id,
+            ledger_id,
+            attempt,
+            provider,
+            model,
+            envelope_hash,
+            context_projection_hash,
+            route_snapshot_hash,
+            policy_snapshot_hash,
+        } = input;
         // Some providers (notably LiteRouter) choose the concrete model at
         // dispatch time. The model-request contract therefore permits an
         // empty model identifier; the provider identity and all commitments
@@ -4111,32 +4127,32 @@ mod tests {
         let signer = TestSigner;
         let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
         let first = runtime
-            .append_model_request_receipt(
-                "request-1",
-                "logical-1",
-                "ledger-1",
-                1,
-                "mock",
-                "model",
-                &"a".repeat(64),
-                &"b".repeat(64),
-                &"c".repeat(64),
-                &"d".repeat(64),
-            )
+            .append_model_request_receipt(ModelRequestReceiptInput {
+                request_id: "request-1",
+                logical_request_id: "logical-1",
+                ledger_id: "ledger-1",
+                attempt: 1,
+                provider: "mock",
+                model: "model",
+                envelope_hash: &"a".repeat(64),
+                context_projection_hash: &"b".repeat(64),
+                route_snapshot_hash: &"c".repeat(64),
+                policy_snapshot_hash: &"d".repeat(64),
+            })
             .unwrap();
         let second = runtime
-            .append_model_request_receipt(
-                "request-1",
-                "logical-1",
-                "ledger-1",
-                1,
-                "mock",
-                "model",
-                &"a".repeat(64),
-                &"b".repeat(64),
-                &"c".repeat(64),
-                &"d".repeat(64),
-            )
+            .append_model_request_receipt(ModelRequestReceiptInput {
+                request_id: "request-1",
+                logical_request_id: "logical-1",
+                ledger_id: "ledger-1",
+                attempt: 1,
+                provider: "mock",
+                model: "model",
+                envelope_hash: &"a".repeat(64),
+                context_projection_hash: &"b".repeat(64),
+                route_snapshot_hash: &"c".repeat(64),
+                policy_snapshot_hash: &"d".repeat(64),
+            })
             .unwrap();
         assert_eq!(first, second);
         assert_eq!(first.previous_receipt_hash, None);
@@ -4166,18 +4182,18 @@ mod tests {
         let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
 
         let receipt = runtime
-            .append_model_request_receipt(
-                "request-provider-selected-model",
-                "logical-provider-selected-model",
-                "ledger-provider-selected-model",
-                1,
-                "literouter",
-                "",
-                &"a".repeat(64),
-                &"b".repeat(64),
-                &"c".repeat(64),
-                &"d".repeat(64),
-            )
+            .append_model_request_receipt(ModelRequestReceiptInput {
+                request_id: "request-provider-selected-model",
+                logical_request_id: "logical-provider-selected-model",
+                ledger_id: "ledger-provider-selected-model",
+                attempt: 1,
+                provider: "literouter",
+                model: "",
+                envelope_hash: &"a".repeat(64),
+                context_projection_hash: &"b".repeat(64),
+                route_snapshot_hash: &"c".repeat(64),
+                policy_snapshot_hash: &"d".repeat(64),
+            })
             .expect("provider-selected model is a valid request receipt");
 
         assert!(!receipt.receipt_hash.is_empty());

@@ -2928,20 +2928,20 @@ impl EventJournal {
             let mut runtime = ReceiptRuntime::new(database.connection_mut(), &signer)
                 .map_err(|error| StorageError::Context(error.to_string()))?;
             runtime
-                .append_model_request_receipt(
-                    &record.request_id,
-                    &record.logical_request_id,
-                    &record.ledger_id,
-                    record.attempt,
-                    &record.provider,
-                    &record.model,
-                    record.envelope_hash.as_deref().ok_or_else(|| {
+                .append_model_request_receipt(evohime_receipts::runtime::ModelRequestReceiptInput {
+                    request_id: &record.request_id,
+                    logical_request_id: &record.logical_request_id,
+                    ledger_id: &record.ledger_id,
+                    attempt: record.attempt,
+                    provider: &record.provider,
+                    model: &record.model,
+                    envelope_hash: record.envelope_hash.as_deref().ok_or_else(|| {
                         StorageError::Context("request receipt requires full envelope".into())
                     })?,
-                    &record.context_projection_hash,
-                    &record.route_snapshot_hash,
-                    &record.policy_snapshot_hash,
-                )
+                    context_projection_hash: &record.context_projection_hash,
+                    route_snapshot_hash: &record.route_snapshot_hash,
+                    policy_snapshot_hash: &record.policy_snapshot_hash,
+                })
                 .map_err(|error| StorageError::Context(error.to_string()))?
         };
         let repository = evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
