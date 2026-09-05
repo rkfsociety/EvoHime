@@ -3902,15 +3902,15 @@ impl EventJournal {
         transition: RecoveryTransition<'_>,
     ) -> Result<RunRecoveryRecord, StorageError> {
         let database = self.database.lock().await;
-        database.transition_recovery(
-            transition.run_id,
-            transition.state,
-            transition.effect_id,
-            transition.idempotency_key,
-            transition.verifier,
-            transition.evidence_json,
-            transition.decision,
-        )
+        database.transition_recovery(evohime_local_storage::RecoveryTransitionInput {
+            run_id: transition.run_id,
+            next: transition.state,
+            effect_id: transition.effect_id,
+            idempotency_key: transition.idempotency_key,
+            verifier: transition.verifier,
+            evidence_json: transition.evidence_json,
+            decision: transition.decision,
+        })
     }
 
     pub async fn create_project(
@@ -4913,23 +4913,27 @@ impl EventJournal {
                 |state, idempotency_key: &str, verifier: &str, evidence: &[u8], decision: &str| {
                     if record.kind == "agent_task" {
                         database.transition_agent_recovery(
-                            &record.run_id,
-                            state,
-                            &record.effect_id,
-                            idempotency_key,
-                            verifier,
-                            evidence,
-                            decision,
+                            evohime_local_storage::RecoveryTransitionInput {
+                                run_id: &record.run_id,
+                                next: state,
+                                effect_id: &record.effect_id,
+                                idempotency_key,
+                                verifier,
+                                evidence_json: evidence,
+                                decision,
+                            },
                         )
                     } else {
                         database.transition_recovery(
-                            &record.run_id,
-                            state,
-                            &record.effect_id,
-                            idempotency_key,
-                            verifier,
-                            evidence,
-                            decision,
+                            evohime_local_storage::RecoveryTransitionInput {
+                                run_id: &record.run_id,
+                                next: state,
+                                effect_id: &record.effect_id,
+                                idempotency_key,
+                                verifier,
+                                evidence_json: evidence,
+                                decision,
+                            },
                         )
                     }
                 };

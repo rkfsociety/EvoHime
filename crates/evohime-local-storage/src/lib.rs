@@ -531,6 +531,16 @@ fn ensure_single_terminal_outcome(
     Ok(())
 }
 
+pub struct RecoveryTransitionInput<'a> {
+    pub run_id: &'a str,
+    pub next: RecoveryState,
+    pub effect_id: &'a str,
+    pub idempotency_key: &'a str,
+    pub verifier: &'a str,
+    pub evidence_json: &'a [u8],
+    pub decision: &'a str,
+}
+
 impl LocalDatabase {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
         Self::open_internal(path.as_ref(), false)
@@ -1692,18 +1702,19 @@ impl LocalDatabase {
         ).map_err(Into::into)
     }
 
-    // Аргументы повторяют колонки перехода recovery в SQLite.
-    #[allow(clippy::too_many_arguments)]
     pub fn transition_recovery(
         &self,
-        run_id: &str,
-        next: RecoveryState,
-        effect_id: &str,
-        idempotency_key: &str,
-        verifier: &str,
-        evidence_json: &[u8],
-        decision: &str,
+        input: RecoveryTransitionInput<'_>,
     ) -> Result<RunRecoveryRecord, StorageError> {
+        let RecoveryTransitionInput {
+            run_id,
+            next,
+            effect_id,
+            idempotency_key,
+            verifier,
+            evidence_json,
+            decision,
+        } = input;
         const MAX_TEXT: usize = 256;
         const MAX_EVIDENCE_BYTES: usize = 64 * 1024;
         for (field, value) in [
@@ -1827,18 +1838,19 @@ impl LocalDatabase {
         Ok(record)
     }
 
-    // Аргументы повторяют колонки перехода recovery агента в SQLite.
-    #[allow(clippy::too_many_arguments)]
     pub fn transition_agent_recovery(
         &self,
-        run_id: &str,
-        next: RecoveryState,
-        effect_id: &str,
-        idempotency_key: &str,
-        verifier: &str,
-        evidence_json: &[u8],
-        decision: &str,
+        input: RecoveryTransitionInput<'_>,
     ) -> Result<RunRecoveryRecord, StorageError> {
+        let RecoveryTransitionInput {
+            run_id,
+            next,
+            effect_id,
+            idempotency_key,
+            verifier,
+            evidence_json,
+            decision,
+        } = input;
         const MAX_TEXT: usize = 256;
         const MAX_EVIDENCE_BYTES: usize = 64 * 1024;
         for (field, value) in [
@@ -3839,8 +3851,8 @@ impl LocalDatabase {
 mod tests {
     use super::{
         DiagnosticsSummary, ImportedTask, LocalDatabase, ModelRouteSnapshot, PolicySnapshot,
-        RecoveryState, RoleRef, RunCheckpointRecord, RunEffectRecord, RunRecord, RunSnapshots,
-        SkillRef, StorageError, WorkItemRecord, SCHEMA_VERSION,
+        RecoveryState, RecoveryTransitionInput, RoleRef, RunCheckpointRecord, RunEffectRecord,
+        RunRecord, RunSnapshots, SkillRef, StorageError, WorkItemRecord, SCHEMA_VERSION,
     };
     use std::path::PathBuf;
 
@@ -5410,37 +5422,37 @@ mod tests {
             .expect("run creates");
 
         database
-            .transition_recovery(
-                "run-state",
-                RecoveryState::Recovering,
-                "effect-state",
-                "run-state:effect-state",
-                "startup",
-                br#"{"reason":"process_restart"}"#,
-                "recovery_started",
-            )
+            .transition_recovery(RecoveryTransitionInput {
+                run_id: "run-state",
+                next: RecoveryState::Recovering,
+                effect_id: "effect-state",
+                idempotency_key: "run-state:effect-state",
+                verifier: "startup",
+                evidence_json: br#"{"reason":"process_restart"}"#,
+                decision: "recovery_started",
+            })
             .expect("recovering transition");
         database
-            .transition_recovery(
-                "run-state",
-                RecoveryState::Reconciling,
-                "effect-state",
-                "run-state:effect-state:reconciling",
-                "file_hash",
-                br#"{"path":"src/lib.rs"}"#,
-                "verifier_started",
-            )
+            .transition_recovery(RecoveryTransitionInput {
+                run_id: "run-state",
+                next: RecoveryState::Reconciling,
+                effect_id: "effect-state",
+                idempotency_key: "run-state:effect-state:reconciling",
+                verifier: "file_hash",
+                evidence_json: br#"{"path":"src/lib.rs"}"#,
+                decision: "verifier_started",
+            })
             .expect("reconciling transition");
         let blocked = database
-            .transition_recovery(
-                "run-state",
-                RecoveryState::Blocked,
-                "effect-state",
-                "run-state:effect-state:blocked",
-                "file_hash",
-                br#"{"match":false}"#,
-                "outcome_unconfirmed",
-            )
+            .transition_recovery(RecoveryTransitionInput {
+                run_id: "run-state",
+                next: RecoveryState::Blocked,
+                effect_id: "effect-state",
+                idempotency_key: "run-state:effect-state:blocked",
+                verifier: "file_hash",
+                evidence_json: br#"{"match":false}"#,
+                decision: "outcome_unconfirmed",
+            })
             .expect("blocked transition");
         assert_eq!(blocked.state, RecoveryState::Blocked);
         assert_eq!(
@@ -5448,15 +5460,15 @@ mod tests {
             Some(blocked)
         );
         let repeated = database
-            .transition_recovery(
-                "run-state",
-                RecoveryState::Blocked,
-                "effect-state",
-                "run-state:effect-state:blocked",
-                "file_hash",
-                br#"{"match":false}"#,
-                "outcome_unconfirmed",
-            )
+            .transition_recovery(RecoveryTransitionInput {
+                run_id: "run-state",
+                next: RecoveryState::Blocked,
+                effect_id: "effect-state",
+                idempotency_key: "run-state:effect-state:blocked",
+                verifier: "file_hash",
+                evidence_json: br#"{"match":false}"#,
+                decision: "outcome_unconfirmed",
+            })
             .expect("repeated decision is idempotent");
         assert_eq!(
             repeated.id,
@@ -5467,15 +5479,15 @@ mod tests {
                 .id
         );
         assert!(matches!(
-            database.transition_recovery(
-                "run-state",
-                RecoveryState::Resumable,
-                "effect-state",
-                "run-state:effect-state:blind-retry",
-                "file_hash",
-                br#"{}"#,
-                "blind_retry"
-            ),
+            database.transition_recovery(RecoveryTransitionInput {
+                run_id: "run-state",
+                next: RecoveryState::Resumable,
+                effect_id: "effect-state",
+                idempotency_key: "run-state:effect-state:blind-retry",
+                verifier: "file_hash",
+                evidence_json: br#"{}"#,
+                decision: "blind_retry",
+            }),
             Err(StorageError::InvalidRecovery(_))
         ));
         let events = database.read_events_after(0, 10).expect("events read");
