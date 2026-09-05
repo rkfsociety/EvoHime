@@ -180,6 +180,38 @@ struct BenchmarkEvaluationInput {
     request: crate::workflow_optimization_lab::BenchmarkEvaluationRequest,
 }
 
+/// Типизированные параметры вызова capability workbench.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorkbenchCallRequest {
+    capability: String,
+    #[serde(default)]
+    tool_id: Option<String>,
+}
+
+/// Типизированные параметры изменения ресурса workbench.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorkbenchResourceRequest {
+    resource_id: String,
+    available: bool,
+}
+
+/// Типизированные параметры снимка workbench; logical_state остаётся
+/// расширяемым payload, но его envelope и credential refs проверяются строго.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorkbenchSnapshotRequest {
+    #[serde(default = "default_workbench_logical_state")]
+    logical_state: serde_json::Value,
+    #[serde(default)]
+    credential_refs: Vec<String>,
+}
+
+fn default_workbench_logical_state() -> serde_json::Value {
+    serde_json::json!({})
+}
+
 /// Аргументы для policy-only preflight при построении каталога инструментов.
 /// Preflight не выполняет инструмент, но path-инструментам всё равно нужен
 /// существующий workspace-relative путь, иначе безопасный инструмент ошибочно
@@ -12488,20 +12520,14 @@ impl TaskCoordinator {
                             .map_err(|_| "storage_failed")?;
                         instance.recover_if_expired(now);
                     } else if operation == "call_tool" {
-                        let call: serde_json::Value =
+                        let call: WorkbenchCallRequest =
                             serde_json::from_slice(&payload).map_err(|_| "invalid_call")?;
-                        let capability = call
-                            .get("capability")
-                            .and_then(serde_json::Value::as_str)
-                            .ok_or_else(|| "invalid_call".to_string())?;
+                        let capability = call.capability.as_str();
                         instance
                             .admit_call(capability, &grants)
                             .map_err(|error| error.to_string())?;
                         instance.finish_call();
-                        let tool_id = call
-                            .get("tool_id")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or(capability);
+                        let tool_id = call.tool_id.as_deref().unwrap_or(capability);
                         let result = workbench::WorkbenchCallResult {
                             schema_version: workbench::SCHEMA_VERSION,
                             instance_id: instance.instance_id.clone(),
@@ -12520,35 +12546,18 @@ impl TaskCoordinator {
                             "unknown": true,
                         })).map_err(|_| "serialization_failed".to_string());
                     } else if operation == "resource" {
-                        let request: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_resource")?;
-                        let resource_id = request.get("resource_id").and_then(serde_json::Value::as_str).ok_or_else(|| "invalid_resource".to_string())?;
-                        let available = request.get("available").and_then(serde_json::Value::as_bool).ok_or_else(|| "invalid_resource".to_string())?;
-                        let resource = instance.descriptor.resources.iter_mut().find(|resource| resource.id == resource_id).ok_or_else(|| "resource_not_found".to_string())?;
-                        resource.available = available;
+                        let request: WorkbenchResourceRequest = serde_json::from_slice(&payload).map_err(|_| "invalid_resource")?;
+                        let resource = instance.descriptor.resources.iter_mut().find(|resource| resource.id == request.resource_id).ok_or_else(|| "resource_not_found".to_string())?;
+                        resource.available = request.available;
                         instance.revision = instance.revision.saturating_add(1);
                     } else if operation == "snapshot" {
-                        let request: serde_json::Value = if payload.is_empty() {
-                            serde_json::json!({})
+                        let request: WorkbenchSnapshotRequest = if payload.is_empty() {
+                            WorkbenchSnapshotRequest::default()
                         } else {
                             serde_json::from_slice(&payload).map_err(|_| "invalid_snapshot")?
                         };
-                        let logical_state = request
-                            .get("logical_state")
-                            .cloned()
-                            .unwrap_or_else(|| serde_json::json!({}));
-                        let credential_refs = request
-                            .get("credential_refs")
-                            .and_then(serde_json::Value::as_array)
-                            .map(|values| {
-                                values
-                                    .iter()
-                                    .filter_map(serde_json::Value::as_str)
-                                    .map(str::to_owned)
-                                    .collect()
-                            })
-                            .unwrap_or_default();
                         let snapshot = instance
-                            .snapshot(logical_state, credential_refs)
+                            .snapshot(request.logical_state, request.credential_refs)
                             .map_err(|error| error.to_string())?;
                         let snapshot_json =
                             serde_json::to_vec(&snapshot).map_err(|_| "serialization_failed")?;
