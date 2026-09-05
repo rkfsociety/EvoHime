@@ -75,35 +75,39 @@ pub fn install_schema(connection: &Connection) -> Result<(), rusqlite::Error> {
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+pub struct SaveAgentRevisionInput<'a> {
+    pub id: &'a str,
+    pub revision: u64,
+    pub status: &'a str,
+    pub content_hash: &'a str,
+    pub agent_json: &'a [u8],
+    pub actor: &'a str,
+    pub now_ms: i64,
+}
+
 pub fn save_agent_revision(
     connection: &Connection,
-    id: &str,
-    revision: u64,
-    status: &str,
-    content_hash: &str,
-    agent_json: &[u8],
-    actor: &str,
-    now_ms: i64,
+    input: SaveAgentRevisionInput<'_>,
 ) -> Result<bool, rusqlite::Error> {
-    if agent_json.len() > MAX_RECORD_BYTES {
+    if input.agent_json.len() > MAX_RECORD_BYTES {
         return Ok(false);
     }
     let tx = connection.unchecked_transaction()?;
     let current: Option<u64> = tx
         .query_row(
             "SELECT revision FROM persistent_agents WHERE id = ?1",
-            [id],
+            [input.id],
             |row| row.get(0),
         )
         .optional()?;
-    if current.is_some_and(|value| value >= revision) {
+    if current.is_some_and(|value| value >= input.revision) {
         return Ok(false);
     }
     tx.execute(
         "INSERT INTO persistent_agent_revisions(agent_id, revision, content_hash, agent_json, actor, created_at_ms)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![id, revision as i64, content_hash, agent_json, actor, now_ms],
+        params![input.id, input.revision as i64, input.content_hash, input.agent_json, input.actor, input.now_ms],
     )?;
     tx.execute(
         "INSERT INTO persistent_agents(id, revision, status, content_hash, agent_json, updated_at_ms)
@@ -111,7 +115,7 @@ pub fn save_agent_revision(
          ON CONFLICT(id) DO UPDATE SET revision=excluded.revision, status=excluded.status,
            content_hash=excluded.content_hash, agent_json=excluded.agent_json,
            updated_at_ms=excluded.updated_at_ms",
-        params![id, revision as i64, status, content_hash, agent_json, now_ms],
+        params![input.id, input.revision as i64, input.status, input.content_hash, input.agent_json, input.now_ms],
     )?;
     tx.commit()?;
     Ok(true)
@@ -199,18 +203,22 @@ pub fn load_reporting_history(
     rows
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+pub struct SaveGoalBindingInput<'a> {
+    pub agent_id: &'a str,
+    pub goal_id: &'a str,
+    pub goal_revision: u64,
+    pub responsibility: &'a str,
+    pub scope_json: Option<&'a [u8]>,
+    pub binding_json: &'a [u8],
+    pub now_ms: i64,
+}
+
 pub fn save_goal_binding(
     connection: &Connection,
-    agent_id: &str,
-    goal_id: &str,
-    goal_revision: u64,
-    responsibility: &str,
-    scope_json: Option<&[u8]>,
-    binding_json: &[u8],
-    now_ms: i64,
+    input: SaveGoalBindingInput<'_>,
 ) -> Result<bool, rusqlite::Error> {
-    if binding_json.len() > MAX_RECORD_BYTES {
+    if input.binding_json.len() > MAX_RECORD_BYTES {
         return Ok(false);
     }
     Ok(connection.execute(
@@ -221,13 +229,13 @@ pub fn save_goal_binding(
            scope_json=excluded.scope_json, binding_json=excluded.binding_json,
            created_at_ms=excluded.created_at_ms",
         params![
-            agent_id,
-            goal_id,
-            goal_revision as i64,
-            responsibility,
-            scope_json,
-            binding_json,
-            now_ms
+            input.agent_id,
+            input.goal_id,
+            input.goal_revision as i64,
+            input.responsibility,
+            input.scope_json,
+            input.binding_json,
+            input.now_ms
         ],
     )? == 1)
 }
@@ -261,19 +269,23 @@ pub fn load_goal_bindings(
     rows
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+pub struct SaveAssignmentInput<'a> {
+    pub id: &'a str,
+    pub revision: u64,
+    pub agent_id: &'a str,
+    pub status: &'a str,
+    pub source_kind: &'a str,
+    pub source_ref: &'a str,
+    pub assignment_json: &'a [u8],
+    pub now_ms: i64,
+}
+
 pub fn save_assignment(
     connection: &Connection,
-    id: &str,
-    revision: u64,
-    agent_id: &str,
-    status: &str,
-    source_kind: &str,
-    source_ref: &str,
-    assignment_json: &[u8],
-    now_ms: i64,
+    input: SaveAssignmentInput<'_>,
 ) -> Result<bool, rusqlite::Error> {
-    if assignment_json.len() > MAX_RECORD_BYTES {
+    if input.assignment_json.len() > MAX_RECORD_BYTES {
         return Ok(false);
     }
     Ok(connection.execute(
@@ -284,14 +296,14 @@ pub fn save_assignment(
            status=excluded.status, source_kind=excluded.source_kind, source_ref=excluded.source_ref,
            assignment_json=excluded.assignment_json, updated_at_ms=excluded.updated_at_ms",
         params![
-            id,
-            revision as i64,
-            agent_id,
-            status,
-            source_kind,
-            source_ref,
-            assignment_json,
-            now_ms
+            input.id,
+            input.revision as i64,
+            input.agent_id,
+            input.status,
+            input.source_kind,
+            input.source_ref,
+            input.assignment_json,
+            input.now_ms
         ],
     )? == 1)
 }
@@ -386,11 +398,19 @@ mod tests {
     fn registry_storage_roundtrip_and_idempotency() {
         let connection = Connection::open_in_memory().unwrap();
         install_schema(&connection).unwrap();
+        let input = SaveAgentRevisionInput {
+            id: "a",
+            revision: 1,
+            status: "draft",
+            content_hash: "h",
+            agent_json: br#"{}"#,
+            actor: "user",
+            now_ms: 1,
+        };
+        assert!(save_agent_revision(&connection, input).unwrap());
         assert!(
-            save_agent_revision(&connection, "a", 1, "draft", "h", br#"{}"#, "user", 1).unwrap()
-        );
-        assert!(
-            !save_agent_revision(&connection, "a", 1, "draft", "h", br#"{}"#, "user", 2).unwrap()
+            !save_agent_revision(&connection, SaveAgentRevisionInput { now_ms: 2, ..input })
+                .unwrap()
         );
         assert_eq!(
             load_agent(&connection, "a").unwrap().unwrap(),

@@ -1016,13 +1016,15 @@ fn write_agent(
     let json = serde_json::to_vec(agent)?;
     let stored = evohime_local_storage::persistent_agent_registry_store::save_agent_revision(
         connection,
-        &agent.id,
-        agent.revision,
-        &format!("{:?}", agent.status).to_ascii_lowercase(),
-        &agent.content_hash,
-        &json,
-        actor,
-        now_ms,
+        evohime_local_storage::persistent_agent_registry_store::SaveAgentRevisionInput {
+            id: &agent.id,
+            revision: agent.revision,
+            status: &format!("{:?}", agent.status).to_ascii_lowercase(),
+            content_hash: &agent.content_hash,
+            agent_json: &json,
+            actor,
+            now_ms,
+        },
     )
     .map_err(map_storage_error)?;
     if !stored {
@@ -1410,19 +1412,21 @@ fn execute(
             let json = serde_json::to_vec(&binding)?;
             evohime_local_storage::persistent_agent_registry_store::save_goal_binding(
                 connection,
-                &binding.agent_id,
-                &binding.goal_id,
-                binding.goal_revision,
-                &format!("{:?}", binding.responsibility).to_ascii_lowercase(),
-                binding
-                    .scope
-                    .as_ref()
-                    .map(serde_json::to_vec)
-                    .transpose()
-                    .map_err(crate::StorageError::from)?
-                    .as_deref(),
-                &json,
-                now_ms,
+                evohime_local_storage::persistent_agent_registry_store::SaveGoalBindingInput {
+                    agent_id: &binding.agent_id,
+                    goal_id: &binding.goal_id,
+                    goal_revision: binding.goal_revision,
+                    responsibility: &format!("{:?}", binding.responsibility).to_ascii_lowercase(),
+                    scope_json: binding
+                        .scope
+                        .as_ref()
+                        .map(serde_json::to_vec)
+                        .transpose()
+                        .map_err(crate::StorageError::from)?
+                        .as_deref(),
+                    binding_json: &json,
+                    now_ms,
+                },
             )
             .map_err(map_storage_error)?;
             Ok(response(ResponseInput {
@@ -1531,14 +1535,16 @@ fn execute(
             let json = serde_json::to_vec(&assignment)?;
             evohime_local_storage::persistent_agent_registry_store::save_assignment(
                 connection,
-                &assignment.id,
-                assignment.revision,
-                &assignment.agent_id,
-                "active",
-                &format!("{:?}", assignment.source_kind).to_ascii_lowercase(),
-                &assignment.source_ref,
-                &json,
-                now_ms,
+                evohime_local_storage::persistent_agent_registry_store::SaveAssignmentInput {
+                    id: &assignment.id,
+                    revision: assignment.revision,
+                    agent_id: &assignment.agent_id,
+                    status: "active",
+                    source_kind: &format!("{:?}", assignment.source_kind).to_ascii_lowercase(),
+                    source_ref: &assignment.source_ref,
+                    assignment_json: &json,
+                    now_ms,
+                },
             )
             .map_err(map_storage_error)?;
             let assignment_agent_id = assignment.agent_id.clone();
@@ -1594,14 +1600,16 @@ fn execute(
             let json = serde_json::to_vec(&assignment)?;
             evohime_local_storage::persistent_agent_registry_store::save_assignment(
                 connection,
-                &assignment.id,
-                assignment.revision,
-                &assignment.agent_id,
-                "cancelled",
-                &format!("{:?}", assignment.source_kind).to_ascii_lowercase(),
-                &assignment.source_ref,
-                &json,
-                now_ms,
+                evohime_local_storage::persistent_agent_registry_store::SaveAssignmentInput {
+                    id: &assignment.id,
+                    revision: assignment.revision,
+                    agent_id: &assignment.agent_id,
+                    status: "cancelled",
+                    source_kind: &format!("{:?}", assignment.source_kind).to_ascii_lowercase(),
+                    source_ref: &assignment.source_ref,
+                    assignment_json: &json,
+                    now_ms,
+                },
             )
             .map_err(map_storage_error)?;
             let assignment_agent_id = assignment.agent_id.clone();
@@ -1646,14 +1654,16 @@ fn execute(
                     let json = serde_json::to_vec(&assignment)?;
                     evohime_local_storage::persistent_agent_registry_store::save_assignment(
                         connection,
-                        &assignment.id,
-                        assignment.revision,
-                        &assignment.agent_id,
-                        "unknown_after_restart",
-                        &format!("{:?}", assignment.source_kind).to_ascii_lowercase(),
-                        &assignment.source_ref,
-                        &json,
-                        now_ms,
+                        evohime_local_storage::persistent_agent_registry_store::SaveAssignmentInput {
+                            id: &assignment.id,
+                            revision: assignment.revision,
+                            agent_id: &assignment.agent_id,
+                            status: "unknown_after_restart",
+                            source_kind: &format!("{:?}", assignment.source_kind).to_ascii_lowercase(),
+                            source_ref: &assignment.source_ref,
+                            assignment_json: &json,
+                            now_ms,
+                        },
                     )
                     .map_err(map_storage_error)?;
                     recovered += 1;
