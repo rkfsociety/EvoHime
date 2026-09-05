@@ -278,6 +278,34 @@ struct TeamCoordinationRequest {
     strategy_state: Option<crate::team_coordination_policies::StrategySessionState>,
 }
 
+/// Типизированные параметры model edit protocol registry.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ModelEditRequest {
+    #[serde(default)]
+    definition: Option<crate::model_edit_protocol_registry::EditProtocolDefinition>,
+    #[serde(default)]
+    original: Option<String>,
+    #[serde(default)]
+    error_code: Option<String>,
+    #[serde(default)]
+    attempt: u8,
+}
+
+/// Типизированные параметры remote conversation channels.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RemoteChannelRequest {
+    #[serde(default)]
+    connection: Option<crate::remote_conversation_channels::ChannelConnection>,
+    #[serde(default)]
+    code: Option<String>,
+    #[serde(default)]
+    external_identity: Option<String>,
+    #[serde(default)]
+    message: Option<crate::remote_conversation_channels::InboundMessage>,
+}
+
 /// Аргументы для policy-only preflight при построении каталога инструментов.
 /// Preflight не выполняет инструмент, но path-инструментам всё равно нужен
 /// существующий workspace-relative путь, иначе безопасный инструмент ошибочно
@@ -16162,10 +16190,10 @@ impl TaskCoordinator {
                     if protocol_id.is_empty() || idempotency_key.is_empty() || idempotency_key.len() > 128 { return Err("invalid_model_edit_request".into()); }
                     let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
                     let db = journal.database().lock().await;
-                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_model_edit_payload".to_string())?;
+                    let request: ModelEditRequest = serde_json::from_slice(&payload).map_err(|_| "invalid_model_edit_payload".to_string())?;
                     match operation.as_str() {
                         "register" => {
-                            let definition: v::EditProtocolDefinition = serde_json::from_value(value.get("definition").cloned().ok_or_else(|| "definition_required".to_string())?).map_err(|_| "invalid_edit_protocol".to_string())?;
+                            let definition = request.definition.ok_or_else(|| "definition_required".to_string())?;
                             if definition.protocol_id != protocol_id { return Err("protocol_id_mismatch".into()); }
                             v::validate(&definition).map_err(|e| e.to_string())?;
                             let json = serde_json::to_vec(&definition).map_err(|_| "serialization_failed".to_string())?;
@@ -16182,12 +16210,12 @@ impl TaskCoordinator {
                             let record = store::load(db.connection(), &protocol_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "protocol_not_found".to_string())?;
                             if expected_version != record.version { return Err("stale_protocol_version".into()); }
                             let definition: v::EditProtocolDefinition = serde_json::from_slice(&record.definition_json).map_err(|_| "corrupt_edit_protocol".to_string())?;
-                            let original = value.get("original").and_then(serde_json::Value::as_str).ok_or_else(|| "original_required".to_string())?;
+                            let original = request.original.as_deref().ok_or_else(|| "original_required".to_string())?;
                             let preflight = v::preflight(&definition, original).map_err(|e| e.to_string())?;
                             if operation == "apply" { return Err("apply_requires_approved_revision_safe_files_tool".into()); }
                             serde_json::to_vec(&serde_json::json!({"status":"preflight_ok","protocol_id":protocol_id,"version":record.version,"preflight":preflight,"mutation":"not_dispatched","redacted":true})).map_err(|_| "serialization_failed".into())
                         }
-                        "repair_feedback" => { let error_code = value.get("error_code").and_then(serde_json::Value::as_str).unwrap_or("edit_failed"); let attempt = value.get("attempt").and_then(serde_json::Value::as_u64).unwrap_or(0) as u8; let feedback = v::repair_feedback(&v::EditProtocolError::Invalid("edit_failed"), attempt).map_err(|_| format!("{error_code}:repair_exhausted"))?; serde_json::to_vec(&feedback).map_err(|_| "serialization_failed".into()) }
+                        "repair_feedback" => { let error_code = request.error_code.as_deref().unwrap_or("edit_failed"); let feedback = v::repair_feedback(&v::EditProtocolError::Invalid("edit_failed"), request.attempt).map_err(|_| format!("{error_code}:repair_exhausted"))?; serde_json::to_vec(&feedback).map_err(|_| "serialization_failed".into()) }
                         _ => Err("unsupported_model_edit_operation".into()),
                     }
                 }.await;
@@ -16222,12 +16250,12 @@ impl TaskCoordinator {
                     use crate::remote_conversation_channels as v; use evohime_local_storage::remote_conversation_channels_store as store;
                     if connection_id.is_empty() || idempotency_key.is_empty() || idempotency_key.len() > 128 { return Err("invalid_remote_channel_request".into()); }
                     let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?; let db = journal.database().lock().await;
-                    let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_remote_channel_payload".to_string())?;
+                    let request: RemoteChannelRequest = serde_json::from_slice(&payload).map_err(|_| "invalid_remote_channel_payload".to_string())?;
                     match operation.as_str() {
-                        "save" => { let connection: v::ChannelConnection = serde_json::from_value(value.get("connection").cloned().ok_or_else(|| "connection_required".to_string())?).map_err(|_| "invalid_channel_connection".to_string())?; if connection.connection_id != connection_id{return Err("connection_id_mismatch".into())}; v::validate_connection(&connection).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&connection).map_err(|_|"serialization_failed".to_string())?; let h=v::canonical_hash(&connection).map_err(|e|e.to_string())?; if !store::save(db.connection(),store::ConnectionInput{id:&connection_id,owner_scope:&connection.owner_scope,connection_json:&json,content_hash:&h,expected_version,idempotency_key:&idempotency_key,now_ms:crate::task_memory::now_millis() as i64}).map_err(|_|"storage_failed".to_string())?{return Err("stale_version_or_idempotency_conflict".into())}; serde_json::to_vec(&serde_json::json!({"status":"saved","connection_id":connection_id,"provider":connection.provider,"state":connection.state,"content_hash":h,"redacted":true})).map_err(|_|"serialization_failed".into()) }
+                        "save" => { let connection = request.connection.ok_or_else(|| "connection_required".to_string())?; if connection.connection_id != connection_id{return Err("connection_id_mismatch".into())}; v::validate_connection(&connection).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&connection).map_err(|_|"serialization_failed".to_string())?; let h=v::canonical_hash(&connection).map_err(|e|e.to_string())?; if !store::save(db.connection(),store::ConnectionInput{id:&connection_id,owner_scope:&connection.owner_scope,connection_json:&json,content_hash:&h,expected_version,idempotency_key:&idempotency_key,now_ms:crate::task_memory::now_millis() as i64}).map_err(|_|"storage_failed".to_string())?{return Err("stale_version_or_idempotency_conflict".into())}; serde_json::to_vec(&serde_json::json!({"status":"saved","connection_id":connection_id,"provider":connection.provider,"state":connection.state,"content_hash":h,"redacted":true})).map_err(|_|"serialization_failed".into()) }
                         "inspect" => { let row=store::load(db.connection(),&connection_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"connection_not_found".to_string())?; serde_json::to_vec(&serde_json::json!({"status":"stored","connection_id":connection_id,"owner_scope":row.owner_scope,"content_hash":row.content_hash,"version":row.version,"redacted":true})).map_err(|_|"serialization_failed".into()) }
-                        "pair" => { let row=store::load(db.connection(),&connection_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"connection_not_found".to_string())?; let connection:v::ChannelConnection=serde_json::from_slice(&row.connection_json).map_err(|_|"corrupt_channel".to_string())?; let code=value.get("code").and_then(serde_json::Value::as_str).ok_or_else(||"pairing_code_required".to_string())?; let identity=value.get("external_identity").and_then(serde_json::Value::as_str).ok_or_else(||"external_identity_required".to_string())?; let now=crate::task_memory::now_millis() as i64; let ok=store::consume_pairing(db.connection(),&connection_id,&v::hash_pairing_code(code).map_err(|e|e.to_string())?,identity,now).map_err(|_|"storage_failed".to_string())?; if !ok{return Err("pairing_invalid_or_expired".into())}; if identity!=connection.external_identity{return Err("identity_mismatch".into())}; serde_json::to_vec(&serde_json::json!({"status":"paired","connection_id":connection_id,"redacted":true})).map_err(|_|"serialization_failed".into()) }
-                        "admit" => { let row=store::load(db.connection(),&connection_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"connection_not_found".to_string())?; let connection:v::ChannelConnection=serde_json::from_slice(&row.connection_json).map_err(|_|"corrupt_channel".to_string())?; let message:v::InboundMessage=serde_json::from_value(value.get("message").cloned().ok_or_else(||"message_required".to_string())?).map_err(|_|"invalid_message".to_string())?; let ok=store::claim_message(db.connection(),&connection_id,&message.message_id,crate::task_memory::now_millis() as i64).map_err(|_|"storage_failed".to_string())?; v::admit_message(&connection,&message,0,!ok,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"admitted","message_id":message.message_id,"redacted":true})).map_err(|_|"serialization_failed".into()) }
+                        "pair" => { let row=store::load(db.connection(),&connection_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"connection_not_found".to_string())?; let connection:v::ChannelConnection=serde_json::from_slice(&row.connection_json).map_err(|_|"corrupt_channel".to_string())?; let code=request.code.as_deref().ok_or_else(||"pairing_code_required".to_string())?; let identity=request.external_identity.as_deref().ok_or_else(||"external_identity_required".to_string())?; let now=crate::task_memory::now_millis() as i64; let ok=store::consume_pairing(db.connection(),&connection_id,&v::hash_pairing_code(code).map_err(|e|e.to_string())?,identity,now).map_err(|_|"storage_failed".to_string())?; if !ok{return Err("pairing_invalid_or_expired".into())}; if identity!=connection.external_identity{return Err("identity_mismatch".into())}; serde_json::to_vec(&serde_json::json!({"status":"paired","connection_id":connection_id,"redacted":true})).map_err(|_|"serialization_failed".into()) }
+                        "admit" => { let row=store::load(db.connection(),&connection_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"connection_not_found".to_string())?; let connection:v::ChannelConnection=serde_json::from_slice(&row.connection_json).map_err(|_|"corrupt_channel".to_string())?; let message=request.message.ok_or_else(||"message_required".to_string())?; let ok=store::claim_message(db.connection(),&connection_id,&message.message_id,crate::task_memory::now_millis() as i64).map_err(|_|"storage_failed".to_string())?; v::admit_message(&connection,&message,0,!ok,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"admitted","message_id":message.message_id,"redacted":true})).map_err(|_|"serialization_failed".into()) }
                         "revoke" => { let row=store::load(db.connection(),&connection_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"connection_not_found".to_string())?; let mut connection:v::ChannelConnection=serde_json::from_slice(&row.connection_json).map_err(|_|"corrupt_channel".to_string())?; connection.state=v::ConnectionState::Revoked; connection.revision=connection.revision.saturating_add(1); let json=serde_json::to_vec(&connection).map_err(|_|"serialization_failed".to_string())?; let h=v::canonical_hash(&connection).map_err(|e|e.to_string())?; if !store::save(db.connection(),store::ConnectionInput{id:&connection_id,owner_scope:&connection.owner_scope,connection_json:&json,content_hash:&h,expected_version,idempotency_key:&idempotency_key,now_ms:crate::task_memory::now_millis() as i64}).map_err(|_|"storage_failed".to_string())?{return Err("stale_version_or_idempotency_conflict".into())}; serde_json::to_vec(&serde_json::json!({"status":"revoked","connection_id":connection_id,"redacted":true})).map_err(|_|"serialization_failed".into()) }
                         _ => Err("unsupported_remote_channel_operation".into()),
                     }
