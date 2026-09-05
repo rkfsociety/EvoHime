@@ -6,10 +6,24 @@ use crate::AgentRunError;
 pub(crate) const ROUTING_POLICY_VERSION: &str = "routing-policy-v1";
 /// Версия встроенного каталога маршрутов.
 pub(crate) const ROUTING_CATALOG_VERSION: &str = "builtin-v1";
+/// Версия схемы записи routing trace.
+pub(crate) const ROUTING_TRACE_SCHEMA_VERSION: u32 = 1;
 /// Имя терминального события в трассировке маршрутизации.
 pub(crate) const ROUTING_EVENT_TERMINAL: &str = "terminal";
 /// Причина отката к локальному выбору runtime.
 pub(crate) const ROUTING_SNAPSHOT_FALLBACK: &str = "runtime-selection";
+/// Причина выбора маршрута после fallback-ранжирования.
+const ROUTING_REASON_FALLBACK_RANK_PREFERRED: &str = "fallback_rank_preferred";
+/// Причина выбора единственного доступного кандидата.
+const ROUTING_REASON_ONLY_CANDIDATE: &str = "only_candidate";
+/// Класс задач, для которых не удалось вывести более точную классификацию.
+const ROUTING_CLASS_COMPLEX: &str = "complex";
+const ROUTING_REASON_CANCELLED: &str = "cancelled";
+const ROUTING_REASON_RUN_DEADLINE_EXCEEDED: &str = "run_deadline_exceeded";
+const ROUTING_REASON_BUDGET_UNAVAILABLE: &str = "budget_unavailable";
+const ROUTING_REASON_PROVIDER_UNAVAILABLE: &str = "provider_unavailable";
+const ROUTING_REASON_REROUTE_APPROVAL_DECLINED: &str = "reroute_approval_declined";
+const ROUTING_REASON_INTERNAL_ERROR: &str = "internal_error";
 
 pub(crate) struct RoutingSuccessInput<'a> {
     pub run_id: &'a str,
@@ -60,7 +74,7 @@ pub(crate) fn routing_success_trace(
         })
         .unwrap_or_default();
     evohime_model_gateway::RoutingTrace {
-        schema_version: 1,
+        schema_version: ROUTING_TRACE_SCHEMA_VERSION,
         trace_id: input.run_id.to_owned(),
         run_id: input.run_id.to_owned(),
         sequence: 1,
@@ -81,9 +95,9 @@ pub(crate) fn routing_success_trace(
             .map(|decision| decision.reason_code.clone())
             .unwrap_or_else(|| {
                 if input.fallback_count > 0 {
-                    "fallback_rank_preferred".into()
+                    ROUTING_REASON_FALLBACK_RANK_PREFERRED.into()
                 } else {
-                    "only_candidate".into()
+                    ROUTING_REASON_ONLY_CANDIDATE.into()
                 }
             }),
         fallback_count: input.fallback_count as u32,
@@ -106,37 +120,37 @@ pub(crate) fn routing_failure_trace(
     let (status, reason, action) = match error {
         AgentRunError::Cancelled => (
             evohime_model_gateway::TerminalStatus::Cancelled,
-            "cancelled",
+            ROUTING_REASON_CANCELLED,
             None,
         ),
         AgentRunError::Timeout(_) => (
             evohime_model_gateway::TerminalStatus::RunDeadlineExceeded,
-            "run_deadline_exceeded",
+            ROUTING_REASON_RUN_DEADLINE_EXCEEDED,
             Some(evohime_model_gateway::SafeNextAction::RetryLater),
         ),
         AgentRunError::BudgetUnavailable { .. } => (
             evohime_model_gateway::TerminalStatus::BudgetUnavailable,
-            "budget_unavailable",
+            ROUTING_REASON_BUDGET_UNAVAILABLE,
             Some(evohime_model_gateway::SafeNextAction::ClarifyRequest),
         ),
         AgentRunError::Provider(_) => (
             evohime_model_gateway::TerminalStatus::BothRoutesUnavailable,
-            "provider_unavailable",
+            ROUTING_REASON_PROVIDER_UNAVAILABLE,
             Some(evohime_model_gateway::SafeNextAction::RetryLater),
         ),
         AgentRunError::RoutingApprovalDeclined => (
             evohime_model_gateway::TerminalStatus::RerouteApprovalDeclined,
-            "reroute_approval_declined",
+            ROUTING_REASON_REROUTE_APPROVAL_DECLINED,
             Some(evohime_model_gateway::SafeNextAction::ManualReview),
         ),
         AgentRunError::Internal(_) => (
             evohime_model_gateway::TerminalStatus::InternalError,
-            "internal_error",
+            ROUTING_REASON_INTERNAL_ERROR,
             Some(evohime_model_gateway::SafeNextAction::ContactSupport),
         ),
     };
     evohime_model_gateway::RoutingTrace {
-        schema_version: 1,
+        schema_version: ROUTING_TRACE_SCHEMA_VERSION,
         trace_id: run_id.to_owned(),
         run_id: run_id.to_owned(),
         sequence: 1,
@@ -145,7 +159,7 @@ pub(crate) fn routing_failure_trace(
         policy_version: ROUTING_POLICY_VERSION.into(),
         catalog_version: ROUTING_CATALOG_VERSION.into(),
         snapshot_hash: ROUTING_SNAPSHOT_FALLBACK.into(),
-        classification: "complex".into(),
+        classification: ROUTING_CLASS_COMPLEX.into(),
         privacy_label: evohime_model_gateway::PrivacyLabel::Unknown,
         candidates: Vec::new(),
         selected_route: None,
