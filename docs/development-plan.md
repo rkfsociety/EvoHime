@@ -104,5 +104,10 @@ npm run typecheck
 npm test
 ```
 
-CI дополнительно выполняет native package, installer и Windows acceptance gates;
-описание workflow находится в [`.github/workflows/`](../.github/workflows/).
+На `push`/PR Windows workflow вычисляет изменённые workspace-crates и замыкает
+граф их обратных зависимостей. Для этого набора выполняются format, Clippy,
+тесты и `cargo build`; Electron отдельно проверяется и собирается только при
+изменении Electron shell или desktop IPC proto. Полный Rust/Electron/native
+package, installer и Windows acceptance gates запускаются только вручную через
+`workflow_dispatch`. Быстрых дублирующих jobs больше нет. Описание workflow
+находится в [`.github/workflows/`](../.github/workflows/).

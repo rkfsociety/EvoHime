@@ -1,8 +1,8 @@
 name: EvoHime — модульный CI и выпуск
 
-# Единый workflow для быстрых проверок, полного выпуска и listener runtime.
-# Граф изменений включает зависимые области: правка Core, IPC, Electron,
-# скриптов или установщика включает native-контур и его пересборку.
+# Единый workflow для целевых проверок, полного выпуска и listener runtime.
+# На push/PR проверяются и собираются только изменённые компоненты и их
+# workspace-потребители. Полный native-релиз запускается вручную.
 on:
   push:
     branches: [main]
@@ -24,14 +24,12 @@ concurrency:
 jobs:
   # Что именно затронул коммит.
   #
-  # Отбор делается здесь, а не через paths-ignore: клиент обновляется только на
-  # коммит с зелёными проверками, а у коммита без единого прогона проверок нет
-  # вообще — он навсегда остался бы «непроверенным». Пропущенный job, в отличие
-  # от отсутствующего прогона, числится пройденным, поэтому workflow стартует
-  # всегда, а тяжёлые job включаются по затронутым путям.
+  # Workflow стартует на каждом push, а jobs включаются по затронутым путям.
+  # Это сохраняет обязательный зелёный статус и не запускает полный релизный
+  # контур для изменений, которые его не затрагивают.
   changes:
     name: Изменения
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       electron: ${{ steps.filter.outputs.electron }}
@@ -39,57 +37,81 @@ jobs:
       docs: ${{ steps.filter.outputs.docs }}
       tooling: ${{ steps.filter.outputs.tooling }}
       listener: ${{ steps.filter.outputs.listener }}
+      rust_packages: ${{ steps.filter.outputs.rust_packages }}
+      rust_manifests: ${{ steps.filter.outputs.rust_manifests }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Определение затронутых областей
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+      - name: Определение затронутых компонентов и зависимостей
         id: filter
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
-          if [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
-            files='ALL'
+          $ErrorActionPreference = 'Stop'
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            $files = @('ALL')
           else
-            before="${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}"
-            if [ -z "$before" ] || [ "$before" = '0000000000000000000000000000000000000000' ] \
-               || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
-              files='ALL'
+            $before = '${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}'
+            git cat-file -e "$before^{commit}" 2>$null
+            $beforeExists = $LASTEXITCODE -eq 0
+            if ([string]::IsNullOrWhiteSpace($before) -or $before -eq '0000000000000000000000000000000000000000' -or -not $beforeExists) {
+              $files = @('ALL')
             else
-              files=$(git diff --name-only "$before" '${{ github.sha }}')
-            fi
-          fi
-          echo "changed files:"; echo "$files"
-
-          matches() {
-            if [ "$files" = 'ALL' ]; then
-              return 0
-            fi
-            echo "$files" | grep -Eq "$1"
+              $files = @(git diff --name-only $before '${{ github.sha }}')
+            }
           }
 
-          rust=false
-          electron=false
-          tooling=false
-          if matches '^(crates/|Cargo\.(toml|lock)$)'; then rust=true; fi
-          if matches '^(desktop/evohime-electron/|crates/desktop-ipc/proto/)'; then electron=true; fi
-          if matches '^(scripts/|installer/EvoHime\.iss$|\.github/workflows/)'; then tooling=true; fi
+          Write-Host 'Changed files:'; $files | Write-Host
+          $all = $files -contains 'ALL'
+          function Match([string] $pattern) { return $all -or (($files | Where-Object { $_ -match $pattern }).Count -gt 0) }
 
-          native=false
-          if [ "$rust" = true ] || [ "$electron" = true ] || [ "$tooling" = true ]; then native=true; fi
-          docs=false
-          if matches '^(docs/|README\.md$|AGENTS\.md$|SECURITY\.md$|\.codex/|installer/.*\.(md|txt)$|crates/.*/README\.md$|tests/.*/README\.md$)'; then docs=true; fi
-          listener=false
-          if matches '^(scripts/build-listener-runtime\.ps1|crates/evohime-listener/src/engine/whisper_dll\.rs|crates/evohime-listener/src/tools_dir\.rs|crates/evohime-listener/examples/)'; then listener=true; fi
+          $metadata = cargo metadata --format-version 1 --no-deps | ConvertFrom-Json
+          $workspaceIds = [System.Collections.Generic.HashSet[string]]::new()
+          $metadata.workspace_members | ForEach-Object { [void]$workspaceIds.Add($_) }
+          $workspacePackages = @($metadata.packages | Where-Object { $workspaceIds.Contains($_.id) })
+          $changedRust = [System.Collections.Generic.HashSet[string]]::new()
+          if ($all -or (Match '^Cargo\.(toml|lock)$')) {
+            $workspacePackages | ForEach-Object { [void]$changedRust.Add($_.name) }
+          } else {
+            foreach ($package in $workspacePackages) {
+              $packageDir = Split-Path -Parent $package.manifest_path
+              $relativeDir = (Resolve-Path -LiteralPath $packageDir).Path.Substring($env:GITHUB_WORKSPACE.Length + 1).Replace('\','/') + '/'
+              if ($files | Where-Object { $_.Replace('\','/').StartsWith($relativeDir, [StringComparison]::OrdinalIgnoreCase) }) { [void]$changedRust.Add($package.name) }
+            }
+          }
 
-          {
-            echo "rust=$rust"
-            echo "electron=$electron"
-            echo "native=$native"
-            echo "docs=$docs"
-            echo "tooling=$tooling"
-            echo "listener=$listener"
-          } >> "$GITHUB_OUTPUT"
+          # Замыкаем граф по обратным workspace-зависимостям: изменение библиотеки
+          # проверяет и собирает каждый workspace-crate, который от неё зависит.
+          $selected = [System.Collections.Generic.HashSet[string]]::new()
+          $changedRust | ForEach-Object { [void]$selected.Add($_) }
+          do {
+            $count = $selected.Count
+            foreach ($package in $workspacePackages) {
+              if ($package.dependencies | Where-Object { $_.path -and $selected.Contains($_.name) }) { [void]$selected.Add($package.name) }
+            }
+          } while ($selected.Count -ne $count)
+
+          $rust = $selected.Count -gt 0
+          $electron = Match '^(desktop/evohime-electron/|crates/desktop-ipc/proto/)'
+          $tooling = Match '^(scripts/|installer/EvoHime\.iss$|\.github/workflows/)'
+          $native = $rust -or $electron -or $tooling
+          $docs = Match '^(docs/|README\.md$|AGENTS\.md$|SECURITY\.md$|\.codex/|installer/.*\.(md|txt)$|crates/.*/README\.md$|tests/.*/README\.md$)'
+          $listener = Match '^(scripts/build-listener-runtime\.ps1|crates/evohime-listener/src/engine/whisper_dll\.rs|crates/evohime-listener/src/tools_dir\.rs|crates/evohime-listener/examples/)'
+          $rustJson = ConvertTo-Json -InputObject @($selected | Sort-Object) -Compress
+          $manifestJson = ConvertTo-Json -InputObject @($workspacePackages | Where-Object { $selected.Contains($_.name) } | Sort-Object name | Select-Object -ExpandProperty manifest_path) -Compress
+          if ($selected.Count -eq 0) { $rustJson = '[]' }
+          if ($selected.Count -eq 0) { $manifestJson = '[]' }
+          "rust=$($rust.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "electron=$($electron.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "native=$($native.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "docs=$($docs.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "tooling=$($tooling.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "listener=$($listener.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "rust_packages=$rustJson" >> $env:GITHUB_OUTPUT
+          "rust_manifests=$manifestJson" >> $env:GITHUB_OUTPUT
 
   documentation:
     name: Документация
@@ -102,13 +124,14 @@ jobs:
         shell: pwsh
         run: ./scripts/documentation.tests.ps1
 
-  # Быстрые Rust-проверки запускаются только для Rust/tooling-изменений.
-  rust-fast:
-    name: Rust — быстрые проверки
+  # На push/PR проверяется только изменённый Rust-граф.
+  rust-targeted:
+    name: Rust — изменённые компоненты
     needs: changes
     if: >-
       always()
-      && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.tooling == 'true')
+      && github.event_name != 'workflow_dispatch'
+      && needs.changes.outputs.rust == 'true'
     runs-on: windows-latest
     env:
       CARGO_BUILD_JOBS: 2
@@ -118,22 +141,31 @@ jobs:
         with:
           toolchain: stable-x86_64-pc-windows-msvc
           components: rustfmt, clippy
-      - name: Runtime Stall Guard — static report
+      - name: Проверка lint изменённых компонентов
         shell: pwsh
-        run: ./scripts/runtime-stall-guard.tests.ps1
-      - name: Проверка форматирования Rust
-        run: cargo fmt --all -- --check
-      - name: Проверка lint всего Rust workspace
-        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+        env:
+          RUST_PACKAGES: ${{ needs.changes.outputs.rust_packages }}
+          RUST_MANIFESTS: ${{ needs.changes.outputs.rust_manifests }}
+        run: |
+          $packages = @($env:RUST_PACKAGES | ConvertFrom-Json)
+          $manifests = @($env:RUST_MANIFESTS | ConvertFrom-Json)
+          for ($i = 0; $i -lt $packages.Count; $i++) {
+            $package = $packages[$i]
+            $manifest = $manifests[$i]
+            if (-not $manifest) { throw "Manifest not found for package: $package" }
+            cargo fmt --manifest-path $manifest -- --check
+            cargo clippy --locked -p $package --all-targets -- -D warnings
+            cargo test --locked -p $package --all-targets
+            cargo build --locked -p $package
+          }
 
   rust-heavy:
     name: Rust — тесты и security-гейты
-    needs: [changes, documentation, rust-fast]
+    needs: [changes, documentation]
     if: >-
       always()
       && github.event_name == 'workflow_dispatch'
       && needs.changes.outputs.native == 'true'
-      && needs.rust-fast.result == 'success'
       && (needs.documentation.result == 'success' || needs.documentation.result == 'skipped')
     runs-on: windows-latest
     env:
@@ -180,12 +212,13 @@ jobs:
           path: artifacts/eval-gate/summary.jsonl
           if-no-files-found: ignore
 
-  # Быстрый Electron-гейт запускается одновременно с rust-fast.
-  electron-fast:
-    name: Electron — protocol и typecheck
+  # На push/PR проверяется и собирается только Electron shell.
+  electron-targeted:
+    name: Electron — изменённый shell
     needs: changes
     if: >-
       always()
+      && github.event_name != 'workflow_dispatch'
       && needs.changes.outputs.electron == 'true'
     runs-on: windows-latest
     defaults:
@@ -207,15 +240,20 @@ jobs:
         run: npm run check:protocol
       - name: Typecheck main, preload и renderer
         run: npm run typecheck
+      - name: Тесты изменённого Electron-контура
+        run: npm test
+      - name: Сборка изменённого Electron shell
+        run: npm run build
+      - name: Проверка production bundle
+        run: npm run check:bundle
   electron-heavy:
     name: Electron — E2E и пакет
-    needs: [changes, documentation, rust-heavy, electron-fast]
+    needs: [changes, documentation, rust-heavy]
     if: >-
       always()
       && github.event_name == 'workflow_dispatch'
       && needs.changes.outputs.native == 'true'
       && needs.rust-heavy.result == 'success'
-      && needs.electron-fast.result == 'success'
       && (needs.documentation.result == 'success' || needs.documentation.result == 'skipped')
     runs-on: windows-latest
     defaults:
