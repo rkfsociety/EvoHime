@@ -450,6 +450,57 @@ fn default_remote_transport_status() -> String {
     "reported".into()
 }
 
+/// Типизированные параметры назначения team work item.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AssignmentRequest {
+    item: crate::team_coordinator::TeamWorkItem,
+    proposal: crate::team_coordinator::DelegationProposal,
+    candidate: crate::team_coordinator::ParticipantCandidate,
+}
+
+/// Типизированные параметры привязки workspace set к task.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorkspaceSetBindingRequest {
+    task_id: String,
+    #[serde(default)]
+    root_ids: Vec<String>,
+}
+
+/// Типизированные параметры оценки message intervention policy.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InterventionRequest {
+    policy: crate::message_intervention_policies::MessageInterventionPolicy,
+    context: crate::message_intervention_policies::MessageInterventionContext,
+    #[serde(default)]
+    seen: bool,
+}
+
+/// Типизированный запрос построения redacted bridge projection.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BridgeProjectionRequest {
+    binding: crate::conversation_bridge_adapters::ThreadBinding,
+    #[serde(default = "default_bridge_projection_kind")]
+    kind: String,
+    #[serde(default = "default_bridge_projection_status")]
+    status: String,
+    #[serde(default = "default_bridge_projection_provenance")]
+    provenance_id: String,
+}
+
+fn default_bridge_projection_kind() -> String {
+    "status".into()
+}
+fn default_bridge_projection_status() -> String {
+    "unknown".into()
+}
+fn default_bridge_projection_provenance() -> String {
+    "event".into()
+}
+
 /// Аргументы для policy-only preflight при построении каталога инструментов.
 /// Preflight не выполняет инструмент, но path-инструментам всё равно нужен
 /// существующий workspace-relative путь, иначе безопасный инструмент ошибочно
@@ -12992,24 +13043,11 @@ impl TaskCoordinator {
                                 .map_err(|_| "serialization_failed".to_string())
                         }
                         "assign" => {
-                            let request: serde_json::Value = serde_json::from_slice(&payload)
+                            let request: AssignmentRequest = serde_json::from_slice(&payload)
                                 .map_err(|_| "invalid_assignment_request")?;
-                            let mut item: coordinator::TeamWorkItem = serde_json::from_value(
-                                request.get("item").cloned().ok_or("invalid_work_item")?,
-                            )
-                            .map_err(|_| "invalid_work_item")?;
-                            let proposal: coordinator::DelegationProposal = serde_json::from_value(
-                                request.get("proposal").cloned().ok_or("invalid_proposal")?,
-                            )
-                            .map_err(|_| "invalid_proposal")?;
-                            let candidate: coordinator::ParticipantCandidate =
-                                serde_json::from_value(
-                                    request
-                                        .get("candidate")
-                                        .cloned()
-                                        .ok_or("invalid_candidate")?,
-                                )
-                                .map_err(|_| "invalid_candidate")?;
+                            let mut item = request.item;
+                            let proposal = request.proposal;
+                            let candidate = request.candidate;
                             if item.id != work_item_id {
                                 return Err("work_item_id_mismatch".into());
                             }
@@ -13331,11 +13369,10 @@ impl TaskCoordinator {
                                 .map_err(|_| "serialization_failed".to_string())
                         }
                         "bind" => {
-                            let request: serde_json::Value = serde_json::from_slice(&payload)
+                            let request: WorkspaceSetBindingRequest = serde_json::from_slice(&payload)
                                 .map_err(|_| "invalid_workspace_set_binding".to_string())?;
-                            let task_id = request.get("task_id").and_then(serde_json::Value::as_str)
-                                .ok_or_else(|| "invalid_workspace_set_binding".to_string())?;
-                            let requested_roots = request.get("root_ids").and_then(|value| serde_json::from_value::<Vec<String>>(value.clone()).ok()).unwrap_or_default();
+                            let task_id = request.task_id.as_str();
+                            let requested_roots = request.root_ids;
                             let json = store::get(database.connection(), &set_id)
                                 .map_err(|_| "storage_failed".to_string())?
                                 .ok_or_else(|| "workspace_set_not_found".to_string())?;
@@ -13745,31 +13782,14 @@ impl TaskCoordinator {
                     if expected_version > 1 {
                         return Err("intervention_stale_version".into());
                     }
-                    let value: serde_json::Value = serde_json::from_slice(&payload)
+                    let request: InterventionRequest = serde_json::from_slice(&payload)
                         .map_err(|_| "invalid_intervention_payload".to_string())?;
-                    let policy: crate::message_intervention_policies::MessageInterventionPolicy =
-                        serde_json::from_value(
-                            value
-                                .get("policy")
-                                .cloned()
-                                .ok_or_else(|| "intervention_policy_required".to_string())?,
-                        )
-                        .map_err(|_| "invalid_intervention_policy".to_string())?;
-                    let context: crate::message_intervention_policies::MessageInterventionContext =
-                        serde_json::from_value(
-                            value
-                                .get("context")
-                                .cloned()
-                                .ok_or_else(|| "intervention_context_required".to_string())?,
-                        )
-                        .map_err(|_| "invalid_intervention_context".to_string())?;
-                    let seen = value
-                        .get("seen")
-                        .and_then(serde_json::Value::as_bool)
-                        .unwrap_or(false);
-                    let verdict =
-                        crate::message_intervention_policies::evaluate(&policy, &context, seen)
-                            .map_err(|e| e.to_string())?;
+                    let verdict = crate::message_intervention_policies::evaluate(
+                        &request.policy,
+                        &request.context,
+                        request.seen,
+                    )
+                    .map_err(|e| e.to_string())?;
                     serde_json::to_vec(&serde_json::json!({
                         "status": "evaluated",
                         "operation": operation,
@@ -14944,17 +14964,13 @@ impl TaskCoordinator {
                             serde_json::to_vec(&serde_json::json!({"status":"accepted_for_core_dispatch","command_id":command.command_id,"kind":format!("{:?}",command.kind),"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "project" => {
-                            let request: serde_json::Value = serde_json::from_slice(&payload)
+                            let request: BridgeProjectionRequest = serde_json::from_slice(&payload)
                                 .map_err(|_| "invalid_projection_request".to_string())?;
-                            let binding: b::ThreadBinding = serde_json::from_value(
-                                request.get("binding").cloned().ok_or("missing_binding")?,
-                            )
-                            .map_err(|_| "invalid_binding".to_string())?;
                             let projection = b::redacted_projection(
-                                &binding,
-                                request["kind"].as_str().unwrap_or("status"),
-                                request["status"].as_str().unwrap_or("unknown"),
-                                request["provenance_id"].as_str().unwrap_or("event"),
+                                &request.binding,
+                                &request.kind,
+                                &request.status,
+                                &request.provenance_id,
                             )
                             .map_err(|e| e.to_string())?;
                             serde_json::to_vec(&projection)
