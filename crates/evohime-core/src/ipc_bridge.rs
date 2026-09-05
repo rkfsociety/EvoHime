@@ -219,6 +219,18 @@ struct AgentRoleRuntimePayload {
     requested_grants: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct InvocationPresetRunPayload {
+    #[serde(default)]
+    preset_id: String,
+    #[serde(default)]
+    revision: u64,
+    #[serde(default)]
+    workspace_path: String,
+    #[serde(default)]
+    temporary_overrides: std::collections::BTreeMap<String, serde_json::Value>,
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct ExecutionBackendPayload {
     #[serde(default)]
@@ -13625,21 +13637,17 @@ impl IpcBridge {
             return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"invalid_request"});
         }
         if request.operation == "run" {
-            let envelope: serde_json::Value =
-                serde_json::from_slice(&request.payload).unwrap_or_default();
-            let preset_id = envelope
-                .get("preset_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default();
-            let revision = envelope
-                .get("revision")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            let workspace = envelope
-                .get("workspace_path")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string();
+            let envelope: InvocationPresetRunPayload = match serde_json::from_slice(
+                &request.payload,
+            ) {
+                Ok(value) => value,
+                Err(_) => {
+                    return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"run","status":"rejected","error_code":"invalid_payload"});
+                }
+            };
+            let preset_id = envelope.preset_id.as_str();
+            let revision = envelope.revision;
+            let workspace = envelope.workspace_path;
             let idempotency = if request.idempotency_key.is_empty() {
                 request.request_id.clone()
             } else {
@@ -13674,14 +13682,9 @@ impl IpcBridge {
                 }
                 preset
             };
-            if let Some(overrides) = envelope
-                .get("temporary_overrides")
-                .and_then(|v| v.as_object())
-            {
-                for (key, value) in overrides {
-                    if preset.input_values.contains_key(key) {
-                        preset.input_values.insert(key.clone(), value.clone());
-                    }
+            for (key, value) in envelope.temporary_overrides {
+                if preset.input_values.contains_key(&key) {
+                    preset.input_values.insert(key, value);
                 }
             }
             return match self
