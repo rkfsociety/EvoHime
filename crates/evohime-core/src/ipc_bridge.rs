@@ -208,6 +208,18 @@ struct ExternalAgentCommandPayload {
 }
 
 #[derive(Debug, Deserialize)]
+struct AgentRoleRuntimePayload {
+    #[serde(default)]
+    run_id: String,
+    #[serde(default)]
+    profile_id: String,
+    #[serde(default)]
+    revision: u64,
+    #[serde(default)]
+    requested_grants: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct PersistentAgentOrganizationResponse {
     #[serde(default)]
     operation: String,
@@ -14566,32 +14578,12 @@ impl IpcBridge {
                 Ok(())
             }
             "start" => {
-                let payload: serde_json::Value = serde_json::from_slice(&request.payload)
+                let payload: AgentRoleRuntimePayload = serde_json::from_slice(&request.payload)
                     .map_err(|_| RoleProfileError::Invalid("payload"))?;
-                let run_id = payload
-                    .get("run_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_owned();
-                profile_id = payload
-                    .get("profile_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_owned();
-                revision = payload
-                    .get("revision")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or_default();
-                let grants = payload
-                    .get("requested_grants")
-                    .and_then(|v| v.as_array())
-                    .map(|items| {
-                        items
-                            .iter()
-                            .filter_map(|v| v.as_str().map(str::to_owned))
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                let run_id = payload.run_id;
+                profile_id = payload.profile_id;
+                revision = payload.revision;
+                let grants = payload.requested_grants;
                 let allowed = vec![
                     "workspace.read".to_owned(),
                     "test.execute".to_owned(),
@@ -14611,13 +14603,9 @@ impl IpcBridge {
                 Ok(())
             }
             "cancel" => {
-                let payload: serde_json::Value = serde_json::from_slice(&request.payload)
+                let payload: AgentRoleRuntimePayload = serde_json::from_slice(&request.payload)
                     .map_err(|_| RoleProfileError::Invalid("payload"))?;
-                let run_id = payload
-                    .get("run_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default();
-                let run = registry.cancel(run_id)?;
+                let run = registry.cancel(&payload.run_id)?;
                 state = "cancelling";
                 profile_id = run.snapshot.profile_id;
                 revision = run.snapshot.revision;
@@ -14639,21 +14627,21 @@ impl IpcBridge {
         writer: &mut W,
         payload: Vec<u8>,
     ) -> Result<(), IpcBridgeError> {
-        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let value: IpcResponseFields = serde_json::from_slice(&payload)?;
         let result = generated::AgentRoleProfilesEvent {
             schema_version: 1,
-            request_id: value["request_id"].as_str().unwrap_or_default().into(),
-            operation: value["operation"].as_str().unwrap_or_default().into(),
-            status: value["status"].as_str().unwrap_or_default().into(),
-            profile_id: value["profile_id"].as_str().unwrap_or_default().into(),
-            revision: value["revision"].as_u64().unwrap_or_default(),
-            content_hash: value["projection_json"]["content_hash"]
+            request_id: value.request_id,
+            operation: value.operation,
+            status: value.status,
+            profile_id: value.profile_id,
+            revision: value.revision,
+            content_hash: value.projection_json["content_hash"]
                 .as_str()
                 .unwrap_or_default()
                 .into(),
-            state: value["state"].as_str().unwrap_or_default().into(),
-            error_code: value["error_code"].as_str().unwrap_or_default().into(),
-            projection_json: serde_json::to_vec(&value["projection_json"])?,
+            state: value.state,
+            error_code: value.error_code,
+            projection_json: serde_json::to_vec(&value.projection_json)?,
         };
         transport::write_frame(
             writer,
