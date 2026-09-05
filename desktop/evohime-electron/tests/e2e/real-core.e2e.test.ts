@@ -73,6 +73,8 @@ function startCore(pipeName: string): ChildProcess {
   const child = spawn(coreExecutable as string, {
     env: {
       ...process.env,
+      EVOHIME_DEV_MODE: '1',
+      EVOHIME_LAUNCH_CONTEXT: undefined,
       EVOHIME_CORE_PIPE: pipeName,
       EVOHIME_DATA_DIR: dataDir
     },

@@ -51,6 +51,14 @@ Electron — единственная пользовательская обол�
 процессы Electron используют authenticated named-pipe transport к Rust Core;
 второй desktop runtime в продукте не предусмотрен.
 
+Конфигурация Core pipe закрыта по умолчанию: без authenticated launch context
+Core завершается с ошибкой до открытия SQLite и создания endpoint. Legacy
+handshake разрешён только при точном `EVOHIME_DEV_MODE=1`; заданный, но
+повреждённый context не переключает запуск на legacy. Флаг разработки не
+отключает аутентификацию supervisor context. Штатный packaged-запуск получает
+контекст от supervisor; конфигурация сервера не допускает отдельного отключения
+authentication. Консольные команды, не создающие pipe, не требуют context.
+
 ## Оболочка
 
 Renderer состоит из панели проектов и чатов, ленты диалога и инструментальных разделов.

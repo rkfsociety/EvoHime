@@ -19,6 +19,19 @@ fn main() {
 
 #[cfg(windows)]
 async fn run() {
+    // Console commands never create a pipe. Validate server launches before
+    // opening storage or starting background work.
+    let pipe_config = if std::env::args().any(|arg| arg == "--console" || arg == "--list-models") {
+        None
+    } else {
+        match launch_context().and_then(evohime_core::PipeServerConfig::from_environment) {
+            Ok(config) => Some(config),
+            Err(error) => {
+                eprintln!("evohime-core launch context failed: {error}");
+                std::process::exit(1);
+            }
+        }
+    };
     let data_dir = normalized_env_path("EVOHIME_DATA_DIR")
         .or_else(|| {
             std::env::var_os("LOCALAPPDATA")
@@ -259,17 +272,11 @@ async fn run() {
             std::process::exit(1);
         }
     };
-    let context = match launch_context() {
-        Ok(context) => context,
-        Err(error) => {
-            eprintln!("evohime-core launch context failed: {error}");
-            std::process::exit(1);
-        }
-    };
-    if let Err(error) = probe_supervisor(&context).await {
+    let config = pipe_config.expect("console commands return before pipe startup");
+    if let Err(error) = probe_supervisor(config.context()).await {
         eprintln!("evohime-core supervisor lifecycle probe failed: {error}");
     }
-    let authenticated = context.is_authenticated();
+    let authenticated = config.context().is_authenticated();
     let _ = logger.write(
         "info",
         "core.started",
@@ -279,10 +286,6 @@ async fn run() {
             "authenticated": authenticated,
         }),
     );
-    let config = evohime_core::PipeServerConfig {
-        context,
-        enforce_authentication: authenticated,
-    };
     let bridge = std::sync::Arc::new(bridge);
     let scheduler_bridge = std::sync::Arc::clone(&bridge);
     let automation_scheduler_task = tokio::spawn(async move {
@@ -292,7 +295,7 @@ async fn run() {
         }
     });
     let listener_bridge = std::sync::Arc::clone(&bridge);
-    let listener_context = config.context.clone();
+    let listener_context = config.context().clone();
     let listener_logger = std::sync::Arc::clone(&logger);
     let result = tokio::select! {
         result = evohime_core::run_windows_pipe(config, bridge, logger) => result,
@@ -905,10 +908,8 @@ fn main() {
 /// one session secret and one Windows identity.
 ///
 /// The supervisor passes a protected context file through
-/// `EVOHIME_LAUNCH_CONTEXT`. Without it Core keeps serving the legacy pipe
-/// name with a freshly generated secret and no identity binding for local
-/// developer launches; such a connection is reported as unauthenticated in the
-/// log and in `core.started`.
+/// `EVOHIME_LAUNCH_CONTEXT`. Without it Core only keeps serving the legacy
+/// pipe when the explicit developer flag is enabled.
 #[cfg(windows)]
 fn launch_context() -> Result<evohime_desktop_ipc::session::LaunchContext, std::io::Error> {
     use evohime_desktop_ipc::session::{
@@ -917,6 +918,12 @@ fn launch_context() -> Result<evohime_desktop_ipc::session::LaunchContext, std::
 
     if let Some(path) = std::env::var_os("EVOHIME_LAUNCH_CONTEXT") {
         return read_launch_context(std::path::Path::new(&path));
+    }
+
+    if !developer_mode_enabled(std::env::var_os("EVOHIME_DEV_MODE").as_deref()) {
+        return Err(std::io::Error::other(
+            "EVOHIME_LAUNCH_CONTEXT is required outside explicit developer mode",
+        ));
     }
 
     let pipe_name =
@@ -934,4 +941,24 @@ fn launch_context() -> Result<evohime_desktop_ipc::session::LaunchContext, std::
         supervisor_pipe_name: None,
         supervisor_secret: None,
     })
+}
+
+#[cfg(windows)]
+fn developer_mode_enabled(value: Option<&std::ffi::OsStr>) -> bool {
+    value.is_some_and(|value| value == "1")
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::developer_mode_enabled;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn developer_mode_requires_explicit_one() {
+        assert!(!developer_mode_enabled(None));
+        assert!(!developer_mode_enabled(Some(OsStr::new("0"))));
+        assert!(!developer_mode_enabled(Some(OsStr::new("true"))));
+        assert!(!developer_mode_enabled(Some(OsStr::new("1 "))));
+        assert!(developer_mode_enabled(Some(OsStr::new("1"))));
+    }
 }

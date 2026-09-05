@@ -34,6 +34,11 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 клиент не вносятся изменения: диагностика и проверки выполняются в исходниках,
 временных каталогах или CI.
 
+Core pipe работает fail-closed: отсутствие authenticated context вне явного
+`EVOHIME_DEV_MODE=1` останавливает процесс до открытия базы и pipe. Негативные
+запуски реального Core проверяет `crates/evohime-core/tests/production_pipe_startup.rs`;
+политику dev-режима и сохранение authentication — тесты `pipe_server`.
+
 ## Пользовательская оболочка
 
 Основная навигация находится в одном окне Electron. Слева доступны workspace и

@@ -26,11 +26,43 @@ use crate::{IpcBridge, StructuredLogger};
 const HANDSHAKE_TIMEOUT_MS: u64 = 10_000;
 
 pub struct PipeServerConfig {
-    pub context: LaunchContext,
+    context: LaunchContext,
     /// When false, a client that skips authentication is still served and the
-    /// connection is logged as unauthenticated. This is retained for local
-    /// developer launches; the packaged supervisor always enables enforcement.
-    pub enforce_authentication: bool,
+    /// connection is logged as unauthenticated. Core constructs this mode only
+    /// for an explicitly enabled developer launch; packaged supervisor launches
+    /// always enable enforcement.
+    enforce_authentication: bool,
+}
+
+impl PipeServerConfig {
+    /// Validate the launch policy before any pipe or runtime state is created.
+    pub fn from_environment(context: LaunchContext) -> Result<Self, std::io::Error> {
+        Self::new(context, std::env::var_os("EVOHIME_DEV_MODE").as_deref())
+    }
+
+    fn new(
+        context: LaunchContext,
+        dev_mode: Option<&std::ffi::OsStr>,
+    ) -> Result<Self, std::io::Error> {
+        context
+            .validate()
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        let enforce_authentication = context.is_authenticated();
+        if !enforce_authentication && dev_mode != Some(std::ffi::OsStr::new("1")) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "authenticated launch context is required unless EVOHIME_DEV_MODE=1",
+            ));
+        }
+        Ok(Self {
+            context,
+            enforce_authentication,
+        })
+    }
+
+    pub fn context(&self) -> &LaunchContext {
+        &self.context
+    }
 }
 
 /// Writer that hands frames to the single task owning the pipe's write half.
@@ -311,4 +343,36 @@ async fn reject<W: tokio::io::AsyncWrite + Unpin>(
     );
     transport::write_frame(writer, &event.encode_to_vec()).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn production_pipe_config_rejects_unauthenticated_context() {
+        let context = LaunchContext::generate(String::new(), String::new(), 0).unwrap();
+        for value in [None, Some(""), Some("0"), Some("true"), Some("1 ")] {
+            assert!(PipeServerConfig::new(context.clone(), value.map(OsStr::new)).is_err());
+        }
+        let config = PipeServerConfig::new(context, Some(OsStr::new("1"))).unwrap();
+        assert!(!config.enforce_authentication);
+    }
+
+    #[test]
+    fn developer_flag_never_downgrades_authenticated_context() {
+        let context = LaunchContext::generate("S-1-5-21-test".into(), "session".into(), 0).unwrap();
+        for value in [None, Some(OsStr::new("1"))] {
+            let config = PipeServerConfig::new(context.clone(), value).unwrap();
+            assert!(config.enforce_authentication);
+        }
+    }
+
+    #[test]
+    fn developer_flag_does_not_bypass_context_validation() {
+        let mut context = LaunchContext::generate(String::new(), String::new(), 0).unwrap();
+        context.pipe_name = "invalid".into();
+        assert!(PipeServerConfig::new(context, Some(OsStr::new("1"))).is_err());
+    }
 }
