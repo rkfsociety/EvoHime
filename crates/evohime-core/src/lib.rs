@@ -10305,7 +10305,10 @@ impl TaskCoordinator {
     // `SendError` по контракту tokio возвращает вызывающему саму неотправленную
     // команду, поэтому размер Err-варианта здесь неизбежен и боксировать его нельзя
     // без слома API диспетчеризации.
-    #[allow(clippy::result_large_err)]
+    #[expect(
+        clippy::result_large_err,
+        reason = "Tokio SendError preserves the unsent CoreCommand for dispatch recovery"
+    )]
     pub async fn dispatch(
         &self,
         command: CoreCommand,
@@ -10468,7 +10471,6 @@ impl TaskCoordinator {
         self.state.lock().await.audit.records().to_vec()
     }
 
-    #[allow(clippy::needless_return)]
     async fn handle_command(state: Arc<Mutex<CoordinatorState>>, command: CoreCommand) {
         match command {
             CoreCommand::StartTask {
@@ -14098,7 +14100,7 @@ impl TaskCoordinator {
                             let model_id = request.model_id.as_deref().filter(|v| !v.is_empty()).ok_or_else(|| "model_id_required".to_string())?;
                             let request_id = request.request_id.as_deref().filter(|v| !v.is_empty()).ok_or_else(|| "request_id_required".to_string())?;
                             #[cfg(windows)]
-                            { let response = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"launch","model_id":model_id,"request_id":request_id})).await.map_err(|_| "runtime_unavailable".to_string())?; if response.get("accepted") != Some(&serde_json::Value::Bool(true)) { return Err("runtime_unavailable".into()); } let health = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"probe","model_id":model_id})).await.map_err(|_| "health_gate_unavailable".to_string())?; if health.get("healthy") != Some(&serde_json::Value::Bool(true)) { let _ = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"stop","model_id":model_id,"request_id":request_id})).await; return Err("health_gate_failed".into()); } return serde_json::to_vec(&serde_json::json!({"status":"ready","model_id":model_id,"supervised":true,"health_gate":"passed","redacted":true})).map_err(|_| "serialization_failed".to_string()); }
+                            { let response = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"launch","model_id":model_id,"request_id":request_id})).await.map_err(|_| "runtime_unavailable".to_string())?; if response.get("accepted") != Some(&serde_json::Value::Bool(true)) { return Err("runtime_unavailable".into()); } let health = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"probe","model_id":model_id})).await.map_err(|_| "health_gate_unavailable".to_string())?; if health.get("healthy") != Some(&serde_json::Value::Bool(true)) { let _ = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"stop","model_id":model_id,"request_id":request_id})).await; return Err("health_gate_failed".into()); } serde_json::to_vec(&serde_json::json!({"status":"ready","model_id":model_id,"supervised":true,"health_gate":"passed","redacted":true})).map_err(|_| "serialization_failed".to_string()) }
                             #[cfg(not(windows))]
                             { let _ = (model_id, request_id); Err("runtime_unavailable".into()) }
                         }
@@ -14106,14 +14108,14 @@ impl TaskCoordinator {
                             let model_id = request.model_id.as_deref().filter(|v| !v.is_empty()).ok_or_else(|| "model_id_required".to_string())?;
                             let request_id = request.request_id.as_deref().filter(|v| !v.is_empty()).ok_or_else(|| "request_id_required".to_string())?;
                             #[cfg(windows)]
-                            { let response = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"stop","model_id":model_id,"request_id":request_id})).await.map_err(|_| "runtime_unavailable".to_string())?; if response.get("accepted") != Some(&serde_json::Value::Bool(true)) { return Err("runtime_unavailable".into()); } return serde_json::to_vec(&serde_json::json!({"status":"stopped","model_id":model_id,"supervised":true,"redacted":true})).map_err(|_| "serialization_failed".to_string()); }
+                            { let response = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"stop","model_id":model_id,"request_id":request_id})).await.map_err(|_| "runtime_unavailable".to_string())?; if response.get("accepted") != Some(&serde_json::Value::Bool(true)) { return Err("runtime_unavailable".into()); } serde_json::to_vec(&serde_json::json!({"status":"stopped","model_id":model_id,"supervised":true,"redacted":true})).map_err(|_| "serialization_failed".to_string()) }
                             #[cfg(not(windows))]
                             { let _ = (model_id, request_id); Err("runtime_unavailable".into()) }
                         }
                         "probe" => {
                             let model_id = request.model_id.as_deref().filter(|v| !v.is_empty()).ok_or_else(|| "model_id_required".to_string())?;
                             #[cfg(windows)]
-                            { let response = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"probe","model_id":model_id})).await.map_err(|_| "health_gate_unavailable".to_string())?; if response.get("healthy") != Some(&serde_json::Value::Bool(true)) { return Err("health_gate_failed".into()); } return serde_json::to_vec(&serde_json::json!({"status":"ready","model_id":model_id,"health_gate":"passed","redacted":true})).map_err(|_| "serialization_failed".to_string()); }
+                            { let response = crate::analysis_kernel::supervisor_command(serde_json::json!({"op":"probe","model_id":model_id})).await.map_err(|_| "health_gate_unavailable".to_string())?; if response.get("healthy") != Some(&serde_json::Value::Bool(true)) { return Err("health_gate_failed".into()); } serde_json::to_vec(&serde_json::json!({"status":"ready","model_id":model_id,"health_gate":"passed","redacted":true})).map_err(|_| "serialization_failed".to_string()) }
                             #[cfg(not(windows))]
                             { let _ = model_id; Err("runtime_unavailable".into()) }
                         }
@@ -14759,7 +14761,7 @@ impl TaskCoordinator {
                 idempotency_key,
                 reply,
             } => {
-                #[allow(clippy::possible_missing_else, clippy::needless_question_mark)]
+                #[expect(clippy::possible_missing_else, clippy::needless_question_mark, reason = "compact privacy command state machine uses sequential guards")]
                 let result = async { use crate::privacy_and_telemetry_governance as g; use evohime_local_storage::privacy_telemetry_store as store; let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?; let db=journal.database().lock().await; if idempotency_key.is_empty() || idempotency_key.len()>128 { return Err("invalid_idempotency_key".to_string()); } if expected_version != 0 { let current=store::consent_revision(db.connection()).map_err(|_|"storage_failed".to_string())?.unwrap_or(0); if current != expected_version { return Err("stale_version".to_string()); } } if !store::claim_idempotency(db.connection(),&idempotency_key,&operation).map_err(|_|"storage_failed".to_string())? { return Ok(serde_json::to_vec(&serde_json::json!({"status":"replayed","redacted":true})).map_err(|_|"serialization_failed".to_string())?); } match operation.as_str(){"consent"=>{let c:g::ConsentState=serde_json::from_slice(&payload).map_err(|_|"invalid_consent".to_string())?;g::validate_consent(&c).map_err(|e|e.to_string())?;let j=serde_json::to_vec(&c).map_err(|_|"serialization_failed".to_string())?;store::put_consent(db.connection(),&j,c.revision).map_err(|_|"storage_failed".to_string())?;serde_json::to_vec(&serde_json::json!({"status":"consent_saved","redacted":true})).map_err(|_|"serialization_failed".to_string())},"enqueue"=>{let request:g::TelemetryEnqueueRequest=serde_json::from_slice(&payload).map_err(|_|"invalid_enqueue_request".to_string())?;let e=request.event;g::enqueue(&request.consent,e.clone()).map_err(|e|e.to_string())?;let j=serde_json::to_vec(&e).map_err(|_|"serialization_failed".to_string())?;let inserted=store::put_event(db.connection(),&e.event_id,&format!("{:?}",e.category),&j,e.created_at_ms).map_err(|_|"storage_failed".to_string())?;serde_json::to_vec(&serde_json::json!({"queued":inserted,"redacted":true})).map_err(|_|"serialization_failed".to_string())},"list"=>serde_json::to_vec(&serde_json::json!({"events":store::list(db.connection()).map_err(|_|"storage_failed".to_string())?,"redacted":true})).map_err(|_|"serialization_failed".to_string()),"clear"=>{store::clear(db.connection()).map_err(|_|"storage_failed".to_string())?;serde_json::to_vec(&serde_json::json!({"status":"cleared","redacted":true})).map_err(|_|"serialization_failed".to_string())},_=>Err("unsupported_privacy_telemetry_operation".into())}}.await;
                 let projection_json = result
                     .as_ref()
