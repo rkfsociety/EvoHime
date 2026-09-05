@@ -73,6 +73,45 @@ pub struct UpsertChildInput<'a, T> {
     pub retained_until_ms: u64,
 }
 
+pub struct InsertFollowUpInput<'a, T> {
+    pub parent_id: &'a str,
+    pub child_id: &'a str,
+    pub idempotency_key: &'a str,
+    pub expected_revision: u64,
+    pub parent_sequence: u64,
+    pub request: &'a T,
+    pub now_ms: u64,
+}
+
+impl<'a, T> Copy for InsertFollowUpInput<'a, T> {}
+impl<'a, T> Clone for InsertFollowUpInput<'a, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct InsertMailboxInput<'a, T> {
+    pub parent_id: &'a str,
+    pub child_id: &'a str,
+    pub idempotency_key: &'a str,
+    pub message_id: &'a str,
+    pub parent_sequence: u64,
+    pub entry: &'a T,
+    pub now_ms: u64,
+}
+
+pub struct EnqueueFollowUpInput<'a, R, F> {
+    pub parent_id: &'a str,
+    pub child_id: &'a str,
+    pub idempotency_key: &'a str,
+    pub expected_revision: u64,
+    pub request: &'a R,
+    pub message_id: &'a str,
+    pub build_entry: F,
+    pub now_ms: u64,
+}
+
 impl RetainedChildStore {
     pub fn next_parent_sequence(
         connection: &mut Connection,
@@ -128,18 +167,11 @@ impl RetainedChildStore {
         rows.map(|r| r.map_err(RetainedStoreError::from).and_then(|x| parse(&x)))
             .collect()
     }
-    #[allow(clippy::too_many_arguments)]
     pub fn insert_follow_up<T: Serialize>(
         connection: &Connection,
-        parent_id: &str,
-        child_id: &str,
-        key: &str,
-        revision: u64,
-        sequence: u64,
-        request: &T,
-        now_ms: u64,
+        input: InsertFollowUpInput<'_, T>,
     ) -> Result<bool, RetainedStoreError> {
-        let n=connection.execute("INSERT OR IGNORE INTO child_follow_ups(idempotency_key,parent_id,child_id,expected_revision,parent_sequence,request_json,outcome,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6,'pending',?7)",params![key,parent_id,child_id,revision as i64,sequence as i64,json(request)?,now_ms as i64])?;
+        let n=connection.execute("INSERT OR IGNORE INTO child_follow_ups(idempotency_key,parent_id,child_id,expected_revision,parent_sequence,request_json,outcome,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6,'pending',?7)",params![input.idempotency_key,input.parent_id,input.child_id,input.expected_revision as i64,input.parent_sequence as i64,json(input.request)?,input.now_ms as i64])?;
         Ok(n == 1)
     }
     pub fn has_follow_up(connection: &Connection, key: &str) -> Result<bool, RetainedStoreError> {
@@ -149,66 +181,51 @@ impl RetainedChildStore {
             |r| r.get(0),
         )?)
     }
-    #[allow(clippy::too_many_arguments)]
     pub fn insert_mailbox<T: Serialize>(
         connection: &Connection,
-        parent_id: &str,
-        child_id: &str,
-        key: &str,
-        message_id: &str,
-        sequence: u64,
-        entry: &T,
-        now_ms: u64,
+        input: InsertMailboxInput<'_, T>,
     ) -> Result<bool, RetainedStoreError> {
-        let pending:i64=connection.query_row("SELECT COUNT(*) FROM child_mailbox WHERE parent_id=?1 AND receiver_id=?2 AND delivery IN ('pending','dispatched')",params![parent_id,child_id],|r|r.get(0))?;
+        let pending:i64=connection.query_row("SELECT COUNT(*) FROM child_mailbox WHERE parent_id=?1 AND receiver_id=?2 AND delivery IN ('pending','dispatched')",params![input.parent_id,input.child_id],|r|r.get(0))?;
         if pending >= MAX_PENDING_PER_CHILD {
             return Err(RetainedStoreError::LimitExceeded);
         }
-        let n=connection.execute("INSERT OR IGNORE INTO child_mailbox(message_id,parent_id,receiver_id,idempotency_key,delivery,parent_sequence,entry_json,created_at_ms) VALUES(?1,?2,?3,?4,'pending',?5,?6,?7)",params![message_id,parent_id,child_id,key,sequence as i64,json(entry)?,now_ms as i64])?;
+        let n=connection.execute("INSERT OR IGNORE INTO child_mailbox(message_id,parent_id,receiver_id,idempotency_key,delivery,parent_sequence,entry_json,created_at_ms) VALUES(?1,?2,?3,?4,'pending',?5,?6,?7)",params![input.message_id,input.parent_id,input.child_id,input.idempotency_key,input.parent_sequence as i64,json(input.entry)?,input.now_ms as i64])?;
         Ok(n == 1)
     }
-    #[allow(clippy::too_many_arguments)]
     pub fn enqueue_follow_up<R: Serialize, E: Serialize, F: FnOnce(u64) -> E>(
         connection: &mut Connection,
-        parent_id: &str,
-        child_id: &str,
-        key: &str,
-        revision: u64,
-        request: &R,
-        message_id: &str,
-        build_entry: F,
-        now_ms: u64,
+        input: EnqueueFollowUpInput<'_, R, F>,
     ) -> Result<bool, RetainedStoreError> {
         let tx = connection.transaction()?;
         if tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM child_follow_ups WHERE idempotency_key=?1)",
-            [key],
+            [input.idempotency_key],
             |r| r.get::<_, bool>(0),
         )? {
             return Ok(false);
         }
         let pending: i64 = tx.query_row(
             "SELECT COUNT(*) FROM child_mailbox WHERE parent_id=?1 AND receiver_id=?2 AND delivery IN ('pending','dispatched')",
-            params![parent_id, child_id],
+            params![input.parent_id, input.child_id],
             |r| r.get(0),
         )?;
         if pending >= MAX_PENDING_PER_CHILD {
             return Err(RetainedStoreError::LimitExceeded);
         }
-        tx.execute("INSERT INTO child_retained_sequences(parent_id,next_sequence) VALUES(?1,0) ON CONFLICT(parent_id) DO NOTHING", [parent_id])?;
+        tx.execute("INSERT INTO child_retained_sequences(parent_id,next_sequence) VALUES(?1,0) ON CONFLICT(parent_id) DO NOTHING", [input.parent_id])?;
         tx.execute(
             "UPDATE child_retained_sequences SET next_sequence=next_sequence+1 WHERE parent_id=?1",
-            [parent_id],
+            [input.parent_id],
         )?;
         let sequence: i64 = tx.query_row(
             "SELECT next_sequence FROM child_retained_sequences WHERE parent_id=?1",
-            [parent_id],
+            [input.parent_id],
             |r| r.get(0),
         )?;
-        tx.execute("INSERT INTO child_follow_ups(idempotency_key,parent_id,child_id,expected_revision,parent_sequence,request_json,outcome,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6,'pending',?7)", params![key,parent_id,child_id,revision as i64,sequence,json(request)?,now_ms as i64])?;
+        tx.execute("INSERT INTO child_follow_ups(idempotency_key,parent_id,child_id,expected_revision,parent_sequence,request_json,outcome,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6,'pending',?7)", params![input.idempotency_key,input.parent_id,input.child_id,input.expected_revision as i64,sequence,json(input.request)?,input.now_ms as i64])?;
         let sequence = u64::try_from(sequence).map_err(|_| RetainedStoreError::LimitExceeded)?;
-        let entry = build_entry(sequence);
-        tx.execute("INSERT INTO child_mailbox(message_id,parent_id,receiver_id,idempotency_key,delivery,parent_sequence,entry_json,created_at_ms) VALUES(?1,?2,?3,?4,'pending',?5,?6,?7)", params![message_id,parent_id,child_id,key,sequence,json(&entry)?,now_ms as i64])?;
+        let entry = (input.build_entry)(sequence);
+        tx.execute("INSERT INTO child_mailbox(message_id,parent_id,receiver_id,idempotency_key,delivery,parent_sequence,entry_json,created_at_ms) VALUES(?1,?2,?3,?4,'pending',?5,?6,?7)", params![input.message_id,input.parent_id,input.child_id,input.idempotency_key,sequence,json(&entry)?,input.now_ms as i64])?;
         tx.commit()?;
         Ok(true)
     }
@@ -296,12 +313,17 @@ mod tests {
             RetainedChildStore::next_parent_sequence(&mut c, "p").unwrap(),
             1
         );
-        assert!(
-            RetainedChildStore::insert_follow_up(&c, "p", "c", "k", 1, 1, &R { v: 1 }, 1).unwrap()
-        );
-        assert!(
-            !RetainedChildStore::insert_follow_up(&c, "p", "c", "k", 1, 1, &R { v: 1 }, 1).unwrap()
-        );
+        let input = InsertFollowUpInput {
+            parent_id: "p",
+            child_id: "c",
+            idempotency_key: "k",
+            expected_revision: 1,
+            parent_sequence: 1,
+            request: &R { v: 1 },
+            now_ms: 1,
+        };
+        assert!(RetainedChildStore::insert_follow_up(&c, input).unwrap());
+        assert!(!RetainedChildStore::insert_follow_up(&c, input).unwrap());
         assert_eq!(
             RetainedChildStore::get_child::<R>(&c, "other", "c").unwrap(),
             None
@@ -311,9 +333,19 @@ mod tests {
     fn unknown_delivery_is_terminal_and_not_success() {
         let c = Connection::open_in_memory().unwrap();
         install_schema(&c).unwrap();
-        assert!(
-            RetainedChildStore::insert_mailbox(&c, "p", "c", "k", "m", 1, &R { v: 1 }, 1).unwrap()
-        );
+        assert!(RetainedChildStore::insert_mailbox(
+            &c,
+            InsertMailboxInput {
+                parent_id: "p",
+                child_id: "c",
+                idempotency_key: "k",
+                message_id: "m",
+                parent_sequence: 1,
+                entry: &R { v: 1 },
+                now_ms: 1,
+            },
+        )
+        .unwrap());
         assert!(
             RetainedChildStore::transition_mailbox(&c, "p", "m", "pending", "unknown", None)
                 .unwrap()
