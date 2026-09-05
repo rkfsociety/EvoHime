@@ -1360,18 +1360,28 @@ fn parent_approval_ids(value: &str) -> Option<(&str, &str)> {
     Some((action_id, approval_id))
 }
 
-// Аргументы повторяют поля подписываемого чека.
-#[allow(clippy::too_many_arguments)]
+struct SignedReceiptInput<'a> {
+    request: &'a ActionRequest,
+    kind: &'a str,
+    status: &'a str,
+    args_hash: &'a str,
+    result: Option<&'a str>,
+    refusal: Option<&'a str>,
+}
+
 fn signed_receipt(
     tx: &Connection,
     signer: &dyn ReceiptSigner,
-    request: &ActionRequest,
-    kind: &str,
-    status: &str,
-    args_hash: &str,
-    result: Option<&str>,
-    refusal: Option<&str>,
+    input: SignedReceiptInput<'_>,
 ) -> Result<(String, String), RuntimeError> {
+    let SignedReceiptInput {
+        request,
+        kind,
+        status,
+        args_hash,
+        result,
+        refusal,
+    } = input;
     let append_started = Instant::now();
     let key_id = signer.key_id()?;
     let previous: Option<String> = tx
@@ -1758,12 +1768,14 @@ impl<'a> ReceiptRuntime<'a> {
                 let (hash, _) = signed_receipt(
                     &tx,
                     self.signer,
-                    &request,
-                    "refusal",
-                    "refused",
-                    &args_hash,
-                    None,
-                    Some("policy_denied"),
+                    SignedReceiptInput {
+                        request: &request,
+                        kind: "refusal",
+                        status: "refused",
+                        args_hash: &args_hash,
+                        result: None,
+                        refusal: Some("policy_denied"),
+                    },
                 )?;
                 tx.execute("UPDATE receipt_actions SET state='refused',terminal_receipt_hash=?2 WHERE action_id=?1", params![action, hash])?;
                 tx.commit()?;
@@ -1798,12 +1810,14 @@ impl<'a> ReceiptRuntime<'a> {
                 let (hash, _) = signed_receipt(
                     &tx,
                     self.signer,
-                    &request,
-                    "pre_action",
-                    "prepared",
-                    &args_hash,
-                    None,
-                    None,
+                    SignedReceiptInput {
+                        request: &request,
+                        kind: "pre_action",
+                        status: "prepared",
+                        args_hash: &args_hash,
+                        result: None,
+                        refusal: None,
+                    },
                 )?;
                 tx.execute("UPDATE receipt_actions SET pre_receipt_hash=?2,state='prepared' WHERE action_id=?1", params![action, hash])?;
                 tx.commit()?;
@@ -1955,12 +1969,14 @@ impl<'a> ReceiptRuntime<'a> {
             let (hash, _) = signed_receipt(
                 &tx,
                 self.signer,
-                request,
-                "refusal",
-                "refused",
-                &stored_hash_for_action(&tx, &action_id)?,
-                None,
-                Some(code),
+                SignedReceiptInput {
+                    request,
+                    kind: "refusal",
+                    status: "refused",
+                    args_hash: &stored_hash_for_action(&tx, &action_id)?,
+                    result: None,
+                    refusal: Some(code),
+                },
             )?;
             tx.execute("UPDATE receipt_approval_intents SET state=?2 WHERE approval_id=?1 AND state IN ('pending','granted')", params![approval_id.to_string(), if expired { "expired" } else { "lost" }])?;
             tx.execute("UPDATE receipt_actions SET state='refused',terminal_receipt_hash=?2,completion_source='execution' WHERE action_id=?1 AND terminal_receipt_hash IS NULL", params![action_id, hash])?;
@@ -1976,12 +1992,14 @@ impl<'a> ReceiptRuntime<'a> {
             let (hash, _) = signed_receipt(
                 &tx,
                 self.signer,
-                request,
-                "refusal",
-                "refused",
-                &stored,
-                None,
-                Some("call_changed"),
+                SignedReceiptInput {
+                    request,
+                    kind: "refusal",
+                    status: "refused",
+                    args_hash: &stored,
+                    result: None,
+                    refusal: Some("call_changed"),
+                },
             )?;
             tx.execute("UPDATE receipt_approval_intents SET state='lost' WHERE approval_id=?1 AND state IN ('pending','granted')", [approval_id.to_string()])?;
             tx.execute("UPDATE receipt_actions SET state='refused',terminal_receipt_hash=?2 WHERE action_id=?1 AND terminal_receipt_hash IS NULL", params![action_id, hash])?;
@@ -1992,12 +2010,14 @@ impl<'a> ReceiptRuntime<'a> {
             let (hash, _) = signed_receipt(
                 &tx,
                 self.signer,
-                request,
-                "refusal",
-                "refused",
-                &stored,
-                None,
-                Some("policy_denied"),
+                SignedReceiptInput {
+                    request,
+                    kind: "refusal",
+                    status: "refused",
+                    args_hash: &stored,
+                    result: None,
+                    refusal: Some("policy_denied"),
+                },
             )?;
             tx.execute("UPDATE receipt_approval_intents SET state='lost' WHERE approval_id=?1 AND state IN ('pending','granted')", [approval_id.to_string()])?;
             tx.execute("UPDATE receipt_actions SET state='refused',terminal_receipt_hash=?2 WHERE action_id=?1 AND terminal_receipt_hash IS NULL", params![action_id, hash])?;
@@ -2009,12 +2029,14 @@ impl<'a> ReceiptRuntime<'a> {
         let (hash, _) = signed_receipt(
             &tx,
             self.signer,
-            &bound,
-            "pre_action",
-            "prepared",
-            &stored,
-            None,
-            None,
+            SignedReceiptInput {
+                request: &bound,
+                kind: "pre_action",
+                status: "prepared",
+                args_hash: &stored,
+                result: None,
+                refusal: None,
+            },
         )?;
         tx.execute("UPDATE receipt_approval_intents SET state='claimed' WHERE approval_id=?1 AND state='granted'", [approval_id.to_string()])?;
         tx.execute("UPDATE receipt_actions SET state='prepared',approval_id=?2,approval_call_hash=?3,pre_receipt_hash=?4 WHERE action_id=?1", params![action_id, approval_id.to_string(), stored, hash])?;
@@ -2166,12 +2188,14 @@ impl<'a> ReceiptRuntime<'a> {
         let (hash, _) = signed_receipt(
             &tx,
             self.signer,
-            request,
-            "post_action",
-            status,
-            &stored_hash,
-            Some(&result),
-            None,
+            SignedReceiptInput {
+                request,
+                kind: "post_action",
+                status,
+                args_hash: &stored_hash,
+                result: Some(&result),
+                refusal: None,
+            },
         )?;
         tx.execute("UPDATE receipt_actions SET state=?2,dispatch_state='returned',result_hash=?3,result_marker=?4,terminal_receipt_hash=?5 WHERE action_id=?1", params![request.action_id.to_string(), status, result, marker, hash])?;
         if let Some(old_action_id) = reconciliation_old_action {
@@ -2255,12 +2279,14 @@ impl<'a> ReceiptRuntime<'a> {
         let (hash, _) = signed_receipt(
             &tx,
             self.signer,
-            request,
-            "refusal",
-            "refused",
-            &stored_hash,
-            None,
-            Some(code),
+            SignedReceiptInput {
+                request,
+                kind: "refusal",
+                status: "refused",
+                args_hash: &stored_hash,
+                result: None,
+                refusal: Some(code),
+            },
         )?;
         let source = if code == "recovery_pending" {
             "reconciliation"
@@ -2796,12 +2822,14 @@ impl<'a> ReceiptRuntime<'a> {
         let (hash, _) = signed_receipt(
             &tx,
             self.signer,
-            request,
-            "refusal",
-            "refused",
-            &stored_hash,
-            None,
-            Some("recovery_pending"),
+            SignedReceiptInput {
+                request,
+                kind: "refusal",
+                status: "refused",
+                args_hash: &stored_hash,
+                result: None,
+                refusal: Some("recovery_pending"),
+            },
         )?;
         tx.execute("UPDATE receipt_actions SET state='refused',recovery_code='unknown',completion_source='reconciliation',terminal_receipt_hash=?2 WHERE action_id=?1 AND state='quarantined'", params![request.action_id.to_string(), hash])?;
         tx.execute(
