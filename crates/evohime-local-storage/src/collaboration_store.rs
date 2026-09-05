@@ -13,18 +13,31 @@ fn parse<T: DeserializeOwned>(v: Vec<u8>) -> Result<T, rusqlite::Error> {
         rusqlite::Error::FromSqlConversionFailure(v.len(), rusqlite::types::Type::Blob, Box::new(e))
     })
 }
-#[allow(clippy::too_many_arguments)]
+pub struct EnqueueInput<'a, T, U, V> {
+    pub session: &'a str,
+    pub key: &'a str,
+    pub message_id: &'a str,
+    pub sender: &'a T,
+    pub receiver: &'a U,
+    pub envelope: &'a V,
+    pub sequence: u64,
+    pub now: i64,
+}
+
 pub fn enqueue<T: Serialize, U: Serialize, V: Serialize>(
     c: &mut Connection,
-    session: &str,
-    key: &str,
-    message_id: &str,
-    sender: &T,
-    receiver: &U,
-    envelope: &V,
-    sequence: u64,
-    now: i64,
+    input: EnqueueInput<'_, T, U, V>,
 ) -> Result<bool, rusqlite::Error> {
+    let EnqueueInput {
+        session,
+        key,
+        message_id,
+        sender,
+        receiver,
+        envelope,
+        sequence,
+        now,
+    } = input;
     let tx = c.transaction()?;
     let n:i64=tx.query_row("SELECT COUNT(*) FROM collaboration_messages WHERE session_id=?1 AND delivery IN ('accepted','queued','delivered')",[session],|r|r.get(0))?;
     if n >= MAX_INBOX_PER_SESSION {
@@ -82,7 +95,20 @@ mod tests {
     fn transition_is_compare_and_set_and_unknown_is_terminal() {
         let mut c = Connection::open_in_memory().unwrap();
         install_schema(&c).unwrap();
-        assert!(enqueue(&mut c, "s", "k", "m", &"parent", &"slot", &"envelope", 1, 1).unwrap());
+        assert!(enqueue(
+            &mut c,
+            EnqueueInput {
+                session: "s",
+                key: "k",
+                message_id: "m",
+                sender: &"parent",
+                receiver: &"slot",
+                envelope: &"envelope",
+                sequence: 1,
+                now: 1,
+            },
+        )
+        .unwrap());
         assert!(transition(&c, "m", "queued", "delivered", 1).unwrap());
         assert!(!transition(&c, "m", "queued", "consumed", 1).unwrap());
         assert!(transition(&c, "m", "delivered", "unknown", 2).unwrap());

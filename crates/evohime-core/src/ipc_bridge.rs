@@ -15081,14 +15081,16 @@ impl IpcBridge {
         let receiver = message.receiver.clone();
         match evohime_local_storage::collaboration_store::enqueue(
             database.connection_mut(),
-            &message.session_id,
-            &message.idempotency_key,
-            &message.message_id,
-            &sender,
-            &receiver,
-            &message,
-            sequence,
-            chrono::Utc::now().timestamp_millis(),
+            evohime_local_storage::collaboration_store::EnqueueInput {
+                session: &message.session_id,
+                key: &message.idempotency_key,
+                message_id: &message.message_id,
+                sender: &sender,
+                receiver: &receiver,
+                envelope: &message,
+                sequence,
+                now: chrono::Utc::now().timestamp_millis(),
+            },
         ) {
             Ok(true) => base(
                 "accepted",
