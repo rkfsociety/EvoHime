@@ -5598,7 +5598,9 @@ mod tests {
 
     #[test]
     fn research_and_memory_stores_round_trip_against_shared_migrated_database() {
-        use crate::memory_store::{MemoryPrivacy, MemoryRecord, MemoryScope, MemoryStoreSql};
+        use crate::memory_store::{
+            MemoryPrivacy, MemoryRecord, MemoryRecordInput, MemoryScope, MemoryStoreSql,
+        };
         use crate::research_store::{ResearchEvidenceRecord, ResearchEvidenceSql};
 
         let path = temp_database_path("bounded-stores");
@@ -5633,17 +5635,17 @@ mod tests {
             1
         );
 
-        let memory = MemoryRecord::new(
-            "memory-1",
-            MemoryScope::Project,
-            "project-shared-db",
-            "Decision",
-            "keep this fact",
-            "run:shared-db",
-            MemoryPrivacy::Internal,
-            "2026-08-12T10:00:00Z",
-            Some("2027-01-01T00:00:00Z".into()),
-        )
+        let memory = MemoryRecord::new(MemoryRecordInput {
+            id: "memory-1".into(),
+            scope: MemoryScope::Project,
+            scope_id: "project-shared-db".into(),
+            title: "Decision".into(),
+            content: "keep this fact".into(),
+            provenance: "run:shared-db".into(),
+            privacy: MemoryPrivacy::Internal,
+            created_at: "2026-08-12T10:00:00Z".into(),
+            expires_at: Some("2027-01-01T00:00:00Z".into()),
+        })
         .expect("memory record builds");
         MemoryStoreSql::insert(database.connection(), &memory)
             .expect("memory inserts against shared connection");

@@ -178,29 +178,17 @@ pub struct MemoryRecord {
 }
 
 impl MemoryRecord {
-    // Аргументы повторяют колонки записи памяти в SQLite.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        id: impl Into<String>,
-        scope: MemoryScope,
-        scope_id: impl Into<String>,
-        title: impl Into<String>,
-        content: impl Into<String>,
-        provenance: impl Into<String>,
-        privacy: MemoryPrivacy,
-        created_at: impl Into<String>,
-        expires_at: Option<String>,
-    ) -> Result<Self, MemoryStoreError> {
+    pub fn new(input: MemoryRecordInput) -> Result<Self, MemoryStoreError> {
         let record = Self {
-            id: id.into(),
-            scope,
-            scope_id: scope_id.into(),
-            title: title.into(),
-            content: redact_sensitive(&content.into()),
-            provenance: provenance.into(),
-            privacy,
-            created_at: created_at.into(),
-            expires_at,
+            id: input.id,
+            scope: input.scope,
+            scope_id: input.scope_id,
+            title: input.title,
+            content: redact_sensitive(&input.content),
+            provenance: input.provenance,
+            privacy: input.privacy,
+            created_at: input.created_at,
+            expires_at: input.expires_at,
             archived: false,
             forgotten: false,
             confirmations: 1,
@@ -373,6 +361,18 @@ pub struct InsertSessionNoteInput<'a> {
     pub statement: &'a str,
     pub created_at: &'a str,
     pub expires_at: &'a str,
+}
+
+pub struct MemoryRecordInput {
+    pub id: String,
+    pub scope: MemoryScope,
+    pub scope_id: String,
+    pub title: String,
+    pub content: String,
+    pub provenance: String,
+    pub privacy: MemoryPrivacy,
+    pub created_at: String,
+    pub expires_at: Option<String>,
 }
 
 /// Installs the v31 typed-memory columns on every database open. It is
@@ -1307,17 +1307,17 @@ mod tests {
     }
 
     fn record(id: &str, content: &str) -> MemoryRecord {
-        MemoryRecord::new(
-            id,
-            MemoryScope::Project,
-            "project-1",
-            "Decision",
-            content,
-            "run:1",
-            MemoryPrivacy::Internal,
-            "2026-08-12T10:00:00Z",
-            Some("2027-01-01T00:00:00Z".into()),
-        )
+        MemoryRecord::new(MemoryRecordInput {
+            id: id.into(),
+            scope: MemoryScope::Project,
+            scope_id: "project-1".into(),
+            title: "Decision".into(),
+            content: content.into(),
+            provenance: "run:1".into(),
+            privacy: MemoryPrivacy::Internal,
+            created_at: "2026-08-12T10:00:00Z".into(),
+            expires_at: Some("2027-01-01T00:00:00Z".into()),
+        })
         .expect("memory record builds")
     }
 
@@ -1327,17 +1327,17 @@ mod tests {
         assert!(!memory.content.contains("roman@example.test"));
         assert!(!memory.content.contains("token=secret"));
 
-        let too_large = MemoryRecord::new(
-            "m-1",
-            MemoryScope::Project,
-            "project-1",
-            "title",
-            "x".repeat(MAX_CONTENT_BYTES + 1),
-            "run:1",
-            MemoryPrivacy::Internal,
-            "2026-08-12T10:00:00Z",
-            None,
-        );
+        let too_large = MemoryRecord::new(MemoryRecordInput {
+            id: "m-1".into(),
+            scope: MemoryScope::Project,
+            scope_id: "project-1".into(),
+            title: "title".into(),
+            content: "x".repeat(MAX_CONTENT_BYTES + 1),
+            provenance: "run:1".into(),
+            privacy: MemoryPrivacy::Internal,
+            created_at: "2026-08-12T10:00:00Z".into(),
+            expires_at: None,
+        });
         assert!(matches!(
             too_large,
             Err(MemoryStoreError::Limit {

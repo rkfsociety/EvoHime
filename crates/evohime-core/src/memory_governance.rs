@@ -148,17 +148,17 @@ mod tests {
     use evohime_local_storage::memory_store::{MemoryPrivacy, MemoryScope};
 
     fn record() -> MemoryRecord {
-        MemoryRecord::new(
-            "m",
-            MemoryScope::Project,
-            "p",
-            "title",
-            "body",
-            "source",
-            MemoryPrivacy::Private,
-            "1",
-            None,
-        )
+        MemoryRecord::new(evohime_local_storage::memory_store::MemoryRecordInput {
+            id: "m".into(),
+            scope: MemoryScope::Project,
+            scope_id: "p".into(),
+            title: "title".into(),
+            content: "body".into(),
+            provenance: "source".into(),
+            privacy: MemoryPrivacy::Private,
+            created_at: "1".into(),
+            expires_at: None,
+        })
         .unwrap()
     }
 

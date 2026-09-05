@@ -1,5 +1,7 @@
 use crate::research::sha256_hex;
-use evohime_local_storage::memory_store::{MemoryPrivacy, MemoryRecord, MemoryScope};
+use evohime_local_storage::memory_store::{
+    MemoryPrivacy, MemoryRecord, MemoryRecordInput, MemoryScope,
+};
 use evohime_local_storage::ToolMetricRecord;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -57,17 +59,17 @@ pub fn build_lesson(
         tools.join(", "),
         failure_names.join(", "),
     );
-    let mut record = MemoryRecord::new(
-        format!("lesson-{task_id}-{lesson_key}"),
-        MemoryScope::Project,
-        workspace_scope_id(workspace_root),
-        "Подтверждённый урок восстановления инструмента",
+    let mut record = MemoryRecord::new(MemoryRecordInput {
+        id: format!("lesson-{task_id}-{lesson_key}"),
+        scope: MemoryScope::Project,
+        scope_id: workspace_scope_id(workspace_root),
+        title: "Подтверждённый урок восстановления инструмента".to_owned(),
         content,
-        format!("task:{task_id}"),
-        MemoryPrivacy::Private,
-        now.to_string(),
-        Some((now + LESSON_TTL_MS).to_string()),
-    )
+        provenance: format!("task:{task_id}"),
+        privacy: MemoryPrivacy::Private,
+        created_at: now.to_string(),
+        expires_at: Some((now + LESSON_TTL_MS).to_string()),
+    })
     .ok()?;
     record.lesson_key = Some(lesson_key);
     Some(record)

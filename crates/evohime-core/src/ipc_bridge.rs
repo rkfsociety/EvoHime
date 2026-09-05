@@ -20325,15 +20325,17 @@ mod tests {
         // has to prove that pending records can be reviewed and resolved.
         let seed = |id: &str, state: &str, statement: &str| {
             let mut record = evohime_local_storage::memory_store::MemoryRecord::new(
-                id,
-                evohime_local_storage::memory_store::MemoryScope::Project,
-                "proj-1",
-                "Язык интерфейса",
-                statement,
-                "{\"message_id\":\"msg-1\"}",
-                evohime_local_storage::memory_store::MemoryPrivacy::Internal,
-                "1000",
-                Some("99999999999999".to_owned()),
+                evohime_local_storage::memory_store::MemoryRecordInput {
+                    id: id.to_owned(),
+                    scope: evohime_local_storage::memory_store::MemoryScope::Project,
+                    scope_id: "proj-1".to_owned(),
+                    title: "Язык интерфейса".to_owned(),
+                    content: statement.to_owned(),
+                    provenance: "{\"message_id\":\"msg-1\"}".to_owned(),
+                    privacy: evohime_local_storage::memory_store::MemoryPrivacy::Internal,
+                    created_at: "1000".to_owned(),
+                    expires_at: Some("99999999999999".to_owned()),
+                },
             )
             .expect("record builds");
             record.extraction = evohime_local_storage::memory_store::MemoryExtractionFields {

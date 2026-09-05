@@ -7115,15 +7115,17 @@ impl ToolAgent {
                 continue;
             };
             let Ok(mut record) = evohime_local_storage::memory_store::MemoryRecord::new(
-                uuid::Uuid::new_v4().to_string(),
-                store_scope,
-                &scope_id,
-                candidate.raw_subject.clone(),
-                candidate.statement.clone(),
-                provenance,
-                evohime_local_storage::memory_store::MemoryPrivacy::Private,
-                now_ms.to_string(),
-                Some(now_ms.saturating_add(decision.ttl_ms).to_string()),
+                evohime_local_storage::memory_store::MemoryRecordInput {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    scope: store_scope,
+                    scope_id: scope_id.clone(),
+                    title: candidate.raw_subject.clone(),
+                    content: candidate.statement.clone(),
+                    provenance,
+                    privacy: evohime_local_storage::memory_store::MemoryPrivacy::Private,
+                    created_at: now_ms.to_string(),
+                    expires_at: Some(now_ms.saturating_add(decision.ttl_ms).to_string()),
+                },
             ) else {
                 continue;
             };
@@ -7420,15 +7422,17 @@ impl ToolAgent {
                 continue;
             };
             let Ok(mut record) = evohime_local_storage::memory_store::MemoryRecord::new(
-                uuid::Uuid::new_v4().to_string(),
-                store_scope,
-                AMBIENT_MEMORY_SCOPE_ID,
-                candidate.raw_subject.clone(),
-                candidate.statement.clone(),
-                provenance,
-                evohime_local_storage::memory_store::MemoryPrivacy::Private,
-                now_ms.to_string(),
-                Some(now_ms.saturating_add(decision.ttl_ms).to_string()),
+                evohime_local_storage::memory_store::MemoryRecordInput {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    scope: store_scope,
+                    scope_id: AMBIENT_MEMORY_SCOPE_ID.to_owned(),
+                    title: candidate.raw_subject.clone(),
+                    content: candidate.statement.clone(),
+                    provenance,
+                    privacy: evohime_local_storage::memory_store::MemoryPrivacy::Private,
+                    created_at: now_ms.to_string(),
+                    expires_at: Some(now_ms.saturating_add(decision.ttl_ms).to_string()),
+                },
             ) else {
                 continue;
             };
@@ -16038,15 +16042,17 @@ impl TaskCoordinator {
                     let provenance_json = serde_json::to_string(&record.provenance)
                         .map_err(|error| error.to_string())?;
                     let store_record = evohime_local_storage::memory_store::MemoryRecord::new(
-                        record.id.clone(),
-                        store_scope,
-                        encode_memory_scope_id(&project_id, &secondary_id),
-                        record.title.clone(),
-                        record.content.clone(),
-                        provenance_json,
-                        store_privacy,
-                        record.created_at_ms.to_string(),
-                        Some(record.expires_at_ms.to_string()),
+                        evohime_local_storage::memory_store::MemoryRecordInput {
+                            id: record.id.clone(),
+                            scope: store_scope,
+                            scope_id: encode_memory_scope_id(&project_id, &secondary_id),
+                            title: record.title.clone(),
+                            content: record.content.clone(),
+                            provenance: provenance_json,
+                            privacy: store_privacy,
+                            created_at: record.created_at_ms.to_string(),
+                            expires_at: Some(record.expires_at_ms.to_string()),
+                        },
                     )
                     .map_err(|error| error.to_string())?;
                     journal.save_memory(&store_record).await?;
