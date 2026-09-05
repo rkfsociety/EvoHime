@@ -7502,11 +7502,17 @@ impl IpcBridge {
         }
         let registry = self.voice_commands.clone();
         let launch_command = command.clone();
-        let launched = tokio::task::spawn_blocking(move || {
+        let launched = match tokio::task::spawn_blocking(move || {
             crate::voice_command::launch(&registry, &launch_command, now_ms)
         })
         .await
-        .unwrap_or_else(|error| Err(error.to_string()));
+        {
+            Ok(result) => result,
+            Err(error) => {
+                tracing::error!(%error, "voice command launch task failed");
+                Err("voice command launch task failed".to_owned())
+            }
+        };
         match launched {
             Ok(_) => {
                 self.publish_voice_command(&command, VoiceCommandState::Launched)

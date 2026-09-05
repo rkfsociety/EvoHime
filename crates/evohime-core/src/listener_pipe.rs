@@ -64,11 +64,17 @@ async fn handle_voice_command(
         Decision::Autorun(command) => {
             let launch_registry = registry.clone();
             let launch_command = command.clone();
-            let launched = tokio::task::spawn_blocking(move || {
+            let launched = match tokio::task::spawn_blocking(move || {
                 crate::voice_command::launch(&launch_registry, &launch_command, now_ms)
             })
             .await
-            .unwrap_or_else(|error| Err(error.to_string()));
+            {
+                Ok(result) => result,
+                Err(error) => {
+                    tracing::error!(%error, "listener voice command launch task failed");
+                    Err("voice command launch task failed".to_owned())
+                }
+            };
             match launched {
                 Ok(_) => (command, VoiceCommandState::Launched),
                 Err(error) => {

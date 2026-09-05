@@ -240,7 +240,13 @@ impl VoiceCommandRegistry {
 }
 
 fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|error| error.into_inner())
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(error) => {
+            tracing::error!("voice command registry mutex poisoned; recovering state");
+            error.into_inner()
+        }
+    }
 }
 
 /// Единственный вход услышанного в открытие приложений.
