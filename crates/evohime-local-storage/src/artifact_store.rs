@@ -333,22 +333,38 @@ impl<'a> ArtifactStore<'a> {
         reason: &str,
     ) -> Result<usize, StorageError> {
         let refs = self.list_refs(task_id)?;
+        let transaction = self.connection.unchecked_transaction()?;
+        let mut delete_ref =
+            transaction.prepare_cached("DELETE FROM task_artifact_refs WHERE locator = ?1")?;
+        let mut count_refs = transaction
+            .prepare_cached("SELECT COUNT(*) FROM task_artifact_refs WHERE content_hash = ?1")?;
+        let mut delete_content =
+            transaction.prepare_cached("DELETE FROM task_artifacts WHERE content_hash = ?1")?;
+        let mut insert_tombstone = transaction.prepare_cached(
+            "INSERT OR REPLACE INTO artifact_tombstones (content_hash, bytes, removed_at, reason)
+             VALUES (?1, ?2, ?3, ?4)",
+        )?;
         let mut removed = 0;
         for reference in refs {
-            self.connection.execute(
-                "DELETE FROM task_artifact_refs WHERE locator = ?1",
-                [&reference.locator],
-            )?;
+            delete_ref.execute([&reference.locator])?;
             removed += 1;
-            let remaining: i64 = self.connection.query_row(
-                "SELECT COUNT(*) FROM task_artifact_refs WHERE content_hash = ?1",
-                [&reference.content_hash],
-                |row| row.get(0),
-            )?;
+            let remaining: i64 =
+                count_refs.query_row([&reference.content_hash], |row| row.get(0))?;
             if remaining == 0 {
-                self.remove_content(&reference.content_hash, reference.bytes, now, reason)?;
+                delete_content.execute([&reference.content_hash])?;
+                insert_tombstone.execute(rusqlite::params![
+                    reference.content_hash,
+                    reference.bytes as i64,
+                    now,
+                    reason,
+                ])?;
             }
         }
+        drop(insert_tombstone);
+        drop(delete_content);
+        drop(count_refs);
+        drop(delete_ref);
+        transaction.commit()?;
         Ok(removed)
     }
 
@@ -356,30 +372,59 @@ impl<'a> ArtifactStore<'a> {
     pub fn evict(&self, needed_bytes: u64, now: i64) -> Result<u64, StorageError> {
         let candidates = self.eviction_candidates(now)?;
         let plan = plan_eviction(&candidates, needed_bytes);
+        let transaction = self.connection.unchecked_transaction()?;
+        let mut get_ref = transaction.prepare_cached(
+            "SELECT locator, content_hash, task_id, owner_task_id, bytes, privacy,
+                    status, created_at, last_access_at, ttl_ms, summary
+             FROM task_artifact_refs WHERE locator = ?1",
+        )?;
+        let mut set_ref_status = transaction
+            .prepare_cached("UPDATE task_artifact_refs SET status = ?2 WHERE locator = ?1")?;
+        let mut delete_ref =
+            transaction.prepare_cached("DELETE FROM task_artifact_refs WHERE locator = ?1")?;
+        let mut count_live_refs = transaction.prepare_cached(
+            "SELECT COUNT(*) FROM task_artifact_refs
+             WHERE content_hash = ?1 AND status = 'live'",
+        )?;
+        let mut delete_content =
+            transaction.prepare_cached("DELETE FROM task_artifacts WHERE content_hash = ?1")?;
+        let mut insert_tombstone = transaction.prepare_cached(
+            "INSERT OR REPLACE INTO artifact_tombstones (content_hash, bytes, removed_at, reason)
+             VALUES (?1, ?2, ?3, ?4)",
+        )?;
         for locator in &plan.evicted {
-            let Some(reference) = self.get_ref(locator)? else {
+            let Some(reference) = get_ref.query_row([locator], read_ref).optional()? else {
                 continue;
             };
             if plan.marked_expired.contains(locator) {
                 // Ссылка из живого ledger entry или confirmed scratchpad:
                 // помечается `expired` с сохранением hash и размера.
-                self.set_ref_status(locator, ArtifactRefStatus::Expired)?;
+                set_ref_status.execute(rusqlite::params![
+                    locator,
+                    ArtifactRefStatus::Expired.as_str(),
+                ])?;
             } else {
-                self.connection.execute(
-                    "DELETE FROM task_artifact_refs WHERE locator = ?1",
-                    [locator],
-                )?;
+                delete_ref.execute([locator])?;
             }
-            let live_refs: i64 = self.connection.query_row(
-                "SELECT COUNT(*) FROM task_artifact_refs
-                 WHERE content_hash = ?1 AND status = 'live'",
-                [&reference.content_hash],
-                |row| row.get(0),
-            )?;
+            let live_refs: i64 =
+                count_live_refs.query_row([&reference.content_hash], |row| row.get(0))?;
             if live_refs == 0 {
-                self.remove_content(&reference.content_hash, reference.bytes, now, "evicted")?;
+                delete_content.execute([&reference.content_hash])?;
+                insert_tombstone.execute(rusqlite::params![
+                    reference.content_hash,
+                    reference.bytes as i64,
+                    now,
+                    "evicted",
+                ])?;
             }
         }
+        drop(insert_tombstone);
+        drop(delete_content);
+        drop(count_live_refs);
+        drop(delete_ref);
+        drop(set_ref_status);
+        drop(get_ref);
+        transaction.commit()?;
         Ok(plan.freed_bytes)
     }
 
@@ -426,25 +471,24 @@ impl<'a> ArtifactStore<'a> {
     fn eviction_candidates(&self, now: i64) -> Result<Vec<EvictionCandidate>, StorageError> {
         let mut statement = self.connection.prepare(
             "SELECT locator, content_hash, task_id, owner_task_id, bytes, privacy,
-                    status, created_at, last_access_at, ttl_ms, summary
+                    status, created_at, last_access_at, ttl_ms, summary,
+                    EXISTS(
+                        SELECT 1 FROM task_scratchpad
+                        WHERE artifact_locator = task_artifact_refs.locator
+                          AND status = 'confirmed'
+                    )
              FROM task_artifact_refs WHERE status = 'live'",
         )?;
-        let rows = statement.query_map([], read_ref)?;
+        let rows = statement.query_map([], |row| Ok((read_ref(row)?, row.get(11)?)))?;
         let mut candidates = Vec::new();
         for row in rows {
-            let reference = row?;
-            let referenced: i64 = self.connection.query_row(
-                "SELECT COUNT(*) FROM task_scratchpad
-                 WHERE artifact_locator = ?1 AND status = 'confirmed'",
-                [&reference.locator],
-                |row| row.get(0),
-            )?;
+            let (reference, referenced): (ArtifactRef, bool) = row?;
             candidates.push(EvictionCandidate {
                 ttl_expired: reference.ttl_expired(now),
                 locator: reference.locator,
                 bytes: reference.bytes,
                 last_access_at: reference.last_access_at,
-                referenced: referenced > 0,
+                referenced,
             });
         }
         Ok(candidates)
@@ -511,27 +555,6 @@ impl<'a> ArtifactStore<'a> {
         self.connection.execute(
             "UPDATE task_artifact_refs SET status = ?2 WHERE locator = ?1",
             rusqlite::params![locator, status.as_str()],
-        )?;
-        Ok(())
-    }
-
-    fn remove_content(
-        &self,
-        content_hash: &str,
-        bytes: u64,
-        now: i64,
-        reason: &str,
-    ) -> Result<(), StorageError> {
-        self.connection.execute(
-            "DELETE FROM task_artifacts WHERE content_hash = ?1",
-            [content_hash],
-        )?;
-        // Hash сохраняется как tombstone только для аудита и не считается
-        // доступным dedup-hit для нового offload.
-        self.connection.execute(
-            "INSERT OR REPLACE INTO artifact_tombstones (content_hash, bytes, removed_at, reason)
-             VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![content_hash, bytes as i64, now, reason],
         )?;
         Ok(())
     }

@@ -68,18 +68,18 @@ pub fn insert_revision(
         params![row.artifact_id, row.project_id, row.revision as i64, row.state,
             row.content_locator, row.content_hash, row.metadata_json, row.created_at_ms],
     )?;
+    let mut insert_parent = tx.prepare_cached(
+        "INSERT INTO artifact_lineage_edges
+         (artifact_id,artifact_revision,parent_artifact_id,parent_revision)
+         VALUES (?1,?2,?3,?4)",
+    )?;
     for (parent_id, parent_revision) in parents {
-        tx.execute(
-            "INSERT INTO artifact_lineage_edges
-             (artifact_id,artifact_revision,parent_artifact_id,parent_revision)
-             VALUES (?1,?2,?3,?4)",
-            params![
-                row.artifact_id,
-                row.revision as i64,
-                parent_id,
-                *parent_revision as i64
-            ],
-        )?;
+        insert_parent.execute(params![
+            row.artifact_id,
+            row.revision as i64,
+            parent_id,
+            *parent_revision as i64
+        ])?;
     }
     Ok(())
 }
@@ -89,21 +89,9 @@ pub fn insert_revision_atomic(
     row: &RegistryRow,
     parents: &[(String, u64)],
 ) -> rusqlite::Result<()> {
-    connection.execute_batch("BEGIN IMMEDIATE")?;
-    let result = (|| {
-        connection.execute("INSERT INTO project_artifact_revisions (artifact_id,project_id,revision,state,content_locator,content_hash,metadata_json,created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)", params![row.artifact_id,row.project_id,row.revision as i64,row.state,row.content_locator,row.content_hash,row.metadata_json,row.created_at_ms])?;
-        for (parent_id, parent_revision) in parents {
-            connection.execute("INSERT INTO artifact_lineage_edges (artifact_id,artifact_revision,parent_artifact_id,parent_revision) VALUES (?1,?2,?3,?4)", params![row.artifact_id,row.revision as i64,parent_id,*parent_revision as i64])?;
-        }
-        Ok::<(), rusqlite::Error>(())
-    })();
-    match result {
-        Ok(()) => connection.execute_batch("COMMIT"),
-        Err(error) => {
-            let _ = connection.execute_batch("ROLLBACK");
-            Err(error)
-        }
-    }
+    let transaction = connection.unchecked_transaction()?;
+    insert_revision(&transaction, row, parents)?;
+    transaction.commit()
 }
 
 pub fn list(

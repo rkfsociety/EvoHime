@@ -411,26 +411,27 @@ pub fn insert_run(
             run.lease_expires_at_ms,
         ],
     )?;
+    let mut insert_node = transaction.prepare_cached(
+        "INSERT INTO workflow_run_nodes (
+            run_id, node_id, action_kind, state, attempts, output_json,
+            error_code, error_message, approval_id, updated_at_ms
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+    )?;
     for node in nodes {
-        transaction.execute(
-            "INSERT INTO workflow_run_nodes (
-                run_id, node_id, action_kind, state, attempts, output_json,
-                error_code, error_message, approval_id, updated_at_ms
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![
-                node.run_id,
-                node.node_id,
-                node.action_kind,
-                node.state.as_str(),
-                node.attempts,
-                node.output_json,
-                node.error_code,
-                node.error_message,
-                node.approval_id,
-                node.updated_at_ms,
-            ],
-        )?;
+        insert_node.execute(params![
+            node.run_id,
+            node.node_id,
+            node.action_kind,
+            node.state.as_str(),
+            node.attempts,
+            node.output_json,
+            node.error_code,
+            node.error_message,
+            node.approval_id,
+            node.updated_at_ms,
+        ])?;
     }
+    drop(insert_node);
     transaction.commit()?;
     Ok(())
 }
@@ -924,6 +925,16 @@ pub fn recover_after_restart(
 ) -> Result<RecoveryOutcome, WorkflowStoreError> {
     let transaction = connection.unchecked_transaction()?;
     let mut outcome = RecoveryOutcome::default();
+    let mut complete_attempt = transaction.prepare_cached(
+        "UPDATE workflow_node_attempts
+            SET completed_at_ms = ?2, outcome = 'unknown', error_code = 'core_restart'
+          WHERE attempt_id = ?1",
+    )?;
+    let mut update_node = transaction.prepare_cached(
+        "UPDATE workflow_run_nodes SET state = 'unknown_outcome',
+                error_code = 'core_restart', updated_at_ms = ?3
+          WHERE run_id = ?1 AND node_id = ?2",
+    )?;
     {
         let mut statement = transaction.prepare(
             "SELECT attempt_id, run_id, node_id FROM workflow_node_attempts
@@ -938,32 +949,25 @@ pub fn recover_after_restart(
         })?;
         for row in rows {
             let (attempt_id, run_id, node_id) = row?;
-            transaction.execute(
-                "UPDATE workflow_node_attempts
-                    SET completed_at_ms = ?2, outcome = 'unknown', error_code = 'core_restart'
-                  WHERE attempt_id = ?1",
-                params![attempt_id, now_ms],
-            )?;
-            transaction.execute(
-                "UPDATE workflow_run_nodes SET state = 'unknown_outcome',
-                        error_code = 'core_restart', updated_at_ms = ?3
-                  WHERE run_id = ?1 AND node_id = ?2",
-                params![run_id, node_id, now_ms],
-            )?;
+            complete_attempt.execute(params![attempt_id, now_ms])?;
+            update_node.execute(params![run_id, node_id, now_ms])?;
             outcome.unknown_attempts.push(attempt_id);
             if !outcome.interrupted_runs.contains(&run_id) {
                 outcome.interrupted_runs.push(run_id);
             }
         }
     }
+    drop(update_node);
+    drop(complete_attempt);
+    let mut interrupt_run = transaction.prepare_cached(
+        "UPDATE workflow_runs SET state = 'interrupted', lease_owner = '',
+                lease_expires_at_ms = 0, updated_at_ms = ?2
+          WHERE run_id = ?1 AND state NOT IN ('completed','failed','cancelled','degraded')",
+    )?;
     for run_id in &outcome.interrupted_runs {
-        transaction.execute(
-            "UPDATE workflow_runs SET state = 'interrupted', lease_owner = '',
-                    lease_expires_at_ms = 0, updated_at_ms = ?2
-              WHERE run_id = ?1 AND state NOT IN ('completed','failed','cancelled','degraded')",
-            params![run_id, now_ms],
-        )?;
+        interrupt_run.execute(params![run_id, now_ms])?;
     }
+    drop(interrupt_run);
     // Запуски без открытых попыток, но оставшиеся в running, тоже теряют
     // lease: их продолжит новый владелец, а не прежний процесс.
     transaction.execute(

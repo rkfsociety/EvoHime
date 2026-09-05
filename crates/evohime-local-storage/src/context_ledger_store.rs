@@ -462,24 +462,28 @@ impl<'a> ContextLedgerStore<'a> {
             .collect::<Result<_, _>>()?;
         drop(removable);
 
+        let transaction = self.connection.unchecked_transaction()?;
+        let mut delete_usage =
+            transaction.prepare_cached("DELETE FROM context_ledger_usage WHERE ledger_id = ?1")?;
+        let mut delete_receipts = transaction
+            .prepare_cached("DELETE FROM context_ledger_receipts WHERE ledger_id = ?1")?;
+        let mut delete_ledger =
+            transaction.prepare_cached("DELETE FROM context_ledger WHERE id = ?1")?;
         let mut removed = 0_u64;
         for (id, session_id) in candidates {
             if recent_sessions.contains(&session_id) {
                 continue;
             }
             // Запись удаляется целиком, вместе со строками usage.
-            self.connection.execute(
-                "DELETE FROM context_ledger_usage WHERE ledger_id = ?1",
-                [&id],
-            )?;
-            self.connection.execute(
-                "DELETE FROM context_ledger_receipts WHERE ledger_id = ?1",
-                [&id],
-            )?;
-            self.connection
-                .execute("DELETE FROM context_ledger WHERE id = ?1", [&id])?;
+            delete_usage.execute([&id])?;
+            delete_receipts.execute([&id])?;
+            delete_ledger.execute([&id])?;
             removed += 1;
         }
+        drop(delete_ledger);
+        drop(delete_receipts);
+        drop(delete_usage);
+        transaction.commit()?;
         Ok(removed)
     }
 

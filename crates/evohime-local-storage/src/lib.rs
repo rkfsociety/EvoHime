@@ -3221,6 +3221,9 @@ impl LocalDatabase {
                     ON task_scratchpad(task_id, category, status);
                  CREATE INDEX IF NOT EXISTS idx_task_scratchpad_parent
                     ON task_scratchpad(parent_id, revision);
+                 CREATE INDEX IF NOT EXISTS idx_task_scratchpad_confirmed_artifact
+                    ON task_scratchpad(artifact_locator)
+                    WHERE status = 'confirmed' AND artifact_locator IS NOT NULL;
                  CREATE TABLE IF NOT EXISTS task_artifacts (
                     content_hash TEXT PRIMARY KEY NOT NULL,
                     bytes INTEGER NOT NULL,
