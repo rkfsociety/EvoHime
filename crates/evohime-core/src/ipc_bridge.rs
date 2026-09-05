@@ -51,6 +51,17 @@ struct TaskCheckpointActionRecord {
     error_message: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct TeamSopSessionPayload {
+    session_id: String,
+    #[serde(default)]
+    protocol_id: Option<String>,
+    #[serde(default)]
+    protocol_version: Option<u64>,
+    #[serde(default)]
+    workflow_run_id: Option<String>,
+}
+
 fn bounded_tool_error_code(error: &evohime_tool_runtime::ToolError) -> &'static str {
     match error {
         evohime_tool_runtime::ToolError::UnknownTool(_) => "unknown_tool",
@@ -15508,16 +15519,21 @@ impl IpcBridge {
                 Ok(())
             }
             "start" => {
-                let p: serde_json::Value = serde_json::from_slice(&request.payload)
+                let p: TeamSopSessionPayload = serde_json::from_slice(&request.payload)
                     .map_err(|_| TeamSopError::Invalid("payload"))?;
-                session_id = p["session_id"].as_str().unwrap_or_default().to_owned();
-                let protocol_id = p["protocol_id"].as_str().unwrap_or_default();
-                let protocol_version = p["protocol_version"].as_u64().unwrap_or_default();
+                session_id = p.session_id;
+                let protocol_id = p
+                    .protocol_id
+                    .as_deref()
+                    .ok_or(TeamSopError::Invalid("protocol_id"))?;
+                let protocol_version = p
+                    .protocol_version
+                    .ok_or(TeamSopError::Invalid("protocol_version"))?;
                 let s = registry.start(
                     session_id.clone(),
                     protocol_id,
                     protocol_version,
-                    p["workflow_run_id"].as_str().map(str::to_owned),
+                    p.workflow_run_id,
                 )?;
                 version = s.version;
                 state = format!("{:?}", s.status).to_lowercase();
@@ -15525,9 +15541,9 @@ impl IpcBridge {
                 Ok(())
             }
             "advance" => {
-                let p: serde_json::Value = serde_json::from_slice(&request.payload)
+                let p: TeamSopSessionPayload = serde_json::from_slice(&request.payload)
                     .map_err(|_| TeamSopError::Invalid("payload"))?;
-                session_id = p["session_id"].as_str().unwrap_or_default().to_owned();
+                session_id = p.session_id;
                 let s = registry.advance(&session_id, request.expected_version)?;
                 version = s.version;
                 state = format!("{:?}", s.status).to_lowercase();
@@ -15535,9 +15551,9 @@ impl IpcBridge {
                 Ok(())
             }
             "cancel" => {
-                let p: serde_json::Value = serde_json::from_slice(&request.payload)
+                let p: TeamSopSessionPayload = serde_json::from_slice(&request.payload)
                     .map_err(|_| TeamSopError::Invalid("payload"))?;
-                session_id = p["session_id"].as_str().unwrap_or_default().to_owned();
+                session_id = p.session_id;
                 let s = registry.cancel(&session_id)?;
                 version = s.version;
                 state = "cancelled".into();
@@ -15545,9 +15561,9 @@ impl IpcBridge {
                 Ok(())
             }
             "review" | "revise_session" => {
-                let p: serde_json::Value = serde_json::from_slice(&request.payload)
+                let p: TeamSopSessionPayload = serde_json::from_slice(&request.payload)
                     .map_err(|_| TeamSopError::Invalid("payload"))?;
-                session_id = p["session_id"].as_str().unwrap_or_default().to_owned();
+                session_id = p.session_id;
                 let s = registry.review(
                     &session_id,
                     request.expected_version,
