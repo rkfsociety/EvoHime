@@ -232,6 +232,14 @@ struct InvocationPresetRunPayload {
 }
 
 #[derive(Debug, Default, Deserialize)]
+struct HumanWorkItemCommandPayload {
+    #[serde(default)]
+    item_id: String,
+    #[serde(default)]
+    response: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
 struct ExecutionBackendPayload {
     #[serde(default)]
     id: String,
@@ -15212,9 +15220,9 @@ impl IpcBridge {
                 Ok(())
             }
             "get" => {
-                let payload: serde_json::Value = serde_json::from_slice(&request.payload)
+                let payload: HumanWorkItemCommandPayload = serde_json::from_slice(&request.payload)
                     .map_err(|_| HumanWorkItemError::Invalid("payload"))?;
-                item_id = payload["item_id"].as_str().unwrap_or_default().to_owned();
+                item_id = payload.item_id;
                 let item = registry
                     .items
                     .get(&item_id)
@@ -15235,10 +15243,10 @@ impl IpcBridge {
                 Ok(())
             }
             "start" | "submit" | "accept" | "revise" | "return" | "cancel" => {
-                let payload: serde_json::Value = serde_json::from_slice(&request.payload)
+                let payload: HumanWorkItemCommandPayload = serde_json::from_slice(&request.payload)
                     .map_err(|_| HumanWorkItemError::Invalid("payload"))?;
-                item_id = payload["item_id"].as_str().unwrap_or_default().to_owned();
-                let response = payload["response"].as_str().map(str::to_owned);
+                item_id = payload.item_id;
+                let response = payload.response;
                 let saved = registry.transition_idempotent(
                     crate::human_work_items::TransitionIdempotentInput {
                         id: item_id.clone(),
