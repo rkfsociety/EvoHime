@@ -88,7 +88,6 @@ pub struct PlanRequest {
     /// Команда `summarize now` (01.5): лестница запускается даже ниже
     /// `soft_limit_tokens`. Действует только на текущую сборку и не меняет
     /// долговременную память.
-    #[allow(clippy::struct_field_names)]
     pub force_reduction: bool,
 }
 
