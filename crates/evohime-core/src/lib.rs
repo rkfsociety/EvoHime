@@ -389,6 +389,27 @@ struct CalibrationRequest {
     cancelled: bool,
 }
 
+/// Типизированный запрос предложения team assignment.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AssignmentProposalRequest {
+    #[serde(default)]
+    item: Option<crate::team_coordinator::TeamWorkItem>,
+    #[serde(default)]
+    candidates: Vec<crate::team_coordinator::ParticipantCandidate>,
+    #[serde(default)]
+    termination: Option<AssignmentTerminationRequest>,
+}
+
+/// Типизированные termination gates для assignment proposal.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AssignmentTerminationRequest {
+    policy: crate::composable_termination_conditions::TerminationPolicy,
+    state: crate::composable_termination_conditions::TerminationState,
+    event: crate::composable_termination_conditions::TerminationEvent,
+}
+
 /// Аргументы для policy-only preflight при построении каталога инструментов.
 /// Preflight не выполняет инструмент, но path-инструментам всё равно нужен
 /// существующий workspace-relative путь, иначе безопасный инструмент ошибочно
@@ -12900,13 +12921,11 @@ impl TaskCoordinator {
                             .map_err(|_| "serialization_failed".to_string())
                         }
                         "propose" => {
-                            let request: serde_json::Value = serde_json::from_slice(&payload)
-                                .map_err(|_| "invalid_proposal_request")?;
-                            let item: coordinator::TeamWorkItem = if let Some(value) =
-                                request.get("item")
-                            {
-                                serde_json::from_value(value.clone())
-                                    .map_err(|_| "invalid_work_item")?
+                            let request: AssignmentProposalRequest =
+                                serde_json::from_slice(&payload)
+                                    .map_err(|_| "invalid_proposal_request")?;
+                            let item: coordinator::TeamWorkItem = if let Some(item) = request.item {
+                                item
                             } else {
                                 let json =
                                     store::get_work_item(database.connection(), &work_item_id)
@@ -12914,34 +12933,19 @@ impl TaskCoordinator {
                                         .ok_or_else(|| "work_item_not_found".to_string())?;
                                 serde_json::from_slice(&json).map_err(|_| "corrupt_work_item")?
                             };
-                            let candidates: Vec<coordinator::ParticipantCandidate> = request
-                                .get("candidates")
-                                .cloned()
-                                .map(|value| {
-                                    serde_json::from_value(value)
-                                        .map_err(|_| "invalid_candidates".to_string())
-                                })
-                                .transpose()?
-                                .unwrap_or_default();
-                            let termination = request.get("termination");
-                            let termination_policy = termination
-                                .map(|value| serde_json::from_value(value["policy"].clone()))
-                                .transpose()
-                                .map_err(|_| "invalid_termination_policy")?;
-                            let termination_state = termination
-                                .map(|value| serde_json::from_value(value["state"].clone()))
-                                .transpose()
-                                .map_err(|_| "invalid_termination_state")?;
-                            let termination_event = termination
-                                .map(|value| serde_json::from_value(value["event"].clone()))
-                                .transpose()
-                                .map_err(|_| "invalid_termination_event")?;
+                            let candidates = request.candidates;
+                            let termination_policy =
+                                request.termination.as_ref().map(|value| &value.policy);
+                            let termination_state =
+                                request.termination.as_ref().map(|value| &value.state);
+                            let termination_event =
+                                request.termination.as_ref().map(|value| &value.event);
                             let proposal = coordinator::propose_assignment_with_termination(
                                 &item,
                                 &candidates,
-                                termination_policy.as_ref(),
-                                termination_state.as_ref(),
-                                termination_event.as_ref(),
+                                termination_policy,
+                                termination_state,
+                                termination_event,
                             )
                             .map_err(|e| e.to_string())?;
                             serde_json::to_vec(&proposal)
