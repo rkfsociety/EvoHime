@@ -38,7 +38,9 @@ pub const AGENT_IDENTITY_PROMPT: &str =
 /// Канонические имена read-only filesystem-инструментов, используемые в
 /// policy preflight и в проверках обязательного исследовательского пути.
 const TOOL_FILESYSTEM_LIST: &str = "filesystem.list";
+/// Read-only filesystem tool used to inspect file contents.
 const TOOL_FILESYSTEM_READ: &str = "filesystem.read";
+/// Read-only filesystem tool used to search workspace content.
 const TOOL_FILESYSTEM_SEARCH: &str = "filesystem.search";
 
 /// Идентификатор встроенной политики разрешений Core.
@@ -5963,6 +5965,7 @@ pub struct ToolAgent {
 }
 
 /// Жёсткий предел циклов `model -> tool` для одной задачи.
+/// Maximum model-to-tool iterations allowed in one autonomous task.
 const DEFAULT_TOOL_ITERATIONS: usize = 32;
 
 struct ProvenancedModelResult {
@@ -18371,6 +18374,7 @@ fn memory_store_privacy(
 /// System prompt of the bounded extractor. It describes the structured
 /// contract only: the model proposes candidates, it never decides whether
 /// something becomes memory — that is `memory_extraction::evaluate`'s job.
+/// System prompt for the bounded, policy-controlled memory extractor.
 const MEMORY_EXTRACTION_PROMPT: &str = "\
 Ты — извлекатель кандидатов в память. Ты НЕ решаешь, что запомнить: решение \
 принимает policy на стороне Core. Верни ТОЛЬКО JSON вида \
@@ -18392,6 +18396,7 @@ const MEMORY_EXTRACTION_PROMPT: &str = "\
 /// outright, and the evidence locator carries the episode instead of a
 /// message. `source_trust` is not negotiable either — Core overwrites it with
 /// `ambient` regardless of what the model claims.
+/// System prompt for extracting non-authoritative ambient-memory candidates.
 const AMBIENT_MEMORY_EXTRACTION_PROMPT: &str = "\
 Ты — извлекатель кандидатов в память из расшифровки услышанной речи. \
 Говорящий НЕ подтверждён: это может быть не пользователь. Ты НЕ решаешь, \
@@ -18513,7 +18518,9 @@ fn memory_active_summary(
 
 /// Bounded batch size for `ConfirmMemory`/`RejectMemory`, so one IPC call
 /// cannot walk the whole pending queue in a single transaction.
+/// Maximum number of memory candidates accepted in one batch.
 const MAX_MEMORY_BATCH: usize = 64;
+/// Maximum idempotency-key length for memory commands.
 const MAX_MEMORY_IDEMPOTENCY_KEY_CHARS: usize = 128;
 
 fn memory_now_ms() -> u64 {
@@ -18694,7 +18701,9 @@ fn capability_manifest_kind(
     }
 }
 
+/// Maximum archive size accepted by capability import.
 const MAX_CAPABILITY_ARCHIVE_BYTES: u64 = 16 * 1024 * 1024;
+/// Maximum duration of one capability archive operation.
 const CAPABILITY_ARCHIVE_TIMEOUT_MS: u64 = 30_000;
 
 /// Downloads one capability archive into bounded memory solely for integrity

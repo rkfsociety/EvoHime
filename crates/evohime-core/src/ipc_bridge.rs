@@ -29,15 +29,21 @@ use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 
+/// Major version of the authenticated desktop IPC protocol.
 const PROTOCOL_MAJOR: u32 = 1;
 /// Number of tools `ToolRegistry::bootstrap()` is expected to register.
 /// Used only as a Doctor health signal (fewer than expected => Warn), never
 /// to gate functionality.
 const EXPECTED_TOOL_COUNT: u32 = 23;
+/// Minor version of the authenticated desktop IPC protocol.
 const PROTOCOL_MINOR: u32 = 0;
+/// Maximum number of checkpoint events replayed in one IPC response.
 const TASK_CHECKPOINT_IPC_MAX_REPLAY_EVENTS: usize = 256;
+/// Maximum number of checkpoint items accepted in one IPC request.
 const TASK_CHECKPOINT_IPC_MAX_ITEMS: usize = 32;
+/// Maximum text size of one checkpoint item in the IPC projection.
 const TASK_CHECKPOINT_IPC_MAX_TEXT_BYTES: usize = 512;
+/// Maximum serialized projection size for the goal listing response.
 const GOAL_LIST_MAX_PROJECTION_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -410,6 +416,7 @@ fn decode_conversation_event(payload: &[u8]) -> Option<generated::ConversationEv
 /// `stale_generation` is new — the client's `CommandEnvelope` names a
 /// `core_instance_id`/`session_epoch` that no longer matches this process.
 const REPLAY_GAP_REASON_SEQUENCE_RETENTION_EXCEEDED: &str = "sequence_retention_exceeded";
+/// Replay gap reason emitted when the client's runtime generation is stale.
 const REPLAY_GAP_REASON_STALE_GENERATION: &str = "stale_generation";
 
 /// Publishes the `ToolCall` typed ledger event for a receipt-tracked action
@@ -674,6 +681,7 @@ pub const AMBIENT_REMINDER_NON_GOAL: &str =
 
 /// Потолок длины ключа идемпотентности. Совпадает с bounded-лимитом
 /// идентификаторов хранилища.
+/// Maximum idempotency-key length for ambient proposal commands.
 const MAX_PROPOSAL_KEY_BYTES: usize = 128;
 
 /// Отказ запуска workflow: код называется явно, идентификатор не выдумывается.

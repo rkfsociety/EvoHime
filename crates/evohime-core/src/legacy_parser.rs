@@ -55,6 +55,7 @@ fn attribute_value(tag: &str, attribute: &str) -> Option<String> {
 /// Markers that begin a tool call a model printed as text instead of using the
 /// provider's tool-call field.
 /// Маркеры, которыми legacy-модель обозначает текстовый вызов инструмента.
+/// Ordered markers that identify legacy text-encoded tool calls.
 const TOOL_CALL_MARKERS: [&str; 6] = [
     "<function_calls>",
     "<invoke",
