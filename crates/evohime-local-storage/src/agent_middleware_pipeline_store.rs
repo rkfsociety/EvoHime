@@ -19,18 +19,29 @@ pub fn save_definition(
     Ok(connection.execute("INSERT OR IGNORE INTO agent_middleware_definitions(definition_id,revision,contract_hash,definition_json,created_at_ms) VALUES (?1,?2,?3,?4,?5)", params![id, revision as i64, hash, json, now_ms])? == 1)
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn save_run(
-    connection: &Connection,
-    run_id: &str,
-    definition_id: &str,
-    revision: u64,
-    contract_hash: &str,
-    policy_hash: &str,
-    capability_hash: &str,
-    state: &str,
-    now_ms: i64,
-) -> Result<bool, StorageError> {
+#[derive(Clone, Copy)]
+pub struct SaveRunInput<'a> {
+    pub run_id: &'a str,
+    pub definition_id: &'a str,
+    pub revision: u64,
+    pub contract_hash: &'a str,
+    pub policy_hash: &'a str,
+    pub capability_hash: &'a str,
+    pub state: &'a str,
+    pub now_ms: i64,
+}
+
+pub fn save_run(connection: &Connection, input: SaveRunInput<'_>) -> Result<bool, StorageError> {
+    let SaveRunInput {
+        run_id,
+        definition_id,
+        revision,
+        contract_hash,
+        policy_hash,
+        capability_hash,
+        state,
+        now_ms,
+    } = input;
     Ok(connection.execute("INSERT OR IGNORE INTO agent_middleware_runs(run_id,definition_id,definition_revision,contract_hash,policy_hash,capability_snapshot_hash,state,created_at_ms,updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?8)", params![run_id, definition_id, revision as i64, contract_hash, policy_hash, capability_hash, state, now_ms])? == 1)
 }
 
@@ -43,7 +54,17 @@ mod tests {
         install_schema(&c).unwrap();
         assert!(save_definition(&c, "d", 1, "h", "{}", 1).unwrap());
         assert!(!save_definition(&c, "d", 1, "h", "{}", 1).unwrap());
-        assert!(save_run(&c, "r", "d", 1, "h", "p", "c", "active", 1).unwrap());
-        assert!(!save_run(&c, "r", "d", 1, "h", "p", "c", "active", 1).unwrap());
+        let input = SaveRunInput {
+            run_id: "r",
+            definition_id: "d",
+            revision: 1,
+            contract_hash: "h",
+            policy_hash: "p",
+            capability_hash: "c",
+            state: "active",
+            now_ms: 1,
+        };
+        assert!(save_run(&c, input).unwrap());
+        assert!(!save_run(&c, input).unwrap());
     }
 }

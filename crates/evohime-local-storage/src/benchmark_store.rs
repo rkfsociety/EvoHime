@@ -55,18 +55,32 @@ pub fn save_run(
     )? == 1)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+pub struct SaveAttemptInput<'a> {
+    pub run_id: &'a str,
+    pub attempt_id: &'a str,
+    pub challenge_id: &'a str,
+    pub model_profile_id: &'a str,
+    pub agent_profile_id: &'a str,
+    pub outcome: &'a str,
+    pub result_json: &'a str,
+    pub now_ms: i64,
+}
+
 pub fn save_attempt(
     connection: &Connection,
-    run_id: &str,
-    attempt_id: &str,
-    challenge_id: &str,
-    model_profile_id: &str,
-    agent_profile_id: &str,
-    outcome: &str,
-    result_json: &str,
-    now_ms: i64,
+    input: SaveAttemptInput<'_>,
 ) -> Result<bool, StorageError> {
+    let SaveAttemptInput {
+        run_id,
+        attempt_id,
+        challenge_id,
+        model_profile_id,
+        agent_profile_id,
+        outcome,
+        result_json,
+        now_ms,
+    } = input;
     Ok(connection.execute(
         "INSERT OR IGNORE INTO benchmark_attempts(run_id,attempt_id,challenge_id,model_profile_id,agent_profile_id,outcome,result_json,created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
         params![run_id, attempt_id, challenge_id, model_profile_id, agent_profile_id, outcome, result_json, now_ms],
@@ -97,7 +111,17 @@ mod tests {
         install_schema(&connection).unwrap();
         assert!(save_run(&connection, "r", "s", "1", "{}", "running", 1).unwrap());
         assert!(!save_run(&connection, "r", "s", "1", "{}", "running", 1).unwrap());
-        assert!(save_attempt(&connection, "r", "a", "c", "m", "p", "passed", "{}", 1).unwrap());
-        assert!(!save_attempt(&connection, "r", "a", "c", "m", "p", "passed", "{}", 1).unwrap());
+        let input = SaveAttemptInput {
+            run_id: "r",
+            attempt_id: "a",
+            challenge_id: "c",
+            model_profile_id: "m",
+            agent_profile_id: "p",
+            outcome: "passed",
+            result_json: "{}",
+            now_ms: 1,
+        };
+        assert!(save_attempt(&connection, input).unwrap());
+        assert!(!save_attempt(&connection, input).unwrap());
     }
 }
