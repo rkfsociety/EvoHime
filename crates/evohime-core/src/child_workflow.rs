@@ -614,39 +614,47 @@ pub struct ArtifactSummaryProjection {
 /// Performs the artifact policy check on every invocation. Callers may retain
 /// only the returned summary; no full blob is exposed without a current,
 /// locator-scoped full grant and explicit selected-context membership.
-// Список аргументов повторяет запрос дочернего процесса целиком: локатор, идентичность и лимиты проверяются вместе.
-#[allow(clippy::too_many_arguments)]
+pub struct ReadArtifactForChildInput<'a> {
+    pub store: &'a evohime_local_storage::artifact_store::ArtifactStore<'a>,
+    pub correlation: &'a CorrelationContext,
+    pub selected_context_ids: &'a [String],
+    pub grants: &'a [Grant],
+    pub locator: &'a str,
+    pub full: bool,
+    pub kind: &'a str,
+    pub now_ms: i64,
+}
+
 pub fn read_artifact_for_child(
-    store: &evohime_local_storage::artifact_store::ArtifactStore<'_>,
-    correlation: &CorrelationContext,
-    selected_context_ids: &[String],
-    grants: &[Grant],
-    locator: &str,
-    full: bool,
-    kind: &str,
-    now_ms: i64,
+    input: ReadArtifactForChildInput<'_>,
 ) -> Result<Result<String, ArtifactSummaryProjection>, ContractError> {
-    if !selected_context_ids.iter().any(|id| id == locator) {
+    if !input
+        .selected_context_ids
+        .iter()
+        .any(|id| id == input.locator)
+    {
         return Err(ContractError::ContextIdNotAccessible {
-            id: locator.to_owned(),
+            id: input.locator.to_owned(),
         });
     }
-    let reference = store
-        .get_ref(locator)
+    let reference = input
+        .store
+        .get_ref(input.locator)
         .map_err(|error| ContractError::ArtifactOffload(error.to_string()))?
         .ok_or_else(|| ContractError::ArtifactOffload("artifact was not found".into()))?;
-    if full && !artifact_full_read_allowed(grants, locator) {
+    if input.full && !artifact_full_read_allowed(input.grants, input.locator) {
         return Err(ContractError::GrantDrift);
     }
-    if full {
-        let parent_chain = correlation_parent_chain(correlation);
-        return store
+    if input.full {
+        let parent_chain = correlation_parent_chain(input.correlation);
+        return input
+            .store
             .read(
-                locator,
-                correlation.child_id.as_str(),
+                input.locator,
+                input.correlation.child_id.as_str(),
                 &parent_chain,
-                kind,
-                now_ms,
+                input.kind,
+                input.now_ms,
             )
             .map(Ok)
             .map_err(|error| ContractError::ArtifactOffload(error.to_string()));

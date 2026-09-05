@@ -961,31 +961,49 @@ fn command_hash(command: &RegistryCommand) -> Result<String, crate::StorageError
     Ok(hex::encode(hasher.finalize()))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn response(
-    operation: &str,
-    agent_id: &str,
+struct ResponseInput<'a> {
+    operation: &'a str,
+    agent_id: &'a str,
     revision: u64,
-    status: &str,
+    status: &'a str,
     projection: Option<AgentProjection>,
     agents: Vec<AgentProjection>,
     history: Vec<AgentHistoryEntry>,
     assignments: Vec<AgentAssignment>,
-) -> serde_json::Value {
-    serde_json::json!({
-        "schema_version": CONTRACT_VERSION,
-        "contract_id": CONTRACT_ID,
-        "status": status,
-        "operation": operation,
-        "agent_id": agent_id,
-        "revision": revision,
-        "projection": projection,
-        "agents": agents,
-        "history": history,
-        "assignments": assignments,
-        "cost_status": "unavailable",
-        "redacted": true,
+}
+
+#[derive(Serialize)]
+struct RegistryResponse {
+    schema_version: u32,
+    contract_id: &'static str,
+    status: String,
+    operation: String,
+    agent_id: String,
+    revision: u64,
+    projection: Option<AgentProjection>,
+    agents: Vec<AgentProjection>,
+    history: Vec<AgentHistoryEntry>,
+    assignments: Vec<AgentAssignment>,
+    cost_status: &'static str,
+    redacted: bool,
+}
+
+fn response(input: ResponseInput<'_>) -> serde_json::Value {
+    serde_json::to_value(RegistryResponse {
+        schema_version: CONTRACT_VERSION,
+        contract_id: CONTRACT_ID,
+        status: input.status.into(),
+        operation: input.operation.into(),
+        agent_id: input.agent_id.into(),
+        revision: input.revision,
+        projection: input.projection,
+        agents: input.agents,
+        history: input.history,
+        assignments: input.assignments,
+        cost_status: "unavailable",
+        redacted: true,
     })
+    .expect("typed registry response is serializable")
 }
 
 fn write_agent(
@@ -1045,16 +1063,16 @@ fn execute(
             for agent in load_agents_map(connection)?.into_values() {
                 agents.push(projection(connection, &agent)?);
             }
-            Ok(response(
-                "list",
-                "",
-                0,
-                "ok",
-                None,
+            Ok(response(ResponseInput {
+                operation: "list",
+                agent_id: "",
+                revision: 0,
+                status: "ok",
+                projection: None,
                 agents,
-                Vec::new(),
-                Vec::new(),
-            ))
+                history: Vec::new(),
+                assignments: Vec::new(),
+            }))
         }
         "get" | "availability" | "activity" | "resolve" | "history" => {
             let bytes = evohime_local_storage::persistent_agent_registry_store::load_agent(
@@ -1095,15 +1113,15 @@ fn execute(
                     goal_ref,
                 )
                 .map_err(|e| crate::StorageError::InvalidInput(e.to_string()))?;
-                return Ok(response(
-                    "resolve",
-                    &agent.id,
-                    agent.revision,
-                    "resolved",
-                    Some(projection(connection, &agent)?),
-                    Vec::new(),
-                    Vec::new(),
-                    vec![AgentAssignment {
+                return Ok(response(ResponseInput {
+                    operation: "resolve",
+                    agent_id: &agent.id,
+                    revision: agent.revision,
+                    status: "resolved",
+                    projection: Some(projection(connection, &agent)?),
+                    agents: Vec::new(),
+                    history: Vec::new(),
+                    assignments: vec![AgentAssignment {
                         schema_version: CONTRACT_VERSION,
                         id: format!("snapshot:{}", agent.id),
                         revision: agent.revision,
@@ -1121,7 +1139,7 @@ fn execute(
                         provenance_hash: None,
                         content_hash: String::new(),
                     }],
-                ));
+                }));
             }
             if command.operation == "history" {
                 let history =
@@ -1145,36 +1163,36 @@ fn execute(
                         }
                     })
                     .collect();
-                return Ok(response(
-                    "history",
-                    &agent.id,
-                    agent.revision,
-                    "ok",
-                    None,
-                    Vec::new(),
+                return Ok(response(ResponseInput {
+                    operation: "history",
+                    agent_id: &agent.id,
+                    revision: agent.revision,
+                    status: "ok",
+                    projection: None,
+                    agents: Vec::new(),
                     history,
-                    Vec::new(),
-                ));
+                    assignments: Vec::new(),
+                }));
             }
             let assignments = effective_assignments(connection, &agent.id)?;
             let mut item = projection(connection, &agent)?;
             if command.operation == "availability" {
                 item.availability = assignment_availability(&assignments);
             }
-            Ok(response(
-                &command.operation,
-                &agent.id,
-                agent.revision,
-                "ok",
-                Some(item),
-                Vec::new(),
-                Vec::new(),
-                if command.operation == "activity" {
+            Ok(response(ResponseInput {
+                operation: &command.operation,
+                agent_id: &agent.id,
+                revision: agent.revision,
+                status: "ok",
+                projection: Some(item),
+                agents: Vec::new(),
+                history: Vec::new(),
+                assignments: if command.operation == "activity" {
                     assignments
                 } else {
                     Vec::new()
                 },
-            ))
+            }))
         }
         "create" => {
             let mut agent: PersistentAgent = serde_json::from_value(value)
@@ -1202,16 +1220,16 @@ fn execute(
                 ));
             }
             write_agent(connection, &agent, &command.actor, "created", now_ms)?;
-            Ok(response(
-                "create",
-                &agent.id,
-                agent.revision,
-                "created",
-                Some(projection(connection, &agent)?),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            ))
+            Ok(response(ResponseInput {
+                operation: "create",
+                agent_id: &agent.id,
+                revision: agent.revision,
+                status: "created",
+                projection: Some(projection(connection, &agent)?),
+                agents: Vec::new(),
+                history: Vec::new(),
+                assignments: Vec::new(),
+            }))
         }
         "revise" => {
             let old_bytes = evohime_local_storage::persistent_agent_registry_store::load_agent(
@@ -1249,16 +1267,16 @@ fn execute(
             reporting_graph_valid(&agents, &next.id, next.reporting_to_agent_id.as_deref())
                 .map_err(|e| crate::StorageError::InvalidInput(e.to_string()))?;
             write_agent(connection, &next, &command.actor, "revised", now_ms)?;
-            Ok(response(
-                "revise",
-                &next.id,
-                next.revision,
-                "updated",
-                Some(projection(connection, &next)?),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            ))
+            Ok(response(ResponseInput {
+                operation: "revise",
+                agent_id: &next.id,
+                revision: next.revision,
+                status: "updated",
+                projection: Some(projection(connection, &next)?),
+                agents: Vec::new(),
+                history: Vec::new(),
+                assignments: Vec::new(),
+            }))
         }
         "activate" | "pause" | "suspend" | "resume" | "retire" => {
             let bytes = evohime_local_storage::persistent_agent_registry_store::load_agent(
@@ -1298,16 +1316,16 @@ fn execute(
                 &command.operation,
                 now_ms,
             )?;
-            Ok(response(
-                &command.operation,
-                &agent.id,
-                agent.revision,
-                "updated",
-                Some(projection(connection, &agent)?),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            ))
+            Ok(response(ResponseInput {
+                operation: &command.operation,
+                agent_id: &agent.id,
+                revision: agent.revision,
+                status: "updated",
+                projection: Some(projection(connection, &agent)?),
+                agents: Vec::new(),
+                history: Vec::new(),
+                assignments: Vec::new(),
+            }))
         }
         "reporting_set" => {
             let bytes = evohime_local_storage::persistent_agent_registry_store::load_agent(
@@ -1340,16 +1358,16 @@ fn execute(
             agent.content_hash = canonical_hash(&agent)
                 .map_err(|e| crate::StorageError::InvalidInput(e.to_string()))?;
             write_agent(connection, &agent, &command.actor, "reporting_set", now_ms)?;
-            Ok(response(
-                "reporting_set",
-                &agent.id,
-                agent.revision,
-                "updated",
-                Some(projection(connection, &agent)?),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            ))
+            Ok(response(ResponseInput {
+                operation: "reporting_set",
+                agent_id: &agent.id,
+                revision: agent.revision,
+                status: "updated",
+                projection: Some(projection(connection, &agent)?),
+                agents: Vec::new(),
+                history: Vec::new(),
+                assignments: Vec::new(),
+            }))
         }
         "goal_bind" => {
             let mut binding: AgentGoalBinding = serde_json::from_value(value)
@@ -1407,16 +1425,16 @@ fn execute(
                 now_ms,
             )
             .map_err(map_storage_error)?;
-            Ok(response(
-                "goal_bind",
-                &binding.agent_id,
-                command.expected_revision,
-                "bound",
-                None,
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            ))
+            Ok(response(ResponseInput {
+                operation: "goal_bind",
+                agent_id: &binding.agent_id,
+                revision: command.expected_revision,
+                status: "bound",
+                projection: None,
+                agents: Vec::new(),
+                history: Vec::new(),
+                assignments: Vec::new(),
+            }))
         }
         "goal_unbind" => {
             let goal_id = value
@@ -1443,16 +1461,16 @@ fn execute(
                 responsibility,
             )
             .map_err(map_storage_error)?;
-            Ok(response(
-                "goal_unbind",
-                &command.agent_id,
-                command.expected_revision,
-                "unbound",
-                None,
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            ))
+            Ok(response(ResponseInput {
+                operation: "goal_unbind",
+                agent_id: &command.agent_id,
+                revision: command.expected_revision,
+                status: "unbound",
+                projection: None,
+                agents: Vec::new(),
+                history: Vec::new(),
+                assignments: Vec::new(),
+            }))
         }
         "assignment_create" => {
             let mut assignment: AgentAssignment = serde_json::from_value(value)
@@ -1524,16 +1542,16 @@ fn execute(
             )
             .map_err(map_storage_error)?;
             let assignment_agent_id = assignment.agent_id.clone();
-            Ok(response(
-                "assignment_create",
-                &assignment_agent_id,
-                assignment.revision,
-                "assigned",
-                Some(projection(connection, &agent)?),
-                Vec::new(),
-                Vec::new(),
-                vec![assignment],
-            ))
+            Ok(response(ResponseInput {
+                operation: "assignment_create",
+                agent_id: &assignment_agent_id,
+                revision: assignment.revision,
+                status: "assigned",
+                projection: Some(projection(connection, &agent)?),
+                agents: Vec::new(),
+                history: Vec::new(),
+                assignments: vec![assignment],
+            }))
         }
         "assignment_cancel" => {
             let id = value
@@ -1587,16 +1605,16 @@ fn execute(
             )
             .map_err(map_storage_error)?;
             let assignment_agent_id = assignment.agent_id.clone();
-            Ok(response(
-                "assignment_cancel",
-                &assignment_agent_id,
-                assignment.revision,
-                "cancelled",
-                None,
-                Vec::new(),
-                Vec::new(),
-                vec![assignment],
-            ))
+            Ok(response(ResponseInput {
+                operation: "assignment_cancel",
+                agent_id: &assignment_agent_id,
+                revision: assignment.revision,
+                status: "cancelled",
+                projection: None,
+                agents: Vec::new(),
+                history: Vec::new(),
+                assignments: vec![assignment],
+            }))
         }
         "recover" => {
             let mut recovered = 0usize;
@@ -1641,16 +1659,16 @@ fn execute(
                     recovered += 1;
                 }
             }
-            Ok(response(
-                "recover",
-                &command.agent_id,
-                0,
-                "reconciled",
-                None,
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            ))
+            Ok(response(ResponseInput {
+                operation: "recover",
+                agent_id: &command.agent_id,
+                revision: 0,
+                status: "reconciled",
+                projection: None,
+                agents: Vec::new(),
+                history: Vec::new(),
+                assignments: Vec::new(),
+            }))
             .map(|mut value| {
                 value["recovered_assignments"] = serde_json::json!(recovered);
                 value

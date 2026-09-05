@@ -177,11 +177,17 @@ pub fn subject_key(subject: &str) -> SubjectKey {
     if slug.is_empty() {
         slug = fingerprint(subject);
     }
-    SubjectKey::new(slug).unwrap_or_else(|_| {
-        // Недостижимо: слаг состоит из ASCII-alnum и дефисов. Паниковать здесь
-        // нельзя — предложение не стоит падения Core.
-        SubjectKey::new(fingerprint(subject)).expect("шестнадцатеричный отпечаток всегда валиден")
-    })
+    match SubjectKey::new(slug) {
+        Ok(key) => key,
+        Err(error) => {
+            tracing::warn!(%error, "subject slug rejected; using content fingerprint");
+            SubjectKey::new(fingerprint(subject)).unwrap_or_else(|fallback_error| {
+                tracing::error!(%fallback_error, "subject fingerprint rejected");
+                SubjectKey::new("invalid-subject")
+                    .unwrap_or_else(|_| unreachable!("static subject key is part of the contract"))
+            })
+        }
+    }
 }
 
 fn fingerprint(value: &str) -> String {

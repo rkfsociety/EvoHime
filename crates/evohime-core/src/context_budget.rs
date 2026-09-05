@@ -257,6 +257,25 @@ pub struct ContextRuntime {
     model_windows: HashMap<String, u32>,
 }
 
+/// Полный вход сборки контекста одного model call. Группировка полей сохраняет
+/// соответствие между идентичностью вызова, бюджетом и источниками контекста.
+pub struct ContextAssembleInput<'a> {
+    pub task_id: &'a str,
+    pub session_id: &'a str,
+    pub model_call_id: &'a str,
+    pub provider: &'a str,
+    pub model: &'a str,
+    pub now: i64,
+    pub messages: &'a [ChatMessage],
+    pub specs: &'a [ToolSpec],
+    pub open_questions: &'a [String],
+    pub scratchpad: &'a [ScratchpadEntry],
+    pub pinned_ids: &'a [String],
+    pub force_reduction: bool,
+    pub offload: &'a mut dyn OffloadSink,
+    pub summarizer: &'a mut dyn Summarizer,
+}
+
 impl ContextRuntime {
     pub fn new(model: &str) -> Self {
         Self {
@@ -303,28 +322,27 @@ impl ContextRuntime {
 
     /// Сборка контекста одного шага. `offload` и `summarizer` подставляются
     /// вызывающей стороной: их отсутствие не блокирует сборку.
-    #[allow(clippy::too_many_arguments)]
-    pub fn assemble(
-        &mut self,
-        task_id: &str,
-        session_id: &str,
-        model_call_id: &str,
-        provider: &str,
-        model: &str,
-        now: i64,
-        messages: &[ChatMessage],
-        specs: &[ToolSpec],
-        open_questions: &[String],
-        // Подтверждённые записи scratchpad задачи (01.2). После restart в
-        // рабочий контекст возвращаются только они.
-        scratchpad: &[ScratchpadEntry],
-        // Item, закреплённые пользователем командой `pin item` (01.5), и
-        // запрошенное пользователем принудительное сжатие (`summarize now`).
-        pinned_ids: &[String],
-        force_reduction: bool,
-        offload: &mut dyn OffloadSink,
-        summarizer: &mut dyn Summarizer,
-    ) -> AssembledContext {
+    pub fn assemble(&mut self, input: ContextAssembleInput<'_>) -> AssembledContext {
+        let ContextAssembleInput {
+            task_id,
+            session_id,
+            model_call_id,
+            provider,
+            model,
+            now,
+            messages,
+            specs,
+            open_questions,
+            // Подтверждённые записи scratchpad задачи (01.2). После restart в
+            // рабочий контекст возвращаются только они.
+            scratchpad,
+            // Item, закреплённые пользователем командой `pin item` (01.5), и
+            // запрошенное пользователем принудительное сжатие (`summarize now`).
+            pinned_ids,
+            force_reduction,
+            offload,
+            summarizer,
+        } = input;
         let user_prompt = messages
             .iter()
             .find(|message| message.role == ChatRole::User)
@@ -655,8 +673,12 @@ fn registry_from_specs(specs: &[ToolSpec]) -> Vec<ToolRegistryEntry> {
                 } else {
                     ToolGroup::ReadOnly
                 },
-                schema_json: serde_json::to_string(&spec.function.parameters)
-                    .unwrap_or_else(|_| "{}".to_string()),
+                schema_json: serde_json::to_string(&spec.function.parameters).unwrap_or_else(
+                    |error| {
+                        tracing::warn!(tool = %name, %error, "tool schema serialization failed");
+                        "{}".to_string()
+                    },
+                ),
                 approval_required: mutation,
                 // Permission/approval semantics выбранного инструмента остаются
                 // видимыми и не скрываются от модели.
@@ -951,22 +973,22 @@ mod tests {
         messages: &[ChatMessage],
         specs: &[ToolSpec],
     ) -> AssembledContext {
-        runtime.assemble(
-            "task",
-            "session",
-            "call-1",
-            "literouter",
-            "gpt-4o-mini",
-            1_000_000,
+        runtime.assemble(ContextAssembleInput {
+            task_id: "task",
+            session_id: "session",
+            model_call_id: "call-1",
+            provider: "literouter",
+            model: "gpt-4o-mini",
+            now: 1_000_000,
             messages,
             specs,
-            &[],
-            &[],
-            &[],
-            false,
-            &mut NoOffloadSink,
-            &mut NoSummarizer,
-        )
+            open_questions: &[],
+            scratchpad: &[],
+            pinned_ids: &[],
+            force_reduction: false,
+            offload: &mut NoOffloadSink,
+            summarizer: &mut NoSummarizer,
+        })
     }
 
     #[test]
@@ -1343,22 +1365,22 @@ mod tests {
             ChatMessage::text(ChatRole::User, "проверь репозиторий"),
         ];
         let entries = vec![scratchpad_entry("s1", ScratchpadCategory::Facts, 10)];
-        let assembled = runtime.assemble(
-            "task",
-            "session",
-            "call-1",
-            "literouter",
-            "gpt-4o-mini",
-            1_000_000,
-            &messages,
-            &[],
-            &[],
-            &entries,
-            &[],
-            false,
-            &mut NoOffloadSink,
-            &mut NoSummarizer,
-        );
+        let assembled = runtime.assemble(ContextAssembleInput {
+            task_id: "task",
+            session_id: "session",
+            model_call_id: "call-1",
+            provider: "literouter",
+            model: "gpt-4o-mini",
+            now: 1_000_000,
+            messages: &messages,
+            specs: &[],
+            open_questions: &[],
+            scratchpad: &entries,
+            pinned_ids: &[],
+            force_reduction: false,
+            offload: &mut NoOffloadSink,
+            summarizer: &mut NoSummarizer,
+        });
         assert!(assembled.is_ready());
         assert!(assembled
             .ledger()
@@ -1413,22 +1435,22 @@ mod tests {
             ChatMessage::text(ChatRole::System, "системная политика"),
             ChatMessage::text(ChatRole::User, "продолжай"),
         ];
-        let assembled = runtime.assemble(
-            "task",
-            "session",
-            "call-1",
-            "literouter",
-            "gpt-4o-mini",
-            1_000_000,
-            &messages,
-            &[spec("filesystem.read"), spec("filesystem.write")],
-            &["нужно исправь конфигурацию".to_string()],
-            &[],
-            &[],
-            false,
-            &mut NoOffloadSink,
-            &mut NoSummarizer,
-        );
+        let assembled = runtime.assemble(ContextAssembleInput {
+            task_id: "task",
+            session_id: "session",
+            model_call_id: "call-1",
+            provider: "literouter",
+            model: "gpt-4o-mini",
+            now: 1_000_000,
+            messages: &messages,
+            specs: &[spec("filesystem.read"), spec("filesystem.write")],
+            open_questions: &["нужно исправь конфигурацию".to_string()],
+            scratchpad: &[],
+            pinned_ids: &[],
+            force_reduction: false,
+            offload: &mut NoOffloadSink,
+            summarizer: &mut NoSummarizer,
+        });
         assert_eq!(assembled.loadout.decision.intent, "edit");
         assert!(assembled.check_tool_call("filesystem.write").is_ok());
     }
@@ -1445,22 +1467,22 @@ mod tests {
             messages.push(ChatMessage::text(ChatRole::Tool, block.clone()));
         }
         let pinned = message_item_id(3, ChatRole::Tool);
-        let assembled = runtime.assemble(
-            "task",
-            "session",
-            "call-1",
-            "literouter",
-            "gpt-4o-mini",
-            1_000_000,
-            &messages,
-            &[],
-            &[],
-            &[],
-            std::slice::from_ref(&pinned),
-            false,
-            &mut NoOffloadSink,
-            &mut NoSummarizer,
-        );
+        let assembled = runtime.assemble(ContextAssembleInput {
+            task_id: "task",
+            session_id: "session",
+            model_call_id: "call-1",
+            provider: "literouter",
+            model: "gpt-4o-mini",
+            now: 1_000_000,
+            messages: &messages,
+            specs: &[],
+            open_questions: &[],
+            scratchpad: &[],
+            pinned_ids: std::slice::from_ref(&pinned),
+            force_reduction: false,
+            offload: &mut NoOffloadSink,
+            summarizer: &mut NoSummarizer,
+        });
         assert!(assembled.is_ready());
         let dropped: Vec<&str> = assembled
             .ledger()
@@ -1491,22 +1513,22 @@ mod tests {
             ChatMessage::text(ChatRole::Tool, "устаревший вывод инструмента"),
         ];
         let relaxed = assemble(&mut runtime, &messages, &[]);
-        let forced = runtime.assemble(
-            "task",
-            "session",
-            "call-2",
-            "literouter",
-            "gpt-4o-mini",
-            1_000_000,
-            &messages,
-            &[],
-            &[],
-            &[],
-            &[],
-            true,
-            &mut NoOffloadSink,
-            &mut NoSummarizer,
-        );
+        let forced = runtime.assemble(ContextAssembleInput {
+            task_id: "task",
+            session_id: "session",
+            model_call_id: "call-2",
+            provider: "literouter",
+            model: "gpt-4o-mini",
+            now: 1_000_000,
+            messages: &messages,
+            specs: &[],
+            open_questions: &[],
+            scratchpad: &[],
+            pinned_ids: &[],
+            force_reduction: true,
+            offload: &mut NoOffloadSink,
+            summarizer: &mut NoSummarizer,
+        });
         assert!(forced.messages.len() < relaxed.messages.len());
         // Обязательный минимум остаётся на месте даже при принудительном сжатии.
         assert!(forced
@@ -1535,22 +1557,22 @@ mod tests {
             SummarizerConfig::default(),
             Some("краткое изложение истории".to_string()),
         );
-        let assembled = runtime.assemble(
-            "task",
-            "session",
-            "call-1",
-            "literouter",
-            "gpt-4o-mini",
-            1_000_000,
-            &messages,
-            &[],
-            &[],
-            &[],
-            &[],
-            false,
-            &mut NoOffloadSink,
-            &mut summarizer,
-        );
+        let assembled = runtime.assemble(ContextAssembleInput {
+            task_id: "task",
+            session_id: "session",
+            model_call_id: "call-1",
+            provider: "literouter",
+            model: "gpt-4o-mini",
+            now: 1_000_000,
+            messages: &messages,
+            specs: &[],
+            open_questions: &[],
+            scratchpad: &[],
+            pinned_ids: &[],
+            force_reduction: false,
+            offload: &mut NoOffloadSink,
+            summarizer: &mut summarizer,
+        });
         assert!(assembled.is_ready());
         let compression = &assembled.ledger().compression;
         assert_eq!(compression.len(), 1, "ровно одно compression-решение");
@@ -1577,22 +1599,22 @@ mod tests {
             ));
         }
         let mut summarizer = model_summarizer(SummarizerConfig::default(), None);
-        let assembled = runtime.assemble(
-            "task",
-            "session",
-            "call-1",
-            "literouter",
-            "gpt-4o-mini",
-            1_000_000,
-            &messages,
-            &[],
-            &[],
-            &[],
-            &[],
-            false,
-            &mut NoOffloadSink,
-            &mut summarizer,
-        );
+        let assembled = runtime.assemble(ContextAssembleInput {
+            task_id: "task",
+            session_id: "session",
+            model_call_id: "call-1",
+            provider: "literouter",
+            model: "gpt-4o-mini",
+            now: 1_000_000,
+            messages: &messages,
+            specs: &[],
+            open_questions: &[],
+            scratchpad: &[],
+            pinned_ids: &[],
+            force_reduction: false,
+            offload: &mut NoOffloadSink,
+            summarizer: &mut summarizer,
+        });
         assert!(assembled.is_ready());
         let compression = &assembled.ledger().compression;
         assert_eq!(compression.len(), 1);

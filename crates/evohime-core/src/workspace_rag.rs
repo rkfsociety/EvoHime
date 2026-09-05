@@ -1273,9 +1273,16 @@ pub fn index_workspace(
         }
 
         assert_generation_consistent(connection, &key, generation)?;
-        publish_generation(
-            connection, &run_id, &key, generation, indexed, chunks, excluded, &errors,
-        )?;
+        publish_generation(PublishGenerationInput {
+            connection,
+            run_id: &run_id,
+            workspace_key: &key,
+            generation,
+            files: indexed,
+            chunks,
+            excluded,
+            errors: &errors,
+        })?;
         gc_superseded_generations(connection, &key)?;
         progress(IndexProgress {
             run_id: run_id.clone(),
@@ -1470,16 +1477,16 @@ fn copy_unchanged_document(
                 row.12
             ],
         )?;
-        insert_fts(
+        insert_fts(FtsInsertInput {
             connection,
-            &chunk_id,
+            chunk_id: &chunk_id,
             workspace_key,
-            new_generation,
-            &row.7,
-            &row.9,
+            generation: new_generation,
+            text: &row.7,
+            symbol: &row.9,
             path,
-            &row.6,
-        )?;
+            parent: &row.6,
+        })?;
     }
     Ok(Some(rows.len()))
 }
@@ -1552,32 +1559,42 @@ fn insert_document(
                 CHUNKER_VERSION
             ],
         )?;
-        insert_fts(
+        insert_fts(FtsInsertInput {
             connection,
-            &chunk_id,
+            chunk_id: &chunk_id,
             workspace_key,
             generation,
-            &chunk.text,
-            &chunk.symbol_normalized,
-            &document.relative_path,
-            &chunk.parent_context,
-        )?;
+            text: &chunk.text,
+            symbol: &chunk.symbol_normalized,
+            path: &document.relative_path,
+            parent: &chunk.parent_context,
+        })?;
     }
     Ok(())
 }
 
-// Аргументы повторяют колонки строки FTS-индекса.
-#[allow(clippy::too_many_arguments)]
-fn insert_fts(
-    connection: &Connection,
-    chunk_id: &str,
-    workspace_key: &str,
+struct FtsInsertInput<'a> {
+    connection: &'a Connection,
+    chunk_id: &'a str,
+    workspace_key: &'a str,
     generation: i64,
-    text: &str,
-    symbol: &str,
-    path: &str,
-    parent: &str,
-) -> Result<(), RagError> {
+    text: &'a str,
+    symbol: &'a str,
+    path: &'a str,
+    parent: &'a str,
+}
+
+fn insert_fts(input: FtsInsertInput<'_>) -> Result<(), RagError> {
+    let FtsInsertInput {
+        connection,
+        chunk_id,
+        workspace_key,
+        generation,
+        text,
+        symbol,
+        path,
+        parent,
+    } = input;
     connection.execute(
         "INSERT INTO workspace_chunks_fts
          (chunk_text, symbol_normalized, path, parent_context, chunk_id, workspace_key, generation)
@@ -1625,18 +1642,28 @@ fn assert_generation_consistent(
     Ok(())
 }
 
-// Аргументы повторяют колонки публикуемого поколения индекса.
-#[allow(clippy::too_many_arguments)]
-fn publish_generation(
-    connection: &mut Connection,
-    run_id: &str,
-    workspace_key: &str,
+struct PublishGenerationInput<'a> {
+    connection: &'a mut Connection,
+    run_id: &'a str,
+    workspace_key: &'a str,
     generation: i64,
     files: usize,
     chunks: usize,
     excluded: usize,
-    errors: &[String],
-) -> Result<(), RagError> {
+    errors: &'a [String],
+}
+
+fn publish_generation(input: PublishGenerationInput<'_>) -> Result<(), RagError> {
+    let PublishGenerationInput {
+        connection,
+        run_id,
+        workspace_key,
+        generation,
+        files,
+        chunks,
+        excluded,
+        errors,
+    } = input;
     let transaction = connection.transaction()?;
     let current: String = transaction.query_row(
         "SELECT status FROM workspace_index_runs WHERE run_id = ?1 AND generation = ?2",
@@ -1852,7 +1879,7 @@ pub fn search_workspace_with_config(
     hybrid: &HybridConfig,
     loop_config: &LoopConfig,
 ) -> Result<SearchResult, RagError> {
-    search_workspace_with_progress(
+    search_workspace_with_progress(SearchWorkspaceInput {
         connection,
         workspace_root,
         query,
@@ -1860,22 +1887,34 @@ pub fn search_workspace_with_config(
         limits,
         hybrid,
         loop_config,
-        |_| {},
-    )
+        progress: |_| {},
+    })
 }
 
-// Аргументы — параметры одного поиска: запрос, лимиты, фильтры и канал прогресса.
-#[allow(clippy::too_many_arguments)]
-pub fn search_workspace_with_progress(
-    connection: &Connection,
-    workspace_root: &Path,
-    query: &str,
-    filters: QueryFilters,
-    limits: &RetrievalLimits,
-    hybrid: &HybridConfig,
-    loop_config: &LoopConfig,
-    mut progress: impl FnMut(RetrievalProgress),
+pub struct SearchWorkspaceInput<'a, F> {
+    pub connection: &'a Connection,
+    pub workspace_root: &'a Path,
+    pub query: &'a str,
+    pub filters: QueryFilters,
+    pub limits: &'a RetrievalLimits,
+    pub hybrid: &'a HybridConfig,
+    pub loop_config: &'a LoopConfig,
+    pub progress: F,
+}
+
+pub fn search_workspace_with_progress<F: FnMut(RetrievalProgress)>(
+    input: SearchWorkspaceInput<'_, F>,
 ) -> Result<SearchResult, RagError> {
+    let SearchWorkspaceInput {
+        connection,
+        workspace_root,
+        query,
+        filters,
+        limits,
+        hybrid,
+        loop_config,
+        mut progress,
+    } = input;
     limits.validate()?;
     validate_filters(&filters)?;
     if loop_config.max_iterations > 2
@@ -2017,68 +2056,68 @@ pub fn search_workspace_with_progress(
         iterations += 1;
         let remaining = Duration::from_millis(loop_config.wall_clock_timeout_ms)
             .saturating_sub(started.elapsed());
-        evidence = match bounded_lexical_retrieval(
+        evidence = match bounded_lexical_retrieval(BoundedLexicalRetrievalInput {
             connection,
             workspace_root,
-            &key,
+            workspace_key: &key,
             generation,
-            &plan,
+            plan: &plan,
             limits,
-            remaining / 2,
-        ) {
+            timeout: remaining / 2,
+        }) {
             Ok(evidence) => evidence,
             Err(RagError::Timeout)
                 if started.elapsed() < Duration::from_millis(loop_config.wall_clock_timeout_ms) =>
             {
                 let retry_remaining = Duration::from_millis(loop_config.wall_clock_timeout_ms)
                     .saturating_sub(started.elapsed());
-                match bounded_lexical_retrieval(
+                match bounded_lexical_retrieval(BoundedLexicalRetrievalInput {
                     connection,
                     workspace_root,
-                    &key,
+                    workspace_key: &key,
                     generation,
-                    &plan,
+                    plan: &plan,
                     limits,
-                    retry_remaining,
-                ) {
+                    timeout: retry_remaining,
+                }) {
                     Ok(evidence) => evidence,
                     Err(_) => {
-                        return Ok(retrieval_failure_result(
+                        return Ok(retrieval_failure_result(RetrievalFailureInput {
                             query_id,
                             plan,
                             query,
                             started,
                             events,
                             iterations,
-                            "retrieval_error",
-                            &mut progress,
-                        ));
+                            reason: "retrieval_error",
+                            progress: &mut progress,
+                        }));
                     }
                 }
             }
             Err(RagError::Sandbox(_)) => {
-                return Ok(retrieval_failure_result(
+                return Ok(retrieval_failure_result(RetrievalFailureInput {
                     query_id,
                     plan,
                     query,
                     started,
                     events,
                     iterations,
-                    "security_rejected",
-                    &mut progress,
-                ));
+                    reason: "security_rejected",
+                    progress: &mut progress,
+                }));
             }
             Err(_) => {
-                return Ok(retrieval_failure_result(
+                return Ok(retrieval_failure_result(RetrievalFailureInput {
                     query_id,
                     plan,
                     query,
                     started,
                     events,
                     iterations,
-                    "retrieval_error",
-                    &mut progress,
-                ));
+                    reason: "retrieval_error",
+                    progress: &mut progress,
+                }));
             }
         };
         consumed_tokens = consumed_tokens.saturating_add(
@@ -2152,16 +2191,16 @@ pub fn search_workspace_with_progress(
     let mut mode = "fts5".to_string();
     let mut fallback_reason = None;
     if hybrid.enabled && hybrid_allowed(&plan, hybrid) {
-        match hybrid_retrieval(
+        match hybrid_retrieval(HybridRetrievalInput {
             connection,
             workspace_root,
-            &key,
+            workspace_key: &key,
             generation,
             query,
-            &plan.filters,
-            &evidence,
+            filters: &plan.filters,
+            lexical: &evidence,
             limits,
-        ) {
+        }) {
             Ok(Some(fused)) => {
                 evidence = fused;
                 mode = "hybrid".into();
@@ -2265,18 +2304,30 @@ fn push_progress(
     events.push(event);
 }
 
-// Аргументы — поля bounded-результата отказа: причина, лимиты и диагностика.
-#[allow(clippy::too_many_arguments)]
-fn retrieval_failure_result(
+struct RetrievalFailureInput<'a, F> {
     query_id: String,
     plan: QueryPlan,
-    query: &str,
+    query: &'a str,
     started: Instant,
-    mut events: Vec<RetrievalProgress>,
+    events: Vec<RetrievalProgress>,
     iterations: usize,
-    reason: &str,
-    progress: &mut impl FnMut(RetrievalProgress),
+    reason: &'a str,
+    progress: &'a mut F,
+}
+
+fn retrieval_failure_result<F: FnMut(RetrievalProgress)>(
+    input: RetrievalFailureInput<'_, F>,
 ) -> SearchResult {
+    let RetrievalFailureInput {
+        query_id,
+        plan,
+        query,
+        started,
+        mut events,
+        iterations,
+        reason,
+        progress,
+    } = input;
     push_progress(
         &mut events,
         progress,
@@ -2325,30 +2376,35 @@ fn unresolved_conflict(evidence: &[RetrievedChunk]) -> bool {
     })
 }
 
-#[allow(clippy::too_many_arguments)]
-fn bounded_lexical_retrieval(
-    connection: &Connection,
-    workspace_root: &Path,
-    workspace_key: &str,
+struct BoundedLexicalRetrievalInput<'a> {
+    connection: &'a Connection,
+    workspace_root: &'a Path,
+    workspace_key: &'a str,
     generation: i64,
-    plan: &QueryPlan,
-    limits: &RetrievalLimits,
+    plan: &'a QueryPlan,
+    limits: &'a RetrievalLimits,
     timeout: Duration,
+}
+
+fn bounded_lexical_retrieval(
+    input: BoundedLexicalRetrievalInput<'_>,
 ) -> Result<Vec<RetrievedChunk>, RagError> {
-    if timeout.is_zero() {
+    if input.timeout.is_zero() {
         return Err(RagError::Timeout);
     }
-    let deadline = Instant::now() + timeout;
-    connection.progress_handler(1_000, Some(move || Instant::now() >= deadline));
+    let deadline = Instant::now() + input.timeout;
+    input
+        .connection
+        .progress_handler(1_000, Some(move || Instant::now() >= deadline));
     let result = lexical_retrieval(
-        connection,
-        workspace_root,
-        workspace_key,
-        generation,
-        plan,
-        limits,
+        input.connection,
+        input.workspace_root,
+        input.workspace_key,
+        input.generation,
+        input.plan,
+        input.limits,
     );
-    connection.progress_handler(0, None::<fn() -> bool>);
+    input.connection.progress_handler(0, None::<fn() -> bool>);
     match result {
         Err(RagError::Sqlite(error)) if error.to_string().to_lowercase().contains("interrupt") => {
             Err(RagError::Timeout)
@@ -2907,18 +2963,30 @@ fn decode_vector(bytes: &[u8]) -> Option<Vec<f32>> {
     )
 }
 
-// Аргументы — параметры гибридного поиска: запрос, веса, лимиты и диагностика.
-#[allow(clippy::too_many_arguments)]
-fn hybrid_retrieval(
-    connection: &Connection,
-    workspace_root: &Path,
-    workspace_key: &str,
+struct HybridRetrievalInput<'a> {
+    connection: &'a Connection,
+    workspace_root: &'a Path,
+    workspace_key: &'a str,
     generation: i64,
-    query: &str,
-    filters: &QueryFilters,
-    lexical: &[RetrievedChunk],
-    limits: &RetrievalLimits,
+    query: &'a str,
+    filters: &'a QueryFilters,
+    lexical: &'a [RetrievedChunk],
+    limits: &'a RetrievalLimits,
+}
+
+fn hybrid_retrieval(
+    input: HybridRetrievalInput<'_>,
 ) -> Result<Option<Vec<RetrievedChunk>>, RagError> {
+    let HybridRetrievalInput {
+        connection,
+        workspace_root,
+        workspace_key,
+        generation,
+        query,
+        filters,
+        lexical,
+        limits,
+    } = input;
     let metadata = connection
         .query_row(
             "SELECT index_id, source_generation, embedding_model_id, embedding_model_version,
@@ -3276,18 +3344,18 @@ pub fn build_evidence_context(
         used_tokens += snippet_tokens + estimate_tokens(&citation.compact());
         selected.push(block.chunk_id.clone());
         citations.push(citation.clone());
-        write_rag_ledger(
+        write_rag_ledger(RagLedgerInput {
             connection,
-            &ledger_id,
-            &search.query_id,
+            ledger_id: &ledger_id,
+            query_id: &search.query_id,
             block,
-            rank + 1,
-            &snippet,
-            &citation,
-            "initial_valid",
-            None,
+            rank: rank + 1,
+            snippet: &snippet,
+            citation: &citation,
+            reread_result: "initial_valid",
+            error_code: None,
             created_at,
-        )?;
+        })?;
     }
     Ok(ContextBuildResult {
         ledger_id,
@@ -3448,19 +3516,32 @@ fn relocate_nearby(bytes: &[u8], block: &RetrievedChunk) -> Result<(String, [u64
     ))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn write_rag_ledger(
-    connection: &Connection,
-    ledger_id: &str,
-    query_id: &str,
-    block: &RetrievedChunk,
+struct RagLedgerInput<'a> {
+    connection: &'a Connection,
+    ledger_id: &'a str,
+    query_id: &'a str,
+    block: &'a RetrievedChunk,
     rank: usize,
-    snippet: &str,
-    citation: &Citation,
-    reread_result: &str,
-    error_code: Option<&str>,
+    snippet: &'a str,
+    citation: &'a Citation,
+    reread_result: &'a str,
+    error_code: Option<&'a str>,
     created_at: i64,
-) -> Result<(), RagError> {
+}
+
+fn write_rag_ledger(input: RagLedgerInput<'_>) -> Result<(), RagError> {
+    let RagLedgerInput {
+        connection,
+        ledger_id,
+        query_id,
+        block,
+        rank,
+        snippet,
+        citation,
+        reread_result,
+        error_code,
+        created_at,
+    } = input;
     connection.execute(
         "INSERT INTO rag_context_ledger
          (ledger_id, query_id, block_id, rank, retrieval_score, checker_confidence,
@@ -3791,19 +3872,19 @@ mod tests {
             .as_ref()
             .is_some_and(|request| request.requires_approval));
         let mut live_events = Vec::new();
-        let _ = search_workspace_with_progress(
-            fixture.database.connection(),
-            &fixture.root,
-            "bounded evidence",
-            QueryFilters {
+        let _ = search_workspace_with_progress(SearchWorkspaceInput {
+            connection: fixture.database.connection(),
+            workspace_root: &fixture.root,
+            query: "bounded evidence",
+            filters: QueryFilters {
                 path: None,
                 language: None,
             },
-            &RetrievalLimits::default(),
-            &HybridConfig::default(),
-            &LoopConfig::default(),
-            |event| live_events.push(event.event_type),
-        )
+            limits: &RetrievalLimits::default(),
+            hybrid: &HybridConfig::default(),
+            loop_config: &LoopConfig::default(),
+            progress: |event: RetrievalProgress| live_events.push(event.event_type),
+        })
         .unwrap();
         assert_eq!(
             live_events.first().map(String::as_str),

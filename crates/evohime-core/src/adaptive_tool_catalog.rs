@@ -64,6 +64,8 @@ pub enum CatalogError {
     UnknownSelectedTool(String),
     #[error("duplicate selected tool: {0}")]
     DuplicateSelectedTool(String),
+    #[error("invalid tool manifest hash: {0}")]
+    InvalidManifestHash(String),
 }
 
 /// Process-local cache. The complete key is intentionally derived from every
@@ -117,13 +119,15 @@ pub fn build_projection(
             .chars()
             .take(MAX_COMPACT_DESCRIPTION_CHARS)
             .collect::<String>();
+        let manifest_hash = manifest.canonical_hash().map_err(|error| {
+            tracing::error!(tool_id = %manifest.tool_id, %error, "tool manifest hash failed");
+            CatalogError::InvalidManifestHash(manifest.tool_id.clone())
+        })?;
         tools.push(CompactTool {
             tool_id: manifest.tool_id.clone(),
             display_name: manifest.display_name.clone(),
             description,
-            manifest_hash: manifest
-                .canonical_hash()
-                .unwrap_or_else(|_| "invalid".into()),
+            manifest_hash,
         });
     }
     tools.sort_by(|a, b| a.tool_id.cmp(&b.tool_id));

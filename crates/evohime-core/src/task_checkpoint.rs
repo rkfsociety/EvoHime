@@ -98,24 +98,17 @@ impl TaskCheckpointRuntime {
     /// Captures a checkpoint with explicitly selected, immutable analysis
     /// kernel refs. Values remain in the kernel/ArtifactStore; the checkpoint
     /// receives only the bounded metadata references.
-    #[allow(clippy::too_many_arguments)]
     pub async fn capture_with_analysis_kernel(
         &self,
-        task_id: &str,
-        workspace_root: &Path,
-        status: CheckpointStatus,
-        reason: CheckpointCaptureReason,
-        ledger: Option<&ContextLedgerEntry>,
-        session: &crate::analysis_kernel::AnalysisKernelSessionV1,
-        objects: &[crate::analysis_kernel::KernelObjectRefV1],
+        input: AnalysisKernelCheckpointInput<'_>,
     ) -> Result<TaskCheckpointV1, evohime_local_storage::StorageError> {
         self.capture_inner(
-            task_id,
-            workspace_root,
-            status,
-            reason,
-            ledger,
-            Some((session, objects)),
+            input.task_id,
+            input.workspace_root,
+            input.status,
+            input.reason,
+            input.ledger,
+            Some((input.session, input.objects)),
         )
         .await
     }
@@ -251,6 +244,17 @@ impl TaskCheckpointRuntime {
             warning,
         })
     }
+}
+
+/// Параметры checkpoint с явно выбранными analysis-kernel references.
+pub struct AnalysisKernelCheckpointInput<'a> {
+    pub task_id: &'a str,
+    pub workspace_root: &'a Path,
+    pub status: CheckpointStatus,
+    pub reason: CheckpointCaptureReason,
+    pub ledger: Option<&'a ContextLedgerEntry>,
+    pub session: &'a crate::analysis_kernel::AnalysisKernelSessionV1,
+    pub objects: &'a [crate::analysis_kernel::KernelObjectRefV1],
 }
 
 fn build_checkpoint(
@@ -490,15 +494,15 @@ mod tests {
             invalidated_at_ms: None,
         };
         let checkpoint = runtime
-            .capture_with_analysis_kernel(
-                "task-kernel",
-                Path::new("C:/workspace/evohime"),
-                CheckpointStatus::InProgress,
-                CheckpointCaptureReason::BeforeCompaction,
-                None,
-                &session,
-                &[object],
-            )
+            .capture_with_analysis_kernel(AnalysisKernelCheckpointInput {
+                task_id: "task-kernel",
+                workspace_root: Path::new("C:/workspace/evohime"),
+                status: CheckpointStatus::InProgress,
+                reason: CheckpointCaptureReason::BeforeCompaction,
+                ledger: None,
+                session: &session,
+                objects: &[object],
+            })
             .await
             .expect("kernel refs persist through checkpoint capture");
         assert!(checkpoint

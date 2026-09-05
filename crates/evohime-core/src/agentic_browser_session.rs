@@ -98,22 +98,10 @@ pub enum ContractError {
 }
 
 impl BrowserSession {
-    #[allow(clippy::too_many_arguments)]
-    pub fn from_metadata(
-        session_id: &str,
-        conversation_id: String,
-        run_id: Option<String>,
-        state: &str,
-        revision: u64,
-        control_generation: u64,
-        control_owner: &str,
-        profile_policy: String,
-        network_policy: String,
-        policy_hash: String,
-    ) -> Result<Self, ContractError> {
-        let session_id = Uuid::parse_str(session_id)
+    pub fn from_metadata(input: BrowserSessionMetadata) -> Result<Self, ContractError> {
+        let session_id = Uuid::parse_str(&input.session_id)
             .map_err(|_| ContractError::InvalidInput("session_id".into()))?;
-        let state = match state {
+        let state = match input.state.as_str() {
             "created" => SessionState::Created,
             "starting" => SessionState::Starting,
             "ready" => SessionState::Ready,
@@ -123,7 +111,7 @@ impl BrowserSession {
             "failed" => SessionState::Failed,
             _ => return Err(ContractError::InvalidInput("state".into())),
         };
-        let control_owner = match control_owner {
+        let control_owner = match input.control_owner.as_str() {
             "agent" => ControlOwner::Agent,
             "human" => ControlOwner::Human,
             _ => return Err(ContractError::InvalidInput("control_owner".into())),
@@ -131,15 +119,15 @@ impl BrowserSession {
         Ok(Self {
             schema_version: CONTRACT_VERSION,
             session_id,
-            conversation_id,
-            run_id,
+            conversation_id: input.conversation_id,
+            run_id: input.run_id,
             state,
-            revision,
+            revision: input.revision,
             control_owner,
-            control_generation,
-            profile_policy,
-            network_policy,
-            policy_hash,
+            control_generation: input.control_generation,
+            profile_policy: input.profile_policy,
+            network_policy: input.network_policy,
+            policy_hash: input.policy_hash,
         })
     }
 
@@ -234,6 +222,20 @@ impl BrowserSession {
         }
         Ok(())
     }
+}
+
+/// Снимок persisted browser-сессии, преобразуемый в типизированный контракт.
+pub struct BrowserSessionMetadata {
+    pub session_id: String,
+    pub conversation_id: String,
+    pub run_id: Option<String>,
+    pub state: String,
+    pub revision: u64,
+    pub control_generation: u64,
+    pub control_owner: String,
+    pub profile_policy: String,
+    pub network_policy: String,
+    pub policy_hash: String,
 }
 
 pub fn fingerprint(session_id: Uuid, revision: u64, url: &str, title: &str) -> String {

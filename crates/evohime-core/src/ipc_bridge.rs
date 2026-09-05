@@ -14339,15 +14339,15 @@ impl IpcBridge {
                     "test.execute".to_owned(),
                     "review".to_owned(),
                 ];
-                let run = registry.start(
+                let run = registry.start(crate::agent_role_profiles::StartRuntimeInput {
                     run_id,
-                    &profile_id,
+                    profile_id: &profile_id,
                     revision,
                     grants,
-                    &allowed,
-                    &allowed,
-                    &allowed,
-                )?;
+                    parent: &allowed,
+                    policy: &allowed,
+                    registry: &allowed,
+                })?;
                 state = "pinned";
                 projection = serde_json::json!({"schema_version":1,"profile_id":run.snapshot.profile_id,"revision":run.snapshot.revision,"content_hash":run.snapshot.content_hash,"run_id":run.run_id,"effective_grants":run.effective_grants,"state":run.state,"raw_prompt":false,"credentials":false});
                 Ok(())
@@ -14990,13 +14990,15 @@ impl IpcBridge {
                 item_id = payload["item_id"].as_str().unwrap_or_default().to_owned();
                 let response = payload["response"].as_str().map(str::to_owned);
                 let saved = registry.transition_idempotent(
-                    &item_id,
-                    request.expected_revision,
-                    &request.operation,
-                    response,
-                    "shell",
-                    chrono::Utc::now().timestamp_millis(),
-                    &request.idempotency_key,
+                    crate::human_work_items::TransitionIdempotentInput {
+                        id: item_id.clone(),
+                        expected: request.expected_revision,
+                        operation: request.operation.clone(),
+                        response,
+                        actor: "shell".into(),
+                        now_ms: chrono::Utc::now().timestamp_millis(),
+                        key: request.idempotency_key.clone(),
+                    },
                 )?;
                 revision = saved.revision;
                 state = format!("{:?}", saved.state).to_lowercase();
@@ -15090,16 +15092,18 @@ impl IpcBridge {
                 return rejected("session_not_found");
             };
             let Ok(session) = BrowserSession::from_metadata(
-                &record.session_id,
-                record.conversation_id,
-                record.run_id,
-                &record.state,
-                record.revision,
-                record.control_generation,
-                &record.control_owner,
-                record.profile_policy,
-                record.network_policy,
-                record.policy_hash,
+                crate::agentic_browser_session::BrowserSessionMetadata {
+                    session_id: record.session_id,
+                    conversation_id: record.conversation_id,
+                    run_id: record.run_id,
+                    state: record.state,
+                    revision: record.revision,
+                    control_generation: record.control_generation,
+                    control_owner: record.control_owner,
+                    profile_policy: record.profile_policy,
+                    network_policy: record.network_policy,
+                    policy_hash: record.policy_hash,
+                },
             ) else {
                 return rejected("invalid_session");
             };
@@ -22416,17 +22420,19 @@ mod tests {
     ) {
         use crate::ambient_proactivity as proactivity;
         let subject_key = proactivity::subject_key(subject);
-        let record = crate::ambient::proposal_record(
+        let proposal_key = proactivity::proposal_key(kind, &subject_key, now_ms);
+        let mute_key = proactivity::mute_key(kind, &subject_key);
+        let record = crate::ambient::proposal_record(crate::ambient::ProposalRecordInput {
             proposal_id,
-            &proactivity::proposal_key(kind, &subject_key, now_ms),
-            &proactivity::mute_key(kind, &subject_key),
+            proposal_key: &proposal_key,
+            mute_key: &mute_key,
             kind,
-            &subject_key,
+            subject_key: &subject_key,
             subject,
-            "Напомнить купить хлеб",
-            episode_id,
+            title: "Напомнить купить хлеб",
+            source_episode_id: episode_id,
             now_ms,
-        );
+        });
         bridge
             .journal()
             .record_ambient_proposal(&record)
@@ -22607,21 +22613,23 @@ mod tests {
         );
         // И он глушит предложение из другой временной корзины — то есть с
         // другим `proposal_key`.
-        let later = crate::ambient::proposal_record(
-            "prop-2",
-            &crate::ambient_proactivity::proposal_key(
-                evohime_listener_contract::ProposalKind::Reminder,
-                &subject_key,
-                now_ms + 5 * 60 * 60 * 1000,
-            ),
-            &mute_key,
+        let later_now_ms = now_ms + 5 * 60 * 60 * 1000;
+        let later_key = crate::ambient_proactivity::proposal_key(
             evohime_listener_contract::ProposalKind::Reminder,
             &subject_key,
-            "хлеб",
-            "Напомнить купить хлеб",
-            None,
-            now_ms + 5 * 60 * 60 * 1000,
+            later_now_ms,
         );
+        let later = crate::ambient::proposal_record(crate::ambient::ProposalRecordInput {
+            proposal_id: "prop-2",
+            proposal_key: &later_key,
+            mute_key: &mute_key,
+            kind: evohime_listener_contract::ProposalKind::Reminder,
+            subject_key: &subject_key,
+            subject: "хлеб",
+            title: "Напомнить купить хлеб",
+            source_episode_id: None,
+            now_ms: later_now_ms,
+        });
         assert_eq!(
             journal.record_ambient_proposal(&later).await,
             Ok(evohime_local_storage::ambient_store::ProposalInsert::Muted)

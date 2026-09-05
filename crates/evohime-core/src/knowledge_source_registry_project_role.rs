@@ -317,48 +317,51 @@ pub fn validate_collection(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn build_view(
-    id: String,
-    run_id: String,
-    sources: &[KnowledgeSource],
-    bindings: &[KnowledgeBinding],
-    target_kind: TargetKind,
-    target_id: &str,
-    max_sensitivity: Sensitivity,
-    retrieval_profile: String,
-    expires_at_ms: Option<i64>,
-    policy: &KnowledgePolicy,
-) -> Result<KnowledgeView, KnowledgeError> {
-    validate_policy(policy)?;
+pub struct BuildViewInput<'a> {
+    pub id: String,
+    pub run_id: String,
+    pub sources: &'a [KnowledgeSource],
+    pub bindings: &'a [KnowledgeBinding],
+    pub target_kind: TargetKind,
+    pub target_id: &'a str,
+    pub max_sensitivity: Sensitivity,
+    pub retrieval_profile: String,
+    pub expires_at_ms: Option<i64>,
+    pub policy: &'a KnowledgePolicy,
+}
+
+pub fn build_view(input: BuildViewInput<'_>) -> Result<KnowledgeView, KnowledgeError> {
+    validate_policy(input.policy)?;
     let mut ids = BTreeSet::new();
-    for binding in bindings.iter().filter(|b| {
-        b.target_kind == target_kind
-            && b.target_id == target_id
+    for binding in input.bindings.iter().filter(|b| {
+        b.target_kind == input.target_kind
+            && b.target_id == input.target_id
             && b.access_mode == AccessMode::ReadOnly
     }) {
-        let source = sources
+        let source = input
+            .sources
             .iter()
             .find(|s| s.id == binding.source_id)
             .ok_or(KnowledgeError::Unauthorized)?;
-        validate_source(source, policy)?;
+        validate_source(source, input.policy)?;
         if source.status != SourceStatus::Ready {
             continue;
         }
-        if source.sensitivity == Sensitivity::Secret && max_sensitivity != Sensitivity::Secret {
+        if source.sensitivity == Sensitivity::Secret && input.max_sensitivity != Sensitivity::Secret
+        {
             return Err(KnowledgeError::SensitivityViolation);
         }
         ids.insert(source.id.clone());
     }
-    let source_ids: Vec<_> = ids.into_iter().take(policy.max_sources).collect();
+    let source_ids: Vec<_> = ids.into_iter().take(input.policy.max_sources).collect();
     let mut view = KnowledgeView {
         schema_version: SCHEMA_VERSION,
-        id,
-        run_id,
+        id: input.id,
+        run_id: input.run_id,
         source_ids,
-        max_sensitivity,
-        retrieval_profile,
-        expires_at_ms,
+        max_sensitivity: input.max_sensitivity,
+        retrieval_profile: input.retrieval_profile,
+        expires_at_ms: input.expires_at_ms,
         content_hash: String::new(),
     };
     let bytes = serde_json::to_vec(&view).map_err(|_| KnowledgeError::Serialization)?;
@@ -366,35 +369,45 @@ pub fn build_view(
     Ok(view)
 }
 
-#[allow(clippy::too_many_arguments)]
+pub struct BuildCollectionViewInput<'a> {
+    pub collection: &'a KnowledgeCollection,
+    pub sources: &'a [KnowledgeSource],
+    pub bindings: &'a [KnowledgeBinding],
+    pub target_kind: TargetKind,
+    pub target_id: &'a str,
+    pub max_sensitivity: Sensitivity,
+    pub expires_at_ms: Option<i64>,
+    pub policy: &'a KnowledgePolicy,
+}
+
 pub fn build_collection_view(
-    collection: &KnowledgeCollection,
-    sources: &[KnowledgeSource],
-    bindings: &[KnowledgeBinding],
-    target_kind: TargetKind,
-    target_id: &str,
-    max_sensitivity: Sensitivity,
-    expires_at_ms: Option<i64>,
-    policy: &KnowledgePolicy,
+    input: BuildCollectionViewInput<'_>,
 ) -> Result<KnowledgeView, KnowledgeError> {
-    validate_collection(collection, policy)?;
-    let selected = sources
+    validate_collection(input.collection, input.policy)?;
+    let selected = input
+        .sources
         .iter()
-        .filter(|source| collection.source_ids.iter().any(|id| id == &source.id))
+        .filter(|source| {
+            input
+                .collection
+                .source_ids
+                .iter()
+                .any(|id| id == &source.id)
+        })
         .cloned()
         .collect::<Vec<_>>();
-    build_view(
-        format!("view-{}-{}", collection.id, collection.version),
-        format!("collection:{}", collection.id),
-        &selected,
-        bindings,
-        target_kind,
-        target_id,
-        max_sensitivity,
-        collection.retrieval_profile.clone(),
-        expires_at_ms,
-        policy,
-    )
+    build_view(BuildViewInput {
+        id: format!("view-{}-{}", input.collection.id, input.collection.version),
+        run_id: format!("collection:{}", input.collection.id),
+        sources: &selected,
+        bindings: input.bindings,
+        target_kind: input.target_kind,
+        target_id: input.target_id,
+        max_sensitivity: input.max_sensitivity,
+        retrieval_profile: input.collection.retrieval_profile.clone(),
+        expires_at_ms: input.expires_at_ms,
+        policy: input.policy,
+    })
 }
 
 pub fn validate_hit(
@@ -452,18 +465,18 @@ mod tests {
             retrieval_profile_id: None,
             priority: 1,
         };
-        let v = build_view(
-            "view".into(),
-            "run".into(),
-            &[s],
-            &[b],
-            TargetKind::Project,
-            "project-1",
-            Sensitivity::Internal,
-            "keyword".into(),
-            None,
-            &p,
-        )
+        let v = build_view(BuildViewInput {
+            id: "view".into(),
+            run_id: "run".into(),
+            sources: &[s],
+            bindings: &[b],
+            target_kind: TargetKind::Project,
+            target_id: "project-1",
+            max_sensitivity: Sensitivity::Internal,
+            retrieval_profile: "keyword".into(),
+            expires_at_ms: None,
+            policy: &p,
+        })
         .unwrap();
         assert_eq!(v.source_ids, vec!["source-1"]);
     }
@@ -479,18 +492,18 @@ mod tests {
             retrieval_profile_id: None,
             priority: 1,
         };
-        let v = build_view(
-            "view".into(),
-            "run".into(),
-            &[s],
-            &[b],
-            TargetKind::Project,
-            "project-1",
-            Sensitivity::Internal,
-            "keyword".into(),
-            None,
-            &p,
-        )
+        let v = build_view(BuildViewInput {
+            id: "view".into(),
+            run_id: "run".into(),
+            sources: &[s],
+            bindings: &[b],
+            target_kind: TargetKind::Project,
+            target_id: "project-1",
+            max_sensitivity: Sensitivity::Internal,
+            retrieval_profile: "keyword".into(),
+            expires_at_ms: None,
+            policy: &p,
+        })
         .unwrap();
         assert!(v.source_ids.is_empty());
     }
@@ -524,19 +537,19 @@ mod tests {
             priority: 1,
         };
         assert_eq!(
-            build_collection_view(
-                &KnowledgeCollection {
+            build_collection_view(BuildCollectionViewInput {
+                collection: &KnowledgeCollection {
                     source_ids: vec![source.id.clone()],
                     ..duplicate
                 },
-                &[source],
-                &[binding],
-                TargetKind::Project,
-                "project-1",
-                Sensitivity::Internal,
-                None,
-                &default_policy()
-            )
+                sources: &[source],
+                bindings: &[binding],
+                target_kind: TargetKind::Project,
+                target_id: "project-1",
+                max_sensitivity: Sensitivity::Internal,
+                expires_at_ms: None,
+                policy: &default_policy()
+            })
             .unwrap()
             .source_ids,
             vec!["source-1"]

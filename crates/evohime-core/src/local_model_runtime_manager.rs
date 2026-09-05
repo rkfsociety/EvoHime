@@ -592,30 +592,35 @@ pub fn compute_fit(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+pub struct ChooseActivationInput<'a> {
+    pub policy: ActivationPolicy,
+    pub current_model_id: &'a str,
+    pub bootstrap_model_id: Option<&'a str>,
+    pub preferred_model_id: Option<&'a str>,
+    pub bootstrap_ready: bool,
+    pub preferred_ready: bool,
+    pub call_in_flight: bool,
+    pub new_conversation: bool,
+}
+
 pub fn choose_activation(
-    policy: ActivationPolicy,
-    current_model_id: &str,
-    bootstrap_model_id: Option<&str>,
-    preferred_model_id: Option<&str>,
-    bootstrap_ready: bool,
-    preferred_ready: bool,
-    call_in_flight: bool,
-    new_conversation: bool,
+    input: ChooseActivationInput<'_>,
 ) -> Result<ActivationDecision, ManagerError> {
-    if current_model_id.is_empty() || call_in_flight {
+    if input.current_model_id.is_empty() || input.call_in_flight {
         return Ok(ActivationDecision::KeepSnapshot);
     }
-    let preferred = preferred_model_id.filter(|_| preferred_ready);
-    match policy {
+    let preferred = input.preferred_model_id.filter(|_| input.preferred_ready);
+    match input.policy {
         ActivationPolicy::Manual => Ok(ActivationDecision::KeepSnapshot),
         ActivationPolicy::PreferWhenReady if preferred.is_some() => {
             Ok(ActivationDecision::Preferred)
         }
-        ActivationPolicy::NewConversationsOnly if new_conversation && preferred.is_some() => {
+        ActivationPolicy::NewConversationsOnly if input.new_conversation && preferred.is_some() => {
             Ok(ActivationDecision::Preferred)
         }
-        _ if bootstrap_ready && bootstrap_model_id.is_some() => Ok(ActivationDecision::Bootstrap),
+        _ if input.bootstrap_ready && input.bootstrap_model_id.is_some() => {
+            Ok(ActivationDecision::Bootstrap)
+        }
         _ => Ok(ActivationDecision::KeepSnapshot),
     }
 }
@@ -917,30 +922,30 @@ mod tests {
             FitStatus::Unknown
         );
         assert_eq!(
-            choose_activation(
-                ActivationPolicy::PreferWhenReady,
-                "bootstrap",
-                Some("bootstrap"),
-                Some("preferred"),
-                true,
-                true,
-                true,
-                false
-            )
+            choose_activation(ChooseActivationInput {
+                policy: ActivationPolicy::PreferWhenReady,
+                current_model_id: "bootstrap",
+                bootstrap_model_id: Some("bootstrap"),
+                preferred_model_id: Some("preferred"),
+                bootstrap_ready: true,
+                preferred_ready: true,
+                call_in_flight: true,
+                new_conversation: false,
+            })
             .unwrap(),
             ActivationDecision::KeepSnapshot
         );
         assert_eq!(
-            choose_activation(
-                ActivationPolicy::NewConversationsOnly,
-                "bootstrap",
-                Some("bootstrap"),
-                Some("preferred"),
-                true,
-                true,
-                false,
-                true
-            )
+            choose_activation(ChooseActivationInput {
+                policy: ActivationPolicy::NewConversationsOnly,
+                current_model_id: "bootstrap",
+                bootstrap_model_id: Some("bootstrap"),
+                preferred_model_id: Some("preferred"),
+                bootstrap_ready: true,
+                preferred_ready: true,
+                call_in_flight: false,
+                new_conversation: true,
+            })
             .unwrap(),
             ActivationDecision::Preferred
         );

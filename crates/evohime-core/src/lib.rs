@@ -2237,17 +2237,19 @@ impl EventJournal {
     ) -> Result<crate::workspace_rag::SearchResult, crate::workspace_rag::RagError> {
         let database = self.database.lock().await;
         crate::workspace_rag::search_workspace_with_progress(
-            database.connection(),
-            workspace_root,
-            query,
-            filters,
-            &crate::workspace_rag::RetrievalLimits::default(),
-            &crate::workspace_rag::HybridConfig {
-                enabled: hybrid,
-                ..Default::default()
+            crate::workspace_rag::SearchWorkspaceInput {
+                connection: database.connection(),
+                workspace_root,
+                query,
+                filters,
+                limits: &crate::workspace_rag::RetrievalLimits::default(),
+                hybrid: &crate::workspace_rag::HybridConfig {
+                    enabled: hybrid,
+                    ..Default::default()
+                },
+                loop_config: &crate::workspace_rag::LoopConfig::default(),
+                progress,
             },
-            &crate::workspace_rag::LoopConfig::default(),
-            progress,
         )
     }
 
@@ -7072,17 +7074,17 @@ impl ToolAgent {
         );
 
         let proposal_id = uuid::Uuid::new_v4().to_string();
-        let record = crate::ambient::proposal_record(
-            &proposal_id,
-            &proposal_key,
-            &mute_key,
+        let record = crate::ambient::proposal_record(crate::ambient::ProposalRecordInput {
+            proposal_id: &proposal_id,
+            proposal_key: &proposal_key,
+            mute_key: &mute_key,
             kind,
-            &subject_key,
-            &candidate.canonical_subject,
-            &candidate.statement,
-            Some(episode_id),
+            subject_key: &subject_key,
+            subject: &candidate.canonical_subject,
+            title: &candidate.statement,
+            source_episode_id: Some(episode_id),
             now_ms,
-        );
+        });
         match journal.record_ambient_proposal(&record).await {
             Ok(ProposalInsert::Created) => {
                 // Счётчик поднимается только после появления карточки:
@@ -7492,41 +7494,41 @@ impl ToolAgent {
                     ),
                     contents,
                 );
-                runtime.assemble(
+                runtime.assemble(context_budget::ContextAssembleInput {
                     task_id,
                     session_id,
-                    &model_call_id,
-                    &provider,
-                    &model,
+                    model_call_id: &model_call_id,
+                    provider: &provider,
+                    model: &model,
                     now,
                     messages,
                     specs,
-                    &open_questions,
-                    &scratchpad,
-                    &pinned,
+                    open_questions: &open_questions,
+                    scratchpad: &scratchpad,
+                    pinned_ids: &pinned,
                     force_reduction,
-                    &mut offload,
-                    &mut summarizer,
-                )
+                    offload: &mut offload,
+                    summarizer: &mut summarizer,
+                })
             }
             None => {
                 let mut offload = evohime_context_budget::ladder::NoOffload;
-                runtime.assemble(
+                runtime.assemble(context_budget::ContextAssembleInput {
                     task_id,
                     session_id,
-                    &model_call_id,
-                    &provider,
-                    &model,
+                    model_call_id: &model_call_id,
+                    provider: &provider,
+                    model: &model,
                     now,
                     messages,
                     specs,
-                    &[],
-                    &[],
-                    &[],
-                    false,
-                    &mut offload,
-                    &mut summarizer,
-                )
+                    open_questions: &[],
+                    scratchpad: &[],
+                    pinned_ids: &[],
+                    force_reduction: false,
+                    offload: &mut offload,
+                    summarizer: &mut summarizer,
+                })
             }
         };
 
@@ -13114,7 +13116,7 @@ impl TaskCoordinator {
                             for id in &collection.source_ids {
                                 bindings.extend(store::list_bindings(database.connection(), id, knowledge::MAX_BINDINGS_PER_SOURCE).map_err(|_| "storage_failed".to_string())?.into_iter().filter_map(|json| serde_json::from_slice::<knowledge::KnowledgeBinding>(&json).ok()));
                             }
-                            let view = knowledge::build_collection_view(&collection, &sources, &bindings, target_kind, target_id, knowledge::Sensitivity::Internal, None, &policy).map_err(|e| e.to_string())?;
+                            let view = knowledge::build_collection_view(knowledge::BuildCollectionViewInput { collection: &collection, sources: &sources, bindings: &bindings, target_kind, target_id, max_sensitivity: knowledge::Sensitivity::Internal, expires_at_ms: None, policy: &policy }).map_err(|e| e.to_string())?;
                             serde_json::to_vec(&serde_json::json!({"schema_version":1,"collection_id":collection.id,"version":collection.version,"view_id":view.id,"source_ids":view.source_ids,"content_hash":view.content_hash,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "register" => {
@@ -13157,7 +13159,7 @@ impl TaskCoordinator {
                             let source_json = store::get_source(database.connection(), &source_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "knowledge_source_not_found".to_string())?;
                             let source: knowledge::KnowledgeSource = serde_json::from_slice(&source_json).map_err(|_| "corrupt_knowledge_source".to_string())?;
                             let bindings = store::list_bindings(database.connection(), &source_id, knowledge::MAX_BINDINGS_PER_SOURCE).map_err(|_| "storage_failed".to_string())?.into_iter().filter_map(|json| serde_json::from_slice(&json).ok()).collect::<Vec<knowledge::KnowledgeBinding>>();
-                            let view = knowledge::build_view(format!("view-{source_id}"), "runtime".into(), std::slice::from_ref(&source), &bindings, target_kind, target_id, knowledge::Sensitivity::Internal, "keyword".into(), None, &policy).map_err(|e| e.to_string())?;
+                            let view = knowledge::build_view(knowledge::BuildViewInput { id: format!("view-{source_id}"), run_id: "runtime".into(), sources: std::slice::from_ref(&source), bindings: &bindings, target_kind, target_id, max_sensitivity: knowledge::Sensitivity::Internal, retrieval_profile: "keyword".into(), expires_at_ms: None, policy: &policy }).map_err(|e| e.to_string())?;
                             let mut hits = Vec::new();
                             for json in store::list_chunks(database.connection(), &source_id, knowledge::MAX_CHUNKS_PER_SOURCE).map_err(|_| "storage_failed".to_string())? {
                                 let chunk: knowledge::KnowledgeChunk = serde_json::from_slice(&json).map_err(|_| "corrupt_knowledge_chunk".to_string())?;
@@ -13512,16 +13514,16 @@ impl TaskCoordinator {
                                 })
                                 .transpose()?
                                 .unwrap_or(batch::FailurePolicy::Continue);
-                            let value = batch::new_batch(
-                                batch_id.clone(),
+                            let value = batch::new_batch(batch::NewBatchInput {
+                                id: batch_id.clone(),
                                 definition_ref,
                                 definition_version,
                                 inputs,
                                 max_concurrency,
                                 failure_policy,
-                                crate::task_memory::now_millis() as i64,
-                                &policy,
-                            )
+                                now_ms: crate::task_memory::now_millis() as i64,
+                                policy: policy.clone(),
+                            })
                             .map_err(|e| e.to_string())?;
                             let json = serde_json::to_vec(&value)
                                 .map_err(|_| "serialization_failed".to_string())?;
@@ -13613,16 +13615,16 @@ impl TaskCoordinator {
                                 .get("error_class")
                                 .and_then(serde_json::Value::as_str)
                                 .map(str::to_owned);
-                            batch::record_result(
-                                &mut value,
+                            batch::record_result(batch::RecordResultInput {
+                                batch: &mut value,
                                 item_id,
-                                expected_version.max(version),
+                                expected_version: expected_version.max(version),
                                 status,
                                 result_ref,
                                 error_class,
-                                crate::task_memory::now_millis() as i64,
-                                &policy,
-                            )
+                                now_ms: crate::task_memory::now_millis() as i64,
+                                policy: &policy,
+                            })
                             .map_err(|e| e.to_string())?;
                             let json = serde_json::to_vec(&value)
                                 .map_err(|_| "serialization_failed".to_string())?;
@@ -16177,7 +16179,7 @@ impl TaskCoordinator {
                         "create" => { let owner=value.get("owner_scope").and_then(serde_json::Value::as_str).ok_or_else(||"owner_scope_required".to_string())?; let subject=value.get("subject_ref").and_then(serde_json::Value::as_str).ok_or_else(||"subject_ref_required".to_string())?; let actor=value.get("actor_ref").and_then(serde_json::Value::as_str).ok_or_else(||"actor_ref_required".to_string())?; let policy=value.get("policy_snapshot_hash").and_then(serde_json::Value::as_str).ok_or_else(||"policy_snapshot_hash_required".to_string())?; let s=v::new_session(session_id.clone(),owner.into(),subject.into(),actor.into(),policy.into()); v::validate_session(&s).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&s).map_err(|_|"serialization_failed".to_string())?; if !store::save(db.connection(),store::SaveInput{id:&session_id,expected:expected_version,revision:s.revision,json:&json,dataset_hash:&s.dataset_hash,idempotency_key:&idempotency_key,now:crate::task_memory::now_millis() as i64}).map_err(|_|"storage_failed".to_string())? {return Err("stale_version_or_idempotency_conflict".into())}; serde_json::to_vec(&serde_json::json!({"status":"created","session_id":session_id,"revision":s.revision,"dataset_hash":s.dataset_hash,"redacted":true})).map_err(|_|"serialization_failed".into()) }
                         "inspect" | "replay" => { let (revision,json,dataset)=store::load(db.connection(),&session_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"session_not_found".to_string())?; let s:v::CalibrationSession=serde_json::from_slice(&json).map_err(|_|"corrupt_calibration_session".to_string())?; v::validate_session(&s).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"available","session_id":session_id,"revision":revision,"iteration_count":s.iterations.len(),"candidate_count":s.candidates.len(),"dataset_hash":dataset,"redacted":true})).map_err(|_|"serialization_failed".into()) }
                         "iteration" => { let (revision, json, _)=store::load(db.connection(),&session_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"session_not_found".to_string())?; let mut s:v::CalibrationSession=serde_json::from_slice(&json).map_err(|_|"corrupt_calibration_session".to_string())?; let i:v::CalibrationIteration=serde_json::from_value(value.get("iteration").cloned().ok_or_else(||"iteration_required".to_string())?).map_err(|_|"invalid_calibration_iteration".to_string())?; v::add_iteration(&mut s,i).map_err(|e|e.to_string())?; let out=serde_json::to_vec(&s).map_err(|_|"serialization_failed".to_string())?; if !store::save(db.connection(),store::SaveInput{id:&session_id,expected:expected_version.max(revision),revision:s.revision,json:&out,dataset_hash:&s.dataset_hash,idempotency_key:&idempotency_key,now:crate::task_memory::now_millis() as i64}).map_err(|_|"storage_failed".to_string())? {return Err("stale_version_or_idempotency_conflict".into())}; serde_json::to_vec(&serde_json::json!({"status":"iteration_recorded","session_id":session_id,"revision":s.revision,"iteration_count":s.iterations.len(),"dataset_hash":s.dataset_hash,"redacted":true})).map_err(|_|"serialization_failed".into()) }
-                        "consolidate" => { let (revision,json,_)=store::load(db.connection(),&session_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"session_not_found".to_string())?; let mut s:v::CalibrationSession=serde_json::from_slice(&json).map_err(|_|"corrupt_calibration_session".to_string())?; let pattern=value.get("pattern_key").and_then(serde_json::Value::as_str).ok_or_else(||"pattern_key_required".to_string())?; let guidance=value.get("guidance_text").and_then(serde_json::Value::as_str).ok_or_else(||"guidance_required".to_string())?; let candidate_id=value.get("candidate_id").and_then(serde_json::Value::as_str).ok_or_else(||"candidate_id_required".to_string())?; let c=v::consolidate(&s,candidate_id,pattern,guidance).map_err(|e|e.to_string())?; let source=s.iterations.iter().filter(|i|c.source_iteration_ids.contains(&i.iteration_id)).collect::<Vec<_>>(); let evidence=source.iter().filter_map(|i|i.feedback.as_ref().map(|f|crate::refinement::EvidenceRefV1{source_id:f.provenance_ref.clone(),source_kind:"calibration_feedback".into(),owner_scope:crate::refinement::OwnerScope::Session,content_hash:f.correction_hash.clone(),observed_at_ms:crate::task_memory::now_millis() as i64,redacted:true})).collect::<Vec<_>>(); let task_ids=source.iter().map(|i|i.task_ref.clone()).collect::<Vec<_>>(); let rc=crate::refinement::RefinementCandidateV1::new(c.refinement_candidate_id.clone(),crate::refinement::CandidateKind::Memory,"session_guidance",crate::refinement::OwnerScope::Session,pattern,"guided calibration guidance","human-confirmed repeated feedback",guidance,task_ids,evidence,s.policy_snapshot_hash.clone(),idempotency_key.clone()).map_err(|e|e.to_string())?; crate::refinement::RefinementService::new(db.connection(),crate::refinement::AdmissionPolicy::default()).propose_memory(rc,crate::task_memory::now_millis() as i64)?; s.candidates.push(c.clone()); s.revision=revision.saturating_add(1); s.dataset_hash=v::dataset_hash(&s).map_err(|e|e.to_string())?; let out=serde_json::to_vec(&s).map_err(|_|"serialization_failed".to_string())?; if !store::save(db.connection(),store::SaveInput{id:&session_id,expected:revision,revision:s.revision,json:&out,dataset_hash:&s.dataset_hash,idempotency_key:&idempotency_key,now:crate::task_memory::now_millis() as i64}).map_err(|_|"storage_failed".to_string())? {return Err("stale_version_or_idempotency_conflict".into())}; serde_json::to_vec(&serde_json::json!({"status":"candidate_proposed_for_refinement","session_id":session_id,"candidate_id":c.candidate_id,"guidance_hash":c.guidance_hash,"refinement_candidate_id":c.refinement_candidate_id,"redacted":true})).map_err(|_|"serialization_failed".into()) }
+                        "consolidate" => { let (revision,json,_)=store::load(db.connection(),&session_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"session_not_found".to_string())?; let mut s:v::CalibrationSession=serde_json::from_slice(&json).map_err(|_|"corrupt_calibration_session".to_string())?; let pattern=value.get("pattern_key").and_then(serde_json::Value::as_str).ok_or_else(||"pattern_key_required".to_string())?; let guidance=value.get("guidance_text").and_then(serde_json::Value::as_str).ok_or_else(||"guidance_required".to_string())?; let candidate_id=value.get("candidate_id").and_then(serde_json::Value::as_str).ok_or_else(||"candidate_id_required".to_string())?; let c=v::consolidate(&s,candidate_id,pattern,guidance).map_err(|e|e.to_string())?; let source=s.iterations.iter().filter(|i|c.source_iteration_ids.contains(&i.iteration_id)).collect::<Vec<_>>(); let evidence=source.iter().filter_map(|i|i.feedback.as_ref().map(|f|crate::refinement::EvidenceRefV1{source_id:f.provenance_ref.clone(),source_kind:"calibration_feedback".into(),owner_scope:crate::refinement::OwnerScope::Session,content_hash:f.correction_hash.clone(),observed_at_ms:crate::task_memory::now_millis() as i64,redacted:true})).collect::<Vec<_>>(); let task_ids=source.iter().map(|i|i.task_ref.clone()).collect::<Vec<_>>(); let rc=crate::refinement::RefinementCandidateV1::new(crate::refinement::RefinementCandidateInput{id:c.refinement_candidate_id.clone(),kind:crate::refinement::CandidateKind::Memory,target:"session_guidance".into(),scope:crate::refinement::OwnerScope::Session,pattern_key:pattern.into(),title:"guided calibration guidance".into(),rationale:"human-confirmed repeated feedback".into(),proposed_content:guidance.into(),source_task_ids:task_ids,evidence,policy_snapshot_hash:s.policy_snapshot_hash.clone(),idempotency_key:idempotency_key.clone()}).map_err(|e|e.to_string())?; crate::refinement::RefinementService::new(db.connection(),crate::refinement::AdmissionPolicy::default()).propose_memory(rc,crate::task_memory::now_millis() as i64)?; s.candidates.push(c.clone()); s.revision=revision.saturating_add(1); s.dataset_hash=v::dataset_hash(&s).map_err(|e|e.to_string())?; let out=serde_json::to_vec(&s).map_err(|_|"serialization_failed".to_string())?; if !store::save(db.connection(),store::SaveInput{id:&session_id,expected:revision,revision:s.revision,json:&out,dataset_hash:&s.dataset_hash,idempotency_key:&idempotency_key,now:crate::task_memory::now_millis() as i64}).map_err(|_|"storage_failed".to_string())? {return Err("stale_version_or_idempotency_conflict".into())}; serde_json::to_vec(&serde_json::json!({"status":"candidate_proposed_for_refinement","session_id":session_id,"candidate_id":c.candidate_id,"guidance_hash":c.guidance_hash,"refinement_candidate_id":c.refinement_candidate_id,"redacted":true})).map_err(|_|"serialization_failed".into()) }
                         "close" => { let (revision,json,_)=store::load(db.connection(),&session_id).map_err(|_|"storage_failed".to_string())?.ok_or_else(||"session_not_found".to_string())?; let mut s:v::CalibrationSession=serde_json::from_slice(&json).map_err(|_|"corrupt_calibration_session".to_string())?; s.status=if value.get("cancelled").and_then(serde_json::Value::as_bool).unwrap_or(false){v::SessionStatus::Cancelled}else{v::SessionStatus::Completed}; s.revision=revision.saturating_add(1); let out=serde_json::to_vec(&s).map_err(|_|"serialization_failed".to_string())?; if !store::save(db.connection(),store::SaveInput{id:&session_id,expected:revision,revision:s.revision,json:&out,dataset_hash:&s.dataset_hash,idempotency_key:&idempotency_key,now:crate::task_memory::now_millis() as i64}).map_err(|_|"storage_failed".to_string())? {return Err("stale_version_or_idempotency_conflict".into())}; serde_json::to_vec(&serde_json::json!({"status":"closed","session_id":session_id,"revision":s.revision,"redacted":true})).map_err(|_|"serialization_failed".into()) }
                         _ => Err("unsupported_calibration_operation".into()),
                     }
@@ -16970,14 +16972,16 @@ impl TaskCoordinator {
                     let handoff_payload = crate::child_roles::HandoffPayload::new(payload)
                         .map_err(|error| error.to_string())?;
                     let envelope = crate::child_roles::HandoffEnvelope::new(
-                        handoff_id.clone(),
-                        task_id.clone(),
-                        parsed_kind,
-                        from.clone(),
-                        to.clone(),
-                        purpose,
-                        handoff_payload,
-                        sequence,
+                        crate::child_roles::HandoffEnvelopeInput {
+                            handoff_id: handoff_id.clone(),
+                            task_id: task_id.clone(),
+                            kind: parsed_kind,
+                            from: from.clone(),
+                            to: to.clone(),
+                            purpose,
+                            payload: handoff_payload,
+                            sequence,
+                        },
                     )
                     .map_err(|error| error.to_string())?;
                     let record = evohime_local_storage::child_store::HandoffRecord {

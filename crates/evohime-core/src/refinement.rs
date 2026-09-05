@@ -111,40 +111,26 @@ pub enum RefinementError {
 }
 
 impl RefinementCandidateV1 {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        id: impl Into<String>,
-        kind: CandidateKind,
-        target: impl Into<String>,
-        scope: OwnerScope,
-        pattern_key: impl Into<String>,
-        title: impl Into<String>,
-        rationale: impl Into<String>,
-        proposed_content: impl Into<String>,
-        source_task_ids: Vec<String>,
-        evidence: Vec<EvidenceRefV1>,
-        policy_snapshot_hash: impl Into<String>,
-        idempotency_key: impl Into<String>,
-    ) -> Result<Self, RefinementError> {
-        let proposed_content = proposed_content.into();
+    pub fn new(input: RefinementCandidateInput) -> Result<Self, RefinementError> {
+        let proposed_content = input.proposed_content;
         let candidate = Self {
             schema_version: CONTRACT_VERSION,
-            id: id.into(),
+            id: input.id,
             revision: 1,
-            kind,
-            target: target.into(),
-            scope,
-            pattern_key: pattern_key.into(),
-            title: title.into(),
-            rationale: rationale.into(),
+            kind: input.kind,
+            target: input.target,
+            scope: input.scope,
+            pattern_key: input.pattern_key,
+            title: input.title,
+            rationale: input.rationale,
             proposed_content,
-            source_task_ids,
-            evidence,
+            source_task_ids: input.source_task_ids,
+            evidence: input.evidence,
             conflicts: Vec::new(),
             confidence: 0,
             content_hash: String::new(),
-            policy_snapshot_hash: policy_snapshot_hash.into(),
-            idempotency_key: idempotency_key.into(),
+            policy_snapshot_hash: input.policy_snapshot_hash,
+            idempotency_key: input.idempotency_key,
             status: CandidateStatus::Proposed,
         };
         candidate.validate()
@@ -209,6 +195,23 @@ impl RefinementCandidateV1 {
         self.content_hash = content_hash(&self.proposed_content);
         Ok(self)
     }
+}
+
+/// Типизированный вход кандидата улучшения, сохраняющий все поля контракта
+/// вместе и исключающий ошибки порядка аргументов.
+pub struct RefinementCandidateInput {
+    pub id: String,
+    pub kind: CandidateKind,
+    pub target: String,
+    pub scope: OwnerScope,
+    pub pattern_key: String,
+    pub title: String,
+    pub rationale: String,
+    pub proposed_content: String,
+    pub source_task_ids: Vec<String>,
+    pub evidence: Vec<EvidenceRefV1>,
+    pub policy_snapshot_hash: String,
+    pub idempotency_key: String,
 }
 
 pub fn content_hash(content: &str) -> String {
@@ -334,20 +337,20 @@ mod tests {
     }
     #[test]
     fn independent_evidence_admits_memory_candidate() {
-        let c = RefinementCandidateV1::new(
-            "c1",
-            CandidateKind::Memory,
-            "memory",
-            OwnerScope::Workspace,
-            "p",
-            "title",
-            "why",
-            "content",
-            vec!["t1".into(), "t2".into()],
-            vec![evidence("e1"), evidence("e2")],
-            "policy",
-            "idem",
-        )
+        let c = RefinementCandidateV1::new(RefinementCandidateInput {
+            id: "c1".into(),
+            kind: CandidateKind::Memory,
+            target: "memory".into(),
+            scope: OwnerScope::Workspace,
+            pattern_key: "p".into(),
+            title: "title".into(),
+            rationale: "why".into(),
+            proposed_content: "content".into(),
+            source_task_ids: vec!["t1".into(), "t2".into()],
+            evidence: vec![evidence("e1"), evidence("e2")],
+            policy_snapshot_hash: "policy".into(),
+            idempotency_key: "idem".into(),
+        })
         .unwrap();
         assert_eq!(c.content_hash, content_hash("content"));
     }
@@ -359,20 +362,20 @@ mod tests {
     #[test]
     fn authority_text_is_rejected() {
         assert_eq!(
-            RefinementCandidateV1::new(
-                "c1",
-                CandidateKind::Memory,
-                "memory",
-                OwnerScope::Global,
-                "p",
-                "title",
-                "why",
-                "change approval policy",
-                vec!["t1".into(), "t2".into()],
-                vec![evidence("e1"), evidence("e2")],
-                "policy",
-                "idem"
-            )
+            RefinementCandidateV1::new(RefinementCandidateInput {
+                id: "c1".into(),
+                kind: CandidateKind::Memory,
+                target: "memory".into(),
+                scope: OwnerScope::Global,
+                pattern_key: "p".into(),
+                title: "title".into(),
+                rationale: "why".into(),
+                proposed_content: "change approval policy".into(),
+                source_task_ids: vec!["t1".into(), "t2".into()],
+                evidence: vec![evidence("e1"), evidence("e2")],
+                policy_snapshot_hash: "policy".into(),
+                idempotency_key: "idem".into(),
+            })
             .unwrap_err(),
             RefinementError::ForbiddenAuthorityChange
         );
@@ -382,20 +385,20 @@ mod tests {
     fn service_persists_only_repeated_independent_observations() {
         let connection = rusqlite::Connection::open_in_memory().unwrap();
         evohime_local_storage::refinement_store::install_schema(&connection).unwrap();
-        let candidate = RefinementCandidateV1::new(
-            "c1",
-            CandidateKind::Memory,
-            "memory",
-            OwnerScope::Workspace,
-            "p",
-            "title",
-            "why",
-            "content",
-            vec!["t1".into(), "t2".into()],
-            vec![evidence("e1"), evidence("e2")],
-            "policy",
-            "idem",
-        )
+        let candidate = RefinementCandidateV1::new(RefinementCandidateInput {
+            id: "c1".into(),
+            kind: CandidateKind::Memory,
+            target: "memory".into(),
+            scope: OwnerScope::Workspace,
+            pattern_key: "p".into(),
+            title: "title".into(),
+            rationale: "why".into(),
+            proposed_content: "content".into(),
+            source_task_ids: vec!["t1".into(), "t2".into()],
+            evidence: vec![evidence("e1"), evidence("e2")],
+            policy_snapshot_hash: "policy".into(),
+            idempotency_key: "idem".into(),
+        })
         .unwrap();
         let row = RefinementService::new(&connection, AdmissionPolicy::default())
             .propose_memory(candidate, 2)

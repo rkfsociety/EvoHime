@@ -200,27 +200,17 @@ pub struct HandoffEnvelope {
 }
 
 impl HandoffEnvelope {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        handoff_id: impl Into<String>,
-        task_id: impl Into<String>,
-        kind: HandoffKind,
-        from: RoleIdentity,
-        to: RoleIdentity,
-        purpose: impl Into<String>,
-        payload: HandoffPayload,
-        sequence: u64,
-    ) -> Result<Self, ContractError> {
+    pub fn new(input: HandoffEnvelopeInput) -> Result<Self, ContractError> {
         let envelope = Self {
-            handoff_id: handoff_id.into(),
-            task_id: task_id.into(),
-            kind,
+            handoff_id: input.handoff_id,
+            task_id: input.task_id,
+            kind: input.kind,
             status: HandoffStatus::Pending,
-            from,
-            to,
-            purpose: purpose.into(),
-            payload,
-            sequence,
+            from: input.from,
+            to: input.to,
+            purpose: input.purpose,
+            payload: input.payload,
+            sequence: input.sequence,
         };
         envelope.validate()?;
         let bytes = serde_json::to_vec(&envelope).expect("HandoffEnvelope is serializable");
@@ -245,6 +235,19 @@ impl HandoffEnvelope {
     pub fn to_deterministic_json(&self) -> String {
         serde_json::to_string(self).expect("HandoffEnvelope is serializable")
     }
+}
+
+/// Полный набор полей передачи между дочерними ролями. Единый объект не даёт
+/// перепутать идентичность отправителя, получателя и полезную нагрузку.
+pub struct HandoffEnvelopeInput {
+    pub handoff_id: String,
+    pub task_id: String,
+    pub kind: HandoffKind,
+    pub from: RoleIdentity,
+    pub to: RoleIdentity,
+    pub purpose: String,
+    pub payload: HandoffPayload,
+    pub sequence: u64,
 }
 
 fn validate_text(
@@ -345,16 +348,16 @@ mod tests {
 
     #[test]
     fn deterministic_json_sorts_payload_keys() {
-        let envelope = HandoffEnvelope::new(
-            "h-1",
-            "task-1",
-            HandoffKind::Delegate,
-            RoleIdentity::builtin(ChildRole::Coordinator),
-            RoleIdentity::builtin(ChildRole::Implementer),
-            "implement slice",
-            payload(),
-            1,
-        )
+        let envelope = HandoffEnvelope::new(HandoffEnvelopeInput {
+            handoff_id: "h-1".into(),
+            task_id: "task-1".into(),
+            kind: HandoffKind::Delegate,
+            from: RoleIdentity::builtin(ChildRole::Coordinator),
+            to: RoleIdentity::builtin(ChildRole::Implementer),
+            purpose: "implement slice".into(),
+            payload: payload(),
+            sequence: 1,
+        })
         .unwrap();
         let json = envelope.to_deterministic_json();
         assert!(json.find("alpha").unwrap() < json.find("zeta").unwrap());
@@ -368,31 +371,31 @@ mod tests {
                 .map(|index| { (format!("field-{index}"), "value".to_owned()) })
         )
         .is_err());
-        assert!(HandoffEnvelope::new(
-            "",
-            "task-1",
-            HandoffKind::Delegate,
-            RoleIdentity::builtin(ChildRole::Planner),
-            RoleIdentity::builtin(ChildRole::Tester),
-            "purpose",
-            payload(),
-            0,
-        )
+        assert!(HandoffEnvelope::new(HandoffEnvelopeInput {
+            handoff_id: String::new(),
+            task_id: "task-1".into(),
+            kind: HandoffKind::Delegate,
+            from: RoleIdentity::builtin(ChildRole::Planner),
+            to: RoleIdentity::builtin(ChildRole::Tester),
+            purpose: "purpose".into(),
+            payload: payload(),
+            sequence: 0,
+        })
         .is_err());
     }
 
     #[test]
     fn serde_round_trip_preserves_contract() {
-        let envelope = HandoffEnvelope::new(
-            "h-2",
-            "task-2",
-            HandoffKind::ReturnResult,
-            RoleIdentity::builtin(ChildRole::Implementer),
-            RoleIdentity::builtin(ChildRole::Reviewer),
-            "review result",
-            payload(),
-            2,
-        )
+        let envelope = HandoffEnvelope::new(HandoffEnvelopeInput {
+            handoff_id: "h-2".into(),
+            task_id: "task-2".into(),
+            kind: HandoffKind::ReturnResult,
+            from: RoleIdentity::builtin(ChildRole::Implementer),
+            to: RoleIdentity::builtin(ChildRole::Reviewer),
+            purpose: "review result".into(),
+            payload: payload(),
+            sequence: 2,
+        })
         .unwrap();
         let restored: HandoffEnvelope =
             serde_json::from_str(&envelope.to_deterministic_json()).unwrap();

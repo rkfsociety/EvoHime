@@ -29,18 +29,18 @@ fn ready_view_carries_only_authorized_sources_and_hit_provenance() {
         retrieval_profile_id: Some("keyword".into()),
         priority: 1,
     };
-    let view = knowledge::build_view(
-        "view".into(),
-        "run".into(),
-        &[source],
-        &[binding],
-        knowledge::TargetKind::Project,
-        "p",
-        knowledge::Sensitivity::Internal,
-        "keyword".into(),
-        None,
-        &policy,
-    )
+    let view = knowledge::build_view(knowledge::BuildViewInput {
+        id: "view".into(),
+        run_id: "run".into(),
+        sources: &[source],
+        bindings: &[binding],
+        target_kind: knowledge::TargetKind::Project,
+        target_id: "p",
+        max_sensitivity: knowledge::Sensitivity::Internal,
+        retrieval_profile: "keyword".into(),
+        expires_at_ms: None,
+        policy: &policy,
+    })
     .unwrap();
     let hit = knowledge::KnowledgeHit {
         source_id: "manual".into(),

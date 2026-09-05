@@ -258,45 +258,37 @@ impl AgentRoleProfilesRegistry {
         self.profiles.insert(profile.id.clone(), profile.clone());
         Ok(profile)
     }
-    // Keep the capability sources explicit: each is an independent authority
-    // boundary and must not be folded into an already-combined grant set.
-    #[allow(clippy::too_many_arguments)]
     pub fn start(
         &mut self,
-        run_id: String,
-        profile_id: &str,
-        revision: u64,
-        grants: Vec<String>,
-        parent: &[String],
-        policy: &[String],
-        registry: &[String],
+        input: StartRuntimeInput<'_>,
     ) -> Result<RuntimeInstance, RoleProfileError> {
-        if !valid_id(&run_id) {
+        if !valid_id(&input.run_id) {
             return Err(RoleProfileError::Invalid("run_id"));
         }
-        if self.runs.contains_key(&run_id) {
+        if self.runs.contains_key(&input.run_id) {
             return Err(RoleProfileError::Duplicate);
         }
         let profile = self
             .profiles
-            .get(profile_id)
+            .get(input.profile_id)
             .ok_or(RoleProfileError::NotFound)?;
-        if profile.revision != revision {
+        if profile.revision != input.revision {
             return Err(RoleProfileError::Stale);
         }
         let snapshot = ProfileSnapshot {
             profile_id: profile.id.clone(),
-            revision,
+            revision: input.revision,
             content_hash: canonical_hash(profile)?,
         };
-        let effective_grants = effective_grants(parent, policy, registry, &grants)?;
+        let effective_grants =
+            effective_grants(input.parent, input.policy, input.registry, &input.grants)?;
         let instance = RuntimeInstance {
-            run_id: run_id.clone(),
+            run_id: input.run_id.clone(),
             snapshot,
             effective_grants,
             state: RunState::Pinned,
         };
-        self.runs.insert(run_id, instance.clone());
+        self.runs.insert(input.run_id, instance.clone());
         Ok(instance)
     }
     pub fn cancel(&mut self, run_id: &str) -> Result<RuntimeInstance, RoleProfileError> {
@@ -313,6 +305,17 @@ impl AgentRoleProfilesRegistry {
         run.state = RunState::Cancelling;
         Ok(run.clone())
     }
+}
+
+/// Вход запуска runtime с явно разделёнными источниками grants.
+pub struct StartRuntimeInput<'a> {
+    pub run_id: String,
+    pub profile_id: &'a str,
+    pub revision: u64,
+    pub grants: Vec<String>,
+    pub parent: &'a [String],
+    pub policy: &'a [String],
+    pub registry: &'a [String],
 }
 
 #[cfg(test)]

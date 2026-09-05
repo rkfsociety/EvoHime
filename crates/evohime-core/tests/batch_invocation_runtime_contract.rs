@@ -4,16 +4,16 @@ use evohime_core::batch_invocation_runtime::{
 
 #[test]
 fn contract_is_bounded_and_redacted_projection_keeps_item_drilldown() {
-    let value = batch::new_batch(
-        "contract-batch".into(),
-        "workflow.review".into(),
-        1,
-        vec!["one".into(), "two".into()],
-        1,
-        FailurePolicy::Continue,
-        10,
-        &batch::default_policy(),
-    )
+    let value = batch::new_batch(batch::NewBatchInput {
+        id: "contract-batch".into(),
+        definition_ref: "workflow.review".into(),
+        definition_version: 1,
+        inputs: vec!["one".into(), "two".into()],
+        max_concurrency: 1,
+        failure_policy: FailurePolicy::Continue,
+        now_ms: 10,
+        policy: batch::default_policy(),
+    })
     .unwrap();
     assert_eq!(
         value.items[0].run_id.as_deref(),
@@ -31,16 +31,16 @@ fn contract_is_bounded_and_redacted_projection_keeps_item_drilldown() {
 
 #[test]
 fn start_respects_concurrency_and_unknown_cannot_blind_retry() {
-    let mut value = batch::new_batch(
-        "recovery-batch".into(),
-        "workflow.review".into(),
-        1,
-        vec!["one".into(), "two".into()],
-        1,
-        FailurePolicy::Continue,
-        10,
-        &batch::default_policy(),
-    )
+    let mut value = batch::new_batch(batch::NewBatchInput {
+        id: "recovery-batch".into(),
+        definition_ref: "workflow.review".into(),
+        definition_version: 1,
+        inputs: vec!["one".into(), "two".into()],
+        max_concurrency: 1,
+        failure_policy: FailurePolicy::Continue,
+        now_ms: 10,
+        policy: batch::default_policy(),
+    })
     .unwrap();
     assert_eq!(
         batch::start_batch(&mut value, 1, 11, &batch::default_policy()).unwrap(),
@@ -73,16 +73,16 @@ fn start_respects_concurrency_and_unknown_cannot_blind_retry() {
         .item_id
         .clone();
     assert_eq!(
-        batch::record_result(
-            &mut value,
-            &unknown,
-            3,
-            ItemStatus::Running,
-            None,
-            None,
-            13,
-            &batch::default_policy()
-        ),
+        batch::record_result(batch::RecordResultInput {
+            batch: &mut value,
+            item_id: &unknown,
+            expected_version: 3,
+            status: ItemStatus::Running,
+            result_ref: None,
+            error_class: None,
+            now_ms: 13,
+            policy: &batch::default_policy(),
+        }),
         Err(BatchError::UnknownRetry)
     );
 }

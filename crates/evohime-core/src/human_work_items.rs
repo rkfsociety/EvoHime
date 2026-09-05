@@ -237,33 +237,33 @@ impl HumanWorkItemsRegistry {
         item.revision += 1;
         Ok(item.clone())
     }
-    // Keep the wire-facing transition fields together: splitting this method
-    // would make the idempotency fingerprint and the state transition easier
-    // to call inconsistently.
-    #[allow(clippy::too_many_arguments)]
     pub fn transition_idempotent(
         &mut self,
-        id: &str,
-        expected: u64,
-        operation: &str,
-        response: Option<String>,
-        actor: &str,
-        now_ms: i64,
-        key: &str,
+        input: TransitionIdempotentInput,
     ) -> Result<HumanWorkItem, HumanWorkItemError> {
-        let fingerprint = format!("{id}:{expected}:{operation}:{response:?}");
-        if let Some(previous) = self.idempotency.get(key) {
+        let fingerprint = format!(
+            "{}:{}:{}:{:?}",
+            input.id, input.expected, input.operation, input.response
+        );
+        if let Some(previous) = self.idempotency.get(input.key.as_str()) {
             return if previous == &fingerprint {
                 self.items
-                    .get(id)
+                    .get(input.id.as_str())
                     .cloned()
                     .ok_or(HumanWorkItemError::NotFound)
             } else {
                 Err(HumanWorkItemError::IdempotencyConflict)
             };
         }
-        let result = self.transition(id, expected, operation, response, actor, now_ms)?;
-        self.idempotency.insert(key.into(), fingerprint);
+        let result = self.transition(
+            &input.id,
+            input.expected,
+            &input.operation,
+            input.response,
+            &input.actor,
+            input.now_ms,
+        )?;
+        self.idempotency.insert(input.key, fingerprint);
         Ok(result)
     }
     pub fn expire_due(&mut self, now_ms: i64) -> Vec<HumanWorkItem> {
@@ -287,6 +287,17 @@ impl HumanWorkItemsRegistry {
             })
             .collect()
     }
+}
+
+/// Данные идемпотентного перехода, сохранённые вместе с wire-контрактом.
+pub struct TransitionIdempotentInput {
+    pub id: String,
+    pub expected: u64,
+    pub operation: String,
+    pub response: Option<String>,
+    pub actor: String,
+    pub now_ms: i64,
+    pub key: String,
 }
 
 #[cfg(test)]
@@ -352,10 +363,26 @@ mod tests {
         let mut r = HumanWorkItemsRegistry::default();
         r.create(item(), "create").unwrap();
         let first = r
-            .transition_idempotent("review", 1, "start", None, "shell", 0, "start-key")
+            .transition_idempotent(TransitionIdempotentInput {
+                id: "review".into(),
+                expected: 1,
+                operation: "start".into(),
+                response: None,
+                actor: "shell".into(),
+                now_ms: 0,
+                key: "start-key".into(),
+            })
             .unwrap();
         let repeated = r
-            .transition_idempotent("review", 1, "start", None, "shell", 0, "start-key")
+            .transition_idempotent(TransitionIdempotentInput {
+                id: "review".into(),
+                expected: 1,
+                operation: "start".into(),
+                response: None,
+                actor: "shell".into(),
+                now_ms: 0,
+                key: "start-key".into(),
+            })
             .unwrap();
         assert_eq!(first, repeated);
     }

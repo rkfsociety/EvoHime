@@ -153,62 +153,64 @@ pub fn validate(batch: &BatchInvocation, policy: &BatchPolicy) -> Result<(), Bat
     }
     Ok(())
 }
-#[allow(clippy::too_many_arguments)]
-pub fn new_batch(
-    id: String,
-    definition_ref: String,
-    definition_version: u64,
-    inputs: Vec<String>,
-    max_concurrency: u32,
-    failure_policy: FailurePolicy,
-    now_ms: i64,
-    policy: &BatchPolicy,
-) -> Result<BatchInvocation, BatchError> {
-    if inputs.is_empty()
-        || inputs.len() > policy.max_items
-        || !valid(&id)
-        || !valid(&definition_ref)
-        || definition_version == 0
-        || max_concurrency == 0
-        || max_concurrency > policy.max_concurrency
+pub struct NewBatchInput {
+    pub id: String,
+    pub definition_ref: String,
+    pub definition_version: u64,
+    pub inputs: Vec<String>,
+    pub max_concurrency: u32,
+    pub failure_policy: FailurePolicy,
+    pub now_ms: i64,
+    pub policy: BatchPolicy,
+}
+
+pub fn new_batch(input: NewBatchInput) -> Result<BatchInvocation, BatchError> {
+    if input.inputs.is_empty()
+        || input.inputs.len() > input.policy.max_items
+        || !valid(&input.id)
+        || !valid(&input.definition_ref)
+        || input.definition_version == 0
+        || input.max_concurrency == 0
+        || input.max_concurrency > input.policy.max_concurrency
     {
         return Err(BatchError::Limit);
     }
-    let items = inputs
+    let items = input
+        .inputs
         .into_iter()
         .enumerate()
         .map(|(ordinal, input_payload)| {
             Ok(BatchItem {
-                item_id: format!("{id}:{ordinal}"),
+                item_id: format!("{}:{ordinal}", input.id),
                 ordinal: ordinal as u32,
                 input_hash: input_hash(&input_payload)?,
                 input_payload,
                 status: ItemStatus::Pending,
-                run_id: Some(format!("{id}:{ordinal}:run:0")),
+                run_id: Some(format!("{}:{ordinal}:run:0", input.id)),
                 attempts: 0,
                 result_ref: None,
                 error_class: None,
-                created_at_ms: now_ms,
-                updated_at_ms: now_ms,
+                created_at_ms: input.now_ms,
+                updated_at_ms: input.now_ms,
             })
         })
         .collect::<Result<Vec<_>, BatchError>>()?;
     let mut batch = BatchInvocation {
         schema_version: 1,
-        id,
+        id: input.id,
         version: 1,
-        definition_ref,
-        definition_version,
+        definition_ref: input.definition_ref,
+        definition_version: input.definition_version,
         items,
-        max_concurrency,
-        failure_policy,
+        max_concurrency: input.max_concurrency,
+        failure_policy: input.failure_policy,
         status: BatchStatus::Pending,
-        created_at_ms: now_ms,
-        updated_at_ms: now_ms,
+        created_at_ms: input.now_ms,
+        updated_at_ms: input.now_ms,
         content_hash: String::new(),
     };
     batch.content_hash = canonical_hash(&batch);
-    validate(&batch, policy)?;
+    validate(&batch, &input.policy)?;
     Ok(batch)
 }
 pub fn resume_pending(
@@ -270,44 +272,48 @@ pub fn start_batch(
     }
     Ok(started)
 }
-#[allow(clippy::too_many_arguments)]
-pub fn record_result(
-    batch: &mut BatchInvocation,
-    item_id: &str,
-    expected_version: u64,
-    status: ItemStatus,
-    result_ref: Option<String>,
-    error_class: Option<String>,
-    now_ms: i64,
-    policy: &BatchPolicy,
-) -> Result<(), BatchError> {
-    if batch.version != expected_version {
+pub struct RecordResultInput<'a> {
+    pub batch: &'a mut BatchInvocation,
+    pub item_id: &'a str,
+    pub expected_version: u64,
+    pub status: ItemStatus,
+    pub result_ref: Option<String>,
+    pub error_class: Option<String>,
+    pub now_ms: i64,
+    pub policy: &'a BatchPolicy,
+}
+
+pub fn record_result(input: RecordResultInput<'_>) -> Result<(), BatchError> {
+    if input.batch.version != input.expected_version {
         return Err(BatchError::Stale);
     }
-    let item = batch
+    let item = input
+        .batch
         .items
         .iter_mut()
-        .find(|item| item.item_id == item_id)
+        .find(|item| item.item_id == input.item_id)
         .ok_or(BatchError::Invalid)?;
-    if item.status == ItemStatus::Unknown && status == ItemStatus::Running {
+    if item.status == ItemStatus::Unknown && input.status == ItemStatus::Running {
         return Err(BatchError::UnknownRetry);
     }
-    if status == ItemStatus::Completed && result_ref.is_none() {
+    if input.status == ItemStatus::Completed && input.result_ref.is_none() {
         return Err(BatchError::InvalidResult);
     }
-    item.status = status;
-    item.result_ref = result_ref;
-    item.error_class = error_class;
+    item.status = input.status;
+    item.result_ref = input.result_ref;
+    item.error_class = input.error_class;
     item.attempts = item.attempts.saturating_add(1);
-    item.updated_at_ms = now_ms;
-    batch.version += 1;
-    batch.status = if batch
+    item.updated_at_ms = input.now_ms;
+    input.batch.version += 1;
+    input.batch.status = if input
+        .batch
         .items
         .iter()
         .all(|i| matches!(i.status, ItemStatus::Completed))
     {
         BatchStatus::Completed
-    } else if batch
+    } else if input
+        .batch
         .items
         .iter()
         .any(|i| matches!(i.status, ItemStatus::Failed | ItemStatus::Unknown))
@@ -316,9 +322,9 @@ pub fn record_result(
     } else {
         BatchStatus::Running
     };
-    batch.updated_at_ms = now_ms;
-    batch.content_hash = canonical_hash(batch);
-    validate(batch, policy)
+    input.batch.updated_at_ms = input.now_ms;
+    input.batch.content_hash = canonical_hash(input.batch);
+    validate(input.batch, input.policy)
 }
 pub fn projection(batch: &BatchInvocation) -> serde_json::Value {
     serde_json::json!({"schema_version":batch.schema_version,"batch_id":batch.id,"version":batch.version,"definition_ref":batch.definition_ref,"definition_version":batch.definition_version,"status":batch.status,"max_concurrency":batch.max_concurrency,"item_count":batch.items.len(),"completed":batch.items.iter().filter(|i|i.status==ItemStatus::Completed).count(),"failed":batch.items.iter().filter(|i|matches!(i.status,ItemStatus::Failed|ItemStatus::Unknown)).count(),"pending":batch.items.iter().filter(|i|i.status==ItemStatus::Pending).count(),"items":batch.items.iter().map(|i|serde_json::json!({"item_id":i.item_id,"ordinal":i.ordinal,"status":i.status,"attempts":i.attempts,"run_id":i.run_id,"result_ref":i.result_ref,"error_class":i.error_class})).collect::<Vec<_>>(),"content_hash":batch.content_hash,"redacted":true})
@@ -328,48 +334,48 @@ mod tests {
     use super::*;
     #[test]
     fn creates_isolated_items_and_hashes_inputs() {
-        let b = new_batch(
-            "b".into(),
-            "workflow".into(),
-            1,
-            vec!["a".into(), "b".into()],
-            2,
-            FailurePolicy::Continue,
-            1,
-            &default_policy(),
-        )
+        let b = new_batch(NewBatchInput {
+            id: "b".into(),
+            definition_ref: "workflow".into(),
+            definition_version: 1,
+            inputs: vec!["a".into(), "b".into()],
+            max_concurrency: 2,
+            failure_policy: FailurePolicy::Continue,
+            now_ms: 1,
+            policy: default_policy(),
+        })
         .unwrap();
         assert_eq!(b.items[0].item_id, "b:0");
         assert_ne!(b.items[0].input_hash, b.items[1].input_hash);
     }
     #[test]
     fn restart_marks_inflight_unknown_without_retry() {
-        let mut b = new_batch(
-            "b".into(),
-            "workflow".into(),
-            1,
-            vec!["a".into()],
-            1,
-            FailurePolicy::Continue,
-            1,
-            &default_policy(),
-        )
+        let mut b = new_batch(NewBatchInput {
+            id: "b".into(),
+            definition_ref: "workflow".into(),
+            definition_version: 1,
+            inputs: vec!["a".into()],
+            max_concurrency: 1,
+            failure_policy: FailurePolicy::Continue,
+            now_ms: 1,
+            policy: default_policy(),
+        })
         .unwrap();
         b.items[0].status = ItemStatus::Running;
         b.content_hash = canonical_hash(&b);
         assert_eq!(resume_pending(&mut b, 1, 2, &default_policy()).unwrap(), 0);
         assert_eq!(b.items[0].status, ItemStatus::Unknown);
         assert_eq!(
-            record_result(
-                &mut b,
-                "b:0",
-                2,
-                ItemStatus::Running,
-                None,
-                None,
-                3,
-                &default_policy()
-            ),
+            record_result(RecordResultInput {
+                batch: &mut b,
+                item_id: "b:0",
+                expected_version: 2,
+                status: ItemStatus::Running,
+                result_ref: None,
+                error_class: None,
+                now_ms: 3,
+                policy: &default_policy(),
+            }),
             Err(BatchError::UnknownRetry)
         );
     }

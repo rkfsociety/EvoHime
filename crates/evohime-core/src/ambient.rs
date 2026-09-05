@@ -641,32 +641,33 @@ impl AmbientProactivityRegistry {
 /// Собирает строку предложения для хранилища.
 ///
 /// Срок жизни считает Core: 24 часа молчания — это ответ «нет».
-#[allow(clippy::too_many_arguments)]
-pub fn proposal_record(
-    proposal_id: &str,
-    proposal_key: &str,
-    mute_key: &str,
-    kind: ProposalKind,
-    subject_key: &SubjectKey,
-    subject: &str,
-    title: &str,
-    source_episode_id: Option<&str>,
-    now_ms: u64,
-) -> AmbientProposalRecord {
+pub struct ProposalRecordInput<'a> {
+    pub proposal_id: &'a str,
+    pub proposal_key: &'a str,
+    pub mute_key: &'a str,
+    pub kind: ProposalKind,
+    pub subject_key: &'a SubjectKey,
+    pub subject: &'a str,
+    pub title: &'a str,
+    pub source_episode_id: Option<&'a str>,
+    pub now_ms: u64,
+}
+
+pub fn proposal_record(input: ProposalRecordInput<'_>) -> AmbientProposalRecord {
     AmbientProposalRecord {
-        proposal_id: proposal_id.to_owned(),
-        proposal_key: proposal_key.to_owned(),
-        mute_key: mute_key.to_owned(),
-        kind,
-        subject_key: subject_key.as_str().to_owned(),
-        subject: subject.to_owned(),
-        title: title.to_owned(),
-        source_episode_id: source_episode_id.map(str::to_owned),
+        proposal_id: input.proposal_id.to_owned(),
+        proposal_key: input.proposal_key.to_owned(),
+        mute_key: input.mute_key.to_owned(),
+        kind: input.kind,
+        subject_key: input.subject_key.as_str().to_owned(),
+        subject: input.subject.to_owned(),
+        title: input.title.to_owned(),
+        source_episode_id: input.source_episode_id.map(str::to_owned),
         source_deleted_at: None,
         source_deleted_reason: None,
-        created_at: timestamp_ms(now_ms),
-        updated_at: timestamp_ms(now_ms),
-        expires_at: timestamp_ms(now_ms.saturating_add(PROPOSAL_LIFETIME_MS)),
+        created_at: timestamp_ms(input.now_ms),
+        updated_at: timestamp_ms(input.now_ms),
+        expires_at: timestamp_ms(input.now_ms.saturating_add(PROPOSAL_LIFETIME_MS)),
         occurrences: 1,
         state: ProposalState::Proposed,
         accepted_task_id: None,
@@ -1311,17 +1312,19 @@ mod tests {
     ) -> AmbientProposalRecord {
         let kind = ProposalKind::Reminder;
         let subject_key = crate::ambient_proactivity::subject_key(subject);
-        proposal_record(
+        let proposal_key = crate::ambient_proactivity::proposal_key(kind, &subject_key, now_ms);
+        let mute_key = crate::ambient_proactivity::mute_key(kind, &subject_key);
+        proposal_record(ProposalRecordInput {
             proposal_id,
-            &crate::ambient_proactivity::proposal_key(kind, &subject_key, now_ms),
-            &crate::ambient_proactivity::mute_key(kind, &subject_key),
+            proposal_key: &proposal_key,
+            mute_key: &mute_key,
             kind,
-            &subject_key,
+            subject_key: &subject_key,
             subject,
-            "Напомнить купить хлеб",
-            episode_id,
+            title: "Напомнить купить хлеб",
+            source_episode_id: episode_id,
             now_ms,
-        )
+        })
     }
 
     /// Часовой потолок держится и после рестарта: счётчик живёт строкой
