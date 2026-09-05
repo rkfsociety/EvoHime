@@ -18,16 +18,16 @@ fn main() -> ExitCode {
     let arguments = &args[1..];
     let result = if arguments.iter().any(|arg| arg == "--apply-components") {
         parse_component_set_args(arguments).and_then(|options| {
-            evohime_tx::apply_component_set_staged(
-                &options.staging,
-                &options.install_dir,
-                &options.state_dir,
-                &options.native_selected,
-                options.ui_version.as_deref(),
-                options.wait_pid,
-                options.relaunch.as_deref(),
-                options.health_file.as_deref(),
-            )
+            evohime_tx::apply_component_set_staged(evohime_tx::ComponentSetApply {
+                staging: &options.staging,
+                install_dir: &options.install_dir,
+                state_dir: &options.state_dir,
+                native_selected: &options.native_selected,
+                ui_version: options.ui_version.as_deref(),
+                wait_pid: options.wait_pid,
+                relaunch: options.relaunch.as_deref(),
+                health_file: options.health_file.as_deref(),
+            })
             .map_err(|error| error.to_string())
         })
     } else if arguments.iter().any(|arg| arg == "--apply-ui") {

@@ -261,17 +261,29 @@ pub fn apply_selected_staged(
 /// Applies one release containing both native files and a renderer bundle.
 /// Native backup/commit and the active UI pointer are kept under one failure
 /// boundary; the previous pointer is restored if restart or health fails.
-#[allow(clippy::too_many_arguments)]
-pub fn apply_component_set_staged(
-    staging: &Path,
-    install_dir: &Path,
-    state_dir: &Path,
-    native_selected: &[String],
-    ui_version: Option<&str>,
-    wait_pid: Option<u32>,
-    relaunch: Option<&Path>,
-    health_file: Option<&Path>,
-) -> io::Result<()> {
+/// Inputs for [`apply_component_set_staged`].
+pub struct ComponentSetApply<'a> {
+    pub staging: &'a Path,
+    pub install_dir: &'a Path,
+    pub state_dir: &'a Path,
+    pub native_selected: &'a [String],
+    pub ui_version: Option<&'a str>,
+    pub wait_pid: Option<u32>,
+    pub relaunch: Option<&'a Path>,
+    pub health_file: Option<&'a Path>,
+}
+
+pub fn apply_component_set_staged(options: ComponentSetApply<'_>) -> io::Result<()> {
+    let ComponentSetApply {
+        staging,
+        install_dir,
+        state_dir,
+        native_selected,
+        ui_version,
+        wait_pid,
+        relaunch,
+        health_file,
+    } = options;
     if native_selected.is_empty() && ui_version.is_none() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -945,7 +957,7 @@ fn timestamp_nanos() -> u128 {
 mod tests {
     use super::{
         apply_component_set_staged, verify_installation, wait_for_health_with_limit,
-        UpdateTransaction,
+        ComponentSetApply, UpdateTransaction,
     };
     use std::fs;
     use std::path::Path;
@@ -991,16 +1003,16 @@ mod tests {
         fs::write(staging.join("ui-bundle/index.html"), "new:ui").unwrap();
         fs::write(install.join("ui-active.json"), r#"{"version":"old"}"#).unwrap();
         let selected = vec!["EvoHime.exe".to_owned()];
-        apply_component_set_staged(
-            &staging,
-            &install,
-            &state,
-            &selected,
-            Some("new"),
-            None,
-            None,
-            None,
-        )
+        apply_component_set_staged(ComponentSetApply {
+            staging: &staging,
+            install_dir: &install,
+            state_dir: &state,
+            native_selected: &selected,
+            ui_version: Some("new"),
+            wait_pid: None,
+            relaunch: None,
+            health_file: None,
+        })
         .unwrap();
         assert_eq!(
             fs::read_to_string(install.join("EvoHime.exe")).unwrap(),
