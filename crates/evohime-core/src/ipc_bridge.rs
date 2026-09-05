@@ -14286,24 +14286,22 @@ impl IpcBridge {
             }
         };
         let mut registry = Registry::default();
-        for (id, kind, endpoint, auth_ref, capabilities_json, version, health) in
-            rows.into_iter().filter(|row| row.0 != "local.core")
-        {
-            let capabilities = serde_json::from_str(&capabilities_json).unwrap_or_default();
+        for row in rows.into_iter().filter(|row| row.id != "local.core") {
+            let capabilities = serde_json::from_str(&row.capabilities_json).unwrap_or_default();
             let _ = registry.register(
                 BackendDefinition {
-                    id,
-                    kind: if kind == "remote" {
+                    id: row.id,
+                    kind: if row.kind == "remote" {
                         BackendKind::Remote
                     } else {
                         BackendKind::Local
                     },
-                    endpoint,
-                    auth_ref,
-                    enabled: health != "disabled",
+                    endpoint: row.endpoint,
+                    auth_ref: row.auth_ref,
+                    enabled: row.health != "disabled",
                     capabilities,
-                    version: version as u64,
-                    health: if health == "disabled" {
+                    version: row.version as u64,
+                    health: if row.health == "disabled" {
                         HealthState::Disabled
                     } else {
                         HealthState::Registered
@@ -14358,14 +14356,16 @@ impl IpcBridge {
                         };
                         let _ = evohime_local_storage::execution_backend_registry_store::upsert(
                             database.connection(),
-                            &backend.id,
-                            kind_s,
-                            backend.endpoint.as_deref(),
-                            backend.auth_ref.as_deref(),
-                            &caps,
-                            registry.version(),
-                            "registered",
-                            crate::task_memory::now_millis() as i64,
+                            evohime_local_storage::execution_backend_registry_store::UpsertInput {
+                                id: &backend.id,
+                                kind: kind_s,
+                                endpoint: backend.endpoint.as_deref(),
+                                auth_ref: backend.auth_ref.as_deref(),
+                                capabilities_json: &caps,
+                                version: registry.version(),
+                                health: "registered",
+                                now_ms: crate::task_memory::now_millis() as i64,
+                            },
                         );
                         serde_json::json!({"status":"ok","registry_version":registry.version()})
                     }

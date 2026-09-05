@@ -6,48 +6,45 @@ pub fn install_schema(connection: &Connection) -> Result<(), StorageError> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn upsert(
-    connection: &Connection,
-    id: &str,
-    kind: &str,
-    endpoint: Option<&str>,
-    auth_ref: Option<&str>,
-    capabilities_json: &str,
-    version: u64,
-    health: &str,
-    now_ms: i64,
-) -> Result<bool, StorageError> {
-    Ok(connection.execute("INSERT INTO execution_backends(id,kind,endpoint,auth_ref,enabled,capabilities_json,version,health,updated_at_ms) VALUES (?1,?2,?3,?4,1,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind,endpoint=excluded.endpoint,auth_ref=excluded.auth_ref,capabilities_json=excluded.capabilities_json,version=excluded.version,health=excluded.health,updated_at_ms=excluded.updated_at_ms", params![id,kind,endpoint,auth_ref,capabilities_json,version as i64,health,now_ms])? == 1)
+#[derive(Clone, Copy)]
+pub struct UpsertInput<'a> {
+    pub id: &'a str,
+    pub kind: &'a str,
+    pub endpoint: Option<&'a str>,
+    pub auth_ref: Option<&'a str>,
+    pub capabilities_json: &'a str,
+    pub version: u64,
+    pub health: &'a str,
+    pub now_ms: i64,
 }
 
-#[allow(clippy::type_complexity)]
-pub fn list(
-    connection: &Connection,
-) -> Result<
-    Vec<(
-        String,
-        String,
-        Option<String>,
-        Option<String>,
-        String,
-        i64,
-        String,
-    )>,
-    StorageError,
-> {
+pub fn upsert(connection: &Connection, input: UpsertInput<'_>) -> Result<bool, StorageError> {
+    Ok(connection.execute("INSERT INTO execution_backends(id,kind,endpoint,auth_ref,enabled,capabilities_json,version,health,updated_at_ms) VALUES (?1,?2,?3,?4,1,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind,endpoint=excluded.endpoint,auth_ref=excluded.auth_ref,capabilities_json=excluded.capabilities_json,version=excluded.version,health=excluded.health,updated_at_ms=excluded.updated_at_ms", params![input.id,input.kind,input.endpoint,input.auth_ref,input.capabilities_json,input.version as i64,input.health,input.now_ms])? == 1)
+}
+
+pub struct BackendRow {
+    pub id: String,
+    pub kind: String,
+    pub endpoint: Option<String>,
+    pub auth_ref: Option<String>,
+    pub capabilities_json: String,
+    pub version: i64,
+    pub health: String,
+}
+
+pub fn list(connection: &Connection) -> Result<Vec<BackendRow>, StorageError> {
     let mut stmt=connection.prepare("SELECT id,kind,endpoint,auth_ref,capabilities_json,version,health FROM execution_backends ORDER BY id")?;
     let rows = stmt
         .query_map([], |row| {
-            Ok((
-                row.get(0)?,
-                row.get(1)?,
-                row.get(2)?,
-                row.get(3)?,
-                row.get(4)?,
-                row.get(5)?,
-                row.get(6)?,
-            ))
+            Ok(BackendRow {
+                id: row.get(0)?,
+                kind: row.get(1)?,
+                endpoint: row.get(2)?,
+                auth_ref: row.get(3)?,
+                capabilities_json: row.get(4)?,
+                version: row.get(5)?,
+                health: row.get(6)?,
+            })
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
@@ -90,8 +87,18 @@ mod tests {
     fn metadata_store_is_idempotent() {
         let c = Connection::open_in_memory().unwrap();
         install_schema(&c).unwrap();
-        assert!(upsert(&c, "local.core", "local", None, None, "[]", 1, "healthy", 1).unwrap());
-        assert!(upsert(&c, "local.core", "local", None, None, "[]", 1, "healthy", 2).unwrap());
+        let input = UpsertInput {
+            id: "local.core",
+            kind: "local",
+            endpoint: None,
+            auth_ref: None,
+            capabilities_json: "[]",
+            version: 1,
+            health: "healthy",
+            now_ms: 1,
+        };
+        assert!(upsert(&c, input).unwrap());
+        assert!(upsert(&c, UpsertInput { now_ms: 2, ..input }).unwrap());
         assert_eq!(list(&c).unwrap().len(), 1);
     }
 }
