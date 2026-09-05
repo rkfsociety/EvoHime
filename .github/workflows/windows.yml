@@ -46,6 +46,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable-x86_64-pc-windows-msvc
+      - name: Регрессия определения изменённых компонентов
+        shell: pwsh
+        run: ./scripts/ci-selection.tests.ps1
       - name: Определение затронутых компонентов и зависимостей
         id: filter
         shell: pwsh
@@ -53,14 +56,15 @@ jobs:
           $ErrorActionPreference = 'Stop'
           if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
             $files = @('ALL')
-          else
+          } else {
             $before = '${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}'
             git cat-file -e "$before^{commit}" 2>$null
             $beforeExists = $LASTEXITCODE -eq 0
             if ([string]::IsNullOrWhiteSpace($before) -or $before -eq '0000000000000000000000000000000000000000' -or -not $beforeExists) {
               $files = @('ALL')
-            else
+            } else {
               $files = @(git diff --name-only $before '${{ github.sha }}')
+              if ($LASTEXITCODE -ne 0) { throw 'git diff failed' }
             }
           }
 
@@ -69,6 +73,7 @@ jobs:
           function Match([string] $pattern) { return $all -or (($files | Where-Object { $_ -match $pattern }).Count -gt 0) }
 
           $metadata = cargo metadata --format-version 1 --no-deps | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'cargo metadata failed' }
           $workspaceIds = [System.Collections.Generic.HashSet[string]]::new()
           $metadata.workspace_members | ForEach-Object { [void]$workspaceIds.Add($_) }
           $workspacePackages = @($metadata.packages | Where-Object { $workspaceIds.Contains($_.id) })
@@ -101,7 +106,7 @@ jobs:
           $docs = Match '^(docs/|README\.md$|AGENTS\.md$|SECURITY\.md$|\.codex/|installer/.*\.(md|txt)$|crates/.*/README\.md$|tests/.*/README\.md$)'
           $listener = Match '^(scripts/build-listener-runtime\.ps1|crates/evohime-listener/src/engine/whisper_dll\.rs|crates/evohime-listener/src/tools_dir\.rs|crates/evohime-listener/examples/)'
           $rustJson = ConvertTo-Json -InputObject @($selected | Sort-Object) -Compress
-          $manifestJson = ConvertTo-Json -InputObject @($workspacePackages | Where-Object { $selected.Contains($_.name) } | Sort-Object name | Select-Object -ExpandProperty manifest_path) -Compress
+          $manifestJson = ConvertTo-Json -InputObject @($workspacePackages | Where-Object { $selected.Contains($_.name) } | Sort-Object name | ForEach-Object { [IO.Path]::GetRelativePath($env:GITHUB_WORKSPACE, $_.manifest_path).Replace('\','/') }) -Compress
           if ($selected.Count -eq 0) { $rustJson = '[]' }
           if ($selected.Count -eq 0) { $manifestJson = '[]' }
           "rust=$($rust.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
@@ -154,9 +159,13 @@ jobs:
             $manifest = $manifests[$i]
             if (-not $manifest) { throw "Manifest not found for package: $package" }
             cargo fmt --manifest-path $manifest -- --check
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             cargo clippy --locked -p $package --all-targets -- -D warnings
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             cargo test --locked -p $package --all-targets
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             cargo build --locked -p $package
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 
   rust-heavy:
