@@ -4,7 +4,8 @@
 //! unpredictable pipe name, a session secret, and the identity (user SID and
 //! Windows logon session) that the shell is expected to run as. The context
 //! reaches Core through a protected launch channel, never through renderer
-//! arguments.
+//! arguments. A missing context is accepted only for an explicitly enabled
+//! developer launch.
 //!
 //! On every connection Core issues a fresh, single-use, time-bounded nonce and
 //! the client answers with `HMAC-SHA256(secret, role | client_id | nonce)`.
@@ -167,8 +168,8 @@ pub struct AuthNonce {
 }
 
 /// Protected launch context handed from the supervisor to Core and to the
-/// shell. `expected_user_sid` and `expected_logon_session` are empty only in a
-/// developer launch without a supervisor, which is logged as unauthenticated.
+/// shell. `expected_user_sid` and `expected_logon_session` are empty only in an
+/// explicitly enabled developer launch without a supervisor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LaunchContext {
     pub pipe_name: String,
@@ -234,7 +235,7 @@ impl LaunchContext {
     }
 
     /// True when the context binds the connection to a specific Windows user
-    /// and logon session; a developer launch does not.
+    /// and logon session; an explicit developer launch does not.
     pub fn is_authenticated(&self) -> bool {
         !self.expected_user_sid.is_empty()
     }

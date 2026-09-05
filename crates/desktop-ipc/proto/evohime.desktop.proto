@@ -25,9 +25,9 @@ message Handshake {
   // Additive session authentication (see evohime_desktop_ipc::session).
   // client_role is one of the transport-accepted roles; nonce echoes the
   // single-use value Core issued on this connection, and proof is
-  // HMAC-SHA256(session secret, role | client_id | nonce). A Core started
-  // without a launch context keeps accepting legacy handshakes and logs the
-  // connection as unauthenticated.
+  // HMAC-SHA256(session secret, role | client_id | nonce). A Core started in
+  // explicit developer mode without a launch context keeps accepting legacy
+  // handshakes and logs the connection as unauthenticated.
   string client_role = 7;
   string nonce = 8;
   string proof = 9;

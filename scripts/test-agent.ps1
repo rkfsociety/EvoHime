@@ -71,6 +71,8 @@ if ($Model) {
 New-Item -ItemType Directory -Force -Path $dataPath | Out-Null
 $env:EVOHIME_DATA_DIR = $dataPath
 $env:EVOHIME_TASK_TIMEOUT_SECONDS = '300'
+$previousDevMode = $env:EVOHIME_DEV_MODE
+$env:EVOHIME_DEV_MODE = '1'
 
 Push-Location $root
 try {
@@ -110,4 +112,9 @@ try {
 }
 finally {
     Pop-Location
+    if ($null -eq $previousDevMode) {
+        Remove-Item Env:EVOHIME_DEV_MODE -ErrorAction SilentlyContinue
+    } else {
+        $env:EVOHIME_DEV_MODE = $previousDevMode
+    }
 }

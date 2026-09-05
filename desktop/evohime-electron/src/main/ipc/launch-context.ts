@@ -26,12 +26,12 @@ export interface LaunchContext {
   readonly clientId: string
   readonly sessionId: string
   readonly clientRole: string
-  /** Session secret; empty in a developer launch without a supervisor. */
+  /** Session secret; empty only in an explicitly enabled developer launch. */
   readonly secret: string
   /** Name of the OS liveness event owned by the supervisor, when provided. */
   readonly livenessEvent: string
   readonly supervisorPid?: number
-  /** True when no supervisor-provided context was found. */
+  /** True when no supervisor-provided context was found in developer mode. */
   readonly developerLaunch: boolean
 }
 
