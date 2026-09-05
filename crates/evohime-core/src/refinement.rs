@@ -300,11 +300,13 @@ impl<'a> RefinementService<'a> {
         };
         self.store
             .insert_candidate(
-                &row,
-                &content_json,
-                &source_task_ids_json,
-                &evidence_json,
-                &conflicts_json,
+                evohime_local_storage::refinement_store::InsertCandidateInput {
+                    row: &row,
+                    content_json: &content_json,
+                    source_task_ids_json: &source_task_ids_json,
+                    evidence_json: &evidence_json,
+                    conflicts_json: &conflicts_json,
+                },
             )
             .map_err(|error| error.to_string())?;
         Ok(row)

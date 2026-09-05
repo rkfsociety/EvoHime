@@ -12130,13 +12130,15 @@ impl IpcBridge {
             _ => return refinement_action_error(&request, "invalid_action"),
         };
         match store.transition_with_idempotency(
-            &request.candidate_id,
-            request.revision as i64,
-            request.expected_version as i64,
-            status,
-            None,
-            crate::task_memory::now_millis() as i64,
-            Some((&request.idempotency_key, &request_hash)),
+            evohime_local_storage::refinement_store::TransitionWithIdempotencyInput {
+                id: &request.candidate_id,
+                revision: request.revision as i64,
+                expected_version: request.expected_version as i64,
+                status,
+                error_code: None,
+                now_ms: crate::task_memory::now_millis() as i64,
+                idempotency: Some((&request.idempotency_key, &request_hash)),
+            },
         ) {
             Ok(row) => generated::RefinementActionResult {
                 schema_version: crate::refinement::CONTRACT_VERSION,

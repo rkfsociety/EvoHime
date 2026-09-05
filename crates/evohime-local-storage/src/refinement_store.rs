@@ -98,20 +98,38 @@ pub struct RefinementStore<'a> {
     connection: &'a Connection,
 }
 
+pub struct InsertCandidateInput<'a> {
+    pub row: &'a CandidateRow,
+    pub content_json: &'a str,
+    pub source_task_ids_json: &'a str,
+    pub evidence_json: &'a str,
+    pub conflicts_json: &'a str,
+}
+
+pub struct TransitionWithIdempotencyInput<'a> {
+    pub id: &'a str,
+    pub revision: i64,
+    pub expected_version: i64,
+    pub status: &'a str,
+    pub error_code: Option<&'a str>,
+    pub now_ms: i64,
+    pub idempotency: Option<(&'a str, &'a str)>,
+}
+
 impl<'a> RefinementStore<'a> {
     pub fn new(connection: &'a Connection) -> Self {
         Self { connection }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn insert_candidate(
         &self,
-        row: &CandidateRow,
-        content_json: &str,
-        source_task_ids_json: &str,
-        evidence_json: &str,
-        conflicts_json: &str,
+        input: InsertCandidateInput<'_>,
     ) -> Result<(), RefinementStoreError> {
+        let row = input.row;
+        let content_json = input.content_json;
+        let source_task_ids_json = input.source_task_ids_json;
+        let evidence_json = input.evidence_json;
+        let conflicts_json = input.conflicts_json;
         for value in [
             content_json,
             source_task_ids_json,
@@ -285,28 +303,30 @@ impl<'a> RefinementStore<'a> {
         error_code: Option<&str>,
         now_ms: i64,
     ) -> Result<CandidateRow, RefinementStoreError> {
-        self.transition_with_idempotency(
+        self.transition_with_idempotency(TransitionWithIdempotencyInput {
             id,
             revision,
             expected_version,
             status,
             error_code,
             now_ms,
-            None,
-        )
+            idempotency: None,
+        })
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn transition_with_idempotency(
         &self,
-        id: &str,
-        revision: i64,
-        expected_version: i64,
-        status: &str,
-        error_code: Option<&str>,
-        now_ms: i64,
-        idempotency: Option<(&str, &str)>,
+        input: TransitionWithIdempotencyInput<'_>,
     ) -> Result<CandidateRow, RefinementStoreError> {
+        let TransitionWithIdempotencyInput {
+            id,
+            revision,
+            expected_version,
+            status,
+            error_code,
+            now_ms,
+            idempotency,
+        } = input;
         let current = self
             .get(id, revision)?
             .ok_or(rusqlite::Error::QueryReturnedNoRows)?;
@@ -416,19 +436,25 @@ mod tests {
         install_schema(&connection).unwrap();
         let store = RefinementStore::new(&connection);
         store
-            .insert_candidate(&row(), "{}", "[\"t1\"]", "[{} , {}]", "[]")
+            .insert_candidate(InsertCandidateInput {
+                row: &row(),
+                content_json: "{}",
+                source_task_ids_json: "[\"t1\"]",
+                evidence_json: "[{} , {}]",
+                conflicts_json: "[]",
+            })
             .unwrap();
         assert_eq!(store.get("c1", 1).unwrap().unwrap().evidence_count, 2);
         let updated = store
-            .transition_with_idempotency(
-                "c1",
-                1,
-                0,
-                "approved",
-                None,
-                2,
-                Some(("action-1", "request-hash")),
-            )
+            .transition_with_idempotency(TransitionWithIdempotencyInput {
+                id: "c1",
+                revision: 1,
+                expected_version: 0,
+                status: "approved",
+                error_code: None,
+                now_ms: 2,
+                idempotency: Some(("action-1", "request-hash")),
+            })
             .unwrap();
         assert_eq!(updated.version, 1);
         assert_eq!(
@@ -461,7 +487,13 @@ mod tests {
         let store = RefinementStore::new(&connection);
         let value = "x".repeat(MAX_JSON_BYTES + 1);
         assert!(matches!(
-            store.insert_candidate(&row(), &value, "[]", "[]", "[]"),
+            store.insert_candidate(InsertCandidateInput {
+                row: &row(),
+                content_json: &value,
+                source_task_ids_json: "[]",
+                evidence_json: "[]",
+                conflicts_json: "[]",
+            }),
             Err(RefinementStoreError::TooLarge)
         ));
     }
