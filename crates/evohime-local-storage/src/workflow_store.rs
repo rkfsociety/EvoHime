@@ -531,23 +531,31 @@ pub fn list_nodes(
     Ok(records)
 }
 
+pub struct UpdateNodeStateInput<'a> {
+    pub run_id: &'a str,
+    pub node_id: &'a str,
+    pub state: NodeState,
+    pub attempts: u32,
+    pub output_json: &'a str,
+    pub error_code: &'a str,
+    pub error_message: &'a str,
+    pub now_ms: i64,
+}
+
 /// Обновляет состояние узла. Терминальный узел не переводится обратно в
 /// рабочее состояние: это запрещено на уровне SQL-условия, а не проверки в
 /// вызывающем коде.
-#[allow(clippy::too_many_arguments)]
 pub fn update_node_state(
     connection: &Connection,
-    run_id: &str,
-    node_id: &str,
-    state: NodeState,
-    attempts: u32,
-    output_json: &str,
-    error_code: &str,
-    error_message: &str,
-    now_ms: i64,
+    input: UpdateNodeStateInput<'_>,
 ) -> Result<(), WorkflowStoreError> {
-    bounded("output_json", output_json, MAX_OUTPUT_JSON_BYTES, false)?;
-    bounded("error_message", error_message, MAX_ERROR_BYTES, false)?;
+    bounded(
+        "output_json",
+        input.output_json,
+        MAX_OUTPUT_JSON_BYTES,
+        false,
+    )?;
+    bounded("error_message", input.error_message, MAX_ERROR_BYTES, false)?;
     let changed = connection.execute(
         "UPDATE workflow_run_nodes
             SET state = ?3, attempts = ?4, output_json = ?5, error_code = ?6,
@@ -555,20 +563,20 @@ pub fn update_node_state(
           WHERE run_id = ?1 AND node_id = ?2
             AND state IN ('pending','ready','running','waiting_approval')",
         params![
-            run_id,
-            node_id,
-            state.as_str(),
-            attempts,
-            output_json,
-            error_code,
-            error_message,
-            now_ms
+            input.run_id,
+            input.node_id,
+            input.state.as_str(),
+            input.attempts,
+            input.output_json,
+            input.error_code,
+            input.error_message,
+            input.now_ms
         ],
     )?;
     if changed == 0 {
         return Err(WorkflowStoreError::UnknownNode {
-            run_id: run_id.to_string(),
-            node_id: node_id.to_string(),
+            run_id: input.run_id.to_string(),
+            node_id: input.node_id.to_string(),
         });
     }
     Ok(())
@@ -955,6 +963,32 @@ pub fn recover_after_restart(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn update_node_state(
+        connection: &Connection,
+        run_id: &str,
+        node_id: &str,
+        state: NodeState,
+        attempts: u32,
+        output_json: &str,
+        error_code: &str,
+        error_message: &str,
+        now_ms: i64,
+    ) -> Result<(), WorkflowStoreError> {
+        super::update_node_state(
+            connection,
+            UpdateNodeStateInput {
+                run_id,
+                node_id,
+                state,
+                attempts,
+                output_json,
+                error_code,
+                error_message,
+                now_ms,
+            },
+        )
+    }
 
     fn connection() -> Connection {
         let connection = Connection::open_in_memory().expect("memory database");

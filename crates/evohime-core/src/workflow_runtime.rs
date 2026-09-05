@@ -984,14 +984,16 @@ impl WorkflowRuntime {
                         let database = self.journal.database.lock().await;
                         store::update_node_state(
                             database.connection(),
-                            run_id,
-                            &node.id,
-                            state,
-                            attempt_number,
-                            &output,
-                            "",
-                            "",
-                            now_ms,
+                            store::UpdateNodeStateInput {
+                                run_id,
+                                node_id: &node.id,
+                                state,
+                                attempts: attempt_number,
+                                output_json: &output,
+                                error_code: "",
+                                error_message: "",
+                                now_ms,
+                            },
                         )?;
                     }
                     self.emit(
@@ -1112,14 +1114,16 @@ impl WorkflowRuntime {
             let database = self.journal.database.lock().await;
             store::update_node_state(
                 database.connection(),
-                run_id,
-                &node.id,
-                state,
-                attempts,
-                "",
-                error_code,
-                &bounded_text(message),
-                now_ms,
+                store::UpdateNodeStateInput {
+                    run_id,
+                    node_id: &node.id,
+                    state,
+                    attempts,
+                    output_json: "",
+                    error_code,
+                    error_message: &bounded_text(message),
+                    now_ms,
+                },
             )?;
         }
         let event_type = match state {
@@ -1166,14 +1170,18 @@ impl WorkflowRuntime {
                     let database = self.journal.database.lock().await;
                     store::update_node_state(
                         database.connection(),
-                        run_id,
-                        &node.id,
-                        NodeState::Blocked,
-                        record.attempts,
-                        "",
-                        "dependency_failed",
-                        &bounded_text(&format!("зависимость {blocking} не выполнена")),
-                        now_ms,
+                        store::UpdateNodeStateInput {
+                            run_id,
+                            node_id: &node.id,
+                            state: NodeState::Blocked,
+                            attempts: record.attempts,
+                            output_json: "",
+                            error_code: "dependency_failed",
+                            error_message: &bounded_text(&format!(
+                                "зависимость {blocking} не выполнена"
+                            )),
+                            now_ms,
+                        },
                     )?;
                 }
                 self.emit(
@@ -1204,14 +1212,16 @@ impl WorkflowRuntime {
                 let database = self.journal.database.lock().await;
                 store::update_node_state(
                     database.connection(),
-                    run_id,
-                    &record.node_id,
-                    NodeState::Cancelled,
-                    record.attempts,
-                    "",
-                    "cancelled",
-                    "",
-                    now_ms,
+                    store::UpdateNodeStateInput {
+                        run_id,
+                        node_id: &record.node_id,
+                        state: NodeState::Cancelled,
+                        attempts: record.attempts,
+                        output_json: "",
+                        error_code: "cancelled",
+                        error_message: "",
+                        now_ms,
+                    },
                 )?;
             }
             self.emit(
