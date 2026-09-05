@@ -17966,16 +17966,18 @@ impl TaskCoordinator {
                         .as_millis() as u64;
                     let id = uuid::Uuid::new_v4().to_string();
                     let record = evohime_local_storage::feedback_store::FeedbackRecord::new(
-                        id.clone(),
-                        run_id.clone(),
-                        task_id,
-                        subject_ref,
-                        signal_parsed,
-                        correction,
-                        rejection_reason,
-                        outcome,
-                        "user:feedback",
-                        created_at_ms.to_string(),
+                        evohime_local_storage::feedback_store::FeedbackRecordInput {
+                            id: id.clone(),
+                            run_id: run_id.clone(),
+                            task_id,
+                            subject_ref,
+                            signal: signal_parsed,
+                            correction,
+                            rejection_reason,
+                            outcome,
+                            provenance: "user:feedback".to_owned(),
+                            created_at: created_at_ms.to_string(),
+                        },
                     )
                     .map_err(|error| error.to_string())?;
                     journal.save_feedback(&record).await?;

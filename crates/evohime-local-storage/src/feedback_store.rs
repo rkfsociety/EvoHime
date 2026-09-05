@@ -85,30 +85,18 @@ pub struct FeedbackRecord {
 }
 
 impl FeedbackRecord {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        id: impl Into<String>,
-        run_id: impl Into<String>,
-        task_id: Option<String>,
-        subject_ref: Option<String>,
-        signal: FeedbackSignal,
-        correction: Option<String>,
-        rejection_reason: Option<String>,
-        outcome: FeedbackOutcome,
-        provenance: impl Into<String>,
-        created_at: impl Into<String>,
-    ) -> Result<Self, FeedbackStoreError> {
+    pub fn new(input: FeedbackRecordInput) -> Result<Self, FeedbackStoreError> {
         let record = Self {
-            id: id.into(),
-            run_id: run_id.into(),
-            task_id,
-            subject_ref,
-            signal,
-            correction: correction.map(|value| redact_sensitive(&value)),
-            rejection_reason: rejection_reason.map(|value| redact_sensitive(&value)),
-            outcome,
-            provenance: provenance.into(),
-            created_at: created_at.into(),
+            id: input.id,
+            run_id: input.run_id,
+            task_id: input.task_id,
+            subject_ref: input.subject_ref,
+            signal: input.signal,
+            correction: input.correction.map(|value| redact_sensitive(&value)),
+            rejection_reason: input.rejection_reason.map(|value| redact_sensitive(&value)),
+            outcome: input.outcome,
+            provenance: input.provenance,
+            created_at: input.created_at,
         };
         record.validate()?;
         Ok(record)
@@ -140,6 +128,20 @@ impl FeedbackRecord {
         validate_required("created_at", &self.created_at, MAX_TIMESTAMP_BYTES)?;
         Ok(())
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct FeedbackRecordInput {
+    pub id: String,
+    pub run_id: String,
+    pub task_id: Option<String>,
+    pub subject_ref: Option<String>,
+    pub signal: FeedbackSignal,
+    pub correction: Option<String>,
+    pub rejection_reason: Option<String>,
+    pub outcome: FeedbackOutcome,
+    pub provenance: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -382,18 +384,18 @@ mod tests {
     }
 
     fn record(id: &str, signal: FeedbackSignal, correction: Option<&str>) -> FeedbackRecord {
-        FeedbackRecord::new(
-            id,
-            "run-1",
-            Some("task-1".to_owned()),
-            Some("effect-1".to_owned()),
+        FeedbackRecord::new(FeedbackRecordInput {
+            id: id.to_owned(),
+            run_id: "run-1".to_owned(),
+            task_id: Some("task-1".to_owned()),
+            subject_ref: Some("effect-1".to_owned()),
             signal,
-            correction.map(str::to_owned),
-            None,
-            Some("tool_succeeded".to_owned()),
-            "run:1",
-            "2026-08-12T10:00:00Z",
-        )
+            correction: correction.map(str::to_owned),
+            rejection_reason: None,
+            outcome: Some("tool_succeeded".to_owned()),
+            provenance: "run:1".to_owned(),
+            created_at: "2026-08-12T10:00:00Z".to_owned(),
+        })
         .expect("feedback record builds")
     }
 
@@ -452,18 +454,18 @@ mod tests {
 
     #[test]
     fn constructor_redacts_secret_shaped_correction_and_rejection_reason() {
-        let record = FeedbackRecord::new(
-            "f-1",
-            "run-1",
-            None,
-            None,
-            FeedbackSignal::NotUseful,
-            Some("use token=abc123 next time".to_owned()),
-            Some("leaked sk-abc123secret in the logs".to_owned()),
-            None,
-            "run:1",
-            "2026-08-12T10:00:00Z",
-        )
+        let record = FeedbackRecord::new(FeedbackRecordInput {
+            id: "f-1".to_owned(),
+            run_id: "run-1".to_owned(),
+            task_id: None,
+            subject_ref: None,
+            signal: FeedbackSignal::NotUseful,
+            correction: Some("use token=abc123 next time".to_owned()),
+            rejection_reason: Some("leaked sk-abc123secret in the logs".to_owned()),
+            outcome: None,
+            provenance: "run:1".to_owned(),
+            created_at: "2026-08-12T10:00:00Z".to_owned(),
+        })
         .expect("builds");
         assert!(!record.correction.unwrap().contains("token=abc123"));
         assert!(!record.rejection_reason.unwrap().contains("sk-abc123secret"));
@@ -471,18 +473,18 @@ mod tests {
 
     #[test]
     fn field_bounds_are_enforced() {
-        let too_long = FeedbackRecord::new(
-            "f-1",
-            "run-1",
-            None,
-            None,
-            FeedbackSignal::Neutral,
-            Some("x".repeat(MAX_CORRECTION_BYTES + 1)),
-            None,
-            None,
-            "run:1",
-            "2026-08-12T10:00:00Z",
-        );
+        let too_long = FeedbackRecord::new(FeedbackRecordInput {
+            id: "f-1".to_owned(),
+            run_id: "run-1".to_owned(),
+            task_id: None,
+            subject_ref: None,
+            signal: FeedbackSignal::Neutral,
+            correction: Some("x".repeat(MAX_CORRECTION_BYTES + 1)),
+            rejection_reason: None,
+            outcome: None,
+            provenance: "run:1".to_owned(),
+            created_at: "2026-08-12T10:00:00Z".to_owned(),
+        });
         assert!(matches!(
             too_long,
             Err(FeedbackStoreError::Limit {
