@@ -13277,7 +13277,8 @@ impl TaskCoordinator {
                     }
                     for rule in &rules {
                         let json = serde_json::to_vec(rule).map_err(|_| "serialization_failed")?;
-                        store::put_rule(database.connection(), &rule.id, rule.source_revision as i64, &serde_json::to_string(&rule.source_kind).unwrap_or_default(), &rule.source_ref, &rule.content_hash, &json, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed")?;
+                        let source_kind = serde_json::to_string(&rule.source_kind).map_err(|_| "serialization_failed")?;
+                        store::put_rule(database.connection(), store::PutRuleInput { rule_id: &rule.id, revision: rule.source_revision as i64, source_kind: &source_kind, source_ref: &rule.source_ref, content_hash: &rule.content_hash, rule_json: &json, now_ms: crate::task_memory::now_millis() as i64 }).map_err(|_| "storage_failed")?;
                     }
                     let now = crate::task_memory::now_millis() as i64;
                     match operation.as_str() {
@@ -13308,7 +13309,8 @@ impl TaskCoordinator {
                             if rule.source_revision != expected_revision && expected_revision != 0 { return Err("stale_rule_revision".into()); }
                             rule.enabled = request.enabled; rule.source_revision = rule.source_revision.saturating_add(1);
                             let json = serde_json::to_vec(&rule).map_err(|_| "serialization_failed")?;
-                            store::put_rule(database.connection(), &rule.id, rule.source_revision as i64, &serde_json::to_string(&rule.source_kind).unwrap_or_default(), &rule.source_ref, &rule.content_hash, &json, now).map_err(|_| "storage_failed")?;
+                            let source_kind = serde_json::to_string(&rule.source_kind).map_err(|_| "serialization_failed")?;
+                            store::put_rule(database.connection(), store::PutRuleInput { rule_id: &rule.id, revision: rule.source_revision as i64, source_kind: &source_kind, source_ref: &rule.source_ref, content_hash: &rule.content_hash, rule_json: &json, now_ms: now }).map_err(|_| "storage_failed")?;
                             serde_json::to_vec(&stack::project_rule(&rule, "toggled")).map_err(|_| "serialization_failed".to_string())
                         }
                         _ => Err("unsupported_project_instruction_operation".into()),
