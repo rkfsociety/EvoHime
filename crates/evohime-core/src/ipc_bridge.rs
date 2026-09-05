@@ -182,6 +182,21 @@ struct IpcResponseFields {
     strategy: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct ArtifactRevisionPayload {
+    artifact_id: String,
+    revision: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct ArtifactHandoffPayload {
+    artifact_id: String,
+    revision: u64,
+    handoff_id: String,
+    producer_identity: String,
+    consumer_identity: String,
+}
+
 fn bounded_tool_error_code(error: &evohime_tool_runtime::ToolError) -> &'static str {
     match error {
         evohime_tool_runtime::ToolError::UnknownTool(_) => "unknown_tool",
@@ -17316,18 +17331,12 @@ impl IpcBridge {
                 )
             }
             "get" => {
-                let id = serde_json::from_slice::<serde_json::Value>(&request.payload)
-                    .ok()
-                    .and_then(|v| v["artifact_id"].as_str().map(str::to_owned))
-                    .ok_or("invalid_payload")?;
-                let rev = serde_json::from_slice::<serde_json::Value>(&request.payload)
-                    .ok()
-                    .and_then(|v| v["revision"].as_u64())
-                    .ok_or("invalid_payload")?;
+                let input: ArtifactRevisionPayload =
+                    serde_json::from_slice(&request.payload).map_err(|_| "invalid_payload")?;
                 let row = evohime_local_storage::artifact_handoff_registry_store::get(
                     database.connection(),
-                    &id,
-                    rev,
+                    &input.artifact_id,
+                    input.revision,
                 )
                 .map_err(|_| "storage_error")?
                 .ok_or("not_found")?;
@@ -17339,13 +17348,10 @@ impl IpcBridge {
                 )
             }
             "mark_stale" | "accept" | "revise" => {
-                let value: serde_json::Value =
+                let input: ArtifactRevisionPayload =
                     serde_json::from_slice(&request.payload).map_err(|_| "invalid_payload")?;
-                artifact_id = value["artifact_id"]
-                    .as_str()
-                    .ok_or("invalid_payload")?
-                    .into();
-                revision = value["revision"].as_u64().ok_or("invalid_payload")?;
+                artifact_id = input.artifact_id;
+                revision = input.revision;
                 if request.expected_revision != revision {
                     return Err("stale_revision");
                 }
@@ -17372,30 +17378,22 @@ impl IpcBridge {
                 )
             }
             "handoff" => {
-                let value: serde_json::Value =
+                let input: ArtifactHandoffPayload =
                     serde_json::from_slice(&request.payload).map_err(|_| "invalid_payload")?;
-                artifact_id = value["artifact_id"]
-                    .as_str()
-                    .ok_or("invalid_payload")?
-                    .into();
-                revision = value["revision"].as_u64().ok_or("invalid_payload")?;
-                let id = value["handoff_id"].as_str().ok_or("invalid_payload")?;
+                artifact_id = input.artifact_id;
+                revision = input.revision;
                 evohime_local_storage::artifact_handoff_registry_store::insert_handoff(
                     database.connection(),
-                    id,
+                    &input.handoff_id,
                     &artifact_id,
                     revision,
-                    value["producer_identity"]
-                        .as_str()
-                        .ok_or("invalid_payload")?,
-                    value["consumer_identity"]
-                        .as_str()
-                        .ok_or("invalid_payload")?,
+                    &input.producer_identity,
+                    &input.consumer_identity,
                     now,
                 )
                 .map_err(|_| "duplicate_or_storage_error")?;
                 Ok(
-                    serde_json::json!({"artifact_id":artifact_id,"revision":revision,"state":"handoff_pending","handoff_id":id,"raw_payload":false}),
+                    serde_json::json!({"artifact_id":artifact_id,"revision":revision,"state":"handoff_pending","handoff_id":input.handoff_id,"raw_payload":false}),
                 )
             }
             _ => Err("unsupported_operation"),
