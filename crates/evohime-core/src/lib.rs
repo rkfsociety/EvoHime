@@ -155,6 +155,31 @@ struct TerminationSaveStateRequest {
     policy_id: String,
 }
 
+/// Типизированный запрос подтверждения или отклонения доставки события.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DeliveryRequest {
+    subscription_id: String,
+    event_id: String,
+    #[serde(default = "default_delivery_attempt")]
+    attempt: u64,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+fn default_delivery_attempt() -> u64 {
+    1
+}
+
+/// Полный типизированный запрос benchmark evaluation.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BenchmarkEvaluationInput {
+    candidate: crate::workflow_optimization_lab::Candidate,
+    #[serde(flatten)]
+    request: crate::workflow_optimization_lab::BenchmarkEvaluationRequest,
+}
+
 /// Аргументы для policy-only preflight при построении каталога инструментов.
 /// Preflight не выполняет инструмент, но path-инструментам всё равно нужен
 /// существующий workspace-relative путь, иначе безопасный инструмент ошибочно
@@ -12075,14 +12100,12 @@ impl TaskCoordinator {
                     use evohime_local_storage::workflow_optimization_lab_store as store;
                     match operation.as_str() {
                         "evaluate" => {
-                            let value: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_benchmark_request".to_string())?;
-                            let candidate: crate::workflow_optimization_lab::Candidate = serde_json::from_value(value.get("candidate").cloned().ok_or_else(|| "candidate_missing".to_string())?).map_err(|_| "invalid_candidate".to_string())?;
-                            let request: crate::workflow_optimization_lab::BenchmarkEvaluationRequest = serde_json::from_value(value).map_err(|_| "invalid_benchmark_request".to_string())?;
-                            let report = crate::workflow_optimization_lab::evaluate_candidate(&run_id, &candidate, &request).map_err(|e| e.to_string())?;
+                            let input: BenchmarkEvaluationInput = serde_json::from_slice(&payload).map_err(|_| "invalid_benchmark_request".to_string())?;
+                            let report = crate::workflow_optimization_lab::evaluate_candidate(&run_id, &input.candidate, &input.request).map_err(|e| e.to_string())?;
                             serde_json::to_vec(&serde_json::json!({"status":"evaluated","run_id":run_id,"report":report,"revision":expected_revision.saturating_add(1)})).map_err(|e| e.to_string())
                         }
                         "save_run" => { let run:crate::workflow_optimization_lab::OptimizationRun=serde_json::from_slice(&payload).map_err(|_|"invalid_optimization_run".to_string())?; crate::workflow_optimization_lab::validate_run(&run).map_err(|e|e.to_string())?; let json=serde_json::to_vec(&run).map_err(|e|e.to_string())?; let saved=store::put_run(database.connection(),&run.id,&json,&run.content_hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":if saved{"stored"}else{"duplicate"},"run_id":run.id,"revision":1})).map_err(|e|e.to_string()) }
-                        "get_run" => { let json=store::get_run(database.connection(),&run_id).map_err(|e|e.to_string())?.ok_or_else(||"run_not_found".to_string())?; serde_json::to_vec(&serde_json::json!({"status":"ok","run":serde_json::from_slice::<serde_json::Value>(&json).map_err(|_|"corrupt_run".to_string())?,"revision":expected_revision})).map_err(|e|e.to_string()) }
+                        "get_run" => { let json=store::get_run(database.connection(),&run_id).map_err(|e|e.to_string())?.ok_or_else(||"run_not_found".to_string())?; let run:crate::workflow_optimization_lab::OptimizationRun=serde_json::from_slice(&json).map_err(|_|"corrupt_run".to_string())?; serde_json::to_vec(&serde_json::json!({"status":"ok","run":run,"revision":expected_revision})).map_err(|e|e.to_string()) }
                         "validate_candidate" => { let c:crate::workflow_optimization_lab::Candidate=serde_json::from_slice(&payload).map_err(|_|"invalid_candidate".to_string())?; crate::workflow_optimization_lab::validate_candidate(&c,crate::workflow_optimization_lab::Split::Validation).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"validated","candidate_id":c.id,"revision":expected_revision})).map_err(|e|e.to_string()) }
                         "promote" => { let c:crate::workflow_optimization_lab::Candidate=serde_json::from_slice(&payload).map_err(|_|"invalid_candidate".to_string())?; let run_json=store::get_run(database.connection(),&run_id).map_err(|e|e.to_string())?.ok_or_else(||"run_not_found".to_string())?; let run:crate::workflow_optimization_lab::OptimizationRun=serde_json::from_slice(&run_json).map_err(|_|"corrupt_run".to_string())?; crate::workflow_optimization_lab::promotion_allowed(&run,&c,true,true).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"promoted","run_id":run_id,"candidate_id":c.id,"revision":expected_revision.saturating_add(1)})).map_err(|e|e.to_string()) }
                         _ => Err("unsupported_optimization_operation".into()),
@@ -12122,7 +12145,7 @@ impl TaskCoordinator {
                     match operation.as_str() {
                         "publish"=>{let e:crate::core_topic_subscription_event_bus::Event=serde_json::from_slice(&payload).map_err(|_|"invalid_event".to_string())?;crate::core_topic_subscription_event_bus::validate_event(&e).map_err(|e|e.to_string())?;let json=serde_json::to_vec(&e).map_err(|e|e.to_string())?;let saved=store::put_event(database.connection(),&e.event_id,&json,&e.content_hash,"published",crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":if saved{"published"}else{"duplicate"},"event_id":e.event_id})).map_err(|e|e.to_string())}
                         "subscribe"=>{let s:crate::core_topic_subscription_event_bus::Subscription=serde_json::from_slice(&payload).map_err(|_|"invalid_subscription".to_string())?;crate::core_topic_subscription_event_bus::validate_subscription(&s).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"subscribed","subscription_id":s.id})).map_err(|e|e.to_string())}
-                        "ack"|"nack"=>{let v:serde_json::Value=serde_json::from_slice(&payload).map_err(|_|"invalid_delivery".to_string())?;let sub=v.get("subscription_id").and_then(|x|x.as_str()).ok_or_else(||"subscription_missing".to_string())?;let id=v.get("event_id").and_then(|x|x.as_str()).ok_or_else(||"event_missing".to_string())?;let attempt=v.get("attempt").and_then(|x|x.as_u64()).unwrap_or(1) as u32;let next=crate::core_topic_subscription_event_bus::transition(crate::core_topic_subscription_event_bus::DeliveryState::InFlight,operation.as_str(),attempt).map_err(|e|e.to_string())?;store::put_delivery(database.connection(),sub,id,&format!("{next:?}"),attempt,v.get("error").and_then(|x|x.as_str()),crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;if matches!(next,crate::core_topic_subscription_event_bus::DeliveryState::DeadLetter){store::put_dead_letter(database.connection(),sub,id,attempt,"consumer_failure","redacted",crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;}serde_json::to_vec(&serde_json::json!({"status":format!("{next:?}").to_lowercase(),"attempt":attempt})).map_err(|e|e.to_string())}
+                        "ack"|"nack"=>{let request:DeliveryRequest=serde_json::from_slice(&payload).map_err(|_|"invalid_delivery".to_string())?;let attempt=request.attempt.min(u32::MAX as u64) as u32;let next=crate::core_topic_subscription_event_bus::transition(crate::core_topic_subscription_event_bus::DeliveryState::InFlight,operation.as_str(),attempt).map_err(|e|e.to_string())?;store::put_delivery(database.connection(),&request.subscription_id,&request.event_id,&format!("{next:?}"),attempt,request.error.as_deref(),crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;if matches!(next,crate::core_topic_subscription_event_bus::DeliveryState::DeadLetter){store::put_dead_letter(database.connection(),&request.subscription_id,&request.event_id,attempt,"consumer_failure","redacted",crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;}serde_json::to_vec(&serde_json::json!({"status":format!("{next:?}").to_lowercase(),"attempt":attempt})).map_err(|e|e.to_string())}
                         _=>Err("unsupported_bus_operation".into()),
                     }
                 }.await;
