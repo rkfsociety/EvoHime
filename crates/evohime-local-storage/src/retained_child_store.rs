@@ -60,6 +60,19 @@ fn parse<T: DeserializeOwned>(value: &[u8]) -> Result<T, RetainedStoreError> {
 }
 
 pub struct RetainedChildStore;
+pub struct UpsertChildInput<'a, T> {
+    pub parent_id: &'a str,
+    pub child_id: &'a str,
+    pub family_root_id: &'a str,
+    pub revision: u64,
+    pub registry_version: u64,
+    pub lifecycle: &'a str,
+    pub record: &'a T,
+    pub created_at_ms: u64,
+    pub last_active_at_ms: u64,
+    pub retained_until_ms: u64,
+}
+
 impl RetainedChildStore {
     pub fn next_parent_sequence(
         connection: &mut Connection,
@@ -79,21 +92,11 @@ impl RetainedChildStore {
         tx.commit()?;
         Ok(n as u64)
     }
-    #[allow(clippy::too_many_arguments)]
     pub fn upsert_child<T: Serialize>(
         connection: &Connection,
-        parent_id: &str,
-        child_id: &str,
-        family_root_id: &str,
-        revision: u64,
-        registry_version: u64,
-        lifecycle: &str,
-        record: &T,
-        created_at_ms: u64,
-        last_active_at_ms: u64,
-        retained_until_ms: u64,
+        input: UpsertChildInput<'_, T>,
     ) -> Result<(), RetainedStoreError> {
-        connection.execute("INSERT INTO retained_children(parent_id,child_id,family_root_id,registry_version,revision,lifecycle,record_json,created_at_ms,last_active_at_ms,retained_until_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) ON CONFLICT(parent_id,child_id) DO UPDATE SET family_root_id=excluded.family_root_id,registry_version=excluded.registry_version,revision=excluded.revision,lifecycle=excluded.lifecycle,record_json=excluded.record_json,last_active_at_ms=excluded.last_active_at_ms,retained_until_ms=excluded.retained_until_ms WHERE retained_children.registry_version < excluded.registry_version",params![parent_id,child_id,family_root_id,registry_version as i64,revision as i64,lifecycle,json(record)?,created_at_ms as i64,last_active_at_ms as i64,retained_until_ms as i64])?;
+        connection.execute("INSERT INTO retained_children(parent_id,child_id,family_root_id,registry_version,revision,lifecycle,record_json,created_at_ms,last_active_at_ms,retained_until_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) ON CONFLICT(parent_id,child_id) DO UPDATE SET family_root_id=excluded.family_root_id,registry_version=excluded.registry_version,revision=excluded.revision,lifecycle=excluded.lifecycle,record_json=excluded.record_json,last_active_at_ms=excluded.last_active_at_ms,retained_until_ms=excluded.retained_until_ms WHERE retained_children.registry_version < excluded.registry_version",params![input.parent_id,input.child_id,input.family_root_id,input.registry_version as i64,input.revision as i64,input.lifecycle,json(input.record)?,input.created_at_ms as i64,input.last_active_at_ms as i64,input.retained_until_ms as i64])?;
         Ok(())
     }
     pub fn get_child<T: DeserializeOwned>(

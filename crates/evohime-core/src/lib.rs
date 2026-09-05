@@ -18157,7 +18157,7 @@ impl TaskCoordinator {
                     let journal = journal.ok_or_else(|| "storage_unavailable".to_string())?;
                     let database = journal.database().lock().await;
                     let applied = state.lock().await.retained_children.retain(child.clone(), now_ms).map_err(|e| e.to_string())?;
-                    if applied { evohime_local_storage::retained_child_store::RetainedChildStore::upsert_child(database.connection(), &child.parent_id, &child.child_id, &child.family_root_id, child.revision, child.registry_version, "idle_retained", &child, child.created_at_ms, child.last_active_at_ms, child.retained_until_ms).map_err(|e| e.to_string())?; }
+                    if applied { evohime_local_storage::retained_child_store::RetainedChildStore::upsert_child(database.connection(), evohime_local_storage::retained_child_store::UpsertChildInput { parent_id: &child.parent_id, child_id: &child.child_id, family_root_id: &child.family_root_id, revision: child.revision, registry_version: child.registry_version, lifecycle: "idle_retained", record: &child, created_at_ms: child.created_at_ms, last_active_at_ms: child.last_active_at_ms, retained_until_ms: child.retained_until_ms }).map_err(|e| e.to_string())?; }
                     serde_json::to_vec(&serde_json::json!({"applied":applied,"child_id":child.child_id})).map_err(|e| e.to_string())
                 }.await;
                 let _ = reply.send(result);
@@ -18250,7 +18250,7 @@ impl TaskCoordinator {
                                     crate::retained_child::RetainedLifecycle::QueuedFollowUp => "queued_follow_up",
                                     _ => "idle_retained",
                                 };
-                                evohime_local_storage::retained_child_store::RetainedChildStore::upsert_child(database.connection(), &child.parent_id, &child.child_id, &child.family_root_id, child.revision, child.registry_version, lifecycle, &child, child.created_at_ms, child.last_active_at_ms, child.retained_until_ms).map_err(|e| e.to_string())?;
+                                evohime_local_storage::retained_child_store::RetainedChildStore::upsert_child(database.connection(), evohime_local_storage::retained_child_store::UpsertChildInput { parent_id: &child.parent_id, child_id: &child.child_id, family_root_id: &child.family_root_id, revision: child.revision, registry_version: child.registry_version, lifecycle, record: &child, created_at_ms: child.created_at_ms, last_active_at_ms: child.last_active_at_ms, retained_until_ms: child.retained_until_ms }).map_err(|e| e.to_string())?;
                             }
                         }
                     }
