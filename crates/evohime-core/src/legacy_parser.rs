@@ -330,16 +330,29 @@ pub(crate) fn parse_plain_tool_call(content: &str, iteration: usize) -> Option<N
         .filter(|(key, _)| argument_keys.contains(key))
     {
         let json_value = match key {
-            "force" | "full_page" => value
-                .parse::<bool>()
-                .map(serde_json::Value::Bool)
-                .unwrap_or_else(|_| serde_json::Value::String(value.to_string())),
-            "max_steps" | "timeout_ms" | "max_chars" | "limit" | "settle_ms" => value
-                .parse::<u64>()
-                .map(|number| serde_json::Value::Number(number.into()))
-                .unwrap_or_else(|_| serde_json::Value::String(value.to_string())),
-            "params" => serde_json::from_str(value)
-                .unwrap_or_else(|_| serde_json::Value::String(value.to_string())),
+            "force" | "full_page" => match value.parse::<bool>() {
+                Ok(parsed) => serde_json::Value::Bool(parsed),
+                Err(error) => {
+                    tracing::debug!(argument = key, %error, "legacy boolean argument kept as text");
+                    serde_json::Value::String(value.to_string())
+                }
+            },
+            "max_steps" | "timeout_ms" | "max_chars" | "limit" | "settle_ms" => {
+                match value.parse::<u64>() {
+                    Ok(number) => serde_json::Value::Number(number.into()),
+                    Err(error) => {
+                        tracing::debug!(argument = key, %error, "legacy numeric argument kept as text");
+                        serde_json::Value::String(value.to_string())
+                    }
+                }
+            }
+            "params" => match serde_json::from_str(value) {
+                Ok(parsed) => parsed,
+                Err(error) => {
+                    tracing::debug!(argument = key, %error, "legacy params kept as text");
+                    serde_json::Value::String(value.to_string())
+                }
+            },
             _ => serde_json::Value::String(value.trim_matches(['"', '\'']).to_string()),
         };
         parsed_arguments.insert(key.to_string(), json_value);

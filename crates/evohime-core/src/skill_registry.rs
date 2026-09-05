@@ -505,8 +505,13 @@ impl SkillRegistry {
             if !skill_file.is_file() {
                 continue;
             }
-            let fallback_id = normalize_id(&entry.file_name().to_string_lossy())
-                .unwrap_or_else(|_| "invalid-skill".into());
+            let fallback_id = match normalize_id(&entry.file_name().to_string_lossy()) {
+                Ok(id) => id,
+                Err(error) => {
+                    tracing::warn!(%error, "skill directory name is invalid");
+                    "invalid-skill".into()
+                }
+            };
             let source_ref = format!("{}:{}", root.label, entry.file_name().to_string_lossy());
             let package = match parse_file(&skill_file, root.kind, &source_ref) {
                 Ok(package) => package,
@@ -581,14 +586,20 @@ fn parse_file(
     metadata.reference_count = reference_count;
     let trust = crate::skill_trust_pipeline::scan_package(&metadata.skill_id, &package_dir, &hash)
         .map_err(|error| SkillRegistryError::TrustRejected(error.to_string()))?;
-    metadata.trust_decision = serde_json::to_string(&trust.decision)
-        .unwrap_or_else(|_| "quarantined".into())
-        .trim_matches('"')
-        .into();
-    metadata.risk_class = serde_json::to_string(&trust.risk_class)
-        .unwrap_or_else(|_| "blocked".into())
-        .trim_matches('"')
-        .into();
+    metadata.trust_decision = match serde_json::to_string(&trust.decision) {
+        Ok(value) => value.trim_matches('"').into(),
+        Err(error) => {
+            tracing::warn!(%error, "skill trust decision serialization failed");
+            "quarantined".into()
+        }
+    };
+    metadata.risk_class = match serde_json::to_string(&trust.risk_class) {
+        Ok(value) => value.trim_matches('"').into(),
+        Err(error) => {
+            tracing::warn!(%error, "skill risk class serialization failed");
+            "blocked".into()
+        }
+    };
     metadata.findings_count = trust.findings.len();
     Ok(SkillPackage {
         metadata,

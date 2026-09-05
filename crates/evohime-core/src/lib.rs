@@ -13485,45 +13485,16 @@ impl TaskCoordinator {
                     let policy = batch::default_policy();
                     match operation.as_str() {
                         "create" => {
-                            let value: serde_json::Value = serde_json::from_slice(&payload)
-                                .map_err(|_| "invalid_batch_payload".to_string())?;
-                            let inputs: Vec<String> = serde_json::from_value(
-                                value
-                                    .get("inputs")
-                                    .cloned()
-                                    .ok_or_else(|| "batch_inputs_required".to_string())?,
-                            )
-                            .map_err(|_| "invalid_batch_inputs".to_string())?;
-                            let definition_ref = value
-                                .get("definition_ref")
-                                .and_then(serde_json::Value::as_str)
-                                .unwrap_or_default()
-                                .to_owned();
-                            let definition_version = value
-                                .get("definition_version")
-                                .and_then(serde_json::Value::as_u64)
-                                .unwrap_or_default();
-                            let max_concurrency = value
-                                .get("max_concurrency")
-                                .and_then(serde_json::Value::as_u64)
-                                .unwrap_or(1)
-                                as u32;
-                            let failure_policy = value
-                                .get("failure_policy")
-                                .cloned()
-                                .map(|v| {
-                                    serde_json::from_value(v)
-                                        .map_err(|_| "invalid_batch_failure_policy".to_string())
-                                })
-                                .transpose()?
-                                .unwrap_or(batch::FailurePolicy::Continue);
+                            let request: batch::CreateBatchRequest =
+                                serde_json::from_slice(&payload)
+                                    .map_err(|_| "invalid_batch_payload".to_string())?;
                             let value = batch::new_batch(batch::NewBatchInput {
                                 id: batch_id.clone(),
-                                definition_ref,
-                                definition_version,
-                                inputs,
-                                max_concurrency,
-                                failure_policy,
+                                definition_ref: request.definition_ref,
+                                definition_version: request.definition_version,
+                                inputs: request.inputs,
+                                max_concurrency: request.max_concurrency,
+                                failure_policy: request.failure_policy,
                                 now_ms: crate::task_memory::now_millis() as i64,
                                 policy: policy.clone(),
                             })
@@ -13597,34 +13568,16 @@ impl TaskCoordinator {
                             let mut value: batch::BatchInvocation =
                                 serde_json::from_slice(&json)
                                     .map_err(|_| "corrupt_batch".to_string())?;
-                            let request: serde_json::Value = serde_json::from_slice(&payload)
-                                .map_err(|_| "invalid_batch_result".to_string())?;
-                            let item_id = request
-                                .get("item_id")
-                                .and_then(serde_json::Value::as_str)
-                                .ok_or_else(|| "batch_item_required".to_string())?;
-                            let status: batch::ItemStatus = serde_json::from_value(
-                                request
-                                    .get("status")
-                                    .cloned()
-                                    .ok_or_else(|| "batch_status_required".to_string())?,
-                            )
-                            .map_err(|_| "invalid_batch_status".to_string())?;
-                            let result_ref = request
-                                .get("result_ref")
-                                .and_then(serde_json::Value::as_str)
-                                .map(str::to_owned);
-                            let error_class = request
-                                .get("error_class")
-                                .and_then(serde_json::Value::as_str)
-                                .map(str::to_owned);
+                            let request: batch::RecordResultRequest =
+                                serde_json::from_slice(&payload)
+                                    .map_err(|_| "invalid_batch_result".to_string())?;
                             batch::record_result(batch::RecordResultInput {
                                 batch: &mut value,
-                                item_id,
+                                item_id: &request.item_id,
                                 expected_version: expected_version.max(version),
-                                status,
-                                result_ref,
-                                error_class,
+                                status: request.status,
+                                result_ref: request.result_ref,
+                                error_class: request.error_class,
                                 now_ms: crate::task_memory::now_millis() as i64,
                                 policy: &policy,
                             })

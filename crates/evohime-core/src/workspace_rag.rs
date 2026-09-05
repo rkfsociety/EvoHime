@@ -1700,7 +1700,13 @@ fn publish_generation(input: PublishGenerationInput<'_>) -> Result<(), RagError>
             chunks as i64,
             excluded as i64,
             errors.len() as i64,
-            serde_json::to_string(errors).unwrap_or_else(|_| "[]".into())
+            match serde_json::to_string(errors) {
+                Ok(value) => value,
+                Err(error) => {
+                    tracing::warn!(%error, "RAG error list serialization failed");
+                    "[]".into()
+                }
+            }
         ],
     )?;
     transaction.commit()?;

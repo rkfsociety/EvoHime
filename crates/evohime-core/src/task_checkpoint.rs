@@ -355,10 +355,13 @@ fn build_checkpoint(
 }
 
 fn status_as_text(status: CheckpointStatus) -> String {
-    serde_json::to_string(&status)
-        .unwrap_or_else(|_| "blocked".into())
-        .trim_matches('"')
-        .to_owned()
+    match serde_json::to_string(&status) {
+        Ok(value) => value.trim_matches('"').to_owned(),
+        Err(error) => {
+            tracing::warn!(%error, "checkpoint status serialization failed");
+            "blocked".into()
+        }
+    }
 }
 
 #[cfg(test)]

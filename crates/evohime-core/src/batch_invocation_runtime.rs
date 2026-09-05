@@ -164,6 +164,35 @@ pub struct NewBatchInput {
     pub policy: BatchPolicy,
 }
 
+/// Wire-вход создания batch без промежуточного `serde_json::Value`.
+#[derive(Debug, Deserialize)]
+pub struct CreateBatchRequest {
+    pub inputs: Vec<String>,
+    pub definition_ref: String,
+    pub definition_version: u64,
+    #[serde(default = "default_max_concurrency")]
+    pub max_concurrency: u32,
+    #[serde(default = "default_failure_policy")]
+    pub failure_policy: FailurePolicy,
+}
+
+fn default_max_concurrency() -> u32 {
+    1
+}
+
+fn default_failure_policy() -> FailurePolicy {
+    FailurePolicy::Continue
+}
+
+/// Wire-вход завершения одного элемента batch.
+#[derive(Debug, Deserialize)]
+pub struct RecordResultRequest {
+    pub item_id: String,
+    pub status: ItemStatus,
+    pub result_ref: Option<String>,
+    pub error_class: Option<String>,
+}
+
 pub fn new_batch(input: NewBatchInput) -> Result<BatchInvocation, BatchError> {
     if input.inputs.is_empty()
         || input.inputs.len() > input.policy.max_items

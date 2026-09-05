@@ -181,11 +181,19 @@ pub fn subject_key(subject: &str) -> SubjectKey {
         Ok(key) => key,
         Err(error) => {
             tracing::warn!(%error, "subject slug rejected; using content fingerprint");
-            SubjectKey::new(fingerprint(subject)).unwrap_or_else(|fallback_error| {
-                tracing::error!(%fallback_error, "subject fingerprint rejected");
-                SubjectKey::new("invalid-subject")
-                    .unwrap_or_else(|_| unreachable!("static subject key is part of the contract"))
-            })
+            match SubjectKey::new(fingerprint(subject)) {
+                Ok(key) => key,
+                Err(fallback_error) => {
+                    tracing::error!(%fallback_error, "subject fingerprint rejected");
+                    match SubjectKey::new("invalid-subject") {
+                        Ok(key) => key,
+                        Err(static_error) => {
+                            tracing::error!(%static_error, "static subject key rejected");
+                            unreachable!("static subject key is part of the contract")
+                        }
+                    }
+                }
+            }
         }
     }
 }

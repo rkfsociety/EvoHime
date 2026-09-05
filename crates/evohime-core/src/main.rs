@@ -416,7 +416,13 @@ fn console_request() -> Option<(String, std::path::PathBuf, bool)> {
     if !args.iter().any(|arg| arg == "--console") {
         return None;
     }
-    let mut workspace = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let mut workspace = match std::env::current_dir() {
+        Ok(path) => path,
+        Err(error) => {
+            tracing::warn!(%error, "current directory unavailable; using portable workspace");
+            std::path::PathBuf::from(".")
+        }
+    };
     let mut prompt_parts = Vec::new();
     let mut approve_writes = false;
     let mut index = 0;
@@ -931,8 +937,13 @@ fn launch_context() -> Result<evohime_desktop_ipc::session::LaunchContext, std::
         ));
     }
 
-    let pipe_name =
-        std::env::var("EVOHIME_CORE_PIPE").unwrap_or_else(|_| r"\\.\pipe\evohime-core-v1".into());
+    let pipe_name = match std::env::var("EVOHIME_CORE_PIPE") {
+        Ok(pipe) => pipe,
+        Err(error) => {
+            tracing::debug!(%error, "core pipe environment is unset; using default pipe");
+            r"\\.\pipe\evohime-core-v1".into()
+        }
+    };
     validate_pipe_name(&pipe_name).map_err(|error| std::io::Error::other(error.to_string()))?;
     Ok(LaunchContext {
         pipe_name,

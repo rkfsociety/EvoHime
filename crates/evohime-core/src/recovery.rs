@@ -89,8 +89,13 @@ pub fn recovery_hint(
 }
 
 pub fn canonical_call_signature(name: &str, arguments: &str) -> String {
-    let value = serde_json::from_str::<Value>(arguments)
-        .unwrap_or_else(|_| Value::String(arguments.into()));
+    let value = match serde_json::from_str::<Value>(arguments) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::debug!(tool = name, %error, "non-JSON tool arguments canonicalized as text");
+            Value::String(arguments.into())
+        }
+    };
     format!("{name}:{}", canonical_json(&value))
 }
 

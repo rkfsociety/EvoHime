@@ -1871,9 +1871,16 @@ impl IpcBridge {
                         self.write_response(writer, "receipt.reconciliation", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.pending_recovery"}))?).await?;
                         return Ok(());
                     }
+                    let reconciliation_task_id = match task_id.parse() {
+                        Ok(task_id) => task_id,
+                        Err(error) => {
+                            tracing::warn!(%error, task_id, "invalid reconciliation task id; generating one");
+                            uuid::Uuid::now_v7()
+                        }
+                    };
                     let context = ToolContext {
                         workspace_root: std::path::PathBuf::from(&request.workspace_path),
-                        task_id: task_id.parse().unwrap_or_else(|_| uuid::Uuid::now_v7()),
+                        task_id: reconciliation_task_id,
                         session_id: None,
                         progress_tx: None,
                     };
@@ -1906,8 +1913,13 @@ impl IpcBridge {
                         policy_decision: evohime_receipts::runtime::PolicyDecision::Allow,
                         approval_id: None,
                         parent_approval_ref: None,
-                        preview: serde_json::to_string(&preview)
-                            .unwrap_or_else(|_| "read-only reconciliation".into()),
+                        preview: match serde_json::to_string(&preview) {
+                            Ok(preview) => preview,
+                            Err(error) => {
+                                tracing::warn!(%error, "reconciliation preview serialization failed");
+                                "read-only reconciliation".into()
+                            }
+                        },
                     };
                     {
                         let mut database = self.journal.database().lock().await;
@@ -2648,13 +2660,23 @@ impl IpcBridge {
                         return Ok(());
                     }
                     self.selected_model.set(model);
-                    let payload = serde_json::to_vec(&self.current_model_config())
-                        .unwrap_or_else(|_| b"null".to_vec());
+                    let payload = match serde_json::to_vec(&self.current_model_config()) {
+                        Ok(payload) => payload,
+                        Err(error) => {
+                            tracing::warn!(%error, "model config serialization failed");
+                            b"null".to_vec()
+                        }
+                    };
                     self.write_response(writer, "model.config", payload).await?;
                 }
                 Some(generated::command_envelope::Command::ModelConfig(_)) => {
-                    let payload = serde_json::to_vec(&self.current_model_config())
-                        .unwrap_or_else(|_| b"null".to_vec());
+                    let payload = match serde_json::to_vec(&self.current_model_config()) {
+                        Ok(payload) => payload,
+                        Err(error) => {
+                            tracing::warn!(%error, "model config serialization failed");
+                            b"null".to_vec()
+                        }
+                    };
                     let event = generated::EventEnvelope {
                         protocol: Some(protocol()),
                         sequence_id: 0,
@@ -10816,7 +10838,13 @@ impl IpcBridge {
                     policy_decision: evohime_receipts::runtime::PolicyDecision::Allow,
                     approval_id: None,
                     parent_approval_ref: None,
-                    preview: serde_json::to_string(&preview).unwrap_or_else(|_| "terminal".into()),
+                    preview: match serde_json::to_string(&preview) {
+                        Ok(preview) => preview,
+                        Err(error) => {
+                            tracing::warn!(%error, "terminal preview serialization failed");
+                            "terminal".into()
+                        }
+                    },
                 };
                 let capability =
                     Self::terminal_capability_snapshot(request.action_id, context, &scope)
