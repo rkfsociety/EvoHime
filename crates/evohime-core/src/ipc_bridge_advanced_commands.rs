@@ -2289,7 +2289,7 @@ impl IpcBridge {
         match request.operation.as_str() {
             "list" | "status" => {}
             "start" => {
-                let payload: ExternalAgentCommandPayload = match serde_json::from_slice(
+                let payload: ExternalAgentCommandPayload<'_> = match serde_json::from_slice(
                     &request.payload,
                 ) {
                     Ok(value) => value,
@@ -2297,8 +2297,8 @@ impl IpcBridge {
                         return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"start","status":"rejected","state":"unavailable","error_code":"invalid_payload","projection_json":{"raw_payload":false}});
                     }
                 };
-                let run_id = payload.run_id.as_str();
-                let conversation_id = payload.conversation_id.as_str();
+                let run_id = payload.run_id.as_ref();
+                let conversation_id = payload.conversation_id.as_ref();
                 if run_id.is_empty() || conversation_id.is_empty() {
                     status = "rejected";
                     error_code = "invalid_run";
@@ -2308,7 +2308,7 @@ impl IpcBridge {
                     error_code = "duplicate_run";
                     state = *registry.runs.get(run_id).unwrap_or(&AgentState::Unknown);
                 } else {
-                    let executable_ref = payload.executable_ref.as_str();
+                    let executable_ref = payload.executable_ref.as_ref();
                     #[cfg(windows)]
                     let supervisor_result = crate::analysis_kernel::supervisor_command(
                         serde_json::json!({"op":"external_agent_start","run_id":run_id,"executable_ref":executable_ref}),
@@ -2338,7 +2338,7 @@ impl IpcBridge {
                 projection = serde_json::json!({"contract_id":CONTRACT_ID,"contract_version":CONTRACT_VERSION,"conversation_id":conversation_id,"run_id":run_id,"core_control_level":"supervised_opaque","raw_payload":false});
             }
             "cancel" => {
-                let payload: ExternalAgentCommandPayload = match serde_json::from_slice(
+                let payload: ExternalAgentCommandPayload<'_> = match serde_json::from_slice(
                     &request.payload,
                 ) {
                     Ok(value) => value,
@@ -2351,8 +2351,8 @@ impl IpcBridge {
                 };
                 if !payload.run_id.is_empty() {
                     if registry
-                        .runs
-                        .insert(payload.run_id, AgentState::Cancelling)
+                    .runs
+                        .insert(payload.run_id.into_owned(), AgentState::Cancelling)
                         .is_none()
                     {
                         status = "not_found";
@@ -2370,14 +2370,8 @@ impl IpcBridge {
             }
         }
         if request.operation == "start" || request.operation == "cancel" {
-            let run_id = projection["run_id"]
-                .as_str()
-                .map(str::to_owned)
-                .unwrap_or_default();
-            let conversation_id = projection["conversation_id"]
-                .as_str()
-                .unwrap_or("")
-                .to_owned();
+            let run_id = projection["run_id"].as_str().unwrap_or_default();
+            let conversation_id = projection["conversation_id"].as_str().unwrap_or_default();
             if !run_id.is_empty() && !conversation_id.is_empty() {
                 if let Ok(database) = self.journal.database().try_lock() {
                     let state_json = serde_json::to_string(&state).unwrap_or_else(|error| {

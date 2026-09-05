@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::{
     collections::HashMap,
+    borrow::Cow,
     future::Future,
     pin::Pin,
     time::{SystemTime, UNIX_EPOCH},
@@ -204,13 +205,13 @@ struct ArtifactHandoffPayload {
 }
 
 #[derive(Debug, Deserialize)]
-struct ExternalAgentCommandPayload {
+struct ExternalAgentCommandPayload<'a> {
     #[serde(default)]
-    run_id: String,
+    run_id: Cow<'a, str>,
     #[serde(default)]
-    conversation_id: String,
+    conversation_id: Cow<'a, str>,
     #[serde(default)]
-    executable_ref: String,
+    executable_ref: Cow<'a, str>,
 }
 
 #[derive(Debug, Deserialize)]
