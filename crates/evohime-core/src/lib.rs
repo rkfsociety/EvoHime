@@ -212,6 +212,29 @@ fn default_workbench_logical_state() -> serde_json::Value {
     serde_json::json!({})
 }
 
+/// Типизированные параметры построения представления knowledge collection.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct KnowledgeCollectionViewRequest {
+    #[serde(default = "default_project_target_kind")]
+    target_kind: crate::knowledge_source_registry_project_role::TargetKind,
+    target_id: String,
+}
+
+/// Типизированные параметры keyword retrieval по knowledge source.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct KnowledgeQueryRequest {
+    query: String,
+    #[serde(default = "default_project_target_kind")]
+    target_kind: crate::knowledge_source_registry_project_role::TargetKind,
+    target_id: String,
+}
+
+fn default_project_target_kind() -> crate::knowledge_source_registry_project_role::TargetKind {
+    crate::knowledge_source_registry_project_role::TargetKind::Project
+}
+
 /// Аргументы для policy-only preflight при построении каталога инструментов.
 /// Preflight не выполняет инструмент, но path-инструментам всё равно нужен
 /// существующий workspace-relative путь, иначе безопасный инструмент ошибочно
@@ -13258,11 +13281,11 @@ impl TaskCoordinator {
                             serde_json::to_vec(&serde_json::json!({"schema_version":1,"collection_id":collection.id,"version":collection.version,"source_count":collection.source_ids.len(),"status":collection.status,"scope":collection.scope,"content_hash":collection.content_hash,"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "collection_view" => {
-                            let request: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_knowledge_collection_view".to_string())?;
+                            let request: KnowledgeCollectionViewRequest = serde_json::from_slice(&payload).map_err(|_| "invalid_knowledge_collection_view".to_string())?;
                             let collection_json = store::get_collection(database.connection(), &source_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "knowledge_collection_not_found".to_string())?;
                             let collection: knowledge::KnowledgeCollection = serde_json::from_slice(&collection_json).map_err(|_| "corrupt_knowledge_collection".to_string())?;
-                            let target_kind: knowledge::TargetKind = serde_json::from_value(request.get("target_kind").cloned().unwrap_or(serde_json::json!("project"))).map_err(|_| "invalid_knowledge_target".to_string())?;
-                            let target_id = request.get("target_id").and_then(serde_json::Value::as_str).ok_or_else(|| "invalid_knowledge_target".to_string())?;
+                            let target_kind = request.target_kind;
+                            let target_id = request.target_id.as_str();
                             let sources = collection.source_ids.iter().filter_map(|id| store::get_source(database.connection(), id).ok().flatten()).filter_map(|json| serde_json::from_slice::<knowledge::KnowledgeSource>(&json).ok()).collect::<Vec<_>>();
                             let mut bindings = Vec::new();
                             for id in &collection.source_ids {
@@ -13303,11 +13326,11 @@ impl TaskCoordinator {
                             serde_json::to_vec(&serde_json::json!({"schema_version":1,"source_id":source_id,"indexed_chunks":chunks.len(),"redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "retrieve" => {
-                            let request: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_knowledge_query".to_string())?;
-                            let query = request.get("query").and_then(serde_json::Value::as_str).ok_or_else(|| "invalid_knowledge_query".to_string())?;
+                            let request: KnowledgeQueryRequest = serde_json::from_slice(&payload).map_err(|_| "invalid_knowledge_query".to_string())?;
+                            let query = request.query.as_str();
                             if query.is_empty() || query.len() > knowledge::MAX_ID_BYTES { return Err("invalid_knowledge_query".into()); }
-                            let target_kind: knowledge::TargetKind = serde_json::from_value(request.get("target_kind").cloned().unwrap_or(serde_json::json!("project"))).map_err(|_| "invalid_knowledge_target".to_string())?;
-                            let target_id = request.get("target_id").and_then(serde_json::Value::as_str).ok_or_else(|| "invalid_knowledge_target".to_string())?;
+                            let target_kind = request.target_kind;
+                            let target_id = request.target_id.as_str();
                             let source_json = store::get_source(database.connection(), &source_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "knowledge_source_not_found".to_string())?;
                             let source: knowledge::KnowledgeSource = serde_json::from_slice(&source_json).map_err(|_| "corrupt_knowledge_source".to_string())?;
                             let bindings = store::list_bindings(database.connection(), &source_id, knowledge::MAX_BINDINGS_PER_SOURCE).map_err(|_| "storage_failed".to_string())?.into_iter().filter_map(|json| serde_json::from_slice(&json).ok()).collect::<Vec<knowledge::KnowledgeBinding>>();
