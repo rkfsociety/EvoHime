@@ -1493,6 +1493,7 @@ mod ui_truthfulness {
                 heartbeat_age_ms: Some(500),
                 stale_threshold_ms: 5_000,
             },
+            codebase: crate::doctor::CodebaseProbe::default(),
         }
     }
 
@@ -1563,4 +1564,3 @@ mod ui_truthfulness {
 mod tests;
 #[path = "evals_workflow_orchestration.rs"]
 mod workflow_orchestration;
-

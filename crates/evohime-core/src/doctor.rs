@@ -63,6 +63,7 @@ pub struct DoctorSnapshot {
     pub permissions: PermissionsProbe,
     pub tools: ToolsProbe,
     pub scheduler: SchedulerProbe,
+    pub codebase: CodebaseProbe,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,6 +130,31 @@ pub struct SchedulerProbe {
     pub stale_threshold_ms: u64,
 }
 
+/// Статические DX-инварианты исходников и SQLite. Сбор этих фактов выполняет
+/// Core adapter, а Doctor только валидирует и формирует bounded report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodebaseProbe {
+    pub available: bool,
+    pub largest_source_file_lines: u32,
+    pub max_source_file_lines: u32,
+    pub include_count: u32,
+    pub allowed_include_count: u32,
+    pub missing_indexes: Vec<String>,
+}
+
+impl Default for CodebaseProbe {
+    fn default() -> Self {
+        Self {
+            available: false,
+            largest_source_file_lines: 0,
+            max_source_file_lines: 2_000,
+            include_count: 0,
+            allowed_include_count: 3,
+            missing_indexes: Vec::new(),
+        }
+    }
+}
+
 impl DoctorReport {
     pub fn from_snapshot(snapshot: &DoctorSnapshot) -> Result<Self, DoctorError> {
         Self::from_snapshot_with_detail(snapshot, DetailLevel::Detailed)
@@ -151,6 +177,7 @@ impl DoctorReport {
             permissions_check(&snapshot.permissions),
             tools_check(&snapshot.tools),
             scheduler_check(&snapshot.scheduler),
+            codebase_check(&snapshot.codebase),
         ];
         if detail_level == DetailLevel::Summary {
             for check in &mut checks {
@@ -429,6 +456,61 @@ fn scheduler_check(probe: &SchedulerProbe) -> DoctorCheck {
     }
 }
 
+fn codebase_check(probe: &CodebaseProbe) -> DoctorCheck {
+    if !probe.available {
+        return check(
+            "codebase",
+            CheckStatus::Warn,
+            "DX-проверки исходников и индексов не собраны",
+            "Запусти Doctor из checkout с доступным workspace",
+            None,
+        );
+    }
+    if probe.largest_source_file_lines > probe.max_source_file_lines {
+        return check(
+            "codebase",
+            CheckStatus::Fail,
+            "Исходный файл превышает лимит размера",
+            "Раздели файл по логическим границам модуля",
+            Some(&format!(
+                "largest_lines={}, limit={}",
+                probe.largest_source_file_lines, probe.max_source_file_lines
+            )),
+        );
+    }
+    if probe.include_count > probe.allowed_include_count {
+        return check(
+            "codebase",
+            CheckStatus::Warn,
+            "В исходниках осталось слишком много include!",
+            "Замени крупные include! на обычные модули",
+            Some(&format!(
+                "include_count={}, allowed={}",
+                probe.include_count, probe.allowed_include_count
+            )),
+        );
+    }
+    if !probe.missing_indexes.is_empty() {
+        return check(
+            "codebase",
+            CheckStatus::Fail,
+            "В SQLite отсутствуют обязательные индексы",
+            "Переустанови схему штатной миграцией",
+            Some(&probe.missing_indexes.join(", ")),
+        );
+    }
+    check(
+        "codebase",
+        CheckStatus::Ok,
+        "Размеры исходников, include! и индексы соответствуют политике",
+        "Действий не требуется",
+        Some(&format!(
+            "largest_lines={}, includes={}",
+            probe.largest_source_file_lines, probe.include_count
+        )),
+    )
+}
+
 fn check(
     id: &str,
     status: CheckStatus,
@@ -479,6 +561,15 @@ fn validate_snapshot(snapshot: &DoctorSnapshot) -> Result<(), DoctorError> {
     }
     for name in &snapshot.tools.unavailable_tools {
         validate_text("tools.unavailable_tools[]", name, MAX_TEXT_CHARS)?;
+    }
+    if snapshot.codebase.max_source_file_lines == 0 {
+        return Err(DoctorError::InvalidProbe("max source file lines"));
+    }
+    if snapshot.codebase.include_count > MAX_CHECKS as u32 * 32 {
+        return Err(DoctorError::InvalidProbe("include count"));
+    }
+    for name in &snapshot.codebase.missing_indexes {
+        validate_text("codebase.missing_indexes[]", name, MAX_TEXT_CHARS)?;
     }
     Ok(())
 }
@@ -543,13 +634,21 @@ mod tests {
                 heartbeat_age_ms: Some(1_000),
                 stale_threshold_ms: 300_000,
             },
+            codebase: CodebaseProbe {
+                available: true,
+                largest_source_file_lines: 1_900,
+                max_source_file_lines: 2_000,
+                include_count: 3,
+                allowed_include_count: 3,
+                missing_indexes: Vec::new(),
+            },
         }
     }
 
     #[test]
     fn healthy_snapshot_is_serializable_and_bounded() {
         let report = DoctorReport::from_snapshot(&snapshot()).unwrap();
-        assert_eq!(report.checks.len(), 7);
+        assert_eq!(report.checks.len(), 8);
         assert!(!report.is_actionable());
         let json = report.to_bounded_json();
         assert!(json.contains("\"bounded\":true"));
@@ -686,5 +785,23 @@ mod tests {
             assert!(!check.summary.is_empty());
             assert!(!check.action.is_empty());
         }
+    }
+
+    #[test]
+    fn codebase_probe_reports_size_include_and_index_failures() {
+        let mut value = snapshot();
+        value.codebase.largest_source_file_lines = 2_001;
+        let report = DoctorReport::from_snapshot(&value).unwrap();
+        assert_eq!(report.checks.last().unwrap().status, CheckStatus::Fail);
+
+        value.codebase.largest_source_file_lines = 1_000;
+        value.codebase.include_count = 4;
+        let report = DoctorReport::from_snapshot(&value).unwrap();
+        assert_eq!(report.checks.last().unwrap().status, CheckStatus::Warn);
+
+        value.codebase.include_count = 3;
+        value.codebase.missing_indexes = vec!["idx_workflow_events_run".into()];
+        let report = DoctorReport::from_snapshot(&value).unwrap();
+        assert_eq!(report.checks.last().unwrap().status, CheckStatus::Fail);
     }
 }

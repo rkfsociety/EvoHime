@@ -449,6 +449,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 };
 
                 let scheduler = crate::export::scheduler_probe();
+                let codebase = collect_codebase_probe(journal.as_ref()).await;
 
                 let snapshot = crate::doctor::DoctorSnapshot {
                     storage,
@@ -462,6 +463,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         unavailable_tools,
                     },
                     scheduler,
+                    codebase,
                 };
                 let report =
                     crate::doctor::DoctorReport::from_snapshot_with_detail(&snapshot, detail_level)
@@ -472,5 +474,78 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let _ = reply.send(result);
         }
         _ => unreachable!("command routed to the wrong coordinator domain"),
+    }
+}
+
+async fn collect_codebase_probe(
+    journal: Option<&crate::core_journal::EventJournal>,
+) -> crate::doctor::CodebaseProbe {
+    let source_root = match std::env::current_dir() {
+        Ok(root) => root.join("crates").join("evohime-core").join("src"),
+        Err(_) => return crate::doctor::CodebaseProbe::default(),
+    };
+    if !source_root.is_dir() {
+        return crate::doctor::CodebaseProbe::default();
+    }
+
+    let mut largest_source_file_lines = 0u32;
+    let mut include_count = 0u32;
+    let mut stack = vec![source_root];
+    while let Some(directory) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(directory) else {
+            return crate::doctor::CodebaseProbe::default();
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.extension().and_then(|value| value.to_str()) != Some("rs") {
+                continue;
+            }
+            let Ok(source) = std::fs::read_to_string(path) else {
+                return crate::doctor::CodebaseProbe::default();
+            };
+            largest_source_file_lines = largest_source_file_lines.max(source.lines().count() as u32);
+            include_count = include_count.saturating_add(source.matches("include!(").count() as u32);
+        }
+    }
+
+    let required_indexes = [
+        "idx_events_task_sequence",
+        "idx_workflow_runs_state",
+        "idx_workflow_attempts_open",
+        "idx_workflow_events_run",
+        "idx_workflow_run_events_ledger",
+    ];
+    let missing_indexes = if let Some(journal) = journal {
+        let database = journal.database().lock().await;
+        required_indexes
+            .iter()
+            .filter(|name| {
+                database
+                    .connection()
+                    .query_row(
+                        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='index' AND name=?1)",
+                        [name],
+                        |row| row.get::<_, bool>(0),
+                    )
+                    .map(|exists| !exists)
+                    .unwrap_or(false)
+            })
+            .map(|name| (*name).to_string())
+            .collect()
+    } else {
+        required_indexes.iter().map(|name| (*name).to_string()).collect()
+    };
+
+    crate::doctor::CodebaseProbe {
+        available: true,
+        largest_source_file_lines,
+        max_source_file_lines: 2_000,
+        include_count,
+        allowed_include_count: 3,
+        missing_indexes,
     }
 }
