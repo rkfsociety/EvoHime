@@ -359,18 +359,16 @@ impl ContextPlanner {
 
         // 6. Pruning до лестницы: дубликаты, вытесненные ревизии и истёкшие
         //    записи (01.3). Обязательные item не трогаются.
-        let mut prunable = items.clone();
-        for item in &mut prunable {
+        for item in &mut items {
             item.selected = !item.is_mandatory_kind();
         }
-        let pruned = prune(&mut prunable, request.now);
-        for (id, reason) in &pruned {
-            if let Some(item) = items.iter_mut().find(|item| &item.id == id) {
-                if !item.is_mandatory_kind() {
-                    item.selected = false;
-                    item.drop_reason = Some(*reason);
-                    self.metrics.record_drop(*reason);
-                }
+        let pruned = prune(&mut items, request.now);
+        for (_, reason) in &pruned {
+            self.metrics.record_drop(*reason);
+        }
+        for item in &mut items {
+            if item.is_mandatory_kind() {
+                item.selected = true;
             }
         }
 
