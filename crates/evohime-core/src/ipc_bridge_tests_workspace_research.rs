@@ -1228,7 +1228,7 @@ use super::*;
             serde_json::from_slice(&event.payload).expect("doctor report is valid json");
         assert_eq!(report["bounded"], serde_json::json!(true));
         let checks = report["checks"].as_array().expect("checks array");
-        assert_eq!(checks.len(), 7);
+        assert_eq!(checks.len(), 8);
         let storage_check = checks
             .iter()
             .find(|check| check["id"] == "storage")
