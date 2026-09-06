@@ -14,6 +14,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 }
 
 $root = (Resolve-Path $PSScriptRoot).Path
+. (Join-Path $root 'scripts\use-project-deps.ps1')
 $packagePath = Join-Path $root '.evohime-native\windows-x64'
 $buildScript = Join-Path $root 'scripts\build-windows-native.ps1'
 $dataPath = Join-Path $root '.evohime-native\data'

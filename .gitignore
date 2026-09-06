@@ -1,6 +1,10 @@
 target/
 artifacts/
 .evohime-native/
+.evohime-tools/
+.evohime-temp/
+.evohime-cargo/
+.evohime-rustup/
 
 # Local Codex/plugin build output and removed legacy web workspace.
 .evohime/

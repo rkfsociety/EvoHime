@@ -252,6 +252,12 @@ impl EstimateCache {
     }
 }
 
+impl Default for EstimateCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Расхождение оценки с фактическим usage провайдера.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct EstimatorDrift {
