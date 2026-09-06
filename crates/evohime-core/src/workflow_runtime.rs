@@ -657,7 +657,9 @@ impl WorkflowRuntime {
             return Err(RuntimeError::Busy(run_id.to_string()));
         }
 
-        let outcome = self.drive_locked(&run, &graph, &parent).await;
+        let outcome = self
+            .drive_locked(&run, &graph, &parent, &actual_hash)
+            .await;
 
         {
             let now_ms = crate::task_memory::now_millis() as i64;
@@ -672,6 +674,7 @@ impl WorkflowRuntime {
         run: &WorkflowRunRecord,
         graph: &WorkflowGraph,
         parent: &ParentCapabilities,
+        graph_hash: &str,
     ) -> Result<DriveOutcome, RuntimeError> {
         let run_id = run.run_id.as_str();
         let mut executed = Vec::new();
@@ -757,7 +760,10 @@ impl WorkflowRuntime {
             let mut progressed = false;
             for node_id in &batch {
                 let node = graph.node(node_id).expect("validated node");
-                match self.execute_node(run, graph, node, parent, &states).await? {
+                match self
+                    .execute_node(run, graph, graph_hash, node, parent, &states)
+                    .await?
+                {
                     NodeStep::Executed => {
                         executed.push(node_id.clone());
                         progressed = true;
@@ -791,6 +797,7 @@ impl WorkflowRuntime {
         &self,
         run: &WorkflowRunRecord,
         graph: &WorkflowGraph,
+        graph_hash: &str,
         node: &WorkflowNode,
         parent: &ParentCapabilities,
         states: &BTreeMap<String, WorkflowNodeRecord>,
@@ -800,10 +807,10 @@ impl WorkflowRuntime {
         // Повторная проверка перед эффектом: hash графа, разрешимость
         // capability и родительские возможности. Между постановкой в очередь и
         // запуском могли измениться и реестр, и окружение.
-        if graph.canonical_hash() != run.graph_hash {
+        if graph_hash != run.graph_hash {
             return Err(RuntimeError::GraphHashMismatch {
                 expected: run.graph_hash.clone(),
-                actual: graph.canonical_hash(),
+                actual: graph_hash.to_string(),
             });
         }
         let single = single_node_graph(graph, node);
@@ -1797,4 +1804,3 @@ fn hash_value(value: &Value) -> String {
 #[cfg(test)]
 #[path = "workflow_runtime_tests.rs"]
 mod tests;
-
