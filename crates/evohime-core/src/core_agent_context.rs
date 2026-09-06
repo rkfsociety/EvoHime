@@ -25,13 +25,13 @@ impl ToolAgent {
         let now = task_memory::now_millis() as i64;
         let provider = self.gateway.provider_kind().as_str().to_string();
         let model = effective_model_name(self.gateway.model_name(), selected_model);
-        let contents: Vec<(String, String)> = messages
+        let contents: std::collections::HashMap<String, &str> = messages
             .iter()
             .enumerate()
             .map(|(index, message)| {
                 (
                     context_budget::message_item_id(index, message.role),
-                    message.content.clone(),
+                    message.content.as_str(),
                 )
             })
             .collect();

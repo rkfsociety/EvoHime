@@ -788,13 +788,16 @@ impl ArtifactOffload<'_> {
 
 /// Offload, материализующий содержимое сообщений: планировщик отдаёт item,
 /// а содержимое берётся из карты, собранной на этапе `plan_inputs`.
-pub struct MessageOffload<'a> {
-    inner: ArtifactOffload<'a>,
-    contents: Vec<(String, String)>,
+pub struct MessageOffload<'store, 'content> {
+    inner: ArtifactOffload<'store>,
+    contents: HashMap<String, &'content str>,
 }
 
-impl<'a> MessageOffload<'a> {
-    pub fn new(inner: ArtifactOffload<'a>, contents: Vec<(String, String)>) -> Self {
+impl<'store, 'content> MessageOffload<'store, 'content> {
+    pub fn new(
+        inner: ArtifactOffload<'store>,
+        contents: HashMap<String, &'content str>,
+    ) -> Self {
         Self { inner, contents }
     }
 
@@ -803,7 +806,7 @@ impl<'a> MessageOffload<'a> {
     }
 }
 
-impl OffloadSink for MessageOffload<'_> {
+impl OffloadSink for MessageOffload<'_, '_> {
     fn available(&self) -> bool {
         true
     }
@@ -812,8 +815,7 @@ impl OffloadSink for MessageOffload<'_> {
         if !item.privacy.allows_offload() {
             return Err(format!("privacy {} forbids offload", item.privacy.as_str()));
         }
-        let Some((_, content)) = self.contents.iter().find(|(id, _)| id == &item.id).cloned()
-        else {
+        let Some(content) = self.contents.get(&item.id).copied() else {
             return Err(format!("content for {} is not available", item.id));
         };
         self.inner
