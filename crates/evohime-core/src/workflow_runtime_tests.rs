@@ -663,3 +663,27 @@
         assert_eq!(error.code, "batch_overflow");
     }
 
+    #[tokio::test]
+    async fn runtime_exposes_bounded_dispatch_metrics() {
+        let (journal, _dir) = journal();
+        let runtime = runtime(
+            &journal,
+            Arc::new(ScriptedAdapter::default()),
+            Arc::new(ApprovedGate),
+        );
+        runtime
+            .start(request(
+                "metrics-run",
+                graph(vec![transform("a")], vec![], "a"),
+            ))
+            .await
+            .expect("start");
+        runtime.drive("metrics-run").await.expect("drive");
+
+        let metrics = runtime.metrics();
+        assert_eq!(metrics.admissions_total, 1);
+        assert_eq!(metrics.graph_hash_checks_total, 1);
+        assert_eq!(metrics.dispatch_batches_total, 1);
+        assert_eq!(metrics.dispatched_nodes_total, 1);
+        assert_eq!(metrics.max_ready_nodes, 1);
+    }

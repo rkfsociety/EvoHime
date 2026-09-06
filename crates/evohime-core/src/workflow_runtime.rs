@@ -20,6 +20,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -483,6 +484,54 @@ pub struct WorkflowRuntime {
     approvals: Arc<dyn WorkflowApprovalGate>,
     owner_id: String,
     events: Option<tokio::sync::broadcast::Sender<crate::CoreEvent>>,
+    metrics: Arc<WorkflowRuntimeMetrics>,
+}
+
+/// Bounded runtime health counters. They contain no graph payloads or IDs.
+#[derive(Debug, Default)]
+pub struct WorkflowRuntimeMetrics {
+    pub admissions_total: AtomicU64,
+    pub graph_hash_checks_total: AtomicU64,
+    pub dispatch_batches_total: AtomicU64,
+    pub dispatched_nodes_total: AtomicU64,
+    pub max_ready_nodes: AtomicU64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WorkflowRuntimeMetricsSnapshot {
+    pub admissions_total: u64,
+    pub graph_hash_checks_total: u64,
+    pub dispatch_batches_total: u64,
+    pub dispatched_nodes_total: u64,
+    pub max_ready_nodes: u64,
+}
+
+impl WorkflowRuntimeMetrics {
+    pub fn snapshot(&self) -> WorkflowRuntimeMetricsSnapshot {
+        WorkflowRuntimeMetricsSnapshot {
+            admissions_total: self.admissions_total.load(Ordering::Relaxed),
+            graph_hash_checks_total: self.graph_hash_checks_total.load(Ordering::Relaxed),
+            dispatch_batches_total: self.dispatch_batches_total.load(Ordering::Relaxed),
+            dispatched_nodes_total: self.dispatched_nodes_total.load(Ordering::Relaxed),
+            max_ready_nodes: self.max_ready_nodes.load(Ordering::Relaxed),
+        }
+    }
+
+    fn observe_ready_nodes(&self, value: usize) {
+        let value = value as u64;
+        let mut current = self.max_ready_nodes.load(Ordering::Relaxed);
+        while value > current {
+            match self.max_ready_nodes.compare_exchange_weak(
+                current,
+                value,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(observed) => current = observed,
+            }
+        }
+    }
 }
 
 impl WorkflowRuntime {
@@ -500,6 +549,7 @@ impl WorkflowRuntime {
             approvals,
             owner_id: owner_id.into(),
             events: None,
+            metrics: Arc::new(WorkflowRuntimeMetrics::default()),
         }
     }
 
@@ -510,6 +560,10 @@ impl WorkflowRuntime {
 
     pub fn registry(&self) -> &WorkflowRegistry {
         &self.registry
+    }
+
+    pub fn metrics(&self) -> WorkflowRuntimeMetricsSnapshot {
+        self.metrics.snapshot()
     }
 
     /// Регистрирует запуск: проверяет контракт, реестр и родительские
@@ -543,6 +597,7 @@ impl WorkflowRuntime {
                         .collect(),
                 )
             })?;
+        self.metrics.admissions_total.fetch_add(1, Ordering::Relaxed);
 
         let now_ms = crate::task_memory::now_millis() as i64;
         let graph_json = serde_json::to_string(&graph)
@@ -634,6 +689,9 @@ impl WorkflowRuntime {
         let graph: WorkflowGraph = serde_json::from_str(&run.graph_json)
             .map_err(|error| RuntimeError::InvalidGraph(error.to_string()))?;
         let actual_hash = graph.canonical_hash();
+        self.metrics
+            .graph_hash_checks_total
+            .fetch_add(1, Ordering::Relaxed);
         if actual_hash != run.graph_hash {
             return Err(RuntimeError::GraphHashMismatch {
                 expected: run.graph_hash.clone(),
@@ -721,6 +779,7 @@ impl WorkflowRuntime {
             }
 
             let ready = ready_nodes(graph, &states);
+            self.metrics.observe_ready_nodes(ready.len());
             if ready.is_empty() {
                 let terminal = terminal_state(graph, &states);
                 if let Some((state, reason)) = terminal {
@@ -757,6 +816,12 @@ impl WorkflowRuntime {
             // объявившие безопасную семантику; всё с побочным эффектом или
             // состоянием идёт по одному.
             let batch = select_batch(graph, &ready, graph.budget.max_parallel_nodes as usize);
+            self.metrics
+                .dispatch_batches_total
+                .fetch_add(1, Ordering::Relaxed);
+            self.metrics
+                .dispatched_nodes_total
+                .fetch_add(batch.len() as u64, Ordering::Relaxed);
             let mut progressed = false;
             for node_id in &batch {
                 let node = graph.node(node_id).expect("validated node");
