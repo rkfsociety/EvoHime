@@ -787,6 +787,10 @@ impl IpcBridge {
             .into());
         }
         let cancellation = CancellationToken::new();
+        let background_permit = self
+            .background_tasks
+            .try_acquire()
+            .ok_or_else(|| FrameError::Io("background task capacity is exhausted".into()))?;
         let review_id = review.review_id.clone();
         self.review_tasks
             .lock()
@@ -802,6 +806,7 @@ impl IpcBridge {
             let _ = progress_tx.send(progress);
         });
         tokio::spawn(async move {
+            let _background_permit = background_permit;
             let progress_journal = journal.clone();
             let progress_coordinator = coordinator.clone();
             let progress_writer = tokio::spawn(async move {
@@ -951,6 +956,10 @@ impl IpcBridge {
             .into());
         }
         let cancellation = CancellationToken::new();
+        let background_permit = self
+            .background_tasks
+            .try_acquire()
+            .ok_or_else(|| FrameError::Io("background task capacity is exhausted".into()))?;
         let revision_id = revision.revision_id.clone();
         self.revision_tasks
             .lock()
@@ -966,6 +975,7 @@ impl IpcBridge {
             let _ = progress_tx.send(progress);
         });
         tokio::spawn(async move {
+            let _background_permit = background_permit;
             let progress_journal = journal.clone();
             let progress_coordinator = coordinator.clone();
             let progress_writer = tokio::spawn(async move {

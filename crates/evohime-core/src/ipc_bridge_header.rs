@@ -666,6 +666,8 @@ pub struct IpcBridge {
     browser_backends:
         Arc<tokio::sync::Mutex<HashMap<String, crate::browser_backend::BrowserBackendProcess>>>,
     conversation_subscription: ConversationSubscription,
+    /// Bounded owner for detached IPC workflows and long-running operations.
+    background_tasks: Arc<crate::bounded_tasks::BoundedTaskGroup>,
 }
 
 /// Проект, под которым живут принятые предложения. Речь у стола не

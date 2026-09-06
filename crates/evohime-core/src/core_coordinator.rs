@@ -25,6 +25,7 @@ pub(crate) struct CoordinatorState {
     journal: Option<EventJournal>,
     audit: crate::audit::AuditTrail,
     retained_children: crate::retained_child::RetainedRegistry,
+    background_tasks: Arc<crate::bounded_tasks::BoundedTaskGroup>,
 }
 
 struct ActiveTask {
@@ -97,6 +98,9 @@ impl TaskCoordinator {
     ) -> (Self, broadcast::Receiver<CoreEvent>) {
         let (commands, mut command_rx) = mpsc::channel(buffer.max(1));
         let (events, event_rx) = broadcast::channel(buffer.max(1));
+        let background_tasks = Arc::new(crate::bounded_tasks::BoundedTaskGroup::new(
+            crate::bounded_tasks::DEFAULT_CAPACITY,
+        ));
         let state = Arc::new(Mutex::new(CoordinatorState {
             command_tx: commands.clone(),
             marker_gate: crate::code_anchored_intent_markers::MarkerGate::default(),
@@ -111,6 +115,7 @@ impl TaskCoordinator {
             journal: journal.clone(),
             audit: crate::audit::AuditTrail::default(),
             retained_children: crate::retained_child::RetainedRegistry::default(),
+            background_tasks: Arc::clone(&background_tasks),
         }));
         // The shell is fed from the journal, so it must be told after a record
         // lands — not when the event was broadcast. Watching the broadcast
@@ -398,7 +403,22 @@ impl TaskCoordinator {
                     }
                 }
                 drop(state_guard);
+                let Some(background_permit) = state
+                    .lock()
+                    .await
+                    .background_tasks
+                    .try_acquire()
+                else {
+                    let mut state_guard = state.lock().await;
+                    state_guard.tasks.remove(&task_id);
+                    let _ = state_guard.events.send(CoreEvent::TaskFailed {
+                        task_id,
+                        error: "background task capacity is exhausted".into(),
+                    });
+                    return;
+                };
                 tokio::spawn(async move {
+                    let _background_permit = background_permit;
                     let intent_hash = crate::research::sha256_hex(prompt.as_bytes());
                     if let Some(journal) = &journal {
                         let checkpoint_runtime =
@@ -907,7 +927,16 @@ impl TaskCoordinator {
                 };
                 // Извлечение не держит очередь команд: эпизод уже закрыт, и
                 // ждать его разбора некому.
+                let Some(background_permit) = state
+                    .lock()
+                    .await
+                    .background_tasks
+                    .try_acquire()
+                else {
+                    return;
+                };
                 tokio::spawn(async move {
+                    let _background_permit = background_permit;
                     executor.extract_ambient_memory(episode_id).await;
                 });
             }
@@ -5428,7 +5457,18 @@ impl TaskCoordinator {
                     .await
                     .backup_cancellations
                     .insert(operation_id.clone(), cancellation.clone());
+                let background_permit = state
+                    .lock()
+                    .await
+                    .background_tasks
+                    .try_acquire();
+                let Some(background_permit) = background_permit else {
+                    state.lock().await.backup_cancellations.remove(&operation_id);
+                    let _ = reply.send(Err("background task capacity is exhausted".into()));
+                    return;
+                };
                 tokio::spawn(async move {
+                    let _background_permit = background_permit;
                     let result = async {
                     let journal =
                         journal.ok_or_else(|| "storage journal is not configured".to_string())?;
@@ -5552,7 +5592,20 @@ impl TaskCoordinator {
                         .backup_cancellations
                         .insert(operation_id.clone(), cancellation.clone());
                 }
+                let background_permit = state
+                    .lock()
+                    .await
+                    .background_tasks
+                    .try_acquire();
+                let Some(background_permit) = background_permit else {
+                    if approved {
+                        state.lock().await.backup_cancellations.remove(&operation_id);
+                    }
+                    let _ = reply.send(Err("background task capacity is exhausted".into()));
+                    return;
+                };
                 tokio::spawn(async move {
+                    let _background_permit = background_permit;
                     let result = async {
                     if !approved {
                         if let Some(journal) = &journal {
@@ -7598,7 +7651,18 @@ impl TaskCoordinator {
                     (guard.journal.clone(), guard.events.clone())
                 };
                 let state_after = Arc::clone(&state);
+                let Some(background_permit) = state
+                    .lock()
+                    .await
+                    .background_tasks
+                    .try_acquire()
+                else {
+                    state.lock().await.workspace_index_cancellations.remove(&key);
+                    let _ = reply.send(Err("background task capacity is exhausted".into()));
+                    return;
+                };
                 tokio::spawn(async move {
+                    let _background_permit = background_permit;
                     let result = async {
                         let journal = journal
                             .ok_or_else(|| "storage journal is not configured".to_string())?;
@@ -7660,7 +7724,18 @@ impl TaskCoordinator {
                     (guard.journal.clone(), guard.events.clone())
                 };
                 let state_after = Arc::clone(&state);
+                let Some(background_permit) = state
+                    .lock()
+                    .await
+                    .background_tasks
+                    .try_acquire()
+                else {
+                    state.lock().await.workspace_index_cancellations.remove(&key);
+                    let _ = reply.send(Err("background task capacity is exhausted".into()));
+                    return;
+                };
                 tokio::spawn(async move {
+                    let _background_permit = background_permit;
                     let result = async {
                         let journal = journal
                             .ok_or_else(|| "storage journal is not configured".to_string())?;

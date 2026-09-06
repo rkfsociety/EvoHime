@@ -32,6 +32,7 @@ mod core_coordinator {
     include!("core_coordinator.rs");
 }
 pub use core_coordinator::TaskCoordinator;
+mod bounded_tasks;
 mod core_domains {
     use super::*;
     include!("core_domains.rs");

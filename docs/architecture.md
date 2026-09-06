@@ -191,6 +191,20 @@ model provenance. Инварианты запуска:
 - события durable, монотонны внутри запуска и содержат только bounded
   projection.
 
+### Ограничение фоновых задач Core
+
+Detached-задачи, запускаемые IPC-мостом и координатором для agent run,
+workflow drive, plan review/revision, backup/restore, extraction и индексации,
+получают permit из Core-owned `BoundedTaskGroup` (`Semaphore + JoinSet`). Лимит по
+умолчанию — 16 одновременно выполняемых задач на процесс Core. Новая работа не
+ставится в бесконечную очередь: при отсутствии permit команда получает
+`background task capacity is exhausted` (или durable task получает событие
+ошибки). Permit живёт до завершения async-задачи, а завершившиеся handles
+удаляются из `JoinSet` для workflow drives; остальные операции удерживают permit
+до завершения своего `JoinHandle`. Короткие writer/pump-задачи конкретного authenticated
+pipe-соединения и heartbeat остаются отдельными задачами с жизненным циклом
+соединения.
+
 Адаптеры (`workflow_adapters.rs`) ведут узлы в уже существующие контуры:
 `child` — в `TypedChildTaskRequest`/report, `tool` и `mcp_tool` — в
 `ToolRegistry` с тем же approval path, `context_provider` и `research` — в

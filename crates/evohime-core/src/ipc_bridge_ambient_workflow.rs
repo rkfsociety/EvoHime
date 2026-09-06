@@ -4059,7 +4059,7 @@ impl IpcBridge {
                         if let Some(run_id) = self.workflow_approvals.run_for(&resolve.approval_id)
                         {
                             let workspace = self.journal.workflow_run_workspace(&run_id).await;
-                            self.spawn_workflow_drive(run_id, workspace);
+                            let _ = self.spawn_workflow_drive(run_id, workspace).await;
                         }
                     }
                 }
@@ -4928,11 +4928,13 @@ impl IpcBridge {
 
     /// Продолжает запуск в фоне. Команда IPC не ждёт выполнения графа:
     /// состояние durable, и оболочка забирает его отдельным `GetWorkflowRun`.
-    pub(crate) fn spawn_workflow_drive(&self, run_id: String, workspace_path: String) {
+    pub(crate) async fn spawn_workflow_drive(&self, run_id: String, workspace_path: String) -> bool {
         let runtime = self.workflow_runtime(&workspace_path);
-        tokio::spawn(async move {
-            let _ = runtime.drive(&run_id).await;
-        });
+        self.background_tasks
+            .try_spawn(async move {
+                let _ = runtime.drive(&run_id).await;
+            })
+            .await
     }
 
     pub(crate) async fn start_invocation_preset(
@@ -4993,7 +4995,12 @@ impl IpcBridge {
             .start(start)
             .await
             .map_err(|error| error.code().to_string())?;
-        self.spawn_workflow_drive(started.clone(), workspace_path);
+        if !self
+            .spawn_workflow_drive(started.clone(), workspace_path)
+            .await
+        {
+            return Err("background task capacity is exhausted".into());
+        }
         Ok(started)
     }
 
@@ -5661,7 +5668,12 @@ impl IpcBridge {
         };
         match runtime.start(start).await {
             Ok(run_id) => {
-                self.spawn_workflow_drive(run_id.clone(), workspace_path);
+                if !self
+                    .spawn_workflow_drive(run_id.clone(), workspace_path)
+                    .await
+                {
+                    return workflow_start_failure("background_task_capacity_exhausted");
+                }
                 serde_json::json!({
                     "run_id": run_id,
                     "state": "pending",
@@ -5712,7 +5724,7 @@ impl IpcBridge {
             .unwrap_or(false);
         if cancelled {
             let workspace = self.journal.workflow_run_workspace(&request.run_id).await;
-            self.spawn_workflow_drive(request.run_id.clone(), workspace);
+            let _ = self.spawn_workflow_drive(request.run_id.clone(), workspace).await;
         }
         serde_json::json!({
             "run_id": request.run_id,

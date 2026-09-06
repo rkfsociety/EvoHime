@@ -190,6 +190,9 @@ impl IpcBridge {
             team_sop: Arc::new(tokio::sync::Mutex::new(Default::default())),
             human_work_items: Arc::new(tokio::sync::Mutex::new(Default::default())),
             browser_backends: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            background_tasks: Arc::new(crate::bounded_tasks::BoundedTaskGroup::new(
+                crate::bounded_tasks::DEFAULT_CAPACITY,
+            )),
         }
     }
 
@@ -227,6 +230,9 @@ impl IpcBridge {
             team_sop: Arc::new(tokio::sync::Mutex::new(Default::default())),
             human_work_items: Arc::new(tokio::sync::Mutex::new(Default::default())),
             browser_backends: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            background_tasks: Arc::new(crate::bounded_tasks::BoundedTaskGroup::new(
+                crate::bounded_tasks::DEFAULT_CAPACITY,
+            )),
         }
     }
 
@@ -271,6 +277,9 @@ impl IpcBridge {
             team_sop: Arc::new(tokio::sync::Mutex::new(Default::default())),
             human_work_items: Arc::new(tokio::sync::Mutex::new(Default::default())),
             browser_backends: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            background_tasks: Arc::new(crate::bounded_tasks::BoundedTaskGroup::new(
+                crate::bounded_tasks::DEFAULT_CAPACITY,
+            )),
         }
     }
 
