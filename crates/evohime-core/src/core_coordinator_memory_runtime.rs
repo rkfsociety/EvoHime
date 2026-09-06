@@ -181,7 +181,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 // принадлежит рабочему каталогу. Но очередь подтверждения
                 // у пользователя одна, и прятать ambient-кандидатов от
                 // неё значило бы, что подтвердить их негде.
-                let ambient_scope = evohime_local_storage::memory_store::MemoryScope::Workspace;
+                let ambient_scope = evohime_local_storage::domains::memory::MemoryScope::Workspace;
                 if !(store_scope == ambient_scope && scope_id == AMBIENT_MEMORY_SCOPE_ID) {
                     pending.extend(
                         journal

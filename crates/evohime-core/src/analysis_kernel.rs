@@ -4,12 +4,13 @@
 //! this facade makes the storage boundary explicit and ensures callers cannot
 //! persist process memory or bypass ArtifactStore references.
 
+#[allow(unused_imports)]
 pub use evohime_local_storage::analysis_kernel::{
     AnalysisKernelError, AnalysisKernelSessionV1, AnalysisKernelStore, KernelLimitsV1,
     KernelObjectPersistence, KernelObjectRefV1, KernelSensitivity, KernelStatus,
     ANALYSIS_KERNEL_SCHEMA_VERSION, ANALYSIS_KERNEL_VERSION,
 };
-pub use evohime_local_storage::task_checkpoint::{
+pub use evohime_local_storage::domains::runs::{
     CheckpointRef, CheckpointSensitivity, Provenance, TaskCheckpointError, TaskCheckpointV1,
 };
 

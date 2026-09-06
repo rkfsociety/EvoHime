@@ -13,7 +13,7 @@ use crate::workflow_runtime::{
     check_acceptance, collect_inputs, is_retryable, ready_nodes, select_batch, terminal_state,
     NodeError, NodeSuccess,
 };
-use evohime_local_storage::workflow_store::{NodeState, RunState, WorkflowNodeRecord};
+use evohime_local_storage::domains::workflow::{NodeState, RunState, WorkflowNodeRecord};
 use std::collections::{BTreeMap, BTreeSet};
 
 fn policy() -> ExecutionPolicy {

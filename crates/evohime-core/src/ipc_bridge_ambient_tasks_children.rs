@@ -214,7 +214,7 @@ impl IpcBridge {
                     let (acceptance, sequence) = match accepted {
                             Ok(value) => value,
                             Err(StorageError::ConversationEventLog(
-                                evohime_local_storage::conversation_event_log_store::ConversationStoreError::IdempotencyConflict,
+                                evohime_local_storage::domains::audit::ConversationStoreError::IdempotencyConflict,
                             )) => {
                                 self.write_conversation_event_log_response(
                                     writer,

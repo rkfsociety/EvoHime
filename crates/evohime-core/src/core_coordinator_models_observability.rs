@@ -221,7 +221,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 let db = journal.database().lock().await;
                 let json =
                     serde_json::to_vec(&lineage).map_err(|_| "serialization_failed".to_string())?;
-                evohime_local_storage::checkpoint_forking_store::put(
+                evohime_local_storage::domains::runs::put(
                     db.connection(),
                     &lineage.fork_run_id,
                     &lineage.source_checkpoint_id,

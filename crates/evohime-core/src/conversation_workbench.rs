@@ -118,7 +118,7 @@ pub fn build_projection(
     backend_snapshot_hash: String,
     capability_snapshot_hash: String,
     event_cursor: u64,
-    events: &[evohime_local_storage::conversation_event_log_store::StoredConversationEvent],
+    events: &[evohime_local_storage::domains::audit::StoredConversationEvent],
 ) -> Projection {
     let mut tasks = std::collections::BTreeSet::new();
     let mut input = 0;

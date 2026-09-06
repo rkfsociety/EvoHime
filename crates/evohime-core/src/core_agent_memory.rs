@@ -57,7 +57,7 @@ impl ToolAgent {
         let mut aliases = extraction::AliasTable::new();
         if let Ok(registered) = journal
             .list_memory_aliases(
-                evohime_local_storage::memory_store::MemoryScope::Project,
+                evohime_local_storage::domains::memory::MemoryScope::Project,
                 &scope_id,
             )
             .await
@@ -138,16 +138,16 @@ impl ToolAgent {
 
             let store_scope = match candidate.scope {
                 extraction::MemoryScopeLevel::Task => {
-                    evohime_local_storage::memory_store::MemoryScope::Task
+                    evohime_local_storage::domains::memory::MemoryScope::Task
                 }
                 extraction::MemoryScopeLevel::Workspace => {
-                    evohime_local_storage::memory_store::MemoryScope::Workspace
+                    evohime_local_storage::domains::memory::MemoryScope::Workspace
                 }
                 extraction::MemoryScopeLevel::Session => {
-                    evohime_local_storage::memory_store::MemoryScope::Session
+                    evohime_local_storage::domains::memory::MemoryScope::Session
                 }
                 extraction::MemoryScopeLevel::Project => {
-                    evohime_local_storage::memory_store::MemoryScope::Project
+                    evohime_local_storage::domains::memory::MemoryScope::Project
                 }
             };
 
@@ -201,15 +201,15 @@ impl ToolAgent {
             let Ok(provenance) = candidate.evidence.to_provenance_json() else {
                 continue;
             };
-            let Ok(mut record) = evohime_local_storage::memory_store::MemoryRecord::new(
-                evohime_local_storage::memory_store::MemoryRecordInput {
+            let Ok(mut record) = evohime_local_storage::domains::memory::MemoryRecord::new(
+                evohime_local_storage::domains::memory::MemoryRecordInput {
                     id: uuid::Uuid::new_v4().to_string(),
                     scope: store_scope,
                     scope_id: scope_id.clone(),
                     title: candidate.raw_subject.clone(),
                     content: candidate.statement.clone(),
                     provenance,
-                    privacy: evohime_local_storage::memory_store::MemoryPrivacy::Private,
+                    privacy: evohime_local_storage::domains::memory::MemoryPrivacy::Private,
                     created_at: now_ms.to_string(),
                     expires_at: Some(now_ms.saturating_add(decision.ttl_ms).to_string()),
                 },
@@ -220,7 +220,7 @@ impl ToolAgent {
             // already carries an honest validation status; `invalid` and
             // `unknown` both keep it out of retrieval.
             let verdict = self.verify_candidate(workspace_root, &candidate).await;
-            record.extraction = evohime_local_storage::memory_store::MemoryExtractionFields {
+            record.extraction = evohime_local_storage::domains::memory::MemoryExtractionFields {
                 record_version: 1,
                 evidence_refs: memory_provenance_source_id(&candidate.evidence)
                     .into_iter()
@@ -361,7 +361,7 @@ impl ToolAgent {
         let mut aliases = extraction::AliasTable::new();
         if let Ok(registered) = journal
             .list_memory_aliases(
-                evohime_local_storage::memory_store::MemoryScope::Workspace,
+                evohime_local_storage::domains::memory::MemoryScope::Workspace,
                 AMBIENT_MEMORY_SCOPE_ID,
             )
             .await
@@ -478,7 +478,7 @@ impl ToolAgent {
                 decision.reason = extraction::PolicyReason::AmbientNeverAutoConfirms;
             }
 
-            let store_scope = evohime_local_storage::memory_store::MemoryScope::Workspace;
+            let store_scope = evohime_local_storage::domains::memory::MemoryScope::Workspace;
             let active = journal
                 .memory_conflict_candidates(
                     store_scope,
@@ -508,22 +508,22 @@ impl ToolAgent {
             let Ok(provenance) = candidate.evidence.to_provenance_json() else {
                 continue;
             };
-            let Ok(mut record) = evohime_local_storage::memory_store::MemoryRecord::new(
-                evohime_local_storage::memory_store::MemoryRecordInput {
+            let Ok(mut record) = evohime_local_storage::domains::memory::MemoryRecord::new(
+                evohime_local_storage::domains::memory::MemoryRecordInput {
                     id: uuid::Uuid::new_v4().to_string(),
                     scope: store_scope,
                     scope_id: AMBIENT_MEMORY_SCOPE_ID.to_owned(),
                     title: candidate.raw_subject.clone(),
                     content: candidate.statement.clone(),
                     provenance,
-                    privacy: evohime_local_storage::memory_store::MemoryPrivacy::Private,
+                    privacy: evohime_local_storage::domains::memory::MemoryPrivacy::Private,
                     created_at: now_ms.to_string(),
                     expires_at: Some(now_ms.saturating_add(decision.ttl_ms).to_string()),
                 },
             ) else {
                 continue;
             };
-            record.extraction = evohime_local_storage::memory_store::MemoryExtractionFields {
+            record.extraction = evohime_local_storage::domains::memory::MemoryExtractionFields {
                 record_version: 1,
                 evidence_refs: memory_provenance_source_id(&candidate.evidence)
                     .into_iter()

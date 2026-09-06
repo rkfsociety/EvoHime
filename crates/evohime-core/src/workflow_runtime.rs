@@ -34,9 +34,10 @@ use crate::workflow::{
 use crate::workflow_registry::{ParentCapabilities, WorkflowRegistry};
 use crate::EventJournal;
 
-use evohime_local_storage::workflow_store::{
-    self as store, NodeState, RunState, WorkflowAttemptRecord, WorkflowEventRecord,
-    WorkflowNodeRecord, WorkflowRunRecord,
+use evohime_local_storage::workflow_store as store;
+use evohime_local_storage::domains::workflow::{
+    NodeState, RunState, WorkflowAttemptRecord, WorkflowEventRecord, WorkflowNodeRecord,
+    WorkflowRunRecord,
 };
 use evohime_local_storage::StorageError;
 

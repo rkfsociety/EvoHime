@@ -584,11 +584,11 @@ pub(crate) fn conversation_event_log_error(
 pub(crate) fn conversation_accept_error_code(error: &StorageError) -> String {
     match error {
         StorageError::ConversationEventLog(
-            evohime_local_storage::conversation_event_log_store::ConversationStoreError::InvalidInput,
+            evohime_local_storage::domains::audit::ConversationStoreError::InvalidInput,
         )
         | StorageError::InvalidInput(_) => "invalid_argument",
         StorageError::ConversationEventLog(
-            evohime_local_storage::conversation_event_log_store::ConversationStoreError::IdempotencyConflict,
+            evohime_local_storage::domains::audit::ConversationStoreError::IdempotencyConflict,
         ) => "idempotency_conflict",
         _ => "storage_unavailable",
     }

@@ -7,10 +7,10 @@ impl EventJournal {
     pub async fn commit_model_request(
         &self,
         envelope: &evohime_model_provenance::ModelRequestEnvelopeV1,
-        mode: evohime_local_storage::model_provenance::CommitMode,
-    ) -> Result<evohime_local_storage::model_provenance::ModelRequestRecord, StorageError> {
+        mode: evohime_local_storage::domains::receipts::CommitMode,
+    ) -> Result<evohime_local_storage::domains::receipts::ModelRequestRecord, StorageError> {
         let database = self.database.lock().await;
-        evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+        evohime_local_storage::domains::receipts::ModelProvenanceRepository::new(
             database.connection(),
         )
         .commit_envelope(envelope, mode)
@@ -22,7 +22,7 @@ impl EventJournal {
     /// различить crash до и после возможного dispatch.
     pub async fn mark_model_dispatch(&self, request_id: &str, at: i64) -> Result<(), StorageError> {
         let database = self.database.lock().await;
-        evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+        evohime_local_storage::domains::receipts::ModelProvenanceRepository::new(
             database.connection(),
         )
         .mark_dispatch(request_id, at)
@@ -32,7 +32,7 @@ impl EventJournal {
     pub async fn append_model_request_receipt(
         &self,
         keys: &Arc<ReceiptKeyManager>,
-        record: &evohime_local_storage::model_provenance::ModelRequestRecord,
+        record: &evohime_local_storage::domains::receipts::ModelRequestRecord,
     ) -> Result<(), StorageError> {
         let mut database = self.database.lock().await;
         let signer = CoreReceiptSigner(Arc::clone(keys));
@@ -56,12 +56,12 @@ impl EventJournal {
                 })
                 .map_err(|error| StorageError::Context(error.to_string()))?
         };
-        let repository = evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+        let repository = evohime_local_storage::domains::receipts::ModelProvenanceRepository::new(
             database.connection(),
         );
         repository
             .link_request_receipt(
-                &evohime_local_storage::model_provenance::RequestReceiptRecord {
+                &evohime_local_storage::domains::receipts::RequestReceiptRecord {
                     receipt_id: signed.receipt_id,
                     request_id: signed.request_id,
                     receipt_hash: signed.receipt_hash,
@@ -83,7 +83,7 @@ impl EventJournal {
     ) -> Result<std::path::PathBuf, StorageError> {
         let database = self.database.lock().await;
         let signer = CoreReceiptSigner(Arc::clone(keys));
-        evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+        evohime_local_storage::domains::receipts::ModelProvenanceRepository::new(
             database.connection(),
         )
         .export_bundle(request_id, destination, &signer)
@@ -94,11 +94,11 @@ impl EventJournal {
     /// request. The response body is Core-owned and never crosses IPC.
     pub async fn record_model_response(
         &self,
-        response: &evohime_local_storage::model_provenance::ModelResponseRecord,
+        response: &evohime_local_storage::domains::receipts::ModelResponseRecord,
         status: evohime_model_provenance::RequestStatus,
     ) -> Result<(), StorageError> {
         let database = self.database.lock().await;
-        let repository = evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+        let repository = evohime_local_storage::domains::receipts::ModelProvenanceRepository::new(
             database.connection(),
         );
         repository
@@ -111,10 +111,10 @@ impl EventJournal {
 
     pub async fn record_model_tool_intent(
         &self,
-        intent: &evohime_local_storage::model_provenance::ToolIntentRecord,
+        intent: &evohime_local_storage::domains::receipts::ToolIntentRecord,
     ) -> Result<(), StorageError> {
         let database = self.database.lock().await;
-        evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+        evohime_local_storage::domains::receipts::ModelProvenanceRepository::new(
             database.connection(),
         )
         .insert_tool_intent(intent)
@@ -129,7 +129,7 @@ impl EventJournal {
         terminal_receipt_hash: &str,
     ) -> Result<(), StorageError> {
         let database = self.database.lock().await;
-        evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+        evohime_local_storage::domains::receipts::ModelProvenanceRepository::new(
             database.connection(),
         )
         .link_tool_receipt(task_id, tool_name, action_id, terminal_receipt_hash)
@@ -144,7 +144,7 @@ impl EventJournal {
         source_version: &str,
     ) -> Result<String, StorageError> {
         let database = self.database.lock().await;
-        evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+        evohime_local_storage::domains::receipts::ModelProvenanceRepository::new(
             database.connection(),
         )
         .capture_workspace_evidence(request_id, source_ref_id, path, source_version)
@@ -153,7 +153,7 @@ impl EventJournal {
 
     pub async fn recover_model_requests(&self) -> Result<usize, StorageError> {
         let database = self.database.lock().await;
-        let recovered = evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+        let recovered = evohime_local_storage::domains::receipts::ModelProvenanceRepository::new(
             database.connection(),
         )
         .recover_active()
@@ -171,7 +171,7 @@ impl EventJournal {
 
     pub async fn retain_model_provenance(&self, cutoff: i64) -> Result<usize, StorageError> {
         let database = self.database.lock().await;
-        evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+        evohime_local_storage::domains::receipts::ModelProvenanceRepository::new(
             database.connection(),
         )
         .retention_pass(cutoff)
@@ -269,7 +269,7 @@ impl EventJournal {
         let store =
             evohime_local_storage::scratchpad_store::ScratchpadStore::new(database.connection());
         let artifacts =
-            evohime_local_storage::artifact_store::ArtifactStore::new(database.connection());
+            evohime_local_storage::domains::workflow::ArtifactStore::new(database.connection());
         let kind = evohime_context_budget::item::ItemKind::Scratchpad.as_str();
         let mut offloaded = 0;
         for id in ids {

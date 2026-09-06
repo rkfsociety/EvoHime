@@ -206,15 +206,15 @@ impl EventJournal {
         let database = self.database.lock().await;
         let mut last_sequence = database.append_event(task_id, event_type, &payload)?;
         if let Some((conversation_id, client_message_id, workspace_id)) =
-            evohime_local_storage::conversation_event_log_store::task_binding(
+            evohime_local_storage::domains::audit::task_binding(
                 database.connection(),
                 task_id,
             )?
         {
             for draft in projected {
-                let stored = evohime_local_storage::conversation_event_log_store::append_event(
+                let stored = evohime_local_storage::domains::audit::append_event(
                     database.connection(),
-                    evohime_local_storage::conversation_event_log_store::NewConversationEvent {
+                    evohime_local_storage::domains::audit::NewConversationEvent {
                         conversation_id: &conversation_id,
                         workspace_id: &workspace_id,
                         kind: &draft.kind,
@@ -272,11 +272,11 @@ impl EventJournal {
         query: &str,
         now: &str,
         limit: u32,
-    ) -> Result<Vec<evohime_local_storage::memory_store::MemoryRecord>, StorageError> {
+    ) -> Result<Vec<evohime_local_storage::domains::memory::MemoryRecord>, StorageError> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::search_lessons(
+        evohime_local_storage::domains::memory::MemoryStoreSql::search_lessons(
             database.connection(),
-            evohime_local_storage::memory_store::MemoryScope::Project,
+            evohime_local_storage::domains::memory::MemoryScope::Project,
             scope_id,
             query,
             now,
@@ -287,12 +287,12 @@ impl EventJournal {
 
     pub async fn record_lesson(
         &self,
-        record: &evohime_local_storage::memory_store::MemoryRecord,
-    ) -> Result<evohime_local_storage::memory_store::MemoryRecord, StorageError> {
+        record: &evohime_local_storage::domains::memory::MemoryRecord,
+    ) -> Result<evohime_local_storage::domains::memory::MemoryRecord, StorageError> {
         crate::memory_governance::MemoryWriteGate::validate(record)
             .map_err(|error| StorageError::InvalidRecovery(error.to_string()))?;
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::upsert_lesson(
+        evohime_local_storage::domains::memory::MemoryStoreSql::upsert_lesson(
             database.connection(),
             record,
         )

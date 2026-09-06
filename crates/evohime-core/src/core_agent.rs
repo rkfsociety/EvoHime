@@ -634,7 +634,7 @@ impl ReceiptSigner for CoreReceiptSigner {
     }
 }
 
-impl evohime_local_storage::model_provenance::ProvenanceBundleSigner for CoreReceiptSigner {
+impl evohime_local_storage::domains::receipts::ProvenanceBundleSigner for CoreReceiptSigner {
     fn key_id(&self) -> String {
         // Export callers already run after receipt-key startup. The trait is
         // synchronous, so keep a bounded owned fallback for diagnostics.
@@ -650,20 +650,20 @@ impl evohime_local_storage::model_provenance::ProvenanceBundleSigner for CoreRec
     fn sign_manifest_digest(
         &self,
         digest: &[u8],
-    ) -> Result<Vec<u8>, evohime_local_storage::model_provenance::ModelProvenanceError> {
+    ) -> Result<Vec<u8>, evohime_local_storage::domains::receipts::ModelProvenanceError> {
         let digest_hex = digest
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>();
         let (_, signature) = self.0.sign_payload_hash(&digest_hex).map_err(|error| {
-            evohime_local_storage::model_provenance::ModelProvenanceError::CommitFailed(
+            evohime_local_storage::domains::receipts::ModelProvenanceError::CommitFailed(
                 error.to_string(),
             )
         })?;
         base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(signature)
             .map_err(|error| {
-                evohime_local_storage::model_provenance::ModelProvenanceError::CommitFailed(
+                evohime_local_storage::domains::receipts::ModelProvenanceError::CommitFailed(
                     error.to_string(),
                 )
             })
@@ -677,10 +677,10 @@ impl evohime_local_storage::model_provenance::ProvenanceBundleSigner for CoreRec
 
     fn key_history_jsonl(
         &self,
-    ) -> Result<Vec<u8>, evohime_local_storage::model_provenance::ModelProvenanceError> {
+    ) -> Result<Vec<u8>, evohime_local_storage::domains::receipts::ModelProvenanceError> {
         let mut output = Vec::new();
         for transition in self.0.load_history().map_err(|error| {
-            evohime_local_storage::model_provenance::ModelProvenanceError::CommitFailed(
+            evohime_local_storage::domains::receipts::ModelProvenanceError::CommitFailed(
                 error.to_string(),
             )
         })? {

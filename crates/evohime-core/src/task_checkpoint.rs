@@ -4,8 +4,9 @@
 //! can validate records independently. Core re-exports it as the public
 //! authority boundary used by later runtime and IPC stages.
 
-pub use evohime_local_storage::task_checkpoint::{
-    install_schema, ApprovalState, CheckpointDecision, CheckpointItem, CheckpointRef,
+#[allow(ambiguous_glob_imports, unused_imports)]
+pub use evohime_local_storage::domains::runs::{
+    ApprovalState, CheckpointDecision, CheckpointItem, CheckpointRef,
     CheckpointSensitivity, CheckpointStatus, FileChange, FileChangeKind, FileReadRef, GateEvidence,
     GateStatus, InsertOutcome, PendingApproval, Provenance, TaskCheckpointError,
     TaskCheckpointStore, TaskCheckpointV1, TestEvidence, TestStatus, TASK_CHECKPOINT_MAX_BYTES,

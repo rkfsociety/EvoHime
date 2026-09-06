@@ -109,7 +109,7 @@ pub struct RecoveryTransition<'a> {
 pub struct SessionMemoryNote<'a> {
     pub id: &'a str,
     pub session_id: &'a str,
-    pub scope: evohime_local_storage::memory_store::MemoryScope,
+    pub scope: evohime_local_storage::domains::memory::MemoryScope,
     pub scope_id: &'a str,
     pub kind: &'a str,
     pub statement: &'a str,

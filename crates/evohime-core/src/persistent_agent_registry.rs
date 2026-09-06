@@ -782,7 +782,7 @@ fn load_agents_map(
 ) -> Result<std::collections::BTreeMap<String, PersistentAgent>, crate::StorageError> {
     let mut result = std::collections::BTreeMap::new();
     for bytes in
-        evohime_local_storage::persistent_agent_registry_store::load_agents(connection, 256)
+        evohime_local_storage::domains::agents::load_agents(connection, 256)
             .map_err(map_storage_error)?
     {
         let agent = deserialize_agent(&bytes)
@@ -796,7 +796,7 @@ fn load_assignments(
     connection: &rusqlite::Connection,
     agent_id: &str,
 ) -> Result<Vec<AgentAssignment>, crate::StorageError> {
-    evohime_local_storage::persistent_agent_registry_store::load_assignments_for_agent(
+    evohime_local_storage::domains::agents::load_assignments_for_agent(
         connection,
         agent_id,
         MAX_HISTORY,
@@ -1014,9 +1014,9 @@ fn write_agent(
     now_ms: i64,
 ) -> Result<(), crate::StorageError> {
     let json = serde_json::to_vec(agent)?;
-    let stored = evohime_local_storage::persistent_agent_registry_store::save_agent_revision(
+    let stored = evohime_local_storage::domains::agents::save_agent_revision(
         connection,
-        evohime_local_storage::persistent_agent_registry_store::SaveAgentRevisionInput {
+        evohime_local_storage::domains::agents::SaveAgentRevisionInput {
             id: &agent.id,
             revision: agent.revision,
             status: &format!("{:?}", agent.status).to_ascii_lowercase(),
@@ -1032,7 +1032,7 @@ fn write_agent(
             RegistryError::Stale.to_string(),
         ));
     }
-    evohime_local_storage::persistent_agent_registry_store::save_reporting_history(
+    evohime_local_storage::domains::agents::save_reporting_history(
         connection,
         &agent.id,
         agent.revision,
@@ -1077,7 +1077,7 @@ fn execute(
             }))
         }
         "get" | "availability" | "activity" | "resolve" | "history" => {
-            let bytes = evohime_local_storage::persistent_agent_registry_store::load_agent(
+            let bytes = evohime_local_storage::domains::agents::load_agent(
                 connection,
                 &command.agent_id,
             )
@@ -1145,7 +1145,7 @@ fn execute(
             }
             if command.operation == "history" {
                 let history =
-                    evohime_local_storage::persistent_agent_registry_store::load_reporting_history(
+                    evohime_local_storage::domains::agents::load_reporting_history(
                         connection,
                         &agent.id,
                         value
@@ -1211,7 +1211,7 @@ fn execute(
                     RegistryError::ScopeMismatch.to_string(),
                 ));
             }
-            if evohime_local_storage::persistent_agent_registry_store::load_agent(
+            if evohime_local_storage::domains::agents::load_agent(
                 connection, &agent.id,
             )
             .map_err(map_storage_error)?
@@ -1234,7 +1234,7 @@ fn execute(
             }))
         }
         "revise" => {
-            let old_bytes = evohime_local_storage::persistent_agent_registry_store::load_agent(
+            let old_bytes = evohime_local_storage::domains::agents::load_agent(
                 connection,
                 &command.agent_id,
             )
@@ -1281,7 +1281,7 @@ fn execute(
             }))
         }
         "activate" | "pause" | "suspend" | "resume" | "retire" => {
-            let bytes = evohime_local_storage::persistent_agent_registry_store::load_agent(
+            let bytes = evohime_local_storage::domains::agents::load_agent(
                 connection,
                 &command.agent_id,
             )
@@ -1330,7 +1330,7 @@ fn execute(
             }))
         }
         "reporting_set" => {
-            let bytes = evohime_local_storage::persistent_agent_registry_store::load_agent(
+            let bytes = evohime_local_storage::domains::agents::load_agent(
                 connection,
                 &command.agent_id,
             )
@@ -1379,7 +1379,7 @@ fn execute(
                     "agent_id_mismatch".into(),
                 ));
             }
-            let agent_bytes = evohime_local_storage::persistent_agent_registry_store::load_agent(
+            let agent_bytes = evohime_local_storage::domains::agents::load_agent(
                 connection,
                 &binding.agent_id,
             )
@@ -1410,9 +1410,9 @@ fn execute(
             };
             binding.content_hash = hex::encode(Sha256::digest(serde_json::to_vec(&binding)?));
             let json = serde_json::to_vec(&binding)?;
-            evohime_local_storage::persistent_agent_registry_store::save_goal_binding(
+            evohime_local_storage::domains::agents::save_goal_binding(
                 connection,
-                evohime_local_storage::persistent_agent_registry_store::SaveGoalBindingInput {
+                evohime_local_storage::domains::agents::SaveGoalBindingInput {
                     agent_id: &binding.agent_id,
                     goal_id: &binding.goal_id,
                     goal_revision: binding.goal_revision,
@@ -1457,7 +1457,7 @@ fn execute(
                 .ok_or_else(|| {
                     crate::StorageError::InvalidInput("responsibility_required".into())
                 })?;
-            evohime_local_storage::persistent_agent_registry_store::remove_goal_binding(
+            evohime_local_storage::domains::agents::remove_goal_binding(
                 connection,
                 &command.agent_id,
                 goal_id,
@@ -1486,7 +1486,7 @@ fn execute(
             }
             assignment = prepare_assignment(assignment)
                 .map_err(|e| crate::StorageError::InvalidInput(e.to_string()))?;
-            let agent_bytes = evohime_local_storage::persistent_agent_registry_store::load_agent(
+            let agent_bytes = evohime_local_storage::domains::agents::load_agent(
                 connection,
                 &assignment.agent_id,
             )
@@ -1533,9 +1533,9 @@ fn execute(
             assignment.content_hash = assignment_hash(&assignment)
                 .map_err(|e| crate::StorageError::InvalidInput(e.to_string()))?;
             let json = serde_json::to_vec(&assignment)?;
-            evohime_local_storage::persistent_agent_registry_store::save_assignment(
+            evohime_local_storage::domains::agents::save_assignment(
                 connection,
-                evohime_local_storage::persistent_agent_registry_store::SaveAssignmentInput {
+                evohime_local_storage::domains::agents::SaveAssignmentInput {
                     id: &assignment.id,
                     revision: assignment.revision,
                     agent_id: &assignment.agent_id,
@@ -1567,7 +1567,7 @@ fn execute(
                 .ok_or_else(|| {
                     crate::StorageError::InvalidInput("assignment_id_required".into())
                 })?;
-            let bytes = evohime_local_storage::persistent_agent_registry_store::load_assignment(
+            let bytes = evohime_local_storage::domains::agents::load_assignment(
                 connection, id,
             )
             .map_err(map_storage_error)?
@@ -1575,7 +1575,7 @@ fn execute(
                 crate::StorageError::InvalidInput(RegistryError::NotFound.to_string())
             })?;
             let mut assignment: AgentAssignment = serde_json::from_slice(&bytes)?;
-            let agent_bytes = evohime_local_storage::persistent_agent_registry_store::load_agent(
+            let agent_bytes = evohime_local_storage::domains::agents::load_agent(
                 connection,
                 &assignment.agent_id,
             )
@@ -1598,9 +1598,9 @@ fn execute(
             assignment.content_hash = assignment_hash(&assignment)
                 .map_err(|e| crate::StorageError::InvalidInput(e.to_string()))?;
             let json = serde_json::to_vec(&assignment)?;
-            evohime_local_storage::persistent_agent_registry_store::save_assignment(
+            evohime_local_storage::domains::agents::save_assignment(
                 connection,
-                evohime_local_storage::persistent_agent_registry_store::SaveAssignmentInput {
+                evohime_local_storage::domains::agents::SaveAssignmentInput {
                     id: &assignment.id,
                     revision: assignment.revision,
                     agent_id: &assignment.agent_id,
@@ -1626,7 +1626,7 @@ fn execute(
         }
         "recover" => {
             let mut recovered = 0usize;
-            let all = evohime_local_storage::persistent_agent_registry_store::load_assignments(
+            let all = evohime_local_storage::domains::agents::load_assignments(
                 connection, 512,
             )
             .map_err(map_storage_error)?;
@@ -1652,9 +1652,9 @@ fn execute(
                     assignment.content_hash = assignment_hash(&assignment)
                         .map_err(|e| crate::StorageError::InvalidInput(e.to_string()))?;
                     let json = serde_json::to_vec(&assignment)?;
-                    evohime_local_storage::persistent_agent_registry_store::save_assignment(
+                    evohime_local_storage::domains::agents::save_assignment(
                         connection,
-                        evohime_local_storage::persistent_agent_registry_store::SaveAssignmentInput {
+                        evohime_local_storage::domains::agents::SaveAssignmentInput {
                             id: &assignment.id,
                             revision: assignment.revision,
                             agent_id: &assignment.agent_id,
@@ -1705,7 +1705,7 @@ impl crate::EventJournal {
         let hash = command_hash(&command)?;
         let database = self.database.lock().await;
         if let Some((previous_hash, outcome)) =
-            evohime_local_storage::persistent_agent_registry_store::load_command_outcome(
+            evohime_local_storage::domains::agents::load_command_outcome(
                 database.connection(),
                 &command.idempotency_key,
             )
@@ -1743,7 +1743,7 @@ impl crate::EventJournal {
         };
         let outcome_bytes = serde_json::to_vec(&outcome)?;
         if let Some((previous_hash, previous)) =
-            evohime_local_storage::persistent_agent_registry_store::record_command_outcome(
+            evohime_local_storage::domains::agents::record_command_outcome(
                 database.connection(),
                 &command.idempotency_key,
                 &hash,

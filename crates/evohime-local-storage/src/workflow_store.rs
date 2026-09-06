@@ -983,6 +983,7 @@ pub fn recover_after_restart(
 mod tests {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)]
     fn update_node_state(
         connection: &Connection,
         run_id: &str,

@@ -29,7 +29,7 @@ impl IpcBridge {
                 false
             } else {
                 let database = self.journal.database().lock().await;
-                match evohime_local_storage::conversation_event_log_store::task_binding(
+                match evohime_local_storage::domains::audit::task_binding(
                     database.connection(),
                     &record.task_id,
                 ) {
@@ -616,9 +616,9 @@ impl IpcBridge {
         {
             return Ok(previous);
         }
-        evohime_local_storage::continuation_store::save_policy(
+        evohime_local_storage::domains::runs::save_policy(
             database.connection(),
-            &evohime_local_storage::continuation_store::PolicyRecord {
+            &evohime_local_storage::domains::runs::PolicyRecord {
                 policy_id: policy.id.clone(),
                 revision: policy.revision as i64,
                 owner_scope: policy.scope.owner_scope.clone(),
@@ -651,7 +651,7 @@ impl IpcBridge {
         }
         let journal = self.journal.clone();
         let database = journal.database().lock().await;
-        if let Some(existing) = evohime_local_storage::continuation_store::get_run_by_idempotency(
+        if let Some(existing) = evohime_local_storage::domains::runs::get_run_by_idempotency(
             database.connection(),
             &request.owner_scope,
             &request.idempotency_key,
@@ -667,7 +667,7 @@ impl IpcBridge {
             }
             return Err("idempotency_conflict".into());
         }
-        let policy = evohime_local_storage::continuation_store::get_policy(
+        let policy = evohime_local_storage::domains::runs::get_policy(
             database.connection(),
             &request.policy_id,
             request.policy_revision as i64,
@@ -682,7 +682,7 @@ impl IpcBridge {
             serde_json::from_slice(&policy.canonical_json)
                 .map_err(|_| "policy_corrupt".to_string())?;
         let now = crate::task_memory::now_millis() as i64;
-        let record = evohime_local_storage::continuation_store::RunRecord {
+        let record = evohime_local_storage::domains::runs::RunRecord {
             run_id: request.run_id.clone(),
             idempotency_key: request.idempotency_key,
             task_id: request.task_id,
@@ -707,7 +707,7 @@ impl IpcBridge {
             created_at_ms: now,
             updated_at_ms: now,
         };
-        evohime_local_storage::continuation_store::create_run(database.connection(), &record)
+        evohime_local_storage::domains::runs::create_run(database.connection(), &record)
             .map_err(|error| {
                 if matches!(error, rusqlite::Error::SqliteFailure(_, _)) {
                     "run_exists"
@@ -724,13 +724,13 @@ impl IpcBridge {
         request: generated::GetContinuationRun,
     ) -> Result<Vec<u8>, String> {
         let database = self.journal.database().lock().await;
-        let run = evohime_local_storage::continuation_store::get_run(
+        let run = evohime_local_storage::domains::runs::get_run(
             database.connection(),
             &request.run_id,
         )
         .map_err(|_| "storage_failed".to_string())?
         .ok_or_else(|| "run_not_found".to_string())?;
-        let gates = evohime_local_storage::continuation_store::list_latest_gate_results(
+        let gates = evohime_local_storage::domains::runs::list_latest_gate_results(
             database.connection(),
             &run.run_id,
         )
@@ -746,9 +746,9 @@ impl IpcBridge {
             return Err("invalid_argument".into());
         }
         let mut database = self.journal.database().lock().await;
-        evohime_local_storage::continuation_store::apply_transition_action(
+        evohime_local_storage::domains::runs::apply_transition_action(
             database.connection_mut(),
-            evohime_local_storage::continuation_store::TransitionActionInput {
+            evohime_local_storage::domains::runs::TransitionActionInput {
                 run_id: &request.run_id,
                 idempotency_key: &request.idempotency_key,
                 action: "stop",
@@ -776,9 +776,9 @@ impl IpcBridge {
             return Err("invalid_argument".into());
         }
         let mut database = self.journal.database().lock().await;
-        evohime_local_storage::continuation_store::apply_transition_action(
+        evohime_local_storage::domains::runs::apply_transition_action(
             database.connection_mut(),
-            evohime_local_storage::continuation_store::TransitionActionInput {
+            evohime_local_storage::domains::runs::TransitionActionInput {
                 run_id: &run_id,
                 idempotency_key: &idempotency_key,
                 action,
@@ -794,7 +794,7 @@ impl IpcBridge {
     pub(crate) async fn dispatch_resume_continuation(
         &self,
         request: generated::ResumeContinuation,
-    ) -> Result<evohime_local_storage::continuation_store::RunRecord, String> {
+    ) -> Result<evohime_local_storage::domains::runs::RunRecord, String> {
         if request.run_id.is_empty()
             || request.idempotency_key.is_empty()
             || request.expected_state != "paused"
@@ -802,7 +802,7 @@ impl IpcBridge {
             return Err("invalid_argument".into());
         }
         let mut database = self.journal.database().lock().await;
-        let run = evohime_local_storage::continuation_store::get_run(
+        let run = evohime_local_storage::domains::runs::get_run(
             database.connection(),
             &request.run_id,
         )
@@ -811,9 +811,9 @@ impl IpcBridge {
         if run.prompt.is_none() || run.workspace_path.is_none() {
             return Err("resume_context_unavailable".into());
         }
-        let _action_result = evohime_local_storage::continuation_store::apply_transition_action(
+        let _action_result = evohime_local_storage::domains::runs::apply_transition_action(
             database.connection_mut(),
-            evohime_local_storage::continuation_store::TransitionActionInput {
+            evohime_local_storage::domains::runs::TransitionActionInput {
                 run_id: &request.run_id,
                 idempotency_key: &request.idempotency_key,
                 action: "resume",
@@ -824,7 +824,7 @@ impl IpcBridge {
             },
         )
         .map_err(|_| "storage_failed".to_string())?;
-        evohime_local_storage::continuation_store::get_run(database.connection(), &request.run_id)
+        evohime_local_storage::domains::runs::get_run(database.connection(), &request.run_id)
             .map_err(|_| "storage_failed".to_string())?
             .ok_or_else(|| "run_not_found".into())
     }

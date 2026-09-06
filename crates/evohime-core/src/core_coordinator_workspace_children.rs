@@ -19,9 +19,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     .retain(child.clone(), now_ms)
                     .map_err(|e| e.to_string())?;
                 if applied {
-                    evohime_local_storage::retained_child_store::RetainedChildStore::upsert_child(
+                    evohime_local_storage::domains::agents::RetainedChildStore::upsert_child(
                         database.connection(),
-                        evohime_local_storage::retained_child_store::UpsertChildInput {
+                        evohime_local_storage::domains::agents::UpsertChildInput {
                             parent_id: &child.parent_id,
                             child_id: &child.child_id,
                             family_root_id: &child.family_root_id,
@@ -55,7 +55,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 let journal = journal.ok_or_else(|| "storage_unavailable".to_string())?;
                 let database = journal.database().lock().await;
                 let child =
-                    evohime_local_storage::retained_child_store::RetainedChildStore::get_child::<
+                    evohime_local_storage::domains::agents::RetainedChildStore::get_child::<
                         crate::retained_child::RetainedChildV1,
                     >(database.connection(), &parent_id, &child_id)
                     .map_err(|e| e.to_string())?
@@ -77,7 +77,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = &journal {
                 let database = journal.database().lock().await;
                 if let Ok(Some(child)) =
-                    evohime_local_storage::retained_child_store::RetainedChildStore::get_child::<
+                    evohime_local_storage::domains::agents::RetainedChildStore::get_child::<
                         crate::retained_child::RetainedChildV1,
                     >(
                         database.connection(), &request.parent_id, &request.child_id
@@ -89,7 +89,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let result = async {
                     let durable_duplicate = if let Some(journal) = &journal {
                         let database = journal.database().lock().await;
-                        evohime_local_storage::retained_child_store::RetainedChildStore::has_follow_up(
+                        evohime_local_storage::domains::agents::RetainedChildStore::has_follow_up(
                             database.connection(),
                             &request.idempotency_key,
                         ).map_err(|e| e.to_string())?
@@ -109,9 +109,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         } else {
                             crate::retained_child::DeliveryState::Pending
                         };
-                        evohime_local_storage::retained_child_store::RetainedChildStore::enqueue_follow_up(
+                        evohime_local_storage::domains::agents::RetainedChildStore::enqueue_follow_up(
                             database.connection_mut(),
-                            evohime_local_storage::retained_child_store::EnqueueFollowUpInput {
+                            evohime_local_storage::domains::agents::EnqueueFollowUpInput {
                                 parent_id: &request.parent_id,
                                 child_id: &request.child_id,
                                 idempotency_key: &request.idempotency_key,
@@ -147,7 +147,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                     crate::retained_child::RetainedLifecycle::QueuedFollowUp => "queued_follow_up",
                                     _ => "idle_retained",
                                 };
-                                evohime_local_storage::retained_child_store::RetainedChildStore::upsert_child(database.connection(), evohime_local_storage::retained_child_store::UpsertChildInput { parent_id: &child.parent_id, child_id: &child.child_id, family_root_id: &child.family_root_id, revision: child.revision, registry_version: child.registry_version, lifecycle, record: &child, created_at_ms: child.created_at_ms, last_active_at_ms: child.last_active_at_ms, retained_until_ms: child.retained_until_ms }).map_err(|e| e.to_string())?;
+                                evohime_local_storage::domains::agents::RetainedChildStore::upsert_child(database.connection(), evohime_local_storage::domains::agents::UpsertChildInput { parent_id: &child.parent_id, child_id: &child.child_id, family_root_id: &child.family_root_id, revision: child.revision, registry_version: child.registry_version, lifecycle, record: &child, created_at_ms: child.created_at_ms, last_active_at_ms: child.last_active_at_ms, retained_until_ms: child.retained_until_ms }).map_err(|e| e.to_string())?;
                             }
                         }
                     }
@@ -167,7 +167,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             reply,
         } => {
             let journal = state.lock().await.journal.clone();
-            let result = async { let journal=journal.ok_or_else(||"storage_unavailable".to_string())?; let database=journal.database().lock().await; let items=evohime_local_storage::retained_child_store::RetainedChildStore::list_children::<crate::retained_child::RetainedChildV1>(database.connection(),&parent_id,now_ms,limit).map_err(|e|e.to_string())?; let projections: Vec<_>=items.iter().map(crate::retained_child::RetainedChildProjectionV1::from).collect(); serde_json::to_vec(&serde_json::json!({"children": projections})).map_err(|e|e.to_string()) }.await;
+            let result = async { let journal=journal.ok_or_else(||"storage_unavailable".to_string())?; let database=journal.database().lock().await; let items=evohime_local_storage::domains::agents::RetainedChildStore::list_children::<crate::retained_child::RetainedChildV1>(database.connection(),&parent_id,now_ms,limit).map_err(|e|e.to_string())?; let projections: Vec<_>=items.iter().map(crate::retained_child::RetainedChildProjectionV1::from).collect(); serde_json::to_vec(&serde_json::json!({"children": projections})).map_err(|e|e.to_string()) }.await;
             let _ = reply.send(result);
         }
         CoreCommand::DeleteRetainedChild {
@@ -180,7 +180,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = &journal {
                 let database = journal.database().lock().await;
                 if let Ok(Some(child)) =
-                    evohime_local_storage::retained_child_store::RetainedChildStore::get_child::<
+                    evohime_local_storage::domains::agents::RetainedChildStore::get_child::<
                         crate::retained_child::RetainedChildV1,
                     >(database.connection(), &parent_id, &child_id)
                 {
@@ -191,7 +191,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 let journal = journal.ok_or_else(|| "storage_unavailable".to_string())?;
                 let database = journal.database().lock().await;
                 let deleted =
-                    evohime_local_storage::retained_child_store::RetainedChildStore::delete_child(
+                    evohime_local_storage::domains::agents::RetainedChildStore::delete_child(
                         database.connection(),
                         &parent_id,
                         &child_id,

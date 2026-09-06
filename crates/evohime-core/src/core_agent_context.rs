@@ -475,7 +475,7 @@ impl ToolAgent {
                 let record = journal
                     .commit_model_request(
                         &envelope,
-                        evohime_local_storage::model_provenance::CommitMode::FullForDispatch,
+                        evohime_local_storage::domains::receipts::CommitMode::FullForDispatch,
                     )
                     .await
                     .map_err(|error| AgentRunError::Internal(error.to_string()))?;
@@ -562,7 +562,7 @@ impl ToolAgent {
                         (&self.journal, request_id.as_deref())
                     {
                         let response =
-                            evohime_local_storage::model_provenance::ModelResponseRecord {
+                            evohime_local_storage::domains::receipts::ModelResponseRecord {
                                 response_id: uuid::Uuid::now_v7().to_string(),
                                 request_id: request_id.to_string(),
                                 status: "failed".into(),
@@ -615,7 +615,7 @@ impl ToolAgent {
                     {
                         let id = uuid::Uuid::now_v7().to_string();
                         let response =
-                            evohime_local_storage::model_provenance::ModelResponseRecord {
+                            evohime_local_storage::domains::receipts::ModelResponseRecord {
                                 response_id: id.clone(),
                                 request_id: request_id.to_string(),
                                 status: "complete".into(),

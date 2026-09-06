@@ -480,6 +480,27 @@ typed outcome metadata. Acceptance покрывает отказ до side effec
 
 ## Core-owned execution ledger
 
+### Storage bounded contexts
+
+`evohime-local-storage` сохраняет SQLite-владение в одном crate, но его
+публичная организация постепенно переводится от таблиц к доменам. Внутренние
+фасады `domains::{memory,runs,workflow,agents,audit,receipts}` задают целевые границы:
+каждый домен объединяет связанные store-операции и является местом для
+дальнейшего переноса типов и транзакционных сервисов. Старые `*_store` модули
+пока остаются публичными для совместимости существующих Core-вызовов.
+
+Эволюция схемы проходит через `src/migrations.rs`. Исторический installer
+v1..v92 временно вызывается из этого boundary, а новые версии должны
+добавляться небольшими numbered installers внутри migrations, не расширением
+`LocalDatabase::open` и не новым произвольным CRUD-store. Это позволяет
+переносить миграции и доменные store-ы поэтапно, сохраняя одну транзакцию,
+backup и rollback semantics.
+
+Для legacy bootstrap действует правило единственного источника: перенос
+крупного inline DDL выполняется целиком вместе с его migration-тестом, после
+чего старый блок удаляется. Промежуточные дубликаты SQL запрещены, чтобы
+история схемы не расходилась между `lib.rs` и `migrations/`.
+
 Единая typed-история выполнения поверх существующего append-only `events`
 журнала, `receipts_v1` и workflow runtime (план 08) реализована в
 `crates/evohime-local-storage/src/execution_ledger.rs` (чистый contract-слой),

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::{
     fs,
     io::{BufWriter, Write},
@@ -8,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, Statement};
 use serde::{Deserialize, Serialize};
 
 pub mod agent_git_change_sets_store;
-pub mod agent_middleware_pipeline_store;
+pub(crate) mod agent_middleware_pipeline_store;
 pub mod agent_role_profiles_store;
 pub mod ambient_store;
 pub mod analysis_kernel;
@@ -16,36 +18,38 @@ pub mod approval_policy_profiles_store;
 pub mod architect_editor_model_pipeline_store;
 pub mod architecture_snapshot_store;
 pub mod artifact_handoff_registry_store;
-pub mod artifact_store;
+pub(crate) mod artifact_store;
 pub mod automation_store;
-pub mod backup;
+pub(crate) mod backup;
+pub mod domains;
+mod migrations;
 pub mod batch_invocation_runtime_store;
-pub mod benchmark_store;
+pub(crate) mod benchmark_store;
 pub mod browser_session_store;
 pub mod capability_selection_store;
 pub mod capability_store;
 pub mod capability_workbenches_store;
-pub mod checkpoint_forking_store;
-pub mod child_store;
+pub(crate) mod checkpoint_forking_store;
+pub(crate) mod child_store;
 pub mod code_diagnostics_feedback_loop_store;
 pub mod collaboration_store;
 pub mod composable_termination_conditions_store;
 pub mod context_command_store;
 pub mod context_ledger_store;
-pub mod continuation_store;
+pub(crate) mod continuation_store;
 pub mod conversation_bridge_adapters_store;
-pub mod conversation_event_log_store;
+pub(crate) mod conversation_event_log_store;
 pub mod core_topic_subscription_event_bus_store;
 pub mod customization_inventory_store;
 pub mod declarative_agent_component_registry_store;
 pub mod declarative_runtime_components_store;
 pub mod dependency_aware_task_graph_store;
 pub mod durable_remote_task_bridge_store;
-pub mod event_trigger_runtime_store;
+pub(crate) mod event_trigger_runtime_store;
 pub mod event_visualizer_registry_store;
 pub mod execution_backend_registry_store;
 pub mod execution_ledger;
-pub mod execution_policy_profiles_store;
+pub(crate) mod execution_policy_profiles_store;
 pub mod experience_replay_library_store;
 pub mod external_coding_agent_adapter_store;
 pub mod feedback_store;
@@ -53,43 +57,43 @@ pub mod goal;
 pub mod guided_calibration_sessions_store;
 pub mod human_work_items_store;
 pub mod incremental_change_protocol_store;
-pub mod integration_provider_store;
+pub(crate) mod integration_provider_store;
 pub mod invocation_presets_store;
 pub mod knowledge_source_registry_project_role_store;
 pub mod local_model_runtime_manager_store;
-pub mod memory_store;
-pub mod memory_views_and_adaptive_recall_store;
+pub(crate) mod memory_store;
+pub(crate) mod memory_views_and_adaptive_recall_store;
 pub mod model_edit_protocol_registry_store;
 pub mod model_limit_store;
-pub mod model_provenance;
+pub(crate) mod model_provenance;
 pub mod model_purpose_routing_store;
-pub mod output_guardrail_pipeline_store;
-pub mod persistent_agent_registry_store;
+pub(crate) mod output_guardrail_pipeline_store;
+pub(crate) mod persistent_agent_registry_store;
 pub mod plan_artifact;
 pub mod policy_aware_tool_result_cache_store;
 pub mod privacy_telemetry_store;
 pub mod project_instruction_stack_store;
-pub mod prompt_cache_planner_store;
+pub(crate) mod prompt_cache_planner_store;
 pub mod reasoning_operator_library_store;
-pub mod reconciliation_verifier;
+pub(crate) mod reconciliation_verifier;
 pub mod refinement_store;
 pub mod remote_conversation_channels_store;
 pub mod research_store;
-pub mod retained_child_store;
+pub(crate) mod retained_child_store;
 pub mod safe_ui_extension_framework_store;
 pub mod schema_driven_agent_configuration_store;
 pub mod scratchpad_store;
-pub mod skill_trust_pipeline_store;
+pub(crate) mod skill_trust_pipeline_store;
 pub mod standing_approval_profiles_store;
-pub mod task_checkpoint;
-pub mod task_worktree_isolation_store;
+pub(crate) mod task_checkpoint;
+pub(crate) mod task_worktree_isolation_store;
 pub mod team_coordination_policies_store;
 pub mod team_coordinator_store;
 pub mod team_resource_budget_store;
 pub mod team_sop_protocols_store;
 pub mod toolkit_store;
 pub mod typed_agent_handoff_contract_store;
-pub mod typed_context_references_store;
+pub(crate) mod typed_context_references_store;
 pub mod visual_workflow_builder_store;
 pub mod workflow_optimization_lab_store;
 pub mod workflow_package_store;
@@ -598,7 +602,7 @@ impl LocalDatabase {
             if existed {
                 fs::copy(&path, path.with_extension("db.bak"))?;
             }
-            if let Err(error) = Self::migrate(&connection, version, fail_migration) {
+            if let Err(error) = migrations::run(&connection, version, fail_migration) {
                 drop(connection);
                 fs::copy(path.with_extension("db.bak"), &path)?;
                 return Err(error);
@@ -2760,1185 +2764,101 @@ impl LocalDatabase {
         connection.query_row("PRAGMA user_version", [], |row| row.get(0))
     }
 
-    fn migrate(
+    #[doc(hidden)]
+    fn migrate_legacy(
         connection: &Connection,
         current: u32,
         fail_migration: bool,
     ) -> Result<(), StorageError> {
         let transaction = connection.unchecked_transaction()?;
-        if current < 1 {
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS events (
-                    sequence_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    task_id TEXT NOT NULL,
-                    event_type TEXT NOT NULL,
-                    payload BLOB NOT NULL,
-                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                CREATE INDEX IF NOT EXISTS idx_events_task_sequence ON events(task_id, sequence_id);
-                PRAGMA user_version = 1;",
-            )?;
-        }
+        migrations::v001::apply(&transaction, current)?;
         if fail_migration {
             return Err(rusqlite::Error::InvalidQuery.into());
         }
-        if current < 2 {
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS projects (
-                    id TEXT PRIMARY KEY, title TEXT NOT NULL, workspace_path TEXT NOT NULL,
-                    source_ref TEXT, version INTEGER NOT NULL DEFAULT 1,
-                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                CREATE TABLE IF NOT EXISTS work_items (
-                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), parent_id TEXT REFERENCES work_items(id),
-                    title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', source_ref TEXT,
-                    acceptance_criteria TEXT NOT NULL DEFAULT '', non_goals TEXT NOT NULL DEFAULT '',
-                    status TEXT NOT NULL CHECK(status IN ('backlog','ready','in_progress','done')),
-                    priority INTEGER NOT NULL DEFAULT 0, estimate INTEGER, complexity TEXT,
-                    attempt_count INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 1,
-                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-                    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                CREATE TABLE IF NOT EXISTS work_item_edges (
-                    from_work_item_id TEXT NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
-                    to_work_item_id TEXT NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
-                    kind TEXT NOT NULL, PRIMARY KEY(from_work_item_id, to_work_item_id, kind)
-                );
-                CREATE TABLE IF NOT EXISTS provenance (
-                    id TEXT PRIMARY KEY, kind TEXT NOT NULL, source TEXT NOT NULL,
-                    payload BLOB NOT NULL, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                CREATE TABLE IF NOT EXISTS runs (
-                    id TEXT PRIMARY KEY, work_item_id TEXT NOT NULL REFERENCES work_items(id),
-                    status TEXT NOT NULL, policy_snapshot BLOB NOT NULL, role_snapshot BLOB NOT NULL,
-                    skill_snapshot BLOB NOT NULL, model_route_snapshot BLOB NOT NULL,
-                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                CREATE TABLE IF NOT EXISTS command_dedup (
-                    client_id TEXT NOT NULL, request_id TEXT NOT NULL, command_hash TEXT NOT NULL,
-                    result BLOB NOT NULL, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-                    PRIMARY KEY(client_id, request_id)
-                );
-                PRAGMA user_version = 2;",
-                )?;
-        }
-        if current < 3 {
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS snapshots (
-                    id TEXT PRIMARY KEY, run_id TEXT NOT NULL, workspace_hash TEXT NOT NULL,
-                    payload BLOB NOT NULL,
-                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                CREATE INDEX IF NOT EXISTS idx_snapshots_run ON snapshots(run_id);
-                PRAGMA user_version = 3;",
-            )?;
-        }
-        if current < 4 {
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS run_checkpoints (
-                    run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-                    checkpoint_id TEXT PRIMARY KEY, stage TEXT NOT NULL, node_id TEXT NOT NULL,
-                    attempt INTEGER NOT NULL, input_hash TEXT NOT NULL, state_json BLOB NOT NULL,
-                    pending_effects_json BLOB NOT NULL,
-                    committed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                CREATE INDEX IF NOT EXISTS idx_run_checkpoints_run ON run_checkpoints(run_id, committed_at);
-                CREATE TABLE IF NOT EXISTS run_effects (
-                    effect_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-                    node_id TEXT NOT NULL, kind TEXT NOT NULL, idempotency_key TEXT NOT NULL UNIQUE,
-                    immutable_intent_hash TEXT NOT NULL, state TEXT NOT NULL,
-                    started_at TEXT, completed_at TEXT, result_hash TEXT
-                );
-                CREATE INDEX IF NOT EXISTS idx_run_effects_run ON run_effects(run_id);
-                PRAGMA user_version = 4;",
-                )?;
-        }
-        if current < 5 {
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS project_policies (
-                    project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
-                    policy_json BLOB NOT NULL,
-                    version INTEGER NOT NULL DEFAULT 1,
-                    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                PRAGMA user_version = 5;",
-            )?;
-        }
-        if current < 6 {
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS run_leases (
-                    run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
-                    lease_id TEXT NOT NULL UNIQUE,
-                    owner_id TEXT NOT NULL,
-                    generation INTEGER NOT NULL,
-                    lease_expires_at TEXT NOT NULL,
-                    heartbeat_at TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS run_reconciliations (
-                    effect_id TEXT PRIMARY KEY REFERENCES run_effects(effect_id) ON DELETE CASCADE,
-                    state TEXT NOT NULL,
-                    verifier TEXT NOT NULL,
-                    evidence_json BLOB NOT NULL,
-                    reconciled_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                PRAGMA user_version = 6;",
-            )?;
-        }
-        if current < 7 {
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS run_recovery (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-                    state TEXT NOT NULL,
-                    effect_id TEXT NOT NULL,
-                    idempotency_key TEXT NOT NULL,
-                    verifier TEXT NOT NULL,
-                    evidence_json BLOB NOT NULL,
-                    decision TEXT NOT NULL,
-                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                CREATE INDEX IF NOT EXISTS idx_run_recovery_run ON run_recovery(run_id, id);
-                PRAGMA user_version = 7;",
-            )?;
-        }
-        if current < 8 {
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS research_evidence (
-                    id TEXT PRIMARY KEY NOT NULL,
-                    source_kind TEXT NOT NULL,
-                    source_ref TEXT NOT NULL,
-                    redacted_excerpt TEXT NOT NULL,
-                    source_hash TEXT NOT NULL,
-                    fetched_at TEXT NOT NULL,
-                    ttl_seconds INTEGER NOT NULL,
-                    provenance_link TEXT
-                );
-                CREATE INDEX IF NOT EXISTS idx_research_evidence_provenance ON research_evidence(provenance_link);
-                CREATE TABLE IF NOT EXISTS memory_entries (
-                    id TEXT PRIMARY KEY NOT NULL,
-                    scope_kind TEXT NOT NULL,
-                    scope_id TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    provenance TEXT NOT NULL,
-                    privacy TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT,
-                    archived INTEGER NOT NULL,
-                    forgotten INTEGER NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_memory_entries_scope ON memory_entries(scope_kind, scope_id);
-                PRAGMA user_version = 8;",
-            )?;
-        }
-        if current < 9 {
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS capability_manifests (
-                    id TEXT PRIMARY KEY NOT NULL,
-                    kind TEXT NOT NULL,
-                    version TEXT NOT NULL,
-                    risk_class TEXT NOT NULL,
-                    content_hash TEXT NOT NULL,
-                    manifest_json BLOB NOT NULL,
-                    installed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                CREATE INDEX IF NOT EXISTS idx_capability_manifests_kind ON capability_manifests(kind);
-                PRAGMA user_version = 9;",
-            )?;
-        }
-        if current < 10 {
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS child_handoffs (
-                    handoff_id TEXT PRIMARY KEY NOT NULL,
-                    task_id TEXT NOT NULL,
-                    kind TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    from_role TEXT NOT NULL,
-                    to_role TEXT NOT NULL,
-                    sequence INTEGER NOT NULL,
-                    envelope_json BLOB NOT NULL,
-                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                CREATE INDEX IF NOT EXISTS idx_child_handoffs_task ON child_handoffs(task_id);
-                CREATE TABLE IF NOT EXISTS child_task_requests (
-                    child_task_id TEXT PRIMARY KEY NOT NULL,
-                    parent_task_id TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    kind TEXT NOT NULL,
-                    request_json BLOB NOT NULL,
-                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                CREATE INDEX IF NOT EXISTS idx_child_task_requests_parent ON child_task_requests(parent_task_id);
-                CREATE TABLE IF NOT EXISTS child_reports (
-                    child_task_id TEXT PRIMARY KEY NOT NULL,
-                    parent_task_id TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    confidence_percent INTEGER NOT NULL,
-                    report_json BLOB NOT NULL,
-                    accepted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                CREATE INDEX IF NOT EXISTS idx_child_reports_parent ON child_reports(parent_task_id);
-                PRAGMA user_version = 10;",
-            )?;
-        }
-        if current < 11 {
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS run_tool_metrics (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    task_id TEXT NOT NULL,
-                    tool_name TEXT NOT NULL,
-                    iteration INTEGER NOT NULL,
-                    ok INTEGER NOT NULL,
-                    failure_kind TEXT,
-                    recovery_hint INTEGER NOT NULL,
-                    escalated INTEGER NOT NULL,
-                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                CREATE INDEX IF NOT EXISTS idx_run_tool_metrics_task
-                    ON run_tool_metrics(task_id, id);
-                CREATE INDEX IF NOT EXISTS idx_run_tool_metrics_tool
-                    ON run_tool_metrics(task_id, tool_name, id);
-                PRAGMA user_version = 11;",
-            )?;
-        }
-        if current < 12 {
-            transaction.execute_batch(
-                "ALTER TABLE memory_entries ADD COLUMN confirmations INTEGER NOT NULL DEFAULT 1;
-                 ALTER TABLE memory_entries ADD COLUMN lesson_key TEXT;
-                 CREATE INDEX IF NOT EXISTS idx_memory_entries_lesson
-                    ON memory_entries(scope_kind, scope_id, lesson_key);
-                 PRAGMA user_version = 12;",
-            )?;
-        }
-        if current < 13 {
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS capability_selections (
-                    task_id TEXT PRIMARY KEY NOT NULL,
-                    origin TEXT NOT NULL,
-                    manifest_name TEXT NOT NULL,
-                    state_json BLOB NOT NULL,
-                    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                PRAGMA user_version = 13;",
-            )?;
-        }
-        if current < 14 {
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS feedback_entries (
-                    id TEXT PRIMARY KEY NOT NULL,
-                    run_id TEXT NOT NULL,
-                    task_id TEXT,
-                    subject_ref TEXT,
-                    signal TEXT NOT NULL,
-                    correction TEXT,
-                    rejection_reason TEXT,
-                    outcome TEXT,
-                    provenance TEXT NOT NULL,
-                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                CREATE INDEX IF NOT EXISTS idx_feedback_entries_run ON feedback_entries(run_id, created_at);
-                CREATE INDEX IF NOT EXISTS idx_feedback_entries_signal ON feedback_entries(signal);
-                PRAGMA user_version = 14;",
-                )?;
-        }
-        if current < 15 {
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS agent_run_effects (
-                    effect_id TEXT PRIMARY KEY,
-                    run_id TEXT NOT NULL UNIQUE,
-                    task_id TEXT NOT NULL,
-                    node_id TEXT NOT NULL,
-                    kind TEXT NOT NULL,
-                    idempotency_key TEXT NOT NULL UNIQUE,
-                    immutable_intent_hash TEXT NOT NULL,
-                    state TEXT NOT NULL,
-                    started_at TEXT,
-                    completed_at TEXT,
-                    result_hash TEXT
-                );
-                CREATE INDEX IF NOT EXISTS idx_agent_run_effects_task
-                    ON agent_run_effects(task_id, started_at);
-                CREATE TABLE IF NOT EXISTS agent_run_leases (
-                    run_id TEXT PRIMARY KEY REFERENCES agent_run_effects(run_id) ON DELETE CASCADE,
-                    lease_id TEXT NOT NULL UNIQUE,
-                    owner_id TEXT NOT NULL,
-                    generation INTEGER NOT NULL,
-                    lease_expires_at TEXT NOT NULL,
-                    heartbeat_at TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS agent_run_reconciliations (
-                    effect_id TEXT PRIMARY KEY REFERENCES agent_run_effects(effect_id) ON DELETE CASCADE,
-                    state TEXT NOT NULL,
-                    verifier TEXT NOT NULL,
-                    evidence_json BLOB NOT NULL,
-                    reconciled_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                CREATE TABLE IF NOT EXISTS agent_run_recovery (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    run_id TEXT NOT NULL,
-                    state TEXT NOT NULL,
-                    effect_id TEXT NOT NULL,
-                    idempotency_key TEXT NOT NULL,
-                    verifier TEXT NOT NULL,
-                    evidence_json BLOB NOT NULL,
-                    decision TEXT NOT NULL,
-                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                CREATE INDEX IF NOT EXISTS idx_agent_run_recovery_run
-                    ON agent_run_recovery(run_id, id);
-                PRAGMA user_version = 15;",
-            )?;
-        }
-        if current < 16 {
-            // Memory Extraction: kind/state/confidence/provenance-контракт
-            // поверх Memory v1. Все legacy rows остаются активной памятью
-            // (`state = confirmed`) и помечаются legacy-версиями извлекателя и
-            // policy, чтобы их нельзя было спутать с model-generated
-            // кандидатами. `canonical_subject` намеренно остаётся NULL: точный
-            // нормализатор версионируется в Core и применяется к `title` при
-            // чтении, а не приблизительной SQL-нормализацией во время
-            // миграции.
-            transaction.execute_batch(
-                "ALTER TABLE memory_entries ADD COLUMN kind TEXT NOT NULL DEFAULT 'entity';
-                 ALTER TABLE memory_entries ADD COLUMN canonical_subject TEXT;
-                 ALTER TABLE memory_entries ADD COLUMN confirmation_state TEXT NOT NULL DEFAULT 'confirmed';
-                 ALTER TABLE memory_entries ADD COLUMN model_confidence REAL NOT NULL DEFAULT 1.0;
-                 ALTER TABLE memory_entries ADD COLUMN verification_confidence REAL NOT NULL DEFAULT 1.0;
-                 ALTER TABLE memory_entries ADD COLUMN privacy_class TEXT NOT NULL DEFAULT 'normal';
-                 ALTER TABLE memory_entries ADD COLUMN source_trust TEXT NOT NULL DEFAULT 'user';
-                 ALTER TABLE memory_entries ADD COLUMN supersedes TEXT;
-                 ALTER TABLE memory_entries ADD COLUMN superseded_by TEXT;
-                 ALTER TABLE memory_entries ADD COLUMN supersession_reason TEXT;
-                 ALTER TABLE memory_entries ADD COLUMN extractor_version TEXT NOT NULL DEFAULT 'v1_legacy';
-                 ALTER TABLE memory_entries ADD COLUMN policy_version TEXT NOT NULL DEFAULT 'legacy-v1';
-                 ALTER TABLE memory_entries ADD COLUMN validation_status TEXT NOT NULL DEFAULT 'not_required';
-                 ALTER TABLE memory_entries ADD COLUMN validated_at TEXT;
-                 ALTER TABLE memory_entries ADD COLUMN provenance_source_id TEXT;
-                 UPDATE memory_entries SET kind = 'lesson' WHERE lesson_key IS NOT NULL;
-                 UPDATE memory_entries SET confirmation_state = 'forgotten' WHERE forgotten = 1;
-                 CREATE INDEX IF NOT EXISTS idx_memory_entries_kind
-                    ON memory_entries(scope_kind, scope_id, kind);
-                 CREATE INDEX IF NOT EXISTS idx_memory_entries_state
-                    ON memory_entries(confirmation_state);
-                 CREATE INDEX IF NOT EXISTS idx_memory_entries_subject
-                    ON memory_entries(canonical_subject, scope_kind, scope_id);
-                 CREATE INDEX IF NOT EXISTS idx_memory_entries_expires
-                    ON memory_entries(expires_at);
-                 CREATE INDEX IF NOT EXISTS idx_memory_entries_provenance_source
-                    ON memory_entries(provenance_source_id);
-                 CREATE TABLE IF NOT EXISTS memory_aliases (
-                    scope_kind TEXT NOT NULL,
-                    scope_id TEXT NOT NULL,
-                    alias TEXT NOT NULL,
-                    entity_id TEXT NOT NULL,
-                    registered_by TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    PRIMARY KEY (scope_kind, scope_id, alias)
-                 );
-                 CREATE TABLE IF NOT EXISTS memory_tombstones (
-                    tombstone_id TEXT PRIMARY KEY NOT NULL,
-                    kind TEXT NOT NULL,
-                    scope_kind TEXT NOT NULL,
-                    scope_id TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    forgotten_at TEXT NOT NULL,
-                    reason_class TEXT NOT NULL,
-                    digest TEXT NOT NULL
-                 );
-                 CREATE TABLE IF NOT EXISTS memory_session_notes (
-                    id TEXT PRIMARY KEY NOT NULL,
-                    session_id TEXT NOT NULL,
-                    scope_kind TEXT NOT NULL,
-                    scope_id TEXT NOT NULL,
-                    kind TEXT NOT NULL,
-                    statement TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL
-                 );
-                 CREATE INDEX IF NOT EXISTS idx_memory_session_notes_session
-                    ON memory_session_notes(session_id, expires_at);
-                 PRAGMA user_version = 16;",
-            )?;
-        }
-        if current < 17 {
-            // План 01: context ledger, scratchpad задачи и artifact store.
-            // Миграция additive: новые таблицы создаются рядом, существующие
-            // записи не переписываются.
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS context_ledger (
-                    id TEXT PRIMARY KEY NOT NULL,
-                    schema_version INTEGER NOT NULL,
-                    task_id TEXT NOT NULL,
-                    session_id TEXT NOT NULL,
-                    model_call_id TEXT NOT NULL,
-                    created_at INTEGER NOT NULL,
-                    provider TEXT NOT NULL,
-                    model TEXT NOT NULL,
-                    profile_version TEXT NOT NULL,
-                    profile_snapshot TEXT NOT NULL,
-                    tokenizer_version TEXT NOT NULL,
-                    normalizer_version TEXT NOT NULL,
-                    strategy_version TEXT NOT NULL,
-                    mandatory_tokens INTEGER NOT NULL,
-                    selected_optional_tokens INTEGER NOT NULL,
-                    reserves_tokens INTEGER NOT NULL,
-                    estimated_prompt_tokens INTEGER NOT NULL,
-                    selected_items TEXT NOT NULL DEFAULT '[]',
-                    dropped_items TEXT NOT NULL DEFAULT '[]',
-                    mandatory_parts TEXT NOT NULL DEFAULT '[]',
-                    ladder_levels_applied TEXT NOT NULL DEFAULT '[]',
-                    compression TEXT NOT NULL DEFAULT '[]',
-                    loadout TEXT,
-                    fallback_estimator INTEGER NOT NULL DEFAULT 0,
-                    replan_of TEXT,
-                    outcome TEXT NOT NULL,
-                    budget_unavailable TEXT,
-                    context_ledger_hash TEXT NOT NULL
-                 );
-                 CREATE INDEX IF NOT EXISTS idx_context_ledger_task
-                    ON context_ledger(task_id, created_at);
-                 CREATE INDEX IF NOT EXISTS idx_context_ledger_session
-                    ON context_ledger(session_id, created_at);
-                 CREATE INDEX IF NOT EXISTS idx_context_ledger_hash
-                    ON context_ledger(context_ledger_hash);
-                 CREATE TABLE IF NOT EXISTS context_ledger_usage (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    ledger_id TEXT NOT NULL,
-                    actual_prompt_tokens INTEGER NOT NULL,
-                    actual_completion_tokens INTEGER NOT NULL,
-                    estimator_drift REAL NOT NULL,
-                    recorded_at INTEGER NOT NULL
-                 );
-                 CREATE INDEX IF NOT EXISTS idx_context_ledger_usage_ledger
-                    ON context_ledger_usage(ledger_id);
-                 CREATE TABLE IF NOT EXISTS context_ledger_receipts (
-                    ledger_id TEXT NOT NULL,
-                    receipt_id TEXT NOT NULL,
-                    exported INTEGER NOT NULL DEFAULT 0,
-                    PRIMARY KEY (ledger_id, receipt_id)
-                 );
-                 CREATE TABLE IF NOT EXISTS task_scratchpad (
-                    id TEXT PRIMARY KEY NOT NULL,
-                    task_id TEXT NOT NULL,
-                    session_id TEXT NOT NULL,
-                    category TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    trust TEXT NOT NULL,
-                    privacy TEXT NOT NULL,
-                    revision INTEGER NOT NULL DEFAULT 1,
-                    parent_id TEXT,
-                    content TEXT NOT NULL,
-                    content_hash TEXT NOT NULL,
-                    created_at INTEGER NOT NULL,
-                    updated_at INTEGER NOT NULL,
-                    ttl_ms INTEGER,
-                    confirmation TEXT,
-                    artifact_locator TEXT,
-                    recovered_at_step INTEGER
-                 );
-                 CREATE INDEX IF NOT EXISTS idx_task_scratchpad_task
-                    ON task_scratchpad(task_id, category, status);
-                 CREATE INDEX IF NOT EXISTS idx_task_scratchpad_parent
-                    ON task_scratchpad(parent_id, revision);
-                 CREATE INDEX IF NOT EXISTS idx_task_scratchpad_confirmed_artifact
-                    ON task_scratchpad(artifact_locator)
-                    WHERE status = 'confirmed' AND artifact_locator IS NOT NULL;
-                 CREATE TABLE IF NOT EXISTS task_artifacts (
-                    content_hash TEXT PRIMARY KEY NOT NULL,
-                    bytes INTEGER NOT NULL,
-                    content BLOB NOT NULL,
-                    created_at INTEGER NOT NULL,
-                    last_access_at INTEGER NOT NULL
-                 );
-                 CREATE TABLE IF NOT EXISTS task_artifact_refs (
-                    locator TEXT PRIMARY KEY NOT NULL,
-                    content_hash TEXT NOT NULL,
-                    task_id TEXT NOT NULL,
-                    owner_task_id TEXT NOT NULL,
-                    bytes INTEGER NOT NULL,
-                    privacy TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    created_at INTEGER NOT NULL,
-                    last_access_at INTEGER NOT NULL,
-                    ttl_ms INTEGER,
-                    summary TEXT NOT NULL DEFAULT ''
-                 );
-                 CREATE INDEX IF NOT EXISTS idx_task_artifact_refs_hash
-                    ON task_artifact_refs(content_hash);
-                 CREATE INDEX IF NOT EXISTS idx_task_artifact_refs_task
-                    ON task_artifact_refs(task_id, status);
-                 CREATE TABLE IF NOT EXISTS artifact_tombstones (
-                    content_hash TEXT PRIMARY KEY NOT NULL,
-                    bytes INTEGER NOT NULL,
-                    removed_at INTEGER NOT NULL,
-                    reason TEXT NOT NULL
-                 );
-                 PRAGMA user_version = 17;",
-            )?;
-        }
-        if current < 18 {
-            // План 01.5: pin/unpin item, журнал mutation-команд контекста и
-            // rate limit поверх него.
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS context_pins (
-                    task_id TEXT NOT NULL,
-                    item_id TEXT NOT NULL,
-                    pinned INTEGER NOT NULL DEFAULT 1,
-                    updated_at INTEGER NOT NULL,
-                    PRIMARY KEY (task_id, item_id)
-                 );
-                 CREATE TABLE IF NOT EXISTS context_command_audit (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    task_id TEXT NOT NULL,
-                    command TEXT NOT NULL,
-                    subject TEXT,
-                    outcome TEXT NOT NULL,
-                    created_at INTEGER NOT NULL
-                 );
-                 CREATE INDEX IF NOT EXISTS idx_context_command_audit_rate
-                    ON context_command_audit(task_id, command, created_at);
-                 PRAGMA user_version = 18;",
-            )?;
-        }
-        if current < 19 {
-            // Local Agentic RAG: generation-published workspace documents,
-            // bounded chunks, FTS5, optional vector generations and a
-            // metadata-only citation ledger. Retrieval only joins rows from
-            // the single published generation for a workspace.
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS workspace_index_runs (
-                    run_id TEXT PRIMARY KEY NOT NULL,
-                    workspace_key TEXT NOT NULL,
-                    generation INTEGER NOT NULL,
-                    status TEXT NOT NULL CHECK(status IN
-                        ('running','published','superseded','cancelled','failed')),
-                    started_at INTEGER NOT NULL,
-                    finished_at INTEGER,
-                    published_at INTEGER,
-                    scanner_version TEXT NOT NULL,
-                    chunker_version TEXT NOT NULL,
-                    tokenizer_version TEXT NOT NULL,
-                    file_count INTEGER NOT NULL DEFAULT 0,
-                    chunk_count INTEGER NOT NULL DEFAULT 0,
-                    excluded_count INTEGER NOT NULL DEFAULT 0,
-                    error_count INTEGER NOT NULL DEFAULT 0,
-                    error_summary TEXT NOT NULL DEFAULT '[]',
-                    dirty INTEGER NOT NULL DEFAULT 1,
-                    UNIQUE(workspace_key, generation)
-                 );
-                 CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_index_published
-                    ON workspace_index_runs(workspace_key) WHERE status = 'published';
-                 CREATE INDEX IF NOT EXISTS idx_workspace_index_runs_state
-                    ON workspace_index_runs(workspace_key, status, generation);
-
-                 CREATE TABLE IF NOT EXISTS workspace_documents (
-                    document_id TEXT PRIMARY KEY NOT NULL,
-                    workspace_key TEXT NOT NULL,
-                    path TEXT NOT NULL,
-                    generation INTEGER NOT NULL,
-                    language TEXT NOT NULL,
-                    mime TEXT NOT NULL,
-                    file_hash TEXT NOT NULL,
-                    size_bytes INTEGER NOT NULL,
-                    encoding TEXT NOT NULL,
-                    decode_status TEXT NOT NULL,
-                    last_modified INTEGER NOT NULL,
-                    indexed_at INTEGER NOT NULL,
-                    status TEXT NOT NULL CHECK(status IN ('active','unstable','deleted')),
-                    redaction_status TEXT NOT NULL CHECK(redaction_status IN ('none','partial','full')),
-                    is_secret_path INTEGER NOT NULL DEFAULT 0,
-                    UNIQUE(workspace_key, generation, path)
-                 );
-                 CREATE INDEX IF NOT EXISTS idx_workspace_documents_scope
-                    ON workspace_documents(workspace_key, generation, status, path);
-                 CREATE INDEX IF NOT EXISTS idx_workspace_documents_language
-                    ON workspace_documents(workspace_key, generation, language);
-
-                 CREATE TABLE IF NOT EXISTS document_chunks (
-                    chunk_id TEXT PRIMARY KEY NOT NULL,
-                    document_id TEXT NOT NULL,
-                    workspace_key TEXT NOT NULL,
-                    generation INTEGER NOT NULL,
-                    ordinal INTEGER NOT NULL,
-                    chunk_hash TEXT NOT NULL,
-                    byte_start INTEGER NOT NULL,
-                    byte_end INTEGER NOT NULL,
-                    line_start INTEGER,
-                    line_end INTEGER,
-                    parent_context TEXT NOT NULL,
-                    chunk_text TEXT NOT NULL,
-                    symbol TEXT,
-                    symbol_normalized TEXT NOT NULL DEFAULT '',
-                    token_count INTEGER NOT NULL,
-                    byte_count INTEGER NOT NULL,
-                    strategy_version TEXT NOT NULL,
-                    FOREIGN KEY(document_id) REFERENCES workspace_documents(document_id)
-                        ON DELETE CASCADE,
-                    UNIQUE(document_id, generation, ordinal)
-                 );
-                 CREATE INDEX IF NOT EXISTS idx_document_chunks_active
-                    ON document_chunks(workspace_key, generation, document_id, ordinal);
-                 CREATE INDEX IF NOT EXISTS idx_document_chunks_hash
-                    ON document_chunks(workspace_key, chunk_hash);
-
-                 CREATE VIRTUAL TABLE IF NOT EXISTS workspace_chunks_fts USING fts5(
-                    chunk_text,
-                    symbol_normalized,
-                    path,
-                    parent_context,
-                    chunk_id UNINDEXED,
-                    workspace_key UNINDEXED,
-                    generation UNINDEXED,
-                    tokenize='trigram'
-                 );
-
-                 CREATE TABLE IF NOT EXISTS workspace_vector_indexes (
-                    index_id TEXT PRIMARY KEY NOT NULL,
-                    workspace_key TEXT NOT NULL,
-                    source_generation INTEGER NOT NULL,
-                    embedding_model_id TEXT NOT NULL,
-                    embedding_model_version TEXT NOT NULL,
-                    vector_dimension INTEGER NOT NULL,
-                    distance_metric TEXT NOT NULL,
-                    normalization TEXT NOT NULL,
-                    chunker_version TEXT NOT NULL,
-                    build_status TEXT NOT NULL CHECK(build_status IN
-                        ('building','ready','published','deprecated','failed','cancelled')),
-                    created_at INTEGER NOT NULL,
-                    published_at INTEGER,
-                    vector_count INTEGER NOT NULL DEFAULT 0
-                 );
-                 CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_vector_published
-                    ON workspace_vector_indexes(workspace_key) WHERE build_status = 'published';
-                 CREATE INDEX IF NOT EXISTS idx_workspace_vector_state
-                    ON workspace_vector_indexes(workspace_key, source_generation, build_status);
-                 CREATE TABLE IF NOT EXISTS workspace_chunk_vectors (
-                    index_id TEXT NOT NULL,
-                    chunk_id TEXT NOT NULL,
-                    vector BLOB NOT NULL,
-                    PRIMARY KEY(index_id, chunk_id),
-                    FOREIGN KEY(index_id) REFERENCES workspace_vector_indexes(index_id)
-                        ON DELETE CASCADE,
-                    FOREIGN KEY(chunk_id) REFERENCES document_chunks(chunk_id)
-                        ON DELETE CASCADE
-                 );
-
-                 CREATE TABLE IF NOT EXISTS rag_context_ledger (
-                    ledger_id TEXT NOT NULL,
-                    query_id TEXT NOT NULL,
-                    block_id TEXT NOT NULL,
-                    rank INTEGER NOT NULL,
-                    retrieval_score REAL NOT NULL,
-                    checker_confidence REAL NOT NULL,
-                    chunk_hash TEXT NOT NULL,
-                    snippet_hash TEXT NOT NULL,
-                    path TEXT NOT NULL,
-                    line_start INTEGER,
-                    line_end INTEGER,
-                    citation_status TEXT NOT NULL,
-                    selection_reason TEXT NOT NULL,
-                    reread_result TEXT NOT NULL,
-                    error_code TEXT,
-                    created_at INTEGER NOT NULL,
-                    PRIMARY KEY(ledger_id, block_id)
-                 );
-                 CREATE INDEX IF NOT EXISTS idx_rag_context_ledger_query
-                    ON rag_context_ledger(query_id, rank);
-                 PRAGMA user_version = 19;",
-            )?;
-        }
-        if current < 20 {
-            // Лимиты приходят от провайдера и живут дольше одного запуска: без
-            // них планировщик контекста и ревью считают окно вслепую, а каталог
-            // перечитывается не при каждом действии.
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS model_context_limits (
-                    model TEXT PRIMARY KEY,
-                    provider TEXT NOT NULL,
-                    context_tokens INTEGER,
-                    max_output_tokens INTEGER,
-                    fetched_at TEXT NOT NULL
-                 );
-                 PRAGMA user_version = 20;",
-            )?;
-        }
-        if current < 21 {
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS receipt_key_transitions (
-                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-                    transition_id TEXT NOT NULL UNIQUE,
-                    transition_hash TEXT NOT NULL UNIQUE,
-                    previous_key_id TEXT,
-                    new_key_id TEXT NOT NULL,
-                    continuity TEXT NOT NULL,
-                    canonical_json BLOB NOT NULL,
-                    created_at TEXT NOT NULL
-                 );
-                 CREATE INDEX IF NOT EXISTS idx_receipt_key_transitions_new_key
-                    ON receipt_key_transitions(new_key_id, sequence);
-                 CREATE TABLE IF NOT EXISTS receipt_key_audit (
-                    event_id TEXT PRIMARY KEY,
-                    transition_id TEXT NOT NULL UNIQUE,
-                    event_type TEXT NOT NULL,
-                    old_key_id TEXT,
-                    new_key_id TEXT,
-                    transition_hash TEXT NOT NULL,
-                    reason TEXT NOT NULL,
-                    actor TEXT NOT NULL,
-                    outcome TEXT NOT NULL,
-                    error_code TEXT,
-                    created_at TEXT NOT NULL
-                 );
-                 PRAGMA user_version = 21;",
-            )?;
-        }
-        if current < 22 {
-            // Stage 01.4: receipt_records/receipt_actions/receipt_chain_heads
-            // and receipt_checkpoints are owned by evohime-receipts, not
-            // duplicated here, so this migration runs the exact same DDL
-            // `ReceiptRuntime::new` runs on every open. Routing it through
-            // this version-gated block (instead of only the unconditional
-            // post-migrate call below) means a pre-existing database gets
-            // the `open_internal` backup-before-migrate guarantee before
-            // gaining these tables, matching the 01.4 storage contract.
-            evohime_receipts::runtime::install_schema(&transaction)
-                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-            transaction.execute_batch("PRAGMA user_version = 22;")?;
-        }
-        if current < 23 {
-            transaction.execute_batch("PRAGMA user_version = 23;")?;
-        }
-        if current < 24 {
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS coordinator_child_checkpoint (
-                    schema_version INTEGER NOT NULL DEFAULT 1,
-                    child_task_id TEXT NOT NULL,
-                    parent_task_id TEXT NOT NULL,
-                    revision INTEGER NOT NULL,
-                    state TEXT NOT NULL CHECK(state IN ('created','queued','running','validating','waiting_parent_acceptance','accepted','rejected','failed','cancelled','timed_out','aborted','revise_plan')),
-                    failure_reason TEXT,
-                    dead_letter INTEGER NOT NULL DEFAULT 0 CHECK(dead_letter IN (0,1)),
-                    report_json BLOB,
-                    evidence_locators_json BLOB,
-                    provenance_hashes_json BLOB,
-                    parent_sequence INTEGER NOT NULL,
-                    lease_deadline_monotonic_ms INTEGER,
-                    lease_created_monotonic_ms INTEGER,
-                    lease_clock_boot_id TEXT,
-                    lease_holder_process_id TEXT,
-                    last_transition_event TEXT NOT NULL,
-                    last_transition_at_ms INTEGER NOT NULL,
-                    created_at_ms INTEGER NOT NULL,
-                    PRIMARY KEY(child_task_id, revision)
-                );
-                CREATE INDEX IF NOT EXISTS idx_coordinator_checkpoint_parent
-                    ON coordinator_child_checkpoint(parent_task_id, last_transition_at_ms);
-                CREATE INDEX IF NOT EXISTS idx_coordinator_checkpoint_dead_letter
-                    ON coordinator_child_checkpoint(parent_task_id, dead_letter, created_at_ms);
-                CREATE TABLE IF NOT EXISTS child_parent_sequences (
-                    parent_task_id TEXT PRIMARY KEY NOT NULL,
-                    next_sequence INTEGER NOT NULL DEFAULT 0
-                );
-                PRAGMA user_version = 24;",
-            )?;
-        }
-        if current < 25 {
-            // Этап 04.2: ambient-эпизоды, высказывания и tombstone.
-            // Колонок для аудио здесь нет по конструкции: схема физически не
-            // может хранить PCM, поэтому «аудио не пишется на диск» — свойство
-            // таблицы, а не дисциплины вызывающего кода. `expires_at` есть у
-            // каждой из трёх таблиц, включая tombstone: без собственного срока
-            // «отдельное время хранения метаданных» нечем исполнить.
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS ambient_episodes (
-                    episode_id TEXT PRIMARY KEY NOT NULL,
-                    started_at TEXT NOT NULL,
-                    ended_at TEXT,
-                    utterance_count INTEGER NOT NULL,
-                    speech_ms INTEGER NOT NULL,
-                    engine_version TEXT NOT NULL,
-                    model_id TEXT NOT NULL,
-                    extraction_state TEXT NOT NULL CHECK(extraction_state IN
-                        ('disabled','pending','done','failed')),
-                    expires_at TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS ambient_utterances (
-                    utterance_id TEXT PRIMARY KEY NOT NULL,
-                    episode_id TEXT NOT NULL
-                        REFERENCES ambient_episodes(episode_id) ON DELETE CASCADE,
-                    sequence INTEGER NOT NULL,
-                    started_at TEXT NOT NULL,
-                    duration_ms INTEGER NOT NULL,
-                    text TEXT NOT NULL,
-                    text_hash TEXT NOT NULL,
-                    language TEXT NOT NULL,
-                    avg_logprob REAL NOT NULL,
-                    speaker TEXT NOT NULL,
-                    redacted INTEGER NOT NULL DEFAULT 0,
-                    expires_at TEXT NOT NULL,
-                    UNIQUE(episode_id, sequence)
-                );
-                CREATE TABLE IF NOT EXISTS ambient_tombstones (
-                    tombstone_id TEXT PRIMARY KEY NOT NULL,
-                    episode_id TEXT NOT NULL,
-                    removed_at TEXT NOT NULL,
-                    reason TEXT NOT NULL,
-                    utterance_count INTEGER NOT NULL,
-                    expires_at TEXT NOT NULL,
-                    UNIQUE(episode_id, removed_at)
-                );
-                CREATE INDEX IF NOT EXISTS idx_ambient_utterances_episode
-                    ON ambient_utterances(episode_id, sequence);
-                CREATE INDEX IF NOT EXISTS idx_ambient_expiry
-                    ON ambient_utterances(expires_at);
-                CREATE INDEX IF NOT EXISTS idx_ambient_episode_expiry
-                    ON ambient_episodes(expires_at);
-                CREATE INDEX IF NOT EXISTS idx_ambient_tombstone_expiry
-                    ON ambient_tombstones(expires_at);
-                PRAGMA user_version = 25;",
-            )?;
-        }
-        if current < 26 {
-            // Этап 04.7: ограниченные проактивные предложения.
-            //
-            // Два ключа, а не один. `proposal_key` (kind + subject + округлённое
-            // время) стоит под `UNIQUE` и отвечает за дедупликацию; постоянный
-            // mute живёт отдельной таблицей по `mute_key` (kind + subject, без
-            // времени). Один ключ на обе роли не работает: со временем внутри
-            // mute заглушил бы ровно одну временную корзину и молча перестал бы
-            // действовать, а без времени `UNIQUE` запретил бы любое повторное
-            // предложение по той же теме после истечения предыдущего.
-            //
-            // `source_episode_id` — nullable с `ON DELETE SET NULL`: связь не
-            // блокирует удаление источника. Пара `source_deleted_at` /
-            // `source_deleted_reason` под `CHECK` «оба NULL либо оба
-            // заполнены»: пока источник жив, они пусты, поэтому «обязательными»
-            // их называть нельзя.
-            //
-            // Счётчики бюджета — одна строка на ambient-профиль: потолок 04.1
-            // неизменяем, а текущее состояние окна обязано пережить рестарт,
-            // иначе перезапуск Core обнулял бы часовой лимит.
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS ambient_proposals (
-                    proposal_id TEXT PRIMARY KEY NOT NULL,
-                    proposal_key TEXT NOT NULL UNIQUE,
-                    mute_key TEXT NOT NULL,
-                    kind TEXT NOT NULL CHECK(kind IN ('suggestion','reminder')),
-                    subject_key TEXT NOT NULL,
-                    subject TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    source_episode_id TEXT
-                        REFERENCES ambient_episodes(episode_id) ON DELETE SET NULL,
-                    source_deleted_at TEXT,
-                    source_deleted_reason TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL,
-                    occurrences INTEGER NOT NULL DEFAULT 1,
-                    state TEXT NOT NULL CHECK(state IN
-                        ('proposed','accepted','declined','muted','expired')),
-                    accepted_task_id TEXT,
-                    idempotency_key TEXT,
-                    CHECK((source_deleted_at IS NULL AND source_deleted_reason IS NULL)
-                       OR (source_deleted_at IS NOT NULL AND source_deleted_reason IS NOT NULL))
-                );
-                CREATE TABLE IF NOT EXISTS ambient_proposal_mutes (
-                    mute_key TEXT PRIMARY KEY NOT NULL,
-                    kind TEXT NOT NULL CHECK(kind IN ('suggestion','reminder')),
-                    subject_key TEXT NOT NULL,
-                    muted_at TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS ambient_proactivity_counters (
-                    profile_id TEXT PRIMARY KEY NOT NULL,
-                    hour_started_at_ms INTEGER NOT NULL,
-                    hour_count INTEGER NOT NULL,
-                    day_started_at_ms INTEGER NOT NULL,
-                    day_count INTEGER NOT NULL,
-                    last_proposed_at_ms INTEGER
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_ambient_proposal_idempotency
-                    ON ambient_proposals(idempotency_key)
-                    WHERE idempotency_key IS NOT NULL;
-                CREATE INDEX IF NOT EXISTS idx_ambient_proposal_state
-                    ON ambient_proposals(state, expires_at);
-                CREATE INDEX IF NOT EXISTS idx_ambient_proposal_source
-                    ON ambient_proposals(source_episode_id);
-                CREATE INDEX IF NOT EXISTS idx_ambient_proposal_mute
-                    ON ambient_proposals(mute_key);
-                PRAGMA user_version = 26;",
-            )?;
-        }
-        if current < 32 {
-            task_checkpoint::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 32;")?;
-        }
-        if current < 33 {
-            goal::install_schema(&transaction)
-                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-            transaction.execute_batch("PRAGMA user_version = 33;")?;
-        }
-        if current < 34 {
-            continuation_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 34;")?;
-        }
-        if current < 35 {
-            let columns = transaction
-                .prepare("PRAGMA table_info(continuation_runs)")?
-                .query_map([], |row| row.get::<_, String>(1))?
-                .collect::<Result<Vec<_>, _>>()?;
-            if !columns.iter().any(|column| column == "idempotency_key") {
-                transaction.execute_batch(
-                    "ALTER TABLE continuation_runs ADD COLUMN idempotency_key TEXT NOT NULL DEFAULT '';",
-                )?;
-            }
-            if !columns.iter().any(|column| column == "task_id") {
-                transaction.execute_batch(
-                    "ALTER TABLE continuation_runs ADD COLUMN task_id TEXT NOT NULL DEFAULT '';",
-                )?;
-            }
-            transaction.execute_batch(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_continuation_runs_idempotency
-                   ON continuation_runs(owner_scope, idempotency_key);
-                 CREATE INDEX IF NOT EXISTS idx_continuation_runs_task
-                   ON continuation_runs(task_id, state, updated_at_ms);
-                 PRAGMA user_version = 35;",
-            )?;
-        }
-        if current < 36 {
-            let columns = transaction
-                .prepare("PRAGMA table_info(continuation_runs)")?
-                .query_map([], |row| row.get::<_, String>(1))?
-                .collect::<Result<Vec<_>, _>>()?;
-            if !columns.iter().any(|column| column == "prompt") {
-                transaction
-                    .execute_batch("ALTER TABLE continuation_runs ADD COLUMN prompt TEXT;")?;
-            }
-            if !columns.iter().any(|column| column == "workspace_path") {
-                transaction.execute_batch(
-                    "ALTER TABLE continuation_runs ADD COLUMN workspace_path TEXT;",
-                )?;
-            }
-            transaction.execute_batch("PRAGMA user_version = 36;")?;
-        }
-        if current < 37 {
-            retained_child_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 37;")?;
-        }
-        if current < 38 {
-            analysis_kernel::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 38;")?;
-        }
-        if current < 39 {
-            refinement_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 39;")?;
-        }
-        if current < 42 {
-            benchmark_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 42;")?;
-        }
-        if current < 43 {
-            agent_middleware_pipeline_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 43;")?;
-        }
-        if current < 44 {
-            execution_policy_profiles_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 44;")?;
-        }
-        if current < 45 {
-            execution_backend_registry_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 45;")?;
-        }
-        if current < 46 {
-            external_coding_agent_adapter_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 46;")?;
-        }
-        if current < 47 {
-            agent_role_profiles_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 47;")?;
-        }
-        if current < 48 {
-            skill_trust_pipeline_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 48;")?;
-        }
-        if current < 49 {
-            team_sop_protocols_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 49;")?;
-        }
-        if current < 50 {
-            conversation_event_log_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 50;")?;
-        }
-        if current < 51 {
-            // Plan 50: additive Core-owned governance metadata. Existing
-            // records retain their confirmed user/durable defaults.
-            memory_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 51;")?;
-        }
-        if current < 52 {
-            collaboration_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 52;")?;
-        }
-        if current < 53 {
-            human_work_items_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 53;")?;
-        }
-        if current < 54 {
-            browser_session_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 54;")?;
-        }
-        if current < 55 {
-            artifact_handoff_registry_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 55;")?;
-        }
-        if current < 56 {
-            plan_artifact::PlanArtifactStore::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 56;")?;
-        }
-        if current < 57 {
-            workspace_state_checkpoint::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 57;")?;
-        }
-        if current < 58 {
-            incremental_change_protocol_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 58;")?;
-        }
-        if current < 59 {
-            task_worktree_isolation_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 59;")?;
-        }
-        if current < 60 {
-            team_resource_budget_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 60;")?;
-        }
-        if current < 61 {
-            composable_termination_conditions_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 61;")?;
-        }
-        if current < 62 {
-            workspace_bootstrap_manifest_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 62;")?;
-        }
-        if current < 63 {
-            team_coordination_policies_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 63;")?;
-        }
-        if current < 64 {
-            typed_agent_handoff_contract_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 64;")?;
-        }
-        if current < 65 {
-            schema_driven_agent_configuration_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 65;")?;
-        }
-        if current < 66 {
-            experience_replay_library_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 66;")?;
-        }
-        if current < 67 {
-            code_diagnostics_feedback_loop_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 67;")?;
-        }
-        if current < 68 {
-            workflow_optimization_lab_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 68;")?;
-        }
-        if current < 69 {
-            core_topic_subscription_event_bus_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 69;")?;
-        }
-        if current < 70 {
-            dependency_aware_task_graph_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 70;")?;
-        }
-        if current < 71 {
-            declarative_agent_component_registry_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 71;")?;
-        }
-        if current < 72 {
-            typed_context_references_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 72;")?;
-        }
-        if current < 73 {
-            safe_ui_extension_framework_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 73;")?;
-        }
-        if current < 74 {
-            capability_workbenches_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 74;")?;
-        }
-        if current < 75 {
-            team_coordinator_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 75;")?;
-        }
-        if current < 76 {
-            project_instruction_stack_store::install_schema(&transaction)?;
-            batch_invocation_runtime_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 76;")?;
-        }
-        if current < 77 {
-            workspace_sets_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 77;")?;
-        }
-        if current < 78 {
-            knowledge_source_registry_project_role_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 78;")?;
-        }
-        if current < 79 {
-            agent_git_change_sets_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 79;")?;
-        }
-        if current < 80 {
-            architect_editor_model_pipeline_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 80;")?;
-        }
-        if current < 81 {
-            event_visualizer_registry_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 81;")?;
-        }
-        if current < 82 {
-            reasoning_operator_library_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 82;")?;
-        }
-        if current < 83 {
-            output_guardrail_pipeline_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 83;")?;
-        }
-        if current < 84 {
-            customization_inventory_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 84;")?;
-        }
-        if current < 85 {
-            standing_approval_profiles_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 85;")?;
-        }
-        if current < 86 {
-            approval_policy_profiles_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 86;")?;
-        }
-        if current < 87 {
-            checkpoint_forking_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 87;")?;
-        }
-        if current < 88 {
-            privacy_telemetry_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 88;")?;
-        }
-        if current < 89 {
-            conversation_bridge_adapters_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 89;")?;
-        }
-        if current < 90 {
-            declarative_runtime_components_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 90;")?;
-        }
-        if current < 91 {
-            guided_calibration_sessions_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 91;")?;
-        }
-        if current < 92 {
-            persistent_agent_registry_store::install_schema(&transaction)?;
-            transaction.execute_batch("PRAGMA user_version = 92;")?;
-        }
+        migrations::v002::apply(&transaction, current)?;
+        migrations::v003::apply(&transaction, current)?;
+        migrations::v004::apply(&transaction, current)?;
+        migrations::v005::apply(&transaction, current)?;
+        migrations::v006::apply(&transaction, current)?;
+        migrations::v007::apply(&transaction, current)?;
+        migrations::v008::apply(&transaction, current)?;
+        migrations::v009::apply(&transaction, current)?;
+        migrations::v010::apply(&transaction, current)?;
+        migrations::v011::apply(&transaction, current)?;
+        migrations::v012::apply(&transaction, current)?;
+        migrations::v013::apply(&transaction, current)?;
+        migrations::v014::apply(&transaction, current)?;
+        migrations::v015::apply(&transaction, current)?;
+        migrations::v016::apply(&transaction, current)?;
+        migrations::v017::apply(&transaction, current)?;
+        migrations::v018::apply(&transaction, current)?;
+        migrations::v019::apply(&transaction, current)?;
+        migrations::v020::apply(&transaction, current)?;
+        migrations::v021::apply(&transaction, current)?;
+        migrations::v022::apply(&transaction, current)?;
+        migrations::v023::apply(&transaction, current)?;
+        migrations::v024::apply(&transaction, current)?;
+        migrations::v025::apply(&transaction, current)?;
+        migrations::v026::apply(&transaction, current)?;
+        migrations::v032::apply(&transaction, current)?;
+        migrations::v033::apply(&transaction, current)?;
+        migrations::v034::apply(&transaction, current)?;
+        migrations::v035::apply(&transaction, current)?;
+        migrations::v036::apply(&transaction, current)?;
+        migrations::v037::apply(&transaction, current)?;
+        migrations::v038::apply(&transaction, current)?;
+        migrations::v039::apply(&transaction, current)?;
+        migrations::v042::apply(&transaction, current)?;
+        migrations::v043::apply(&transaction, current)?;
+        migrations::v044::apply(&transaction, current)?;
+        migrations::v045::apply(&transaction, current)?;
+        migrations::v046::apply(&transaction, current)?;
+        migrations::v047::apply(&transaction, current)?;
+        migrations::v048::apply(&transaction, current)?;
+        migrations::v049::apply(&transaction, current)?;
+        migrations::v050::apply(&transaction, current)?;
+        migrations::v051::apply(&transaction, current)?;
+        migrations::v052::apply(&transaction, current)?;
+        migrations::v053::apply(&transaction, current)?;
+        migrations::v054::apply(&transaction, current)?;
+        migrations::v055::apply(&transaction, current)?;
+        migrations::v056::apply(&transaction, current)?;
+        migrations::v057::apply(&transaction, current)?;
+        migrations::v058::apply(&transaction, current)?;
+        migrations::v059::apply(&transaction, current)?;
+        migrations::v060::apply(&transaction, current)?;
+        migrations::v061::apply(&transaction, current)?;
+        migrations::v062::apply(&transaction, current)?;
+        migrations::v063::apply(&transaction, current)?;
+        migrations::v064::apply(&transaction, current)?;
+        migrations::v065::apply(&transaction, current)?;
+        migrations::v066::apply(&transaction, current)?;
+        migrations::v067::apply(&transaction, current)?;
+        migrations::v068::apply(&transaction, current)?;
+        migrations::v069::apply(&transaction, current)?;
+        migrations::v070::apply(&transaction, current)?;
+        migrations::v071::apply(&transaction, current)?;
+        migrations::v072::apply(&transaction, current)?;
+        migrations::v073::apply(&transaction, current)?;
+        migrations::v074::apply(&transaction, current)?;
+        migrations::v075::apply(&transaction, current)?;
+        migrations::v076::apply(&transaction, current)?;
+        migrations::v077::apply(&transaction, current)?;
+        migrations::v078::apply(&transaction, current)?;
+        migrations::v079::apply(&transaction, current)?;
+        migrations::v080::apply(&transaction, current)?;
+        migrations::v081::apply(&transaction, current)?;
+        migrations::v082::apply(&transaction, current)?;
+        migrations::v083::apply(&transaction, current)?;
+        migrations::v084::apply(&transaction, current)?;
+        migrations::v085::apply(&transaction, current)?;
+        migrations::v086::apply(&transaction, current)?;
+        migrations::v087::apply(&transaction, current)?;
+        migrations::v088::apply(&transaction, current)?;
+        migrations::v089::apply(&transaction, current)?;
+        migrations::v090::apply(&transaction, current)?;
+        migrations::v091::apply(&transaction, current)?;
+        migrations::v092::apply(&transaction, current)?;
         transaction.commit()?;
         Ok(())
     }

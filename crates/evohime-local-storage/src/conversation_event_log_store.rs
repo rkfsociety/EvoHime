@@ -745,6 +745,7 @@ fn conversation_range(
 mod tests {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)]
     fn accept_message(
         connection: &Connection,
         conversation_id: &str,

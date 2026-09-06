@@ -1124,6 +1124,7 @@ mod index;
 #[path = "workspace_rag_retrieval.rs"]
 mod retrieval;
 
+#[allow(unused_imports)]
 pub use evidence::{
     build_evidence_context, finalize_citations, rag_ledger_projection, verify_document_provenance,
 };
@@ -1133,6 +1134,7 @@ pub use retrieval::SearchWorkspaceInput;
 pub(super) use retrieval::{
     bounded_error, estimate_tokens, previous_char_boundary, stable_id, validate_source,
 };
+#[allow(unused_imports)]
 pub use retrieval::{
     build_vector_index, search_workspace, search_workspace_with_config,
     search_workspace_with_progress,

@@ -59,7 +59,7 @@ impl EventJournal {
     /// `memory_entries` table (SCHEMA_VERSION 8).
     pub async fn save_memory(
         &self,
-        record: &evohime_local_storage::memory_store::MemoryRecord,
+        record: &evohime_local_storage::domains::memory::MemoryRecord,
     ) -> Result<(), String> {
         let mut governed = record.clone();
         if matches!(
@@ -72,7 +72,7 @@ impl EventJournal {
         crate::memory_governance::MemoryWriteGate::validate(&governed)
             .map_err(|error| error.to_string())?;
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::insert(
+        evohime_local_storage::domains::memory::MemoryStoreSql::insert(
             database.connection(),
             &governed,
         )
@@ -82,13 +82,13 @@ impl EventJournal {
     /// Lists non-forgotten Memory v1 records for one exact scope.
     pub async fn list_memory(
         &self,
-        scope: evohime_local_storage::memory_store::MemoryScope,
+        scope: evohime_local_storage::domains::memory::MemoryScope,
         scope_id: &str,
         include_archived: bool,
         limit: u32,
-    ) -> Result<Vec<evohime_local_storage::memory_store::MemoryRecord>, String> {
+    ) -> Result<Vec<evohime_local_storage::domains::memory::MemoryRecord>, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::list(
+        evohime_local_storage::domains::memory::MemoryStoreSql::list(
             database.connection(),
             scope,
             scope_id,
@@ -102,14 +102,14 @@ impl EventJournal {
     /// scope.
     pub async fn search_memory(
         &self,
-        scope: evohime_local_storage::memory_store::MemoryScope,
+        scope: evohime_local_storage::domains::memory::MemoryScope,
         scope_id: &str,
         query: &str,
         now: &str,
         limit: u32,
-    ) -> Result<Vec<evohime_local_storage::memory_store::MemoryRecord>, String> {
+    ) -> Result<Vec<evohime_local_storage::domains::memory::MemoryRecord>, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::search(
+        evohime_local_storage::domains::memory::MemoryStoreSql::search(
             database.connection(),
             scope,
             scope_id,
@@ -129,9 +129,9 @@ impl EventJournal {
         query: &str,
         now: &str,
         limit: u32,
-    ) -> Result<Vec<evohime_local_storage::memory_store::MemoryRecord>, String> {
+    ) -> Result<Vec<evohime_local_storage::domains::memory::MemoryRecord>, String> {
         self.search_memory(
-            evohime_local_storage::memory_store::MemoryScope::Project,
+            evohime_local_storage::domains::memory::MemoryScope::Project,
             scope_id,
             query,
             now,
@@ -144,7 +144,7 @@ impl EventJournal {
     /// record was found.
     pub async fn archive_memory(&self, id: &str) -> Result<bool, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::archive(database.connection(), id)
+        evohime_local_storage::domains::memory::MemoryStoreSql::archive(database.connection(), id)
             .map_err(|error| error.to_string())
     }
 
@@ -152,7 +152,7 @@ impl EventJournal {
     /// no matching row was found.
     pub async fn forget_memory(&self, id: &str) -> Result<bool, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::forget(database.connection(), id)
+        evohime_local_storage::domains::memory::MemoryStoreSql::forget(database.connection(), id)
             .map_err(|error| error.to_string())
     }
 
@@ -161,9 +161,9 @@ impl EventJournal {
     pub async fn get_memory(
         &self,
         id: &str,
-    ) -> Result<Option<evohime_local_storage::memory_store::MemoryRecord>, String> {
+    ) -> Result<Option<evohime_local_storage::domains::memory::MemoryRecord>, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::get_by_id(database.connection(), id)
+        evohime_local_storage::domains::memory::MemoryStoreSql::get_by_id(database.connection(), id)
             .map_err(|error| error.to_string())
     }
 
@@ -171,13 +171,13 @@ impl EventJournal {
     /// queue and the rejected/superseded history use the same path.
     pub async fn list_memory_by_state(
         &self,
-        scope: evohime_local_storage::memory_store::MemoryScope,
+        scope: evohime_local_storage::domains::memory::MemoryScope,
         scope_id: &str,
         state: &str,
         limit: u32,
-    ) -> Result<Vec<evohime_local_storage::memory_store::MemoryRecord>, String> {
+    ) -> Result<Vec<evohime_local_storage::domains::memory::MemoryRecord>, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::list_by_state(
+        evohime_local_storage::domains::memory::MemoryStoreSql::list_by_state(
             database.connection(),
             scope,
             scope_id,
@@ -190,11 +190,11 @@ impl EventJournal {
     /// Per-state counters for OperationsPanel; never exposes any body.
     pub async fn count_memory_by_state(
         &self,
-        scope: evohime_local_storage::memory_store::MemoryScope,
+        scope: evohime_local_storage::domains::memory::MemoryScope,
         scope_id: &str,
     ) -> Result<Vec<(String, i64)>, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::count_by_state(
+        evohime_local_storage::domains::memory::MemoryStoreSql::count_by_state(
             database.connection(),
             scope,
             scope_id,
@@ -206,13 +206,13 @@ impl EventJournal {
     /// conflict detection in `memory_extraction::detect_conflict`.
     pub async fn memory_conflict_candidates(
         &self,
-        scope: evohime_local_storage::memory_store::MemoryScope,
+        scope: evohime_local_storage::domains::memory::MemoryScope,
         scope_id: &str,
         kind: &str,
         limit: u32,
-    ) -> Result<Vec<evohime_local_storage::memory_store::MemoryRecord>, String> {
+    ) -> Result<Vec<evohime_local_storage::domains::memory::MemoryRecord>, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::conflict_candidates(
+        evohime_local_storage::domains::memory::MemoryStoreSql::conflict_candidates(
             database.connection(),
             scope,
             scope_id,
@@ -226,7 +226,7 @@ impl EventJournal {
     /// returns the actual current state.
     pub async fn transition_memory_state(&self, id: &str, target: &str) -> Result<String, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::transition_state(
+        evohime_local_storage::domains::memory::MemoryStoreSql::transition_state(
             database.connection(),
             id,
             target,
@@ -237,7 +237,7 @@ impl EventJournal {
     /// Replaces a pending candidate's statement with one the user wrote.
     pub async fn revise_pending_memory(&self, id: &str, statement: &str) -> Result<(), String> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::revise_pending_statement(
+        evohime_local_storage::domains::memory::MemoryStoreSql::revise_pending_statement(
             database.connection(),
             id,
             statement,
@@ -253,7 +253,7 @@ impl EventJournal {
         reason: &str,
     ) -> Result<(), String> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::supersede(
+        evohime_local_storage::domains::memory::MemoryStoreSql::supersede(
             database.connection(),
             old_id,
             new_id,
@@ -268,7 +268,7 @@ impl EventJournal {
         limit: usize,
     ) -> Result<Vec<String>, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::supersession_chain(
+        evohime_local_storage::domains::memory::MemoryStoreSql::supersession_chain(
             database.connection(),
             id,
             limit,
@@ -280,7 +280,7 @@ impl EventJournal {
     /// hidden action on stale content.
     pub async fn expire_due_memory(&self, now: &str) -> Result<usize, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::expire_due(database.connection(), now)
+        evohime_local_storage::domains::memory::MemoryStoreSql::expire_due(database.connection(), now)
             .map_err(|error| error.to_string())
     }
 
@@ -294,7 +294,7 @@ impl EventJournal {
         forgotten_at: &str,
     ) -> Result<bool, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::forget_with_tombstone(
+        evohime_local_storage::domains::memory::MemoryStoreSql::forget_with_tombstone(
             database.connection(),
             id,
             tombstone_id,
@@ -308,11 +308,11 @@ impl EventJournal {
     /// `memory_extraction::AliasTable`. Model inference can never add one.
     pub async fn list_memory_aliases(
         &self,
-        scope: evohime_local_storage::memory_store::MemoryScope,
+        scope: evohime_local_storage::domains::memory::MemoryScope,
         scope_id: &str,
     ) -> Result<Vec<(String, String)>, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::list_aliases(
+        evohime_local_storage::domains::memory::MemoryStoreSql::list_aliases(
             database.connection(),
             scope,
             scope_id,
@@ -327,9 +327,9 @@ impl EventJournal {
         note: SessionMemoryNote<'_>,
     ) -> Result<(), String> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::insert_session_note(
+        evohime_local_storage::domains::memory::MemoryStoreSql::insert_session_note(
             database.connection(),
-            evohime_local_storage::memory_store::InsertSessionNoteInput {
+            evohime_local_storage::domains::memory::InsertSessionNoteInput {
                 id: note.id,
                 session_id: note.session_id,
                 scope: note.scope,
@@ -349,7 +349,7 @@ impl EventJournal {
         now: &str,
     ) -> Result<Vec<(String, String)>, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::list_session_notes(
+        evohime_local_storage::domains::memory::MemoryStoreSql::list_session_notes(
             database.connection(),
             session_id,
             now,
@@ -359,7 +359,7 @@ impl EventJournal {
 
     pub async fn purge_expired_memory_session_notes(&self, now: &str) -> Result<usize, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::memory_store::MemoryStoreSql::purge_expired_session_notes(
+        evohime_local_storage::domains::memory::MemoryStoreSql::purge_expired_session_notes(
             database.connection(),
             now,
         )

@@ -647,7 +647,7 @@ impl CoreNodeAdapter {
                 let records = self
                     .journal
                     .search_memory(
-                        evohime_local_storage::memory_store::MemoryScope::Project,
+                        evohime_local_storage::domains::memory::MemoryScope::Project,
                         &self.workspace_root.to_string_lossy(),
                         query,
                         &now,

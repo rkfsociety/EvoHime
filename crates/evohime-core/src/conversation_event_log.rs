@@ -227,7 +227,7 @@ pub fn project_core_event(
 }
 
 pub fn renderer_event(
-    event: &evohime_local_storage::conversation_event_log_store::StoredConversationEvent,
+    event: &evohime_local_storage::domains::audit::StoredConversationEvent,
 ) -> Result<RendererConversationEvent, ConversationEventError> {
     serde_json::from_slice::<serde_json::Value>(&event.renderer_payload)
         .map_err(|_| ConversationEventError::InvalidPayload)?;

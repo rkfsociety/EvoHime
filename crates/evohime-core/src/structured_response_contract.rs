@@ -1,5 +1,6 @@
 //! Core-owned lifecycle and redacted provenance for structured model output.
 
+#[allow(unused_imports)]
 pub use evohime_model_gateway::structured_response::{
     ResponseContract, ResponseError, ResponseResult, ResponseStrategy, MAX_REPAIR_ATTEMPTS,
     MAX_SCHEMA_BYTES, MAX_TOTAL_ATTEMPTS, STRUCTURED_RESPONSE_SCHEMA_VERSION,

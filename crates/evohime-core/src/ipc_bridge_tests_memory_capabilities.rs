@@ -363,21 +363,21 @@ async fn memory_pending_conflict_confirm_reject_supersede_round_trip() {
     // Core's policy gate, not by an IPC caller, so the IPC surface only
     // has to prove that pending records can be reviewed and resolved.
     let seed = |id: &str, state: &str, statement: &str| {
-        let mut record = evohime_local_storage::memory_store::MemoryRecord::new(
-            evohime_local_storage::memory_store::MemoryRecordInput {
+        let mut record = evohime_local_storage::domains::memory::MemoryRecord::new(
+            evohime_local_storage::domains::memory::MemoryRecordInput {
                 id: id.to_owned(),
-                scope: evohime_local_storage::memory_store::MemoryScope::Project,
+                scope: evohime_local_storage::domains::memory::MemoryScope::Project,
                 scope_id: "proj-1".to_owned(),
                 title: "Язык интерфейса".to_owned(),
                 content: statement.to_owned(),
                 provenance: "{\"message_id\":\"msg-1\"}".to_owned(),
-                privacy: evohime_local_storage::memory_store::MemoryPrivacy::Internal,
+                privacy: evohime_local_storage::domains::memory::MemoryPrivacy::Internal,
                 created_at: "1000".to_owned(),
                 expires_at: Some("99999999999999".to_owned()),
             },
         )
         .expect("record builds");
-        record.extraction = evohime_local_storage::memory_store::MemoryExtractionFields {
+        record.extraction = evohime_local_storage::domains::memory::MemoryExtractionFields {
             kind: "preference".to_owned(),
             canonical_subject: Some("язык интерфейса".to_owned()),
             confirmation_state: state.to_owned(),

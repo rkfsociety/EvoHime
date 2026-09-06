@@ -4,10 +4,10 @@ impl EventJournal {
     /// Persists one validated child handoff envelope.
     pub async fn save_child_handoff(
         &self,
-        record: &evohime_local_storage::child_store::HandoffRecord,
+        record: &evohime_local_storage::domains::agents::HandoffRecord,
     ) -> Result<(), String> {
         let database = self.database.lock().await;
-        evohime_local_storage::child_store::ChildStoreSql::insert_handoff(
+        evohime_local_storage::domains::agents::ChildStoreSql::insert_handoff(
             database.connection(),
             record,
         )
@@ -19,9 +19,9 @@ impl EventJournal {
         &self,
         task_id: &str,
         limit: u32,
-    ) -> Result<Vec<evohime_local_storage::child_store::HandoffRecord>, String> {
+    ) -> Result<Vec<evohime_local_storage::domains::agents::HandoffRecord>, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::child_store::ChildStoreSql::list_handoffs_by_task(
+        evohime_local_storage::domains::agents::ChildStoreSql::list_handoffs_by_task(
             database.connection(),
             task_id,
             limit,
@@ -32,10 +32,10 @@ impl EventJournal {
     /// Persists one validated, read-only child task request.
     pub async fn save_child_task_request(
         &self,
-        record: &evohime_local_storage::child_store::ChildTaskRequestRecord,
+        record: &evohime_local_storage::domains::agents::ChildTaskRequestRecord,
     ) -> Result<(), String> {
         let database = self.database.lock().await;
-        evohime_local_storage::child_store::ChildStoreSql::insert_child_task_request(
+        evohime_local_storage::domains::agents::ChildStoreSql::insert_child_task_request(
             database.connection(),
             record,
         )
@@ -46,9 +46,9 @@ impl EventJournal {
     pub async fn get_child_task_request(
         &self,
         child_task_id: &str,
-    ) -> Result<Option<evohime_local_storage::child_store::ChildTaskRequestRecord>, String> {
+    ) -> Result<Option<evohime_local_storage::domains::agents::ChildTaskRequestRecord>, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::child_store::ChildStoreSql::get_child_task_request(
+        evohime_local_storage::domains::agents::ChildStoreSql::get_child_task_request(
             database.connection(),
             child_task_id,
         )
@@ -58,10 +58,10 @@ impl EventJournal {
     /// Persists one accepted child report.
     pub async fn save_child_report(
         &self,
-        record: &evohime_local_storage::child_store::ChildReportRecord,
+        record: &evohime_local_storage::domains::agents::ChildReportRecord,
     ) -> Result<(), String> {
         let database = self.database.lock().await;
-        evohime_local_storage::child_store::ChildStoreSql::insert_child_report(
+        evohime_local_storage::domains::agents::ChildStoreSql::insert_child_report(
             database.connection(),
             record,
         )
@@ -70,7 +70,7 @@ impl EventJournal {
 
     pub async fn next_child_parent_sequence(&self, parent_task_id: &str) -> Result<u64, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::child_store::ChildStoreSql::next_parent_sequence(
+        evohime_local_storage::domains::agents::ChildStoreSql::next_parent_sequence(
             database.connection(),
             parent_task_id,
         )
@@ -80,10 +80,10 @@ impl EventJournal {
 
     pub async fn save_coordinator_checkpoint(
         &self,
-        record: &evohime_local_storage::child_store::CoordinatorCheckpointRecord,
+        record: &evohime_local_storage::domains::agents::CoordinatorCheckpointRecord,
     ) -> Result<(), String> {
         let database = self.database.lock().await;
-        evohime_local_storage::child_store::ChildStoreSql::upsert_coordinator_checkpoint(
+        evohime_local_storage::domains::agents::ChildStoreSql::upsert_coordinator_checkpoint(
             database.connection(),
             record,
         )
@@ -93,10 +93,10 @@ impl EventJournal {
     pub async fn get_coordinator_checkpoint(
         &self,
         child_task_id: &str,
-    ) -> Result<Option<evohime_local_storage::child_store::CoordinatorCheckpointRecord>, String>
+    ) -> Result<Option<evohime_local_storage::domains::agents::CoordinatorCheckpointRecord>, String>
     {
         let database = self.database.lock().await;
-        evohime_local_storage::child_store::ChildStoreSql::latest_coordinator_checkpoint(
+        evohime_local_storage::domains::agents::ChildStoreSql::latest_coordinator_checkpoint(
             database.connection(),
             child_task_id,
         )
@@ -108,9 +108,9 @@ impl EventJournal {
         parent_task_id: &str,
         now_ms: i64,
         limit: u32,
-    ) -> Result<Vec<evohime_local_storage::child_store::CoordinatorCheckpointRecord>, String> {
+    ) -> Result<Vec<evohime_local_storage::domains::agents::CoordinatorCheckpointRecord>, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::child_store::ChildStoreSql::list_dead_letter_checkpoints(
+        evohime_local_storage::domains::agents::ChildStoreSql::list_dead_letter_checkpoints(
             database.connection(),
             parent_task_id,
             now_ms,

@@ -28,15 +28,15 @@ pub(crate) fn memory_domain_scope(
 /// the real `memory_entries` table.
 pub(crate) fn memory_store_scope(
     kind: &str,
-) -> Result<evohime_local_storage::memory_store::MemoryScope, String> {
+) -> Result<evohime_local_storage::domains::memory::MemoryScope, String> {
     match kind {
-        "project" => Ok(evohime_local_storage::memory_store::MemoryScope::Project),
-        "task" => Ok(evohime_local_storage::memory_store::MemoryScope::Task),
-        "workspace" => Ok(evohime_local_storage::memory_store::MemoryScope::Workspace),
+        "project" => Ok(evohime_local_storage::domains::memory::MemoryScope::Project),
+        "task" => Ok(evohime_local_storage::domains::memory::MemoryScope::Task),
+        "workspace" => Ok(evohime_local_storage::domains::memory::MemoryScope::Workspace),
         // Session-scoped memory exists only as a `memory_session_notes` row
         // with automatic expiry; it is addressable here so pending/conflict
         // listings can report it, but it never enters long-term retrieval.
-        "session" => Ok(evohime_local_storage::memory_store::MemoryScope::Session),
+        "session" => Ok(evohime_local_storage::domains::memory::MemoryScope::Session),
         other => Err(format!("unsupported memory scope kind: {other}")),
     }
 }
@@ -59,16 +59,16 @@ pub(crate) fn parse_memory_privacy(
 /// storage (callers must not be able to persist a value they cannot express).
 pub(crate) fn memory_store_privacy(
     label: crate::memory_domain::PrivacyLabel,
-) -> Result<evohime_local_storage::memory_store::MemoryPrivacy, String> {
+) -> Result<evohime_local_storage::domains::memory::MemoryPrivacy, String> {
     match label {
         crate::memory_domain::PrivacyLabel::Public => {
-            Ok(evohime_local_storage::memory_store::MemoryPrivacy::Public)
+            Ok(evohime_local_storage::domains::memory::MemoryPrivacy::Public)
         }
         crate::memory_domain::PrivacyLabel::Internal => {
-            Ok(evohime_local_storage::memory_store::MemoryPrivacy::Internal)
+            Ok(evohime_local_storage::domains::memory::MemoryPrivacy::Internal)
         }
         crate::memory_domain::PrivacyLabel::Private => {
-            Ok(evohime_local_storage::memory_store::MemoryPrivacy::Private)
+            Ok(evohime_local_storage::domains::memory::MemoryPrivacy::Private)
         }
         crate::memory_domain::PrivacyLabel::Secret => {
             Err("secret privacy is not supported by persistent memory storage".to_string())
@@ -211,7 +211,7 @@ pub(crate) fn memory_provenance_source_id(
 /// `memory_extraction::detect_conflict`. Records whose enums no longer parse
 /// are skipped rather than silently treated as a different kind.
 pub(crate) fn memory_active_summary(
-    record: &evohime_local_storage::memory_store::MemoryRecord,
+    record: &evohime_local_storage::domains::memory::MemoryRecord,
 ) -> Option<crate::memory_extraction::ActiveMemorySummary> {
     Some(crate::memory_extraction::ActiveMemorySummary {
         id: record.id.clone(),
@@ -257,7 +257,7 @@ pub(crate) fn validate_memory_idempotency_key(key: &str) -> Result<(), String> {
 /// Canonical subject of a stored record. Legacy rows have none, so the title
 /// stands in and gets normalized by the same versioned normalizer.
 pub(crate) fn memory_conflict_subject(
-    record: &evohime_local_storage::memory_store::MemoryRecord,
+    record: &evohime_local_storage::domains::memory::MemoryRecord,
 ) -> String {
     match crate::memory_extraction::normalize_subject(record.subject_for_conflict()) {
         Ok(subject) => subject,
@@ -272,9 +272,9 @@ pub(crate) fn memory_conflict_subject(
 /// same `kind + canonical_subject + scope`, incompatible statements.
 /// Equivalent statements are duplicates, not conflicts.
 pub(crate) fn memory_conflicting_record<'a>(
-    candidate: &evohime_local_storage::memory_store::MemoryRecord,
-    active: &'a [evohime_local_storage::memory_store::MemoryRecord],
-) -> Option<&'a evohime_local_storage::memory_store::MemoryRecord> {
+    candidate: &evohime_local_storage::domains::memory::MemoryRecord,
+    active: &'a [evohime_local_storage::domains::memory::MemoryRecord],
+) -> Option<&'a evohime_local_storage::domains::memory::MemoryRecord> {
     let subject = memory_conflict_subject(candidate);
     let statement = crate::memory_extraction::normalize_subject(&candidate.content).ok();
     active.iter().find(|existing| {
@@ -320,7 +320,7 @@ pub(crate) fn decode_memory_scope_id(scope_id: &str) -> (String, String) {
 /// returned over IPC, decoding the scope id and parsing the provenance JSON
 /// that was serialized at create time.
 pub(crate) fn memory_record_to_json(
-    record: &evohime_local_storage::memory_store::MemoryRecord,
+    record: &evohime_local_storage::domains::memory::MemoryRecord,
 ) -> Result<serde_json::Value, String> {
     let (project_id, secondary_id) = decode_memory_scope_id(&record.scope_id);
     let provenance: serde_json::Value = if record.provenance.trim().is_empty() {
@@ -330,9 +330,9 @@ pub(crate) fn memory_record_to_json(
     };
     let scope_kind = record.scope.as_str();
     let privacy = match record.privacy {
-        evohime_local_storage::memory_store::MemoryPrivacy::Public => "public",
-        evohime_local_storage::memory_store::MemoryPrivacy::Internal => "internal",
-        evohime_local_storage::memory_store::MemoryPrivacy::Private => "private",
+        evohime_local_storage::domains::memory::MemoryPrivacy::Public => "public",
+        evohime_local_storage::domains::memory::MemoryPrivacy::Internal => "internal",
+        evohime_local_storage::domains::memory::MemoryPrivacy::Private => "private",
     };
     // Metadata-only projection. `ListMemory`/`SearchMemory` never carry the
     // statement or the provenance body: those are reachable only through an
@@ -376,7 +376,7 @@ pub(crate) fn memory_record_to_json(
 /// the explicit `GetMemory` path. `sensitive` and forgotten records never
 /// return their body: the metadata still explains what exists and why.
 pub(crate) fn memory_record_body_json(
-    record: &evohime_local_storage::memory_store::MemoryRecord,
+    record: &evohime_local_storage::domains::memory::MemoryRecord,
 ) -> Result<serde_json::Value, String> {
     let mut value = memory_record_to_json(record)?;
     let object = value

@@ -1,5 +1,5 @@
 use crate::research::sha256_hex;
-use evohime_local_storage::memory_store::{
+use evohime_local_storage::domains::memory::{
     MemoryPrivacy, MemoryRecord, MemoryRecordInput, MemoryScope,
 };
 use evohime_local_storage::ToolMetricRecord;

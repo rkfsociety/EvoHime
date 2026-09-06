@@ -27,7 +27,7 @@ use evohime_context_budget::{
     profile::ProfileCatalog,
     scratchpad::{ScratchpadCategory, ScratchpadEntry},
 };
-use evohime_local_storage::artifact_store::ArtifactStore;
+use evohime_local_storage::domains::workflow::ArtifactStore;
 use evohime_model_gateway::{
     providers::{ChatMessage, ChatRole},
     ToolSpec,

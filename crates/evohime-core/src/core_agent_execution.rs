@@ -733,7 +733,7 @@ impl ToolAgent {
                         .map_err(|error| AgentRunError::Internal(error.to_string()))?;
                     journal
                         .record_model_tool_intent(
-                            &evohime_local_storage::model_provenance::ToolIntentRecord {
+                            &evohime_local_storage::domains::receipts::ToolIntentRecord {
                                 intent_id: uuid::Uuid::now_v7().to_string(),
                                 origin_request_id: request_id.to_owned(),
                                 origin_request_envelope_hash: request_hash.to_owned(),

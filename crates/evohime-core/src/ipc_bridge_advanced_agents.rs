@@ -163,7 +163,7 @@ impl IpcBridge {
                 let Ok(database) = database.try_lock() else {
                     return rejected("storage_busy");
                 };
-                let Ok(bytes) = evohime_local_storage::artifact_store::ArtifactStore::new(
+                let Ok(bytes) = evohime_local_storage::domains::workflow::ArtifactStore::new(
                     database.connection(),
                 )
                 .read_bytes(
@@ -215,7 +215,7 @@ impl IpcBridge {
                 let Ok(database) = database.try_lock() else {
                     return rejected("storage_busy");
                 };
-                let Ok(offload) = evohime_local_storage::artifact_store::ArtifactStore::new(
+                let Ok(offload) = evohime_local_storage::domains::workflow::ArtifactStore::new(
                     database.connection(),
                 )
                 .offload_bytes(

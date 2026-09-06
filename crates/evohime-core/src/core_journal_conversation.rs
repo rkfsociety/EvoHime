@@ -32,7 +32,7 @@ impl EventJournal {
         content: &str,
     ) -> Result<
         (
-            evohime_local_storage::conversation_event_log_store::MessageAcceptance,
+            evohime_local_storage::domains::audit::MessageAcceptance,
             i64,
         ),
         StorageError,
@@ -43,9 +43,9 @@ impl EventJournal {
             .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
         let content_hash = hex::encode(Sha256::digest(content.as_bytes()));
         let database = self.database.lock().await;
-        let acceptance = evohime_local_storage::conversation_event_log_store::accept_message(
+        let acceptance = evohime_local_storage::domains::audit::accept_message(
             database.connection(),
-            evohime_local_storage::conversation_event_log_store::AcceptMessageInput {
+            evohime_local_storage::domains::audit::AcceptMessageInput {
                 conversation_id,
                 workspace_id,
                 task_id,
@@ -72,12 +72,12 @@ impl EventJournal {
         after_sequence: u64,
         limit: usize,
     ) -> Result<
-        evohime_local_storage::conversation_event_log_store::ConversationEventPage,
+        evohime_local_storage::domains::audit::ConversationEventPage,
         StorageError,
     > {
         let database = self.database.lock().await;
         Ok(
-            evohime_local_storage::conversation_event_log_store::history_after(
+            evohime_local_storage::domains::audit::history_after(
                 database.connection(),
                 conversation_id,
                 after_sequence,
@@ -96,7 +96,7 @@ impl EventJournal {
             .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
         let database = self.database.lock().await;
         let Some((conversation_id, client_message_id, workspace_id)) =
-            evohime_local_storage::conversation_event_log_store::task_binding(
+            evohime_local_storage::domains::audit::task_binding(
                 database.connection(),
                 task_id,
             )?
@@ -104,9 +104,9 @@ impl EventJournal {
             return Ok(());
         };
         for draft in drafts {
-            let stored = evohime_local_storage::conversation_event_log_store::append_event(
+            let stored = evohime_local_storage::domains::audit::append_event(
                 database.connection(),
-                evohime_local_storage::conversation_event_log_store::NewConversationEvent {
+                evohime_local_storage::domains::audit::NewConversationEvent {
                     conversation_id: &conversation_id,
                     workspace_id: &workspace_id,
                     kind: &draft.kind,
@@ -142,7 +142,7 @@ impl EventJournal {
     ) -> Result<bool, StorageError> {
         let database = self.database.lock().await;
         Ok(
-            evohime_local_storage::conversation_event_log_store::claim_message_dispatch(
+            evohime_local_storage::domains::audit::claim_message_dispatch(
                 database.connection(),
                 conversation_id,
                 client_message_id,
@@ -158,7 +158,7 @@ impl EventJournal {
     ) -> Result<(), StorageError> {
         let database = self.database.lock().await;
         Ok(
-            evohime_local_storage::conversation_event_log_store::finish_message_dispatch(
+            evohime_local_storage::domains::audit::finish_message_dispatch(
                 database.connection(),
                 conversation_id,
                 client_message_id,
@@ -173,12 +173,12 @@ impl EventJournal {
         before_sequence: u64,
         limit: usize,
     ) -> Result<
-        evohime_local_storage::conversation_event_log_store::ConversationEventPage,
+        evohime_local_storage::domains::audit::ConversationEventPage,
         StorageError,
     > {
         let database = self.database.lock().await;
         Ok(
-            evohime_local_storage::conversation_event_log_store::history_before(
+            evohime_local_storage::domains::audit::history_before(
                 database.connection(),
                 conversation_id,
                 before_sequence,
@@ -219,7 +219,7 @@ impl EventJournal {
     ) -> Result<String, StorageError> {
         let database = self.database.lock().await;
         let store =
-            evohime_local_storage::artifact_store::ArtifactStore::new(database.connection());
+            evohime_local_storage::domains::workflow::ArtifactStore::new(database.connection());
         let reference = store
             .get_ref(locator)?
             .ok_or_else(|| StorageError::Context(format!("artifact {locator} was not found")))?;
@@ -247,7 +247,7 @@ impl EventJournal {
             evohime_local_storage::scratchpad_store::ScratchpadStore::new(database.connection());
         let removed_notes = scratchpad.forget(memory_id)?;
         let artifacts =
-            evohime_local_storage::artifact_store::ArtifactStore::new(database.connection());
+            evohime_local_storage::domains::workflow::ArtifactStore::new(database.connection());
         let removed_artifacts =
             artifacts.forget_task_artifacts(task_id, now, "forget memory cascade")?;
         let commands = evohime_local_storage::context_command_store::ContextCommandStore::new(

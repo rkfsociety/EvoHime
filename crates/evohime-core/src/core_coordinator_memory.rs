@@ -48,8 +48,8 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 let store_privacy = memory_store_privacy(record.privacy)?;
                 let provenance_json =
                     serde_json::to_string(&record.provenance).map_err(|error| error.to_string())?;
-                let store_record = evohime_local_storage::memory_store::MemoryRecord::new(
-                    evohime_local_storage::memory_store::MemoryRecordInput {
+                let store_record = evohime_local_storage::domains::memory::MemoryRecord::new(
+                    evohime_local_storage::domains::memory::MemoryRecordInput {
                         id: record.id.clone(),
                         scope: store_scope,
                         scope_id: encode_memory_scope_id(&project_id, &secondary_id),
@@ -261,7 +261,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let event_view_id = view_id.clone();
             let result = async {
                     use crate::memory_views_and_adaptive_recall as v;
-                    use evohime_local_storage::memory_views_and_adaptive_recall_store as store;
+                    use evohime_local_storage::domains::memory as store;
                     if view_id.is_empty() || idempotency_key.is_empty() || idempotency_key.len() > 128 {
                         return Err("invalid_memory_view_request".to_string());
                     }

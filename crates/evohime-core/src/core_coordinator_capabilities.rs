@@ -354,7 +354,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     },
                 )
                 .map_err(|error| error.to_string())?;
-                let record = evohime_local_storage::child_store::HandoffRecord {
+                let record = evohime_local_storage::domains::agents::HandoffRecord {
                     handoff_id: envelope.handoff_id.clone(),
                     task_id: envelope.task_id.clone(),
                     kind: handoff_kind_str(envelope.kind).to_string(),
@@ -476,7 +476,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     .map_err(|error| error.to_string())?;
                 let request_json =
                     serde_json::to_string(&request).map_err(|error| error.to_string())?;
-                let record = evohime_local_storage::child_store::ChildTaskRequestRecord {
+                let record = evohime_local_storage::domains::agents::ChildTaskRequestRecord {
                     child_task_id: request.child_task_id.clone(),
                     parent_task_id: request.parent_task_id.clone(),
                     role: request.role.clone(),
@@ -487,7 +487,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 let now_ms = task_memory::now_millis() as i64;
                 journal
                     .save_coordinator_checkpoint(
-                        &evohime_local_storage::child_store::CoordinatorCheckpointRecord {
+                        &evohime_local_storage::domains::agents::CoordinatorCheckpointRecord {
                             schema_version: 1,
                             child_task_id: request.child_task_id.clone(),
                             parent_task_id: request.parent_task_id.clone(),

@@ -104,7 +104,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     .map_err(|error| error.to_string())?;
                 let report_json =
                     serde_json::to_string(&accepted).map_err(|error| error.to_string())?;
-                let record = evohime_local_storage::child_store::ChildReportRecord {
+                let record = evohime_local_storage::domains::agents::ChildReportRecord {
                     child_task_id: accepted.child_task_id.clone(),
                     parent_task_id: stored_request.parent_task_id.clone(),
                     status: child_report_status_str(accepted.status).to_string(),
@@ -115,7 +115,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 let now_ms = task_memory::now_millis() as i64;
                 journal
                     .save_coordinator_checkpoint(
-                        &evohime_local_storage::child_store::CoordinatorCheckpointRecord {
+                        &evohime_local_storage::domains::agents::CoordinatorCheckpointRecord {
                             schema_version: 1,
                             child_task_id: accepted.child_task_id.clone(),
                             parent_task_id: stored_request.parent_task_id.clone(),

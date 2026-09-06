@@ -450,7 +450,7 @@ impl ToolAgent {
             (!outcome.ok).then_some("tool_error"),
         );
         if let Ok(terminal_receipt_hash) = completion {
-            let _ = evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+            let _ = evohime_local_storage::domains::receipts::ModelProvenanceRepository::new(
                 database.connection(),
             )
             .link_tool_receipt(

@@ -37,7 +37,7 @@ impl EventJournal {
     /// публикует read-only reconciliation-события, не переписывая исходные.
     pub async fn reconcile_ledger_on_startup(
         &self,
-    ) -> Result<Vec<(String, evohime_local_storage::execution_ledger::ActionState)>, StorageError>
+    ) -> Result<Vec<(String, evohime_local_storage::domains::audit::ActionState)>, StorageError>
     {
         let database = self.database.lock().await;
         database.reconcile_ledger_on_startup()
@@ -58,10 +58,10 @@ impl EventJournal {
     pub async fn recover_continuation_runs(&self) -> Result<usize, StorageError> {
         let database = self.database.lock().await;
         let runs =
-            evohime_local_storage::continuation_store::list_running_runs(database.connection())?;
+            evohime_local_storage::domains::runs::list_running_runs(database.connection())?;
         let mut recovered = 0;
         for run in runs {
-            if evohime_local_storage::continuation_store::transition_run(
+            if evohime_local_storage::domains::runs::transition_run(
                 database.connection(),
                 &run.run_id,
                 "running",
@@ -80,11 +80,11 @@ impl EventJournal {
     pub async fn recover_retained_children(&self) -> Result<(u32, u32), StorageError> {
         let database = self.database.lock().await;
         let unknown =
-            evohime_local_storage::retained_child_store::RetainedChildStore::reconcile_all_unknown(
+            evohime_local_storage::domains::agents::RetainedChildStore::reconcile_all_unknown(
                 database.connection(),
             )
             .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
-        let expired = evohime_local_storage::retained_child_store::RetainedChildStore::expire_due(
+        let expired = evohime_local_storage::domains::agents::RetainedChildStore::expire_due(
             database.connection(),
             task_memory::now_millis(),
         )
@@ -315,7 +315,7 @@ impl EventJournal {
         source_refs: &[evohime_model_provenance::SourceRef],
     ) -> Result<(), StorageError> {
         let database = self.database.lock().await;
-        let repository = evohime_local_storage::model_provenance::ModelProvenanceRepository::new(
+        let repository = evohime_local_storage::domains::receipts::ModelProvenanceRepository::new(
             database.connection(),
         );
         for compression in &ledger.compression {
@@ -323,7 +323,7 @@ impl EventJournal {
                 let shadow_id = format!("{request_id}:summary:{original_id}");
                 repository
                     .append_shadow_original(
-                        &evohime_local_storage::model_provenance::ShadowOriginalRecord {
+                        &evohime_local_storage::domains::receipts::ShadowOriginalRecord {
                             shadow_id,
                             ledger_id: ledger.id.clone(),
                             request_id: request_id.to_owned(),
@@ -346,7 +346,7 @@ impl EventJournal {
             let shadow_id = format!("{request_id}:prune:{}", dropped.id);
             repository
                 .append_shadow_original(
-                    &evohime_local_storage::model_provenance::ShadowOriginalRecord {
+                    &evohime_local_storage::domains::receipts::ShadowOriginalRecord {
                         shadow_id,
                         ledger_id: ledger.id.clone(),
                         request_id: request_id.to_owned(),

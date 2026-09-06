@@ -18,8 +18,9 @@ use crate::{
 };
 use evohime_listener_contract::{ListeningReason, ListeningState};
 use evohime_local_storage::{
-    execution_ledger, EventRecord, LocalDatabase, StorageError, WorkItemRecord,
+    EventRecord, LocalDatabase, StorageError, WorkItemRecord,
 };
+use evohime_local_storage::execution_ledger;
 use evohime_model_gateway::ModelGatewayConfig;
 use evohime_permissions::{Permission, PermissionMode};
 use evohime_receipts::{
@@ -699,8 +700,8 @@ fn workflow_start_failure(code: &str) -> serde_json::Value {
 }
 
 fn continuation_public_json(
-    run: &evohime_local_storage::continuation_store::RunRecord,
-    gates: &[evohime_local_storage::continuation_store::GateResultRecord],
+    run: &evohime_local_storage::domains::runs::RunRecord,
+    gates: &[evohime_local_storage::domains::runs::GateResultRecord],
 ) -> Result<Vec<u8>, String> {
     serde_json::to_vec(&serde_json::json!({
         "schema_version": crate::continuation::POLICY_SCHEMA_VERSION,

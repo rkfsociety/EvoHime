@@ -376,14 +376,14 @@ impl Coordinator {
     pub fn to_storage_record(
         &self,
         child: &str,
-    ) -> Result<evohime_local_storage::child_store::CoordinatorCheckpointRecord, CoordinatorError>
+    ) -> Result<evohime_local_storage::domains::agents::CoordinatorCheckpointRecord, CoordinatorError>
     {
         let checkpoint = self
             .checkpoints
             .get(child)
             .ok_or(CoordinatorError::InvalidCheckpoint)?;
         Ok(
-            evohime_local_storage::child_store::CoordinatorCheckpointRecord {
+            evohime_local_storage::domains::agents::CoordinatorCheckpointRecord {
                 schema_version: 1,
                 child_task_id: checkpoint.child_task_id.clone(),
                 parent_task_id: checkpoint.parent_task_id.clone(),
@@ -615,7 +615,7 @@ pub struct ArtifactSummaryProjection {
 /// only the returned summary; no full blob is exposed without a current,
 /// locator-scoped full grant and explicit selected-context membership.
 pub struct ReadArtifactForChildInput<'a> {
-    pub store: &'a evohime_local_storage::artifact_store::ArtifactStore<'a>,
+    pub store: &'a evohime_local_storage::domains::workflow::ArtifactStore<'a>,
     pub correlation: &'a CorrelationContext,
     pub selected_context_ids: &'a [String],
     pub grants: &'a [Grant],
@@ -708,7 +708,7 @@ pub fn accept_report_with_offload(
             )))
         }
     };
-    let result = evohime_local_storage::artifact_store::ArtifactStore::new(connection)
+    let result = evohime_local_storage::domains::workflow::ArtifactStore::new(connection)
         .offload(
             "child-report",
             &request.child_task_id,

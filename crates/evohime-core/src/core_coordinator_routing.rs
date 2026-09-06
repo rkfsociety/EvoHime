@@ -35,7 +35,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = &state_guard.journal {
                 let database = journal.database().lock().await;
                 if let Ok(Some(binding)) =
-                    evohime_local_storage::task_worktree_isolation_store::get_ready_for_task(
+                    evohime_local_storage::domains::workflow::get_ready_for_task(
                         database.connection(),
                         &task_id,
                     )
@@ -48,7 +48,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             }
             if let Some(journal) = &state_guard.journal {
                 let database = journal.database().lock().await;
-                let _ = evohime_local_storage::continuation_store::attach_task_context(
+                let _ = evohime_local_storage::domains::runs::attach_task_context(
                     database.connection(),
                     &task_id,
                     &prompt,
@@ -185,7 +185,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     .unwrap_or(DEFAULT_TASK_TIMEOUT_SECONDS);
                 let continuation_context = if let Some(journal) = &journal {
                     let database = journal.database().lock().await;
-                    let run = evohime_local_storage::continuation_store::get_run_by_task(
+                    let run = evohime_local_storage::domains::runs::get_run_by_task(
                         database.connection(),
                         &task_id,
                     )
@@ -193,7 +193,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     .flatten();
                     run.and_then(|run| {
                         serde_json::from_slice::<crate::continuation::ContinuationPolicyV1>(
-                            &evohime_local_storage::continuation_store::get_policy(
+                            &evohime_local_storage::domains::runs::get_policy(
                                 database.connection(),
                                 &run.policy_id,
                                 run.policy_revision,
@@ -226,7 +226,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             if let Some(journal) = &journal {
                                 if let Ok(database) = journal.database().try_lock() {
                                     let _ =
-                                        evohime_local_storage::continuation_store::transition_run(
+                                        evohime_local_storage::domains::runs::transition_run(
                                             database.connection(),
                                             &run.run_id,
                                             "running",
@@ -246,7 +246,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             .database()
                             .lock()
                             .await;
-                        match evohime_local_storage::continuation_store::reserve_attempt(
+                        match evohime_local_storage::domains::runs::reserve_attempt(
                             database.connection_mut(),
                             &run.run_id,
                             "task",
@@ -344,9 +344,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                         .database()
                                         .lock()
                                         .await;
-                                    let _ = evohime_local_storage::continuation_store::record_gate_result(
+                                    let _ = evohime_local_storage::domains::runs::record_gate_result(
                                             database.connection(),
-                                            &evohime_local_storage::continuation_store::GateResultRecord {
+                                            &evohime_local_storage::domains::runs::GateResultRecord {
                                                 run_id: run.run_id.clone(),
                                                 gate_id: gate.id.clone(),
                                                 attempt_index,
@@ -398,7 +398,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             "error": result.as_ref().err().map(ToString::to_string)
                         }))
                         .unwrap_or_default();
-                        let _ = evohime_local_storage::continuation_store::finish_attempt(
+                        let _ = evohime_local_storage::domains::runs::finish_attempt(
                             database.connection(),
                             &run_id,
                             attempt_index,
@@ -460,7 +460,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             });
                         }
                         if next_state != "running" {
-                            let _ = evohime_local_storage::continuation_store::transition_run(
+                            let _ = evohime_local_storage::domains::runs::transition_run(
                                 database.connection(),
                                 &run.run_id,
                                 "running",

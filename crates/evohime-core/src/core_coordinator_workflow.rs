@@ -28,7 +28,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         "list" => {
                             let summaries = {
                                 let database = journal.database().lock().await;
-                                evohime_local_storage::workspace_state_checkpoint::list_checkpoint_summaries(
+                                evohime_local_storage::domains::runs::list_checkpoint_summaries(
                                     database.connection(), &workspace_id)
                                     .map_err(|e| e.to_string())?
                             };
@@ -69,19 +69,19 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 }
                             };
                             let json = serde_json::to_vec(&checkpoint).map_err(|e| e.to_string())?;
-                            let record = evohime_local_storage::workspace_state_checkpoint::WorkspaceCheckpointRecord {
+                            let record = evohime_local_storage::domains::runs::WorkspaceCheckpointRecord {
                                 checkpoint_id: id.clone(), workspace_id: workspace_id.clone(), task_id: task_id.clone(),
                                 snapshot_hash: checkpoint.baseline_hash.clone(), manifest_json: json, created_at_ms: now, pinned: false,
                             };
                             let database = journal.database().lock().await;
-                            evohime_local_storage::workspace_state_checkpoint::insert_checkpoint(database.connection(), &record)
+                            evohime_local_storage::domains::runs::insert_checkpoint(database.connection(), &record)
                                 .map_err(|e| e.to_string())?;
                             serde_json::to_vec(&serde_json::json!({"schema_version":1,"operation":"create","checkpoint_id":id,"project_id":project_id,"task_id":task_id,"state":"completed","file_count":checkpoint.files.len(),"snapshot_hash":checkpoint.baseline_hash})).map_err(|e| e.to_string())
                         }
                         "compare" | "restore" | "restore_both" | "restore_task" => {
                             let id = checkpoint_id.ok_or_else(|| "checkpoint_id is required".to_string())?;
                             let database = journal.database().lock().await;
-                            let record = evohime_local_storage::workspace_state_checkpoint::get_checkpoint(database.connection(), &id)
+                            let record = evohime_local_storage::domains::runs::get_checkpoint(database.connection(), &id)
                                 .map_err(|e| e.to_string())?.ok_or_else(|| "checkpoint not found".to_string())?;
                             if record.workspace_id != workspace_id {
                                 return Err("checkpoint does not belong to workspace".to_string());
@@ -101,7 +101,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 let database = journal.database().lock().await;
                                 let detail = serde_json::to_vec(&serde_json::json!({"conflict_count": conflicts.len()})).unwrap_or_default();
                                 let operation_id = format!("{}:conflict", if idempotency_key.is_empty() { uuid::Uuid::now_v7().to_string() } else { idempotency_key.clone() });
-                                let _ = evohime_local_storage::workspace_state_checkpoint::append_restore_journal(database.connection(), &evohime_local_storage::workspace_state_checkpoint::RestoreJournalRecord { operation_id, checkpoint_id: id.clone(), operation: operation.clone(), state: "conflict".into(), detail_json: detail, created_at_ms: now });
+                                let _ = evohime_local_storage::domains::runs::append_restore_journal(database.connection(), &evohime_local_storage::domains::runs::RestoreJournalRecord { operation_id, checkpoint_id: id.clone(), operation: operation.clone(), state: "conflict".into(), detail_json: detail, created_at_ms: now });
                                 let response = match serde_json::to_string(&serde_json::json!({"error_code":"workspace_conflict","conflict_count":conflicts.len()})) {
                                     Ok(value) => value,
                                     Err(error) => {
@@ -115,7 +115,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             let database = journal.database().lock().await;
                             let detail = serde_json::to_vec(&serde_json::json!({"expected_version": expected_version})).unwrap_or_default();
                             let operation_id = format!("{}:completed", if idempotency_key.is_empty() { uuid::Uuid::now_v7().to_string() } else { idempotency_key.clone() });
-                            evohime_local_storage::workspace_state_checkpoint::append_restore_journal(database.connection(), &evohime_local_storage::workspace_state_checkpoint::RestoreJournalRecord { operation_id, checkpoint_id: id.clone(), operation: operation.clone(), state: "completed".into(), detail_json: detail, created_at_ms: now }).map_err(|e| e.to_string())?;
+                            evohime_local_storage::domains::runs::append_restore_journal(database.connection(), &evohime_local_storage::domains::runs::RestoreJournalRecord { operation_id, checkpoint_id: id.clone(), operation: operation.clone(), state: "completed".into(), detail_json: detail, created_at_ms: now }).map_err(|e| e.to_string())?;
                             let state = if operation == "restore_both" { "workspace_and_task_projection_restored" } else { "workspace_restored" };
                             serde_json::to_vec(&serde_json::json!({"schema_version":1,"operation":operation,"checkpoint_id":id,"project_id":project_id,"task_id":task_id,"state":state,"conflict_count":0})).map_err(|e| e.to_string())
                         }
@@ -206,17 +206,17 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     if !matches!(operation.as_str(), "ready" | "integrating" | "cleanup_pending") { return Err("unsupported worktree transition".to_string()); }
                     let connection = journal.database().lock().await;
                     if operation == "create" {
-                        let record = evohime_local_storage::task_worktree_isolation_store::TaskWorktreeRecord { worktree_id: worktree_id.clone(), task_id, repository_scope: project.id, branch, root_ref: format!(".evohime/worktrees/{worktree_id}"), base_commit, state: "planned".into(), version: 1, idempotency_key, updated_at_ms: crate::task_memory::now_millis() as i64 };
-                        evohime_local_storage::task_worktree_isolation_store::create(connection.connection(), &record).map_err(|e| e.to_string())?;
+                        let record = evohime_local_storage::domains::workflow::TaskWorktreeRecord { worktree_id: worktree_id.clone(), task_id, repository_scope: project.id, branch, root_ref: format!(".evohime/worktrees/{worktree_id}"), base_commit, state: "planned".into(), version: 1, idempotency_key, updated_at_ms: crate::task_memory::now_millis() as i64 };
+                        evohime_local_storage::domains::workflow::create(connection.connection(), &record).map_err(|e| e.to_string())?;
                         return serde_json::to_vec(&record).map_err(|e| e.to_string());
                     }
-                    let current = evohime_local_storage::task_worktree_isolation_store::get(connection.connection(), &worktree_id).map_err(|e| e.to_string())?.ok_or_else(|| "worktree not found".to_string())?;
+                    let current = evohime_local_storage::domains::workflow::get(connection.connection(), &worktree_id).map_err(|e| e.to_string())?.ok_or_else(|| "worktree not found".to_string())?;
                     if operation == "ready" && !std::path::PathBuf::from(&project.workspace_path).join(&current.root_ref).is_dir() {
                         return Err("worktree root is not present; create it through the approved git.worktree.create tool".to_string());
                     }
-                    let ok = evohime_local_storage::task_worktree_isolation_store::transition(connection.connection(), &worktree_id, expected_version, &operation, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                    let ok = evohime_local_storage::domains::workflow::transition(connection.connection(), &worktree_id, expected_version, &operation, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
                     if !ok { return Err("stale or unknown worktree transition".to_string()); }
-                    let record = evohime_local_storage::task_worktree_isolation_store::get(connection.connection(), &worktree_id).map_err(|e| e.to_string())?.ok_or_else(|| "worktree not found".to_string())?;
+                    let record = evohime_local_storage::domains::workflow::get(connection.connection(), &worktree_id).map_err(|e| e.to_string())?.ok_or_else(|| "worktree not found".to_string())?;
                     serde_json::to_vec(&record).map_err(|e| e.to_string())
                 }.await;
             let _ = reply.send(result);

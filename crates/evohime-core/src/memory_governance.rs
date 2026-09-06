@@ -4,7 +4,7 @@
 //! deliberately a policy/validation layer: it does not own another record or
 //! perform SQL, so every Core write can be checked immediately before effect.
 
-use evohime_local_storage::memory_store::MemoryRecord;
+use evohime_local_storage::domains::memory::MemoryRecord;
 use std::collections::BTreeSet;
 use std::fmt;
 
@@ -145,10 +145,10 @@ impl MemoryWriteGate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use evohime_local_storage::memory_store::{MemoryPrivacy, MemoryScope};
+    use evohime_local_storage::domains::memory::{MemoryPrivacy, MemoryScope};
 
     fn record() -> MemoryRecord {
-        MemoryRecord::new(evohime_local_storage::memory_store::MemoryRecordInput {
+        MemoryRecord::new(evohime_local_storage::domains::memory::MemoryRecordInput {
             id: "m".into(),
             scope: MemoryScope::Project,
             scope_id: "p".into(),
