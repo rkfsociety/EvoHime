@@ -20,6 +20,14 @@ bounded-context фасады в `src/domains.rs`. Все исторически�
 сокращение оставшихся модулей требует миграции их фактических потребителей
 в доменные фасады.
 
+Путь typed execution ledger не выполняет отдельный `BEGIN`/`COMMIT` для каждой
+строки: `LocalDatabase::append_ledger_events` валидирует bounded batch, переиспользует
+подготовленные SQLite statements и публикует весь batch одной транзакцией. При
+ошибке проверки terminal outcome транзакция откатывается целиком; одиночный
+`append_ledger_event` остаётся для независимых событий. Startup reconciliation
+также использует этот batch-путь. Это устраняет лишние commit-затраты в связанных
+операциях ledger, не перенося runtime-состояние из Rust Core.
+
 ## Продуктовая граница
 
 EvoHime — локальное Windows desktop-приложение с одним пользовательским
