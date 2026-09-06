@@ -1,2 +1,7 @@
 use rusqlite::Transaction;
-pub(crate) fn apply(t: &Transaction<'_>, c: u32) -> rusqlite::Result<()> { if c < 5 { t.execute_batch("CREATE TABLE IF NOT EXISTS project_policies (project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE, policy_json BLOB NOT NULL, version INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))); PRAGMA user_version = 5;")?; } Ok(()) }
+pub(crate) fn apply(t: &Transaction<'_>, c: u32) -> rusqlite::Result<()> {
+    if c < 5 {
+        t.execute_batch("CREATE TABLE IF NOT EXISTS project_policies (project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE, policy_json BLOB NOT NULL, version INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))); PRAGMA user_version = 5;")?;
+    }
+    Ok(())
+}

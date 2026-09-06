@@ -167,7 +167,22 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             reply,
         } => {
             let journal = state.lock().await.journal.clone();
-            let result = async { let journal=journal.ok_or_else(||"storage_unavailable".to_string())?; let database=journal.database().lock().await; let items=evohime_local_storage::domains::agents::RetainedChildStore::list_children::<crate::retained_child::RetainedChildV1>(database.connection(),&parent_id,now_ms,limit).map_err(|e|e.to_string())?; let projections: Vec<_>=items.iter().map(crate::retained_child::RetainedChildProjectionV1::from).collect(); serde_json::to_vec(&serde_json::json!({"children": projections})).map_err(|e|e.to_string()) }.await;
+            let result = async {
+                let journal = journal.ok_or_else(|| "storage_unavailable".to_string())?;
+                let database = journal.database().lock().await;
+                let items =
+                    evohime_local_storage::domains::agents::RetainedChildStore::list_children::<
+                        crate::retained_child::RetainedChildV1,
+                    >(database.connection(), &parent_id, now_ms, limit)
+                    .map_err(|e| e.to_string())?;
+                let projections: Vec<_> = items
+                    .iter()
+                    .map(crate::retained_child::RetainedChildProjectionV1::from)
+                    .collect();
+                serde_json::to_vec(&serde_json::json!({"children": projections}))
+                    .map_err(|e| e.to_string())
+            }
+            .await;
             let _ = reply.send(result);
         }
         CoreCommand::DeleteRetainedChild {

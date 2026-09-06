@@ -94,12 +94,30 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
         }
     }
-    journal.recover_and_reconcile_after_restart().await.map_err(|e| format!("recovery failed: {e}"))?;
-    journal.recover_persistent_agent_registry().await.map_err(|e| format!("persistent agent registry recovery failed: {e}"))?;
-    journal.recover_model_provenance_on_startup().await.map_err(|e| format!("model provenance recovery failed: {e}"))?;
-    journal.recover_continuation_runs().await.map_err(|e| format!("continuation recovery failed: {e}"))?;
-    journal.recover_retained_children().await.map_err(|e| format!("retained child recovery failed: {e}"))?;
-    journal.recover_analysis_kernels().await.map_err(|e| format!("analysis-kernel recovery failed: {e}"))?;
+    journal
+        .recover_and_reconcile_after_restart()
+        .await
+        .map_err(|e| format!("recovery failed: {e}"))?;
+    journal
+        .recover_persistent_agent_registry()
+        .await
+        .map_err(|e| format!("persistent agent registry recovery failed: {e}"))?;
+    journal
+        .recover_model_provenance_on_startup()
+        .await
+        .map_err(|e| format!("model provenance recovery failed: {e}"))?;
+    journal
+        .recover_continuation_runs()
+        .await
+        .map_err(|e| format!("continuation recovery failed: {e}"))?;
+    journal
+        .recover_retained_children()
+        .await
+        .map_err(|e| format!("retained child recovery failed: {e}"))?;
+    journal
+        .recover_analysis_kernels()
+        .await
+        .map_err(|e| format!("analysis-kernel recovery failed: {e}"))?;
     let _model_provenance_retention_task =
         evohime_core::spawn_model_provenance_retention(journal.clone());
     let heartbeat_task = spawn_heartbeat(data_dir.join("core-heartbeat"));
@@ -401,7 +419,8 @@ fn heartbeat_timestamp() -> u128 {
 }
 
 #[cfg(windows)]
-fn console_request() -> Result<Option<(String, std::path::PathBuf, bool)>, Box<dyn std::error::Error + Send + Sync>> {
+fn console_request(
+) -> Result<Option<(String, std::path::PathBuf, bool)>, Box<dyn std::error::Error + Send + Sync>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if !args.iter().any(|arg| arg == "--console") {
         return Ok(None);
@@ -454,7 +473,9 @@ fn console_request() -> Result<Option<(String, std::path::PathBuf, bool)>, Box<d
 /// Каталог моделей провайдера. Без него имена моделей для ревью пришлось бы
 /// угадывать, а ключ провайдера в консоль не попадает и попасть не должен.
 #[cfg(windows)]
-async fn list_console_models(gateway_config: Option<evohime_model_gateway::ModelGatewayConfig>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn list_console_models(
+    gateway_config: Option<evohime_model_gateway::ModelGatewayConfig>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let Some(config) = gateway_config else {
         tracing::error!("evohime-core console: модель не настроена; проверьте .env");
         return Err("console: модель не настроена; проверьте .env".into());
@@ -499,7 +520,8 @@ struct ConsoleReview {
 }
 
 #[cfg(windows)]
-fn console_review_request() -> Result<Option<ConsoleReview>, Box<dyn std::error::Error + Send + Sync>> {
+fn console_review_request(
+) -> Result<Option<ConsoleReview>, Box<dyn std::error::Error + Send + Sync>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if !args.iter().any(|arg| arg == "--console") {
         return Ok(None);

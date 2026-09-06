@@ -206,10 +206,7 @@ impl EventJournal {
         let database = self.database.lock().await;
         let mut last_sequence = database.append_event(task_id, event_type, &payload)?;
         if let Some((conversation_id, client_message_id, workspace_id)) =
-            evohime_local_storage::domains::audit::task_binding(
-                database.connection(),
-                task_id,
-            )?
+            evohime_local_storage::domains::audit::task_binding(database.connection(), task_id)?
         {
             for draft in projected {
                 let stored = evohime_local_storage::domains::audit::append_event(

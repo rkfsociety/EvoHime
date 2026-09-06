@@ -707,15 +707,16 @@ impl IpcBridge {
             created_at_ms: now,
             updated_at_ms: now,
         };
-        evohime_local_storage::domains::runs::create_run(database.connection(), &record)
-            .map_err(|error| {
+        evohime_local_storage::domains::runs::create_run(database.connection(), &record).map_err(
+            |error| {
                 if matches!(error, rusqlite::Error::SqliteFailure(_, _)) {
                     "run_exists"
                 } else {
                     "storage_failed"
                 }
                 .to_string()
-            })?;
+            },
+        )?;
         continuation_public_json(&record, &[])
     }
 
@@ -724,12 +725,10 @@ impl IpcBridge {
         request: generated::GetContinuationRun,
     ) -> Result<Vec<u8>, String> {
         let database = self.journal.database().lock().await;
-        let run = evohime_local_storage::domains::runs::get_run(
-            database.connection(),
-            &request.run_id,
-        )
-        .map_err(|_| "storage_failed".to_string())?
-        .ok_or_else(|| "run_not_found".to_string())?;
+        let run =
+            evohime_local_storage::domains::runs::get_run(database.connection(), &request.run_id)
+                .map_err(|_| "storage_failed".to_string())?
+                .ok_or_else(|| "run_not_found".to_string())?;
         let gates = evohime_local_storage::domains::runs::list_latest_gate_results(
             database.connection(),
             &run.run_id,
@@ -802,12 +801,10 @@ impl IpcBridge {
             return Err("invalid_argument".into());
         }
         let mut database = self.journal.database().lock().await;
-        let run = evohime_local_storage::domains::runs::get_run(
-            database.connection(),
-            &request.run_id,
-        )
-        .map_err(|_| "storage_failed".to_string())?
-        .ok_or_else(|| "run_not_found".to_string())?;
+        let run =
+            evohime_local_storage::domains::runs::get_run(database.connection(), &request.run_id)
+                .map_err(|_| "storage_failed".to_string())?
+                .ok_or_else(|| "run_not_found".to_string())?;
         if run.prompt.is_none() || run.workspace_path.is_none() {
             return Err("resume_context_unavailable".into());
         }

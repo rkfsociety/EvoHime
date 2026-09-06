@@ -280,8 +280,11 @@ impl EventJournal {
     /// hidden action on stale content.
     pub async fn expire_due_memory(&self, now: &str) -> Result<usize, String> {
         let database = self.database.lock().await;
-        evohime_local_storage::domains::memory::MemoryStoreSql::expire_due(database.connection(), now)
-            .map_err(|error| error.to_string())
+        evohime_local_storage::domains::memory::MemoryStoreSql::expire_due(
+            database.connection(),
+            now,
+        )
+        .map_err(|error| error.to_string())
     }
 
     /// Logical deletion plus a tombstone that carries only metadata and a

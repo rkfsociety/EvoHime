@@ -57,8 +57,7 @@ impl EventJournal {
     /// вслепую: Core переводит его в blocked до явного запуска пользователем.
     pub async fn recover_continuation_runs(&self) -> Result<usize, StorageError> {
         let database = self.database.lock().await;
-        let runs =
-            evohime_local_storage::domains::runs::list_running_runs(database.connection())?;
+        let runs = evohime_local_storage::domains::runs::list_running_runs(database.connection())?;
         let mut recovered = 0;
         for run in runs {
             if evohime_local_storage::domains::runs::transition_run(

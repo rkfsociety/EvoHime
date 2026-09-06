@@ -2,7 +2,8 @@ use rusqlite::Transaction;
 
 pub(crate) fn apply(t: &Transaction<'_>, c: u32) -> rusqlite::Result<()> {
     if c < 36 {
-        let columns = t.prepare("PRAGMA table_info(continuation_runs)")?
+        let columns = t
+            .prepare("PRAGMA table_info(continuation_runs)")?
             .query_map([], |row| row.get::<_, String>(1))?
             .collect::<Result<Vec<_>, _>>()?;
         if !columns.iter().any(|column| column == "prompt") {

@@ -233,16 +233,30 @@ impl IpcBridge {
                 evohime_local_storage::domains::audit::ConversationStoreError::CursorExpired {
                     earliest_available_sequence,
                 },
-            )) => return conversation_event_log_error_with_earliest(
-                operation,
-                &request.conversation_id,
-                "cursor_expired",
-                earliest_available_sequence,
-            ),
+            )) => {
+                return conversation_event_log_error_with_earliest(
+                    operation,
+                    &request.conversation_id,
+                    "cursor_expired",
+                    earliest_available_sequence,
+                )
+            }
             Err(StorageError::ConversationEventLog(
                 evohime_local_storage::domains::audit::ConversationStoreError::ConversationNotFound,
-            )) => return conversation_event_log_error(operation, &request.conversation_id, "conversation_not_found"),
-            Err(_) => return conversation_event_log_error(operation, &request.conversation_id, "history_unavailable"),
+            )) => {
+                return conversation_event_log_error(
+                    operation,
+                    &request.conversation_id,
+                    "conversation_not_found",
+                )
+            }
+            Err(_) => {
+                return conversation_event_log_error(
+                    operation,
+                    &request.conversation_id,
+                    "history_unavailable",
+                )
+            }
         };
         let filters = request
             .kinds_filter
@@ -337,7 +351,9 @@ impl IpcBridge {
         let page = match page {
             Ok(page) => page,
             Err(StorageError::ConversationEventLog(
-                evohime_local_storage::domains::audit::ConversationStoreError::CursorExpired { .. },
+                evohime_local_storage::domains::audit::ConversationStoreError::CursorExpired {
+                    ..
+                },
             )) => return error("cursor_expired"),
             Err(StorageError::ConversationEventLog(
                 evohime_local_storage::domains::audit::ConversationStoreError::ConversationNotFound,
@@ -544,7 +560,20 @@ impl IpcBridge {
                 serde_json::json!({"session_id":message.session_id,"message_id":message.message_id,"deduplicated":true,"raw_payload":false}),
             );
         }
-        let sequence = match evohime_local_storage::domains::agents::RetainedChildStore::next_parent_sequence(database.connection_mut(), &message.session_id) { Ok(v)=>v, Err(_)=>return base("unavailable","storage_failed",serde_json::json!({"raw_payload":false})) };
+        let sequence =
+            match evohime_local_storage::domains::agents::RetainedChildStore::next_parent_sequence(
+                database.connection_mut(),
+                &message.session_id,
+            ) {
+                Ok(v) => v,
+                Err(_) => {
+                    return base(
+                        "unavailable",
+                        "storage_failed",
+                        serde_json::json!({"raw_payload":false}),
+                    )
+                }
+            };
         message.sequence = sequence;
         let sender = message.sender.clone();
         let receiver = message.receiver.clone();

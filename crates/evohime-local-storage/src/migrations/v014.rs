@@ -1,2 +1,7 @@
 use rusqlite::Transaction;
-pub(crate) fn apply(t: &Transaction<'_>, c: u32) -> rusqlite::Result<()> { if c < 14 { t.execute_batch("CREATE TABLE IF NOT EXISTS feedback_entries (id TEXT PRIMARY KEY NOT NULL, run_id TEXT NOT NULL, task_id TEXT, subject_ref TEXT, signal TEXT NOT NULL, correction TEXT, rejection_reason TEXT, outcome TEXT, provenance TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))); CREATE INDEX IF NOT EXISTS idx_feedback_entries_run ON feedback_entries(run_id, created_at); CREATE INDEX IF NOT EXISTS idx_feedback_entries_signal ON feedback_entries(signal); PRAGMA user_version = 14;")?; } Ok(()) }
+pub(crate) fn apply(t: &Transaction<'_>, c: u32) -> rusqlite::Result<()> {
+    if c < 14 {
+        t.execute_batch("CREATE TABLE IF NOT EXISTS feedback_entries (id TEXT PRIMARY KEY NOT NULL, run_id TEXT NOT NULL, task_id TEXT, subject_ref TEXT, signal TEXT NOT NULL, correction TEXT, rejection_reason TEXT, outcome TEXT, provenance TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))); CREATE INDEX IF NOT EXISTS idx_feedback_entries_run ON feedback_entries(run_id, created_at); CREATE INDEX IF NOT EXISTS idx_feedback_entries_signal ON feedback_entries(signal); PRAGMA user_version = 14;")?;
+    }
+    Ok(())
+}

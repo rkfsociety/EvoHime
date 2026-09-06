@@ -225,15 +225,14 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         }) {
                             if let Some(journal) = &journal {
                                 if let Ok(database) = journal.database().try_lock() {
-                                    let _ =
-                                        evohime_local_storage::domains::runs::transition_run(
-                                            database.connection(),
-                                            &run.run_id,
-                                            "running",
-                                            "budget_limited",
-                                            Some("max_wall_clock_ms"),
-                                            crate::task_memory::now_millis() as i64,
-                                        );
+                                    let _ = evohime_local_storage::domains::runs::transition_run(
+                                        database.connection(),
+                                        &run.run_id,
+                                        "running",
+                                        "budget_limited",
+                                        Some("max_wall_clock_ms"),
+                                        crate::task_memory::now_millis() as i64,
+                                    );
                                 }
                             }
                             break;

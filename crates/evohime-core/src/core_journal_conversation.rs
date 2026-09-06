@@ -71,19 +71,14 @@ impl EventJournal {
         conversation_id: &str,
         after_sequence: u64,
         limit: usize,
-    ) -> Result<
-        evohime_local_storage::domains::audit::ConversationEventPage,
-        StorageError,
-    > {
+    ) -> Result<evohime_local_storage::domains::audit::ConversationEventPage, StorageError> {
         let database = self.database.lock().await;
-        Ok(
-            evohime_local_storage::domains::audit::history_after(
-                database.connection(),
-                conversation_id,
-                after_sequence,
-                limit,
-            )?,
-        )
+        Ok(evohime_local_storage::domains::audit::history_after(
+            database.connection(),
+            conversation_id,
+            after_sequence,
+            limit,
+        )?)
     }
 
     pub async fn record_conversation_usage(
@@ -96,10 +91,7 @@ impl EventJournal {
             .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
         let database = self.database.lock().await;
         let Some((conversation_id, client_message_id, workspace_id)) =
-            evohime_local_storage::domains::audit::task_binding(
-                database.connection(),
-                task_id,
-            )?
+            evohime_local_storage::domains::audit::task_binding(database.connection(), task_id)?
         else {
             return Ok(());
         };
@@ -172,19 +164,14 @@ impl EventJournal {
         conversation_id: &str,
         before_sequence: u64,
         limit: usize,
-    ) -> Result<
-        evohime_local_storage::domains::audit::ConversationEventPage,
-        StorageError,
-    > {
+    ) -> Result<evohime_local_storage::domains::audit::ConversationEventPage, StorageError> {
         let database = self.database.lock().await;
-        Ok(
-            evohime_local_storage::domains::audit::history_before(
-                database.connection(),
-                conversation_id,
-                before_sequence,
-                limit,
-            )?,
-        )
+        Ok(evohime_local_storage::domains::audit::history_before(
+            database.connection(),
+            conversation_id,
+            before_sequence,
+            limit,
+        )?)
     }
 
     /// Запрос `summarize now` на текущую сборку контекста задачи.

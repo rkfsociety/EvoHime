@@ -22,9 +22,9 @@ pub mod runs {
 pub mod workflow {
     pub use crate::artifact_store::*;
     pub use crate::task_worktree_isolation_store::*;
+    pub use crate::workflow_optimization_lab_store::*;
     pub use crate::workflow_package_store::*;
     pub use crate::workflow_store::*;
-    pub use crate::workflow_optimization_lab_store::*;
 }
 
 pub mod agents {

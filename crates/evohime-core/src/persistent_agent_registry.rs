@@ -781,9 +781,8 @@ fn load_agents_map(
     connection: &rusqlite::Connection,
 ) -> Result<std::collections::BTreeMap<String, PersistentAgent>, crate::StorageError> {
     let mut result = std::collections::BTreeMap::new();
-    for bytes in
-        evohime_local_storage::domains::agents::load_agents(connection, 256)
-            .map_err(map_storage_error)?
+    for bytes in evohime_local_storage::domains::agents::load_agents(connection, 256)
+        .map_err(map_storage_error)?
     {
         let agent = deserialize_agent(&bytes)
             .map_err(|error| crate::StorageError::InvalidInput(error.to_string()))?;
@@ -1077,14 +1076,12 @@ fn execute(
             }))
         }
         "get" | "availability" | "activity" | "resolve" | "history" => {
-            let bytes = evohime_local_storage::domains::agents::load_agent(
-                connection,
-                &command.agent_id,
-            )
-            .map_err(map_storage_error)?
-            .ok_or_else(|| {
-                crate::StorageError::InvalidInput(RegistryError::NotFound.to_string())
-            })?;
+            let bytes =
+                evohime_local_storage::domains::agents::load_agent(connection, &command.agent_id)
+                    .map_err(map_storage_error)?
+                    .ok_or_else(|| {
+                        crate::StorageError::InvalidInput(RegistryError::NotFound.to_string())
+                    })?;
             let agent = deserialize_agent(&bytes)
                 .map_err(|error| crate::StorageError::InvalidInput(error.to_string()))?;
             authorize_scope(&agent, &command.owner_scope)?;
@@ -1144,27 +1141,26 @@ fn execute(
                 }));
             }
             if command.operation == "history" {
-                let history =
-                    evohime_local_storage::domains::agents::load_reporting_history(
-                        connection,
-                        &agent.id,
-                        value
-                            .get("limit")
-                            .and_then(serde_json::Value::as_u64)
-                            .unwrap_or(MAX_HISTORY as u64) as usize,
-                    )
-                    .map_err(map_storage_error)?
-                    .into_iter()
-                    .map(|(revision, _parent, event_type, actor, created_at_ms)| {
-                        AgentHistoryEntry {
-                            revision,
-                            event_type: event_type.clone(),
-                            actor,
-                            summary_hash: hex::encode(Sha256::digest(event_type.as_bytes())),
-                            created_at_ms,
-                        }
-                    })
-                    .collect();
+                let history = evohime_local_storage::domains::agents::load_reporting_history(
+                    connection,
+                    &agent.id,
+                    value
+                        .get("limit")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(MAX_HISTORY as u64) as usize,
+                )
+                .map_err(map_storage_error)?
+                .into_iter()
+                .map(
+                    |(revision, _parent, event_type, actor, created_at_ms)| AgentHistoryEntry {
+                        revision,
+                        event_type: event_type.clone(),
+                        actor,
+                        summary_hash: hex::encode(Sha256::digest(event_type.as_bytes())),
+                        created_at_ms,
+                    },
+                )
+                .collect();
                 return Ok(response(ResponseInput {
                     operation: "history",
                     agent_id: &agent.id,
@@ -1211,11 +1207,9 @@ fn execute(
                     RegistryError::ScopeMismatch.to_string(),
                 ));
             }
-            if evohime_local_storage::domains::agents::load_agent(
-                connection, &agent.id,
-            )
-            .map_err(map_storage_error)?
-            .is_some()
+            if evohime_local_storage::domains::agents::load_agent(connection, &agent.id)
+                .map_err(map_storage_error)?
+                .is_some()
             {
                 return Err(crate::StorageError::InvalidInput(
                     RegistryError::Duplicate.to_string(),
@@ -1234,14 +1228,12 @@ fn execute(
             }))
         }
         "revise" => {
-            let old_bytes = evohime_local_storage::domains::agents::load_agent(
-                connection,
-                &command.agent_id,
-            )
-            .map_err(map_storage_error)?
-            .ok_or_else(|| {
-                crate::StorageError::InvalidInput(RegistryError::NotFound.to_string())
-            })?;
+            let old_bytes =
+                evohime_local_storage::domains::agents::load_agent(connection, &command.agent_id)
+                    .map_err(map_storage_error)?
+                    .ok_or_else(|| {
+                        crate::StorageError::InvalidInput(RegistryError::NotFound.to_string())
+                    })?;
             let old = deserialize_agent(&old_bytes)
                 .map_err(|e| crate::StorageError::InvalidInput(e.to_string()))?;
             if old.revision != command.expected_revision {
@@ -1281,14 +1273,12 @@ fn execute(
             }))
         }
         "activate" | "pause" | "suspend" | "resume" | "retire" => {
-            let bytes = evohime_local_storage::domains::agents::load_agent(
-                connection,
-                &command.agent_id,
-            )
-            .map_err(map_storage_error)?
-            .ok_or_else(|| {
-                crate::StorageError::InvalidInput(RegistryError::NotFound.to_string())
-            })?;
+            let bytes =
+                evohime_local_storage::domains::agents::load_agent(connection, &command.agent_id)
+                    .map_err(map_storage_error)?
+                    .ok_or_else(|| {
+                        crate::StorageError::InvalidInput(RegistryError::NotFound.to_string())
+                    })?;
             let mut agent = deserialize_agent(&bytes)
                 .map_err(|e| crate::StorageError::InvalidInput(e.to_string()))?;
             if agent.revision != command.expected_revision {
@@ -1330,14 +1320,12 @@ fn execute(
             }))
         }
         "reporting_set" => {
-            let bytes = evohime_local_storage::domains::agents::load_agent(
-                connection,
-                &command.agent_id,
-            )
-            .map_err(map_storage_error)?
-            .ok_or_else(|| {
-                crate::StorageError::InvalidInput(RegistryError::NotFound.to_string())
-            })?;
+            let bytes =
+                evohime_local_storage::domains::agents::load_agent(connection, &command.agent_id)
+                    .map_err(map_storage_error)?
+                    .ok_or_else(|| {
+                        crate::StorageError::InvalidInput(RegistryError::NotFound.to_string())
+                    })?;
             let mut agent = deserialize_agent(&bytes)
                 .map_err(|e| crate::StorageError::InvalidInput(e.to_string()))?;
             if agent.revision != command.expected_revision {
@@ -1379,14 +1367,12 @@ fn execute(
                     "agent_id_mismatch".into(),
                 ));
             }
-            let agent_bytes = evohime_local_storage::domains::agents::load_agent(
-                connection,
-                &binding.agent_id,
-            )
-            .map_err(map_storage_error)?
-            .ok_or_else(|| {
-                crate::StorageError::InvalidInput(RegistryError::NotFound.to_string())
-            })?;
+            let agent_bytes =
+                evohime_local_storage::domains::agents::load_agent(connection, &binding.agent_id)
+                    .map_err(map_storage_error)?
+                    .ok_or_else(|| {
+                        crate::StorageError::InvalidInput(RegistryError::NotFound.to_string())
+                    })?;
             let agent = deserialize_agent(&agent_bytes)
                 .map_err(|e| crate::StorageError::InvalidInput(e.to_string()))?;
             authorize_scope(&agent, &command.owner_scope)?;
@@ -1567,13 +1553,11 @@ fn execute(
                 .ok_or_else(|| {
                     crate::StorageError::InvalidInput("assignment_id_required".into())
                 })?;
-            let bytes = evohime_local_storage::domains::agents::load_assignment(
-                connection, id,
-            )
-            .map_err(map_storage_error)?
-            .ok_or_else(|| {
-                crate::StorageError::InvalidInput(RegistryError::NotFound.to_string())
-            })?;
+            let bytes = evohime_local_storage::domains::agents::load_assignment(connection, id)
+                .map_err(map_storage_error)?
+                .ok_or_else(|| {
+                    crate::StorageError::InvalidInput(RegistryError::NotFound.to_string())
+                })?;
             let mut assignment: AgentAssignment = serde_json::from_slice(&bytes)?;
             let agent_bytes = evohime_local_storage::domains::agents::load_agent(
                 connection,
@@ -1626,10 +1610,8 @@ fn execute(
         }
         "recover" => {
             let mut recovered = 0usize;
-            let all = evohime_local_storage::domains::agents::load_assignments(
-                connection, 512,
-            )
-            .map_err(map_storage_error)?;
+            let all = evohime_local_storage::domains::agents::load_assignments(connection, 512)
+                .map_err(map_storage_error)?;
             for bytes in all {
                 let mut assignment: AgentAssignment = serde_json::from_slice(&bytes)?;
                 if matches!(
@@ -1659,7 +1641,8 @@ fn execute(
                             revision: assignment.revision,
                             agent_id: &assignment.agent_id,
                             status: "unknown_after_restart",
-                            source_kind: &format!("{:?}", assignment.source_kind).to_ascii_lowercase(),
+                            source_kind: &format!("{:?}", assignment.source_kind)
+                                .to_ascii_lowercase(),
                             source_ref: &assignment.source_ref,
                             assignment_json: &json,
                             now_ms,

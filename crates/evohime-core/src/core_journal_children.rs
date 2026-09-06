@@ -46,7 +46,8 @@ impl EventJournal {
     pub async fn get_child_task_request(
         &self,
         child_task_id: &str,
-    ) -> Result<Option<evohime_local_storage::domains::agents::ChildTaskRequestRecord>, String> {
+    ) -> Result<Option<evohime_local_storage::domains::agents::ChildTaskRequestRecord>, String>
+    {
         let database = self.database.lock().await;
         evohime_local_storage::domains::agents::ChildStoreSql::get_child_task_request(
             database.connection(),
@@ -108,7 +109,8 @@ impl EventJournal {
         parent_task_id: &str,
         now_ms: i64,
         limit: u32,
-    ) -> Result<Vec<evohime_local_storage::domains::agents::CoordinatorCheckpointRecord>, String> {
+    ) -> Result<Vec<evohime_local_storage::domains::agents::CoordinatorCheckpointRecord>, String>
+    {
         let database = self.database.lock().await;
         evohime_local_storage::domains::agents::ChildStoreSql::list_dead_letter_checkpoints(
             database.connection(),
