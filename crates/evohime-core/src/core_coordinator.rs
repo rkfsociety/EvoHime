@@ -159,7 +159,7 @@ impl TaskCoordinator {
             journal: journal.clone(),
             audit: crate::audit::AuditTrail::default(),
             retained_children: crate::retained_child::RetainedRegistry::default(),
-            background_tasks: Arc::clone(&background_tasks),
+            background_tasks,
         }));
         // The shell is fed from the journal, so it must be told after a record
         // lands — not when the event was broadcast. Watching the broadcast
