@@ -1,6 +1,6 @@
 # EvoHime — roadmap
 
-Обновлено: 2026-09-04.
+Обновлено: 2026-09-06.
 
 Это краткая продуктовая карта, а не список отдельных задач. Исполняемый порядок
 находится в [`development-plan.md`](development-plan.md), подтверждённое
@@ -49,11 +49,15 @@ checkout.
 
 ## Release workflow
 
-1. Push или pull request запускает workflow быстрых Rust/Electron проверок.
-2. Ручной workflow выпускает полный Rust, Electron, package, installer и
-   Windows acceptance набор.
+1. Push или pull request запускает модульный workflow и быстрые проверки
+   затронутых областей.
+2. Ручной workflow с `publish_listener=true` выпускает полный Rust, Electron,
+   package, installer и Windows acceptance набор; результат фиксируется в
+   `release-evidence.md`.
 3. Постоянный release `installer` обновляется только после зелёного полного
    прогона; новые версионные теги текущим циклом не создаются.
+4. Локально выполняются только быстрые проверки; полный прогон выполняется в
+   GitHub Actions.
 
 Карта workflow и команды проверки находятся в [`../AGENTS.md`](../AGENTS.md) и
 `.github/workflows/`.

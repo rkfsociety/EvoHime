@@ -1,6 +1,6 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-09-04.
+Обновлено: 2026-09-06.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
@@ -9,12 +9,27 @@ output, transcripts, absolute paths и PII запрещены.
 
 ## Текущий статус выпуска
 
-Статус: `TECHNICAL_GATES_PASS / RELEASE_GREEN`.
+Статус: `TECHNICAL_GATES_PASS / RELEASE_GREEN` для последнего успешного
+push-workflow; ручной полный workflow на текущем коммите ещё выполняется.
 
 Статус относится к постоянному release channel `installer`; новый installer в
-этом документальном обновлении не публиковался. Текущий checkout дополнительно
-содержит shell follow-up для выбора provider/model в self-repair и новой
-навигации Electron.
+этом документальном обновлении не публиковался. Последний опубликованный
+`installer` содержит `EvoHime-Setup.exe`, `EvoHime.exe`, Core, Supervisor,
+transaction/verify и `evohime.components.json`.
+
+## Evidence текущего GitHub workflow — 2026-09-06
+
+| Событие | Результат |
+| --- | --- |
+| Коммит | `d9742a0fd9de9b8ed4ed90f0d6eb117be73d3949` |
+| Push workflow | PASS — [run 34030005220](https://github.com/rkfsociety/EvoHime/actions/runs/34030005220) |
+| Полный ручной workflow | Выполняется — [run 34034590713](https://github.com/rkfsociety/EvoHime/actions/runs/34034590713) |
+| Постоянный installer | [release `installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer), опубликован 2026-08-14 |
+| Listener runtime | [release `listener-runtime`](https://github.com/rkfsociety/EvoHime/releases/tag/listener-runtime), опубликован 2026-08-21 |
+
+Локальная проверка этого обновления ограничена документационным тестом и
+`git diff --check`. Полный Rust/Electron/package/installer acceptance-прогон
+выполняется только в GitHub Actions.
 
 ## Свежая проверка текущего checkout
 

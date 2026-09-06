@@ -1,6 +1,6 @@
 # План разработки EvoHime Desktop
 
-Обновлено: 2026-09-04.
+Обновлено: 2026-09-06.
 
 ## Цель
 
@@ -74,7 +74,7 @@ release channel, установленный клиент или security boundar
 - любое изменение IPC обновлять на Rust и Electron сторонах с contract tests;
 - новые Rust-функции и исправления покрывать тестами;
 - сохранять sandbox, timeout, cancellation, approval и bounded resource limits;
-- после изменений запускать релевантные checks и `git diff --check`;
+- после изменений запускать быстрые релевантные checks и `git diff --check`;
 - изменения коммитить task-only; `git push` выполнять только по прямому запросу.
 
 ## Gate для каждого этапа
@@ -91,23 +91,26 @@ release channel, установленный клиент или security boundar
 
 ## Команды проверки
 
-Полный список команд находится в [`../AGENTS.md`](../AGENTS.md). Для обычного
-изменения используются:
+Полный список команд находится в [`../AGENTS.md`](../AGENTS.md). На рабочей
+машине используются только быстрые проверки; полный набор запускается через
+GitHub Actions workflow:
 
 ```powershell
 pwsh -File .\scripts\documentation.tests.ps1
-cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc
-cargo check -p evohime-supervisor
-cd desktop\evohime-electron
-npm run check:protocol
-npm run typecheck
-npm test
 ```
+
+Для изменённого Electron/IPC-модуля дополнительно допустимы только узкие
+`npm run check:protocol` и `npm run typecheck`; для изменённого Rust-crate —
+точечные `cargo check` или тесты этого crate. Команды полного набора ниже в
+`AGENTS.md` предназначены для GitHub Actions и не являются локальным smoke
+прогоном.
 
 На `push`/PR Windows workflow вычисляет изменённые workspace-crates и замыкает
 граф их обратных зависимостей. Для этого набора выполняются format, Clippy,
 тесты и `cargo build`; Electron отдельно проверяется и собирается только при
 изменении Electron shell или desktop IPC proto. Полный Rust/Electron/native
 package, installer и Windows acceptance gates запускаются только вручную через
-`workflow_dispatch`. Быстрых дублирующих jobs больше нет. Описание workflow
+`workflow_dispatch`. Полный локальный прогон запрещён рабочим процессом
+проекта; локально выполняются только документационные, protocol/typecheck и
+узкие проверки изменённых модулей. Описание workflow
 находится в [`.github/workflows/`](../.github/workflows/).

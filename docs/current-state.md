@@ -34,6 +34,19 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 клиент не вносятся изменения: диагностика и проверки выполняются в исходниках,
 временных каталогах или CI.
 
+## Актуальное состояние CI и релизов
+
+Последний синхронизированный checkout — коммит
+`d9742a0fd9de9b8ed4ed90f0d6eb117be73d3949`. Push-workflow для него завершился
+успешно: [run 34030005220](https://github.com/rkfsociety/EvoHime/actions/runs/34030005220).
+Полный ручной workflow с публикацией listener runtime запущен через GitHub
+Actions: [run 34034590713](https://github.com/rkfsociety/EvoHime/actions/runs/34034590713).
+
+Постоянные опубликованные каналы — [`installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer)
+и [`listener-runtime`](https://github.com/rkfsociety/EvoHime/releases/tag/listener-runtime).
+Локально выполняются только быстрые проверки; полный acceptance-прогон Rust,
+Electron, native package и installer выполняется в GitHub Actions.
+
 Core pipe работает fail-closed: отсутствие authenticated context вне явного
 `EVOHIME_DEV_MODE=1` останавливает процесс до открытия базы и pipe. Негативные
 запуски реального Core проверяет `crates/evohime-core/tests/production_pipe_startup.rs`;
