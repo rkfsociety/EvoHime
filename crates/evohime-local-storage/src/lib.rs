@@ -676,6 +676,16 @@ impl LocalDatabase {
         model_purpose_routing_store::install_schema(&connection)?;
         local_model_runtime_manager_store::install_schema(&connection)?;
         architecture_snapshot_store::install_schema(&connection)?;
+        // These indexes depend on the typed-ledger columns installed above.
+        // Keep them idempotent and outside the version gate so existing
+        // databases receive the optimization without a data migration.
+        connection.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_events_action_terminal
+                 ON events(action_id, sequence_id DESC)
+                 WHERE action_id IS NOT NULL AND state_after IS NOT NULL;
+             CREATE INDEX IF NOT EXISTS idx_events_review_lookup
+                 ON events(task_id, event_type, sequence_id DESC);",
+        )?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
@@ -3937,6 +3947,29 @@ mod tests {
 
     fn temp_database_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("evohime-test-{name}-{}.db", std::process::id()))
+    }
+
+    #[test]
+    fn latest_schema_installs_hot_event_indexes() {
+        let path = temp_database_path("hot-event-indexes");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        let count: i64 = database
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type='index' AND name IN
+                 ('idx_events_task_sequence', 'idx_events_action_terminal',
+                  'idx_events_review_lookup')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("index query");
+        assert_eq!(count, 3);
+        drop(database);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
     }
 
     #[test]

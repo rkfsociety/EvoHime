@@ -514,6 +514,8 @@ async fn collect_codebase_probe(
 
     let required_indexes = [
         "idx_events_task_sequence",
+        "idx_events_action_terminal",
+        "idx_events_review_lookup",
         "idx_workflow_runs_state",
         "idx_workflow_attempts_open",
         "idx_workflow_events_run",
