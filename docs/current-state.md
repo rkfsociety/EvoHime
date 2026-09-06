@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-09-04.
+Обновлено: 2026-09-06.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -130,6 +130,29 @@ handoff; новый runtime или scheduler не создаётся. Startup re
 разделены. Approval, sandbox, таймауты, отмена, bounded frames и redacted
 diagnostics обязательны для опасных операций. Подробная модель границ — в
 [`../SECURITY.md`](../SECURITY.md) и [`architecture.md`](architecture.md).
+
+## Модульность и узкие проверки
+
+Основные Core и IPC-домены разделены на обычные Rust-модули с отдельными
+тестовыми файлами; крупнейшие исходные файлы checkout находятся в пределах
+лимита 2000 строк. Doctor дополнительно проверяет размер исходников, число
+`include!` и наличие индексов горячих SQLite-запросов. Context Budget Manager
+использует `Arc` для крупных payload-ов и считает fallback estimator, а workflow
+runtime переиспользует canonical hash, ограничивает глубину графа 64 узлами и
+публикует bounded dispatch metrics.
+
+Свежие узкие проверки этого изменения:
+
+| Проверка | Результат |
+| --- | --- |
+| `cargo test -p evohime-context-budget --lib` | PASS, 142/142 |
+| `cargo test -p evohime-core --lib doctor::tests` | PASS, 11/11 |
+| `cargo test -p evohime-local-storage --lib latest_schema` | PASS |
+| `cargo check -p evohime-core --benches` | PASS |
+| `cargo bench -p evohime-core --bench runtime_paths -- --warm-up-time 0.1 --measurement-time 0.2 --sample-size 10` | PASS |
+
+Полный workspace test и полный набор Electron-тестов для этой задачи не
+запускались; перечисленные результаты относятся только к затронутым модулям.
 
 ## Подтверждённые проверки checkout
 

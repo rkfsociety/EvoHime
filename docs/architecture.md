@@ -1,6 +1,6 @@
 # EvoHime — Windows desktop architecture
 
-Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-09-04.
+Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-09-06.
 Фактическое состояние реализации см. в [`current-state.md`](current-state.md).
 
 EvoHime — локальное Windows-приложение.
@@ -190,6 +190,39 @@ model provenance. Инварианты запуска:
 - недоступный или устаревший источник даёт `degraded`, а не уверенный ответ;
 - события durable, монотонны внутри запуска и содержат только bounded
   projection.
+
+### Границы модулей и эксплуатационные ограничения
+
+Core организован по доменам, а не одним набором крупных исходников. Координация
+agent run разделена между routing, approval, dispatch, recovery и child
+orchestration-модулями; IPC сгруппирован по workspace, memory, workflow, ambient,
+review и terminal-доменам. Журнал, RAG, memory extraction и workflow runtime
+также имеют отдельные модули для основной логики и тестов. IPC-слой остаётся
+тонким: проверка envelope и маршрутизация выполняются на границе, а доменная
+операция — в Core-owned сервисе.
+
+Для новых изменений действует инженерная граница: исходные Rust-файлы Core
+должны оставаться не больше 2000 строк. Doctor проверяет максимум строк,
+количество допустимых `include!` и наличие индексов горячих запросов; это
+проверка checkout, а не пользовательская настройка. Оставшиеся include-фрагменты
+ограничены совместимыми prelude/header-границами, которые содержат общие
+приватные определения и постепенно переводятся в обычные модули без изменения
+visibility-контракта.
+
+Context Budget Manager передаёт крупный текст и бинарные payload-ы через
+`Arc`, чтобы планирование и offload не создавали повторные полные копии.
+Fallback estimator сохраняет счётчик использования и предупреждает при доле
+выше 5%; bounded LRU-кэш оценок использует стабильный ключ с версией
+normalizer. Workflow runtime вычисляет canonical graph hash один раз на drive,
+отклоняет графы глубже 64 узлов по пути и публикует bounded counters для
+admission, hash-check, dispatch batch, dispatched nodes и ready-set.
+
+Горячие SQLite-запросы typed event ledger покрыты partial/composite индексами
+для terminal action, review lookup, workflow state, открытых попыток и
+per-run event projection. Поддерживаются prepared statements и транзакционные
+batch-вставки для журналируемых событий. Узкие Criterion-бенчмарки находятся в
+`crates/evohime-core/benches/runtime_paths.rs` и покрывают context planner,
+workflow hash и protobuf IPC envelope.
 
 ### Ограничение фоновых задач Core
 
