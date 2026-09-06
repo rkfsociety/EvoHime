@@ -1493,7 +1493,14 @@ mod ui_truthfulness {
                 heartbeat_age_ms: Some(500),
                 stale_threshold_ms: 5_000,
             },
-            codebase: crate::doctor::CodebaseProbe::default(),
+            codebase: crate::doctor::CodebaseProbe {
+                available: true,
+                largest_source_file_lines: 1_000,
+                max_source_file_lines: 2_000,
+                include_count: 0,
+                allowed_include_count: 3,
+                missing_indexes: Vec::new(),
+            },
         }
     }
 
