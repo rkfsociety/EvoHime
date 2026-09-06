@@ -794,10 +794,7 @@ pub struct MessageOffload<'store, 'content> {
 }
 
 impl<'store, 'content> MessageOffload<'store, 'content> {
-    pub fn new(
-        inner: ArtifactOffload<'store>,
-        contents: HashMap<String, &'content str>,
-    ) -> Self {
+    pub fn new(inner: ArtifactOffload<'store>, contents: HashMap<String, &'content str>) -> Self {
         Self { inner, contents }
     }
 

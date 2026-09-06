@@ -203,7 +203,8 @@ pub(crate) struct KnowledgeQueryRequest {
     pub(crate) target_id: String,
 }
 
-pub(crate) fn default_project_target_kind() -> crate::knowledge_source_registry_project_role::TargetKind {
+pub(crate) fn default_project_target_kind(
+) -> crate::knowledge_source_registry_project_role::TargetKind {
     crate::knowledge_source_registry_project_role::TargetKind::Project
 }
 
@@ -301,7 +302,8 @@ pub(crate) struct MemoryRecallRequest {
     pub(crate) candidates: Vec<crate::memory_views_and_adaptive_recall::RecallCandidate>,
 }
 
-pub(crate) fn default_query_complexity() -> crate::memory_views_and_adaptive_recall::QueryComplexity {
+pub(crate) fn default_query_complexity() -> crate::memory_views_and_adaptive_recall::QueryComplexity
+{
     crate::memory_views_and_adaptive_recall::QueryComplexity::Unknown
 }
 

@@ -38,17 +38,17 @@ mod tests {
         }
     }
 
+    #[path = "../ipc_bridge_tests_ambient.rs"]
+    mod ambient;
+    #[path = "../ipc_bridge_tests_memory_capabilities.rs"]
+    mod memory_capabilities;
     /// Typed ledger rows written by 08-2's `append_ledger_event` must reach
     /// the IPC replay path (план 08-3) as an additive `execution_event`
     /// projection, without disturbing the generic backward-compat fields.
-#[path = "../ipc_bridge_tests_projection.rs"]
-mod projection;
-#[path = "../ipc_bridge_tests_workspace_research.rs"]
-mod workspace_research;
-#[path = "../ipc_bridge_tests_memory_capabilities.rs"]
-mod memory_capabilities;
-#[path = "../ipc_bridge_tests_ambient.rs"]
-mod ambient;
-#[path = "../ipc_bridge_tests_workflow.rs"]
-mod workflow;
+    #[path = "../ipc_bridge_tests_projection.rs"]
+    mod projection;
+    #[path = "../ipc_bridge_tests_workflow.rs"]
+    mod workflow;
+    #[path = "../ipc_bridge_tests_workspace_research.rs"]
+    mod workspace_research;
 }

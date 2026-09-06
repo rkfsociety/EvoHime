@@ -85,7 +85,10 @@ impl IpcBridge {
         }
     }
 
-    pub(crate) async fn dispatch_get_goal(&self, request: generated::GetGoal) -> generated::GoalProjection {
+    pub(crate) async fn dispatch_get_goal(
+        &self,
+        request: generated::GetGoal,
+    ) -> generated::GoalProjection {
         if !valid_goal_token(&request.goal_id) {
             return goal_projection_error("", "invalid_argument");
         }

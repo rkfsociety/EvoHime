@@ -1927,4 +1927,3 @@ pub fn sort_by_scope_precedence(records: &mut [ActiveMemorySummary]) {
 #[cfg(test)]
 #[path = "memory_extraction_tests.rs"]
 mod tests;
-

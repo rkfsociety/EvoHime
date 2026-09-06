@@ -369,5 +369,4 @@ impl IpcBridge {
         .await?;
         Ok(())
     }
-
 }

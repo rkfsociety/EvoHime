@@ -42,30 +42,30 @@ impl IpcBridge {
     // ------------------------------------------------------------------
 }
 
-#[path = "ipc_bridge_ambient_receipts.rs"]
-mod receipts;
-#[path = "ipc_bridge_ambient_model_and_protocol.rs"]
-mod model_and_protocol;
-#[path = "ipc_bridge_ambient_workspace_contracts.rs"]
-mod workspace_contracts;
-#[path = "ipc_bridge_ambient_plan_review.rs"]
-mod plan_review;
-#[path = "ipc_bridge_ambient_tasks_children.rs"]
-mod tasks_children;
-#[path = "ipc_bridge_ambient_workspace_memory.rs"]
-mod workspace_memory;
 #[path = "ipc_bridge_ambient_ambient_workflow.rs"]
 mod ambient_workflow;
 #[path = "ipc_bridge_ambient_automation_collaboration.rs"]
 mod automation_collaboration;
+#[path = "ipc_bridge_ambient_model_and_protocol.rs"]
+mod model_and_protocol;
+#[path = "ipc_bridge_ambient_plan_review.rs"]
+mod plan_review;
+#[path = "ipc_bridge_ambient_receipts.rs"]
+mod receipts;
+#[path = "ipc_bridge_ambient_tasks_children.rs"]
+mod tasks_children;
+#[path = "ipc_bridge_ambient_workspace_contracts.rs"]
+mod workspace_contracts;
+#[path = "ipc_bridge_ambient_workspace_memory.rs"]
+mod workspace_memory;
 
-#[path = "ipc_bridge_ambient_transport.rs"]
-mod transport_domain;
 #[path = "ipc_bridge_ambient_state.rs"]
 mod ambient_state;
 #[path = "ipc_bridge_automation.rs"]
 mod automation;
-#[path = "ipc_bridge_workflow.rs"]
-mod workflow;
 #[path = "ipc_bridge_ambient_proposals.rs"]
 mod proposals;
+#[path = "ipc_bridge_ambient_transport.rs"]
+mod transport_domain;
+#[path = "ipc_bridge_workflow.rs"]
+mod workflow;

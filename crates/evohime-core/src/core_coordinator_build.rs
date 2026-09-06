@@ -507,8 +507,10 @@ async fn collect_codebase_probe(
             let Ok(source) = std::fs::read_to_string(path) else {
                 return crate::doctor::CodebaseProbe::default();
             };
-            largest_source_file_lines = largest_source_file_lines.max(source.lines().count() as u32);
-            include_count = include_count.saturating_add(source.matches("include!(").count() as u32);
+            largest_source_file_lines =
+                largest_source_file_lines.max(source.lines().count() as u32);
+            include_count =
+                include_count.saturating_add(source.matches("include!(").count() as u32);
         }
     }
 
@@ -539,7 +541,10 @@ async fn collect_codebase_probe(
             .map(|name| (*name).to_string())
             .collect()
     } else {
-        required_indexes.iter().map(|name| (*name).to_string()).collect()
+        required_indexes
+            .iter()
+            .map(|name| (*name).to_string())
+            .collect()
     };
 
     crate::doctor::CodebaseProbe {

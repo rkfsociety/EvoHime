@@ -310,4 +310,3 @@ impl IpcBridge {
             .map_err(IpcBridgeError::from)
     }
 }
-

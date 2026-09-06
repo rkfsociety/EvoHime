@@ -331,7 +331,9 @@ impl IpcBridge {
         }
     }
 
-    pub(crate) fn ambient_policy_json(policy: &evohime_listener_contract::AmbientPolicy) -> serde_json::Value {
+    pub(crate) fn ambient_policy_json(
+        policy: &evohime_listener_contract::AmbientPolicy,
+    ) -> serde_json::Value {
         serde_json::json!({
             "quiet_hours": policy
                 .quiet_hours
@@ -427,5 +429,4 @@ impl IpcBridge {
             Err(code) => serde_json::json!({ "applied": false, "error_code": code.as_str() }),
         }
     }
-
 }

@@ -249,7 +249,7 @@ impl IpcBridge {
                 };
                 if !payload.run_id.is_empty() {
                     if registry
-                    .runs
+                        .runs
                         .insert(payload.run_id.into_owned(), AgentState::Cancelling)
                         .is_none()
                     {
@@ -562,7 +562,9 @@ impl IpcBridge {
         Ok(())
     }
 
-    pub(crate) async fn write_persistent_agent_organization_registry_response<W: AsyncWrite + Unpin>(
+    pub(crate) async fn write_persistent_agent_organization_registry_response<
+        W: AsyncWrite + Unpin,
+    >(
         &self,
         writer: &mut W,
         request_id: &str,

@@ -19,8 +19,8 @@
 //! * события durable, монотонны и содержат только bounded projection.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -597,7 +597,9 @@ impl WorkflowRuntime {
                         .collect(),
                 )
             })?;
-        self.metrics.admissions_total.fetch_add(1, Ordering::Relaxed);
+        self.metrics
+            .admissions_total
+            .fetch_add(1, Ordering::Relaxed);
 
         let now_ms = crate::task_memory::now_millis() as i64;
         let graph_json = serde_json::to_string(&graph)
@@ -715,9 +717,7 @@ impl WorkflowRuntime {
             return Err(RuntimeError::Busy(run_id.to_string()));
         }
 
-        let outcome = self
-            .drive_locked(&run, &graph, &parent, &actual_hash)
-            .await;
+        let outcome = self.drive_locked(&run, &graph, &parent, &actual_hash).await;
 
         {
             let now_ms = crate::task_memory::now_millis() as i64;

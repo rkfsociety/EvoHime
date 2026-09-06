@@ -1,6 +1,6 @@
 mod core_prelude;
-pub use core_prelude::{CoreVersion, AGENT_IDENTITY_PROMPT, DEFAULT_TASK_TIMEOUT_SECONDS};
 pub(crate) use core_prelude::*;
+pub use core_prelude::{CoreVersion, AGENT_IDENTITY_PROMPT, DEFAULT_TASK_TIMEOUT_SECONDS};
 
 pub mod adaptive_tool_catalog;
 pub mod approval_policy_profiles;
@@ -66,12 +66,6 @@ impl CoreVersion {
     }
 }
 
-use std::{
-    collections::{HashMap, HashSet},
-    path::PathBuf,
-    sync::{Arc, Mutex as StdMutex},
-    time::{Duration, Instant, SystemTime},
-};
 use base64::Engine;
 use evohime_local_storage::{
     BackupPreview, BackupProgress, BackupResult, EventRecord, ImportedTask, LocalDatabase,
@@ -95,6 +89,12 @@ use futures_util::future::BoxFuture;
 use futures_util::StreamExt;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    sync::{Arc, Mutex as StdMutex},
+    time::{Duration, Instant, SystemTime},
+};
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
@@ -195,6 +195,7 @@ pub mod agent_git_change_sets;
 pub mod architect_editor_model_pipeline;
 pub mod architecture_snapshot;
 pub mod architecture_snapshot_runtime;
+mod core_protocol;
 pub mod plan_context;
 pub mod plan_review;
 pub mod task_checkpoint;
@@ -212,7 +213,6 @@ pub mod workflow_runtime;
 pub mod workflow_templates;
 pub mod workspace;
 pub mod workspace_rag;
-mod core_protocol;
 pub use core_protocol::*;
 mod core_journal;
 pub use core_journal::*;

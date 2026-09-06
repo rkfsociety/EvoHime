@@ -1599,7 +1599,10 @@ impl IpcBridge {
             .map_err(IpcBridgeError::from)
     }
 
-    pub(crate) async fn dispatch_get_task_graph(&self, project_id: String) -> Result<Vec<u8>, IpcBridgeError> {
+    pub(crate) async fn dispatch_get_task_graph(
+        &self,
+        project_id: String,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
         let coordinator = self
             .coordinator
             .as_ref()
@@ -1900,9 +1903,7 @@ impl IpcBridge {
             .map_err(FrameError::Io)
             .map_err(IpcBridgeError::from)
     }
-
 }
 
 #[path = "ipc_bridge_workspace_operations.rs"]
 mod operations;
-

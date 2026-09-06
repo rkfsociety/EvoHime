@@ -313,5 +313,4 @@ impl IpcBridge {
             }
         }
     }
-
 }

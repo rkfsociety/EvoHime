@@ -1,4 +1,3 @@
-
 use super::*;
 
 pub(crate) fn validate_skill_workspace(
@@ -106,7 +105,11 @@ pub(crate) fn valid_goal_token(value: &str) -> bool {
     valid_checkpoint_token(value, crate::goal::GOAL_MAX_ID_CHARS)
 }
 
-pub(crate) fn valid_goal_action(goal_id: &str, expected_version: u64, idempotency_key: &str) -> bool {
+pub(crate) fn valid_goal_action(
+    goal_id: &str,
+    expected_version: u64,
+    idempotency_key: &str,
+) -> bool {
     valid_goal_token(goal_id) && expected_version > 0 && valid_goal_token(idempotency_key)
 }
 
@@ -462,7 +465,10 @@ pub(crate) fn analysis_kernel_object_ref(
     }
 }
 
-pub(crate) fn analysis_kernel_result_error(request_id: &str, code: &str) -> generated::AnalysisKernelResult {
+pub(crate) fn analysis_kernel_result_error(
+    request_id: &str,
+    code: &str,
+) -> generated::AnalysisKernelResult {
     generated::AnalysisKernelResult {
         schema_version: crate::analysis_kernel::KERNEL_HOST_REQUEST_VERSION,
         request_id: request_id.into(),
@@ -474,7 +480,9 @@ pub(crate) fn analysis_kernel_result_error(request_id: &str, code: &str) -> gene
     }
 }
 
-pub(crate) fn kernel_error_code(error: &crate::analysis_kernel::KernelRuntimeError) -> &'static str {
+pub(crate) fn kernel_error_code(
+    error: &crate::analysis_kernel::KernelRuntimeError,
+) -> &'static str {
     match error {
         crate::analysis_kernel::KernelRuntimeError::NotRunning => "kernel_not_running",
         crate::analysis_kernel::KernelRuntimeError::Denied(_) => "host_request_denied",
@@ -493,7 +501,9 @@ pub(crate) fn kernel_error_code(error: &crate::analysis_kernel::KernelRuntimeErr
     }
 }
 
-pub(crate) fn kernel_storage_error_code(error: &evohime_local_storage::StorageError) -> &'static str {
+pub(crate) fn kernel_storage_error_code(
+    error: &evohime_local_storage::StorageError,
+) -> &'static str {
     match error {
         evohime_local_storage::StorageError::AnalysisKernel(
             crate::analysis_kernel::AnalysisKernelError::VersionConflict { .. },
@@ -597,7 +607,9 @@ pub(crate) fn conversation_event_log_error_with_earliest(
     }
 }
 
-pub(crate) fn checkpoint_disposition_text(disposition: crate::task_checkpoint::RecoveryDisposition) -> String {
+pub(crate) fn checkpoint_disposition_text(
+    disposition: crate::task_checkpoint::RecoveryDisposition,
+) -> String {
     match serde_json::to_string(&disposition) {
         Ok(value) => value.trim_matches('"').to_owned(),
         Err(error) => {
@@ -868,7 +880,9 @@ pub(crate) fn strip_review_header(final_markdown: &str) -> String {
     }
 }
 
-pub(crate) fn revision_result_from_event(payload: &[u8]) -> Option<crate::plan_review::RevisionResult> {
+pub(crate) fn revision_result_from_event(
+    payload: &[u8],
+) -> Option<crate::plan_review::RevisionResult> {
     let value: serde_json::Value = serde_json::from_slice(payload).ok()?;
     let message = value
         .get("TaskCompleted")

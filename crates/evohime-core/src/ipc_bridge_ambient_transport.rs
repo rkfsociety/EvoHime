@@ -828,5 +828,4 @@ impl IpcBridge {
             .map_err(|_| "storage_failed".to_string())?
             .ok_or_else(|| "run_not_found".into())
     }
-
 }

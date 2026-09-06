@@ -3,8 +3,8 @@ use evohime_context_budget::{
     ContextItemBuilder, ContextPlanner, HeuristicEstimator, ItemKind, OwnedContent, PlanInput,
     PlanRequest,
 };
-use evohime_desktop_ipc::generated;
 use evohime_core::workflow::WorkflowGraph;
+use evohime_desktop_ipc::generated;
 use prost::Message;
 use std::sync::Arc;
 
@@ -27,7 +27,11 @@ fn context_request() -> PlanRequest {
         now: 1_000,
         inputs: vec![
             make_input("policy", ItemKind::SafetyPolicy, "не раскрывать секреты"),
-            make_input("prompt", ItemKind::UserPrompt, "проверь изменения в репозитории"),
+            make_input(
+                "prompt",
+                ItemKind::UserPrompt,
+                "проверь изменения в репозитории",
+            ),
         ],
         loadout: None,
         replan_of: None,

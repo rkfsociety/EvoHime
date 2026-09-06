@@ -175,7 +175,10 @@ impl IpcBridge {
         }
     }
 
-    pub(crate) async fn dispatch_workflow_run(&self, request: generated::GetWorkflowRun) -> serde_json::Value {
+    pub(crate) async fn dispatch_workflow_run(
+        &self,
+        request: generated::GetWorkflowRun,
+    ) -> serde_json::Value {
         let workspace = self.journal.workflow_run_workspace(&request.run_id).await;
         let runtime = self.workflow_runtime(&workspace);
         match runtime.projection(&request.run_id).await {
@@ -213,7 +216,9 @@ impl IpcBridge {
             .unwrap_or(false);
         if cancelled {
             let workspace = self.journal.workflow_run_workspace(&request.run_id).await;
-            let _ = self.spawn_workflow_drive(request.run_id.clone(), workspace).await;
+            let _ = self
+                .spawn_workflow_drive(request.run_id.clone(), workspace)
+                .await;
         }
         serde_json::json!({
             "run_id": request.run_id,
@@ -813,5 +818,4 @@ impl IpcBridge {
             )
             .map_err(|_| crate::visual_workflow_builder::BuilderError::RegistryRejected)
     }
-
 }

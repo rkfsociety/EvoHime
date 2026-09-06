@@ -791,5 +791,4 @@ impl IpcBridge {
         }
         serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":status,"item_id":item_id,"revision":revision,"state":state,"error_code":error_code,"projection_json":projection})
     }
-
 }

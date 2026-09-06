@@ -460,5 +460,3 @@ pub fn verify_document_provenance(
     )
     .is_ok())
 }
-
-

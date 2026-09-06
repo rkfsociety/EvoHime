@@ -1,7 +1,10 @@
 use super::*;
 
 impl IpcBridge {
-    pub(crate) fn workflow_runtime(&self, workspace_path: &str) -> crate::workflow_runtime::WorkflowRuntime {
+    pub(crate) fn workflow_runtime(
+        &self,
+        workspace_path: &str,
+    ) -> crate::workflow_runtime::WorkflowRuntime {
         let mut adapter =
             crate::workflow_adapters::CoreNodeAdapter::new(self.journal.clone(), workspace_path);
         if let Some(tools) = &self.tools {
@@ -19,7 +22,11 @@ impl IpcBridge {
 
     /// Продолжает запуск в фоне. Команда IPC не ждёт выполнения графа:
     /// состояние durable, и оболочка забирает его отдельным `GetWorkflowRun`.
-    pub(crate) async fn spawn_workflow_drive(&self, run_id: String, workspace_path: String) -> bool {
+    pub(crate) async fn spawn_workflow_drive(
+        &self,
+        run_id: String,
+        workspace_path: String,
+    ) -> bool {
         let runtime = self.workflow_runtime(&workspace_path);
         self.background_tasks
             .try_spawn(async move {
@@ -617,5 +624,4 @@ impl IpcBridge {
             }
         }
     }
-
 }

@@ -359,5 +359,4 @@ impl IpcBridge {
             })
             .await;
     }
-
 }

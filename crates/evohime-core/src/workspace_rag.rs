@@ -1114,6 +1114,8 @@ fn source_byte_offset(file: &DecodedFile, decoded_offset: usize) -> usize {
     }
 }
 
+#[path = "workspace_rag_evidence.rs"]
+mod evidence;
 /// Builds a private generation and atomically publishes it. The caller owns
 /// cancellation and progress policy; neither callback can alter the workspace
 /// root or any indexed content.
@@ -1121,22 +1123,19 @@ fn source_byte_offset(file: &DecodedFile, decoded_offset: usize) -> usize {
 mod index;
 #[path = "workspace_rag_retrieval.rs"]
 mod retrieval;
-#[path = "workspace_rag_evidence.rs"]
-mod evidence;
 
+pub use evidence::{
+    build_evidence_context, finalize_citations, rag_ledger_projection, verify_document_provenance,
+};
+pub(super) use index::active_generation;
 pub use index::{get_index_status, index_workspace};
+pub use retrieval::SearchWorkspaceInput;
+pub(super) use retrieval::{
+    bounded_error, estimate_tokens, previous_char_boundary, stable_id, validate_source,
+};
 pub use retrieval::{
     build_vector_index, search_workspace, search_workspace_with_config,
     search_workspace_with_progress,
-};
-pub use retrieval::SearchWorkspaceInput;
-pub use evidence::{
-    build_evidence_context, finalize_citations, rag_ledger_projection,
-    verify_document_provenance,
-};
-pub(super) use index::active_generation;
-pub(super) use retrieval::{
-    bounded_error, estimate_tokens, previous_char_boundary, stable_id, validate_source,
 };
 
 #[cfg(test)]
