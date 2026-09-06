@@ -819,7 +819,7 @@ impl OffloadSink for MessageOffload<'_, '_> {
             return Err(format!("content for {} is not available", item.id));
         };
         self.inner
-            .offload_text(item.kind.as_str(), &content, item.privacy)
+            .offload_text(item.kind.as_str(), content, item.privacy)
     }
 }
 

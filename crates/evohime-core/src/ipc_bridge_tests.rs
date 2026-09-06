@@ -41,7 +41,6 @@ mod tests {
     /// Typed ledger rows written by 08-2's `append_ledger_event` must reach
     /// the IPC replay path (план 08-3) as an additive `execution_event`
     /// projection, without disturbing the generic backward-compat fields.
-
 #[path = "../ipc_bridge_tests_projection.rs"]
 mod projection;
 #[path = "../ipc_bridge_tests_workspace_research.rs"]

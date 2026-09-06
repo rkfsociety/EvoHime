@@ -138,14 +138,14 @@ impl IpcBridge {
                         .dispatch_run_doctor(
                             request.project_id,
                             request.detail_level,
-                            protocol.clone(),
+                            protocol,
                         )
                         .await?;
                     self.write_response(writer, "doctor.report", result).await?;
                 }
                 Some(generated::command_envelope::Command::CreateDiagnosticsSnapshot(request)) => {
                     let result = self
-                        .dispatch_create_diagnostics_snapshot(request, protocol.clone())
+                        .dispatch_create_diagnostics_snapshot(request, protocol)
                         .await?;
                     self.write_response(writer, "diagnostics.snapshot", result)
                         .await?;
