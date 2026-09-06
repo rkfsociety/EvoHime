@@ -17,7 +17,7 @@ foreach ($path in $automationFiles) {
 
 $wiringChecks = @{
     'crates\evohime-core\src\main.rs' = 'poll_automation_schedules'
-    'crates\evohime-core\src\ipc_bridge.rs' = 'dispatch_trigger_automation'
+    'crates\evohime-core\src\ipc_bridge_ambient_automation_collaboration.rs' = 'dispatch_trigger_automation'
     'crates\desktop-ipc\proto\evohime.desktop.proto' = 'trigger_automation = 131'
     'desktop\evohime-electron\src\main\shell-bridge.ts' = 'automation.trigger'
 }
