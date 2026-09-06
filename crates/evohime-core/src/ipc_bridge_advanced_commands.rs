@@ -2381,8 +2381,8 @@ impl IpcBridge {
                     let _ = evohime_local_storage::external_coding_agent_adapter_store::record_event(
                         database.connection(),
                         evohime_local_storage::external_coding_agent_adapter_store::RecordEventInput {
-                            conversation_id: &conversation_id,
-                            run_id: &run_id,
+                            conversation_id,
+                            run_id,
                             state: state_json.trim_matches('"'),
                             outcome: status,
                             correlation_id: &request.request_id,
