@@ -137,7 +137,8 @@ diagnostics обязательны для опасных операций. По�
 тестовыми файлами; крупнейшие исходные файлы checkout находятся в пределах
 лимита 2000 строк. Doctor дополнительно проверяет размер исходников, число
 `include!` и наличие индексов горячих SQLite-запросов. Context Budget Manager
-использует `Arc` для крупных payload-ов и считает fallback estimator, а workflow
+использует `Arc` для крупных payload-ов, выполняет initial pruning in-place и
+считает fallback estimator, а workflow
 runtime переиспользует canonical hash, ограничивает глубину графа 64 узлами и
 публикует bounded dispatch metrics.
 
