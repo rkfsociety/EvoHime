@@ -3,7 +3,8 @@
 //! Estimator обязан быть консервативным: его оценка не ниже фактического usage
 //! провайдера. Занижение считается дефектом, а не допустимой погрешностью.
 
-use std::collections::HashMap;
+use lru::LruCache;
+use std::num::NonZeroUsize;
 
 use serde::{Deserialize, Serialize};
 
@@ -150,23 +151,38 @@ impl TokenEstimator for FallbackEstimator {
 /// chat-template. Смена любого из компонентов не даёт стухший кэш-хит.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EstimateCacheKey {
+    pub form: EstimateForm,
     pub content_hash: String,
     pub tokenizer_version: String,
     pub normalizer_version: String,
     pub chat_template_version: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EstimateForm {
+    Content,
+    ToolSchema,
+}
+
 /// Кэш оценки для неизменных item в пределах сборки и между сборками.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct EstimateCache {
-    entries: HashMap<EstimateCacheKey, u32>,
+    entries: LruCache<EstimateCacheKey, u32>,
     hits: u64,
     misses: u64,
 }
 
 impl EstimateCache {
     pub fn new() -> Self {
-        Self::default()
+        Self::with_capacity(4096)
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            entries: LruCache::new(NonZeroUsize::new(capacity.max(1)).expect("non-zero cache")),
+            hits: 0,
+            misses: 0,
+        }
     }
 
     /// Возвращает оценку из кэша либо вычисляет её и запоминает.
@@ -178,6 +194,7 @@ impl EstimateCache {
         form: &ContentForm<'_>,
     ) -> u32 {
         let key = EstimateCacheKey {
+            form: EstimateForm::Content,
             content_hash: content_hash.to_string(),
             tokenizer_version: estimator.version().to_string(),
             normalizer_version: normalizer_version.to_string(),
@@ -189,7 +206,32 @@ impl EstimateCache {
         }
         self.misses += 1;
         let estimated = estimator.estimate_content(form);
-        self.entries.insert(key, estimated);
+        self.entries.put(key, estimated);
+        estimated
+    }
+
+    /// Возвращает оценку tool schema из bounded LRU-кэша либо вычисляет её.
+    pub fn estimate_tool_schema(
+        &mut self,
+        estimator: &dyn TokenEstimator,
+        schema_hash: &str,
+        normalizer_version: &str,
+        schema_json: &str,
+    ) -> u32 {
+        let key = EstimateCacheKey {
+            form: EstimateForm::ToolSchema,
+            content_hash: schema_hash.to_string(),
+            tokenizer_version: estimator.version().to_string(),
+            normalizer_version: normalizer_version.to_string(),
+            chat_template_version: estimator.chat_template_version().to_string(),
+        };
+        if let Some(cached) = self.entries.get(&key) {
+            self.hits += 1;
+            return *cached;
+        }
+        self.misses += 1;
+        let estimated = estimator.estimate_tool_schema(schema_json);
+        self.entries.put(key, estimated);
         estimated
     }
 
@@ -299,6 +341,35 @@ mod tests {
         assert_eq!(first, second);
         assert_eq!(cache.hits(), 1);
         assert_eq!(cache.misses(), 1);
+    }
+
+    #[test]
+    fn cache_reuses_tool_schema_estimates_and_keeps_forms_separate() {
+        let estimator = HeuristicEstimator::default_for("m");
+        let mut cache = EstimateCache::with_capacity(2);
+        let form = ContentForm::Text("{}");
+        cache.estimate(&estimator, "same-hash", NORMALIZER_VERSION, &form);
+        let first = cache.estimate_tool_schema(&estimator, "same-hash", NORMALIZER_VERSION, "{}");
+        let second = cache.estimate_tool_schema(&estimator, "same-hash", NORMALIZER_VERSION, "{}");
+
+        assert_eq!(first, second);
+        assert_eq!(cache.hits(), 1);
+        assert_eq!(cache.misses(), 2);
+        assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
+    fn cache_is_bounded_with_lru_eviction() {
+        let estimator = HeuristicEstimator::default_for("m");
+        let mut cache = EstimateCache::with_capacity(1);
+        let form = ContentForm::Text("payload");
+        cache.estimate(&estimator, "first", NORMALIZER_VERSION, &form);
+        cache.estimate(&estimator, "second", NORMALIZER_VERSION, &form);
+        cache.estimate(&estimator, "first", NORMALIZER_VERSION, &form);
+
+        assert_eq!(cache.len(), 1);
+        assert_eq!(cache.hits(), 0);
+        assert_eq!(cache.misses(), 3);
     }
 
     #[test]

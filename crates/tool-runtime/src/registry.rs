@@ -161,6 +161,7 @@ pub enum ToolPreflightDecision {
 #[derive(Clone)]
 pub struct ToolRegistry {
     tools: HashMap<&'static str, ToolDefinition>,
+    manifest_cache: HashMap<&'static str, crate::ToolManifest>,
     permissions: PermissionEngine,
 }
 
@@ -538,11 +539,14 @@ impl ToolRegistry {
     pub fn with_permissions(permissions: PermissionEngine) -> Self {
         Self {
             tools: HashMap::new(),
+            manifest_cache: HashMap::new(),
             permissions,
         }
     }
 
     pub fn register(&mut self, definition: ToolDefinition) {
+        let manifest = definition.manifest();
+        self.manifest_cache.insert(definition.name, manifest);
         self.tools.insert(definition.name, definition);
     }
 
@@ -555,12 +559,12 @@ impl ToolRegistry {
     pub fn manifests(&self) -> Vec<crate::ToolManifest> {
         self.list()
             .into_iter()
-            .map(|tool| tool.manifest())
+            .filter_map(|tool| self.manifest_cache.get(tool.name).cloned())
             .collect()
     }
 
     pub fn manifest_for(&self, name: &str) -> Option<crate::ToolManifest> {
-        self.tools.get(name).map(ToolDefinition::manifest)
+        self.manifest_cache.get(name).cloned()
     }
 
     /// Performs the exact policy/scope check without creating an in-memory

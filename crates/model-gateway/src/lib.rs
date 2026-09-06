@@ -11,10 +11,10 @@ pub mod tools;
 
 pub use crate::config::{ModelGatewayConfig, ModelRouteConfig};
 pub use crate::provider_contract::{
-    select_route_snapshot, AttemptTrace, CandidateEntry, CapabilityMetadata, CircuitState,
-    ExecutionClass, FailureCategory, HealthStatus, PolicyHashes, ProbeConfig, ProbeFailure,
-    ProbeResult, RetryConfig, RoutePolicySnapshot, RunHealthOverlay, RunResult, RunTrace,
-    SnapshotCandidateDecision, SnapshotError, SnapshotRouteDecision,
+    select_route_snapshot, select_route_snapshot_cached, AttemptTrace, CandidateEntry,
+    CapabilityMetadata, CircuitState, ExecutionClass, FailureCategory, HealthStatus, PolicyHashes,
+    ProbeConfig, ProbeFailure, ProbeResult, RetryConfig, RoutePolicySnapshot, RunHealthOverlay,
+    RunResult, RunTrace, SnapshotCandidateDecision, SnapshotError, SnapshotRouteDecision,
 };
 use crate::providers::{
     literouter::LiteRouterProvider, local::LocalProvider, mock::MockProvider,
@@ -473,7 +473,7 @@ impl ModelGateway {
                 .route_policy_snapshot_with_model(request, model, now_ms)
                 .map_err(|error| ProviderError::Config(error.to_string()))?;
             let overlay = RunHealthOverlay::new(&snapshot.run_id);
-            let decision = select_route_snapshot(
+            let decision = select_route_snapshot_cached(
                 request,
                 &snapshot,
                 &overlay,

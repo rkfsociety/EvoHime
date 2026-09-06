@@ -32,7 +32,8 @@ pub use budget::{
     MinimumViableContext, BUDGET_UNAVAILABLE_CODE, CONTEXT_BUDGET_SCHEMA_VERSION,
 };
 pub use estimator::{
-    EstimateCache, EstimatorDrift, FallbackEstimator, HeuristicEstimator, TokenEstimator,
+    EstimateCache, EstimateForm, EstimatorDrift, FallbackEstimator, HeuristicEstimator,
+    TokenEstimator,
 };
 pub use hash::{content_hash, ContentForm, NORMALIZER_VERSION};
 pub use item::{

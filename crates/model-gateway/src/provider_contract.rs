@@ -17,8 +17,9 @@ use crate::routing_policy::RoutingRequest;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
@@ -716,6 +717,66 @@ pub struct SnapshotRouteDecision {
     pub reason_code: String,
 }
 
+const ROUTE_CACHE_CAPACITY: usize = 256;
+
+/// Ограниченный процессный memoization-кэш решений маршрутизации.
+/// Ключ учитывает snapshot, запрос, поколение health overlay, каталог и
+/// точное время оценки, поэтому изменение состояния не использует старое решение.
+static ROUTE_CACHE: OnceLock<Mutex<lru::LruCache<String, SnapshotRouteDecision>>> = OnceLock::new();
+
+fn route_cache() -> &'static Mutex<lru::LruCache<String, SnapshotRouteDecision>> {
+    ROUTE_CACHE.get_or_init(|| {
+        Mutex::new(lru::LruCache::new(
+            NonZeroUsize::new(ROUTE_CACHE_CAPACITY).expect("non-zero route cache capacity"),
+        ))
+    })
+}
+
+fn route_cache_key(
+    request: &RoutingRequest,
+    snapshot: &RoutePolicySnapshot,
+    overlay: &RunHealthOverlay,
+    catalog: Option<&EvaluationCatalog>,
+    attempt_id: u32,
+    now_ms: u64,
+) -> Option<String> {
+    let mut hasher = Sha256::new();
+    hasher.update(serde_json::to_vec(request).ok()?);
+    hasher.update(serde_json::to_vec(snapshot).ok()?);
+    hasher.update(overlay.run_id.as_bytes());
+    hasher.update(overlay.generation().to_le_bytes());
+    hasher.update(serde_json::to_vec(&catalog.map(|catalog| &catalog.records)).ok()?);
+    hasher.update(attempt_id.to_le_bytes());
+    hasher.update(now_ms.to_le_bytes());
+    Some(hex::encode(hasher.finalize()))
+}
+
+/// Кэшированный вариант [`select_route_snapshot`].
+pub fn select_route_snapshot_cached(
+    request: &RoutingRequest,
+    snapshot: &RoutePolicySnapshot,
+    overlay: &RunHealthOverlay,
+    catalog: Option<&EvaluationCatalog>,
+    attempt_id: u32,
+    now_ms: u64,
+) -> Result<SnapshotRouteDecision, SnapshotError> {
+    let key = route_cache_key(request, snapshot, overlay, catalog, attempt_id, now_ms);
+    if let Some(key) = key.as_ref() {
+        if let Some(decision) = route_cache().lock().expect("route cache poisoned").get(key) {
+            return Ok(decision.clone());
+        }
+    }
+
+    let decision = select_route_snapshot(request, snapshot, overlay, catalog, attempt_id, now_ms)?;
+    if let Some(key) = key {
+        route_cache()
+            .lock()
+            .expect("route cache poisoned")
+            .put(key, decision.clone());
+    }
+    Ok(decision)
+}
+
 /// Canonical Core-owned selection over an immutable snapshot and a per-run
 /// overlay. It has no clock, filesystem, provider or budget-manager access.
 pub fn select_route_snapshot(
@@ -1281,9 +1342,12 @@ mod tests {
             estimated_input_tokens: 10,
             quality_delta: 0.05,
         };
-        let decision =
-            select_route_snapshot(&request, &snapshot, &overlay, None, 0, 1_050).expect("decision");
+        let decision = select_route_snapshot_cached(&request, &snapshot, &overlay, None, 0, 1_050)
+            .expect("decision");
+        let repeated = select_route_snapshot_cached(&request, &snapshot, &overlay, None, 0, 1_050)
+            .expect("cached decision");
         assert_eq!(decision.selected_route.as_deref(), Some("local-1"));
+        assert_eq!(decision, repeated);
         assert_eq!(
             decision
                 .candidates
