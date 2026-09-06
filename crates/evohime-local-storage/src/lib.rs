@@ -677,15 +677,24 @@ impl LocalDatabase {
         local_model_runtime_manager_store::install_schema(&connection)?;
         architecture_snapshot_store::install_schema(&connection)?;
         // These indexes depend on the typed-ledger columns installed above.
-        // Keep them idempotent and outside the version gate so existing
-        // databases receive the optimization without a data migration.
-        connection.execute_batch(
-            "CREATE INDEX IF NOT EXISTS idx_events_action_terminal
-                 ON events(action_id, sequence_id DESC)
-                 WHERE action_id IS NOT NULL AND state_after IS NOT NULL;
-             CREATE INDEX IF NOT EXISTS idx_events_review_lookup
-                 ON events(task_id, event_type, sequence_id DESC);",
+        // Some legacy fixtures create the compatibility `events` table later
+        // through another store, so do not reference action_id/state_after
+        // until those columns are actually present.
+        let typed_event_columns: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('events')
+             WHERE name IN ('action_id', 'state_after')",
+            [],
+            |row| row.get(0),
         )?;
+        if typed_event_columns == 2 {
+            connection.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_events_action_terminal
+                     ON events(action_id, sequence_id DESC)
+                     WHERE action_id IS NOT NULL AND state_after IS NOT NULL;
+                 CREATE INDEX IF NOT EXISTS idx_events_review_lookup
+                     ON events(task_id, event_type, sequence_id DESC);",
+            )?;
+        }
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { path, connection })
     }
