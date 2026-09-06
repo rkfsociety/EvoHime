@@ -22,6 +22,7 @@ pub const WORKFLOW_CONTRACT_VERSION: &str = "workflow/v1";
 
 pub const MAX_GRAPH_NODES: usize = 256;
 pub const MAX_GRAPH_EDGES: usize = 512;
+pub const MAX_GRAPH_DEPTH: usize = 64;
 pub const MAX_NODE_PORTS: usize = 64;
 pub const MAX_TIMEOUT_MS: u64 = 300_000;
 pub const MAX_RETRY_ATTEMPTS: u32 = 10;
@@ -541,6 +542,10 @@ pub enum ValidationError {
         actual: usize,
         maximum: usize,
     },
+    TooDeep {
+        actual: usize,
+        maximum: usize,
+    },
     EmptyNodeId,
     DuplicateNodeId(String),
     UnknownEntryNode(String),
@@ -813,6 +818,13 @@ impl WorkflowGraph {
         let cycle = find_cycle(&nodes, &adjacency);
         if let Some(cycle) = cycle {
             errors.push(ValidationError::Cycle(cycle));
+        } else if let Some(depth) = graph_depth(&nodes, &adjacency) {
+            if depth > MAX_GRAPH_DEPTH {
+                errors.push(ValidationError::TooDeep {
+                    actual: depth,
+                    maximum: MAX_GRAPH_DEPTH,
+                });
+            }
         }
         let reachable = reachable_nodes(&self.entry_node, &adjacency);
         for node_id in nodes.keys() {
@@ -1356,6 +1368,43 @@ fn reachable_nodes(
     seen
 }
 
+fn graph_depth(
+    nodes: &BTreeMap<String, &WorkflowNode>,
+    adjacency: &BTreeMap<String, BTreeSet<String>>,
+) -> Option<usize> {
+    fn depth_from(
+        node_id: &str,
+        adjacency: &BTreeMap<String, BTreeSet<String>>,
+        memo: &mut BTreeMap<String, usize>,
+    ) -> usize {
+        if let Some(depth) = memo.get(node_id) {
+            return *depth;
+        }
+        let depth = adjacency
+            .get(node_id)
+            .into_iter()
+            .flat_map(|children| children.iter())
+            .map(|child| depth_from(child, adjacency, memo))
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1);
+        memo.insert(node_id.to_string(), depth);
+        depth
+    }
+
+    if nodes.is_empty() {
+        return None;
+    }
+    let mut memo = BTreeMap::new();
+    Some(
+        nodes
+            .keys()
+            .map(|node_id| depth_from(node_id, adjacency, &mut memo))
+            .max()
+            .unwrap_or(0),
+    )
+}
+
 fn find_cycle(
     nodes: &BTreeMap<String, &WorkflowNode>,
     adjacency: &BTreeMap<String, BTreeSet<String>>,
@@ -1457,6 +1506,35 @@ mod tests {
         )
         .validate();
         assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn rejects_pathological_graph_depth_before_runtime_dispatch() {
+        let mut nodes = Vec::new();
+        let mut edges = Vec::new();
+        for index in 0..=MAX_GRAPH_DEPTH {
+            nodes.push(node(
+                &format!("n{index}"),
+                (index > 0).then_some(("in", PortType::Text)),
+                (index < MAX_GRAPH_DEPTH).then_some(("out", PortType::Text)),
+            ));
+            if index > 0 {
+                edges.push(WorkflowEdge::data(
+                    &format!("n{}", index - 1),
+                    "out",
+                    &format!("n{index}"),
+                    "in",
+                ));
+            }
+        }
+        let errors = graph(nodes, edges).validate().expect_err("depth bound");
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            ValidationError::TooDeep {
+                actual,
+                maximum: MAX_GRAPH_DEPTH
+            } if *actual == MAX_GRAPH_DEPTH + 1
+        )));
     }
 
     #[test]
