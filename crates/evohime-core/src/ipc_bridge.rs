@@ -22,4 +22,5 @@ pub(crate) use ipc_bridge_projections::*;
 mod ipc_bridge_extension_commands;
 
 #[cfg(test)]
-include!("ipc_bridge_tests.rs");
+#[path = "ipc_bridge_tests.rs"]
+mod ipc_bridge_tests;

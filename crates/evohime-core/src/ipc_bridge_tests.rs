@@ -1,3 +1,5 @@
+use super::*;
+
 mod tests {
     use super::*;
     use crate::CoreEvent;
