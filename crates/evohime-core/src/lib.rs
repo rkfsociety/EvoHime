@@ -1,4 +1,65 @@
-include!("core_prelude.rs");
+mod core_prelude;
+pub use core_prelude::{CoreVersion, AGENT_IDENTITY_PROMPT, DEFAULT_TASK_TIMEOUT_SECONDS};
+pub(crate) use core_prelude::*;
+
+pub mod adaptive_tool_catalog;
+pub mod approval_policy_profiles;
+pub mod capability_workbenches;
+pub mod checkpoint_forking_and_replay;
+pub mod code_diagnostics_feedback_loop;
+pub mod conversation_bridge_adapters;
+pub mod core_topic_subscription_event_bus;
+pub mod customization_inventory;
+pub mod declarative_agent_component_registry;
+pub mod declarative_runtime_components;
+pub mod dependency_aware_task_graph;
+pub mod durable_remote_task_bridge;
+pub mod event_visualizer_registry;
+pub mod experience_replay_library;
+pub mod headless_core_cli;
+pub mod knowledge_source_registry_project_role;
+pub mod output_guardrail_pipeline;
+pub mod privacy_and_telemetry_governance;
+pub mod project_instruction_stack;
+pub mod reasoning_operator_library;
+pub mod safe_ui_extension_framework;
+pub mod schema_driven_agent_configuration;
+pub mod sensitive_data_guardrails;
+pub mod standing_approval_profiles;
+pub mod team_coordinator;
+pub mod team_sop_protocols;
+pub mod typed_context_references;
+pub mod workflow_optimization_lab;
+pub mod workspace_bootstrap_manifest;
+pub mod workspace_sets;
+
+mod ipc_bridge;
+pub use ipc_bridge::{IpcBridge, IpcBridgeError, ModelConfigSnapshot};
+mod legacy_parser;
+pub use legacy_parser::visible_agent_text;
+#[cfg(test)]
+pub(crate) use legacy_parser::LEGACY_TOOL_NAMES;
+use legacy_parser::{
+    parse_legacy_function_calls, parse_natural_tool_intent, parse_plain_tool_call,
+    parse_tagged_tool_call, parse_xml_named_tool_call, strip_legacy_function_blocks,
+};
+mod logging;
+pub(crate) use logging::write_model_trace;
+pub use logging::StructuredLogger;
+use logging::{append_audit_line, redact_boundary_text, write_observability_hook};
+pub mod paths;
+pub use paths::get_data_directory;
+mod routing_trace;
+use routing_trace::{
+    classify_routing_task, routing_failure_trace, routing_success_trace, RoutingSuccessInput,
+};
+
+#[cfg(windows)]
+mod pipe_server;
+#[cfg(windows)]
+pub use listener_pipe::run_windows_listener_pipe;
+#[cfg(windows)]
+pub use pipe_server::{run_windows_pipe, PipeServerConfig};
 impl CoreVersion {
     pub const fn current() -> &'static str {
         env!("CARGO_PKG_VERSION")
