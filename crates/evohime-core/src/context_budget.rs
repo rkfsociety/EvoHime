@@ -381,7 +381,7 @@ impl ContextRuntime {
             item.session_id = session_id.to_string();
             inputs.push(PlanInput::new(
                 item,
-                OwnedContent::Text(scratchpad_context_text(entry)),
+                OwnedContent::text(scratchpad_context_text(entry)),
             ));
         }
         for input in &mut inputs {
@@ -586,7 +586,7 @@ fn plan_inputs(
                     .created_at(now + index as i64)
                     .tool_pair_complete(pair_complete)
                     .build();
-            PlanInput::new(item, OwnedContent::Text(message.content.clone()))
+            PlanInput::new(item, OwnedContent::text(message.content.clone()))
         })
         .collect()
 }

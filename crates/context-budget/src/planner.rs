@@ -31,12 +31,24 @@ use crate::profile::{ModelContextProfile, ProfileCatalog, STRATEGY_VERSION};
 /// `content_hash`, размер и оценку токенов.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OwnedContent {
-    Text(String),
-    Json(String),
-    Binary(Vec<u8>),
+    Text(Arc<str>),
+    Json(Arc<str>),
+    Binary(Arc<[u8]>),
 }
 
 impl OwnedContent {
+    pub fn text(value: impl Into<Arc<str>>) -> Self {
+        Self::Text(value.into())
+    }
+
+    pub fn json(value: impl Into<Arc<str>>) -> Self {
+        Self::Json(value.into())
+    }
+
+    pub fn binary(value: impl Into<Arc<[u8]>>) -> Self {
+        Self::Binary(value.into())
+    }
+
     pub fn as_form(&self) -> ContentForm<'_> {
         match self {
             Self::Text(text) => ContentForm::Text(text),
@@ -230,6 +242,10 @@ impl ContextPlanner {
                     });
                 }
             };
+
+        if fallback_estimator {
+            self.metrics.record_fallback_estimator();
+        }
 
         // 2. Профиль. Для fallback-estimator пороги масштабируются на 0.70,
         //    резервы не уменьшаются.
@@ -774,7 +790,7 @@ mod tests {
                 .priority(priority)
                 .created_at(created_at)
                 .build(),
-            OwnedContent::Text(text.to_string()),
+            OwnedContent::text(text),
         )
     }
 
@@ -935,6 +951,7 @@ mod tests {
             .profile
             .profile_version
             .ends_with("+fallback-estimator"));
+        assert_eq!(planner.metrics().fallback_estimator_total, 1);
         let base = ProfileCatalog::builtin().resolve("literouter", "gpt-4o-mini", None);
         assert!(plan.profile.hard_limit_tokens < base.hard_limit_tokens);
         assert_eq!(plan.profile.reserves_total(), base.reserves_total());

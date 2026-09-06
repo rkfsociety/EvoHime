@@ -18,6 +18,8 @@ pub const ALERT_WINDOW_CALLS: usize = 100;
 pub const ALERT_ESTIMATOR_DRIFT_P95: f64 = 0.05;
 /// Порог доли вызовов с re-plan.
 pub const ALERT_REPLAN_SHARE: f64 = 0.01;
+/// Порог доли сборок, использовавших fallback-estimator.
+pub const ALERT_FALLBACK_ESTIMATOR_SHARE: f64 = 0.05;
 
 /// Счётчики этапа. Значения агрегируются Core и выгружаются в observability.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -50,6 +52,8 @@ pub struct ContextMetrics {
     pub loadout_miss_total: u64,
     /// Общее число сборок контекста, попавших в окно.
     pub calls_total: u64,
+    /// Число сборок, для которых primary estimator был недоступен.
+    pub fallback_estimator_total: u64,
 }
 
 impl ContextMetrics {
@@ -99,6 +103,10 @@ impl ContextMetrics {
         self.selection_latency_ms.push(millis);
     }
 
+    pub fn record_fallback_estimator(&mut self) {
+        self.fallback_estimator_total += 1;
+    }
+
     /// p95 наблюдений. Возвращает `None` для пустого набора.
     pub fn p95(values: &[f64]) -> Option<f64> {
         if values.is_empty() {
@@ -137,6 +145,11 @@ impl ContextMetrics {
             let share = replans as f64 / window_calls as f64;
             if share > ALERT_REPLAN_SHARE {
                 alerts.push(format!("replan_share={share:.4}"));
+            }
+
+            let fallback_share = self.fallback_estimator_total as f64 / window_calls as f64;
+            if fallback_share > ALERT_FALLBACK_ESTIMATOR_SHARE {
+                alerts.push(format!("fallback_estimator_share={fallback_share:.4}"));
             }
         }
         if let Some(count) = self
@@ -217,5 +230,24 @@ mod tests {
             .alerts()
             .iter()
             .any(|alert| alert.starts_with("estimator_unavailable=")));
+    }
+
+    #[test]
+    fn frequent_fallback_estimator_use_raises_an_alert() {
+        let mut metrics = ContextMetrics {
+            calls_total: 100,
+            fallback_estimator_total: 6,
+            ..Default::default()
+        };
+        assert!(metrics
+            .alerts()
+            .iter()
+            .any(|alert| alert.starts_with("fallback_estimator_share=")));
+
+        metrics.fallback_estimator_total = 5;
+        assert!(!metrics
+            .alerts()
+            .iter()
+            .any(|alert| alert.starts_with("fallback_estimator_share=")));
     }
 }
