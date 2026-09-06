@@ -58,3 +58,7 @@ criterion = "0.5"
 [[bench]]
 name = "legacy_parser"
 harness = false
+
+[[bench]]
+name = "runtime_paths"
+harness = false
