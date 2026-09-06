@@ -1,3 +1,5 @@
+use super::*;
+
 #[derive(Debug, thiserror::Error)]
 pub enum AgentRunError {
     #[error("model request failed: {0}")]
@@ -498,7 +500,11 @@ where
 /// Projects Codex CLI's JSONL into the normal Core transcript stream. Raw CLI
 /// output remains available in the trace, while the chat receives real command
 /// activities and separate assistant messages in their original order.
-pub(crate) fn emit_codex_events(buffer: &mut String, events: &broadcast::Sender<CoreEvent>, task_id: &str) {
+pub(crate) fn emit_codex_events(
+    buffer: &mut String,
+    events: &broadcast::Sender<CoreEvent>,
+    task_id: &str,
+) {
     while let Some(newline) = buffer.find('\n') {
         let line = buffer[..newline].trim();
         emit_codex_event(line, events, task_id);

@@ -1,3 +1,5 @@
+use super::*;
+
 #[derive(Clone)]
 pub struct EventJournal {
     pub(crate) database: Arc<Mutex<LocalDatabase>>,
@@ -31,7 +33,9 @@ pub(crate) fn default_build_policy() -> crate::scope::BuildScope {
     }
 }
 
-pub(crate) fn harden_build_policy(mut policy: crate::scope::BuildScope) -> crate::scope::BuildScope {
+pub(crate) fn harden_build_policy(
+    mut policy: crate::scope::BuildScope,
+) -> crate::scope::BuildScope {
     for required in [".git", ".evohime"] {
         if !policy.protected_paths.iter().any(|path| path == required) {
             policy.protected_paths.push(required.into());

@@ -1,42 +1,24 @@
 include!("core_prelude.rs");
 include!("core_root_prelude.rs");
-mod core_protocol {
-    use super::*;
-    include!("core_protocol.rs");
-}
+mod core_protocol;
 pub use core_protocol::*;
-mod core_journal {
-    use super::*;
-    include!("core_journal.rs");
-}
+mod core_journal;
 pub use core_journal::*;
-mod core_lifecycle {
-    use super::*;
-    include!("core_lifecycle.rs");
-}
+mod core_lifecycle;
 pub use core_lifecycle::{
     attach_permission_audit_sink, spawn_ambient_retention, spawn_approval_gc,
     spawn_model_provenance_retention, spawn_receipt_retention,
 };
-mod core_agent {
-    use super::*;
-    include!("core_agent.rs");
-}
+mod core_agent;
 pub(crate) use core_agent::*;
 pub use core_agent::{
     AgentRunError, ApprovalCoordinator, ModelAgent, RoutingApprovalRegistry, SelectedModel,
     TaskExecutor, ToolAgent,
 };
-mod core_coordinator {
-    use super::*;
-    include!("core_coordinator.rs");
-}
+mod core_coordinator;
 pub use core_coordinator::TaskCoordinator;
 mod bounded_tasks;
-mod core_domains {
-    use super::*;
-    include!("core_domains.rs");
-}
+mod core_domains;
 pub(crate) use core_domains::*;
 pub mod adapter_contract;
 pub mod automation;

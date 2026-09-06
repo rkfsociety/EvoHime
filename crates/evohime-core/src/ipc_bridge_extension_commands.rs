@@ -1,3 +1,5 @@
+use super::*;
+
 impl IpcBridge {
     pub(crate) async fn dispatch_artifact_handoff_registry(
         &self,

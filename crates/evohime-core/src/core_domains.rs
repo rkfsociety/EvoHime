@@ -1,3 +1,5 @@
+use super::*;
+
 /// Bounded лимит чтения: базовое значение 01.1 — не более 100 элементов.
 pub(crate) fn bounded_limit(limit: u32) -> usize {
     let limit = if limit == 0 { 20 } else { limit as usize };
@@ -39,7 +41,9 @@ pub(crate) fn memory_store_scope(
     }
 }
 
-pub(crate) fn parse_memory_privacy(value: &str) -> Result<crate::memory_domain::PrivacyLabel, String> {
+pub(crate) fn parse_memory_privacy(
+    value: &str,
+) -> Result<crate::memory_domain::PrivacyLabel, String> {
     match value {
         "public" => Ok(crate::memory_domain::PrivacyLabel::Public),
         "internal" | "" => Ok(crate::memory_domain::PrivacyLabel::Internal),
@@ -252,7 +256,9 @@ pub(crate) fn validate_memory_idempotency_key(key: &str) -> Result<(), String> {
 
 /// Canonical subject of a stored record. Legacy rows have none, so the title
 /// stands in and gets normalized by the same versioned normalizer.
-pub(crate) fn memory_conflict_subject(record: &evohime_local_storage::memory_store::MemoryRecord) -> String {
+pub(crate) fn memory_conflict_subject(
+    record: &evohime_local_storage::memory_store::MemoryRecord,
+) -> String {
     match crate::memory_extraction::normalize_subject(record.subject_for_conflict()) {
         Ok(subject) => subject,
         Err(error) => {
@@ -283,7 +289,11 @@ pub(crate) fn memory_conflicting_record<'a>(
 /// Scope id for memory reads. A workspace path takes precedence because
 /// memory extraction stores records under `task_memory::workspace_scope_id`,
 /// which the shell cannot reproduce on its own.
-pub(crate) fn memory_scope_id(workspace_path: &str, project_id: &str, secondary_id: &str) -> String {
+pub(crate) fn memory_scope_id(
+    workspace_path: &str,
+    project_id: &str,
+    secondary_id: &str,
+) -> String {
     if workspace_path.trim().is_empty() {
         encode_memory_scope_id(project_id, secondary_id)
     } else {
@@ -487,7 +497,10 @@ pub(crate) async fn verify_https_capability_archive(
     verify_capability_archive_hash(&body, expected_content_hash)
 }
 
-pub(crate) fn verify_capability_archive_hash(bytes: &[u8], expected_content_hash: &str) -> Result<(), String> {
+pub(crate) fn verify_capability_archive_hash(
+    bytes: &[u8],
+    expected_content_hash: &str,
+) -> Result<(), String> {
     let observed = crate::research::sha256_hex(bytes);
     if !observed.eq_ignore_ascii_case(expected_content_hash) {
         return Err(format!(
@@ -497,7 +510,9 @@ pub(crate) fn verify_capability_archive_hash(bytes: &[u8], expected_content_hash
     Ok(())
 }
 
-pub(crate) fn capability_risk_class_str(risk: crate::capability_registry::RiskClass) -> &'static str {
+pub(crate) fn capability_risk_class_str(
+    risk: crate::capability_registry::RiskClass,
+) -> &'static str {
     match risk {
         crate::capability_registry::RiskClass::Low => "low",
         crate::capability_registry::RiskClass::Medium => "medium",
@@ -532,7 +547,9 @@ pub(crate) fn parse_capability_risk_class(
     }
 }
 
-pub(crate) fn handoff_kind_from_str(value: &str) -> Result<crate::child_roles::HandoffKind, String> {
+pub(crate) fn handoff_kind_from_str(
+    value: &str,
+) -> Result<crate::child_roles::HandoffKind, String> {
     match value {
         "delegate" => Ok(crate::child_roles::HandoffKind::Delegate),
         "return_result" => Ok(crate::child_roles::HandoffKind::ReturnResult),
@@ -597,7 +614,9 @@ pub(crate) fn role_identity_display(identity: &crate::child_roles::RoleIdentity)
     }
 }
 
-pub(crate) fn child_task_kind_from_str(value: &str) -> Result<crate::child_runtime::ChildTaskKind, String> {
+pub(crate) fn child_task_kind_from_str(
+    value: &str,
+) -> Result<crate::child_runtime::ChildTaskKind, String> {
     match value {
         "code_search" => Ok(crate::child_runtime::ChildTaskKind::CodeSearch),
         "threat_model_review" => Ok(crate::child_runtime::ChildTaskKind::ThreatModelReview),
@@ -629,7 +648,9 @@ pub(crate) fn child_report_status_from_str(
     }
 }
 
-pub(crate) fn child_report_status_str(status: crate::child_runtime::ChildReportStatus) -> &'static str {
+pub(crate) fn child_report_status_str(
+    status: crate::child_runtime::ChildReportStatus,
+) -> &'static str {
     match status {
         crate::child_runtime::ChildReportStatus::Complete => "complete",
         crate::child_runtime::ChildReportStatus::Partial => "partial",
@@ -640,7 +661,9 @@ pub(crate) fn child_report_status_str(status: crate::child_runtime::ChildReportS
 /// Fail-closed permissions probe used when the doctor cannot ground its
 /// permissions check in a real, resolved workspace (no project supplied or
 /// the project was not found). This intentionally does not claim health.
-pub(crate) fn unresolved_permissions_probe(approval_required: bool) -> crate::doctor::PermissionsProbe {
+pub(crate) fn unresolved_permissions_probe(
+    approval_required: bool,
+) -> crate::doctor::PermissionsProbe {
     crate::doctor::PermissionsProbe {
         workspace_readable: false,
         workspace_writable: false,

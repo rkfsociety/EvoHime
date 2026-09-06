@@ -1,3 +1,5 @@
+use super::*;
+
 #[derive(Clone)]
 pub struct TaskCoordinator {
     commands: mpsc::Sender<CoreCommand>,
@@ -35,7 +37,6 @@ struct ActiveTask {
 impl TaskCoordinator {
     pub fn new(buffer: usize) -> (Self, broadcast::Receiver<CoreEvent>) {
         Self::build(buffer, None, None)
-
     }
 
     /// Additional listener on the same event stream. Used by the pipe server to
@@ -265,7 +266,10 @@ impl TaskCoordinator {
             .map_err(|error| error.to_string())
     }
 
-    pub(crate) async fn record_audit_for_event(state: &Arc<Mutex<CoordinatorState>>, event: &CoreEvent) {
+    pub(crate) async fn record_audit_for_event(
+        state: &Arc<Mutex<CoordinatorState>>,
+        event: &CoreEvent,
+    ) {
         match event {
             CoreEvent::ApprovalRequired {
                 task_id,
@@ -403,11 +407,7 @@ impl TaskCoordinator {
                     }
                 }
                 drop(state_guard);
-                let Some(background_permit) = state
-                    .lock()
-                    .await
-                    .background_tasks
-                    .try_acquire()
+                let Some(background_permit) = state.lock().await.background_tasks.try_acquire()
                 else {
                     let mut state_guard = state.lock().await;
                     state_guard.tasks.remove(&task_id);
@@ -927,11 +927,7 @@ impl TaskCoordinator {
                 };
                 // Извлечение не держит очередь команд: эпизод уже закрыт, и
                 // ждать его разбора некому.
-                let Some(background_permit) = state
-                    .lock()
-                    .await
-                    .background_tasks
-                    .try_acquire()
+                let Some(background_permit) = state.lock().await.background_tasks.try_acquire()
                 else {
                     return;
                 };
@@ -5457,13 +5453,13 @@ impl TaskCoordinator {
                     .await
                     .backup_cancellations
                     .insert(operation_id.clone(), cancellation.clone());
-                let background_permit = state
-                    .lock()
-                    .await
-                    .background_tasks
-                    .try_acquire();
+                let background_permit = state.lock().await.background_tasks.try_acquire();
                 let Some(background_permit) = background_permit else {
-                    state.lock().await.backup_cancellations.remove(&operation_id);
+                    state
+                        .lock()
+                        .await
+                        .backup_cancellations
+                        .remove(&operation_id);
                     let _ = reply.send(Err("background task capacity is exhausted".into()));
                     return;
                 };
@@ -5592,14 +5588,14 @@ impl TaskCoordinator {
                         .backup_cancellations
                         .insert(operation_id.clone(), cancellation.clone());
                 }
-                let background_permit = state
-                    .lock()
-                    .await
-                    .background_tasks
-                    .try_acquire();
+                let background_permit = state.lock().await.background_tasks.try_acquire();
                 let Some(background_permit) = background_permit else {
                     if approved {
-                        state.lock().await.backup_cancellations.remove(&operation_id);
+                        state
+                            .lock()
+                            .await
+                            .backup_cancellations
+                            .remove(&operation_id);
                     }
                     let _ = reply.send(Err("background task capacity is exhausted".into()));
                     return;
@@ -7651,13 +7647,13 @@ impl TaskCoordinator {
                     (guard.journal.clone(), guard.events.clone())
                 };
                 let state_after = Arc::clone(&state);
-                let Some(background_permit) = state
-                    .lock()
-                    .await
-                    .background_tasks
-                    .try_acquire()
+                let Some(background_permit) = state.lock().await.background_tasks.try_acquire()
                 else {
-                    state.lock().await.workspace_index_cancellations.remove(&key);
+                    state
+                        .lock()
+                        .await
+                        .workspace_index_cancellations
+                        .remove(&key);
                     let _ = reply.send(Err("background task capacity is exhausted".into()));
                     return;
                 };
@@ -7724,13 +7720,13 @@ impl TaskCoordinator {
                     (guard.journal.clone(), guard.events.clone())
                 };
                 let state_after = Arc::clone(&state);
-                let Some(background_permit) = state
-                    .lock()
-                    .await
-                    .background_tasks
-                    .try_acquire()
+                let Some(background_permit) = state.lock().await.background_tasks.try_acquire()
                 else {
-                    state.lock().await.workspace_index_cancellations.remove(&key);
+                    state
+                        .lock()
+                        .await
+                        .workspace_index_cancellations
+                        .remove(&key);
                     let _ = reply.send(Err("background task capacity is exhausted".into()));
                     return;
                 };

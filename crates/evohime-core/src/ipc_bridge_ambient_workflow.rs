@@ -1,3 +1,5 @@
+use super::*;
+
 impl IpcBridge {
     pub fn with_selected_model(mut self, selected: SelectedModel) -> Self {
         self.selected_model = selected;

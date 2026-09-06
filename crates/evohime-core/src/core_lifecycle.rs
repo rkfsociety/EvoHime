@@ -1,3 +1,5 @@
+use super::*;
+
 /// Подключает permission-аудит к локальному append-only журналу Core.
 ///
 /// PermissionEngine сохраняет короткий bounded-журнал для быстрых проверок,

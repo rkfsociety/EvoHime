@@ -1,3 +1,5 @@
+use super::*;
+
 impl IpcBridge {
     pub(crate) async fn publish_voice_command(
         &self,

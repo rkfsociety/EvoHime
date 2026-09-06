@@ -1,4 +1,6 @@
 
+use super::*;
+
 pub(crate) fn validate_skill_workspace(
     value: &str,
 ) -> Result<std::path::PathBuf, crate::skill_registry::SkillRegistryError> {

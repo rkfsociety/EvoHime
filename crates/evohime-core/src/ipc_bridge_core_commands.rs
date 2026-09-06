@@ -1,3 +1,5 @@
+use super::*;
+
 impl IpcBridge {
     pub fn journal(&self) -> EventJournal {
         self.journal.clone()
