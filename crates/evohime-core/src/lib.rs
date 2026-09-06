@@ -26,6 +26,6 @@ pub mod automation_acceptance;
 pub mod automation_runtime;
 pub mod automation_scheduler;
 pub mod automation_simulation;
-pub mod target_contract;
 #[cfg(test)]
-include!("core_tests.rs");
+mod core_tests;
+pub mod target_contract;

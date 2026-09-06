@@ -1,3 +1,5 @@
+pub(crate) use crate::*;
+
 mod tests {
     use super::{
         observability, recovery, visible_agent_text, AgentRunError, CoreCommand, CoreEvent,
