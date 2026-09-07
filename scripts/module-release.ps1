@@ -67,7 +67,7 @@ $modulePaths = @{
 $changes = if ($modulePaths.ContainsKey($Module)) { @(git log -5 --pretty=format:'- %s' -- $modulePaths[$Module] 2>$null) } else { @() }
 if ($changes.Count -eq 0) { $changes = @('- Обновлён состав поставки модуля и его проверенный бинарный артефакт.') }
 $notes = [System.Collections.Generic.List[string]]::new()
-$notes.Add("# $Module $Version")
+$notes.Add(('Версия модуля `{0}` опубликована после успешных проверок и сборки.' -f $Version))
 $notes.Add('')
 $summaryText = if ($Summary) { $Summary } else {
     switch ($Module) {
@@ -87,7 +87,6 @@ $notes.Add('## Назначение')
 $notes.Add($summaryText)
 $notes.Add('')
 $notes.Add('## Изменения модуля')
-$notes.Add(('Выпущена версия `{0}` после успешных проверок и сборки этого модуля.' -f $Version))
 $notes.Add('Обновление заменяет только данный модуль; остальные модули не изменяются.')
 $notes.Add('')
 $notes.Add('## Артефакт и проверки')
