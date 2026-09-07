@@ -1,0 +1,30 @@
+name: EvoHime — listener executable module
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/evohime-listener/**'
+      - 'crates/evohime-listener-*/**'
+      - 'release-versions/listener.txt'
+      - '.github/workflows/listener-module.yml'
+  pull_request:
+    paths:
+      - 'crates/evohime-listener/**'
+      - 'crates/evohime-listener-*/**'
+      - 'release-versions/listener.txt'
+      - '.github/workflows/listener-module.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  listener:
+    name: Listener — tests, build and release
+    uses: ./.github/workflows/module-native.yml
+    with:
+      module: listener
+      package: evohime-listener
+      version_file: release-versions/listener.txt
+      artifact: evohime-listener.exe
+    secrets: inherit

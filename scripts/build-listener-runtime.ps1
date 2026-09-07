@@ -13,7 +13,7 @@ param(
     модели лестницы и манифест `listener-runtime.json`.
 
     .DESCRIPTION
-    Результат этого скрипта — содержимое релиза с тегом `listener-runtime`,
+    Результат этого скрипта — содержимое релиза с тегом `module-listener-runtime`,
     из которого Electron (`desktop/evohime-electron/src/main/update/listener-runtime.ts`)
     скачивает набор, а листенер (`crates/evohime-listener/src/tools_dir.rs`)
     его проверяет.
@@ -402,11 +402,11 @@ foreach ($rung in $ladder) {
 }
 if ($models.Count -eq 0) { throw 'Поставка без единой ступени лестницы бесполезна.' }
 
-$moduleVersionPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'release-versions\listener.txt'
-if (-not (Test-Path -LiteralPath $moduleVersionPath)) { throw "Версия модуля listener не найдена: $moduleVersionPath" }
+$moduleVersionPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'release-versions\listener-runtime.txt'
+if (-not (Test-Path -LiteralPath $moduleVersionPath)) { throw "Версия модуля listener-runtime не найдена: $moduleVersionPath" }
 $moduleVersion = (Get-Content -LiteralPath $moduleVersionPath -Raw).Trim()
-if ($moduleVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Некорректная версия listener: $moduleVersion" }
-$version = "listener-$moduleVersion"
+if ($moduleVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Некорректная версия listener-runtime: $moduleVersion" }
+$version = "listener-runtime-$moduleVersion"
 $manifest = [ordered]@{
     schema  = 1
     version = $version

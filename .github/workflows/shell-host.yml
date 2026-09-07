@@ -1,0 +1,71 @@
+name: EvoHime — shell host module
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/evohime-electron/src/main/**'
+      - 'desktop/evohime-electron/src/preload/**'
+      - 'desktop/evohime-electron/electron.vite.config.ts'
+      - 'desktop/evohime-electron/electron-builder.yml'
+      - 'desktop/evohime-electron/package*.json'
+      - 'release-versions/shell-host.txt'
+      - '.github/workflows/shell-host.yml'
+  pull_request:
+    paths:
+      - 'desktop/evohime-electron/src/main/**'
+      - 'desktop/evohime-electron/src/preload/**'
+      - 'desktop/evohime-electron/electron.vite.config.ts'
+      - 'desktop/evohime-electron/electron-builder.yml'
+      - 'desktop/evohime-electron/package*.json'
+      - 'release-versions/shell-host.txt'
+      - '.github/workflows/shell-host.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Shell host — tests and package
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop/evohime-electron
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: node scripts/postinstall-allowlist.mjs
+      - run: npm run check:protocol
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run package
+      - uses: actions/upload-artifact@v7
+        with:
+          name: module-shell-host
+          path: desktop/evohime-electron/release/win-unpacked/EvoHime.exe
+          if-no-files-found: error
+
+  publish:
+    name: Shell host — release
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: module-shell-host
+          path: shell-output
+      - name: Publish shell host module release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content -LiteralPath 'release-versions/shell-host.txt' -Raw).Trim()
+          ./scripts/module-release.ps1 -Module shell-host -Version $version -Artifact (Join-Path $env:GITHUB_WORKSPACE 'shell-output\EvoHime.exe')

@@ -48,7 +48,7 @@ function fixture(options: { readonly corruptModel?: boolean } = {}) {
   }
   const fetch = vi.fn(async (input: string | URL | Request) => {
     const url = String(input)
-    if (url.endsWith('/releases/tags/listener')) {
+    if (url.endsWith('/releases/tags/module-listener-runtime')) {
       return new Response(
         JSON.stringify({
           assets: [
