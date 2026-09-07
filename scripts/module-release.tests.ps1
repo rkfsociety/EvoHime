@@ -9,6 +9,7 @@ if ($text -notmatch "schema = 'evohime\.module-release\.v1'") { throw 'Module ma
 if ($text -notmatch 'gh release upload \$tag') { throw 'Module release upload missing.' }
 if ($text -notmatch 'sha256') { throw 'Module hash missing.' }
 if ($text -match "NotesFile = 'installer/release-notes\.md'") { throw 'Module release still inherits installer notes by default.' }
-if ($text -notmatch '\$notes\.Add\("# \$Module \$Version"\)') { throw 'Module release title template is not module-specific.' }
+if ($text -notmatch "Версия модуля.*\$Version") { throw 'Module release version text is missing.' }
+if ($text -match '# \$Module \$Version') { throw 'Module release body still duplicates the release title.' }
 Remove-Item -LiteralPath $root -Recurse -Force
 Write-Output 'module release smoke: PASS'
