@@ -29,6 +29,13 @@ pub struct UpdaterStatus {
     pub modules: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct UpdateCandidate {
+    pub module: String,
+    pub installed: String,
+    pub available: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct InstalledComponent {
     pub id: String,

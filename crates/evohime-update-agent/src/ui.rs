@@ -1,3 +1,4 @@
+use evohime_update_agent::UpdateCandidate;
 use std::{
     path::{Path, PathBuf},
     process::Command,
@@ -20,11 +21,35 @@ const CLASS_NAME: &[u16] = &[
     69, 118, 111, 72, 105, 109, 101, 85, 112, 100, 97, 116, 101, 114, 0,
 ];
 
+thread_local! { static PREFLIGHT_BODY: std::cell::RefCell<Vec<u16>> = const { std::cell::RefCell::new(Vec::new()) }; }
+
 fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-pub fn run_preflight_window(_install_dir: &Path) -> Result<(), String> {
+pub fn run_preflight_window(
+    _install_dir: &Path,
+    updates: &[UpdateCandidate],
+    remote_error: Option<&str>,
+) -> Result<(), String> {
+    let text = if updates.is_empty() {
+        match remote_error {
+            Some(error) => format!(
+                "Manifest, размеры и SHA-256 подтверждены.\nНе удалось проверить releases: {error}"
+            ),
+            None => "Manifest, размеры и SHA-256 подтверждены.\nВсе модули актуальны.".to_owned(),
+        }
+    } else {
+        format!(
+            "Найдены обновления:\n{}",
+            updates
+                .iter()
+                .map(|item| format!("{}  {} → {}", item.module, item.installed, item.available))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    };
+    PREFLIGHT_BODY.with(|body| *body.borrow_mut() = wide(&text));
     let instance = unsafe { GetModuleHandleW(std::ptr::null()) };
     if instance.is_null() {
         return Err("updater: не удалось получить дескриптор окна".into());
@@ -88,9 +113,7 @@ unsafe extern "system" fn window_proc(
         WM_CREATE => {
             let static_class = wide("STATIC");
             let title = wide("Проверка модулей завершена");
-            let body = wide(
-                "Manifest, размеры и SHA-256 подтверждены.\nEvoHime будет запущена после проверки.",
-            );
+            let body = PREFLIGHT_BODY.with(|body| body.borrow().clone());
             let button_class = wide("BUTTON");
             let button = wide("Запустить текущую версию");
             CreateWindowExW(

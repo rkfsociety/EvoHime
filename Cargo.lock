@@ -1083,6 +1083,7 @@ dependencies = [
 name = "evohime-update-agent"
 version = "0.1.0"
 dependencies = [
+ "reqwest",
  "serde",
  "serde_json",
  "sha2 0.10.9",
