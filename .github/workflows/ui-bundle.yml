@@ -1,0 +1,74 @@
+name: EvoHime — ui bundle module
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/evohime-electron/src/renderer/**'
+      - 'desktop/evohime-electron/src/shared/**'
+      - 'desktop/evohime-electron/package*.json'
+      - 'desktop/evohime-electron/vite.config.*'
+      - 'release-versions/ui-bundle.txt'
+      - '.github/workflows/ui-bundle.yml'
+  pull_request:
+    paths:
+      - 'desktop/evohime-electron/src/renderer/**'
+      - 'desktop/evohime-electron/src/shared/**'
+      - 'desktop/evohime-electron/package*.json'
+      - 'desktop/evohime-electron/vite.config.*'
+      - 'release-versions/ui-bundle.txt'
+      - '.github/workflows/ui-bundle.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: UI bundle — tests and build
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop/evohime-electron
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: node scripts/postinstall-allowlist.mjs
+      - run: npm run check:protocol
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Package UI bundle
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:GITHUB_WORKSPACE 'desktop\evohime-electron\out\ui-bundle'
+          if (-not (Test-Path $source)) { throw "UI bundle output missing: $source" }
+          Compress-Archive -Path (Join-Path $source '*') -DestinationPath (Join-Path $env:GITHUB_WORKSPACE 'ui-bundle.zip') -Force
+      - uses: actions/upload-artifact@v7
+        with:
+          name: module-ui-bundle
+          path: ui-bundle.zip
+          if-no-files-found: error
+
+  publish:
+    name: UI bundle — release
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: module-ui-bundle
+          path: ui-output
+      - name: Publish UI module release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content -LiteralPath 'release-versions/ui-bundle.txt' -Raw).Trim()
+          ./scripts/module-release.ps1 -Module ui-bundle -Version $version -Artifact (Join-Path $env:GITHUB_WORKSPACE 'ui-output\ui-bundle.zip')
