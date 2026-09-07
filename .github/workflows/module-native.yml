@@ -15,9 +15,6 @@ on:
       version-file:
         required: true
         type: string
-    secrets:
-      GH_TOKEN:
-        required: true
 
 permissions:
   contents: read
@@ -58,7 +55,7 @@ jobs:
       - name: Publish module release
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           $version = (Get-Content -LiteralPath "${{ inputs.version-file }}" -Raw).Trim()
           ./scripts/module-release.ps1 -Module "${{ inputs.module }}" -Version $version -Artifact (Join-Path $env:GITHUB_WORKSPACE "module-output\${{ inputs.artifact }}")

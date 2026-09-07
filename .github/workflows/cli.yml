@@ -9,4 +9,3 @@ jobs:
   module:
     uses: ./.github/workflows/module-native.yml
     with: { module: cli, package: evohime-cli, artifact: eva.exe, version-file: release-versions/cli.txt }
-    secrets: { GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} }

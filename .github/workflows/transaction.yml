@@ -9,4 +9,3 @@ jobs:
   module:
     uses: ./.github/workflows/module-native.yml
     with: { module: transaction, package: evohime-updater, artifact: evohime-transaction.exe, version-file: release-versions/transaction.txt }
-    secrets: { GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} }

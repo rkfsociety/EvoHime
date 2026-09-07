@@ -9,4 +9,3 @@ jobs:
   module:
     uses: ./.github/workflows/module-native.yml
     with: { module: supervisor, package: evohime-supervisor, artifact: evohime-supervisor.exe, version-file: release-versions/supervisor.txt }
-    secrets: { GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} }
