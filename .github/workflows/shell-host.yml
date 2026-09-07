@@ -1,17 +1,7 @@
 name: shell-host module
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'desktop/evohime-electron/src/main/**'
-      - 'desktop/evohime-electron/tests/**'
-      - 'desktop/evohime-electron/src/preload/**'
-      - 'desktop/evohime-electron/electron.vite.config.ts'
-      - 'desktop/evohime-electron/electron-builder.yml'
-      - 'desktop/evohime-electron/package*.json'
-      - 'release-versions/shell-host.txt'
-      - '.github/workflows/shell-host.yml'
+  workflow_call:
   pull_request:
     paths:
       - 'desktop/evohime-electron/src/main/**'

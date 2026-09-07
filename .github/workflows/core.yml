@@ -1,19 +1,7 @@
 name: core module
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/evohime-core/**'
-      - 'crates/evohime-model-gateway/**'
-      - 'crates/evohime-permissions/**'
-      - 'crates/tool-runtime/**'
-      - 'crates/local-storage/**'
-      - 'crates/evohime-local-storage/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'release-versions/core.txt'
-      - '.github/workflows/core.yml'
+  workflow_call:
   pull_request:
     paths:
       - 'crates/evohime-core/**'

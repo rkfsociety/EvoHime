@@ -1,16 +1,7 @@
 name: ui-bundle module
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'desktop/evohime-electron/src/renderer/**'
-      - 'desktop/evohime-electron/tests/**'
-      - 'desktop/evohime-electron/src/shared/**'
-      - 'desktop/evohime-electron/package*.json'
-      - 'desktop/evohime-electron/vite.config.*'
-      - 'release-versions/ui-bundle.txt'
-      - '.github/workflows/ui-bundle.yml'
+  workflow_call:
   pull_request:
     paths:
       - 'desktop/evohime-electron/src/renderer/**'

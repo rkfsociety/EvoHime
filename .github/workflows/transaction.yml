@@ -1,8 +1,6 @@
 name: transaction module
 on:
-  push:
-    branches: [main]
-    paths: ['crates/evohime-updater/**', 'release-versions/transaction.txt', '.github/workflows/transaction.yml', '.github/workflows/module-native.yml']
+  workflow_call:
   pull_request:
     paths: ['crates/evohime-updater/**', 'release-versions/transaction.txt', '.github/workflows/transaction.yml', '.github/workflows/module-native.yml']
 jobs:

@@ -1,11 +1,8 @@
 name: installer workflow
 
-# Единый workflow для целевых проверок, полного выпуска и listener runtime.
-# На push/PR проверяются и собираются только изменённые компоненты и их
-# workspace-потребители. Полный native-релиз запускается вручную.
+# Полный native-пакет и installer выпускаются только вручную. Push-маршрутизацию
+# модулей выполняет module-router.yml.
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -19,9 +16,8 @@ concurrency:
 jobs:
   # Что именно затронул коммит.
   #
-  # Workflow стартует на каждом push, а jobs включаются по затронутым путям.
-  # Это сохраняет обязательный зелёный статус и не запускает полный релизный
-  # контур для изменений, которые его не затрагивают.
+  # На PR jobs включаются по затронутым путям; push-маршрутизация выполняется
+  # центральным module-router.yml.
   changes:
     name: Изменения
     runs-on: windows-latest

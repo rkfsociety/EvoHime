@@ -1,8 +1,6 @@
 name: analysis-worker module
 on:
-  push:
-    branches: [main]
-    paths: ['crates/evohime-supervisor/**', 'release-versions/analysis-worker.txt', '.github/workflows/analysis-worker.yml', '.github/workflows/module-native.yml']
+  workflow_call:
   pull_request:
     paths: ['crates/evohime-supervisor/**', 'release-versions/analysis-worker.txt', '.github/workflows/analysis-worker.yml', '.github/workflows/module-native.yml']
 jobs:

@@ -1,8 +1,6 @@
 name: supervisor module
 on:
-  push:
-    branches: [main]
-    paths: ['crates/evohime-supervisor/**', 'crates/evohime-process/**', 'release-versions/supervisor.txt', '.github/workflows/supervisor.yml', '.github/workflows/module-native.yml']
+  workflow_call:
   pull_request:
     paths: ['crates/evohime-supervisor/**', 'crates/evohime-process/**', 'release-versions/supervisor.txt', '.github/workflows/supervisor.yml', '.github/workflows/module-native.yml']
 jobs:

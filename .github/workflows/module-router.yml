@@ -1,0 +1,126 @@
+name: module router
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      base:
+        description: 'Базовый commit для ручной проверки'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: module-router-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Определить изменённые модули
+    runs-on: windows-latest
+    outputs:
+      shell-host: ${{ steps.select.outputs.shell-host }}
+      ui-bundle: ${{ steps.select.outputs.ui-bundle }}
+      core: ${{ steps.select.outputs.core }}
+      supervisor: ${{ steps.select.outputs.supervisor }}
+      cli: ${{ steps.select.outputs.cli }}
+      analysis-worker: ${{ steps.select.outputs.analysis-worker }}
+      listener: ${{ steps.select.outputs.listener }}
+      listener-runtime: ${{ steps.select.outputs.listener-runtime }}
+      transaction: ${{ steps.select.outputs.transaction }}
+      verifier: ${{ steps.select.outputs.verifier }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: select
+        name: Вычислить граф изменений и зависимостей
+        shell: pwsh
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          MANUAL_BASE: ${{ inputs.base }}
+        run: |
+          $base = if ($env:MANUAL_BASE) { $env:MANUAL_BASE } elseif ($env:BEFORE -and $env:BEFORE -ne ('0' * 40)) { $env:BEFORE } else { (git rev-list --max-parents=0 HEAD) }
+          $paths = @(git diff --name-only $base $env:AFTER)
+          $all = ($paths -contains 'Cargo.toml' -or $paths -contains 'Cargo.lock' -or $paths | Where-Object { $_ -like '.github/workflows/*' })
+          $rustShared = $all -or @($paths | Where-Object { $_ -like 'crates/evohime-model-gateway/*' -or $_ -like 'crates/evohime-permissions/*' -or $_ -like 'crates/tool-runtime/*' -or $_ -like 'crates/evohime-local-storage/*' -or $_ -like 'crates/local-storage/*' }).Count -gt 0
+          $electronShared = $all -or @($paths | Where-Object { $_ -like 'desktop/evohime-electron/src/shared/*' -or $_ -like 'desktop/evohime-electron/package*.json' }).Count -gt 0
+          $core = $all -or $rustShared -or @($paths | Where-Object { $_ -like 'crates/evohime-core/*' -or $_ -eq 'release-versions/core.txt' }).Count -gt 0
+          $supervisor = $all -or $rustShared -or @($paths | Where-Object { $_ -like 'crates/evohime-supervisor/*' -or $_ -like 'crates/evohime-process/*' -or $_ -eq 'release-versions/supervisor.txt' }).Count -gt 0
+          $cli = $all -or $core -or @($paths | Where-Object { $_ -like 'crates/evohime-cli/*' -or $_ -eq 'release-versions/cli.txt' }).Count -gt 0
+          $analysis = $all -or $core -or $supervisor -or @($paths | Where-Object { $_ -eq 'release-versions/analysis-worker.txt' }).Count -gt 0
+          $transaction = $all -or $rustShared -or @($paths | Where-Object { $_ -like 'crates/evohime-updater/*' -or $_ -eq 'release-versions/transaction.txt' }).Count -gt 0
+          $verifier = $all -or $rustShared -or @($paths | Where-Object { $_ -like 'crates/evohime-receipts/*' -or $_ -eq 'release-versions/verifier.txt' }).Count -gt 0
+          $listener = $all -or $core -or @($paths | Where-Object { $_ -like 'crates/evohime-listener/*' -or $_ -like 'crates/evohime-listener-*/*' -or $_ -eq 'release-versions/listener.txt' }).Count -gt 0
+          $runtime = $all -or $listener -or @($paths | Where-Object { $_ -eq 'release-versions/listener-runtime.txt' -or $_ -eq 'scripts/build-listener-runtime.ps1' }).Count -gt 0
+          $ui = $all -or $electronShared -or @($paths | Where-Object { $_ -like 'desktop/evohime-electron/src/renderer/*' -or $_ -like 'desktop/evohime-electron/vite.config.*' -or $_ -eq 'release-versions/ui-bundle.txt' }).Count -gt 0
+          $shell = $all -or $electronShared -or $core -or $supervisor -or $transaction -or $verifier -or @($paths | Where-Object { $_ -like 'desktop/evohime-electron/src/main/*' -or $_ -like 'desktop/evohime-electron/src/preload/*' -or $_ -eq 'release-versions/shell-host.txt' }).Count -gt 0
+          foreach ($item in @{'shell-host'=$shell;'ui-bundle'=$ui;'core'=$core;'supervisor'=$supervisor;'cli'=$cli;'analysis-worker'=$analysis;'listener'=$listener;'listener-runtime'=$runtime;'transaction'=$transaction;'verifier'=$verifier}.GetEnumerator()) {
+            $value = ([bool]$item.Value).ToString().ToLower()
+            "$($item.Key)=$value" >> $env:GITHUB_OUTPUT
+          }
+
+  shell-host:
+    needs: changes
+    if: needs.changes.outputs.shell-host == 'true'
+    uses: ./.github/workflows/shell-host.yml
+    permissions: { contents: write }
+    secrets: inherit
+  ui-bundle:
+    needs: changes
+    if: needs.changes.outputs.ui-bundle == 'true'
+    uses: ./.github/workflows/ui-bundle.yml
+    permissions: { contents: write }
+    secrets: inherit
+  core:
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
+    uses: ./.github/workflows/core.yml
+    permissions: { contents: write }
+    secrets: inherit
+  supervisor:
+    needs: changes
+    if: needs.changes.outputs.supervisor == 'true'
+    uses: ./.github/workflows/supervisor.yml
+    permissions: { contents: write }
+    secrets: inherit
+  cli:
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    uses: ./.github/workflows/cli.yml
+    permissions: { contents: write }
+    secrets: inherit
+  analysis-worker:
+    needs: changes
+    if: needs.changes.outputs.analysis-worker == 'true'
+    uses: ./.github/workflows/analysis-worker.yml
+    permissions: { contents: write }
+    secrets: inherit
+  listener:
+    needs: changes
+    if: needs.changes.outputs.listener == 'true'
+    uses: ./.github/workflows/listener-module.yml
+    permissions: { contents: write }
+    secrets: inherit
+  listener-runtime:
+    needs: changes
+    if: needs.changes.outputs.listener-runtime == 'true'
+    uses: ./.github/workflows/listener.yml
+    permissions: { contents: write }
+    secrets: inherit
+  transaction:
+    needs: changes
+    if: needs.changes.outputs.transaction == 'true'
+    uses: ./.github/workflows/transaction.yml
+    permissions: { contents: write }
+    secrets: inherit
+  verifier:
+    needs: changes
+    if: needs.changes.outputs.verifier == 'true'
+    uses: ./.github/workflows/verifier.yml
+    permissions: { contents: write }
+    secrets: inherit

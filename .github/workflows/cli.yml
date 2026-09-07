@@ -1,8 +1,6 @@
 name: cli module
 on:
-  push:
-    branches: [main]
-    paths: ['crates/evohime-cli/**', 'release-versions/cli.txt', '.github/workflows/cli.yml', '.github/workflows/module-native.yml']
+  workflow_call:
   pull_request:
     paths: ['crates/evohime-cli/**', 'release-versions/cli.txt', '.github/workflows/cli.yml', '.github/workflows/module-native.yml']
 jobs:

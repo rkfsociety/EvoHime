@@ -1,13 +1,7 @@
 name: listener module
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/evohime-listener/**'
-      - 'crates/evohime-listener-*/**'
-      - 'release-versions/listener.txt'
-      - '.github/workflows/listener-module.yml'
+  workflow_call:
   pull_request:
     paths:
       - 'crates/evohime-listener/**'

@@ -1,8 +1,6 @@
 name: verifier module
 on:
-  push:
-    branches: [main]
-    paths: ['crates/evohime-receipts/**', 'release-versions/verifier.txt', '.github/workflows/verifier.yml', '.github/workflows/module-native.yml']
+  workflow_call:
   pull_request:
     paths: ['crates/evohime-receipts/**', 'release-versions/verifier.txt', '.github/workflows/verifier.yml', '.github/workflows/module-native.yml']
 jobs:

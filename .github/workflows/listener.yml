@@ -1,14 +1,7 @@
 name: listener-runtime module
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'crates/evohime-listener/**'
-      - 'scripts/build-listener-runtime.ps1'
-      - 'release-versions/listener-runtime.txt'
-      - 'installer/listener-runtime-notes.md'
-      - '.github/workflows/listener.yml'
+  workflow_call:
   pull_request:
     paths:
       - 'crates/evohime-listener/**'
