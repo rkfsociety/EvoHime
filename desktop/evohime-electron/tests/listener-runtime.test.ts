@@ -48,15 +48,16 @@ function fixture(options: { readonly corruptModel?: boolean } = {}) {
   }
   const fetch = vi.fn(async (input: string | URL | Request) => {
     const url = String(input)
-    if (url.endsWith('/releases/tags/module-listener-runtime')) {
+    if (url.endsWith('/releases?per_page=100')) {
       return new Response(
-        JSON.stringify({
+        JSON.stringify([{
+          tag_name: 'module-listener-runtime-v1.0.0',
           assets: [
             { name: 'listener-runtime.json', url: 'https://api.github.com/repos/x/y/releases/assets/manifest' },
             { name: 'whisper.dll', url: 'https://api.github.com/repos/x/y/releases/assets/dll' },
             { name: 'ggml-small-q5_1.bin', url: 'https://api.github.com/repos/x/y/releases/assets/model' }
           ]
-        }),
+        }]),
         { status: 200 }
       )
     }

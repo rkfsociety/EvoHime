@@ -25,7 +25,7 @@ import { githubApiBase } from './commit-status'
 // listener-runtime has its own stable module release channel. The manifest
 // version is semver and is the update identity; the tag stays stable so the
 // client discovers the latest bundle without comparing repository commits.
-const RELEASE_TAG = 'module-listener-runtime'
+const RELEASE_TAG_PREFIX = 'module-listener-runtime-v'
 const MANIFEST_ASSET = 'listener-runtime.json'
 const STAGING_DIRECTORY = '.staging'
 const MAX_MANIFEST_BYTES = 64 * 1024
@@ -319,12 +319,17 @@ export class ListenerRuntimeService {
     const apiBase = githubApiBase(this.deps.repositoryUrl)
     if (!apiBase) throw new Error('Рантайм распознавания поставляется только через GitHub-релизы.')
     const request = this.deps.fetch ?? globalThis.fetch
-    const response = await request(`${apiBase}/releases/tags/${RELEASE_TAG}`, {
+    const response = await request(`${apiBase}/releases?per_page=100`, {
       headers: apiHeaders(token),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
     })
     if (!response.ok) throw new Error(`GitHub ответил ${response.status}.`)
-    return response.json()
+    const releases = await response.json()
+    if (!Array.isArray(releases)) throw new Error('GitHub вернул некорректный список релизов.')
+    const candidates = releases.filter((release) => typeof release?.tag_name === 'string' && release.tag_name.startsWith(RELEASE_TAG_PREFIX))
+    candidates.sort((left, right) => compareVersions(String(right.tag_name).slice(RELEASE_TAG_PREFIX.length), String(left.tag_name).slice(RELEASE_TAG_PREFIX.length)))
+    if (candidates.length === 0) throw new Error('Релиз рантайма ещё не опубликован.')
+    return candidates[0]
   }
 
   private async downloadText(url: string, token: string | null): Promise<string> {
@@ -440,6 +445,15 @@ function apiHeaders(token: string | null): Record<string, string> {
   }
   if (token) headers.authorization = `Bearer ${token}`
   return headers
+}
+
+function compareVersions(left: string, right: string): number {
+  const a = left.split('.').map(Number)
+  const b = right.split('.').map(Number)
+  for (let index = 0; index < 3; index += 1) {
+    if ((a[index] ?? -1) !== (b[index] ?? -1)) return (a[index] ?? -1) - (b[index] ?? -1)
+  }
+  return 0
 }
 
 function assetUrl(release: any, name: string, apiBase: string | null): string | null {

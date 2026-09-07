@@ -10,7 +10,7 @@ if (-not $env:GH_TOKEN) { throw 'GH_TOKEN is required.' }
 if (-not (Test-Path -LiteralPath $Artifact -PathType Leaf)) { throw "Module artifact missing: $Artifact" }
 
 $repo = if ($env:GITHUB_REPOSITORY) { $env:GITHUB_REPOSITORY } else { (gh repo view --json nameWithOwner --jq .nameWithOwner) }
-$tag = "module-$Module"
+$tag = "module-$Module-v$Version"
 $artifactPath = (Resolve-Path -LiteralPath $Artifact).Path
 $artifactName = Split-Path -Leaf $artifactPath
 $hash = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -110,4 +110,15 @@ gh release upload $tag --repo $repo $artifactPath --clobber
 if ($LASTEXITCODE -ne 0) { throw "Failed to publish $artifactName." }
 gh release upload $tag --repo $repo $manifestPath --clobber
 if ($LASTEXITCODE -ne 0) { throw "Failed to publish module manifest." }
+
+# Удаляем старые версии только после успешной публикации нового релиза.
+$releases = gh release list --repo $repo --limit 100 --json tagName --jq '.[].tagName' | Where-Object {
+    $_ -like "module-$Module-v*" -or $_ -eq "module-$Module"
+}
+foreach ($oldTag in $releases) {
+    if ($oldTag -eq $tag) { continue }
+    gh release delete $oldTag --repo $repo --cleanup-tag --yes
+    if ($LASTEXITCODE -ne 0) { throw "Failed to remove old release $oldTag." }
+    Write-Host "Removed old release $oldTag"
+}
 Write-Host "Published $Module $Version to $tag ($hash)"

@@ -56,7 +56,6 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: module-listener-runtime
         run: |
           $bundle = Join-Path $env:GITHUB_WORKSPACE 'listener-runtime-output'
           if (-not (Test-Path (Join-Path $bundle 'listener-runtime.json'))) { throw 'Listener manifest missing.' }
@@ -76,13 +75,20 @@ jobs:
             'Манифест содержит версии, размеры и SHA-256 всех DLL и моделей.'
             'Файлы публикуются только после успешного завершения тестов и сборки.'
           ) | Set-Content -LiteralPath $notesPath -Encoding utf8NoBOM
-          gh release view $env:RELEASE_TAG 2>$null | Out-Null
+          $releaseTag = "module-listener-runtime-v$version"
+          gh release view $releaseTag 2>$null | Out-Null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $env:RELEASE_TAG --title "listener-runtime $version" --notes-file $notesPath
+            gh release create $releaseTag --title "listener-runtime $version" --notes-file $notesPath
           } else {
-            gh release edit $env:RELEASE_TAG --title "listener-runtime $version" --notes-file $notesPath
+            gh release edit $releaseTag --title "listener-runtime $version" --notes-file $notesPath
           }
           Get-ChildItem -LiteralPath $bundle -File | ForEach-Object {
-            gh release upload $env:RELEASE_TAG $_.FullName --clobber
+            gh release upload $releaseTag $_.FullName --clobber
             if ($LASTEXITCODE -ne 0) { throw "Не удалось опубликовать $($_.Name)." }
+          }
+          gh release list --limit 100 --json tagName --jq '.[].tagName' | Where-Object {
+            $_ -like 'module-listener-runtime-v*' -and $_ -ne $releaseTag
+          } | ForEach-Object {
+            gh release delete $_ --cleanup-tag --yes
+            if ($LASTEXITCODE -ne 0) { throw "Не удалось удалить старый релиз $_." }
           }
