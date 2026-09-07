@@ -514,26 +514,3 @@ jobs:
           Write-Host "Установщик обновлён в релизе $env:RELEASE_TAG; модульные артефакты публикуются отдельными workflow."
           exit 0
 
-  listener-build:
-    name: Listener — сборка runtime
-    needs: changes
-    if: >-
-      always()
-      && needs.changes.outputs.listener == 'true'
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable-x86_64-pc-windows-msvc
-      - name: Сборка listener runtime
-        shell: pwsh
-        env:
-          RUNGS: ${{ github.event_name == 'workflow_dispatch' && 'small,base,tiny' || 'tiny' }}
-        run: ./scripts/build-listener-runtime.ps1 -Rungs ($env:RUNGS -split ',')
-      - name: Сохранение listener runtime
-        uses: actions/upload-artifact@v7
-        with:
-          name: evohime-listener-runtime
-          path: artifacts/listener-runtime
-          retention-days: 1
