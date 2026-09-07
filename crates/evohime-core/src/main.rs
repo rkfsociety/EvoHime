@@ -419,11 +419,11 @@ fn heartbeat_timestamp() -> u128 {
 }
 
 #[cfg(windows)]
-type ConsoleRequest = Result<Option<(String, std::path::PathBuf, bool)>, Box<dyn std::error::Error + Send + Sync>>;
+type ConsoleRequest =
+    Result<Option<(String, std::path::PathBuf, bool)>, Box<dyn std::error::Error + Send + Sync>>;
 
 #[cfg(windows)]
-fn console_request(
-) -> ConsoleRequest {
+fn console_request() -> ConsoleRequest {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if !args.iter().any(|arg| arg == "--console") {
         return Ok(None);
