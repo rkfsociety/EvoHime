@@ -15,7 +15,9 @@
 
 ## Реализация
 
-Сформировать focused contract/storage/runtime/recovery tests, migration/fault fixtures, IPC/replay/redaction/accessibility checks и подходящую workspace regression. Выполнить git diff --check и evidence review. После реализации перенести подтверждённый контракт в docs/architecture.md, состояние в docs/current-state.md и release procedure в docs/release-evidence.md; затем удалить полный комплект по правилам.
+Сформировать focused relay/parser/installer, storage, runtime/recovery, IPC/replay/redaction и Android accessibility checks. Проверить clean/repeat/interrupted installer, least-privilege service, token replay/revoke, IP-only access, TLS downgrade, malformed/oversized frames, multiple clients, changing client IP и end-to-end Android → static-IP relay → connector → Core.
+
+Измерить relay CPU, память, sockets, traffic и latency для 1, 10 и согласованного максимума sessions; фиксировать build/network conditions и p50/p95/p99, не подменяя baseline неподтверждёнными целями. Отдельно проверить, что текущая SECURITY.md не объявляет публичный relay уже поддержанным до завершения работ. После реализации и security review обновить SECURITY.md, затем перенести подтверждённый контракт в docs/architecture.md, состояние в docs/current-state.md и release procedure в docs/release-evidence.md; выполнить git diff --check и удалить полный комплект только по правилам.
 
 ## Критерии выхода
 
@@ -23,6 +25,9 @@
 - [ ] Ошибки, stale/conflict/restart и отсутствие evidence дают безопасный non-success verdict.
 - [ ] Нет обхода существующих authority, секретов или raw user data.
 - [ ] Есть воспроизводимые tests/evidence для acceptance criteria.
+- [ ] Security negative tests доказывают, что IP, чужой APK, replay и cross-device token не дают доступа.
+- [ ] Root credentials, raw prompts, provider secrets и private keys отсутствуют в logs, APK, storage и evidence.
+- [ ] Красный security/recovery gate блокирует release; rollback не удаляет Core data.
 
 ## Не входит
 

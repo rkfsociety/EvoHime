@@ -15,7 +15,9 @@
 
 ## Реализация
 
-Подключить Remote Client Control Plane к Core runtime через явные commands/state transitions. Реализовать cancellation, timeout, approval/policy checks, optimistic concurrency, crash recovery и last-known-safe behavior. Unknown, stale, denied, conflict и partial failure не превращаются в успешный результат; активный run pin-ит immutable revision.
+Создать PC connector как отдельный ограниченный runtime-компонент. Он держит исходящее TLS-соединение к статичному relay IP, регистрирует device_id и capabilities, переподключается после смены локального IP и передаёт текстовые команды через существующий authenticated Core IPC. Connector не читает SQLite напрямую и не получает произвольный shell authority.
+
+Добавить Core-owned remote request/session state: immutable request id, client identity, selected device, cancellation, timeout, approval/policy decision, stream sequence, duplicate suppression и explicit Unknown/Disconnected result. Restart relay, connector или Core не должен создавать duplicate effect. Для нескольких PC сначала реализовать выбор конкретного устройства; пул независимых запросов — опционально, distributed inference одной модели — вне scope.
 
 ## Критерии выхода
 
@@ -23,7 +25,9 @@
 - [ ] Ошибки, stale/conflict/restart и отсутствие evidence дают безопасный non-success verdict.
 - [ ] Нет обхода существующих authority, секретов или raw user data.
 - [ ] Есть воспроизводимые tests/evidence для acceptance criteria.
+- [ ] Покрыты reconnect, stale token, replay, duplicate frame, ordering, timeout, cancellation, Core unavailable и supervisor recovery.
+- [ ] Connector работает без root и не меняет установленный клиент EvoHime.
 
 ## Не входит
 
-Новая параллельная authority, arbitrary shell/network execution, silent policy relaxation, renderer-owned business logic и автоматическая публикация данных.
+Новая параллельная authority, arbitrary shell/network execution, silent policy relaxation, renderer-owned business logic и автоматическая публикация данных. При ошибке handshake connector остаётся offline/read-only.

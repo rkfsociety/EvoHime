@@ -15,7 +15,9 @@
 
 ## Реализация
 
-Добавить additive authenticated IPC commands/events после проверки highest tag, correlation/idempotency, replay/resync и bounded errors. Проецировать только redacted metadata: status, revision/hash prefix, scope, evidence refs and next action. Создать минимальную Electron surface; renderer не вычисляет verdict, не пишет storage и не получает secrets/raw payloads.
+Создать Android thin client: статичный IP/порт relay, TLS trust/pinning, одноразовое QR/код-сопряжение, токен в Android Keystore, device naming, logout/revoke и credentials rotation. Приложение получает список online/offline устройств, показывает last-seen и позволяет выбрать конкретную Еву. Поток текста имеет bounded buffering, sequence/replay, cancel и reconnect.
+
+Добавить additive authenticated IPC commands/events после проверки highest tag, correlation/idempotency, replay/resync и bounded errors. Проецировать только redacted metadata и настройки connector/pairing; renderer не вычисляет verdict, не пишет storage и не получает secrets/raw payloads.
 
 ## Критерии выхода
 
@@ -23,7 +25,10 @@
 - [ ] Ошибки, stale/conflict/restart и отсутствие evidence дают безопасный non-success verdict.
 - [ ] Нет обхода существующих authority, секретов или raw user data.
 - [ ] Есть воспроизводимые tests/evidence для acceptance criteria.
+- [ ] Несколько Android работают одновременно с независимыми tokens; IP-only, просроченный или отозванный token не даёт доступа.
+- [ ] Смена IP телефона или ПК не требует ручной перенастройки; offline/reconnect не дублирует сообщение.
+- [ ] Проверены certificate rotation, malformed frames, accessibility и logout/revoke.
 
 ## Не входит
 
-Новая параллельная authority, arbitrary shell/network execution, silent policy relaxation, renderer-owned business logic и автоматическая публикация данных.
+Новая параллельная authority, arbitrary shell/network execution, silent policy relaxation, renderer-owned business logic и автоматическая публикация данных. Файлы, изображения и push notifications — вне базовой версии.

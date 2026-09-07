@@ -1,29 +1,51 @@
-# План 127.1 — Remote Client Control Plane: Core-контракт, schema и storage
+# План 127.1 — Relay-контракт, installer, registry и storage
 
-Статус: этап 1 для [плана 127.0](./127-0-remote-client-control-plane.md); issue: [#108](https://github.com/rkfsociety/EvoHime/issues/108).
+Статус: этап 1 для [плана 127.0](./127-0-remote-client-control-plane.md); реализация не начата.
 
 ## Зависимости
 
 ### Блокирующие
 
-- План 127.0 и предыдущий этап этого направления.
-- Existing Core policy/capability/approval, SQLite, event/replay, provenance и authenticated IPC boundaries.
+- План 127.0 и текущие Core/IPC/security boundaries.
+- Evidence freeze: проверить workspace topology, storage schema, highest IPC tags и способ упаковки server artifact.
 
 ### Опциональные
 
-- #102 Verification Evidence Ledger, #104 Project Quality Contract и diagnostics; без них результат остаётся explicit Unknown/degraded.
+- #102/#104 и diagnostics; отсутствие этих систем даёт typed degraded evidence.
 
 ## Реализация
 
-Определить bounded типы для Remote Client Control Plane, lifecycle Draft/Active/Superseded/Invalid, canonical hash, scope/actor/revision/idempotency semantics. Добавить metadata-only transactional storage и additive migration с backup, rollback, corruption/expiry/size limits. Зафиксировать ownership и границы с существующими registry/policy/provenance subsystems.
+Спроектировать versioned bounded relay protocol для pair, device_register,
+device_list, chat_start, chat_delta, chat_complete, cancel, ping и ошибок.
+Зафиксировать размеры, rate limits, TTL, correlation/idempotency, ordering и
+reconnect/resume semantics. Разделить owner, device identity, session и
+revocable credential; хранить только хеши токенов и metadata, не raw prompts или secrets.
+
+Создать отдельный relay package и idempotent installer/bootstrap. Installer
+работает по явному SSH-доступу, создаёт service user с минимальными правами,
+конфигурацию и service unit, настраивает только нужный firewall-порт, выдаёт
+одноразовый owner pairing secret и выполняет health-check. Root/SSH credential
+не попадает в модель, логи или runtime; предусмотрены повторный запуск, rollback
+и безопасное удаление. Сервер поддерживает статичный IP без обязательного домена;
+сертификатный trust, pinning и rotation описываются до клиента.
+
+## Выходные артефакты
+
+- protocol/schema с compatibility/version policy;
+- relay package, конфигурация и installer;
+- migration/storage contract для owner/device/token/session metadata;
+- redacted operator guide для установки, rotation, revoke и recovery.
 
 ## Критерии выхода
 
-- [ ] Все material transitions типизированы, bounded и проверяются Core.
-- [ ] Ошибки, stale/conflict/restart и отсутствие evidence дают безопасный non-success verdict.
-- [ ] Нет обхода существующих authority, секретов или raw user data.
-- [ ] Есть воспроизводимые tests/evidence для acceptance criteria.
+- [ ] Installer не выполняет произвольный model-generated shell и повторный запуск не ломает конфигурацию.
+- [ ] Relay отказывает без valid token/pairing, не считает IP authentication и не выдаёт секреты в ошибках.
+- [ ] Storage транзакционный, secret-safe, bounded и recoverable.
+- [ ] Protocol имеет explicit incompatibility, expiry, replay и oversize errors.
+- [ ] Есть contract/property tests для parser, token hashing, pairing TTL, rate-limit и idempotent installer fixture.
 
-## Не входит
+## Rollback и остановка
 
-Новая параллельная authority, arbitrary shell/network execution, silent policy relaxation, renderer-owned business logic и автоматическая публикация данных.
+При неизвестной ОС, неподтверждённом trust или неполной миграции установка
+останавливается до изменения рабочего relay. Неуспешный bootstrap удаляет только
+созданные им ресурсы по journal; существующий сервис не заменяет.
