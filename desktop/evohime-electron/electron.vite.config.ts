@@ -42,7 +42,10 @@ export default defineConfig({
       rollupOptions: {
         // A sandboxed preload cannot use ESM or `require` of app modules, so it
         // is bundled into a single CommonJS file with no external imports.
-        input: { index: resolve(__dirname, 'src/preload/index.ts') },
+        input: {
+          index: resolve(__dirname, 'src/preload/index.ts'),
+          updater: resolve(__dirname, 'src/preload/updater.ts')
+        },
         output: { format: 'cjs' }
       }
     }
@@ -57,7 +60,10 @@ export default defineConfig({
       sourcemap: false,
       outDir: resolve(__dirname, 'out/ui-bundle'),
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/renderer/index.html') }
+        input: {
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          updater: resolve(__dirname, 'src/renderer/updater.html')
+        }
       }
     }
   }

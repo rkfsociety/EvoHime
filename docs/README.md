@@ -14,7 +14,7 @@
 | Посмотреть долгосрочные направления | [`roadmap.md`](roadmap.md) | Крупные продуктовые этапы без деталей реализации |
 | Проверить решения и зависимости | [`decision-register.md`](decision-register.md) | Accepted/open decisions, владельцы и release impact |
 | Проверить статус выпуска | [`release-evidence.md`](release-evidence.md) | Технические gates, blockers и rollback evidence |
-| Проверить дизайн окна обновления | [`update-window-design.md`](update-window-design.md), [`.codex/updater-window-preview.html`](../.codex/updater-window-preview.html) | Утверждённая композиция, состояния и визуальный контракт native updater |
+| Проверить дизайн окна обновления | [`update-window-design.md`](update-window-design.md), [`.codex/updater-window-preview.html`](../.codex/updater-window-preview.html) | Утверждённая композиция, состояния и визуальный контракт Electron updater |
 | Проверить пользовательское self-repair/self-update | [`current-state.md`](current-state.md), [`architecture.md`](architecture.md), [`release-evidence.md`](release-evidence.md) | Ручной repair-run, обязательные provider/model, CI gates, health-check и rollback |
 | Проверить границы безопасности | [`../SECURITY.md`](../SECURITY.md) | Угрозы, доверие, диагностика и релизные проверки |
 
@@ -68,6 +68,6 @@
 
 Для текущей разработки используйте `start-dev.ps1` (нужен PowerShell 7 или новее: в Windows PowerShell 5.1 сборка не работает), быстрые локальные проверки и Windows CI. Полный Rust/Electron/package/installer acceptance-прогон локально не запускается: его выполняет GitHub Actions. Electron shell живёт в `desktop/evohime-electron`; protocol check, typecheck и узкие проверки изменённых модулей допустимы локально, полный набор и real-Core E2E входят в CI. Установщик и пользовательский запуск работают через Electron `EvoHime.exe`.
 
-Electron renderer — встроенный desktop UI, а отдельный сетевой web-runtime не используется. `start-dev.ps1` собирает native package и открывает Electron `EvoHime.exe`; клиент сам запускает единственный скрытый supervisor, а supervisor — Core. `-SkipBuild` допустим только при наличии готового `.evohime-native\windows-x64`.
+Electron renderer — встроенный desktop UI, а отдельный сетевой web-runtime не используется. `start-dev.ps1` собирает native package и открывает Electron `EvoHime.exe`; клиент сам запускает единственный скрытый supervisor, а supervisor — Core. Для установки updater поставляется отдельным Electron-процессом `EvoHimeUpdater.exe`, его Rust worker работает скрыто. `-SkipBuild` допустим только при наличии готового `.evohime-native\windows-x64`.
 
 При изменении архитектуры, runtime-контрактов или статуса реализации обновляйте соответствующий канонический документ и дату состояния. Не дублируйте подробный план в `roadmap.md` и не добавляйте инструкции для отдельного web-продукта.

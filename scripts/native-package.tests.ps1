@@ -13,6 +13,7 @@ if ($manifest.components.supervisor -ne 'evohime-supervisor.exe') { throw 'super
 if ($manifest.components.analysis_worker -ne 'evohime-analysis-worker.exe') { throw 'analysis worker component is missing' }
 if ($manifest.components.listener -ne 'evohime-listener.exe') { throw 'listener component is missing' }
 if ($manifest.components.updater -ne 'evohime-updater.exe') { throw 'updater component is missing' }
+if ($manifest.components.updater_ui -ne 'EvoHimeUpdater.exe') { throw 'Electron updater UI component is missing' }
 if ($manifest.components.verifier -ne 'evohime-verify.exe') { throw 'verifier component is missing' }
 if ($manifest.components.ui -ne 'EvoHime.exe') { throw 'UI component is missing' }
 if ($manifest.components.browser_backend -ne 'EvoHime.exe') { throw 'browser backend component is missing' }
@@ -40,6 +41,9 @@ $commit = 'a' * 40
 & (Join-Path $PSScriptRoot 'build-windows-native.ps1') -SkipBuild -OutputPath $packageRoot -Commit $commit | Out-Null
 if (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'evohime.manifest.json'))) {
     throw 'package manifest was not written'
+}
+if (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'EvoHimeUpdater.exe'))) {
+    throw 'Electron updater executable was not packaged'
 }
 $componentMarkerPath = Join-Path $packageRoot 'evohime.components.json'
 if (-not (Test-Path -LiteralPath $componentMarkerPath)) { throw 'component manifest was not written' }

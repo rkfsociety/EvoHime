@@ -31,6 +31,7 @@ import { createMainWindow, focusWindow, loadRenderer } from './window'
 import { WorkspaceService, windowChooser } from './workspace-service'
 import { WorkspaceStore } from './workspace-store'
 import { runBrowserBackend } from './browser-backend'
+import { runUpdaterApplication } from './updater-window'
 
 /**
  * Electron main process.
@@ -73,6 +74,12 @@ const hardening: HardeningOptions = { rendererOrigin, log }
 
 if (process.argv.includes('--evohime-browser-backend')) {
   void runBrowserBackend().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error))
+    app.exit(1)
+  })
+} else if (process.argv.includes('--evohime-updater')) {
+  hardenProcess(hardening)
+  void runUpdaterApplication(hardening).catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : String(error))
     app.exit(1)
   })

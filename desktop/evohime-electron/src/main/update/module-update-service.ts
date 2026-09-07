@@ -29,10 +29,10 @@ export interface ModuleUpdateServiceOptions {
 }
 
 /**
- * Production-side view of the independent native updater.
+ * Production-side view of the independent headless Rust updater worker.
  *
  * The Electron shell never checks commits, downloads releases, or applies
- * files. The native updater owns those operations and publishes this small
+ * files. The Rust worker owns those operations and publishes this small
  * status contract for the renderer. The old source-build service remains
  * available only for explicit development runs.
  */
@@ -65,7 +65,8 @@ export class ModuleUpdateService {
   }
 
   async check(): Promise<UpdateStatus> {
-    this.refresh()
+    this.lastSerialized = ''
+    this.patchLocal({ phase: 'checking', message: 'Проверяю версии и целостность модулей…', error: null })
     this.startUpdater('--check')
     return this.current
   }
@@ -75,7 +76,8 @@ export class ModuleUpdateService {
   }
 
   async prepareComponents(_selected: readonly string[]): Promise<UpdateStatus> {
-    this.patchLocal({ phase: 'applying', message: 'Передаю обновление независимому updater…' })
+    this.lastSerialized = ''
+    this.patchLocal({ phase: 'applying', message: 'Передаю обновление updater worker…' })
     this.startUpdater('--apply')
     return this.current
   }
@@ -103,9 +105,12 @@ export class ModuleUpdateService {
         [mode, '--install-dir', this.options.installDirectory],
         { detached: true, stdio: 'ignore', windowsHide: true }
       )
+      child.once('error', () => {
+        this.patchLocal({ phase: 'failed', message: 'Не удалось запустить updater worker.', error: 'Updater worker недоступен.' })
+      })
       child.unref()
     } catch {
-      this.patchLocal({ phase: 'failed', message: 'Не удалось запустить независимый updater.' })
+      this.patchLocal({ phase: 'failed', message: 'Не удалось запустить updater worker.' })
     }
   }
 

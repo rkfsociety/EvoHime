@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-09-06.
+Обновлено: 2026-09-07.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -31,7 +31,8 @@ bounded-context фасады в `src/domains.rs`. Все исторически�
 ## Продуктовая граница
 
 EvoHime — локальное Windows desktop-приложение с одним пользовательским
-ярлыком `EvoHime`. Внутри пакета работают Electron shell, `evohime-core.exe` и
+ярлыком `EvoHime`. Внутри пакета работают Electron shell, отдельный Electron
+updater `EvoHimeUpdater.exe`, `evohime-updater.exe`, `evohime-core.exe` и
 `evohime-supervisor.exe`; Core владеет состоянием, SQLite, правами и эффектами,
 а renderer получает только проекцию через authenticated versioned named pipe.
 
@@ -48,8 +49,8 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 | IPC | `desktop-ipc-v1`, protobuf bindings, HMAC-сессия supervisor | `crates/desktop-ipc/`, `npm run check:protocol` |
 | Core | Rust agent runtime, tools, SQLite и provider gateway | `crates/evohime-core/`, `crates/model-gateway/` |
 | Supervisor | mutex, Job Object, lifecycle и recovery | `crates/evohime-supervisor/` |
-| Native package | Core, supervisor, `eva.exe`, analysis worker, listener, transaction и verifier | `scripts/build-windows-native.ps1` |
-| Installer | Electron `EvoHime.exe` в постоянном `EvoHime-Setup.exe` | `installer/`, `.github/workflows/windows.yml` |
+| Native package | Electron shell `EvoHime.exe`, отдельный Electron updater `EvoHimeUpdater.exe`, Rust updater worker, Core, supervisor, `eva.exe`, analysis worker, listener, transaction и verifier | `scripts/build-windows-native.ps1` |
+| Installer | Electron shell и отдельный Electron updater в постоянном `EvoHime-Setup.exe` | `installer/`, `.github/workflows/windows.yml` |
 
 Для разработки используется PowerShell 7+ и Node.js 22 LTS. В установленный
 клиент не вносятся изменения: диагностика и проверки выполняются в исходниках,
@@ -222,11 +223,11 @@ native package генерирует `evohime.components.json` для перво�
 с последним тегом `module-<module>-v<semver>` и запускает workflow только для
 модуля, чья локальная версия новее опубликованной.
 Updater сравнивает версии module releases и скачивает только устаревшие модули.
-Независимое нативное окно preflight следует утверждённому референсу
+Отдельное Electron-приложение `EvoHimeUpdater.exe` следует утверждённому референсу
 [`update-window-design.md`](update-window-design.md): тёмная оболочка EvoHime,
 отдельные состояния проверки и обновления, а при ошибке releases окно остаётся
-открытым для явного действия пользователя; executable собирается без Windows
-console subsystem.
+открытым для явного действия пользователя. Его невидимый Rust worker собирается
+без Windows console subsystem и не рисует пользовательский интерфейс.
 `installer` оставлен только для первоначальной установки или полного
 восстановления; общий component Release не используется.
 

@@ -1,9 +1,8 @@
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 use evohime_update_agent::{
-    compare_semver, is_valid_semver, select_outdated, validate_component_manifest,
-    ComponentManifest, InstalledManifest, ModuleRecord, UpdateCandidate, UpdaterModuleStatus,
-    UpdaterStatus,
+    compare_semver, is_valid_semver, select_outdated, InstalledManifest, ModuleRecord,
+    UpdateCandidate, UpdaterModuleStatus, UpdaterStatus,
 };
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
@@ -13,9 +12,6 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, ExitCode},
 };
-
-#[cfg(windows)]
-mod ui;
 
 fn main() -> ExitCode {
     let args = env::args().collect::<Vec<_>>();
@@ -118,10 +114,9 @@ fn control_update(args: &[String]) -> ExitCode {
     }
 }
 
-/// The updater is the installed entry point. It remains independent from the
-/// Electron shell: the preflight currently validates local manifests, then
-/// starts the shell as a child. Applying a staged module can therefore replace
-/// the shell without requiring the updater itself to be replaced in-process.
+/// Compatibility entry point for older shortcuts. The visible updater is a
+/// separate Electron application; this Rust process only forwards the launch
+/// request and remains a headless worker.
 fn launch_shell(args: &[String]) -> ExitCode {
     let install_dir = args
         .windows(2)
@@ -135,85 +130,22 @@ fn launch_shell(args: &[String]) -> ExitCode {
     let Some(install_dir) = install_dir else {
         return fail("cannot determine install directory");
     };
-    let data_dir = data_directory(&install_dir);
-    let manifest_path = install_dir.join("evohime.components.json");
-    if manifest_path.is_file() {
-        let manifest = match fs::read_to_string(&manifest_path)
-            .map_err(|error| error.to_string())
-            .and_then(|text| {
-                serde_json::from_str::<ComponentManifest>(&text).map_err(|error| error.to_string())
-            }) {
-            Ok(value) => value,
-            Err(error) => return fail(format!("invalid component manifest: {error}")),
-        };
-        if let Err(error) = validate_component_manifest(&manifest, &install_dir) {
-            return fail(format!("installation integrity check failed: {error}"));
-        }
+    let updater = install_dir.join("EvoHimeUpdater.exe");
+    if !updater.is_file() {
+        return fail(format!(
+            "Electron updater is missing: {}",
+            updater.display()
+        ));
     }
-    let (updates, remote_error) = match remote_updates(&data_dir, &install_dir) {
-        Ok(updates) => (updates, None),
-        Err(error) => (Vec::new(), Some(error)),
-    };
-    write_status(
-        &data_dir,
-        if remote_error.is_some() {
-            "check-failed"
-        } else {
-            "ready"
-        },
-        remote_error.as_deref().unwrap_or(if updates.is_empty() {
-            "Все модули актуальны."
-        } else {
-            "Доступны обновления модулей."
-        }),
-        &updates,
-    );
-    #[cfg(windows)]
+    match Command::new(updater)
+        .args(["--evohime-updater", "--install-dir"])
+        .arg(&install_dir)
+        .current_dir(&install_dir)
+        .spawn()
     {
-        let updates_for_apply = updates.clone();
-        let install_for_apply = install_dir.clone();
-        let data_for_apply = data_dir.clone();
-        let operation: std::sync::Arc<ui::ApplyOperation> = std::sync::Arc::new(move |events| {
-            apply_updates(
-                &install_for_apply,
-                &data_for_apply,
-                &updates_for_apply,
-                &|message, percent| {
-                    let _ = events.send(ui::UiEvent::Progress {
-                        message: message.to_owned(),
-                        percent,
-                    });
-                },
-            )
-        });
-        if let Err(error) =
-            ui::run_preflight_window(&install_dir, &updates, remote_error.as_deref(), operation)
-        {
-            return fail(error);
-        }
-        if data_dir
-            .join("update-state")
-            .join("updater-relaunch.pending")
-            .is_file()
-        {
-            // Bootstrap дожидается завершения этого процесса, заменяет
-            // updater и запускает его заново. Старый процесс не должен
-            // параллельно стартовать shell.
-            return ExitCode::SUCCESS;
-        }
+        Ok(_) => ExitCode::SUCCESS,
+        Err(error) => fail(error),
     }
-    let shell = install_dir.join("EvoHime.exe");
-    if !shell.is_file() {
-        return fail(format!("shell is missing: {}", shell.display()));
-    }
-    let mut child = match Command::new(shell).current_dir(&install_dir).spawn() {
-        Ok(child) => child,
-        Err(error) => return fail(error),
-    };
-    #[cfg(windows)]
-    monitor_running_shell(&mut child, &data_dir, &install_dir);
-    let _ = child;
-    ExitCode::SUCCESS
 }
 
 const MODULE_IDS: &[&str] = &[
@@ -972,14 +904,16 @@ fn schedule_updater_replacement(
     let script = state_dir.join(format!("updater-bootstrap-{}.cmd", std::process::id()));
     let marker = state_dir.join("updater-relaunch.pending");
     let updater = install_dir.join("evohime-updater.exe");
+    let updater_ui = install_dir.join("EvoHimeUpdater.exe");
     let staged = staging.join("evohime-updater.exe.next");
     let backup = state_dir.join("updater-previous.exe");
     let manifest_backup = state_dir.join("components-previous.json");
     let quote = |path: &Path| format!("\"{}\"", path.display());
     let content = format!(
-        "@echo off\r\nsetlocal\r\n:wait\r\ntasklist /FI \"PID eq {pid}\" 2>NUL | findstr /C:\"{pid}\" >NUL\r\nif not errorlevel 1 (timeout /t 1 /nobreak >NUL & goto wait)\r\ncopy /Y {updater} {backup} >NUL\r\nmove /Y {staged} {updater} >NUL\r\nif errorlevel 1 (move /Y {backup} {updater} >NUL & exit /b 1)\r\ncopy /Y {manifest} {manifest_backup} >NUL\r\nmove /Y {manifest_next} {manifest} >NUL\r\nif errorlevel 1 (move /Y {backup} {updater} >NUL & move /Y {manifest_backup} {manifest} >NUL & exit /b 1)\r\ndel /Q {backup} 2>NUL\r\ndel /Q {manifest_backup} 2>NUL\r\ndel /Q {marker} 2>NUL\r\nstart \"\" {updater} --launch --install-dir {install_dir}\r\ndel /Q \"%~f0\" 2>NUL\r\n",
+        "@echo off\r\nsetlocal\r\n:wait\r\ntasklist /FI \"PID eq {pid}\" 2>NUL | findstr /C:\"{pid}\" >NUL\r\nif not errorlevel 1 (timeout /t 1 /nobreak >NUL & goto wait)\r\ncopy /Y {updater} {backup} >NUL\r\nmove /Y {staged} {updater} >NUL\r\nif errorlevel 1 (move /Y {backup} {updater} >NUL & exit /b 1)\r\ncopy /Y {manifest} {manifest_backup} >NUL\r\nmove /Y {manifest_next} {manifest} >NUL\r\nif errorlevel 1 (move /Y {backup} {updater} >NUL & move /Y {manifest_backup} {manifest} >NUL & exit /b 1)\r\ndel /Q {backup} 2>NUL\r\ndel /Q {manifest_backup} 2>NUL\r\ndel /Q {marker} 2>NUL\r\nstart \"\" {updater_ui} --evohime-updater --install-dir {install_dir}\r\ndel /Q \"%~f0\" 2>NUL\r\n",
         pid = std::process::id(),
         updater = quote(&updater),
+        updater_ui = quote(&updater_ui),
         staged = quote(&staged),
         backup = quote(&backup),
         manifest = quote(&install_dir.join("evohime.components.json")),
@@ -995,32 +929,6 @@ fn schedule_updater_replacement(
         .spawn()
         .map_err(|error| error.to_string())?;
     Ok(())
-}
-
-fn monitor_running_shell(child: &mut std::process::Child, data_dir: &Path, install_dir: &Path) {
-    while child.try_wait().ok().flatten().is_none() {
-        std::thread::sleep(std::time::Duration::from_secs(30 * 60));
-        if child.try_wait().ok().flatten().is_some() {
-            break;
-        }
-        match remote_updates(data_dir, install_dir) {
-            Ok(updates) => write_status(
-                data_dir,
-                if updates.is_empty() {
-                    "ready"
-                } else {
-                    "available"
-                },
-                if updates.is_empty() {
-                    "Все модули актуальны."
-                } else {
-                    "Доступны обновления модулей."
-                },
-                &updates,
-            ),
-            Err(error) => write_status(data_dir, "check-failed", &error, &[]),
-        }
-    }
 }
 
 fn write_status(data_dir: &Path, phase: &'static str, message: &str, updates: &[UpdateCandidate]) {

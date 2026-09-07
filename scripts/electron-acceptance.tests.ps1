@@ -9,6 +9,7 @@ $ErrorActionPreference = 'Stop'
 $resolvedPackage = (Resolve-Path -LiteralPath $PackagePath).Path
 $required = @(
     'EvoHime.exe',
+    'EvoHimeUpdater.exe',
     'resources\app.asar',
     'resources\evohime-agent.ico',
     'evohime-core.exe',

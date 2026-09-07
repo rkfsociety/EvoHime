@@ -23,6 +23,7 @@ function New-NativePackageManifest {
             analysis_worker = 'evohime-analysis-worker.exe'
             listener   = 'evohime-listener.exe'
             updater    = 'evohime-updater.exe'
+            updater_ui = 'EvoHimeUpdater.exe'
             verifier   = 'evohime-verify.exe'
         }
     }

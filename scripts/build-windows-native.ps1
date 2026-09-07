@@ -84,6 +84,11 @@ if (-not $SkipBuild) {
     }
 }
 if (-not (Test-Path -LiteralPath $uiPackaged)) { throw "Electron UI не найден: $uiPackaged" }
+# Обновлятор — отдельный Electron-процесс с тем же подписанным runtime. Он
+# использует отдельную точку входа `--evohime-updater`, поэтому обычная Eva и
+# окно обновления никогда не конкурируют за один BrowserWindow.
+$updaterUiPackaged = Join-Path $resolvedOutput 'EvoHimeUpdater.exe'
+Copy-Item -LiteralPath $uiPackaged -Destination $updaterUiPackaged -Force
 $uiBundleSource = Join-Path $electronRoot 'out\ui-bundle'
 $uiBundleArchive = Join-Path $resolvedOutput 'ui-bundle.zip'
 if (-not $SkipBuild) {

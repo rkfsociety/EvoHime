@@ -23,7 +23,7 @@
     "check:bundle": "node scripts/check-production-bundle.mjs",
     "generate:protocol": "node scripts/generate-protocol.mjs",
     "check:protocol": "node scripts/generate-protocol.mjs --check",
-    "package": "npm run build && electron-builder --dir --config electron-builder.yml"
+    "package": "npm run build && electron-builder --dir --config electron-builder.yml && node scripts/copy-updater-executable.mjs"
   },
   "dependencies": {
     "dompurify": "3.4.13",

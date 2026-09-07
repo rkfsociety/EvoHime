@@ -1,6 +1,6 @@
 # EvoHime — Windows desktop architecture
 
-Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-09-06.
+Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-09-07.
 Фактическое состояние реализации см. в [`current-state.md`](current-state.md).
 
 EvoHime — локальное Windows-приложение.
@@ -8,6 +8,9 @@ EvoHime — локальное Windows-приложение.
 
 ```text
 EvoHime.exe               Electron main + bundled renderer
+EvoHimeUpdater.exe        separate Electron update window
+        │ headless worker
+evohime-updater.exe       Rust check/apply/rollback worker
         │ preload/contextBridge → desktop-ipc-v1 / named pipe
 evohime-core.exe          agent loop, model gateway, tools, SQLite
         ▲
@@ -817,7 +820,7 @@ update.json          репозиторий, ветка, launchPolicy, инте�
 - проверка обновлений ходит в GitHub API с токеном пользователя, если он есть: анонимный лимит — 60 запросов в час на IP, и выбранный чужим трафиком с того же адреса лимит останавливает обновления с `403`, тогда как с токеном лимит 5000. Источники по убыванию явности: `EVOHIME_UPDATE_GITHUB_TOKEN`, поле `githubToken` в `update.json`, `GH_TOKEN`/`GITHUB_TOKEN`, `gh auth token`. Токен не обязателен — без него проверка работает как раньше; он уходит только на `api.github.com`, не пишется в логи и не сохраняется клиентом;
 - git обновления работает без интерактива: сохранённые на машине учётные данные (`gh`, credential manager) используются, но ни git, ни credential helper не могут открыть диалог или спросить пароль в терминале. Зависшее за невидимым окном обновление хуже упавшего — оно блокирует запуск;
 - `update.json` пишет установщик, репозиторий принимается только по `https`, ветка и интервал проверки нормализуются — конфигурация не может увести сборку на чужой источник или превратить проверку в busy loop;
-- установленный ярлык и post-install запуск сначала вызывают независимый `evohime-updater.exe`; он выполняет preflight в собственном нативном Windows-окне, показывает результат проверки и запускает `EvoHime.exe`, поэтому сам updater не заменяется во время работы shell. Main-процесс дополнительно проводит update gate до старта Core и supervisor, а внутри приложения остаётся компактная иконка с подробностями по версиям модулей;
+- установленный ярлык и post-install запуск вызывают отдельное Electron-приложение `EvoHimeUpdater.exe` с аргументом `--evohime-updater`. Оно использует общий визуальный стек EvoHime, но не поднимает Core, supervisor, трей или обычное окно. Проверку и применение оно передаёт невидимому Rust worker `evohime-updater.exe`; после успешного завершения worker запускает shell `EvoHime.exe`, а при обновлении самого worker — снова `EvoHimeUpdater.exe`. Main-процесс дополнительно проводит background update gate до старта Core и supervisor, а внутри приложения остаётся компактная иконка с подробностями по версиям модулей;
 - у уже запущенного клиента фоновая проверка собирает обновление в staging и предлагает перезапуск баннером, не прерывая работу;
 - пользовательский repair-run доступен в `OperationsPanel` после bounded digest из трёх ошибок задач. Перед `repair.start` пользователь выбирает provider и model; пара сохраняется в repair status и переносится через diagnose, commit, push и restart. Сама ошибка только показывает кнопку: `repair.start`, `repair.commit`, `repair.push`, `repair.refreshCI` и обновление запускаются отдельными кликами;
 - repair-run работает в `%LOCALAPPDATA%\\EvoHime\\repair\\<repair-id>`, проверяет origin выбранного workspace и канонический URL EvoHime, а изменения `AGENTS.md`, `.codex`, workflows, updater, supervisor, receipt, security и `.env*` останавливает до ручного review;
