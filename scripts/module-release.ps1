@@ -2,7 +2,6 @@ param(
     [Parameter(Mandatory)] [ValidatePattern('^[a-z0-9][a-z0-9-]*$')] [string]$Module,
     [Parameter(Mandatory)] [ValidatePattern('^\d+\.\d+\.\d+$')] [string]$Version,
     [Parameter(Mandatory)] [string]$Artifact,
-    [string]$NotesFile = '',
     [string]$Summary
 )
 
@@ -100,11 +99,6 @@ $notes.Add('')
 $notes.Add('## Что изменилось')
 $changes | ForEach-Object { $notes.Add($_) }
 if ($runUrl) { $notes.Add('') ; $notes.Add("Публикация выполнена отдельным workflow после успешных тестов и сборки: [$runUrl]($runUrl)") }
-if ($NotesFile -and (Test-Path -LiteralPath $NotesFile -PathType Leaf)) {
-    $notes.Add('')
-    $notes.Add('## Дополнительные примечания')
-    (Get-Content -LiteralPath $NotesFile) | ForEach-Object { $notes.Add($_) }
-}
 $notes | Set-Content -LiteralPath $generatedNotesPath -Encoding utf8NoBOM
 
 gh release view $tag --repo $repo 2>$null | Out-Null
