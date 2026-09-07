@@ -511,17 +511,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Не удалось загрузить установщик.' }
           gh release upload $env:RELEASE_TAG installer-output\EvoHime-Setup.json --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Не удалось загрузить манифест установщика.' }
-          $componentManifest = Get-ChildItem -LiteralPath $env:GITHUB_WORKSPACE -Filter 'evohime.components.json' -Recurse | Select-Object -First 1
-          if ($null -eq $componentManifest) { throw 'Component manifest artifact is missing.' }
-          gh release upload $env:RELEASE_TAG $componentManifest.FullName --clobber
-          if ($LASTEXITCODE -ne 0) { throw 'Не удалось загрузить component manifest.' }
-          Get-ChildItem -LiteralPath $env:GITHUB_WORKSPACE -Filter '*.exe' -Recurse |
-            Where-Object { $_.Name -in @('EvoHime.exe', 'evohime-core.exe', 'evohime-supervisor.exe', 'eva.exe', 'evohime-analysis-worker.exe', 'evohime-listener.exe', 'evohime-transaction.exe', 'evohime-verify.exe') } |
-            ForEach-Object {
-              gh release upload $env:RELEASE_TAG $_.FullName --clobber
-              if ($LASTEXITCODE -ne 0) { throw "Не удалось загрузить component artifact: $($_.Name)" }
-            }
-          Write-Host "Установщик обновлён в релизе $env:RELEASE_TAG"
+          Write-Host "Установщик обновлён в релизе $env:RELEASE_TAG; модульные артефакты публикуются отдельными workflow."
           exit 0
 
   listener-build:
