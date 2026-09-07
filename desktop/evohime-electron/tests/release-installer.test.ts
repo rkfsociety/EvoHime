@@ -71,7 +71,7 @@ describe('release installer', () => {
     const hash = createHash('sha256').update(bytes).digest('hex')
     const manifest = JSON.stringify({
       schema: 'evohime.component-manifest.v1', release_commit: COMMIT,
-      components: [{ id: 'ui-bundle', version: '1', artifact: 'ui.zip', path: 'ui.zip', size: bytes.byteLength, sha256: hash, required: true }]
+      components: [{ id: 'ui-bundle', version: '1.0.0', artifact: 'ui.zip', path: 'ui.zip', size: bytes.byteLength, sha256: hash, required: true }]
     })
     const fetch = vi.fn(async (input: string | URL | Request) => {
       const url = String(input)

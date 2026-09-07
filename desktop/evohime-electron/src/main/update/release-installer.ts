@@ -31,9 +31,11 @@ export interface DownloadedInstaller {
 
 export interface ReleaseComponentManifest {
   readonly schema: 'evohime.component-manifest.v1'
-  readonly release_commit: string
+  /** Retained for diagnostics/backward compatibility; never used for selection. */
+  readonly release_commit?: string
   readonly components: readonly {
     readonly id: string
+    readonly version: string
     readonly artifact: string
     readonly path: string
     readonly size: number
@@ -160,7 +162,7 @@ export async function downloadReleaseComponents(
   if (!manifestUrl) throw new Error('GitHub components: component manifest отсутствует.')
   const text = await downloadText(manifestUrl, request, { ...headers, accept: 'application/octet-stream' })
   if (text.length > MAX_MANIFEST_BYTES) throw new Error('GitHub components: манифест слишком большой.')
-  const manifest = parseComponentManifest(text, normalized)
+  const manifest = parseComponentManifest(text)
   const chosen = selected.map((id) => {
     const component = manifest.components.find((candidate) => candidate.id === id)
     if (!component) throw new Error(`GitHub components: компонент не найден: ${id}`)
@@ -282,15 +284,15 @@ function parseManifest(text: string): ReleaseInstallerManifest {
   return { commit, branch, asset: value.asset, sha256, size: value.size }
 }
 
-function parseComponentManifest(text: string, commit: string): ReleaseComponentManifest {
+function parseComponentManifest(text: string): ReleaseComponentManifest {
   let value: any
   try { value = JSON.parse(text) } catch { throw new Error('GitHub components: повреждённый манифест.') }
   const components = Array.isArray(value?.components) ? value.components : []
-  if (value?.schema !== 'evohime.component-manifest.v1' || value?.release_commit !== commit || components.length === 0 || components.length > 32) {
+  if (value?.schema !== 'evohime.component-manifest.v1' || components.length === 0 || components.length > 32) {
     throw new Error('GitHub components: некорректный манифест.')
   }
   for (const component of components) {
-    if (typeof component?.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(component.id) || typeof component?.artifact !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(component.artifact) || typeof component?.path !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,259}$/.test(component.path) || component.path.includes('..') || component.path.includes('//') || !Number.isSafeInteger(component.size) || component.size <= 0 || component.size > MAX_INSTALLER_BYTES || typeof component.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(component.sha256)) {
+    if (typeof component?.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(component.id) || typeof component?.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(component.version) || typeof component?.artifact !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(component.artifact) || typeof component?.path !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,259}$/.test(component.path) || component.path.includes('..') || component.path.includes('//') || !Number.isSafeInteger(component.size) || component.size <= 0 || component.size > MAX_INSTALLER_BYTES || typeof component.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(component.sha256)) {
       throw new Error('GitHub components: небезопасная запись компонента.')
     }
   }
