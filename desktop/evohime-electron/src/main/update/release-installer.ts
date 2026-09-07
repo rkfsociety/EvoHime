@@ -141,15 +141,13 @@ export async function downloadReleaseInstaller(
 /** Downloads only selected bounded component artifacts from the same release. */
 export async function downloadReleaseComponents(
   repositoryUrl: string,
-  commit: string,
   destination: string,
   selected: readonly string[],
   token: string | null,
   deps: ReleaseInstallerDeps = {}
 ): Promise<DownloadedComponents> {
-  const normalized = normalizeCommit(commit)
   const apiBase = githubApiBase(repositoryUrl)
-  if (!normalized || !apiBase) throw new Error('GitHub components: некорректный repository или commit.')
+  if (!apiBase) throw new Error('GitHub components: некорректный repository.')
   if (selected.length === 0 || selected.length > 32 || selected.some((id) => !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id))) {
     throw new Error('GitHub components: некорректный selected component set.')
   }

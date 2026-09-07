@@ -82,7 +82,7 @@ describe('release installer', () => {
       if (url.endsWith('/components')) return new Response(manifest, { status: 200 })
       return new Response(bytes, { status: 200 })
     })
-    const result = await downloadReleaseComponents('https://github.com/rkfsociety/EvoHime.git', COMMIT, root, ['ui-bundle'], null, { fetch })
+    const result = await downloadReleaseComponents('https://github.com/rkfsociety/EvoHime.git', root, ['ui-bundle'], null, { fetch })
     expect(result.selected).toEqual(['ui-bundle'])
     expect(result.files).toEqual([join(root, 'ui.zip')])
     expect(fetch).toHaveBeenCalledTimes(3)

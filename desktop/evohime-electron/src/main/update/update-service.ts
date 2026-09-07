@@ -451,11 +451,8 @@ export class UpdateService {
     if (selected.length === 0 || selected.length > 32) return this.fail('Набор компонентов некорректен', new Error('empty or oversized selection'))
     this.running = true
     try {
-      const checked = this.current.remoteCommit ? this.current : await this.check()
-      const commit = checked.remoteCommit
-      if (!commit) return this.fail('Коммит обновления не подтверждён', new Error('missing green commit'))
       const downloaded = await (this.deps.downloadComponents ?? downloadReleaseComponents)(
-        this.deps.config.repositoryUrl, commit, this.deps.config.stagingDirectory, selected,
+        this.deps.config.repositoryUrl, this.deps.config.stagingDirectory, selected,
         await this.githubToken(), { onProgress: (downloadedBytes, totalBytes) => this.patch({ downloadedBytes, totalBytes: totalBytes || null, downloadProgress: totalBytes ? downloadedBytes / totalBytes : null }) }
       )
       const selectedPaths = downloaded.manifest.components
