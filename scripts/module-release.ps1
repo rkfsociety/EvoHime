@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory)] [ValidatePattern('^[a-z0-9][a-z0-9-]*$')] [string]$Module,
     [Parameter(Mandatory)] [ValidatePattern('^\d+\.\d+\.\d+$')] [string]$Version,
     [Parameter(Mandatory)] [string]$Artifact,
-    [string]$NotesFile = 'installer/release-notes.md'
+    [string]$NotesFile = 'installer/release-notes.md',
+    [string]$Summary
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,14 +40,35 @@ if ($changes.Count -eq 0) { $changes = @('- Изменения зафиксир�
 $notes = [System.Collections.Generic.List[string]]::new()
 $notes.Add("# EvoHime — модуль `$Module` $Version")
 $notes.Add('')
+$summaryText = if ($Summary) { $Summary } else {
+    switch ($Module) {
+        'shell-host' { 'Оболочка Electron: окно приложения, IPC-адаптеры, preload и запуск пользовательского интерфейса.'; break }
+        'ui-bundle' { 'Собранный renderer-интерфейс приложения с проверкой IPC-контракта и типизации.'; break }
+        'core' { 'Основной Rust runtime агента: инструменты, провайдеры, локальное состояние и обработка задач.'; break }
+        'supervisor' { 'Windows supervisor: жизненный цикл Core, mutex, Job Object, восстановление и журналы.'; break }
+        'cli' { 'Официальный консольный клиент для диагностики, запуска задач и чтения статуса Core.'; break }
+        'analysis-worker' { 'Фоновый worker анализа данных и выполнения связанных аналитических операций.'; break }
+        'listener' { 'Исполняемый listener для захвата аудио и обмена с Core по защищённому IPC.'; break }
+        'transaction' { 'Worker транзакционного обновления: безопасная замена файлов, backup и rollback.'; break }
+        'verifier' { 'Проверяющий worker целостности и контрактов поставляемых файлов.'; break }
+        default { "Компонент `$Module` поставлен как самостоятельный модуль EvoHime."; break }
+    }
+}
+$notes.Add('## Назначение')
+$notes.Add($summaryText)
+$notes.Add('')
 $notes.Add('## Изменения модуля')
-$changes | ForEach-Object { $notes.Add($_) }
+$notes.Add("Выпущена версия `$Version` после успешных проверок и сборки этого модуля.")
+$notes.Add('Обновление заменяет только данный модуль; остальные модули не изменяются.')
 $notes.Add('')
 $notes.Add('## Артефакт и проверки')
 $notes.Add("- Версия: `$Version`")
 $notes.Add("- SHA-256: `$hash`")
 $notes.Add("- Размер: $size байт")
 $notes.Add('- Тесты, lint и release-сборка успешно завершены до публикации.')
+$notes.Add('')
+$notes.Add('## Техническая история сборки')
+$changes | ForEach-Object { $notes.Add($_) }
 if ($commit) { $notes.Add("- Коммит сборки: `$commit`") }
 if ($runUrl) { $notes.Add("- Workflow: [$runUrl]($runUrl)") }
 if (Test-Path -LiteralPath $NotesFile -PathType Leaf) {
@@ -58,9 +80,9 @@ $notes | Set-Content -LiteralPath $generatedNotesPath -Encoding utf8NoBOM
 
 gh release view $tag --repo $repo 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) {
-    gh release create $tag --repo $repo --title "EvoHime — $Module $Version" --notes-file $generatedNotesPath
+    gh release create $tag --repo $repo --title "$Module $Version" --notes-file $generatedNotesPath
 } else {
-    gh release edit $tag --repo $repo --title "EvoHime — $Module $Version" --notes-file $generatedNotesPath
+    gh release edit $tag --repo $repo --title "$Module $Version" --notes-file $generatedNotesPath
 }
 gh release upload $tag --repo $repo $artifactPath --clobber
 if ($LASTEXITCODE -ne 0) { throw "Failed to publish $artifactName." }
