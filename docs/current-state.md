@@ -222,6 +222,11 @@ native package генерирует `evohime.components.json` для перво�
 с последним тегом `module-<module>-v<semver>` и запускает workflow только для
 модуля, чья локальная версия новее опубликованной.
 Updater сравнивает версии module releases и скачивает только устаревшие модули.
+Независимое нативное окно preflight следует утверждённому референсу
+[`update-window-design.md`](update-window-design.md): тёмная оболочка EvoHime,
+отдельные состояния проверки и обновления, а при ошибке releases окно остаётся
+открытым для явного действия пользователя; executable собирается без Windows
+console subsystem.
 `installer` оставлен только для первоначальной установки или полного
 восстановления; общий component Release не используется.
 

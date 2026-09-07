@@ -1,3 +1,5 @@
+#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
+
 use evohime_update_agent::{
     compare_semver, is_valid_semver, select_outdated, validate_component_manifest,
     ComponentManifest, InstalledManifest, ModuleRecord, UpdateCandidate, UpdaterModuleStatus,

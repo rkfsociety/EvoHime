@@ -8,13 +8,15 @@ use std::{
 };
 use windows_sys::Win32::{
     Foundation::HWND,
+    Graphics::Gdi::{CreateFontW, CreateSolidBrush, SetBkColor, SetTextColor},
     System::LibraryLoader::GetModuleHandleW,
     UI::Input::KeyboardAndMouse::EnableWindow,
     UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, KillTimer,
-        LoadCursorW, PostQuitMessage, RegisterClassW, SetTimer, SetWindowTextW, ShowWindow,
-        TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, IDC_ARROW, MSG, SW_SHOW, WM_CLOSE,
-        WM_COMMAND, WM_CREATE, WM_DESTROY, WM_TIMER, WNDCLASSW, WS_CAPTION, WS_CHILD,
+        LoadCursorW, PostQuitMessage, RegisterClassW, SendMessageW, SetTimer, SetWindowTextW,
+        ShowWindow, TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, IDC_ARROW, MSG,
+        SW_SHOW, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_CTLCOLORBTN, WM_CTLCOLORSTATIC, WM_DESTROY,
+        WM_SETFONT, WM_TIMER, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE,
         WS_EX_DLGMODALFRAME, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
     },
 };
@@ -36,6 +38,10 @@ thread_local! { static PREFLIGHT_EVENTS: RefCell<Option<mpsc::Receiver<UiEvent>>
 thread_local! { static PREFLIGHT_STATUS_HWND: Cell<HWND> = const { Cell::new(null_mut()) }; }
 thread_local! { static PREFLIGHT_UPDATE_HWND: Cell<HWND> = const { Cell::new(null_mut()) }; }
 thread_local! { static PREFLIGHT_RUN_HWND: Cell<HWND> = const { Cell::new(null_mut()) }; }
+thread_local! { static PREFLIGHT_FONT: Cell<isize> = const { Cell::new(0) }; }
+thread_local! { static PREFLIGHT_BODY_HWND: Cell<HWND> = const { Cell::new(null_mut()) }; }
+thread_local! { static PREFLIGHT_CARD_BRUSH: Cell<isize> = const { Cell::new(0) }; }
+thread_local! { static PREFLIGHT_STATUS_BRUSH: Cell<isize> = const { Cell::new(0) }; }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum UiAction {
@@ -89,7 +95,9 @@ pub fn run_preflight_window(
     };
     PREFLIGHT_BODY.with(|body| *body.borrow_mut() = wide(&text));
     PREFLIGHT_STATUS.with(|status| {
-        *status.borrow_mut() = wide(if updates.is_empty() {
+        *status.borrow_mut() = wide(if remote_error.is_some() {
+            "Проверка завершена с ошибкой."
+        } else if updates.is_empty() {
             "Проверка завершена."
         } else {
             "Обновление ещё не запущено."
@@ -105,16 +113,18 @@ pub fn run_preflight_window(
     if instance.is_null() {
         return Err("updater: не удалось получить дескриптор окна".into());
     }
+    let window_brush = unsafe { CreateSolidBrush(0x002A1811) };
     let class = WNDCLASSW {
         style: CS_HREDRAW | CS_VREDRAW,
         lpfnWndProc: Some(window_proc),
         hInstance: instance,
         hCursor: unsafe { LoadCursorW(null_mut(), IDC_ARROW) },
+        hbrBackground: window_brush,
         lpszClassName: CLASS_NAME.as_ptr(),
         ..unsafe { std::mem::zeroed() }
     };
     let _ = unsafe { RegisterClassW(&class) };
-    let title = wide("Updater");
+    let title = wide("EvoHime — обновление");
     let hwnd = unsafe {
         CreateWindowExW(
             WS_EX_DLGMODALFRAME,
@@ -123,8 +133,8 @@ pub fn run_preflight_window(
             WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
-            560,
-            390,
+            620,
+            455,
             null_mut(),
             null_mut(),
             instance,
@@ -135,7 +145,7 @@ pub fn run_preflight_window(
         return Err("updater: не удалось создать окно".into());
     }
     unsafe {
-        if !PREFLIGHT_HAS_UPDATES.with(Cell::get) {
+        if !PREFLIGHT_HAS_UPDATES.with(Cell::get) && remote_error.is_none() {
             SetTimer(hwnd, TIMER_ID, 900, None);
         }
         ShowWindow(hwnd, SW_SHOW);
@@ -164,6 +174,23 @@ unsafe extern "system" fn window_proc(
 ) -> isize {
     match message {
         WM_CREATE => {
+            let font = CreateFontW(
+                -18,
+                0,
+                0,
+                0,
+                400,
+                0,
+                0,
+                0,
+                1,
+                0,
+                0,
+                5,
+                0,
+                wide("Segoe UI").as_ptr(),
+            );
+            PREFLIGHT_FONT.with(|value| value.set(font as isize));
             let static_class = wide("STATIC");
             let title = wide("Проверка модулей");
             let body = PREFLIGHT_BODY.with(|value| value.borrow().clone());
@@ -171,80 +198,93 @@ unsafe extern "system" fn window_proc(
             let button_class = wide("BUTTON");
             let run = wide("Запустить текущую версию");
             let update = wide("Обновить");
-            CreateWindowExW(
+            let title_hwnd = CreateWindowExW(
                 0,
                 static_class.as_ptr(),
                 title.as_ptr(),
                 WS_CHILD | WS_VISIBLE,
-                28,
-                22,
-                480,
                 32,
-                hwnd,
-                null_mut(),
-                null_mut(),
-                null_mut(),
-            );
-            CreateWindowExW(
-                0,
-                static_class.as_ptr(),
-                body.as_ptr(),
-                WS_CHILD | WS_VISIBLE,
-                28,
-                62,
-                490,
-                190,
-                hwnd,
-                null_mut(),
-                null_mut(),
-                null_mut(),
-            );
-            let status_hwnd = CreateWindowExW(
-                0,
-                static_class.as_ptr(),
-                status.as_ptr(),
-                WS_CHILD | WS_VISIBLE,
-                28,
-                262,
-                490,
+                24,
+                540,
                 30,
                 hwnd,
                 null_mut(),
                 null_mut(),
                 null_mut(),
             );
+            let body_hwnd = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                static_class.as_ptr(),
+                body.as_ptr(),
+                WS_CHILD | WS_VISIBLE,
+                32,
+                66,
+                540,
+                230,
+                hwnd,
+                null_mut(),
+                null_mut(),
+                null_mut(),
+            );
+            PREFLIGHT_BODY_HWND.with(|value| value.set(body_hwnd));
+            PREFLIGHT_CARD_BRUSH.with(|value| {
+                value.set(CreateSolidBrush(0x00482D20) as isize);
+            });
+            PREFLIGHT_STATUS_BRUSH.with(|value| {
+                value.set(CreateSolidBrush(0x00482D20) as isize);
+            });
+            let status_hwnd = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                static_class.as_ptr(),
+                status.as_ptr(),
+                WS_CHILD | WS_VISIBLE,
+                32,
+                310,
+                540,
+                34,
+                hwnd,
+                null_mut(),
+                null_mut(),
+                null_mut(),
+            );
             PREFLIGHT_STATUS_HWND.with(|value| value.set(status_hwnd));
+            let font = PREFLIGHT_FONT.with(Cell::get) as usize;
+            for child in [title_hwnd, body_hwnd, status_hwnd] {
+                SendMessageW(child, WM_SETFONT, font, 1);
+            }
             let run_hwnd = CreateWindowExW(
                 0,
                 button_class.as_ptr(),
                 run.as_ptr(),
-                WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                28,
-                310,
-                220,
-                34,
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | 1u32,
+                32,
+                365,
+                250,
+                38,
                 hwnd,
                 RUN_BUTTON as *mut _,
                 null_mut(),
                 null_mut(),
             );
             PREFLIGHT_RUN_HWND.with(|value| value.set(run_hwnd));
+            SendMessageW(run_hwnd, WM_SETFONT, font, 1);
             if PREFLIGHT_HAS_UPDATES.with(Cell::get) {
                 let update_hwnd = CreateWindowExW(
                     0,
                     button_class.as_ptr(),
                     update.as_ptr(),
-                    WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                    270,
-                    310,
-                    150,
-                    34,
+                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | 1u32,
+                    300,
+                    365,
+                    170,
+                    38,
                     hwnd,
                     UPDATE_BUTTON as *mut _,
                     null_mut(),
                     null_mut(),
                 );
                 PREFLIGHT_UPDATE_HWND.with(|value| value.set(update_hwnd));
+                SendMessageW(update_hwnd, WM_SETFONT, font, 1);
             }
             0
         }
@@ -256,6 +296,36 @@ unsafe extern "system" fn window_proc(
                 request_launch(hwnd);
             }
             0
+        }
+        WM_CTLCOLORSTATIC => {
+            let dc = wparam as *mut _;
+            let control = lparam as HWND;
+            let body = PREFLIGHT_BODY_HWND.with(Cell::get);
+            let status = PREFLIGHT_STATUS_HWND.with(Cell::get);
+            let (brush, color, background) = if control == body {
+                (PREFLIGHT_CARD_BRUSH.with(Cell::get), 0x00FCFAF8, 0x00482D20)
+            } else if control == status {
+                (
+                    PREFLIGHT_STATUS_BRUSH.with(Cell::get),
+                    0x007DE37D,
+                    0x00482D20,
+                )
+            } else {
+                (
+                    PREFLIGHT_STATUS_BRUSH.with(Cell::get),
+                    0x00FCFAF8,
+                    0x002A1811,
+                )
+            };
+            SetTextColor(dc, color);
+            SetBkColor(dc, background);
+            brush
+        }
+        WM_CTLCOLORBTN => {
+            let dc = wparam as *mut _;
+            SetTextColor(dc, 0x00FCFAF8);
+            SetBkColor(dc, 0x00482D20);
+            PREFLIGHT_STATUS_BRUSH.with(Cell::get)
         }
         WM_COMMAND if (wparam & 0xffff) == RUN_BUTTON => {
             if !PREFLIGHT_RUNNING.with(Cell::get) {
