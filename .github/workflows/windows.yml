@@ -1,4 +1,4 @@
-name: EvoHime — модульный CI и выпуск
+name: installer workflow
 
 # Единый workflow для целевых проверок, полного выпуска и listener runtime.
 # На push/PR проверяются и собираются только изменённые компоненты и их

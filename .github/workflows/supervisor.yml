@@ -1,4 +1,4 @@
-name: EvoHime — supervisor module
+name: supervisor module
 on:
   push:
     branches: [main]

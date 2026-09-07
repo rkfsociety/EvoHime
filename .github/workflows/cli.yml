@@ -1,4 +1,4 @@
-name: EvoHime — cli module
+name: cli module
 on:
   push:
     branches: [main]

@@ -1,4 +1,4 @@
-name: EvoHime — listener module
+name: listener-runtime module
 
 on:
   push:

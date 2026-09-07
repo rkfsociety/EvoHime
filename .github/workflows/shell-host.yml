@@ -1,4 +1,4 @@
-name: EvoHime — shell host module
+name: shell-host module
 
 on:
   push:

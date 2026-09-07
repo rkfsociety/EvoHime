@@ -1,4 +1,4 @@
-name: EvoHime — analysis worker module
+name: analysis-worker module
 on:
   push:
     branches: [main]

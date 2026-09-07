@@ -1,4 +1,4 @@
-name: EvoHime — verifier module
+name: verifier module
 on:
   push:
     branches: [main]

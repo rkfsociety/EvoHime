@@ -1,4 +1,4 @@
-name: EvoHime — transaction module
+name: transaction module
 on:
   push:
     branches: [main]
