@@ -1,0 +1,73 @@
+name: EvoHime — listener module
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/evohime-listener/**'
+      - 'scripts/build-listener-runtime.ps1'
+      - 'release-versions/listener.txt'
+      - '.github/workflows/listener.yml'
+  pull_request:
+    paths:
+      - 'crates/evohime-listener/**'
+      - 'scripts/build-listener-runtime.ps1'
+      - 'release-versions/listener.txt'
+      - '.github/workflows/listener.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evohime-listener-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  listener:
+    name: Listener — tests, build and artifact
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+      - name: Listener privacy gate
+        shell: pwsh
+        run: ./scripts/ambient-privacy.tests.ps1
+      - name: Build listener runtime
+        shell: pwsh
+        run: ./scripts/build-listener-runtime.ps1 -Rungs @('tiny')
+      - name: Upload listener module artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: evohime-listener-module
+          path: artifacts/listener-runtime
+          if-no-files-found: error
+
+  publish:
+    name: Listener — update common Release
+    needs: listener
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: evohime-listener-module
+          path: listener-runtime-output
+      - name: Publish listener assets to common Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: installer
+        run: |
+          $bundle = Join-Path $env:GITHUB_WORKSPACE 'listener-runtime-output'
+          if (-not (Test-Path (Join-Path $bundle 'listener-runtime.json'))) { throw 'Listener manifest missing.' }
+          gh release view $env:RELEASE_TAG 2>$null | Out-Null
+          if ($LASTEXITCODE -ne 0) { gh release create $env:RELEASE_TAG --title 'EvoHime — общий релиз' --notes 'Модульные артефакты EvoHime.' }
+          Get-ChildItem -LiteralPath $bundle -File | ForEach-Object {
+            gh release upload $env:RELEASE_TAG $_.FullName --clobber
+            if ($LASTEXITCODE -ne 0) { throw "Не удалось опубликовать $($_.Name)." }
+          }

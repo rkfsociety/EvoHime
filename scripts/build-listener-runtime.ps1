@@ -402,7 +402,11 @@ foreach ($rung in $ladder) {
 }
 if ($models.Count -eq 0) { throw 'Поставка без единой ступени лестницы бесполезна.' }
 
-$version = "whisper-$whisperTag-r$runtimeRevision"
+$moduleVersionPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'release-versions\listener.txt'
+if (-not (Test-Path -LiteralPath $moduleVersionPath)) { throw "Версия модуля listener не найдена: $moduleVersionPath" }
+$moduleVersion = (Get-Content -LiteralPath $moduleVersionPath -Raw).Trim()
+if ($moduleVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Некорректная версия listener: $moduleVersion" }
+$version = "listener-$moduleVersion"
 $manifest = [ordered]@{
     schema  = 1
     version = $version
