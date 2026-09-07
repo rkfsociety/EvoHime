@@ -333,7 +333,7 @@ jobs:
           $setup = Join-Path $env:GITHUB_WORKSPACE 'installer-output\EvoHime-Setup.exe'
           & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installPath"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($component in @('EvoHime.exe', 'resources\app.asar', 'resources\evohime-agent.ico', 'evohime-core.exe', 'evohime-supervisor.exe', 'evohime-listener.exe', 'evohime-transaction.exe', 'evohime-verify.exe', 'evohime.manifest.json', 'evohime.components.json', 'evohime.build.json')) {
+          foreach ($component in @('EvoHime.exe', 'resources\app.asar', 'resources\evohime-agent.ico', 'evohime-core.exe', 'evohime-supervisor.exe', 'evohime-listener.exe', 'evohime-transaction.exe', 'evohime-updater.exe', 'evohime-verify.exe', 'evohime.manifest.json', 'evohime.components.json', 'evohime.build.json')) {
             if (-not (Test-Path -LiteralPath (Join-Path $installPath $component))) { throw "Installed component missing: $component" }
           }
           # Маркер сборки — то, по чему установленный клиент понимает, отстал ли он от ветки.
@@ -450,6 +450,7 @@ jobs:
             native-package\evohime-analysis-worker.exe
             native-package\evohime-listener.exe
             native-package\evohime-transaction.exe
+            native-package\evohime-updater.exe
             native-package\evohime-verify.exe
           if-no-files-found: error
 
