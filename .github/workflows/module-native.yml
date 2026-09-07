@@ -12,7 +12,7 @@ on:
       artifact:
         required: true
         type: string
-      version-file:
+      version_file:
         required: true
         type: string
 
@@ -57,5 +57,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = (Get-Content -LiteralPath "${{ inputs.version-file }}" -Raw).Trim()
+          $version = (Get-Content -LiteralPath "${{ inputs.version_file }}" -Raw).Trim()
           ./scripts/module-release.ps1 -Module "${{ inputs.module }}" -Version $version -Artifact (Join-Path $env:GITHUB_WORKSPACE "module-output\${{ inputs.artifact }}")

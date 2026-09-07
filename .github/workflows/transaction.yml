@@ -8,4 +8,4 @@ on:
 jobs:
   module:
     uses: ./.github/workflows/module-native.yml
-    with: { module: transaction, package: evohime-updater, artifact: evohime-transaction.exe, version-file: release-versions/transaction.txt }
+    with: { module: transaction, package: evohime-updater, artifact: evohime-transaction.exe, version_file: release-versions/transaction.txt }

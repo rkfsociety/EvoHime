@@ -8,4 +8,4 @@ on:
 jobs:
   module:
     uses: ./.github/workflows/module-native.yml
-    with: { module: verifier, package: evohime-receipts, artifact: evohime-verify.exe, version-file: release-versions/verifier.txt }
+    with: { module: verifier, package: evohime-receipts, artifact: evohime-verify.exe, version_file: release-versions/verifier.txt }
