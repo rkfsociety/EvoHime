@@ -50,6 +50,16 @@ export interface DownloadedComponents {
   readonly files: readonly string[]
 }
 
+export interface ModuleReleaseManifest {
+  readonly schema: 'evohime.module-release.v1'
+  readonly module: string
+  readonly version: string
+  readonly artifact: string
+  readonly size: number
+  readonly sha256: string
+  readonly dependencies?: readonly string[]
+}
+
 export interface ReleaseInstallerDeps {
   readonly fetch?: typeof globalThis.fetch
   readonly now?: () => number
@@ -183,6 +193,35 @@ export async function downloadReleaseComponents(
   return { manifest, selected: selected.slice(), files }
 }
 
+/** Download one independently versioned module release. */
+export async function downloadModuleRelease(
+  repositoryUrl: string,
+  module: string,
+  destination: string,
+  token: string | null,
+  deps: ReleaseInstallerDeps = {}
+): Promise<{ readonly manifest: ModuleReleaseManifest; readonly file: string }> {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(module)) throw new Error('GitHub module: некорректный идентификатор.')
+  const apiBase = githubApiBase(repositoryUrl)
+  if (!apiBase) throw new Error('GitHub module: некорректный repository.')
+  const request = deps.fetch ?? globalThis.fetch
+  const headers = apiHeaders(token)
+  const release = await getJson(`${apiBase}/releases/tags/module-${module}`, request, headers)
+  const assets: readonly ReleaseAsset[] = Array.isArray(release.assets) ? release.assets : []
+  const manifestAsset = assets.find((asset) => asset.name === `${module}.manifest.json`)
+  const manifestUrl = assetUrl(manifestAsset?.url, apiBase)
+  if (!manifestUrl) throw new Error(`GitHub module: manifest ${module} отсутствует.`)
+  const manifest = parseModuleManifest(await downloadText(manifestUrl, request, { ...headers, accept: 'application/octet-stream' }), module)
+  const artifact = assets.find((asset) => asset.name === manifest.artifact)
+  const artifactUrl = assetUrl(artifact?.url, apiBase)
+  if (!artifactUrl) throw new Error(`GitHub module: артефакт ${manifest.artifact} отсутствует.`)
+  await mkdir(destination, { recursive: true })
+  const target = join(destination, manifest.artifact)
+  const bytes = await downloadBytes(artifactUrl, target, request, { ...headers, accept: 'application/octet-stream' }, deps.onProgress, manifest.size)
+  if (bytes !== manifest.size || (await sha256(target)) !== manifest.sha256) throw new Error(`GitHub module: hash mismatch: ${module}`)
+  return { manifest, file: target }
+}
+
 async function extractUiArchive(archivePath: string, destination: string): Promise<void> {
   const archive = unzipSync(await readFile(archivePath))
   const entries = Object.entries(archive)
@@ -295,6 +334,15 @@ function parseComponentManifest(text: string): ReleaseComponentManifest {
     }
   }
   return value as ReleaseComponentManifest
+}
+
+function parseModuleManifest(text: string, module: string): ModuleReleaseManifest {
+  let value: any
+  try { value = JSON.parse(text) } catch { throw new Error('GitHub module: повреждённый manifest.') }
+  if (value?.schema !== 'evohime.module-release.v1' || value.module !== module || typeof value.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(value.version) || typeof value.artifact !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value.artifact) || !Number.isSafeInteger(value.size) || value.size <= 0 || typeof value.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(value.sha256)) {
+    throw new Error('GitHub module: некорректный manifest.')
+  }
+  return value as ModuleReleaseManifest
 }
 
 async function sha256(path: string): Promise<string> {

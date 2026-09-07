@@ -6,7 +6,7 @@ import { zipSync } from 'fflate'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { downloadReleaseComponents, downloadReleaseInstaller } from '../src/main/update/release-installer'
+import { downloadModuleRelease, downloadReleaseComponents, downloadReleaseInstaller } from '../src/main/update/release-installer'
 
 const COMMIT = 'a'.repeat(40)
 const roots: string[] = []
@@ -86,5 +86,25 @@ describe('release installer', () => {
     expect(result.selected).toEqual(['ui-bundle'])
     expect(result.files).toEqual([join(root, 'ui.zip')])
     expect(fetch).toHaveBeenCalledTimes(3)
+  })
+
+  it('downloads a module from its own versioned release', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evohime-module-'))
+    roots.push(root)
+    const bytes = new TextEncoder().encode('core module')
+    const hash = createHash('sha256').update(bytes).digest('hex')
+    const manifest = JSON.stringify({ schema: 'evohime.module-release.v1', module: 'core', version: '2.1.0', artifact: 'evohime-core.exe', size: bytes.length, sha256: hash })
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/releases/tags/module-core')) return new Response(JSON.stringify({ assets: [
+        { name: 'core.manifest.json', url: 'https://api.github.com/repos/x/y/releases/assets/core-manifest' },
+        { name: 'evohime-core.exe', url: 'https://api.github.com/repos/x/y/releases/assets/core' }
+      ] }), { status: 200 })
+      if (url.endsWith('core-manifest')) return new Response(manifest, { status: 200 })
+      return new Response(bytes, { status: 200 })
+    })
+    const result = await downloadModuleRelease('https://github.com/rkfsociety/EvoHime.git', 'core', root, null, { fetch })
+    expect(result.manifest.version).toBe('2.1.0')
+    expect(result.file).toBe(join(root, 'evohime-core.exe'))
   })
 })
