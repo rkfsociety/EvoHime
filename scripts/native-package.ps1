@@ -99,6 +99,7 @@ function Write-ComponentManifest {
         [Parameter(Mandatory)] [string]$Commit,
         [string]$Version = '0.1.0'
     )
+    $versionRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'release-versions'
     $componentFiles = @(
         @{ id = 'shell-host'; path = 'EvoHime.exe'; restart = 'shell' },
         @{ id = 'ui-bundle'; path = 'ui-bundle.zip'; restart = 'shell' },
@@ -114,8 +115,15 @@ function Write-ComponentManifest {
         $file = Join-Path $PackageRoot $item.path
         if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Component is missing: $file" }
         $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+        $versionPath = Join-Path $versionRoot ($item.id + '.txt')
+        $moduleVersion = if (Test-Path -LiteralPath $versionPath) {
+            (Get-Content -LiteralPath $versionPath -Raw).Trim()
+        } else { $Version }
+        if ($moduleVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
+            throw "Invalid module version for $($item.id): $moduleVersion"
+        }
         [pscustomobject]@{
-            id = $item.id; version = $Version; artifact = $item.path; path = $item.path
+            id = $item.id; version = $moduleVersion; artifact = $item.path; path = $item.path
             size = [int64](Get-Item -LiteralPath $file).Length; sha256 = $hash
             dependencies = @(); required = $true; protocol = 'desktop-ipc-v1'; restart = $item.restart
         }
