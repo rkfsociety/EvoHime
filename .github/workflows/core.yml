@@ -71,7 +71,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view installer 2>$null | Out-Null
-          if ($LASTEXITCODE -ne 0) { gh release create installer --title 'EvoHime — общий релиз' --notes 'Модульные артефакты EvoHime.' }
-          gh release upload installer (Join-Path $env:GITHUB_WORKSPACE 'core-output\evohime-core.exe') --clobber
-          if ($LASTEXITCODE -ne 0) { throw 'Не удалось опубликовать Core.' }
+          $version = (Get-Content -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'release-versions\core.txt') -Raw).Trim()
+          ./scripts/module-release.ps1 -Module core -Version $version -Artifact (Join-Path $env:GITHUB_WORKSPACE 'core-output\evohime-core.exe')
