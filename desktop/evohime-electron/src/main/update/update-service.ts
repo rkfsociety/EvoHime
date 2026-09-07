@@ -141,7 +141,9 @@ export class UpdateService {
           restartRequired: true
         })
       } else if (checked.phase === 'available') {
-        const prepared = await this.prepare()
+        const prepared = checked.availableModules && checked.availableModules.length > 0
+          ? await this.prepareComponents(checked.availableModules)
+          : await this.prepare()
         if (this.skipped || prepared.phase !== 'ready') {
           return this.releaseGate()
         }
