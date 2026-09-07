@@ -66,6 +66,7 @@ fn launch_shell(args: &[String]) -> ExitCode {
     let Some(install_dir) = install_dir else {
         return fail("cannot determine install directory");
     };
+    let data_dir = data_directory(&install_dir);
     let manifest_path = install_dir.join("evohime.components.json");
     if manifest_path.is_file() {
         let manifest = match fs::read_to_string(&manifest_path)
@@ -80,12 +81,12 @@ fn launch_shell(args: &[String]) -> ExitCode {
             return fail(format!("installation integrity check failed: {error}"));
         }
     }
-    let (updates, remote_error) = match remote_updates(&install_dir) {
+    let (updates, remote_error) = match remote_updates(&data_dir, &install_dir) {
         Ok(updates) => (updates, None),
         Err(error) => (Vec::new(), Some(error)),
     };
     write_status(
-        &install_dir,
+        &data_dir,
         if remote_error.is_some() {
             "check-failed"
         } else {
@@ -108,7 +109,7 @@ fn launch_shell(args: &[String]) -> ExitCode {
         if action == ui::UiAction::Launch {
             return ExitCode::SUCCESS;
         }
-        if let Err(error) = apply_updates(&install_dir, &updates) {
+        if let Err(error) = apply_updates(&install_dir, &data_dir, &updates) {
             return fail(error);
         }
     }
@@ -155,9 +156,20 @@ struct RemoteManifest {
     sha256: String,
 }
 
-fn remote_updates(install_dir: &Path) -> Result<Vec<UpdateCandidate>, String> {
+fn data_directory(install_dir: &Path) -> PathBuf {
+    if let Ok(value) = env::var("EVOHIME_DATA_DIR") {
+        if !value.trim().is_empty() {
+            return PathBuf::from(value);
+        }
+    }
+    env::var("LOCALAPPDATA")
+        .map(|value| PathBuf::from(value).join("EvoHime"))
+        .unwrap_or_else(|_| install_dir.to_path_buf())
+}
+
+fn remote_updates(data_dir: &Path, install_dir: &Path) -> Result<Vec<UpdateCandidate>, String> {
     let config: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(install_dir.join("update.json")).map_err(|error| error.to_string())?,
+        &fs::read_to_string(data_dir.join("update.json")).map_err(|error| error.to_string())?,
     )
     .map_err(|error| error.to_string())?;
     let repository = config
@@ -215,6 +227,15 @@ fn remote_updates(install_dir: &Path) -> Result<Vec<UpdateCandidate>, String> {
         if manifest.module != *module {
             return Err(format!("updater: manifest module mismatch for {module}"));
         }
+        if manifest.artifact.is_empty()
+            || manifest.artifact.contains('/')
+            || manifest.artifact.contains('\\')
+            || manifest.size == 0
+            || manifest.sha256.len() != 64
+            || !manifest.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err(format!("updater: некорректный manifest для {module}"));
+        }
         let current = installed
             .get(*module)
             .cloned()
@@ -262,9 +283,13 @@ fn read_installed_versions(install_dir: &Path) -> std::collections::HashMap<Stri
         .collect()
 }
 
-fn apply_updates(install_dir: &Path, updates: &[UpdateCandidate]) -> Result<(), String> {
-    let staging = install_dir.join("update-staging");
-    let state = install_dir.join("update-state");
+fn apply_updates(
+    install_dir: &Path,
+    data_dir: &Path,
+    updates: &[UpdateCandidate],
+) -> Result<(), String> {
+    let staging = data_dir.join("update-staging");
+    let state = data_dir.join("update-state");
     fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
     let client = reqwest::blocking::Client::builder()
         .user_agent("EvoHime-Updater")
@@ -390,8 +415,8 @@ fn merge_installed_manifest(
     fs::rename(temporary, path).map_err(|error| error.to_string())
 }
 
-fn write_status(install_dir: &Path, phase: &'static str, message: &str, modules: Vec<String>) {
-    let state = install_dir.join("update-state");
+fn write_status(data_dir: &Path, phase: &'static str, message: &str, modules: Vec<String>) {
+    let state = data_dir.join("update-state");
     if fs::create_dir_all(&state).is_ok() {
         let status = UpdaterStatus {
             schema: "evohime.updater-status.v1",
