@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory)] [ValidatePattern('^[a-z0-9][a-z0-9-]*$')] [string]$Module,
     [Parameter(Mandatory)] [ValidatePattern('^\d+\.\d+\.\d+$')] [string]$Version,
     [Parameter(Mandatory)] [string]$Artifact,
-    [string]$NotesFile = 'installer/release-notes.md',
+    [string]$NotesFile = '',
     [string]$Summary
 )
 
@@ -68,7 +68,7 @@ $modulePaths = @{
 $changes = if ($modulePaths.ContainsKey($Module)) { @(git log -5 --pretty=format:'- %s' -- $modulePaths[$Module] 2>$null) } else { @() }
 if ($changes.Count -eq 0) { $changes = @('- Обновлён состав поставки модуля и его проверенный бинарный артефакт.') }
 $notes = [System.Collections.Generic.List[string]]::new()
-$notes.Add("# EvoHime — модуль `$Module` $Version")
+$notes.Add("# $Module $Version")
 $notes.Add('')
 $summaryText = if ($Summary) { $Summary } else {
     switch ($Module) {
@@ -100,7 +100,7 @@ $notes.Add('')
 $notes.Add('## Что изменилось')
 $changes | ForEach-Object { $notes.Add($_) }
 if ($runUrl) { $notes.Add('') ; $notes.Add("Публикация выполнена отдельным workflow после успешных тестов и сборки: [$runUrl]($runUrl)") }
-if (Test-Path -LiteralPath $NotesFile -PathType Leaf) {
+if ($NotesFile -and (Test-Path -LiteralPath $NotesFile -PathType Leaf)) {
     $notes.Add('')
     $notes.Add('## Дополнительные примечания')
     (Get-Content -LiteralPath $NotesFile) | ForEach-Object { $notes.Add($_) }
