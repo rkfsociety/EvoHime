@@ -465,6 +465,9 @@ unsafe extern "system" fn window_proc(
             0
         }
         WM_DESTROY => {
+            DeleteObject(PREFLIGHT_FONT.with(Cell::get) as _);
+            DeleteObject(PREFLIGHT_CARD_BRUSH.with(Cell::get) as _);
+            DeleteObject(PREFLIGHT_STATUS_BRUSH.with(Cell::get) as _);
             PostQuitMessage(0);
             0
         }
