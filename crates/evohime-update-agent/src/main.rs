@@ -2,6 +2,7 @@ use evohime_update_agent::{
     compare_semver, select_outdated, validate_component_manifest, ComponentManifest,
     InstalledManifest, ModuleRecord, UpdateCandidate, UpdaterStatus,
 };
+use sha2::Digest;
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -98,8 +99,18 @@ fn launch_shell(args: &[String]) -> ExitCode {
         updates.iter().map(|item| item.module.clone()).collect(),
     );
     #[cfg(windows)]
-    if let Err(error) = ui::run_preflight_window(&install_dir, &updates, remote_error.as_deref()) {
-        return fail(error);
+    {
+        let action = match ui::run_preflight_window(&install_dir, &updates, remote_error.as_deref())
+        {
+            Ok(action) => action,
+            Err(error) => return fail(error),
+        };
+        if action == ui::UiAction::Launch {
+            return ExitCode::SUCCESS;
+        }
+        if let Err(error) = apply_updates(&install_dir, &updates) {
+            return fail(error);
+        }
     }
     let shell = install_dir.join("EvoHime.exe");
     if !shell.is_file() {
@@ -139,6 +150,9 @@ struct ReleaseAsset {
 struct RemoteManifest {
     module: String,
     version: String,
+    artifact: String,
+    size: u64,
+    sha256: String,
 }
 
 fn remote_updates(install_dir: &Path) -> Result<Vec<UpdateCandidate>, String> {
@@ -206,10 +220,21 @@ fn remote_updates(install_dir: &Path) -> Result<Vec<UpdateCandidate>, String> {
             .cloned()
             .unwrap_or_else(|| "0.0.0".into());
         if compare_semver(&current, &manifest.version).is_lt() {
+            let artifact = manifest.artifact.clone();
+            let download_url = release
+                .assets
+                .iter()
+                .find(|asset| asset.name == artifact)
+                .map(|asset| asset.browser_download_url.clone())
+                .ok_or_else(|| format!("updater: artifact отсутствует для {module}"))?;
             updates.push(UpdateCandidate {
                 module: (*module).into(),
                 installed: current,
                 available: manifest.version,
+                artifact,
+                size: manifest.size,
+                sha256: manifest.sha256,
+                download_url,
             });
         }
     }
@@ -235,6 +260,134 @@ fn read_installed_versions(install_dir: &Path) -> std::collections::HashMap<Stri
             ))
         })
         .collect()
+}
+
+fn apply_updates(install_dir: &Path, updates: &[UpdateCandidate]) -> Result<(), String> {
+    let staging = install_dir.join("update-staging");
+    let state = install_dir.join("update-state");
+    fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("EvoHime-Updater")
+        .build()
+        .map_err(|error| error.to_string())?;
+    let mut selected = Vec::new();
+    let mut applied = Vec::new();
+    for update in updates {
+        if update.module == "updater"
+            || update.module == "ui-bundle"
+            || update.module == "listener-runtime"
+        {
+            continue;
+        }
+        if update.artifact.contains('/')
+            || update.artifact.contains('\\')
+            || update.artifact.is_empty()
+        {
+            return Err(format!(
+                "updater: небезопасный artifact для {}",
+                update.module
+            ));
+        }
+        let bytes = client
+            .get(&update.download_url)
+            .send()
+            .map_err(|error| error.to_string())?
+            .error_for_status()
+            .map_err(|error| error.to_string())?
+            .bytes()
+            .map_err(|error| error.to_string())?;
+        if bytes.len() as u64 != update.size {
+            return Err(format!("updater: размер не совпал для {}", update.module));
+        }
+        let digest = sha2::Sha256::digest(&bytes);
+        let actual = digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        if actual != update.sha256.to_ascii_lowercase() {
+            return Err(format!("updater: SHA-256 не совпал для {}", update.module));
+        }
+        fs::write(staging.join(&update.artifact), &bytes).map_err(|error| error.to_string())?;
+        selected.push(update.artifact.clone());
+        applied.push(update);
+    }
+    if selected.is_empty() {
+        return Ok(());
+    }
+    let manifest = serde_json::json!({
+        "schema": "evohime.component-manifest.v1", "os": "windows", "architecture": "x64",
+        "components": applied.iter().map(|item| serde_json::json!({
+            "id": item.module, "version": item.available, "artifact": item.artifact,
+            "path": item.artifact, "size": item.size, "sha256": item.sha256,
+            "dependencies": [], "required": true, "restart": "module"
+        })).collect::<Vec<_>>()
+    });
+    fs::write(
+        staging.join("evohime.components.json"),
+        serde_json::to_vec_pretty(&manifest).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    let worker = install_dir.join("evohime-transaction.exe");
+    if !worker.is_file() {
+        return Err("updater: transaction worker отсутствует".into());
+    }
+    let staging_arg = staging.to_string_lossy().into_owned();
+    let install_arg = install_dir.to_string_lossy().into_owned();
+    let state_arg = state.to_string_lossy().into_owned();
+    let selected_arg = selected.join(",");
+    let status = Command::new(worker)
+        .args([
+            "--apply-staging",
+            "--staging",
+            staging_arg.as_str(),
+            "--install-dir",
+            install_arg.as_str(),
+            "--state-dir",
+            state_arg.as_str(),
+            "--selected",
+            selected_arg.as_str(),
+        ])
+        .status()
+        .map_err(|error| error.to_string())?;
+    if !status.success() {
+        return Err(format!(
+            "updater: transaction worker завершился с кодом {}",
+            status.code().unwrap_or(-1)
+        ));
+    }
+    merge_installed_manifest(install_dir, applied)
+}
+
+fn merge_installed_manifest(
+    install_dir: &Path,
+    applied: Vec<&UpdateCandidate>,
+) -> Result<(), String> {
+    let path = install_dir.join("evohime.components.json");
+    let mut root = serde_json::from_str::<serde_json::Value>(
+        &fs::read_to_string(&path).unwrap_or_else(|_| "{\"components\":[]}".into()),
+    )
+    .map_err(|error| error.to_string())?;
+    let components = root
+        .get_mut("components")
+        .and_then(serde_json::Value::as_array_mut)
+        .ok_or_else(|| "updater: component manifest повреждён".to_owned())?;
+    for update in applied {
+        let value = serde_json::json!({"id": update.module, "version": update.available, "artifact": update.artifact, "path": update.artifact, "size": update.size, "sha256": update.sha256, "required": true, "restart": "module"});
+        if let Some(existing) = components.iter_mut().find(|item| {
+            item.get("id").and_then(serde_json::Value::as_str) == Some(update.module.as_str())
+        }) {
+            *existing = value;
+        } else {
+            components.push(value);
+        }
+    }
+    let temporary = path.with_extension("json.tmp");
+    fs::write(
+        &temporary,
+        serde_json::to_vec_pretty(&root).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    fs::rename(temporary, path).map_err(|error| error.to_string())
 }
 
 fn write_status(install_dir: &Path, phase: &'static str, message: &str, modules: Vec<String>) {

@@ -17,11 +17,20 @@ use windows_sys::Win32::{
 
 const TIMER_ID: usize = 1;
 const RUN_BUTTON: usize = 10;
+const UPDATE_BUTTON: usize = 11;
 const CLASS_NAME: &[u16] = &[
     69, 118, 111, 72, 105, 109, 101, 85, 112, 100, 97, 116, 101, 114, 0,
 ];
 
 thread_local! { static PREFLIGHT_BODY: std::cell::RefCell<Vec<u16>> = const { std::cell::RefCell::new(Vec::new()) }; }
+thread_local! { static PREFLIGHT_HAS_UPDATES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+thread_local! { static PREFLIGHT_ACTION: std::cell::Cell<UiAction> = const { std::cell::Cell::new(UiAction::Launch) }; }
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum UiAction {
+    Launch,
+    Update,
+}
 
 fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(std::iter::once(0)).collect()
@@ -31,7 +40,7 @@ pub fn run_preflight_window(
     _install_dir: &Path,
     updates: &[UpdateCandidate],
     remote_error: Option<&str>,
-) -> Result<(), String> {
+) -> Result<UiAction, String> {
     let text = if updates.is_empty() {
         match remote_error {
             Some(error) => format!(
@@ -50,6 +59,8 @@ pub fn run_preflight_window(
         )
     };
     PREFLIGHT_BODY.with(|body| *body.borrow_mut() = wide(&text));
+    PREFLIGHT_HAS_UPDATES.with(|value| value.set(!updates.is_empty()));
+    PREFLIGHT_ACTION.with(|value| value.set(UiAction::Launch));
     let instance = unsafe { GetModuleHandleW(std::ptr::null()) };
     if instance.is_null() {
         return Err("updater: не удалось получить дескриптор окна".into());
@@ -86,7 +97,9 @@ pub fn run_preflight_window(
         return Err("updater: не удалось создать окно".into());
     }
     unsafe {
-        SetTimer(hwnd, TIMER_ID, 900, None);
+        if !PREFLIGHT_HAS_UPDATES.with(std::cell::Cell::get) {
+            SetTimer(hwnd, TIMER_ID, 900, None);
+        }
         ShowWindow(hwnd, SW_SHOW);
     }
     let mut message: MSG = unsafe { std::mem::zeroed() };
@@ -100,22 +113,22 @@ pub fn run_preflight_window(
             DispatchMessageW(&message);
         }
     }
-    Ok(())
+    Ok(PREFLIGHT_ACTION.with(std::cell::Cell::get))
 }
 
 unsafe extern "system" fn window_proc(
     hwnd: windows_sys::Win32::Foundation::HWND,
     message: u32,
     wparam: usize,
-    _lparam: isize,
+    lparam: isize,
 ) -> isize {
     match message {
         WM_CREATE => {
             let static_class = wide("STATIC");
             let title = wide("Проверка модулей завершена");
-            let body = PREFLIGHT_BODY.with(|body| body.borrow().clone());
+            let body = PREFLIGHT_BODY.with(|value| value.borrow().clone());
             let button_class = wide("BUTTON");
-            let button = wide("Запустить текущую версию");
+            let run = wide("Запустить текущую версию");
             CreateWindowExW(
                 0,
                 static_class.as_ptr(),
@@ -147,7 +160,7 @@ unsafe extern "system" fn window_proc(
             CreateWindowExW(
                 0,
                 button_class.as_ptr(),
-                button.as_ptr(),
+                run.as_ptr(),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 28,
                 160,
@@ -158,6 +171,23 @@ unsafe extern "system" fn window_proc(
                 null_mut(),
                 null_mut(),
             );
+            if PREFLIGHT_HAS_UPDATES.with(std::cell::Cell::get) {
+                let update = wide("Обновить модули");
+                CreateWindowExW(
+                    0,
+                    button_class.as_ptr(),
+                    update.as_ptr(),
+                    WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+                    260,
+                    160,
+                    140,
+                    32,
+                    hwnd,
+                    UPDATE_BUTTON as *mut _,
+                    null_mut(),
+                    null_mut(),
+                );
+            }
             0
         }
         WM_TIMER => {
@@ -170,6 +200,12 @@ unsafe extern "system" fn window_proc(
             launch_shell(hwnd);
             0
         }
+        WM_COMMAND if (wparam & 0xffff) == UPDATE_BUTTON => {
+            KillTimer(hwnd, TIMER_ID);
+            PREFLIGHT_ACTION.with(|value| value.set(UiAction::Update));
+            DestroyWindow(hwnd);
+            0
+        }
         WM_CLOSE => {
             KillTimer(hwnd, TIMER_ID);
             launch_shell(hwnd);
@@ -179,7 +215,7 @@ unsafe extern "system" fn window_proc(
             PostQuitMessage(0);
             0
         }
-        _ => DefWindowProcW(hwnd, message, wparam, _lparam),
+        _ => DefWindowProcW(hwnd, message, wparam, lparam),
     }
 }
 

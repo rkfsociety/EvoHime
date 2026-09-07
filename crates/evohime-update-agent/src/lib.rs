@@ -34,6 +34,10 @@ pub struct UpdateCandidate {
     pub module: String,
     pub installed: String,
     pub available: String,
+    pub artifact: String,
+    pub size: u64,
+    pub sha256: String,
+    pub download_url: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
