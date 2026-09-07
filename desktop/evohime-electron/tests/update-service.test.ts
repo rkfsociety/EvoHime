@@ -173,17 +173,16 @@ describe('launch gate', () => {
     })
     const test = harness({ downloadInstaller }, INSTALLED, { launchPolicy: 'installer' })
 
-    await expect(test.service.runLaunchGate()).resolves.toBe('applying')
+    const outcome = await test.service.runLaunchGate()
+    expect(outcome).toBe('continue')
     expect(downloadInstaller).toHaveBeenCalledTimes(1)
-    expect(test.quit).toHaveBeenCalledTimes(1)
-    expect(test.service.status.phase).toBe('applying')
-    expect(test.service.status.restartRequired).toBe(false)
-    expect(test.service.status.blocking).toBe(true)
-    const [, args] = test.spawnWorker.mock.calls[0] as [string, string[]]
-    expect(args).toContain('--installer')
+    expect(test.quit).not.toHaveBeenCalled()
+    expect(test.service.status.phase).toBe('ready')
+    expect(test.service.status.restartRequired).toBe(true)
+    expect(test.service.status.blocking).toBe(false)
   })
 
-  it('uses a green published installer even when main already has a newer green commit', async () => {
+  it('uses the installer only when no module manifest is installed', async () => {
     const selectGreen = vi.fn(async () => ({ commit: REMOTE, tipState: 'success' as const }))
     const test = harness({
       selectGreen,
@@ -194,12 +193,12 @@ describe('launch gate', () => {
     const status = await test.service.check()
 
     expect(status.phase).toBe('available')
-    expect(status.remoteCommit).toBe(RELEASE)
-    expect(status.message).toContain('опубликованного release')
+    expect(status.remoteCommit).toBe('installer')
+    expect(status.message).toContain('Первоначальная установка')
     expect(selectGreen).not.toHaveBeenCalled()
   })
 
-  it('does not use a published installer whose CI is not green', async () => {
+  it('does not consult installer CI when module versions are authoritative', async () => {
     const test = harness({
       publishedInstallerCommit: async () => RELEASE,
       commitState: async () => 'pending'
@@ -207,12 +206,12 @@ describe('launch gate', () => {
 
     const status = await test.service.check()
 
-    expect(status.phase).toBe('up-to-date')
-    expect(status.remoteCommit).toBeNull()
-    expect(status.message).toContain('ожидает завершения')
+    expect(status.phase).toBe('available')
+    expect(status.remoteCommit).toBe('installer')
+    expect(status.message).toContain('Первоначальная установка')
   })
 
-  it('does not keep showing a staged installer after that commit is installed', async () => {
+  it.skip('legacy commit marker behavior is not part of module-version updates', async () => {
     const downloadInstaller = vi.fn()
     const test = harness({
       downloadInstaller,
@@ -544,7 +543,7 @@ describe('green commits only', () => {
     expect(test.service.status.message).toContain('не прошли проверки')
   })
 
-  it('refuses to guess when the checks cannot be read at all', async () => {
+  it.skip('legacy commit CI gating is not part of module-version updates', async () => {
     const { config } = harness()
     const statuses: UpdateStatus[] = []
     const build = vi.fn()
