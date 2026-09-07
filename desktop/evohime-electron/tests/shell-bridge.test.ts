@@ -636,6 +636,33 @@ describe('renderer command surface', () => {
     expect(sent).toHaveLength(0)
   })
 
+  it('validates large payloads by UTF-8 bytes instead of the short-text limit', () => {
+    const body = 'я'.repeat(3_000) // 6000 UTF-8 bytes, but only 3000 JS characters.
+    const outcome = invoke('core.remoteConversationChannels', {
+      operation: 'save',
+      connectionId: 'connection-1',
+      payload: body,
+      expectedVersion: 0,
+      idempotencyKey: 'payload-boundary-1'
+    })
+    expect(outcome).toEqual({ ok: true, value: { accepted: true } })
+    expect(sent).toHaveLength(1)
+    const command = sent[0]?.['remoteConversationChannels'] as { payload: Buffer }
+    expect(command.payload.toString('utf8')).toBe(body)
+  })
+
+  it('rejects a payload above its byte contract before forwarding to Core', () => {
+    const outcome = invoke('core.remoteConversationChannels', {
+      operation: 'save',
+      connectionId: 'connection-1',
+      payload: 'я'.repeat(262_145),
+      expectedVersion: 0,
+      idempotencyKey: 'payload-boundary-2'
+    }) as CommandFailure
+    expect(outcome).toMatchObject({ ok: false, code: 'invalid-payload' })
+    expect(sent).toHaveLength(0)
+  })
+
   it('surfaces a full queue as a typed failure', () => {
     enqueueResult = 'queue-full'
     const outcome = invoke('core.stopTask', { taskId: 'task-1' }) as CommandFailure

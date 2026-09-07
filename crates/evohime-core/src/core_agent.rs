@@ -63,7 +63,7 @@ pub struct RoutingApprovalWait<'a> {
     pub trace_id: &'a str,
     pub route_id: &'a str,
     pub timeout_ms: u64,
-    pub events: &'a broadcast::Sender<CoreEvent>,
+    pub events: &'a EventSink,
     pub cancellation: &'a CancellationToken,
 }
 
@@ -78,13 +78,16 @@ impl RoutingApprovalRegistry {
             .await
             .insert(wait.trace_id.to_owned(), sender);
         let expires_at_ms = task_memory::now_millis().saturating_add(wait.timeout_ms);
-        let _ = wait.events.send(CoreEvent::PendingRoutingApproval {
-            task_id: wait.task_id.to_owned(),
-            trace_id: wait.trace_id.to_owned(),
-            run_id: wait.run_id.to_owned(),
-            route_id: wait.route_id.to_owned(),
-            expires_at_ms,
-        });
+        let _ = wait
+            .events
+            .send(CoreEvent::PendingRoutingApproval {
+                task_id: wait.task_id.to_owned(),
+                trace_id: wait.trace_id.to_owned(),
+                run_id: wait.run_id.to_owned(),
+                route_id: wait.route_id.to_owned(),
+                expires_at_ms,
+            })
+            .await;
         let outcome = tokio::select! {
             _ = wait.cancellation.cancelled() => Err(AgentRunError::Cancelled),
             result = tokio::time::timeout(std::time::Duration::from_millis(wait.timeout_ms.max(1)), receiver) =>
@@ -145,7 +148,7 @@ pub trait TaskExecutor: Send + Sync {
         task_id: String,
         prompt: String,
         cancellation: CancellationToken,
-        events: broadcast::Sender<CoreEvent>,
+        events: EventSink,
     ) -> BoxFuture<'static, Result<String, AgentRunError>>;
 
     fn execute_in_workspace(
@@ -154,7 +157,7 @@ pub trait TaskExecutor: Send + Sync {
         prompt: String,
         workspace_root: PathBuf,
         cancellation: CancellationToken,
-        events: broadcast::Sender<CoreEvent>,
+        events: EventSink,
     ) -> BoxFuture<'static, Result<String, AgentRunError>> {
         let _ = workspace_root;
         self.execute(task_id, prompt, cancellation, events)
@@ -167,7 +170,7 @@ pub trait TaskExecutor: Send + Sync {
         workspace_root: PathBuf,
         preferred_route_hint: Option<String>,
         cancellation: CancellationToken,
-        events: broadcast::Sender<CoreEvent>,
+        events: EventSink,
     ) -> BoxFuture<'static, Result<String, AgentRunError>> {
         let _ = preferred_route_hint;
         self.execute_in_workspace(task_id, prompt, workspace_root, cancellation, events)
@@ -213,7 +216,7 @@ impl ModelAgent {
         &self,
         task_id: impl Into<String>,
         prompt: impl Into<String>,
-        events: &broadcast::Sender<CoreEvent>,
+        events: &EventSink,
     ) -> Result<String, AgentRunError> {
         self.run_once_with_cancellation(task_id, prompt, events, CancellationToken::new())
             .await
@@ -223,7 +226,7 @@ impl ModelAgent {
         &self,
         task_id: impl Into<String>,
         prompt: impl Into<String>,
-        events: &broadcast::Sender<CoreEvent>,
+        events: &EventSink,
         cancellation: CancellationToken,
     ) -> Result<String, AgentRunError> {
         let task_id = task_id.into();
@@ -272,10 +275,12 @@ impl ModelAgent {
                         .map_err(|_| AgentRunError::Internal("sensitive_data_blocked".into()))?;
                     if !result.value.is_empty() {
                         final_message.push_str(&result.value);
-                        let _ = events.send(CoreEvent::AssistantDelta {
-                            task_id: task_id.clone(),
-                            content: result.value,
-                        });
+                        let _ = events
+                            .send(CoreEvent::AssistantDelta {
+                                task_id: task_id.clone(),
+                                content: result.value,
+                            })
+                            .await;
                     }
                 }
                 evohime_model_gateway::ChatStreamItem::Thinking(_)
@@ -287,15 +292,19 @@ impl ModelAgent {
             .map_err(|_| AgentRunError::Internal("sensitive_data_blocked".into()))?;
         if !result.value.is_empty() {
             final_message.push_str(&result.value);
-            let _ = events.send(CoreEvent::AssistantDelta {
-                task_id: task_id.clone(),
-                content: result.value,
-            });
+            let _ = events
+                .send(CoreEvent::AssistantDelta {
+                    task_id: task_id.clone(),
+                    content: result.value,
+                })
+                .await;
         }
-        let _ = events.send(CoreEvent::TaskCompleted {
-            task_id,
-            final_message: final_message.clone(),
-        });
+        let _ = events
+            .send(CoreEvent::TaskCompleted {
+                task_id,
+                final_message: final_message.clone(),
+            })
+            .await;
         Ok(final_message)
     }
 }
@@ -306,7 +315,7 @@ impl TaskExecutor for ModelAgent {
         task_id: String,
         prompt: String,
         cancellation: CancellationToken,
-        events: broadcast::Sender<CoreEvent>,
+        events: EventSink,
     ) -> BoxFuture<'static, Result<String, AgentRunError>> {
         let agent = Self {
             gateway: Arc::clone(&self.gateway),
@@ -347,7 +356,7 @@ pub(crate) async fn run_codex_cli(
     prompt: String,
     workspace_root: PathBuf,
     cancellation: CancellationToken,
-    events: broadcast::Sender<CoreEvent>,
+    events: EventSink,
 ) -> Result<String, AgentRunError> {
     const MAX_PROMPT_BYTES: usize = 128 * 1024;
     const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
@@ -364,15 +373,19 @@ pub(crate) async fn run_codex_cli(
         ));
     }
 
-    let _ = events.send(CoreEvent::ToolStarted {
-        task_id: task_id.clone(),
-        tool_name: "codex.execute".into(),
-    });
-    let _ = events.send(CoreEvent::ToolOutput {
-        task_id: task_id.clone(),
-        tool_name: "codex.execute".into(),
-        output: "Codex CLI запущен, выполняю задачу…".into(),
-    });
+    let _ = events
+        .send(CoreEvent::ToolStarted {
+            task_id: task_id.clone(),
+            tool_name: "codex.execute".into(),
+        })
+        .await;
+    let _ = events
+        .send(CoreEvent::ToolOutput {
+            task_id: task_id.clone(),
+            tool_name: "codex.execute".into(),
+            output: "Codex CLI запущен, выполняю задачу…".into(),
+        })
+        .await;
     let executable = resolve_codex_executable();
     let mut command = tokio::process::Command::new(executable);
     command
@@ -465,7 +478,7 @@ pub(crate) async fn run_codex_cli(
 
 pub(crate) async fn stream_codex_output<R>(
     mut reader: R,
-    events: broadcast::Sender<CoreEvent>,
+    events: EventSink,
     task_id: String,
     parse_agent_messages: bool,
 ) -> Vec<u8>
@@ -481,18 +494,20 @@ where
             break;
         }
         output.extend_from_slice(&chunk[..read]);
-        let _ = events.send(CoreEvent::ToolOutput {
-            task_id: task_id.clone(),
-            tool_name: "codex.execute".into(),
-            output: String::from_utf8_lossy(&chunk[..read]).into_owned(),
-        });
+        let _ = events
+            .send(CoreEvent::ToolOutput {
+                task_id: task_id.clone(),
+                tool_name: "codex.execute".into(),
+                output: String::from_utf8_lossy(&chunk[..read]).into_owned(),
+            })
+            .await;
         if parse_agent_messages {
             line_buffer.push_str(&String::from_utf8_lossy(&chunk[..read]));
-            emit_codex_events(&mut line_buffer, &events, &task_id);
+            emit_codex_events(&mut line_buffer, &events, &task_id).await;
         }
     }
     if parse_agent_messages {
-        emit_codex_events(&mut line_buffer, &events, &task_id);
+        emit_codex_events(&mut line_buffer, &events, &task_id).await;
     }
     output
 }
@@ -500,19 +515,15 @@ where
 /// Projects Codex CLI's JSONL into the normal Core transcript stream. Raw CLI
 /// output remains available in the trace, while the chat receives real command
 /// activities and separate assistant messages in their original order.
-pub(crate) fn emit_codex_events(
-    buffer: &mut String,
-    events: &broadcast::Sender<CoreEvent>,
-    task_id: &str,
-) {
+pub(crate) async fn emit_codex_events(buffer: &mut String, events: &EventSink, task_id: &str) {
     while let Some(newline) = buffer.find('\n') {
         let line = buffer[..newline].trim();
-        emit_codex_event(line, events, task_id);
+        emit_codex_event(line, events, task_id).await;
         buffer.drain(..=newline);
     }
 }
 
-pub(crate) fn emit_codex_event(line: &str, events: &broadcast::Sender<CoreEvent>, task_id: &str) {
+pub(crate) async fn emit_codex_event(line: &str, events: &EventSink, task_id: &str) {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
         return;
     };
@@ -526,10 +537,12 @@ pub(crate) fn emit_codex_event(line: &str, events: &broadcast::Sender<CoreEvent>
     ) {
         (Some("item.started"), Some("command_execution")) => {
             if let Some(command) = item.get("command").and_then(serde_json::Value::as_str) {
-                let _ = events.send(CoreEvent::ToolStarted {
-                    task_id: task_id.to_string(),
-                    tool_name: codex_command_tool_name(command),
-                });
+                let _ = events
+                    .send(CoreEvent::ToolStarted {
+                        task_id: task_id.to_string(),
+                        tool_name: codex_command_tool_name(command),
+                    })
+                    .await;
             }
         }
         (Some("item.completed"), Some("command_execution")) => {
@@ -547,11 +560,13 @@ pub(crate) fn emit_codex_event(line: &str, events: &broadcast::Sender<CoreEvent>
             } else {
                 format!("{command}\n{output}")
             };
-            let _ = events.send(CoreEvent::ToolOutput {
-                task_id: task_id.to_string(),
-                tool_name: codex_command_tool_name(command),
-                output,
-            });
+            let _ = events
+                .send(CoreEvent::ToolOutput {
+                    task_id: task_id.to_string(),
+                    tool_name: codex_command_tool_name(command),
+                    output,
+                })
+                .await;
         }
         (Some("item.completed"), Some("agent_message")) => {
             if let Some(text) = item
@@ -560,10 +575,12 @@ pub(crate) fn emit_codex_event(line: &str, events: &broadcast::Sender<CoreEvent>
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
             {
-                let _ = events.send(CoreEvent::AssistantDelta {
-                    task_id: task_id.to_string(),
-                    content: text.to_string(),
-                });
+                let _ = events
+                    .send(CoreEvent::AssistantDelta {
+                        task_id: task_id.to_string(),
+                        content: text.to_string(),
+                    })
+                    .await;
             }
         }
         _ => {}
@@ -889,7 +906,7 @@ impl TaskExecutor for ToolAgent {
         task_id: String,
         prompt: String,
         cancellation: CancellationToken,
-        events: broadcast::Sender<CoreEvent>,
+        events: EventSink,
     ) -> BoxFuture<'static, Result<String, AgentRunError>> {
         self.execute_in_workspace(
             task_id,
@@ -969,7 +986,7 @@ impl TaskExecutor for ToolAgent {
         prompt: String,
         workspace_root: PathBuf,
         cancellation: CancellationToken,
-        events: broadcast::Sender<CoreEvent>,
+        events: EventSink,
     ) -> BoxFuture<'static, Result<String, AgentRunError>> {
         let agent = Self {
             gateway: Arc::clone(&self.gateway),
@@ -1007,7 +1024,7 @@ impl TaskExecutor for ToolAgent {
         workspace_root: PathBuf,
         preferred_route_hint: Option<String>,
         cancellation: CancellationToken,
-        events: broadcast::Sender<CoreEvent>,
+        events: EventSink,
     ) -> BoxFuture<'static, Result<String, AgentRunError>> {
         if preferred_route_hint.as_deref() == Some("codex_cli") {
             return Box::pin(run_codex_cli(

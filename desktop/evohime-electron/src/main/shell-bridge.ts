@@ -294,7 +294,7 @@ function dispatch(
 
     case 'core.planArtifactCreate': {
       const value = asRecord(payload)
-      const artifactJson = asBoundedString(value['artifactJson'])
+      const artifactJson = asBoundedPayload(value['artifactJson'], 64 * 1024)
       const idempotencyKey = asBoundedString(value['idempotencyKey'])
       if (artifactJson === null || artifactJson.length > 64 * 1024 || idempotencyKey === null) return failure('invalid-payload', 'Некорректный Plan Artifact.')
       return accepted(client.send({ planArtifactCreate: { schemaVersion: 1, operation: 'create', artifactJson: Buffer.from(artifactJson, 'utf8'), idempotencyKey } }))
@@ -338,7 +338,7 @@ function dispatch(
       const value = asRecord(payload)
       const operation = value['operation'] === 'create' || value['operation'] === 'apply' || value['operation'] === 'cancel' || value['operation'] === 'unknown' ? value['operation'] : null
       const runId = asBoundedString(value['runId'])
-      const body = value['payload'] === undefined ? '' : asBoundedString(value['payload'])
+      const body = value['payload'] === undefined ? '' : asBoundedPayload(value['payload'], 64 * 1024)
       const observedFingerprint = value['observedFingerprint'] === undefined ? '' : asBoundedString(value['observedFingerprint'])
       const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion'])
       const idempotencyKey = asBoundedString(value['idempotencyKey'])
@@ -351,7 +351,7 @@ function dispatch(
       const operation = value['operation'] === 'read' ? value['operation'] : null
       const projectId = asBoundedString(value['projectId'])
       const logicalPath = asBoundedString(value['logicalPath'])
-      const content = value['content'] === undefined ? '' : asBoundedString(value['content'])
+      const content = value['content'] === undefined ? '' : asBoundedPayload(value['content'], 4 * 1024 * 1024)
       const expectedHash = value['expectedHash'] === undefined ? '' : asBoundedString(value['expectedHash'])
       const idempotencyKey = asBoundedString(value['idempotencyKey'])
       if (operation === null || projectId === null || logicalPath === null || content === null || expectedHash === null || idempotencyKey === null || logicalPath.length > 4096 || content.length > 4 * 1024 * 1024) return failure('invalid-payload', 'Некорректная операция revision-safe файлов.')
@@ -362,7 +362,7 @@ function dispatch(
       const value = asRecord(payload)
       const operation = ['register', 'inspect', 'preflight', 'apply', 'repair_feedback'].includes(String(value['operation'])) ? String(value['operation']) : null
       const protocolId = asBoundedString(value['protocolId'])
-      const body = value['payload'] === undefined ? '' : asBoundedString(value['payload'])
+      const body = value['payload'] === undefined ? '' : asBoundedPayload(value['payload'], 4 * 1024 * 1024)
       const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion'])
       const idempotencyKey = asBoundedString(value['idempotencyKey'])
       if (operation === null || protocolId === null || body === null || expectedVersion === null || idempotencyKey === null || body.length > 4 * 1024 * 1024) return failure('invalid-payload', 'Некорректная операция Model Edit Protocol Registry.')
@@ -371,15 +371,15 @@ function dispatch(
 
     case 'core.remoteConversationChannels': {
       const value = asRecord(payload); const operation = ['save','inspect','pair','admit','revoke'].includes(String(value['operation'])) ? String(value['operation']) : null
-      const connectionId = asBoundedString(value['connectionId']); const body = value['payload'] === undefined ? '' : asBoundedString(value['payload']); const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion']); const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const connectionId = asBoundedString(value['connectionId']); const body = value['payload'] === undefined ? '' : asBoundedPayload(value['payload'], 512 * 1024); const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion']); const idempotencyKey = asBoundedString(value['idempotencyKey'])
       if(operation === null || connectionId === null || body === null || expectedVersion === null || idempotencyKey === null || body.length > 512 * 1024) return failure('invalid-payload','Некорректная операция Remote Conversation Channels.')
       return accepted(client.send({ remoteConversationChannels: { schemaVersion: 1, operation, connectionId, payload: Buffer.from(body,'utf8'), expectedVersion, idempotencyKey } }))
     }
 
-    case 'core.promptCachePlanner': { const value=asRecord(payload); const operation=['plan','inspect','metric'].includes(String(value['operation']))?String(value['operation']):null; const planId=asBoundedString(value['planId']); const body=value['payload']===undefined?'':asBoundedString(value['payload']); const expectedVersion=value['expectedVersion']===undefined?0:asNonNegativeInteger(value['expectedVersion']); const idempotencyKey=asBoundedString(value['idempotencyKey']); if(operation===null||planId===null||body===null||expectedVersion===null||idempotencyKey===null||body.length>512*1024)return failure('invalid-payload','Некорректная операция Prompt Cache Planner.'); return accepted(client.send({promptCachePlanner:{schemaVersion:1,operation,planId,payload:Buffer.from(body,'utf8'),expectedVersion,idempotencyKey}})) }
-    case 'core.declarativeRuntimeComponents': { const value=asRecord(payload); const operation=['save','inspect','rehydrate','transition'].includes(String(value['operation']))?String(value['operation']):null; const componentId=asBoundedString(value['componentId']); const body=value['payload']===undefined?'':asBoundedString(value['payload']); const expectedVersion=value['expectedVersion']===undefined?0:asNonNegativeInteger(value['expectedVersion']); const idempotencyKey=asBoundedString(value['idempotencyKey']); if(operation===null||componentId===null||body===null||expectedVersion===null||idempotencyKey===null||componentId.length>128||body.length>512*1024||idempotencyKey.length>128)return failure('invalid-payload','Некорректная операция Declarative Runtime Components.'); return accepted(client.send({declarativeRuntimeComponents:{schemaVersion:1,operation,componentId,payload:Buffer.from(body,'utf8'),expectedVersion,idempotencyKey}})) }
-    case 'core.guidedCalibrationSessions': { const value=asRecord(payload); const operation=['create','inspect','replay','iteration','consolidate','close'].includes(String(value['operation']))?String(value['operation']):null; const sessionId=asBoundedString(value['sessionId']); const body=value['payload']===undefined?'':asBoundedString(value['payload']); const expectedVersion=value['expectedVersion']===undefined?0:asNonNegativeInteger(value['expectedVersion']); const idempotencyKey=asBoundedString(value['idempotencyKey']); if(operation===null||sessionId===null||body===null||expectedVersion===null||idempotencyKey===null||sessionId.length>128||body.length>512*1024||idempotencyKey.length>128)return failure('invalid-payload','Некорректная операция Guided Calibration Sessions.'); return accepted(client.send({guidedCalibrationSessions:{schemaVersion:1,operation,sessionId,payload:Buffer.from(body,'utf8'),expectedVersion,idempotencyKey}})) }
-    case 'core.extensionConformanceKit': { const value=asRecord(payload); const operation=['run','register','inspect'].includes(String(value['operation']))?String(value['operation']):null; const subjectId=asBoundedString(value['subjectId']); const body=value['payload']===undefined?'':asBoundedString(value['payload']); const expectedVersion=value['expectedVersion']===undefined?0:asNonNegativeInteger(value['expectedVersion']); const idempotencyKey=asBoundedString(value['idempotencyKey']); if(operation===null||subjectId===null||body===null||expectedVersion===null||idempotencyKey===null||subjectId.length>128||body.length>512*1024||idempotencyKey.length>128)return failure('invalid-payload','Некорректная операция Extension Conformance Kit.'); return accepted(client.send({extensionConformanceKit:{schemaVersion:1,operation,subjectId,payload:Buffer.from(body,'utf8'),expectedVersion,idempotencyKey}})) }
+    case 'core.promptCachePlanner': { const value=asRecord(payload); const operation=['plan','inspect','metric'].includes(String(value['operation']))?String(value['operation']):null; const planId=asBoundedString(value['planId']); const body=value['payload']===undefined?'':asBoundedPayload(value['payload'], 512 * 1024); const expectedVersion=value['expectedVersion']===undefined?0:asNonNegativeInteger(value['expectedVersion']); const idempotencyKey=asBoundedString(value['idempotencyKey']); if(operation===null||planId===null||body===null||expectedVersion===null||idempotencyKey===null||body.length>512*1024)return failure('invalid-payload','Некорректная операция Prompt Cache Planner.'); return accepted(client.send({promptCachePlanner:{schemaVersion:1,operation,planId,payload:Buffer.from(body,'utf8'),expectedVersion,idempotencyKey}})) }
+    case 'core.declarativeRuntimeComponents': { const value=asRecord(payload); const operation=['save','inspect','rehydrate','transition'].includes(String(value['operation']))?String(value['operation']):null; const componentId=asBoundedString(value['componentId']); const body=value['payload']===undefined?'':asBoundedPayload(value['payload'], 512 * 1024); const expectedVersion=value['expectedVersion']===undefined?0:asNonNegativeInteger(value['expectedVersion']); const idempotencyKey=asBoundedString(value['idempotencyKey']); if(operation===null||componentId===null||body===null||expectedVersion===null||idempotencyKey===null||componentId.length>128||body.length>512*1024||idempotencyKey.length>128)return failure('invalid-payload','Некорректная операция Declarative Runtime Components.'); return accepted(client.send({declarativeRuntimeComponents:{schemaVersion:1,operation,componentId,payload:Buffer.from(body,'utf8'),expectedVersion,idempotencyKey}})) }
+    case 'core.guidedCalibrationSessions': { const value=asRecord(payload); const operation=['create','inspect','replay','iteration','consolidate','close'].includes(String(value['operation']))?String(value['operation']):null; const sessionId=asBoundedString(value['sessionId']); const body=value['payload']===undefined?'':asBoundedPayload(value['payload'], 512 * 1024); const expectedVersion=value['expectedVersion']===undefined?0:asNonNegativeInteger(value['expectedVersion']); const idempotencyKey=asBoundedString(value['idempotencyKey']); if(operation===null||sessionId===null||body===null||expectedVersion===null||idempotencyKey===null||sessionId.length>128||body.length>512*1024||idempotencyKey.length>128)return failure('invalid-payload','Некорректная операция Guided Calibration Sessions.'); return accepted(client.send({guidedCalibrationSessions:{schemaVersion:1,operation,sessionId,payload:Buffer.from(body,'utf8'),expectedVersion,idempotencyKey}})) }
+    case 'core.extensionConformanceKit': { const value=asRecord(payload); const operation=['run','register','inspect'].includes(String(value['operation']))?String(value['operation']):null; const subjectId=asBoundedString(value['subjectId']); const body=value['payload']===undefined?'':asBoundedPayload(value['payload'], 512 * 1024); const expectedVersion=value['expectedVersion']===undefined?0:asNonNegativeInteger(value['expectedVersion']); const idempotencyKey=asBoundedString(value['idempotencyKey']); if(operation===null||subjectId===null||body===null||expectedVersion===null||idempotencyKey===null||subjectId.length>128||body.length>512*1024||idempotencyKey.length>128)return failure('invalid-payload','Некорректная операция Extension Conformance Kit.'); return accepted(client.send({extensionConformanceKit:{schemaVersion:1,operation,subjectId,payload:Buffer.from(body,'utf8'),expectedVersion,idempotencyKey}})) }
 
     case 'core.taskWorktreeIsolation': {
       const value = asRecord(payload)
@@ -1703,7 +1703,7 @@ function dispatch(
     case 'core.prepareBuild': {
       const value = asRecord(payload)
       const projectId = asBoundedString(value['projectId'])
-      const proposalJson = asBoundedPayload(value['proposalJson'])
+      const proposalJson = asBoundedPayload(value['proposalJson'], 256 * 1024)
       if (projectId === null || proposalJson === null) {
         return failure('invalid-payload', 'Некорректное Build-предложение.')
       }
@@ -1715,7 +1715,7 @@ function dispatch(
       const projectId = asBoundedString(value['projectId'])
       const runId = asBoundedString(value['runId'])
       const taskId = asBoundedString(value['taskId'])
-      const approvedBuildJson = asBoundedPayload(value['approvedBuildJson'])
+      const approvedBuildJson = asBoundedPayload(value['approvedBuildJson'], 256 * 1024)
       if (projectId === null || runId === null || taskId === null || approvedBuildJson === null) {
         return failure('invalid-payload', 'Некорректные параметры применения Build.')
       }
@@ -2677,6 +2677,19 @@ function asBoundedString(value: unknown): string | null {
   return value
 }
 
+/**
+ * Payload fields have a contract-specific byte limit. They must not go
+ * through asBoundedString: that helper is intentionally for identifiers and
+ * short text and caps values at 4096 characters before the command-specific
+ * limit can be checked.
+ */
+function asBoundedPayload(value: unknown, maxBytes: number): string | null {
+  if (typeof value !== 'string' || value.length === 0 || Buffer.byteLength(value, 'utf8') > maxBytes) {
+    return null
+  }
+  return value
+}
+
 function asBoundedStringArray(value: unknown): string[] | null {
   if (!Array.isArray(value) || value.length > 128) return null
   const result: string[] = []
@@ -2820,10 +2833,6 @@ function asArguments(value: unknown): string[] | null {
   if (!Array.isArray(value) || value.length > 64) return null
   const args = value.map((item) => asBoundedString(item))
   return args.every((item): item is string => item !== null) ? args : null
-}
-
-function asBoundedPayload(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 && value.length <= 256 * 1024 ? value : null
 }
 
 function asReviewMarkdown(value: unknown): string | null {

@@ -760,6 +760,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         }
         evohime_core::CoreEvent::TaskFailed { error, .. } => console_line!("\n\n✕ Задача завершена с ошибкой\n{error}"),
         evohime_core::CoreEvent::TaskStopped { .. } => console_line!("\n\n■ Задача остановлена"),
+        evohime_core::CoreEvent::EventPersistenceFailed { source, error } => console_line!(
+            "\n⚠ Ошибка обязательной записи событий ({source}): {error}"
+        ),
         evohime_core::CoreEvent::ReviewProgress {
             review_id,
             stage,

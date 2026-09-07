@@ -41,7 +41,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = state.lock().await.journal.clone() {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         CoreCommand::ExtensionConformanceKit {
@@ -69,7 +69,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = state.lock().await.journal.clone() {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         CoreCommand::PersistentAgentOrganizationRegistry {
@@ -121,7 +121,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = state.lock().await.journal.clone() {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         CoreCommand::GetMemory { id, reply } => {

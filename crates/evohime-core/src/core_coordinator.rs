@@ -22,12 +22,14 @@ pub(crate) struct CoordinatorState {
     backup_approvals: HashMap<String, String>,
     routing_decisions: HashMap<String, bool>,
     routing_approvals: RoutingApprovalRegistry,
-    events: broadcast::Sender<CoreEvent>,
+    events: EventSink,
+    notifications: broadcast::Sender<CoreEvent>,
     executor: Option<Arc<dyn TaskExecutor>>,
     journal: Option<EventJournal>,
     audit: crate::audit::AuditTrail,
     retained_children: crate::retained_child::RetainedRegistry,
     background_tasks: Arc<crate::bounded_tasks::BoundedTaskGroup>,
+    persistence_error: Option<String>,
 }
 
 struct ActiveTask {
@@ -85,7 +87,7 @@ impl TaskCoordinator {
     /// Additional listener on the same event stream. Used by the pipe server to
     /// know when to flush the journal tail to a connected shell.
     pub async fn subscribe(&self) -> broadcast::Receiver<CoreEvent> {
-        self.state.lock().await.events.subscribe()
+        self.state.lock().await.notifications.subscribe()
     }
 
     /// Fires after an event is durably recorded, carrying its sequence. The
@@ -103,7 +105,13 @@ impl TaskCoordinator {
     /// that bypasses the broadcast lands in the database but never reaches a
     /// connected shell.
     pub async fn emit(&self, event: CoreEvent) {
-        let _ = self.state.lock().await.events.send(event);
+        let events = self.state.lock().await.events.clone();
+        let _ = events.send(event).await;
+    }
+
+    pub(crate) async fn emit_state_event(state: &Arc<Mutex<CoordinatorState>>, event: CoreEvent) {
+        let events = state.lock().await.events.clone();
+        let _ = events.send(event).await;
     }
 
     /// Сообщает, что в журнал легла запись, минуя broadcast координатора.
@@ -141,7 +149,9 @@ impl TaskCoordinator {
         journal: Option<EventJournal>,
     ) -> (Self, broadcast::Receiver<CoreEvent>) {
         let (commands, mut command_rx) = mpsc::channel(buffer.max(1));
-        let (events, event_rx) = broadcast::channel(buffer.max(1));
+        let (notifications, notification_rx) = broadcast::channel(buffer.max(1));
+        let (event_tx, mut event_rx) = mpsc::channel(buffer.max(1));
+        let events = EventSink::new(event_tx);
         let background_tasks = Arc::new(crate::bounded_tasks::BoundedTaskGroup::new(
             crate::bounded_tasks::DEFAULT_CAPACITY,
         ));
@@ -155,33 +165,42 @@ impl TaskCoordinator {
             routing_decisions: HashMap::new(),
             routing_approvals: RoutingApprovalRegistry::default(),
             events: events.clone(),
+            notifications: notifications.clone(),
             executor,
             journal: journal.clone(),
             audit: crate::audit::AuditTrail::default(),
             retained_children: crate::retained_child::RetainedRegistry::default(),
             background_tasks,
+            persistence_error: None,
         }));
         // The shell is fed from the journal, so it must be told after a record
         // lands — not when the event was broadcast. Watching the broadcast
         // directly raced the writer and left the last event of a task unsent.
         let (journalled, journalled_rx) = tokio::sync::watch::channel(0_u64);
         let journalled = Arc::new(journalled);
-        if let Some(journal) = journal {
-            let mut journal_receiver = events.subscribe();
-            let journalled = Arc::clone(&journalled);
-            tokio::spawn(async move {
-                while let Ok(event) = journal_receiver.recv().await {
-                    if let Ok(sequence) = journal.record(&event).await {
-                        let _ = journalled.send(sequence.max(0) as u64);
+        let audit_state = Arc::clone(&state);
+        let journal_state = Arc::clone(&state);
+        let notifications = notifications.clone();
+        let journalled_for_worker = Arc::clone(&journalled);
+        tokio::spawn(async move {
+            while let Some(event) = event_rx.recv().await {
+                if let Some(journal) = journal_state.lock().await.journal.clone() {
+                    match journal.record(&event).await {
+                        Ok(sequence) => {
+                            let _ = journalled_for_worker.send(sequence.max(0) as u64);
+                        }
+                        Err(error) => {
+                            Self::report_persistence_error(
+                                &journal_state,
+                                "journal",
+                                error.to_string(),
+                            )
+                            .await;
+                        }
                     }
                 }
-            });
-        }
-        let audit_state = Arc::clone(&state);
-        let mut audit_receiver = events.subscribe();
-        tokio::spawn(async move {
-            while let Ok(event) = audit_receiver.recv().await {
                 Self::record_audit_for_event(&audit_state, &event).await;
+                let _ = notifications.send(event);
             }
         });
         let worker_state = Arc::clone(&state);
@@ -197,8 +216,42 @@ impl TaskCoordinator {
                 journalled: journalled_rx,
                 journalled_tx: journalled,
             },
-            event_rx,
+            notification_rx,
         )
+    }
+
+    async fn report_persistence_error(
+        state: &Arc<Mutex<CoordinatorState>>,
+        source: &str,
+        error: String,
+    ) {
+        let message = format!("{source}: {error}");
+        let notifications = {
+            let mut state_guard = state.lock().await;
+            state_guard.persistence_error = Some(message);
+            state_guard.notifications.clone()
+        };
+        let _ = notifications.send(CoreEvent::EventPersistenceFailed {
+            source: source.to_owned(),
+            error,
+        });
+    }
+
+    /// Возвращает последнюю ошибку обязательной записи событий.
+    pub async fn persistence_error(&self) -> Option<String> {
+        self.state.lock().await.persistence_error.clone()
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn record_test_audit_failure(&self) {
+        Self::record_audit(
+            &self.state,
+            crate::audit::AuditKind::Failure,
+            "",
+            "invalid",
+            [],
+        )
+        .await;
     }
 
     // `SendError` по контракту tokio возвращает вызывающему саму неотправленную
@@ -226,15 +279,27 @@ impl TaskCoordinator {
         let sequence = state_guard.audit.records().len() as u64;
         let record = match crate::audit::AuditRecord::new(sequence, event_id, kind, actor, fields) {
             Ok(record) => record,
-            Err(_) => return,
+            Err(error) => {
+                drop(state_guard);
+                Self::report_persistence_error(state, "audit", error.to_string()).await;
+                return;
+            }
         };
-        let Ok(line) = record.to_json_line() else {
-            return;
+        let line = match record.to_json_line() {
+            Ok(line) => line,
+            Err(error) => {
+                drop(state_guard);
+                Self::report_persistence_error(state, "audit", error.to_string()).await;
+                return;
+            }
         };
-        if state_guard.audit.append(record).is_ok() {
+        if let Err(error) = state_guard.audit.append(record) {
             drop(state_guard);
-            append_audit_line(&line);
+            Self::report_persistence_error(state, "audit", error.to_string()).await;
+            return;
         }
+        drop(state_guard);
+        append_audit_line(&line);
     }
 
     /// Shared confirm/reject path. Both are approval-gated, batched and

@@ -274,6 +274,11 @@ jobs:
       - name: Сборка Core для real-Core IPC E2E
         working-directory: .
         run: cargo build --locked --release -p evohime-core
+      - name: Обязательный real-Core IPC E2E
+        shell: pwsh
+        run: |
+          $env:EVOHIME_REQUIRE_REAL_CORE_E2E = '1'
+          npm exec vitest run tests/e2e/real-core.e2e.test.ts
       - name: Electron — адаптер, политика безопасности и IPC E2E
         run: npm test
       - name: Сборка Electron shell bundles

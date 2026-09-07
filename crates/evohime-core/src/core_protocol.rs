@@ -1099,6 +1099,10 @@ pub enum CoreEvent {
     TaskStopped {
         task_id: String,
     },
+    EventPersistenceFailed {
+        source: String,
+        error: String,
+    },
     ReviewProgress {
         review_id: String,
         stage: String,

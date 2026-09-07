@@ -8,8 +8,16 @@
 #![allow(ambiguous_glob_imports)]
 
 pub mod memory {
-    pub use crate::memory_store::*;
-    pub use crate::memory_views_and_adaptive_recall_store::*;
+    pub use crate::memory_store::{
+        install_schema, InsertSessionNoteInput, MemoryExtractionFields, MemoryPrivacy,
+        MemoryRecord, MemoryRecordInput, MemoryScope, MemoryStoreError, MemoryStoreSql,
+        MAX_CONTENT_BYTES, MAX_EVIDENCE_REFS, MAX_ID_BYTES, MAX_PROVENANCE_BYTES, MAX_QUERY_BYTES,
+        MAX_SCOPE_ID_BYTES, MAX_TIMESTAMP_BYTES, MAX_TITLE_BYTES, MAX_TTL_SECONDS,
+    };
+    pub use crate::memory_views_and_adaptive_recall_store::{
+        install_schema as install_views_schema, load_view, save_recall, save_view, RecallInput,
+        RecallRecord, ViewInput, ViewRecord,
+    };
 }
 
 pub mod runs {

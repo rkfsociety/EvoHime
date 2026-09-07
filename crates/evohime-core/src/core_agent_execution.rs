@@ -6,7 +6,7 @@ impl ToolAgent {
         task_id: impl Into<String>,
         prompt: impl Into<String>,
         workspace_root: impl Into<std::path::PathBuf>,
-        events: &broadcast::Sender<CoreEvent>,
+        events: &EventSink,
     ) -> Result<String, AgentRunError> {
         self.run_once_with_cancellation(
             task_id,
@@ -24,7 +24,7 @@ impl ToolAgent {
         task_id: impl Into<String>,
         prompt: impl Into<String>,
         workspace_root: impl Into<std::path::PathBuf>,
-        events: &broadcast::Sender<CoreEvent>,
+        events: &EventSink,
         cancellation: CancellationToken,
         preferred_route: Option<String>,
     ) -> Result<String, AgentRunError> {
@@ -473,21 +473,23 @@ impl ToolAgent {
                         .map_err(|error| AgentRunError::Internal(error.to_string()))?;
                 }
             }
-            let _ = events.send(CoreEvent::ModelContext {
-                task_id: task_id.clone(),
-                workspace_path: context.workspace_root.display().to_string(),
-                model: effective_model.clone(),
-                system_prompt: system_prompt.clone(),
-                user_prompt: user_prompt.clone(),
-                tools: assembled
-                    .tool_specs
-                    .iter()
-                    .map(|spec| spec.function.name.clone())
-                    .collect(),
-                estimated_tokens: assembled.ledger().estimated_prompt_tokens as usize,
-                context_limit_tokens: assembled.plan.profile.hard_limit_tokens as usize,
-                context: Some(Box::new(assembled.projection())),
-            });
+            let _ = events
+                .send(CoreEvent::ModelContext {
+                    task_id: task_id.clone(),
+                    workspace_path: context.workspace_root.display().to_string(),
+                    model: effective_model.clone(),
+                    system_prompt: system_prompt.clone(),
+                    user_prompt: user_prompt.clone(),
+                    tools: assembled
+                        .tool_specs
+                        .iter()
+                        .map(|spec| spec.function.name.clone())
+                        .collect(),
+                    estimated_tokens: assembled.ledger().estimated_prompt_tokens as usize,
+                    context_limit_tokens: assembled.plan.profile.hard_limit_tokens as usize,
+                    context: Some(Box::new(assembled.projection())),
+                })
+                .await;
             if let Some(refusal) = assembled.plan.unavailable.as_ref() {
                 // Отказ сборки — терминальный результат, а не обрыв ответа:
                 // model call не выполняется и не повторяется автоматически.
@@ -558,34 +560,36 @@ impl ToolAgent {
                     reroutes_used = reroutes_used.saturating_add(1);
                 }
             }
-            let _ = events.send(CoreEvent::RoutingTrace {
-                task_id: task_id.clone(),
-                trace: routing_success_trace(RoutingSuccessInput {
-                    run_id: &task_id,
-                    selected_route: &provenance_result.result.selected_route,
-                    fallback_count: provenance_result.result.fallback_chain.len(),
-                    estimated_input_tokens: assembled.ledger().estimated_prompt_tokens,
-                    profile_version: &assembled.ledger().profile_version,
-                    context_ledger_hash: &assembled.ledger().context_ledger_hash,
-                    classification: task_class,
-                    decision: provenance_result.result.decision.as_ref(),
-                    snapshot_hash: provenance_result.result.snapshot_hash.as_deref(),
-                    attempt_id: provenance_result
-                        .result
-                        .attempt_trace
-                        .as_ref()
-                        .and_then(|trace| trace.attempts.last())
-                        .map(|attempt| attempt.attempt_id)
-                        .unwrap_or(0),
-                    now_ms: provenance_result
-                        .result
-                        .attempt_trace
-                        .as_ref()
-                        .and_then(|trace| trace.attempts.last())
-                        .map(|attempt| attempt.now_ms)
-                        .unwrap_or_else(task_memory::now_millis),
-                }),
-            });
+            let _ = events
+                .send(CoreEvent::RoutingTrace {
+                    task_id: task_id.clone(),
+                    trace: routing_success_trace(RoutingSuccessInput {
+                        run_id: &task_id,
+                        selected_route: &provenance_result.result.selected_route,
+                        fallback_count: provenance_result.result.fallback_chain.len(),
+                        estimated_input_tokens: assembled.ledger().estimated_prompt_tokens,
+                        profile_version: &assembled.ledger().profile_version,
+                        context_ledger_hash: &assembled.ledger().context_ledger_hash,
+                        classification: task_class,
+                        decision: provenance_result.result.decision.as_ref(),
+                        snapshot_hash: provenance_result.result.snapshot_hash.as_deref(),
+                        attempt_id: provenance_result
+                            .result
+                            .attempt_trace
+                            .as_ref()
+                            .and_then(|trace| trace.attempts.last())
+                            .map(|attempt| attempt.attempt_id)
+                            .unwrap_or(0),
+                        now_ms: provenance_result
+                            .result
+                            .attempt_trace
+                            .as_ref()
+                            .and_then(|trace| trace.attempts.last())
+                            .map(|attempt| attempt.now_ms)
+                            .unwrap_or_else(task_memory::now_millis),
+                    }),
+                })
+                .await;
             let result = provenance_result.result.result;
             if let Some(usage) = result.usage.as_ref() {
                 // Фактический usage провайдера обновляет диагностику оценки и
@@ -695,10 +699,12 @@ impl ToolAgent {
             if !tool_calls.is_empty() {
                 let visible = visible_agent_text(&result.content);
                 if !visible.is_empty() {
-                    let _ = events.send(CoreEvent::AssistantDelta {
-                        task_id: task_id.clone(),
-                        content: visible.into_owned(),
-                    });
+                    let _ = events
+                        .send(CoreEvent::AssistantDelta {
+                            task_id: task_id.clone(),
+                            content: visible.into_owned(),
+                        })
+                        .await;
                 }
             }
             let mut duplicate_tool_call = None;
@@ -798,10 +804,12 @@ impl ToolAgent {
                         missing.join(", ")
                     );
                     self.persist_lesson(&task_id, &context.workspace_root).await;
-                    let _ = events.send(CoreEvent::TaskFailed {
-                        task_id,
-                        error: message.clone(),
-                    });
+                    let _ = events
+                        .send(CoreEvent::TaskFailed {
+                            task_id,
+                            error: message.clone(),
+                        })
+                        .await;
                     return Ok(message);
                 }
                 let mut final_message = strip_legacy_function_blocks(&result.content);
@@ -882,10 +890,12 @@ impl ToolAgent {
                     }
                 }
                 self.persist_lesson(&task_id, &context.workspace_root).await;
-                let _ = events.send(CoreEvent::TaskCompleted {
-                    task_id: task_id.clone(),
-                    final_message: final_message.clone(),
-                });
+                let _ = events
+                    .send(CoreEvent::TaskCompleted {
+                        task_id: task_id.clone(),
+                        final_message: final_message.clone(),
+                    })
+                    .await;
                 // Extraction runs after the answer has already been sent, so
                 // it adds nothing to the turn's latency and cannot fail it.
                 self.run_memory_extraction(
@@ -905,10 +915,12 @@ impl ToolAgent {
             for call in tool_calls {
                 let hook_sequence = observability_sequence;
                 observability_sequence = observability_sequence.saturating_add(1);
-                let _ = events.send(CoreEvent::ToolStarted {
-                    task_id: task_id.clone(),
-                    tool_name: call.name.clone(),
-                });
+                let _ = events
+                    .send(CoreEvent::ToolStarted {
+                        task_id: task_id.clone(),
+                        tool_name: call.name.clone(),
+                    })
+                    .await;
                 write_model_trace(
                     "tool.started",
                     serde_json::json!({
@@ -933,11 +945,13 @@ impl ToolAgent {
                     input = match resolve_model_mcp_input(&self.workflow_registry, input) {
                         Ok(value) => value,
                         Err(error) => {
-                            let _ = events.send(CoreEvent::ToolOutput {
-                                task_id: task_id.clone(),
-                                tool_name: call.name.clone(),
-                                output: error,
-                            });
+                            let _ = events
+                                .send(CoreEvent::ToolOutput {
+                                    task_id: task_id.clone(),
+                                    tool_name: call.name.clone(),
+                                    output: error,
+                                })
+                                .await;
                             continue;
                         }
                     };
@@ -1094,14 +1108,16 @@ impl ToolAgent {
                                 )
                             } else {
                                 let receiver = self.approvals.register(approval_id).await;
-                                let _ = events.send(CoreEvent::ApprovalRequired {
-                                    task_id: task_id.clone(),
-                                    approval_id: approval_id.to_string(),
-                                    tool_name: tool.clone(),
-                                    permission: format!("{permission:?}"),
-                                    scope: scope.clone(),
-                                    preview: preview.clone(),
-                                });
+                                let _ = events
+                                    .send(CoreEvent::ApprovalRequired {
+                                        task_id: task_id.clone(),
+                                        approval_id: approval_id.to_string(),
+                                        tool_name: tool.clone(),
+                                        permission: format!("{permission:?}"),
+                                        scope: scope.clone(),
+                                        preview: preview.clone(),
+                                    })
+                                    .await;
                                 let granted = tokio::select! {
                                     _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
                                     result = receiver => result.unwrap_or(false),
@@ -1206,11 +1222,13 @@ impl ToolAgent {
                         "<sensitive_data_blocked>".into()
                     }
                 };
-                let _ = events.send(CoreEvent::ToolOutput {
-                    task_id: task_id.clone(),
-                    tool_name: call.name.clone(),
-                    output: guarded_output.clone(),
-                });
+                let _ = events
+                    .send(CoreEvent::ToolOutput {
+                        task_id: task_id.clone(),
+                        tool_name: call.name.clone(),
+                        output: guarded_output.clone(),
+                    })
+                    .await;
                 if let Some(journal) = &self.journal {
                     let _ = journal
                         .record_audit(
@@ -1458,10 +1476,12 @@ impl ToolAgent {
                         ],
                     );
                     self.persist_lesson(&task_id, &context.workspace_root).await;
-                    let _ = events.send(CoreEvent::TaskFailed {
-                        task_id: task_id.clone(),
-                        error: message.clone(),
-                    });
+                    let _ = events
+                        .send(CoreEvent::TaskFailed {
+                            task_id: task_id.clone(),
+                            error: message.clone(),
+                        })
+                        .await;
                     return Ok(message);
                 }
             }
@@ -1480,10 +1500,12 @@ impl ToolAgent {
             ],
         );
         self.persist_lesson(&task_id, &context.workspace_root).await;
-        let _ = events.send(CoreEvent::TaskFailed {
-            task_id,
-            error: message.clone(),
-        });
+        let _ = events
+            .send(CoreEvent::TaskFailed {
+                task_id,
+                error: message.clone(),
+            })
+            .await;
         Ok(message)
     }
 }

@@ -176,7 +176,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = journal {
                 let _ = journal.record(&event).await;
             }
-            let _ = events.send(event);
+            let _ = events.send(event).await;
             let _ = reply.send(result);
         }
         CoreCommand::TeamCoordinationPolicies {
@@ -292,7 +292,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = journal {
                 let _ = journal.record(&event).await;
             }
-            let _ = events.send(event);
+            let _ = events.send(event).await;
             let _ = reply.send(result);
         }
         CoreCommand::TypedAgentHandoffContract {
@@ -371,7 +371,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = journal {
                 let _ = journal.record(&event).await;
             }
-            let _ = events.send(event);
+            let _ = events.send(event).await;
             let _ = reply.send(result);
         }
         CoreCommand::SchemaDrivenAgentConfiguration {
@@ -437,7 +437,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = journal {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         CoreCommand::ExperienceReplayLibrary {
@@ -483,7 +483,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = journal {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         _ => unreachable!("command routed to the wrong coordinator domain"),

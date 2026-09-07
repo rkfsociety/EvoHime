@@ -193,24 +193,33 @@ impl EventJournal {
         query: &str,
         filters: crate::workspace_rag::QueryFilters,
         hybrid: bool,
-        progress: impl FnMut(crate::workspace_rag::RetrievalProgress),
+        progress: impl FnMut(crate::workspace_rag::RetrievalProgress) + Send + 'static,
     ) -> Result<crate::workspace_rag::SearchResult, crate::workspace_rag::RagError> {
-        let database = self.database.lock().await;
-        crate::workspace_rag::search_workspace_with_progress(
-            crate::workspace_rag::SearchWorkspaceInput {
-                connection: database.connection(),
-                workspace_root,
-                query,
-                filters,
-                limits: &crate::workspace_rag::RetrievalLimits::default(),
-                hybrid: &crate::workspace_rag::HybridConfig {
-                    enabled: hybrid,
-                    ..Default::default()
+        let database_path = self.database_path.as_ref().clone();
+        let workspace_root = workspace_root.to_path_buf();
+        let query = query.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let database = LocalDatabase::open(database_path).map_err(|error| {
+                crate::workspace_rag::RagError::InvalidConfig(error.to_string())
+            })?;
+            crate::workspace_rag::search_workspace_with_progress(
+                crate::workspace_rag::SearchWorkspaceInput {
+                    connection: database.connection(),
+                    workspace_root: &workspace_root,
+                    query: &query,
+                    filters,
+                    limits: &crate::workspace_rag::RetrievalLimits::default(),
+                    hybrid: &crate::workspace_rag::HybridConfig {
+                        enabled: hybrid,
+                        ..Default::default()
+                    },
+                    loop_config: &crate::workspace_rag::LoopConfig::default(),
+                    progress,
                 },
-                loop_config: &crate::workspace_rag::LoopConfig::default(),
-                progress,
-            },
-        )
+            )
+        })
+        .await
+        .map_err(|error| crate::workspace_rag::RagError::InvalidConfig(error.to_string()))?
     }
 
     pub async fn build_workspace_evidence_context(

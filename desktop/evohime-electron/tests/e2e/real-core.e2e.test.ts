@@ -30,6 +30,13 @@ function findCoreExecutable(): string | null {
 }
 
 const coreExecutable = findCoreExecutable()
+const requireRealCoreE2E = process.env['EVOHIME_REQUIRE_REAL_CORE_E2E'] === '1'
+if (requireRealCoreE2E && (process.platform !== 'win32' || coreExecutable === null)) {
+  throw new Error(
+    'real-Core E2E is required, but the Windows Core executable was not found ' +
+      '(platform=' + process.platform + ', path=' + (coreExecutable ?? 'missing') + ')'
+  )
+}
 const CORE_STARTUP_TIMEOUT_MS = 60_000
 
 let core: ChildProcess | null = null

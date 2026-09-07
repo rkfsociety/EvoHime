@@ -114,9 +114,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         .create_database_backup_with_cancel(
                             std::path::Path::new(&destination_path),
                             env!("CARGO_PKG_VERSION"),
-                            |item| {
+                            move |item| {
                                 let _ = progress.send(item.clone());
-                                let _ = events.send(CoreEvent::StorageProgress {
+                                let _ = events.blocking_send(CoreEvent::StorageProgress {
                                     operation_id: operation_for_events.clone(),
                                     progress: item,
                                 });
@@ -266,9 +266,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             std::path::Path::new(&backup_path),
                             &safety_path,
                             env!("CARGO_PKG_VERSION"),
-                            |item| {
+                            move |item| {
                                 let _ = progress.send(item.clone());
-                                let _ = events.send(CoreEvent::StorageProgress {
+                                let _ = events.blocking_send(CoreEvent::StorageProgress {
                                     operation_id: operation_for_events.clone(),
                                     progress: item,
                                 });

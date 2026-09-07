@@ -2,7 +2,9 @@
 
 mod core_prelude;
 pub(crate) use core_prelude::*;
-pub use core_prelude::{CoreVersion, AGENT_IDENTITY_PROMPT, DEFAULT_TASK_TIMEOUT_SECONDS};
+pub use core_prelude::{
+    CoreVersion, EventSink, AGENT_IDENTITY_PROMPT, DEFAULT_TASK_TIMEOUT_SECONDS,
+};
 
 pub(crate) mod adaptive_tool_catalog;
 pub(crate) mod approval_policy_profiles;

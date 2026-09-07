@@ -28,6 +28,23 @@ bounded-context фасады в `src/domains.rs`. Все исторически�
 также использует этот batch-путь. Это устраняет лишние commit-затраты в связанных
 операциях ledger, не перенося runtime-состояние из Rust Core.
 
+## Durable event delivery
+
+События, которые обязаны попасть в журнал, проходят через bounded ожидающую
+`mpsc`-очередь `TaskCoordinator`, а не через lossy `broadcast`. Отдельный
+уведомительный `broadcast` получает событие только после journal write, поэтому
+`Lagged` у клиента не прерывает запись. Journal SQL, backup и restore выполняются
+в blocking worker; ошибка journal или audit удерживается в Core как
+`persistence_error` и публикуется событием `EventPersistenceFailed`.
+
+Добавлены проверки очереди размера 1 с потоком событий, задержкой чтения и
+финальным `task.completed`, а также проверка явного уведомления об ошибке audit.
+В Electron bridge крупные поля проверяются отдельным UTF-8 byte-bound helper,
+включая Unicode и превышение 512 KiB. В workflow `electron-heavy` real-Core IPC
+E2E запускается отдельным обязательным шагом после сборки Core с
+`EVOHIME_REQUIRE_REAL_CORE_E2E=1`; локальный режим по-прежнему может пропускать
+этот тест без собранного Windows Core.
+
 ## Продуктовая граница
 
 EvoHime — локальное Windows desktop-приложение с одним пользовательским

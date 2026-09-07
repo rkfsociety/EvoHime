@@ -3,7 +3,7 @@ pub(crate) use crate::*;
 mod tests {
     use super::{
         observability, recovery, visible_agent_text, AgentRunError, CoreCommand, CoreEvent,
-        CoreVersion, EventJournal, ModelAgent, TaskCoordinator, TaskExecutor, ToolAgent,
+        CoreVersion, EventJournal, EventSink, ModelAgent, TaskCoordinator, TaskExecutor, ToolAgent,
         DEFAULT_TASK_TIMEOUT_SECONDS,
     };
     use evohime_model_gateway::{
@@ -14,13 +14,14 @@ mod tests {
     use std::sync::Arc;
     use tokio_util::sync::CancellationToken;
 
-    #[test]
-    fn codex_jsonl_agent_message_becomes_chat_event() {
+    #[tokio::test]
+    async fn codex_jsonl_agent_message_becomes_chat_event() {
         let line = r#"{"type":"item.completed","item":{"type":"agent_message","text":"Готово"}}"#;
-        let (events, mut received) = tokio::sync::broadcast::channel(2);
-        super::emit_codex_event(line, &events, "task-1");
+        let (events, mut received) = tokio::sync::mpsc::channel(2);
+        let events = EventSink::new(events);
+        super::emit_codex_event(line, &events, "task-1").await;
         assert!(matches!(
-            received.try_recv().unwrap(),
+            received.recv().await.unwrap(),
             CoreEvent::AssistantDelta { task_id, content }
                 if task_id == "task-1" && content == "Готово"
         ));
@@ -143,7 +144,8 @@ mod tests {
     #[tokio::test]
     async fn routing_approval_waits_for_explicit_decision_and_times_out() {
         let registry = super::RoutingApprovalRegistry::default();
-        let (events, mut receiver) = tokio::sync::broadcast::channel(4);
+        let (event_tx, mut receiver) = tokio::sync::mpsc::channel(4);
+        let events = EventSink::new(event_tx);
         let cancellation = CancellationToken::new();
         let waiting = {
             let registry = registry.clone();
@@ -164,7 +166,7 @@ mod tests {
             })
         };
         assert!(
-            matches!(receiver.recv().await, Ok(CoreEvent::PendingRoutingApproval { route_id, .. }) if route_id == "cloud")
+            matches!(receiver.recv().await, Some(CoreEvent::PendingRoutingApproval { route_id, .. }) if route_id == "cloud")
         );
         assert!(registry.resolve("trace", true).await.is_ok());
         assert!(waiting.await.unwrap().unwrap());
@@ -390,7 +392,7 @@ mod tests {
             _task_id: String,
             _prompt: String,
             cancellation: CancellationToken,
-            _events: tokio::sync::broadcast::Sender<CoreEvent>,
+            _events: EventSink,
         ) -> BoxFuture<'static, Result<String, AgentRunError>> {
             Box::pin(async move {
                 cancellation.cancelled().await;
@@ -412,13 +414,15 @@ mod tests {
             task_id: String,
             _prompt: String,
             _cancellation: CancellationToken,
-            events: tokio::sync::broadcast::Sender<CoreEvent>,
+            events: EventSink,
         ) -> BoxFuture<'static, Result<String, AgentRunError>> {
             Box::pin(async move {
-                let _ = events.send(CoreEvent::ToolStarted {
-                    task_id: task_id.clone(),
-                    tool_name: "filesystem.list".into(),
-                });
+                let _ = events
+                    .send(CoreEvent::ToolStarted {
+                        task_id: task_id.clone(),
+                        tool_name: "filesystem.list".into(),
+                    })
+                    .await;
                 Ok("done".into())
             })
         }
@@ -483,7 +487,7 @@ mod tests {
                 _task_id: String,
                 _prompt: String,
                 _cancellation: CancellationToken,
-                _events: tokio::sync::broadcast::Sender<CoreEvent>,
+                _events: EventSink,
             ) -> BoxFuture<'static, Result<String, AgentRunError>> {
                 Box::pin(async move { Err(AgentRunError::Timeout(1)) })
             }
@@ -778,7 +782,8 @@ mod tests {
             vec!["hello ".into(), "from core".into()],
         )));
         let agent = ModelAgent::new(Arc::new(gateway));
-        let (events, mut receiver) = tokio::sync::broadcast::channel(8);
+        let (event_tx, mut receiver) = tokio::sync::mpsc::channel(8);
+        let events = EventSink::new(event_tx);
         let result = agent
             .run_once("task-2", "say hello", &events)
             .await
@@ -836,7 +841,8 @@ mod tests {
             Arc::new(ModelGateway::from_provider(Arc::new(provider))),
             Arc::new(ToolRegistry::bootstrap()),
         );
-        let (events, mut receiver) = tokio::sync::broadcast::channel(16);
+        let (event_tx, mut receiver) = tokio::sync::mpsc::channel(16);
+        let events = EventSink::new(event_tx);
         let result = agent
             .run_once("task-tools", "find needle", &workspace, &events)
             .await
@@ -1113,6 +1119,150 @@ mod tests {
             1
         );
         let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn bounded_event_queue_preserves_a_fast_stream_and_final_state() {
+        struct FloodExecutor;
+
+        impl TaskExecutor for FloodExecutor {
+            fn execute(
+                &self,
+                task_id: String,
+                _prompt: String,
+                _cancellation: CancellationToken,
+                events: EventSink,
+            ) -> BoxFuture<'static, Result<String, AgentRunError>> {
+                Box::pin(async move {
+                    for index in 0..64 {
+                        events
+                            .send(CoreEvent::ToolOutput {
+                                task_id: task_id.clone(),
+                                tool_name: "slow-store-probe".into(),
+                                output: format!("event-{index}"),
+                            })
+                            .await
+                            .expect("bounded queue remains connected");
+                    }
+                    events
+                        .send(CoreEvent::TaskCompleted {
+                            task_id,
+                            final_message: "final state".into(),
+                        })
+                        .await
+                        .expect("final event enters the durable queue");
+                    Ok("final state".into())
+                })
+            }
+        }
+
+        let path = std::env::temp_dir().join(format!(
+            "evohime-core-bounded-events-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (coordinator, _notifications) =
+            TaskCoordinator::new_with_journal(1, Some(Arc::new(FloodExecutor)), journal.clone());
+        let mut journalled = coordinator.journalled();
+        coordinator
+            .dispatch(CoreCommand::StartTask {
+                task_id: "task-bounded-events".into(),
+                prompt: "flood".into(),
+                workspace_root: None,
+                preferred_route_hint: None,
+            })
+            .await
+            .expect("task dispatches");
+
+        let replay = tokio::time::timeout(std::time::Duration::from_secs(60), async {
+            loop {
+                let replay = journal.replay(0, 256).await.expect("journal replays");
+                let has_all_outputs = replay
+                    .iter()
+                    .filter(|record| record.event_type == "tool.output")
+                    .count()
+                    >= 64;
+                let has_final_state = replay.iter().any(|record| {
+                    record.event_type == "task.completed"
+                        && String::from_utf8_lossy(&record.payload).contains("final state")
+                });
+                if has_all_outputs && has_final_state {
+                    break replay;
+                }
+                journalled
+                    .changed()
+                    .await
+                    .expect("journal worker remains alive");
+            }
+        })
+        .await
+        .expect("journal worker records the complete stream");
+        assert!(
+            replay
+                .iter()
+                .filter(|record| record.event_type == "tool.output")
+                .count()
+                >= 64,
+            "all events must reach the journal even when notifications lag"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn bounded_event_sink_waits_for_a_slow_durable_consumer() {
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+        let events = EventSink::new(sender);
+        events
+            .send(CoreEvent::TaskStarted {
+                task_id: "slow-consumer".into(),
+                prompt: "first".into(),
+            })
+            .await
+            .expect("first event enters the bounded queue");
+
+        let consumer = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            while receiver.recv().await.is_some() {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        });
+        let started = std::time::Instant::now();
+        events
+            .send(CoreEvent::TaskCompleted {
+                task_id: "slow-consumer".into(),
+                final_message: "second".into(),
+            })
+            .await
+            .expect("second event enters the bounded queue");
+        events
+            .send(CoreEvent::TaskStopped {
+                task_id: "slow-consumer".into(),
+            })
+            .await
+            .expect("third event waits for durable consumer capacity");
+        assert!(
+            started.elapsed() >= std::time::Duration::from_millis(40),
+            "a full queue must apply backpressure instead of dropping the event"
+        );
+        drop(events);
+        consumer.await.expect("slow consumer completes");
+    }
+
+    #[tokio::test]
+    async fn persistence_failure_is_retained_and_not_silent() {
+        let (coordinator, mut notifications) = TaskCoordinator::new(2);
+        coordinator.record_test_audit_failure().await;
+
+        let event = notifications.recv().await.expect("failure notification");
+        assert!(matches!(
+            event,
+            CoreEvent::EventPersistenceFailed { source, .. } if source == "audit"
+        ));
+        assert!(coordinator
+            .persistence_error()
+            .await
+            .is_some_and(|error| error.starts_with("audit:")));
     }
 
     #[test]

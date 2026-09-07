@@ -23,10 +23,6 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             {
                 return;
             }
-            let _ = state_guard.events.send(CoreEvent::TaskStarted {
-                task_id: task_id.clone(),
-                prompt: prompt.clone(),
-            });
             let events = state_guard.events.clone();
             let executor = state_guard.executor.clone();
             let journal = state_guard.journal.clone();
@@ -77,13 +73,23 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 }
             }
             drop(state_guard);
+            let _ = events
+                .send(CoreEvent::TaskStarted {
+                    task_id: task_id.clone(),
+                    prompt: prompt.clone(),
+                })
+                .await;
             let Some(background_permit) = state.lock().await.background_tasks.try_acquire() else {
                 let mut state_guard = state.lock().await;
                 state_guard.tasks.remove(&task_id);
-                let _ = state_guard.events.send(CoreEvent::TaskFailed {
-                    task_id,
-                    error: "background task capacity is exhausted".into(),
-                });
+                let events = state_guard.events.clone();
+                drop(state_guard);
+                let _ = events
+                    .send(CoreEvent::TaskFailed {
+                        task_id,
+                        error: "background task capacity is exhausted".into(),
+                    })
+                    .await;
                 return;
             };
             tokio::spawn(async move {
@@ -105,19 +111,27 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             let warning = recovery.warning.unwrap_or_else(|| {
                                 "checkpoint recovery requires explicit reconciliation".into()
                             });
-                            let _ = state_guard.events.send(CoreEvent::TaskFailed {
-                                task_id,
-                                error: warning,
-                            });
+                            let events = state_guard.events.clone();
+                            drop(state_guard);
+                            let _ = events
+                                .send(CoreEvent::TaskFailed {
+                                    task_id,
+                                    error: warning,
+                                })
+                                .await;
                             return;
                         }
                         Err(error) => {
                             let mut state_guard = state.lock().await;
                             state_guard.tasks.remove(&task_id);
-                            let _ = state_guard.events.send(CoreEvent::TaskFailed {
-                                task_id,
-                                error: format!("task checkpoint recovery failed: {error}"),
-                            });
+                            let events = state_guard.events.clone();
+                            drop(state_guard);
+                            let _ = events
+                                .send(CoreEvent::TaskFailed {
+                                    task_id,
+                                    error: format!("task checkpoint recovery failed: {error}"),
+                                })
+                                .await;
                             return;
                         }
                         Ok(_) => {}
@@ -134,10 +148,14 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     {
                         let mut state_guard = state.lock().await;
                         state_guard.tasks.remove(&task_id);
-                        let _ = state_guard.events.send(CoreEvent::TaskFailed {
-                            task_id,
-                            error: format!("task checkpoint could not be persisted: {error}"),
-                        });
+                        let events = state_guard.events.clone();
+                        drop(state_guard);
+                        let _ = events
+                            .send(CoreEvent::TaskFailed {
+                                task_id,
+                                error: format!("task checkpoint could not be persisted: {error}"),
+                            })
+                            .await;
                         return;
                     }
                     if let Err(error) = journal
@@ -146,10 +164,16 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     {
                         let mut state_guard = state.lock().await;
                         state_guard.tasks.remove(&task_id);
-                        let _ = state_guard.events.send(CoreEvent::TaskFailed {
-                            task_id,
-                            error: format!("agent run could not acquire durable lease: {error}"),
-                        });
+                        let events = state_guard.events.clone();
+                        drop(state_guard);
+                        let _ = events
+                            .send(CoreEvent::TaskFailed {
+                                task_id,
+                                error: format!(
+                                    "agent run could not acquire durable lease: {error}"
+                                ),
+                            })
+                            .await;
                         return;
                     }
                 }
@@ -257,11 +281,16 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             Ok(true) => Some((run.run_id.clone(), continuation_index + 1)),
                             Ok(false) => None,
                             Err(_) => {
-                                let _ = state.lock().await.events.send(CoreEvent::TaskFailed {
-                                    task_id: task_id.clone(),
-                                    error: "continuation budget or state rejected the next attempt"
-                                        .into(),
-                                });
+                                TaskCoordinator::emit_state_event(
+                                    &state,
+                                    CoreEvent::TaskFailed {
+                                        task_id: task_id.clone(),
+                                        error:
+                                            "continuation budget or state rejected the next attempt"
+                                                .into(),
+                                    },
+                                )
+                                .await;
                                 break;
                             }
                         }
@@ -441,22 +470,28 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             crate::continuation::Decision::Continue => "running",
                         };
                         if let Some(approval_id) = pending_approval_id {
-                            let _ = events.send(CoreEvent::ApprovalRequired {
-                                task_id: task_id.clone(),
-                                approval_id,
-                                tool_name: "continuation_gate".into(),
-                                permission: "continuation_gate".into(),
-                                scope: workspace_root.to_string_lossy().chars().take(256).collect(),
-                                preview: evohime_permissions::ApprovalPreview {
-                                    kind: "continuation_gate".into(),
-                                    summary: "Continuation gate requires user approval".into(),
-                                    command: None,
-                                    cwd: None,
-                                    path: None,
-                                    details: None,
-                                    truncated: false,
-                                },
-                            });
+                            let _ = events
+                                .send(CoreEvent::ApprovalRequired {
+                                    task_id: task_id.clone(),
+                                    approval_id,
+                                    tool_name: "continuation_gate".into(),
+                                    permission: "continuation_gate".into(),
+                                    scope: workspace_root
+                                        .to_string_lossy()
+                                        .chars()
+                                        .take(256)
+                                        .collect(),
+                                    preview: evohime_permissions::ApprovalPreview {
+                                        kind: "continuation_gate".into(),
+                                        summary: "Continuation gate requires user approval".into(),
+                                        command: None,
+                                        cwd: None,
+                                        path: None,
+                                        details: None,
+                                        truncated: false,
+                                    },
+                                })
+                                .await;
                         }
                         if next_state != "running" {
                             let _ = evohime_local_storage::domains::runs::transition_run(
@@ -521,31 +556,39 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 }
                 let mut state_guard = state.lock().await;
                 state_guard.tasks.remove(&task_id);
+                let events = state_guard.events.clone();
+                drop(state_guard);
                 if let Err(error) = &result {
-                    let _ = state_guard.events.send(CoreEvent::RoutingTrace {
-                        task_id: task_id.clone(),
-                        trace: routing_failure_trace(&run_id, error),
-                    });
+                    let _ = events
+                        .send(CoreEvent::RoutingTrace {
+                            task_id: task_id.clone(),
+                            trace: routing_failure_trace(&run_id, error),
+                        })
+                        .await;
                 }
                 match (result, heartbeat_error) {
                     (Ok(_), Some(error)) => {
-                        let _ = state_guard.events.send(CoreEvent::TaskFailed {
+                        let _ = events
+                            .send(CoreEvent::TaskFailed {
                                 task_id,
                                 error: format!(
-                                    "agent run lease was lost; outcome requires reconciliation: {error}"
-                                ),
-                            });
+                                "agent run lease was lost; outcome requires reconciliation: {error}"
+                            ),
+                            })
+                            .await;
                     }
                     (Ok(_), None) => {}
                     (Err(error), _) => {
                         let task_id = task_id;
                         if matches!(error, AgentRunError::Cancelled) {
-                            let _ = state_guard.events.send(CoreEvent::TaskStopped { task_id });
+                            let _ = events.send(CoreEvent::TaskStopped { task_id }).await;
                         } else {
-                            let _ = state_guard.events.send(CoreEvent::TaskFailed {
-                                task_id,
-                                error: error.to_string(),
-                            });
+                            let _ = events
+                                .send(CoreEvent::TaskFailed {
+                                    task_id,
+                                    error: error.to_string(),
+                                })
+                                .await;
                         }
                     }
                 }

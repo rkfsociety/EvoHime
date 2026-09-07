@@ -14,6 +14,7 @@ impl EventJournal {
             | CoreEvent::TaskCompleted { task_id, .. }
             | CoreEvent::TaskFailed { task_id, .. }
             | CoreEvent::TaskStopped { task_id } => task_id,
+            CoreEvent::EventPersistenceFailed { .. } => "event-persistence",
             CoreEvent::ReviewProgress { review_id, .. } => review_id,
             CoreEvent::RevisionProgress { revision_id, .. } => revision_id,
             CoreEvent::StorageProgress { operation_id, .. } => operation_id,
@@ -82,6 +83,7 @@ impl EventJournal {
             CoreEvent::TaskCompleted { .. } => "task.completed",
             CoreEvent::TaskFailed { .. } => "task.failed",
             CoreEvent::TaskStopped { .. } => "task.stopped",
+            CoreEvent::EventPersistenceFailed { .. } => "event.persistence_failed",
             CoreEvent::ReviewProgress { .. } => "review.progress",
             CoreEvent::RevisionProgress { .. } => "revision.progress",
             CoreEvent::StorageProgress { .. } => "storage.progress",
@@ -203,42 +205,61 @@ impl EventJournal {
                 )
             })
             .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
-        let database = self.database.lock().await;
-        let mut last_sequence = database.append_event(task_id, event_type, &payload)?;
-        if let Some((conversation_id, client_message_id, workspace_id)) =
-            evohime_local_storage::domains::audit::task_binding(database.connection(), task_id)?
-        {
-            for draft in projected {
-                let stored = evohime_local_storage::domains::audit::append_event(
+        let database_path = self.database_path.clone();
+        let task_id = task_id.to_owned();
+        let event_type = event_type.to_owned();
+        let event_type_for_sql = event_type.clone();
+        let sql_started = std::time::Instant::now();
+        let result = tokio::task::spawn_blocking(move || -> Result<i64, StorageError> {
+            let database = LocalDatabase::open(database_path.as_ref())?;
+            let mut last_sequence =
+                database.append_event(&task_id, &event_type_for_sql, &payload)?;
+            if let Some((conversation_id, client_message_id, workspace_id)) =
+                evohime_local_storage::domains::audit::task_binding(
                     database.connection(),
-                    evohime_local_storage::domains::audit::NewConversationEvent {
-                        conversation_id: &conversation_id,
-                        workspace_id: &workspace_id,
-                        kind: &draft.kind,
-                        category: &draft.category,
-                        authoritative_payload: &draft.authoritative_payload,
-                        renderer_payload: &draft.renderer_payload,
-                        correlation_id: Some(&client_message_id),
-                        causation_id: Some(&client_message_id),
-                        task_id: Some(task_id),
-                        run_id: Some(task_id),
-                        turn_id: Some(task_id),
-                        client_message_id: Some(&client_message_id),
-                        persistence_class: &draft.persistence_class,
-                        sensitivity: &draft.sensitivity,
-                        timestamp_ms: task_memory::now_millis() as i64,
-                    },
-                )?;
-                let renderer = crate::conversation_event_log::renderer_event(&stored)
-                    .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
-                last_sequence = database.append_event(
-                    task_id,
-                    "conversation.event",
-                    &serde_json::to_vec(&renderer)?,
-                )?;
+                    &task_id,
+                )?
+            {
+                for draft in projected {
+                    let stored = evohime_local_storage::domains::audit::append_event(
+                        database.connection(),
+                        evohime_local_storage::domains::audit::NewConversationEvent {
+                            conversation_id: &conversation_id,
+                            workspace_id: &workspace_id,
+                            kind: &draft.kind,
+                            category: &draft.category,
+                            authoritative_payload: &draft.authoritative_payload,
+                            renderer_payload: &draft.renderer_payload,
+                            correlation_id: Some(&client_message_id),
+                            causation_id: Some(&client_message_id),
+                            task_id: Some(&task_id),
+                            run_id: Some(&task_id),
+                            turn_id: Some(&task_id),
+                            client_message_id: Some(&client_message_id),
+                            persistence_class: &draft.persistence_class,
+                            sensitivity: &draft.sensitivity,
+                            timestamp_ms: task_memory::now_millis() as i64,
+                        },
+                    )?;
+                    let renderer = crate::conversation_event_log::renderer_event(&stored)
+                        .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
+                    last_sequence = database.append_event(
+                        &task_id,
+                        "conversation.event",
+                        &serde_json::to_vec(&renderer)?,
+                    )?;
+                }
             }
-        }
-        Ok(last_sequence)
+            Ok(last_sequence)
+        })
+        .await
+        .map_err(|error| StorageError::InvalidInput(format!("journal worker failed: {error}")))?;
+        tracing::debug!(
+            sql_ms = sql_started.elapsed().as_secs_f64() * 1000.0,
+            event_type,
+            "core event SQL write completed"
+        );
+        result
     }
 
     pub async fn record_tool_metric(&self, metric: ToolMetric<'_>) -> Result<i64, StorageError> {
@@ -345,28 +366,43 @@ impl EventJournal {
         &self,
         path: impl AsRef<std::path::Path>,
     ) -> Result<BackupPreview, StorageError> {
-        LocalDatabase::preview_backup(path)
+        let path = path.as_ref().to_owned();
+        tokio::task::spawn_blocking(move || LocalDatabase::preview_backup(path))
+            .await
+            .map_err(|error| {
+                StorageError::InvalidInput(format!("backup preview worker failed: {error}"))
+            })?
     }
 
     pub async fn create_database_backup(
         &self,
         path: impl AsRef<std::path::Path>,
         app_version: &str,
-        progress: impl FnMut(BackupProgress),
+        progress: impl FnMut(BackupProgress) + Send + 'static,
     ) -> Result<BackupResult, StorageError> {
-        let database = self.database.lock().await;
-        database.create_backup(path, app_version, progress)
+        let path = path.as_ref().to_owned();
+        let app_version = app_version.to_owned();
+        let database = Arc::clone(&self.database).lock_owned().await;
+        tokio::task::spawn_blocking(move || database.create_backup(path, &app_version, progress))
+            .await
+            .map_err(|error| StorageError::InvalidInput(format!("backup worker failed: {error}")))?
     }
 
     pub async fn create_database_backup_with_cancel(
         &self,
         path: impl AsRef<std::path::Path>,
         app_version: &str,
-        progress: impl FnMut(BackupProgress),
-        cancelled: impl FnMut() -> bool,
+        progress: impl FnMut(BackupProgress) + Send + 'static,
+        cancelled: impl FnMut() -> bool + Send + 'static,
     ) -> Result<BackupResult, StorageError> {
-        let database = self.database.lock().await;
-        database.create_backup_with_cancel(path, app_version, progress, cancelled)
+        let path = path.as_ref().to_owned();
+        let app_version = app_version.to_owned();
+        let database = Arc::clone(&self.database).lock_owned().await;
+        tokio::task::spawn_blocking(move || {
+            database.create_backup_with_cancel(path, &app_version, progress, cancelled)
+        })
+        .await
+        .map_err(|error| StorageError::InvalidInput(format!("backup worker failed: {error}")))?
     }
 
     pub async fn restore_database(
@@ -374,10 +410,17 @@ impl EventJournal {
         backup_path: impl AsRef<std::path::Path>,
         safety_path: impl AsRef<std::path::Path>,
         app_version: &str,
-        progress: impl FnMut(BackupProgress),
+        progress: impl FnMut(BackupProgress) + Send + 'static,
     ) -> Result<RestoreResult, StorageError> {
-        let mut database = self.database.lock().await;
-        database.restore_backup(backup_path, safety_path, app_version, progress)
+        let backup_path = backup_path.as_ref().to_owned();
+        let safety_path = safety_path.as_ref().to_owned();
+        let app_version = app_version.to_owned();
+        let mut database = Arc::clone(&self.database).lock_owned().await;
+        tokio::task::spawn_blocking(move || {
+            database.restore_backup(backup_path, safety_path, &app_version, progress)
+        })
+        .await
+        .map_err(|error| StorageError::InvalidInput(format!("restore worker failed: {error}")))?
     }
 
     pub async fn restore_database_with_cancel(
@@ -385,17 +428,24 @@ impl EventJournal {
         backup_path: impl AsRef<std::path::Path>,
         safety_path: impl AsRef<std::path::Path>,
         app_version: &str,
-        progress: impl FnMut(BackupProgress),
-        cancelled: impl FnMut() -> bool,
+        progress: impl FnMut(BackupProgress) + Send + 'static,
+        cancelled: impl FnMut() -> bool + Send + 'static,
     ) -> Result<RestoreResult, StorageError> {
-        let mut database = self.database.lock().await;
-        database.restore_backup_with_cancel(
-            backup_path,
-            safety_path,
-            app_version,
-            progress,
-            cancelled,
-        )
+        let backup_path = backup_path.as_ref().to_owned();
+        let safety_path = safety_path.as_ref().to_owned();
+        let app_version = app_version.to_owned();
+        let mut database = Arc::clone(&self.database).lock_owned().await;
+        tokio::task::spawn_blocking(move || {
+            database.restore_backup_with_cancel(
+                backup_path,
+                safety_path,
+                &app_version,
+                progress,
+                cancelled,
+            )
+        })
+        .await
+        .map_err(|error| StorageError::InvalidInput(format!("restore worker failed: {error}")))?
     }
 
     /// Bounded, read-only storage facts for diagnostics (Core Doctor).

@@ -1,5 +1,42 @@
 pub struct CoreVersion;
 
+/// Надёжный вход событий координатора.
+///
+/// broadcast подходит только для уведомления подписчиков: медленный
+/// подписчик может получить Lagged. Обязательные потребители получают
+/// события через bounded mpsc и поэтому оказывают обратное давление на
+/// producer до освобождения места в очереди.
+#[derive(Clone)]
+pub struct EventSink {
+    sender: tokio::sync::mpsc::Sender<crate::CoreEvent>,
+}
+
+impl EventSink {
+    pub(crate) fn new(sender: tokio::sync::mpsc::Sender<crate::CoreEvent>) -> Self {
+        Self { sender }
+    }
+
+    pub async fn send(&self, event: crate::CoreEvent) -> Result<(), &'static str> {
+        let queued_at = std::time::Instant::now();
+        let result = self
+            .sender
+            .send(event)
+            .await
+            .map_err(|_| "core event queue is closed");
+        tracing::debug!(
+            queue_wait_ms = queued_at.elapsed().as_secs_f64() * 1000.0,
+            "core event queue send completed"
+        );
+        result
+    }
+
+    pub(crate) fn blocking_send(&self, event: crate::CoreEvent) -> Result<(), &'static str> {
+        self.sender
+            .blocking_send(event)
+            .map_err(|_| "core event queue is closed")
+    }
+}
+
 use crate::recovery;
 
 /// Базовая identity-инструкция, добавляемая к каждому model context.

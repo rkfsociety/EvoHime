@@ -51,7 +51,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = state.lock().await.journal.clone() {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         CoreCommand::CodeAnchoredIntentMarkers {
@@ -97,7 +97,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = state.lock().await.journal.clone() {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         CoreCommand::AgentGitChangeSets {
@@ -154,7 +154,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = state.lock().await.journal.clone() {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         CoreCommand::PolicyAwareToolResultCache {
@@ -196,7 +196,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = state.lock().await.journal.clone() {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         CoreCommand::ArchitectEditorModelPipeline {
@@ -233,7 +233,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = state.lock().await.journal.clone() {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         CoreCommand::EventVisualizerRegistry {
@@ -270,7 +270,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = state.lock().await.journal.clone() {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         _ => unreachable!("command routed to the wrong coordinator domain"),

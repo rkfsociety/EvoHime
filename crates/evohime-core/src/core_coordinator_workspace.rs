@@ -39,7 +39,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     let progress_path = workspace_path.clone();
                     let summary = journal
                         .index_workspace_knowledge(&root, false, &cancellation, move |progress| {
-                            let _ = events.send(CoreEvent::WorkspaceIndexProgress {
+                            let _ = events.blocking_send(CoreEvent::WorkspaceIndexProgress {
                                 workspace_path: progress_path.clone(),
                                 progress,
                             });
@@ -106,7 +106,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     let progress_path = workspace_path.clone();
                     let summary = journal
                         .index_workspace_knowledge(&root, true, &cancellation, move |progress| {
-                            let _ = events.send(CoreEvent::WorkspaceIndexProgress {
+                            let _ = events.blocking_send(CoreEvent::WorkspaceIndexProgress {
                                 workspace_path: progress_path.clone(),
                                 progress,
                             });
@@ -184,10 +184,12 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         },
                         hybrid,
                         move |progress| {
-                            let _ = progress_sender.send(CoreEvent::WorkspaceRetrievalProgress {
-                                workspace_path: progress_workspace.clone(),
-                                progress,
-                            });
+                            let _ = progress_sender.blocking_send(
+                                CoreEvent::WorkspaceRetrievalProgress {
+                                    workspace_path: progress_workspace.clone(),
+                                    progress,
+                                },
+                            );
                         },
                     )
                     .await

@@ -31,7 +31,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = journal {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         CoreCommand::CodeDiagnosticsFeedbackLoop {
@@ -71,7 +71,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = journal {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         CoreCommand::WorkflowOptimizationLab {
@@ -114,7 +114,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = journal {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         CoreCommand::CoreTopicSubscriptionEventBus {
@@ -150,7 +150,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = journal {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         CoreCommand::DependencyAwareTaskGraph {
@@ -188,7 +188,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = journal {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         CoreCommand::DeclarativeAgentComponentRegistry {
@@ -226,7 +226,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = journal {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         CoreCommand::TypedContextReferences {
@@ -297,7 +297,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = journal {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         CoreCommand::SafeUiExtensionFramework {
@@ -366,7 +366,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             if let Some(journal) = journal {
                 let _ = journal.record(&event).await;
             }
-            let _ = state.lock().await.events.send(event);
+            TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
         _ => unreachable!("command routed to the wrong coordinator domain"),

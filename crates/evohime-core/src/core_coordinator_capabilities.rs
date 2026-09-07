@@ -511,11 +511,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         },
                     )
                     .await?;
-                let _ = state
-                    .lock()
-                    .await
-                    .events
-                    .send(CoreEvent::ChildWorkflowProjection {
+                TaskCoordinator::emit_state_event(
+                    &state,
+                    CoreEvent::ChildWorkflowProjection {
                         task_id: request.parent_task_id.clone(),
                         projection: crate::child_workflow::ChildProjection {
                             event_id: format!("{}:created", request.child_task_id),
@@ -530,7 +528,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             lease_live: false,
                             dead_letter: false,
                         },
-                    });
+                    },
+                )
+                .await;
                 TaskCoordinator::record_audit(
                     &state,
                     crate::audit::AuditKind::Evidence,
