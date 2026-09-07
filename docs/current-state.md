@@ -215,8 +215,10 @@ runtime переиспользует canonical hash, ограничивает г
 
 В текущем checkout реализован план 144:
 native package генерирует `evohime.components.json` для первоначальной поставки;
-каждый runtime-модуль имеет отдельную semver-версию и собственный Release
-`module-*` с manifest, размером, SHA-256, зависимостями и restart policy.
+каждый runtime-модуль имеет отдельную semver-версию и собственный versioned Release
+`module-<module>-v<semver>` с manifest, размером, SHA-256, зависимостями и restart policy.
+После успешной публикации старый Release этого модуля удаляется. Router сначала
+вычисляет изменённые пути и запускает только затронутые модульные workflows.
 Updater сравнивает версии module releases и скачивает только устаревшие модули.
 `installer` оставлен только для первоначальной установки или полного
 восстановления; общий component Release не используется.

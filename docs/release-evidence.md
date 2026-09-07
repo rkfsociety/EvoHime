@@ -12,7 +12,8 @@ output, transcripts, absolute paths и PII запрещены.
 Статус: `TECHNICAL_GATES_PASS / RELEASE_GREEN` для последнего успешного
 push-workflow; ручной полный workflow на текущем коммите ещё выполняется.
 
-Поставка разделена на постоянные module releases с тегами `module-*` и один
+Поставка разделена на versioned module releases с тегами
+`module-<module>-v<semver>` и один
 `installer` для первоначальной установки или полного восстановления.
 `installer` содержит только `EvoHime-Setup.exe` и `EvoHime-Setup.json`; бинарники
 и runtime публикуются только в собственных релизах модулей.
