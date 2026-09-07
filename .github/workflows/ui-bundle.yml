@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'desktop/evohime-electron/src/renderer/**'
+      - 'desktop/evohime-electron/tests/**'
       - 'desktop/evohime-electron/src/shared/**'
       - 'desktop/evohime-electron/package*.json'
       - 'desktop/evohime-electron/vite.config.*'
@@ -13,6 +14,7 @@ on:
   pull_request:
     paths:
       - 'desktop/evohime-electron/src/renderer/**'
+      - 'desktop/evohime-electron/tests/**'
       - 'desktop/evohime-electron/src/shared/**'
       - 'desktop/evohime-electron/package*.json'
       - 'desktop/evohime-electron/vite.config.*'

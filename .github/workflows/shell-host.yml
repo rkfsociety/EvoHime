@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'desktop/evohime-electron/src/main/**'
+      - 'desktop/evohime-electron/tests/**'
       - 'desktop/evohime-electron/src/preload/**'
       - 'desktop/evohime-electron/electron.vite.config.ts'
       - 'desktop/evohime-electron/electron-builder.yml'
@@ -14,6 +15,7 @@ on:
   pull_request:
     paths:
       - 'desktop/evohime-electron/src/main/**'
+      - 'desktop/evohime-electron/tests/**'
       - 'desktop/evohime-electron/src/preload/**'
       - 'desktop/evohime-electron/electron.vite.config.ts'
       - 'desktop/evohime-electron/electron-builder.yml'
