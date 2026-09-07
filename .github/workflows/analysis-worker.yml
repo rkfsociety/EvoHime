@@ -9,4 +9,4 @@ jobs:
   module:
     uses: ./.github/workflows/module-native.yml
     permissions: { contents: write }
-    with: { module: analysis-worker, package: evohime-supervisor, artifact: evohime-analysis-worker.exe, version_file: release-versions/analysis-worker.txt }
+    with: { module: analysis-worker, package: evohime-analysis-worker, artifact: evohime-analysis-worker.exe, version_file: release-versions/analysis-worker.txt }
