@@ -1,4 +1,4 @@
-import { existsSync, unlinkSync } from 'node:fs'
+import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 
@@ -89,6 +89,7 @@ export class UpdateService {
           phase: 'idle',
           message: 'Обновления не проверялись.',
           installedCommit: this.installedCommit()
+          , installedModules: this.installedModules()
         }
       : disabledUpdateStatus(deps.config.branch)
   }
@@ -701,6 +702,20 @@ export class UpdateService {
 
   private installedCommit(): string | null {
     return readBuildMarker(this.deps.config.installDirectory)?.commit ?? null
+  }
+
+  private installedModules(): Readonly<Record<string, string>> {
+    const path = join(this.deps.config.installDirectory, 'evohime.components.json')
+    try {
+      const value = JSON.parse(readFileSync(path, 'utf8')) as { components?: Array<{ id?: unknown; version?: unknown }> }
+      const result: Record<string, string> = {}
+      for (const component of value.components ?? []) {
+        if (typeof component.id === 'string' && typeof component.version === 'string') result[component.id] = component.version
+      }
+      return result
+    } catch {
+      return {}
+    }
   }
 
   private stagedMarker(): { readonly commit: string } | null {

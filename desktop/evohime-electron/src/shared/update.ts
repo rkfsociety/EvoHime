@@ -69,6 +69,8 @@ export interface UpdateStatus {
   readonly steps: readonly UpdateStep[]
   /** Commit currently installed, as recorded by the last successful build. */
   readonly installedCommit: string | null
+  /** Installed module versions read from the package manifest. */
+  readonly installedModules?: Readonly<Record<string, string>>
   /** Newest commit on the tracked branch, once a check succeeded. */
   readonly remoteCommit: string | null
   readonly branch: string
