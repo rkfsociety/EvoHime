@@ -1,6 +1,7 @@
 name: analysis-worker module
 on:
   workflow_call:
+  workflow_dispatch:
   pull_request:
     paths: ['crates/evohime-supervisor/**', 'release-versions/analysis-worker.txt', '.github/workflows/analysis-worker.yml', '.github/workflows/module-native.yml']
 jobs:

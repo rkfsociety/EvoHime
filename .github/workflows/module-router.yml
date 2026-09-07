@@ -66,63 +66,39 @@ jobs:
             "$($item.Key)=$value" >> $env:GITHUB_OUTPUT
           }
 
-  shell-host:
+  dispatch:
+    name: Запустить отдельные workflow модулей
     needs: changes
-    if: needs.changes.outputs.shell-host == 'true'
-    uses: ./.github/workflows/shell-host.yml
-    permissions: { contents: write }
-    secrets: inherit
-  ui-bundle:
-    needs: changes
-    if: needs.changes.outputs.ui-bundle == 'true'
-    uses: ./.github/workflows/ui-bundle.yml
-    permissions: { contents: write }
-    secrets: inherit
-  core:
-    needs: changes
-    if: needs.changes.outputs.core == 'true'
-    uses: ./.github/workflows/core.yml
-    permissions: { contents: write }
-    secrets: inherit
-  supervisor:
-    needs: changes
-    if: needs.changes.outputs.supervisor == 'true'
-    uses: ./.github/workflows/supervisor.yml
-    permissions: { contents: write }
-    secrets: inherit
-  cli:
-    needs: changes
-    if: needs.changes.outputs.cli == 'true'
-    uses: ./.github/workflows/cli.yml
-    permissions: { contents: write }
-    secrets: inherit
-  analysis-worker:
-    needs: changes
-    if: needs.changes.outputs.analysis-worker == 'true'
-    uses: ./.github/workflows/analysis-worker.yml
-    permissions: { contents: write }
-    secrets: inherit
-  listener:
-    needs: changes
-    if: needs.changes.outputs.listener == 'true'
-    uses: ./.github/workflows/listener-module.yml
-    permissions: { contents: write }
-    secrets: inherit
-  listener-runtime:
-    needs: changes
-    if: needs.changes.outputs.listener-runtime == 'true'
-    uses: ./.github/workflows/listener.yml
-    permissions: { contents: write }
-    secrets: inherit
-  transaction:
-    needs: changes
-    if: needs.changes.outputs.transaction == 'true'
-    uses: ./.github/workflows/transaction.yml
-    permissions: { contents: write }
-    secrets: inherit
-  verifier:
-    needs: changes
-    if: needs.changes.outputs.verifier == 'true'
-    uses: ./.github/workflows/verifier.yml
-    permissions: { contents: write }
-    secrets: inherit
+    runs-on: windows-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch selected module workflows
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REF: ${{ github.ref_name }}
+        run: |
+          $selected = @{
+            'shell-host' = '${{ needs.changes.outputs.shell-host }}'
+            'ui-bundle' = '${{ needs.changes.outputs.ui-bundle }}'
+            'core' = '${{ needs.changes.outputs.core }}'
+            'supervisor' = '${{ needs.changes.outputs.supervisor }}'
+            'cli' = '${{ needs.changes.outputs.cli }}'
+            'analysis-worker' = '${{ needs.changes.outputs.analysis-worker }}'
+            'listener' = '${{ needs.changes.outputs.listener }}'
+            'listener-runtime' = '${{ needs.changes.outputs.listener-runtime }}'
+            'transaction' = '${{ needs.changes.outputs.transaction }}'
+            'verifier' = '${{ needs.changes.outputs.verifier }}'
+          }
+          $workflowFiles = @{
+            'shell-host' = 'shell-host.yml'; 'ui-bundle' = 'ui-bundle.yml'; 'core' = 'core.yml'; 'supervisor' = 'supervisor.yml'; 'cli' = 'cli.yml'; 'analysis-worker' = 'analysis-worker.yml'; 'listener' = 'listener-module.yml'; 'listener-runtime' = 'listener.yml'; 'transaction' = 'transaction.yml'; 'verifier' = 'verifier.yml'
+          }
+          foreach ($module in $selected.Keys) {
+            if ($selected[$module] -ne 'true') { continue }
+            gh workflow run $workflowFiles[$module] --repo $env:REPOSITORY --ref $env:REF
+            if ($LASTEXITCODE -ne 0) { throw "Не удалось запустить workflow модуля $module." }
+            Write-Host "Запущен отдельный workflow: $module"
+          }
