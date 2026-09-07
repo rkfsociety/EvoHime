@@ -28,7 +28,7 @@ $manifest = New-NativePackageManifest -Architecture 'x64' -OsMinimum 'Windows 10
 $cargoProfile = if ($Configuration -eq 'Debug') { 'debug' } else { 'release' }
 $cargoArguments = @('build', '--locked')
 if ($Configuration -eq 'Release') { $cargoArguments += '--release' }
-$cargoArguments += @('-p', 'evohime-core', '-p', 'evohime-cli', '-p', 'evohime-supervisor', '-p', 'evohime-updater', '-p', 'evohime-receipts', '-p', 'evohime-listener')
+$cargoArguments += @('-p', 'evohime-core', '-p', 'evohime-cli', '-p', 'evohime-supervisor', '-p', 'evohime-updater', '-p', 'evohime-update-agent', '-p', 'evohime-receipts', '-p', 'evohime-listener')
 $electronBuilderArguments = @('electron-builder', '--dir', '--config', 'electron-builder.yml')
 if ($Version) {
     if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "Некорректная версия Electron package: $Version" }

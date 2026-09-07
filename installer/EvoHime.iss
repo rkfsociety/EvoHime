@@ -43,10 +43,10 @@ Name: "autoupdate"; Description: "Обновлять модули автомат
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autodesktop}\EvoHime"; Filename: "{app}\evohime-updater.exe"; Parameters: "--launch --install-dir \"{app}\""; WorkingDir: "{app}"; IconFilename: "{app}\resources\evohime-agent.ico"
+Name: "{autodesktop}\EvoHime"; Filename: "{app}\evohime-updater.exe"; Parameters: "--launch --install-dir ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\resources\evohime-agent.ico"
 
 [Run]
-Filename: "{app}\evohime-updater.exe"; Parameters: "--launch --install-dir \"{app}\""; Description: "Запустить EvoHime"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\evohime-updater.exe"; Parameters: "--launch --install-dir ""{app}"""; Description: "Запустить EvoHime"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 ; Рабочая копия исходников и собранный пакет принадлежат обновлению, а не
