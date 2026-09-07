@@ -22,6 +22,7 @@ jobs:
   listener:
     name: Listener — tests, build and release
     uses: ./.github/workflows/module-native.yml
+    permissions: { contents: write }
     with:
       module: listener
       package: evohime-listener
