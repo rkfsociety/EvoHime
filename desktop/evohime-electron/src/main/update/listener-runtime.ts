@@ -22,9 +22,9 @@ import { githubApiBase } from './commit-status'
  * пользователю, а решение принимает он.
  */
 
-// Listener has its own stable release channel. The manifest version is the
-// update identity; the tag is kept stable so clients can discover the latest
-// module without comparing repository commits.
+// listener-runtime has its own stable module release channel. The manifest
+// version is semver and is the update identity; the tag stays stable so the
+// client discovers the latest bundle without comparing repository commits.
 const RELEASE_TAG = 'module-listener-runtime'
 const MANIFEST_ASSET = 'listener-runtime.json'
 const STAGING_DIRECTORY = '.staging'

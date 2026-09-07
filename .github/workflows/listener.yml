@@ -58,7 +58,7 @@ jobs:
         with:
           name: evohime-listener-module
           path: listener-runtime-output
-      - name: Publish listener assets to common Release
+      - name: Publish listener-runtime assets to module Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

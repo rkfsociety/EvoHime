@@ -406,9 +406,10 @@ $moduleVersionPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'release-versi
 if (-not (Test-Path -LiteralPath $moduleVersionPath)) { throw "Версия модуля listener-runtime не найдена: $moduleVersionPath" }
 $moduleVersion = (Get-Content -LiteralPath $moduleVersionPath -Raw).Trim()
 if ($moduleVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Некорректная версия listener-runtime: $moduleVersion" }
-$version = "listener-runtime-$moduleVersion"
+$version = $moduleVersion
 $manifest = [ordered]@{
     schema  = 1
+    module  = 'listener-runtime'
     version = $version
     abi     = [ordered]@{
         name                = $mirrored.name
