@@ -17,6 +17,26 @@ $artifactName = Split-Path -Leaf $artifactPath
 $hash = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $size = [int64](Get-Item -LiteralPath $artifactPath).Length
 $manifestPath = Join-Path $env:RUNNER_TEMP "$Module.manifest.json"
+$moduleDependencies = @{
+    'shell-host' = @('ui-bundle', 'core', 'supervisor', 'transaction', 'verifier')
+    'ui-bundle' = @()
+    'core' = @('supervisor')
+    'supervisor' = @('transaction', 'verifier')
+    'cli' = @('core')
+    'analysis-worker' = @('core')
+    'listener' = @('core', 'listener-runtime')
+    'transaction' = @()
+    'verifier' = @()
+    'listener-runtime' = @()
+}
+$moduleRestart = @{
+    'shell-host' = 'shell'; 'ui-bundle' = 'shell'; 'core' = 'core';
+    'supervisor' = 'supervisor'; 'cli' = 'none'; 'analysis-worker' = 'core';
+    'listener' = 'listener'; 'transaction' = 'transaction'; 'verifier' = 'none';
+    'listener-runtime' = 'listener'
+}
+$dependencies = if ($moduleDependencies.ContainsKey($Module)) { $moduleDependencies[$Module] } else { @() }
+$restart = if ($moduleRestart.ContainsKey($Module)) { $moduleRestart[$Module] } else { 'module' }
 $manifest = [ordered]@{
     schema = 'evohime.module-release.v1'
     module = $Module
@@ -25,8 +45,8 @@ $manifest = [ordered]@{
     size = $size
     sha256 = $hash
     release_tag = $tag
-    dependencies = @()
-    restart = 'module'
+    dependencies = $dependencies
+    restart = $restart
 }
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
 
