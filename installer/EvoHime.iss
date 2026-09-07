@@ -34,11 +34,6 @@ CloseApplications=yes
 RestartApplications=no
 CloseApplicationsFilter=EvoHime.exe
 
-[Tasks]
-; Установщик CI уже собран и проверен на зелёном коммите. Клиент скачивает
-; этот установщик из постоянного GitHub Release и применяет его до запуска Евы.
-Name: "autoupdate"; Description: "Обновлять модули автоматически из GitHub Release"; GroupDescription: "Обновления"
-
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
@@ -64,21 +59,16 @@ procedure WriteUpdateConfig();
 var
   Directory: String;
   Lines: TArrayOfString;
-  Enabled: String;
 begin
   Directory := ExpandConstant('{localappdata}\EvoHime');
   if not ForceDirectories(Directory) then
     exit;
 
-  if IsTaskSelected('autoupdate') then
-    Enabled := 'true'
-  else
-    Enabled := 'false';
-
   SetArrayLength(Lines, 9);
   Lines[0] := '{';
   Lines[1] := '  "version": 2,';
-  Lines[2] := '  "enabled": ' + Enabled + ',';
+  { Модульные обновления обязательны для установленного клиента. }
+  Lines[2] := '  "enabled": true,';
   Lines[3] := '  "repositoryUrl": "{#UpdateRepository}",';
   Lines[4] := '  "branch": "{#UpdateBranch}",';
   Lines[5] := '  "launchPolicy": "installer",';

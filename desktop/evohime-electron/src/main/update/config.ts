@@ -65,6 +65,8 @@ export interface ConfigInputs {
   readonly dataDirectory: string
   readonly executablePath: string
   readonly environment?: NodeJS.ProcessEnv
+  /** Packaged clients cannot disable the mandatory updater. */
+  readonly packaged?: boolean
   /** Injected in tests; production reads the config file from disk. */
   readonly readFile?: (path: string) => string | null
 }
@@ -91,14 +93,19 @@ export function loadUpdateConfig(inputs: ConfigInputs): UpdateConfig {
     // developers to opt into the local-build path explicitly.
     (configuredPolicy === 'build' ? 'installer' : configuredPolicy) ??
     'installer'
-  const enabled =
+  const requestedEnabled =
     normalizeBoolean(environment['EVOHIME_UPDATE_ENABLED']) ?? normalizeBoolean(file['enabled']) ?? true
+  // A packaged installation must always be able to receive security and
+  // compatibility updates. The override remains available to un-packaged
+  // development/test runs only.
+  const enabled = inputs.packaged === true ? true : requestedEnabled
+  const effectiveLaunchPolicy = inputs.packaged === true && launchPolicy === 'off' ? 'installer' : launchPolicy
 
   return {
     enabled,
     repositoryUrl,
     branch,
-    launchPolicy: enabled ? launchPolicy : 'off',
+    launchPolicy: enabled ? effectiveLaunchPolicy : 'off',
     checkIntervalMs: normalizeInterval(file['checkIntervalMinutes']),
     requireGreenCommit:
       normalizeBoolean(environment['EVOHIME_UPDATE_REQUIRE_GREEN']) ??

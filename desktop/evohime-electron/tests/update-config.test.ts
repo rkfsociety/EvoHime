@@ -12,11 +12,12 @@ import {
 
 const COMMIT = 'a'.repeat(40)
 
-function load(file: unknown, environment: NodeJS.ProcessEnv = {}) {
+function load(file: unknown, environment: NodeJS.ProcessEnv = {}, packaged = false) {
   return loadUpdateConfig({
     dataDirectory: 'C:\\data\\EvoHime',
     executablePath: 'C:\\Programs\\EvoHime\\EvoHime.exe',
     environment,
+    packaged,
     readFile: () => (file === undefined ? null : JSON.stringify(file))
   })
 }
@@ -62,6 +63,13 @@ describe('update config', () => {
 
     expect(config.enabled).toBe(false)
     expect(config.launchPolicy).toBe('off')
+  })
+
+  it('forces the updater on for packaged installations', () => {
+    const config = load({ enabled: false, launchPolicy: 'off' }, { EVOHIME_UPDATE_ENABLED: '0' }, true)
+
+    expect(config.enabled).toBe(true)
+    expect(config.launchPolicy).toBe('installer')
   })
 
   it('keeps a hostile config file from redirecting or bounding out the rebuild', () => {

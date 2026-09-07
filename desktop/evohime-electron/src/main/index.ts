@@ -121,7 +121,8 @@ if (process.argv.includes('--evohime-browser-backend')) {
 
     const updateConfig = loadUpdateConfig({
       dataDirectory: dataDirectory(),
-      executablePath: app.getPath('exe')
+      executablePath: app.getPath('exe'),
+      packaged: app.isPackaged
     })
     const updateHealthFile = join(updateConfig.stateDirectory, 'health.json')
     repair = new RepairService({
@@ -421,7 +422,8 @@ function observeAmbientEvent(eventType: string, payload: string): void {
 function createListenerRuntimeService(): ListenerRuntimeService {
   const config = loadUpdateConfig({
     dataDirectory: dataDirectory(),
-    executablePath: app.getPath('exe')
+    executablePath: app.getPath('exe'),
+    packaged: app.isPackaged
   })
   return new ListenerRuntimeService({
     toolsDirectory: join(dataDirectory(), 'tools', 'listener'),
@@ -443,7 +445,8 @@ function createListenerRuntimeService(): ListenerRuntimeService {
 function createUpdateService(): UpdateController {
   const config = loadUpdateConfig({
     dataDirectory: dataDirectory(),
-    executablePath: app.getPath('exe')
+    executablePath: app.getPath('exe'),
+    packaged: app.isPackaged
   })
   const enabled = config.enabled && app.isPackaged
   if (enabled) {
