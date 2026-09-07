@@ -203,38 +203,20 @@ export class UpdateService {
             checkedAtMs: this.time()
           })
         }
-        const apiBase = githubApiBase(config.repositoryUrl)
-        if (!apiBase) {
+        if (Object.keys(this.installedModules()).length === 0) {
           return this.patch({
-            phase: 'up-to-date',
-            message: 'Проверки CI-установщика недоступны вне GitHub-репозитория.',
-            remoteCommit: null,
+            phase: 'available',
+            message: 'Первоначальная установка требует installer release.',
+            remoteCommit: 'installer',
             checkedAtMs: this.time()
           })
         }
-        const token = await this.githubToken()
-        const published = await (this.deps.publishedInstallerCommit ?? readReleaseInstallerCommit)(
-          config.repositoryUrl,
-          config.branch,
-          token
-        )
-        if (config.requireGreenCommit) {
-          const state = await (this.deps.commitState ?? readCommitState)(apiBase, published, { token })
-          if (state !== 'success') {
-            this.deps.log('info', 'update.installer_not_green', { published, state })
-            return this.patch({
-              phase: 'up-to-date',
-              message: installerWaitingMessage(state),
-              remoteCommit: null,
-              checkedAtMs: this.time()
-            })
-          }
-        }
-
-        return this.checkCandidate({
-          commit: published,
-          message: 'Доступно обновление из опубликованного release.'
-        }, installedCommit)
+        return this.patch({
+          phase: 'up-to-date',
+          message: 'Все модули уже имеют актуальные версии.',
+          remoteCommit: null,
+          checkedAtMs: this.time()
+        })
       }
 
       const toolchain = await (this.deps.detect ?? detectToolchain)({})
@@ -848,18 +830,6 @@ function waitingMessage(tipState: CommitCheckState): string {
       // A cancelled or missing run is not a failure: the verdict simply never
       // arrived, and an unverified commit is not installed.
       return 'Проверки свежих коммитов не завершились — обновление отложено.'
-  }
-}
-
-/** The release manifest is authoritative, but its commit still needs green CI. */
-function installerWaitingMessage(state: CommitCheckState): string {
-  switch (state) {
-    case 'pending':
-      return 'Опубликованный установщик ожидает завершения проверок CI.'
-    case 'failure':
-      return 'Проверки CI опубликованного установщика завершились ошибкой — обновление отложено.'
-    default:
-      return 'Не удалось подтвердить проверки CI опубликованного установщика — обновление отложено.'
   }
 }
 
