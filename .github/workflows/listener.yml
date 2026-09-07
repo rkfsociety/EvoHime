@@ -67,7 +67,10 @@ jobs:
           $bundle = Join-Path $env:GITHUB_WORKSPACE 'listener-runtime-output'
           if (-not (Test-Path (Join-Path $bundle 'listener-runtime.json'))) { throw 'Listener manifest missing.' }
           gh release view $env:RELEASE_TAG 2>$null | Out-Null
-          if ($LASTEXITCODE -ne 0) { gh release create $env:RELEASE_TAG --title 'EvoHime — listener-runtime' --notes-file installer/listener-runtime-notes.md }
+          if ($LASTEXITCODE -ne 0) {
+            $version = (Get-Content -LiteralPath 'release-versions/listener-runtime.txt' -Raw).Trim()
+            gh release create $env:RELEASE_TAG --title "listener-runtime $version" --notes-file installer/listener-runtime-notes.md
+          }
           Get-ChildItem -LiteralPath $bundle -File | ForEach-Object {
             gh release upload $env:RELEASE_TAG $_.FullName --clobber
             if ($LASTEXITCODE -ne 0) { throw "Не удалось опубликовать $($_.Name)." }

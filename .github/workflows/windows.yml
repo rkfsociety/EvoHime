@@ -473,7 +473,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: installer
-      RELEASE_TITLE: EvoHime — установщик
+      RELEASE_TITLE: installer
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
