@@ -10,7 +10,7 @@ crates и npm-пакеты имеют license metadata, что lockfiles не и
 | --- | --- | --- | --- | --- | --- |
 | EvoHime bundled Rust dependencies | `Cargo.lock` | per-package metadata | crates.io package metadata | yes, as bundled code | `manifest.json` + release manifest |
 | EvoHime Electron production dependencies | `package-lock.json` | per-package metadata | npm package metadata | yes, as bundled code | `manifest.json` + release manifest |
-| listener runtime models/DLLs | release manifest | upstream license | `listener-runtime` release | optional | `listener-runtime.json` |
+| listener runtime models/DLLs | release manifest | upstream license | общий `installer` release | optional | `listener-runtime.json` |
 
 Перед installer release release manifest должен добавить точные artifact
 SHA-256 и ссылки на upstream license texts для listener-runtime и любого нового
