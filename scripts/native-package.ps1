@@ -100,6 +100,12 @@ function Write-ComponentManifest {
         [string]$Version = '0.1.0'
     )
     $versionRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'release-versions'
+    $dependencies = @{
+        'shell-host' = @('ui-bundle', 'core', 'supervisor', 'transaction', 'verifier')
+        'ui-bundle' = @(); 'core' = @('supervisor'); 'supervisor' = @('transaction', 'verifier')
+        'cli' = @('core'); 'analysis-worker' = @('core'); 'listener' = @('core', 'listener-runtime')
+        'transaction' = @(); 'verifier' = @()
+    }
     $componentFiles = @(
         @{ id = 'shell-host'; path = 'EvoHime.exe'; restart = 'shell' },
         @{ id = 'ui-bundle'; path = 'ui-bundle.zip'; restart = 'shell' },
@@ -125,7 +131,8 @@ function Write-ComponentManifest {
         [pscustomobject]@{
             id = $item.id; version = $moduleVersion; artifact = $item.path; path = $item.path
             size = [int64](Get-Item -LiteralPath $file).Length; sha256 = $hash
-            dependencies = @(); required = $true; protocol = 'desktop-ipc-v1'; restart = $item.restart
+            dependencies = if ($dependencies.ContainsKey($item.id)) { $dependencies[$item.id] } else { @() }
+            required = $true; protocol = 'desktop-ipc-v1'; restart = $item.restart
         }
     }
     [pscustomobject]@{
