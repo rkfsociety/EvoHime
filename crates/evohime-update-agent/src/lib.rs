@@ -21,6 +21,14 @@ pub struct UpdatePlan {
     pub modules: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct UpdaterStatus {
+    pub schema: &'static str,
+    pub phase: &'static str,
+    pub message: String,
+    pub modules: Vec<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct InstalledComponent {
     pub id: String,

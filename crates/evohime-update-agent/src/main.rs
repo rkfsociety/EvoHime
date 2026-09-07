@@ -1,6 +1,6 @@
 use evohime_update_agent::{
     select_outdated, validate_component_manifest, ComponentManifest, InstalledManifest,
-    ModuleRecord,
+    ModuleRecord, UpdaterStatus,
 };
 use std::{
     env, fs,
@@ -76,6 +76,12 @@ fn launch_shell(args: &[String]) -> ExitCode {
             return fail(format!("installation integrity check failed: {error}"));
         }
     }
+    write_status(
+        &install_dir,
+        "ready",
+        "Проверка модулей завершена.",
+        Vec::new(),
+    );
     let shell = install_dir.join("EvoHime.exe");
     if !shell.is_file() {
         return fail(format!("shell is missing: {}", shell.display()));
@@ -83,6 +89,22 @@ fn launch_shell(args: &[String]) -> ExitCode {
     match Command::new(shell).current_dir(&install_dir).spawn() {
         Ok(_) => ExitCode::SUCCESS,
         Err(error) => fail(error),
+    }
+}
+
+fn write_status(install_dir: &PathBuf, phase: &'static str, message: &str, modules: Vec<String>) {
+    let state = install_dir.join("update-state");
+    if fs::create_dir_all(&state).is_ok() {
+        let status = UpdaterStatus {
+            schema: "evohime.updater-status.v1",
+            phase,
+            message: message.to_owned(),
+            modules,
+        };
+        let path = state.join("updater.json");
+        if let Ok(value) = serde_json::to_vec_pretty(&status) {
+            let _ = fs::write(path, value);
+        }
     }
 }
 
