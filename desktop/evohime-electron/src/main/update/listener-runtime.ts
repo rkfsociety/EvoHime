@@ -22,7 +22,10 @@ import { githubApiBase } from './commit-status'
  * пользователю, а решение принимает он.
  */
 
-const RELEASE_TAG = 'listener-runtime'
+// Listener has its own stable release channel. The manifest version is the
+// update identity; the tag is kept stable so clients can discover the latest
+// module without comparing repository commits.
+const RELEASE_TAG = 'listener'
 const MANIFEST_ASSET = 'listener-runtime.json'
 const STAGING_DIRECTORY = '.staging'
 const MAX_MANIFEST_BYTES = 64 * 1024

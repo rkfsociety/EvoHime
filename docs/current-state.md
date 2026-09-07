@@ -63,7 +63,7 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 Полный ручной workflow с публикацией listener runtime запущен через GitHub
 Actions: [run 34034590713](https://github.com/rkfsociety/EvoHime/actions/runs/34034590713).
 
-Единственный постоянный опубликованный канал — [`installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer); он содержит установщик и модульные артефакты, включая listener runtime.
+Постоянные каналы поставки разделены по назначению: [`installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer) — первая установка, [`listener`](https://github.com/rkfsociety/EvoHime/releases/tag/listener) — отдельный модульный release listener runtime.
 Локально выполняются только быстрые проверки; полный acceptance-прогон Rust,
 Electron, native package и installer выполняется в GitHub Actions.
 

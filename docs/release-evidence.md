@@ -25,7 +25,7 @@ transaction/verify и `evohime.components.json`.
 | Push workflow | PASS — [run 34030005220](https://github.com/rkfsociety/EvoHime/actions/runs/34030005220) |
 | Полный ручной workflow | Выполняется — [run 34034590713](https://github.com/rkfsociety/EvoHime/actions/runs/34034590713) |
 | Постоянный installer | [release `installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer), опубликован 2026-08-14 |
-| Listener runtime | [release `listener-runtime`](https://github.com/rkfsociety/EvoHime/releases/tag/listener-runtime), опубликован 2026-08-21 |
+| Listener runtime | общий [release `installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer), публикуется как модульный артефакт |
 
 Локальная проверка этого обновления ограничена документационным тестом и
 `git diff --check`. Полный Rust/Electron/package/installer acceptance-прогон
