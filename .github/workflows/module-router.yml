@@ -32,6 +32,7 @@ jobs:
       listener-runtime: ${{ steps.select.outputs.listener-runtime }}
       transaction: ${{ steps.select.outputs.transaction }}
       verifier: ${{ steps.select.outputs.verifier }}
+      updater: ${{ steps.select.outputs.updater }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -57,11 +58,12 @@ jobs:
           $analysis = $all -or $core -or $supervisor -or (Has-Path { $_ -eq 'release-versions/analysis-worker.txt' -or $_ -eq '.github/workflows/analysis-worker.yml' })
           $transaction = $all -or $rustShared -or (Has-Path { $_ -like 'crates/evohime-updater/*' -or $_ -eq 'release-versions/transaction.txt' -or $_ -eq '.github/workflows/transaction.yml' })
           $verifier = $all -or $rustShared -or (Has-Path { $_ -like 'crates/evohime-receipts/*' -or $_ -eq 'release-versions/verifier.txt' -or $_ -eq '.github/workflows/verifier.yml' })
+          $updater = $all -or (Has-Path { $_ -like 'crates/evohime-update-agent/*' -or $_ -eq 'release-versions/updater.txt' -or $_ -eq '.github/workflows/update-agent.yml' })
           $listener = $all -or $core -or (Has-Path { $_ -like 'crates/evohime-listener/*' -or $_ -like 'crates/evohime-listener-*/*' -or $_ -eq 'release-versions/listener.txt' -or $_ -eq '.github/workflows/listener-module.yml' })
           $runtime = $all -or $listener -or (Has-Path { $_ -eq 'release-versions/listener-runtime.txt' -or $_ -eq 'scripts/build-listener-runtime.ps1' -or $_ -eq '.github/workflows/listener.yml' })
           $ui = $all -or $electronShared -or (Has-Path { $_ -like 'desktop/evohime-electron/src/renderer/*' -or $_ -like 'desktop/evohime-electron/vite.config.*' -or $_ -eq 'release-versions/ui-bundle.txt' -or $_ -eq '.github/workflows/ui-bundle.yml' })
           $shell = $all -or $electronShared -or $core -or $supervisor -or $transaction -or $verifier -or (Has-Path { $_ -like 'desktop/evohime-electron/src/main/*' -or $_ -like 'desktop/evohime-electron/src/preload/*' -or $_ -eq 'release-versions/shell-host.txt' -or $_ -eq '.github/workflows/shell-host.yml' })
-          foreach ($item in @{'shell-host'=$shell;'ui-bundle'=$ui;'core'=$core;'supervisor'=$supervisor;'cli'=$cli;'analysis-worker'=$analysis;'listener'=$listener;'listener-runtime'=$runtime;'transaction'=$transaction;'verifier'=$verifier}.GetEnumerator()) {
+          foreach ($item in @{'shell-host'=$shell;'ui-bundle'=$ui;'core'=$core;'supervisor'=$supervisor;'cli'=$cli;'analysis-worker'=$analysis;'listener'=$listener;'listener-runtime'=$runtime;'transaction'=$transaction;'verifier'=$verifier;'updater'=$updater}.GetEnumerator()) {
             $value = ([bool]$item.Value).ToString().ToLower()
             "$($item.Key)=$value" >> $env:GITHUB_OUTPUT
           }
@@ -92,9 +94,10 @@ jobs:
             'listener-runtime' = '${{ needs.changes.outputs.listener-runtime }}'
             'transaction' = '${{ needs.changes.outputs.transaction }}'
             'verifier' = '${{ needs.changes.outputs.verifier }}'
+            'updater' = '${{ needs.changes.outputs.updater }}'
           }
           $workflowFiles = @{
-            'shell-host' = 'shell-host.yml'; 'ui-bundle' = 'ui-bundle.yml'; 'core' = 'core.yml'; 'supervisor' = 'supervisor.yml'; 'cli' = 'cli.yml'; 'analysis-worker' = 'analysis-worker.yml'; 'listener' = 'listener-module.yml'; 'listener-runtime' = 'listener.yml'; 'transaction' = 'transaction.yml'; 'verifier' = 'verifier.yml'
+            'shell-host' = 'shell-host.yml'; 'ui-bundle' = 'ui-bundle.yml'; 'core' = 'core.yml'; 'supervisor' = 'supervisor.yml'; 'cli' = 'cli.yml'; 'analysis-worker' = 'analysis-worker.yml'; 'listener' = 'listener-module.yml'; 'listener-runtime' = 'listener.yml'; 'transaction' = 'transaction.yml'; 'verifier' = 'verifier.yml'; 'updater' = 'update-agent.yml'
           }
           foreach ($module in $selected.Keys) {
             if ($selected[$module] -ne 'true') { continue }

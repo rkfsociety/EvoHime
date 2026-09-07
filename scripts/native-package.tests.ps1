@@ -12,7 +12,7 @@ if ($manifest.components.cli -ne 'eva.exe') { throw 'CLI component is missing' }
 if ($manifest.components.supervisor -ne 'evohime-supervisor.exe') { throw 'supervisor component is missing' }
 if ($manifest.components.analysis_worker -ne 'evohime-analysis-worker.exe') { throw 'analysis worker component is missing' }
 if ($manifest.components.listener -ne 'evohime-listener.exe') { throw 'listener component is missing' }
-if ($manifest.components.updater -ne 'evohime-transaction.exe') { throw 'updater component is missing' }
+if ($manifest.components.updater -ne 'evohime-updater.exe') { throw 'updater component is missing' }
 if ($manifest.components.verifier -ne 'evohime-verify.exe') { throw 'verifier component is missing' }
 if ($manifest.components.ui -ne 'EvoHime.exe') { throw 'UI component is missing' }
 if ($manifest.components.browser_backend -ne 'EvoHime.exe') { throw 'browser backend component is missing' }
@@ -31,6 +31,7 @@ Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-supervisor.exe') -Valu
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-analysis-worker.exe') -Value 'analysis-worker'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-listener.exe') -Value 'listener'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-transaction.exe') -Value 'updater'
+Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-updater.exe') -Value 'update-agent'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-verify.exe') -Value 'verifier'
 Set-Content -LiteralPath (Join-Path $packageRoot 'ui-bundle.zip') -Value 'ui-archive-fixture'
 
@@ -44,7 +45,7 @@ $componentMarkerPath = Join-Path $packageRoot 'evohime.components.json'
 if (-not (Test-Path -LiteralPath $componentMarkerPath)) { throw 'component manifest was not written' }
 $componentMarker = Get-Content -LiteralPath $componentMarkerPath -Raw | ConvertFrom-Json
 if ($componentMarker.schema -ne 'evohime.component-manifest.v1') { throw 'component manifest schema mismatch' }
-if ($componentMarker.components.Count -ne 9) { throw 'component manifest inventory mismatch' }
+if ($componentMarker.components.Count -ne 10) { throw 'component manifest inventory mismatch' }
 if ($componentMarker.components[0].sha256.Length -ne 64) { throw 'component manifest hash is missing' }
 
 # Маркер сборки: без него клиент не знает своей версии и пересобирается зря.

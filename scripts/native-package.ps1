@@ -22,7 +22,7 @@ function New-NativePackageManifest {
             supervisor = 'evohime-supervisor.exe'
             analysis_worker = 'evohime-analysis-worker.exe'
             listener   = 'evohime-listener.exe'
-            updater    = 'evohime-transaction.exe'
+            updater    = 'evohime-updater.exe'
             verifier   = 'evohime-verify.exe'
         }
     }
@@ -104,7 +104,7 @@ function Write-ComponentManifest {
         'shell-host' = @('ui-bundle', 'core', 'supervisor', 'transaction', 'verifier')
         'ui-bundle' = @(); 'core' = @('supervisor'); 'supervisor' = @('transaction', 'verifier')
         'cli' = @('core'); 'analysis-worker' = @('core'); 'listener' = @('core', 'listener-runtime')
-        'transaction' = @(); 'verifier' = @()
+        'transaction' = @(); 'verifier' = @(); 'updater' = @()
     }
     $componentFiles = @(
         @{ id = 'shell-host'; path = 'EvoHime.exe'; restart = 'shell' },
@@ -115,6 +115,7 @@ function Write-ComponentManifest {
         @{ id = 'analysis-worker'; path = 'evohime-analysis-worker.exe'; restart = 'core' },
         @{ id = 'listener'; path = 'evohime-listener.exe'; restart = 'listener' },
         @{ id = 'transaction'; path = 'evohime-transaction.exe'; restart = 'transaction' },
+        @{ id = 'updater'; path = 'evohime-updater.exe'; restart = 'updater' },
         @{ id = 'verifier'; path = 'evohime-verify.exe'; restart = 'none' }
     )
     $components = foreach ($item in $componentFiles) {

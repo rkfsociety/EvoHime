@@ -27,12 +27,14 @@ $moduleDependencies = @{
     'transaction' = @()
     'verifier' = @()
     'listener-runtime' = @()
+    'updater' = @()
 }
 $moduleRestart = @{
     'shell-host' = 'shell'; 'ui-bundle' = 'shell'; 'core' = 'core';
     'supervisor' = 'supervisor'; 'cli' = 'none'; 'analysis-worker' = 'core';
     'listener' = 'listener'; 'transaction' = 'transaction'; 'verifier' = 'none';
     'listener-runtime' = 'listener'
+    'updater' = 'updater'
 }
 $dependencies = if ($moduleDependencies.ContainsKey($Module)) { $moduleDependencies[$Module] } else { @() }
 $restart = if ($moduleRestart.ContainsKey($Module)) { $moduleRestart[$Module] } else { 'module' }
@@ -63,6 +65,7 @@ $modulePaths = @{
     'listener' = @('crates/evohime-listener', 'crates/evohime-listener-ipc')
     'transaction' = @('crates/evohime-updater')
     'verifier' = @('crates/evohime-receipts')
+    'updater' = @('crates/evohime-update-agent')
 }
 $changes = if ($modulePaths.ContainsKey($Module)) { @(git log -5 --pretty=format:'- %s' -- $modulePaths[$Module] 2>$null) } else { @() }
 if ($changes.Count -eq 0) { $changes = @('- Обновлён состав поставки модуля и его проверенный бинарный артефакт.') }
@@ -80,6 +83,7 @@ $summaryText = if ($Summary) { $Summary } else {
         'listener' { 'Исполняемый listener для захвата аудио и обмена с Core по защищённому IPC.'; break }
         'transaction' { 'Worker транзакционного обновления: безопасная замена файлов, backup и rollback.'; break }
         'verifier' { 'Проверяющий worker целостности и контрактов поставляемых файлов.'; break }
+        'updater' { 'Независимый агент проверки и координации модульных обновлений.'; break }
         default { "Компонент `$Module` поставлен как самостоятельный модуль EvoHime."; break }
     }
 }

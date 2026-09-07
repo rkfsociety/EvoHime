@@ -1,0 +1,20 @@
+[package]
+name = "evohime-update-agent"
+version = "0.1.0"
+publish = false
+edition = "2021"
+
+[lib]
+name = "evohime_update_agent"
+path = "src/lib.rs"
+
+[[bin]]
+name = "evohime-updater"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
