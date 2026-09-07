@@ -48,7 +48,7 @@ jobs:
           $paths = @(git diff --name-only $base $env:AFTER)
           function Has-Path([scriptblock]$predicate) { @($paths | Where-Object $predicate).Count -gt 0 }
           $workflowChanged = Has-Path { $_ -like '.github/workflows/*' }
-          $all = ($paths -contains 'Cargo.toml' -or $paths -contains 'Cargo.lock' -or $workflowChanged)
+          $all = ($paths -contains 'Cargo.toml' -or $paths -contains 'Cargo.lock' -or $paths -contains 'scripts/module-release.ps1' -or $workflowChanged)
           $rustShared = $all -or (Has-Path { $_ -like 'crates/evohime-model-gateway/*' -or $_ -like 'crates/evohime-permissions/*' -or $_ -like 'crates/tool-runtime/*' -or $_ -like 'crates/evohime-local-storage/*' -or $_ -like 'crates/local-storage/*' })
           $electronShared = $all -or (Has-Path { $_ -like 'desktop/evohime-electron/src/shared/*' -or $_ -like 'desktop/evohime-electron/package*.json' })
           $core = $all -or $rustShared -or (Has-Path { $_ -like 'crates/evohime-core/*' -or $_ -eq 'release-versions/core.txt' })
