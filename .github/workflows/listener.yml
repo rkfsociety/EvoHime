@@ -42,7 +42,7 @@ jobs:
   publish:
     name: Listener runtime — stable release
     needs: listener-runtime
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: windows-latest
     permissions:
       contents: write

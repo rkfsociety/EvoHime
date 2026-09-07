@@ -2,6 +2,8 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $router = Get-Content -LiteralPath (Join-Path $root '.github\workflows\module-router.yml') -Raw
 if ($router -notmatch 'name: module router') { throw 'Central module router is missing.' }
+if ($router -match '(?m)^\s+uses:\s+\.\/\.github/workflows/') { throw 'Router still nests module workflows instead of dispatching separate runs.' }
+if ($router -notmatch 'gh workflow run') { throw 'Router does not dispatch independent module workflow runs.' }
 foreach ($workflow in @('core.yml','supervisor.yml','cli.yml','analysis-worker.yml','listener-module.yml','listener.yml','transaction.yml','verifier.yml','shell-host.yml','ui-bundle.yml')) {
     $text = Get-Content -LiteralPath (Join-Path $root ".github\workflows\$workflow") -Raw
     if ($text -match '(?m)^\s{2}push:') { throw "$workflow still has a direct push trigger." }
@@ -13,5 +15,9 @@ if ($installer -match '(?m)^\s{2}push:') { throw 'installer workflow still has a
 foreach ($module in @('shell-host','ui-bundle','core','supervisor','cli','analysis-worker','listener','listener-runtime','transaction','verifier')) {
     $expected = $module + ': ${{ steps.select.outputs.' + $module + ' }}'
     if ($router -notmatch [regex]::Escape($expected)) { throw "Router output is missing: $module" }
+}
+$dispatchBlock = ($router -split '(?m)^  dispatch:', 2)[1]
+foreach ($module in @('shell-host','ui-bundle','core','supervisor','cli','analysis-worker','listener','listener-runtime','transaction','verifier')) {
+    if ($dispatchBlock -notmatch [regex]::Escape("'$module'")) { throw "Dispatch map is missing: $module" }
 }
 Write-Host 'module-router smoke tests passed.'

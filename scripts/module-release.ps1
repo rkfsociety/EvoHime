@@ -51,12 +51,22 @@ $manifest = [ordered]@{
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
 
 $generatedNotesPath = Join-Path $env:RUNNER_TEMP "$Module-release-notes.md"
-$commit = if ($env:GITHUB_SHA) { $env:GITHUB_SHA } else { (git rev-parse HEAD 2>$null) }
 $runUrl = if ($env:GITHUB_SERVER_URL -and $env:GITHUB_REPOSITORY -and $env:GITHUB_RUN_ID) {
     "$($env:GITHUB_SERVER_URL)/$($env:GITHUB_REPOSITORY)/actions/runs/$($env:GITHUB_RUN_ID)"
 } else { $null }
-$changes = @(git log -5 --pretty=format:'- %h %s' 2>$null)
-if ($changes.Count -eq 0) { $changes = @('- Изменения зафиксированы текущей сборкой.') }
+$modulePaths = @{
+    'shell-host' = @('desktop/evohime-electron/src/main', 'desktop/evohime-electron/src/preload')
+    'ui-bundle' = @('desktop/evohime-electron/src/renderer', 'desktop/evohime-electron/src/shared')
+    'core' = @('crates/evohime-core', 'crates/evohime-model-gateway', 'crates/evohime-permissions', 'crates/tool-runtime', 'crates/evohime-local-storage')
+    'supervisor' = @('crates/evohime-supervisor', 'crates/evohime-process')
+    'cli' = @('crates/evohime-cli')
+    'analysis-worker' = @('crates/evohime-supervisor/src/analysis_worker.rs')
+    'listener' = @('crates/evohime-listener', 'crates/evohime-listener-ipc')
+    'transaction' = @('crates/evohime-updater')
+    'verifier' = @('crates/evohime-receipts')
+}
+$changes = if ($modulePaths.ContainsKey($Module)) { @(git log -5 --pretty=format:'- %s' -- $modulePaths[$Module] 2>$null) } else { @() }
+if ($changes.Count -eq 0) { $changes = @('- Обновлён состав поставки модуля и его проверенный бинарный артефакт.') }
 $notes = [System.Collections.Generic.List[string]]::new()
 $notes.Add("# EvoHime — модуль `$Module` $Version")
 $notes.Add('')
@@ -87,10 +97,9 @@ $notes.Add(('- SHA-256: `{0}`' -f $hash))
 $notes.Add("- Размер: $size байт")
 $notes.Add('- Тесты, lint и release-сборка успешно завершены до публикации.')
 $notes.Add('')
-$notes.Add('## Техническая история сборки')
+$notes.Add('## Что изменилось')
 $changes | ForEach-Object { $notes.Add($_) }
-if ($commit) { $notes.Add(('- Коммит сборки: `{0}`' -f $commit)) }
-if ($runUrl) { $notes.Add("- Workflow: [$runUrl]($runUrl)") }
+if ($runUrl) { $notes.Add('') ; $notes.Add("Публикация выполнена отдельным workflow после успешных тестов и сборки: [$runUrl]($runUrl)") }
 if (Test-Path -LiteralPath $NotesFile -PathType Leaf) {
     $notes.Add('')
     $notes.Add('## Дополнительные примечания')
