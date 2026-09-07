@@ -134,6 +134,7 @@ fn parse_semver(value: &str) -> Option<[u64; 3]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn compares_versions_numerically() {
@@ -177,5 +178,42 @@ mod tests {
             select_outdated(&installed, &available).unwrap().modules,
             vec!["core", "shell"]
         );
+    }
+
+    #[test]
+    fn validates_manifest_hash_and_size() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut file = std::fs::File::create(directory.path().join("core.exe")).unwrap();
+        file.write_all(b"core").unwrap();
+        let digest = sha2::Sha256::digest(b"core");
+        let hash = digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let manifest = ComponentManifest {
+            components: vec![InstalledComponent {
+                id: "core".into(),
+                path: "core.exe".into(),
+                size: 4,
+                sha256: hash,
+            }],
+        };
+        validate_component_manifest(&manifest, directory.path()).unwrap();
+    }
+
+    #[test]
+    fn rejects_modified_component() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("core.exe"), b"tampered").unwrap();
+        let manifest = ComponentManifest {
+            components: vec![InstalledComponent {
+                id: "core".into(),
+                path: "core.exe".into(),
+                size: 4,
+                sha256: "00".repeat(32),
+            }],
+        };
+        let error = validate_component_manifest(&manifest, directory.path()).unwrap_err();
+        assert!(error.contains("size mismatch") || error.contains("sha256 mismatch"));
     }
 }
