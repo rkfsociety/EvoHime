@@ -98,15 +98,23 @@ describe('sidebar update indicator', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('opens only the update confirmation after the installer is ready', () => {
+  it('opens the module version details after the update is ready', () => {
     const invoke = installApi()
-    render(<UpdateIndicator status={status({ phase: 'ready', restartRequired: true, downloadProgress: 1 })} />)
+    render(<UpdateIndicator status={status({
+      phase: 'ready',
+      restartRequired: true,
+      downloadProgress: 1,
+      availableModules: ['shell-host'],
+      installedModules: { 'shell-host': '1.2.0' },
+      availableModuleVersions: { 'shell-host': '1.3.0' }
+    })} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить установку обновления' }))
     expect(screen.getByRole('dialog', { name: 'Подтверждение обновления' })).toBeTruthy()
-    expect(screen.getByText('Установщик скачан и проверен. Перезапустить Еву сейчас?')).toBeTruthy()
+    expect(screen.getByText('shell-host')).toBeTruthy()
+    expect(screen.getByText('1.2.0 → 1.3.0')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Перезапустить и обновить' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
     expect(invoke).toHaveBeenCalledWith('update.restart', {})
   })
 

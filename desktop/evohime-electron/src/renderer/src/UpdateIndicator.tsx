@@ -36,7 +36,7 @@ export function UpdateIndicator({ status }: UpdateIndicatorProps): React.JSX.Ele
         aria-expanded={ready ? confirmOpen : undefined}
         title={status.message}
         onClick={() => {
-          if (ready) setConfirmOpen(true)
+          setConfirmOpen(true)
         }}
       >
         <span
@@ -48,17 +48,27 @@ export function UpdateIndicator({ status }: UpdateIndicatorProps): React.JSX.Ele
         </span>
       </button>
 
-      {confirmOpen && ready ? (
+      {confirmOpen ? (
         <section className="update-confirm" role="dialog" aria-label="Подтверждение обновления">
           <div className="update-popover__header">
             <div>
-              <h2>Обновление готово</h2>
-              <p>Установщик скачан и проверен. Перезапустить Еву сейчас?</p>
+              <h2>{ready ? 'Обновление готово' : 'Доступно обновление'}</h2>
+              <p>{ready ? 'Изменения проверены. Применить обновление сейчас?' : status.message}</p>
             </div>
           </div>
+          {status.availableModules && status.availableModules.length > 0 ? (
+            <ul className="update-confirm__modules">
+              {status.availableModules.map((module) => (
+                <li key={module}>
+                  <span>{module}</span>
+                  <strong>{status.installedModules?.[module] ?? '—'} → {status.availableModuleVersions?.[module] ?? 'новая версия'}</strong>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <div className="update-confirm__actions">
-            <button type="button" onClick={() => setConfirmOpen(false)}>Позже</button>
-            <button type="button" onClick={() => void api?.invoke('update.restart', {})}>Перезапустить и обновить</button>
+            <button type="button" onClick={() => setConfirmOpen(false)}>Закрыть</button>
+            {ready ? <button type="button" onClick={() => void api?.invoke('update.restart', {})}>Обновить</button> : null}
           </div>
         </section>
       ) : null}

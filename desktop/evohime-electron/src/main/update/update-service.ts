@@ -203,12 +203,13 @@ export class UpdateService {
           })
         }
         const moduleCheck = await this.checkModuleVersions()
-        if (moduleCheck.length > 0) {
+        if (moduleCheck.modules.length > 0) {
           return this.patch({
             phase: 'available',
-            message: `Доступны обновления модулей: ${moduleCheck.join(', ')}.`,
+            message: `Доступны обновления модулей: ${moduleCheck.modules.join(', ')}.`,
             remoteCommit: null,
-            availableModules: moduleCheck,
+            availableModules: moduleCheck.modules,
+            availableModuleVersions: moduleCheck.versions,
             checkedAtMs: this.time()
           })
         }
@@ -752,7 +753,7 @@ export class UpdateService {
     }
   }
 
-  private async checkModuleVersions(): Promise<string[]> {
+  private async checkModuleVersions(): Promise<{ modules: string[]; versions: Record<string, string> }> {
     const available: ModuleVersionRecord[] = []
     try {
       for (const module of MODULE_IDS) {
@@ -761,9 +762,13 @@ export class UpdateService {
       }
     } catch (error) {
       this.deps.log('info', 'update.module_releases_unavailable', { reason: redactError(error) })
-      return []
+      return { modules: [], versions: {} }
     }
-    return selectOutdatedModules(this.installedModules(), available).map((item) => item.module)
+    const selected = selectOutdatedModules(this.installedModules(), available)
+    return {
+      modules: selected.map((item) => item.module),
+      versions: Object.fromEntries(selected.map((item) => [item.module, item.version]))
+    }
   }
 
   private stagedMarker(): { readonly commit: string } | null {

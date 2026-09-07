@@ -221,6 +221,9 @@
 .update-confirm .update-popover__header h2 { margin: 0 0 4px; font-size: 14px; }
 .update-confirm .update-popover__header p { margin: 0; color: var(--fg-muted, #9b9baa); font-size: 12px; }
 .update-confirm__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.update-confirm__modules { display: grid; gap: 7px; margin: 14px 0 0; padding: 0; list-style: none; }
+.update-confirm__modules li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 10px; border-radius: 8px; background: var(--bg-sunken, #0a0a0d); color: var(--fg-muted, #9b9baa); font-size: 11px; }
+.update-confirm__modules strong { color: var(--fg, #e8e8ef); font-weight: 600; white-space: nowrap; }
 
 /* Kept for the blocking local-build gate; the ready-state viewer is gone. */
 .update-popover {

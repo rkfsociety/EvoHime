@@ -82,6 +82,8 @@ export interface UpdateStatus {
   /** Components selected by the manifest for this operation. */
   readonly selectedComponents?: readonly string[]
   readonly availableModules?: readonly string[]
+  /** New versions for the modules listed in availableModules. */
+  readonly availableModuleVersions?: Readonly<Record<string, string>>
   readonly downloadedBytes?: number | null
   readonly totalBytes?: number | null
   /** True once a staged package is waiting for the restart. */
