@@ -208,10 +208,7 @@ export async function downloadModuleRelease(
   const headers = apiHeaders(token)
   const release = await getJson(`${apiBase}/releases/tags/module-${module}`, request, headers)
   const assets: readonly ReleaseAsset[] = Array.isArray(release.assets) ? release.assets : []
-  const manifestAsset = assets.find((asset) => asset.name === `${module}.manifest.json`)
-  const manifestUrl = assetUrl(manifestAsset?.url, apiBase)
-  if (!manifestUrl) throw new Error(`GitHub module: manifest ${module} отсутствует.`)
-  const manifest = parseModuleManifest(await downloadText(manifestUrl, request, { ...headers, accept: 'application/octet-stream' }), module)
+  const manifest = await readModuleReleaseManifestFromAssets(module, assets, apiBase, request, headers)
   const artifact = assets.find((asset) => asset.name === manifest.artifact)
   const artifactUrl = assetUrl(artifact?.url, apiBase)
   if (!artifactUrl) throw new Error(`GitHub module: артефакт ${manifest.artifact} отсутствует.`)
@@ -220,6 +217,35 @@ export async function downloadModuleRelease(
   const bytes = await downloadBytes(artifactUrl, target, request, { ...headers, accept: 'application/octet-stream' }, deps.onProgress, manifest.size)
   if (bytes !== manifest.size || (await sha256(target)) !== manifest.sha256) throw new Error(`GitHub module: hash mismatch: ${module}`)
   return { manifest, file: target }
+}
+
+/** Reads only the current module metadata; no binary is downloaded. */
+export async function readModuleReleaseManifest(
+  repositoryUrl: string,
+  module: string,
+  token: string | null,
+  deps: ReleaseInstallerDeps = {}
+): Promise<ModuleReleaseManifest> {
+  const apiBase = githubApiBase(repositoryUrl)
+  if (!apiBase) throw new Error('GitHub module: некорректный repository.')
+  const request = deps.fetch ?? globalThis.fetch
+  const headers = apiHeaders(token)
+  const release = await getJson(`${apiBase}/releases/tags/module-${module}`, request, headers)
+  const assets: readonly ReleaseAsset[] = Array.isArray(release.assets) ? release.assets : []
+  return readModuleReleaseManifestFromAssets(module, assets, apiBase, request, headers)
+}
+
+async function readModuleReleaseManifestFromAssets(
+  module: string,
+  assets: readonly ReleaseAsset[],
+  apiBase: string,
+  request: typeof globalThis.fetch,
+  headers: Record<string, string>
+): Promise<ModuleReleaseManifest> {
+  const manifestAsset = assets.find((asset) => asset.name === `${module}.manifest.json`)
+  const manifestUrl = assetUrl(manifestAsset?.url, apiBase)
+  if (!manifestUrl) throw new Error(`GitHub module: manifest ${module} отсутствует.`)
+  return parseModuleManifest(await downloadText(manifestUrl, request, { ...headers, accept: 'application/octet-stream' }), module)
 }
 
 async function extractUiArchive(archivePath: string, destination: string): Promise<void> {
