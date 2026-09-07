@@ -112,13 +112,16 @@ gh release upload $tag --repo $repo $manifestPath --clobber
 if ($LASTEXITCODE -ne 0) { throw "Failed to publish module manifest." }
 
 # Удаляем старые версии только после успешной публикации нового релиза.
-$releases = gh release list --repo $repo --limit 100 --json tagName --jq '.[].tagName' | Where-Object {
-    $_ -like "module-$Module-v*" -or $_ -eq "module-$Module"
-}
-foreach ($oldTag in $releases) {
+$releaseRows = @(gh api --paginate "repos/$repo/releases?per_page=100" --jq '.[] | [.tag_name, (.id|tostring)] | @tsv')
+foreach ($row in $releaseRows) {
+    $parts = $row -split "`t", 2
+    $oldTag = $parts[0]
+    $oldId = $parts[1]
+    if ($oldTag -notlike "module-$Module-v*" -and $oldTag -ne "module-$Module") { continue }
     if ($oldTag -eq $tag) { continue }
-    gh release delete $oldTag --repo $repo --cleanup-tag --yes
+    gh api --method DELETE "repos/$repo/releases/$oldId"
     if ($LASTEXITCODE -ne 0) { throw "Failed to remove old release $oldTag." }
+    gh api --method DELETE "repos/$repo/git/refs/tags/$oldTag" 2>$null
     Write-Host "Removed old release $oldTag"
 }
 Write-Host "Published $Module $Version to $tag ($hash)"

@@ -86,9 +86,13 @@ jobs:
             gh release upload $releaseTag $_.FullName --clobber
             if ($LASTEXITCODE -ne 0) { throw "Не удалось опубликовать $($_.Name)." }
           }
-          gh release list --limit 100 --json tagName --jq '.[].tagName' | Where-Object {
-            $_ -like 'module-listener-runtime-v*' -and $_ -ne $releaseTag
-          } | ForEach-Object {
-            gh release delete $_ --cleanup-tag --yes
-            if ($LASTEXITCODE -ne 0) { throw "Не удалось удалить старый релиз $_." }
+          $releaseRows = @(gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | [.tag_name, (.id|tostring)] | @tsv')
+          foreach ($row in $releaseRows) {
+            $parts = $row -split "`t", 2
+            $oldTag = $parts[0]
+            $oldId = $parts[1]
+            if (($oldTag -notlike 'module-listener-runtime-v*' -and $oldTag -ne 'module-listener-runtime') -or $oldTag -eq $releaseTag) { continue }
+            gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/releases/$oldId"
+            if ($LASTEXITCODE -ne 0) { throw "Не удалось удалить старый релиз $oldTag." }
+            gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/git/refs/tags/$oldTag" 2>$null
           }
