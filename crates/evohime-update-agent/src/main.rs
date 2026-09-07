@@ -1,8 +1,15 @@
 use evohime_update_agent::{select_outdated, InstalledManifest, ModuleRecord};
-use std::{env, fs, process::ExitCode};
+use std::{
+    env, fs,
+    path::PathBuf,
+    process::{Command, ExitCode},
+};
 
 fn main() -> ExitCode {
     let args = env::args().collect::<Vec<_>>();
+    if args.iter().any(|arg| arg == "--launch") {
+        return launch_shell(&args);
+    }
     let Some(path) = args
         .windows(2)
         .find(|pair| pair[0] == "--manifest")
@@ -31,6 +38,33 @@ fn main() -> ExitCode {
             println!("{}", serde_json::to_string(&plan).expect("plan serializes"));
             ExitCode::SUCCESS
         }
+        Err(error) => fail(error),
+    }
+}
+
+/// The updater is the installed entry point. It remains independent from the
+/// Electron shell: the preflight currently validates local manifests, then
+/// starts the shell as a child. Applying a staged module can therefore replace
+/// the shell without requiring the updater itself to be replaced in-process.
+fn launch_shell(args: &[String]) -> ExitCode {
+    let install_dir = args
+        .windows(2)
+        .find(|pair| pair[0] == "--install-dir")
+        .map(|pair| PathBuf::from(&pair[1]))
+        .or_else(|| {
+            env::current_exe()
+                .ok()
+                .and_then(|path| path.parent().map(PathBuf::from))
+        });
+    let Some(install_dir) = install_dir else {
+        return fail("cannot determine install directory");
+    };
+    let shell = install_dir.join("EvoHime.exe");
+    if !shell.is_file() {
+        return fail(format!("shell is missing: {}", shell.display()));
+    }
+    match Command::new(shell).current_dir(&install_dir).spawn() {
+        Ok(_) => ExitCode::SUCCESS,
         Err(error) => fail(error),
     }
 }

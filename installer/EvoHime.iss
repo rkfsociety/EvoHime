@@ -37,16 +37,16 @@ CloseApplicationsFilter=EvoHime.exe
 [Tasks]
 ; Установщик CI уже собран и проверен на зелёном коммите. Клиент скачивает
 ; этот установщик из постоянного GitHub Release и применяет его до запуска Евы.
-Name: "autoupdate"; Description: "Обновлять автоматически из GitHub Release"; GroupDescription: "Обновления"
+Name: "autoupdate"; Description: "Обновлять модули автоматически из GitHub Release"; GroupDescription: "Обновления"
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autodesktop}\EvoHime"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\resources\evohime-agent.ico"
+Name: "{autodesktop}\EvoHime"; Filename: "{app}\evohime-updater.exe"; Parameters: "--launch --install-dir \"{app}\""; WorkingDir: "{app}"; IconFilename: "{app}\resources\evohime-agent.ico"
 
 [Run]
-Filename: "{app}\{#AppExeName}"; Description: "Запустить EvoHime"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\evohime-updater.exe"; Parameters: "--launch --install-dir \"{app}\""; Description: "Запустить EvoHime"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 ; Рабочая копия исходников и собранный пакет принадлежат обновлению, а не
@@ -75,7 +75,7 @@ begin
   else
     Enabled := 'false';
 
-  SetArrayLength(Lines, 10);
+  SetArrayLength(Lines, 9);
   Lines[0] := '{';
   Lines[1] := '  "version": 2,';
   Lines[2] := '  "enabled": ' + Enabled + ',';
@@ -83,11 +83,9 @@ begin
   Lines[4] := '  "branch": "{#UpdateBranch}",';
   Lines[5] := '  "launchPolicy": "installer",';
   Lines[6] := '  "checkIntervalMinutes": 30,';
-  { Пересборка идёт на машине пользователя, поэтому красный коммит }
-  { собирать нельзя: клиент ждёт зелёной сборки.                   }
-  Lines[7] := '  "requireGreenCommit": true,';
-  Lines[8] := '  "greenCommitDepth": 10';
-  Lines[9] := '}';
+  { Модули проверяются по версиям и хешам component manifest. }
+  Lines[7] := '  "moduleManifest": "evohime.components.json"';
+  Lines[8] := '}';
   SaveStringsToUTF8File(Directory + '\update.json', Lines, False);
 end;
 
