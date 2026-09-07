@@ -5,6 +5,7 @@ export interface ModuleVersionRecord {
   readonly size: number
   readonly sha256: string
   readonly dependencies?: readonly string[]
+  readonly restart?: string
 }
 
 export function compareSemver(left: string, right: string): number {

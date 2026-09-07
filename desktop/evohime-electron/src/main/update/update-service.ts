@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, unlinkSync } from 'node:fs'
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 
@@ -84,6 +84,7 @@ export class UpdateService {
   private skipped = false
   private token: Promise<string | null> | null = null
   private selectedComponentPaths: readonly string[] | null = null
+  private selectedModuleVersions: Readonly<Record<string, string>> = {}
 
   constructor(private readonly deps: UpdateServiceDeps) {
     this.current = deps.config.enabled
@@ -461,10 +462,14 @@ export class UpdateService {
         const downloaded = await this.deps.downloadComponents(this.deps.config.repositoryUrl, this.deps.config.stagingDirectory, selected, token, progress)
         selectedPaths.push(...downloaded.manifest.components.filter((component) => selected.includes(component.id)).map((component) => component.path))
       } else {
+        const selectedManifests: ModuleVersionRecord[] = []
         for (const module of selected) {
           const downloaded = await (this.deps.downloadModule ?? downloadModuleRelease)(this.deps.config.repositoryUrl, module, this.deps.config.stagingDirectory, token, progress)
+          selectedManifests.push(downloaded.manifest)
           if (module !== 'ui-bundle') selectedPaths.push(downloaded.manifest.artifact)
         }
+        this.selectedModuleVersions = Object.fromEntries(selectedManifests.map((manifest) => [manifest.module, manifest.version]))
+        this.writeStagedComponentManifest(selectedManifests)
       }
       this.selectedComponentPaths = selectedPaths
       if (selected.includes('ui-bundle')) this.selectedComponentPaths = ['__ui_bundle__', ...selectedPaths]
@@ -474,6 +479,27 @@ export class UpdateService {
     } finally {
       this.running = false
     }
+  }
+
+  private writeStagedComponentManifest(selected: readonly ModuleVersionRecord[]): void {
+    const installedPath = join(this.deps.config.installDirectory, 'evohime.components.json')
+    let existing: { readonly components?: readonly Record<string, unknown>[] } = {}
+    try { existing = JSON.parse(readFileSync(installedPath, 'utf8')) as typeof existing } catch { /* initial install has no manifest */ }
+    const merged = new Map<string, Record<string, unknown>>()
+    for (const component of existing.components ?? []) {
+      if (typeof component.id === 'string') merged.set(component.id, { ...component })
+    }
+    for (const module of selected) {
+      merged.set(module.module, {
+        id: module.module, version: module.version, artifact: module.artifact, path: module.artifact,
+        size: module.size, sha256: module.sha256, dependencies: module.dependencies ?? [],
+        restart: module.restart ?? 'module', required: true
+      })
+    }
+    writeFileSync(join(this.deps.config.stagingDirectory, 'evohime.components.json'), `${JSON.stringify({
+      schema: 'evohime.component-manifest.v1', os: 'windows', architecture: 'x64',
+      components: [...merged.values()]
+    }, null, 2)}\n`, 'utf8')
   }
 
   /** Downloads the installer published by CI after its checks passed. */
@@ -667,7 +693,7 @@ export class UpdateService {
           '--apply-components', '--staging', config.stagingDirectory,
           '--install-dir', config.installDirectory, '--state-dir', config.stateDirectory,
           '--selected', this.selectedComponentPaths!.filter((path) => path !== '__ui_bundle__').join(','),
-          '--ui-version', this.current.remoteCommit ?? 'unknown',
+          '--ui-version', this.selectedModuleVersions['ui-bundle'] ?? 'unknown',
           '--wait-pid', String(process.pid),
           '--relaunch', join(config.installDirectory, SHELL_EXECUTABLE),
           '--health-file', healthFile
