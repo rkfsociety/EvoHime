@@ -205,7 +205,7 @@ export async function downloadModuleRelease(
   if (!apiBase) throw new Error('GitHub module: некорректный repository.')
   const request = deps.fetch ?? globalThis.fetch
   const headers = apiHeaders(token)
-  const release = await getJson(`${apiBase}/releases/tags/module-${module}`, request, headers)
+  const release = await getLatestModuleRelease(apiBase, module, request, headers)
   const assets: readonly ReleaseAsset[] = Array.isArray(release.assets) ? release.assets : []
   const manifest = await readModuleReleaseManifestFromAssets(module, assets, apiBase, request, headers)
   const artifact = assets.find((asset) => asset.name === manifest.artifact)
@@ -230,7 +230,7 @@ export async function readModuleReleaseManifest(
   if (!apiBase) throw new Error('GitHub module: некорректный repository.')
   const request = deps.fetch ?? globalThis.fetch
   const headers = apiHeaders(token)
-  const release = await getJson(`${apiBase}/releases/tags/module-${module}`, request, headers)
+  const release = await getLatestModuleRelease(apiBase, module, request, headers)
   const assets: readonly ReleaseAsset[] = Array.isArray(release.assets) ? release.assets : []
   return readModuleReleaseManifestFromAssets(module, assets, apiBase, request, headers)
 }
@@ -246,6 +246,30 @@ async function readModuleReleaseManifestFromAssets(
   const manifestUrl = assetUrl(manifestAsset?.url, apiBase)
   if (!manifestUrl) throw new Error(`GitHub module: manifest ${module} отсутствует.`)
   return parseModuleManifest(await downloadText(manifestUrl, request, { ...headers, accept: 'application/octet-stream' }), module)
+}
+
+async function getLatestModuleRelease(
+  apiBase: string,
+  module: string,
+  request: typeof globalThis.fetch,
+  headers: Record<string, string>
+): Promise<any> {
+  const releases = await getJson(`${apiBase}/releases?per_page=100`, request, headers)
+  if (!Array.isArray(releases)) throw new Error('GitHub module: некорректный список релизов.')
+  const prefix = `module-${module}-v`
+  const candidates = releases.filter((release) => typeof release?.tag_name === 'string' && release.tag_name.startsWith(prefix))
+  candidates.sort((left, right) => compareModuleVersions(String(right.tag_name).slice(prefix.length), String(left.tag_name).slice(prefix.length)))
+  if (candidates.length === 0) throw new Error(`GitHub module: релиз ${module} отсутствует.`)
+  return candidates[0]
+}
+
+function compareModuleVersions(left: string, right: string): number {
+  const a = left.split('.').map(Number)
+  const b = right.split('.').map(Number)
+  for (let index = 0; index < 3; index += 1) {
+    if ((a[index] ?? -1) !== (b[index] ?? -1)) return (a[index] ?? -1) - (b[index] ?? -1)
+  }
+  return 0
 }
 
 async function extractUiArchive(archivePath: string, destination: string): Promise<void> {

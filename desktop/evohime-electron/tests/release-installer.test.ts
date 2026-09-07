@@ -96,10 +96,10 @@ describe('release installer', () => {
     const manifest = JSON.stringify({ schema: 'evohime.module-release.v1', module: 'core', version: '2.1.0', artifact: 'evohime-core.exe', size: bytes.length, sha256: hash })
     const fetch = vi.fn(async (input: string | URL | Request) => {
       const url = String(input)
-      if (url.endsWith('/releases/tags/module-core')) return new Response(JSON.stringify({ assets: [
+      if (url.endsWith('/releases?per_page=100')) return new Response(JSON.stringify([{ tag_name: 'module-core-v2.1.0', assets: [
         { name: 'core.manifest.json', url: 'https://api.github.com/repos/x/y/releases/assets/core-manifest' },
         { name: 'evohime-core.exe', url: 'https://api.github.com/repos/x/y/releases/assets/core' }
-      ] }), { status: 200 })
+      ] }]), { status: 200 })
       if (url.endsWith('core-manifest')) return new Response(manifest, { status: 200 })
       return new Response(bytes, { status: 200 })
     })
