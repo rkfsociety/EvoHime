@@ -46,19 +46,21 @@ jobs:
         run: |
           $base = if ($env:MANUAL_BASE) { $env:MANUAL_BASE } elseif ($env:BEFORE -and $env:BEFORE -ne ('0' * 40)) { $env:BEFORE } else { (git rev-list --max-parents=0 HEAD) }
           $paths = @(git diff --name-only $base $env:AFTER)
-          $all = ($paths -contains 'Cargo.toml' -or $paths -contains 'Cargo.lock' -or $paths | Where-Object { $_ -like '.github/workflows/*' })
-          $rustShared = $all -or @($paths | Where-Object { $_ -like 'crates/evohime-model-gateway/*' -or $_ -like 'crates/evohime-permissions/*' -or $_ -like 'crates/tool-runtime/*' -or $_ -like 'crates/evohime-local-storage/*' -or $_ -like 'crates/local-storage/*' }).Count -gt 0
-          $electronShared = $all -or @($paths | Where-Object { $_ -like 'desktop/evohime-electron/src/shared/*' -or $_ -like 'desktop/evohime-electron/package*.json' }).Count -gt 0
-          $core = $all -or $rustShared -or @($paths | Where-Object { $_ -like 'crates/evohime-core/*' -or $_ -eq 'release-versions/core.txt' }).Count -gt 0
-          $supervisor = $all -or $rustShared -or @($paths | Where-Object { $_ -like 'crates/evohime-supervisor/*' -or $_ -like 'crates/evohime-process/*' -or $_ -eq 'release-versions/supervisor.txt' }).Count -gt 0
-          $cli = $all -or $core -or @($paths | Where-Object { $_ -like 'crates/evohime-cli/*' -or $_ -eq 'release-versions/cli.txt' }).Count -gt 0
-          $analysis = $all -or $core -or $supervisor -or @($paths | Where-Object { $_ -eq 'release-versions/analysis-worker.txt' }).Count -gt 0
-          $transaction = $all -or $rustShared -or @($paths | Where-Object { $_ -like 'crates/evohime-updater/*' -or $_ -eq 'release-versions/transaction.txt' }).Count -gt 0
-          $verifier = $all -or $rustShared -or @($paths | Where-Object { $_ -like 'crates/evohime-receipts/*' -or $_ -eq 'release-versions/verifier.txt' }).Count -gt 0
-          $listener = $all -or $core -or @($paths | Where-Object { $_ -like 'crates/evohime-listener/*' -or $_ -like 'crates/evohime-listener-*/*' -or $_ -eq 'release-versions/listener.txt' }).Count -gt 0
-          $runtime = $all -or $listener -or @($paths | Where-Object { $_ -eq 'release-versions/listener-runtime.txt' -or $_ -eq 'scripts/build-listener-runtime.ps1' }).Count -gt 0
-          $ui = $all -or $electronShared -or @($paths | Where-Object { $_ -like 'desktop/evohime-electron/src/renderer/*' -or $_ -like 'desktop/evohime-electron/vite.config.*' -or $_ -eq 'release-versions/ui-bundle.txt' }).Count -gt 0
-          $shell = $all -or $electronShared -or $core -or $supervisor -or $transaction -or $verifier -or @($paths | Where-Object { $_ -like 'desktop/evohime-electron/src/main/*' -or $_ -like 'desktop/evohime-electron/src/preload/*' -or $_ -eq 'release-versions/shell-host.txt' }).Count -gt 0
+          function Has-Path([scriptblock]$predicate) { @($paths | Where-Object $predicate).Count -gt 0 }
+          $workflowChanged = Has-Path { $_ -like '.github/workflows/*' }
+          $all = ($paths -contains 'Cargo.toml' -or $paths -contains 'Cargo.lock' -or $workflowChanged)
+          $rustShared = $all -or (Has-Path { $_ -like 'crates/evohime-model-gateway/*' -or $_ -like 'crates/evohime-permissions/*' -or $_ -like 'crates/tool-runtime/*' -or $_ -like 'crates/evohime-local-storage/*' -or $_ -like 'crates/local-storage/*' })
+          $electronShared = $all -or (Has-Path { $_ -like 'desktop/evohime-electron/src/shared/*' -or $_ -like 'desktop/evohime-electron/package*.json' })
+          $core = $all -or $rustShared -or (Has-Path { $_ -like 'crates/evohime-core/*' -or $_ -eq 'release-versions/core.txt' })
+          $supervisor = $all -or $rustShared -or (Has-Path { $_ -like 'crates/evohime-supervisor/*' -or $_ -like 'crates/evohime-process/*' -or $_ -eq 'release-versions/supervisor.txt' })
+          $cli = $all -or $core -or (Has-Path { $_ -like 'crates/evohime-cli/*' -or $_ -eq 'release-versions/cli.txt' })
+          $analysis = $all -or $core -or $supervisor -or (Has-Path { $_ -eq 'release-versions/analysis-worker.txt' })
+          $transaction = $all -or $rustShared -or (Has-Path { $_ -like 'crates/evohime-updater/*' -or $_ -eq 'release-versions/transaction.txt' })
+          $verifier = $all -or $rustShared -or (Has-Path { $_ -like 'crates/evohime-receipts/*' -or $_ -eq 'release-versions/verifier.txt' })
+          $listener = $all -or $core -or (Has-Path { $_ -like 'crates/evohime-listener/*' -or $_ -like 'crates/evohime-listener-*/*' -or $_ -eq 'release-versions/listener.txt' })
+          $runtime = $all -or $listener -or (Has-Path { $_ -eq 'release-versions/listener-runtime.txt' -or $_ -eq 'scripts/build-listener-runtime.ps1' })
+          $ui = $all -or $electronShared -or (Has-Path { $_ -like 'desktop/evohime-electron/src/renderer/*' -or $_ -like 'desktop/evohime-electron/vite.config.*' -or $_ -eq 'release-versions/ui-bundle.txt' })
+          $shell = $all -or $electronShared -or $core -or $supervisor -or $transaction -or $verifier -or (Has-Path { $_ -like 'desktop/evohime-electron/src/main/*' -or $_ -like 'desktop/evohime-electron/src/preload/*' -or $_ -eq 'release-versions/shell-host.txt' })
           foreach ($item in @{'shell-host'=$shell;'ui-bundle'=$ui;'core'=$core;'supervisor'=$supervisor;'cli'=$cli;'analysis-worker'=$analysis;'listener'=$listener;'listener-runtime'=$runtime;'transaction'=$transaction;'verifier'=$verifier}.GetEnumerator()) {
             $value = ([bool]$item.Value).ToString().ToLower()
             "$($item.Key)=$value" >> $env:GITHUB_OUTPUT

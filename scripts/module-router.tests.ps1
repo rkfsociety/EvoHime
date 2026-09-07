@@ -7,6 +7,8 @@ foreach ($workflow in @('core.yml','supervisor.yml','cli.yml','analysis-worker.y
     if ($text -match '(?m)^\s{2}push:') { throw "$workflow still has a direct push trigger." }
     if ($text -notmatch '(?m)^\s{2}workflow_call:') { throw "$workflow is not reusable." }
 }
+$installer = Get-Content -LiteralPath (Join-Path $root '.github\workflows\windows.yml') -Raw
+if ($installer -match '(?m)^\s{2}push:') { throw 'installer workflow still has a direct push trigger.' }
 foreach ($module in @('shell-host','ui-bundle','core','supervisor','cli','analysis-worker','listener','listener-runtime','transaction','verifier')) {
     $expected = $module + ': ${{ steps.select.outputs.' + $module + ' }}'
     if ($router -notmatch [regex]::Escape($expected)) { throw "Router output is missing: $module" }
