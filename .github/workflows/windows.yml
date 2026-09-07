@@ -324,7 +324,9 @@ jobs:
         run: |
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
           if (-not (Test-Path -LiteralPath $iscc)) { throw "ISCC not found: $iscc" }
-          & $iscc "/O$env:GITHUB_WORKSPACE\installer-output" "/DSourceDir=$env:GITHUB_WORKSPACE\native-package" installer/EvoHime.iss
+          $installerVersion = (Get-Content -LiteralPath "$env:GITHUB_WORKSPACE\release-versions\installer.txt" -Raw).Trim()
+          if ($installerVersion -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid installer version: $installerVersion" }
+          & $iscc "/O$env:GITHUB_WORKSPACE\installer-output" "/DSourceDir=$env:GITHUB_WORKSPACE\native-package" "/DAppVersion=$installerVersion" installer/EvoHime.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Smoke установки и обновления
         shell: pwsh
@@ -421,9 +423,11 @@ jobs:
         shell: pwsh
         run: |
           $setup = Join-Path $env:GITHUB_WORKSPACE 'installer-output\EvoHime-Setup.exe'
+          $installerVersion = (Get-Content -LiteralPath "$env:GITHUB_WORKSPACE\release-versions\installer.txt" -Raw).Trim()
           $manifest = [ordered]@{
             version = 1
             product = 'EvoHime'
+            installerVersion = $installerVersion
             asset = 'EvoHime-Setup.exe'
             commit = $env:GITHUB_SHA
             branch = 'main'
@@ -483,9 +487,11 @@ jobs:
         shell: pwsh
         run: |
           $setup = Join-Path $env:GITHUB_WORKSPACE 'installer-output\EvoHime-Setup.exe'
+          $installerVersion = (Get-Content -LiteralPath "$env:GITHUB_WORKSPACE\release-versions\installer.txt" -Raw).Trim()
           $manifest = [ordered]@{
             version = 1
             product = 'EvoHime'
+            installerVersion = $installerVersion
             asset = 'EvoHime-Setup.exe'
             commit = $env:GITHUB_SHA
             branch = 'main'

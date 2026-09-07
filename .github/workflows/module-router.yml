@@ -33,6 +33,7 @@ jobs:
       transaction: ${{ steps.select.outputs.transaction }}
       verifier: ${{ steps.select.outputs.verifier }}
       updater: ${{ steps.select.outputs.updater }}
+      installer: ${{ steps.select.outputs.installer }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -49,7 +50,7 @@ jobs:
           $manual = @($env:MANUAL_MODULES -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
           $manualSet = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
           foreach ($module in $manual) {
-            if ($module -notin $modules) { throw "Неизвестный модуль для ручного запуска: $module" }
+            if ($module -ne 'installer' -and $module -notin $modules) { throw "Неизвестный модуль для ручного запуска: $module" }
             [void]$manualSet.Add($module)
           }
           $env:GH_TOKEN = $env:GH_TOKEN
@@ -86,6 +87,22 @@ jobs:
               Write-Host "$module`: $currentText уже опубликован, workflow пропускается"
             }
           }
+          $installerPath = Join-Path $env:GITHUB_WORKSPACE 'release-versions/installer.txt'
+          if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) { throw "Не найден файл версии установщика: $installerPath" }
+          $installerText = (Get-Content -LiteralPath $installerPath -Raw).Trim()
+          $installerCurrent = Parse-Version $installerText
+          if ($null -eq $installerCurrent) { throw "Некорректная версия установщика: $installerText" }
+          $installerLatest = $null
+          $manifestPath = Join-Path $env:RUNNER_TEMP 'EvoHime-Setup.json'
+          gh release download installer --repo $env:REPOSITORY --pattern EvoHime-Setup.json --dir $env:RUNNER_TEMP --clobber 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $manifestPath)) {
+            $published = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+            $installerLatest = Parse-Version ([string]$published.installerVersion)
+          }
+          $installerSelected = $manualSet.Contains('installer') -or ($manual.Count -eq 0 -and ($null -eq $installerLatest -or $installerCurrent -gt $installerLatest))
+          "installer=$($installerSelected.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          if ($installerSelected) { Write-Host "installer: $installerText -> $($installerLatest ?? 'нет релиза'), workflow будет запущен" }
+          else { Write-Host "installer: $installerText уже опубликован, workflow пропускается" }
 
   dispatch:
     name: Запустить отдельные workflow модулей
@@ -114,9 +131,10 @@ jobs:
             'transaction' = '${{ needs.changes.outputs.transaction }}'
             'verifier' = '${{ needs.changes.outputs.verifier }}'
             'updater' = '${{ needs.changes.outputs.updater }}'
+            'installer' = '${{ needs.changes.outputs.installer }}'
           }
           $workflowFiles = @{
-            'shell-host' = 'shell-host.yml'; 'ui-bundle' = 'ui-bundle.yml'; 'core' = 'core.yml'; 'supervisor' = 'supervisor.yml'; 'cli' = 'cli.yml'; 'analysis-worker' = 'analysis-worker.yml'; 'listener' = 'listener-module.yml'; 'listener-runtime' = 'listener.yml'; 'transaction' = 'transaction.yml'; 'verifier' = 'verifier.yml'; 'updater' = 'update-agent.yml'
+            'shell-host' = 'shell-host.yml'; 'ui-bundle' = 'ui-bundle.yml'; 'core' = 'core.yml'; 'supervisor' = 'supervisor.yml'; 'cli' = 'cli.yml'; 'analysis-worker' = 'analysis-worker.yml'; 'listener' = 'listener-module.yml'; 'listener-runtime' = 'listener.yml'; 'transaction' = 'transaction.yml'; 'verifier' = 'verifier.yml'; 'updater' = 'update-agent.yml'; 'installer' = 'windows.yml'
           }
           foreach ($module in $selected.Keys) {
             if ($selected[$module] -ne 'true') { continue }

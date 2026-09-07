@@ -6,6 +6,8 @@ if ($router -match '(?m)^\s+uses:\s+\.\/\.github/workflows/') { throw 'Router st
 if ($router -notmatch 'gh workflow run') { throw 'Router does not dispatch independent module workflow runs.' }
 if ($router -match 'git diff|git log|github\.event\.before|MANUAL_BASE|base:') { throw 'Router still uses commit/path diff as the production release criterion.' }
 if ($router -notmatch 'module-\$module-v|Latest-Version|release-versions/\$module\.txt') { throw 'Router does not compare module versions with module releases.' }
+if ($router -notmatch 'release-versions/installer\.txt') { throw 'Router does not track installer version.' }
+if ($router -notmatch "'installer' = 'windows\.yml'") { throw 'Router does not dispatch the installer workflow.' }
 foreach ($workflow in @('core.yml','supervisor.yml','cli.yml','analysis-worker.yml','listener-module.yml','listener.yml','transaction.yml','verifier.yml','shell-host.yml','ui-bundle.yml','update-agent.yml')) {
     $text = Get-Content -LiteralPath (Join-Path $root ".github\workflows\$workflow") -Raw
     if ($text -match '(?m)^\s{2}push:') { throw "$workflow still has a direct push trigger." }
