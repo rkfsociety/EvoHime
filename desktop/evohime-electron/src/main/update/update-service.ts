@@ -193,6 +193,14 @@ export class UpdateService {
 
     try {
       if (config.launchPolicy === 'installer') {
+        if (Object.keys(this.installedModules()).length === 0) {
+          return this.patch({
+            phase: 'available',
+            message: 'Первоначальная установка требует installer release.',
+            remoteCommit: 'installer',
+            checkedAtMs: this.time()
+          })
+        }
         const moduleCheck = await this.checkModuleVersions()
         if (moduleCheck.length > 0) {
           return this.patch({
@@ -200,14 +208,6 @@ export class UpdateService {
             message: `Доступны обновления модулей: ${moduleCheck.join(', ')}.`,
             remoteCommit: null,
             availableModules: moduleCheck,
-            checkedAtMs: this.time()
-          })
-        }
-        if (Object.keys(this.installedModules()).length === 0) {
-          return this.patch({
-            phase: 'available',
-            message: 'Первоначальная установка требует installer release.',
-            remoteCommit: 'installer',
             checkedAtMs: this.time()
           })
         }
