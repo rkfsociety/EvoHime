@@ -18,15 +18,16 @@ push-workflow; ручной полный workflow на текущем комми
 `installer` содержит только `EvoHime-Setup.exe` и `EvoHime-Setup.json`; бинарники
 и runtime публикуются только в собственных релизах модулей.
 
-## Evidence текущего GitHub workflow — 2026-09-06
+## Evidence текущего GitHub workflow — 2026-09-07
 
 | Событие | Результат |
 | --- | --- |
-| Коммит | `d9742a0fd9de9b8ed4ed90f0d6eb117be73d3949` |
-| Push workflow | PASS — [run 34030005220](https://github.com/rkfsociety/EvoHime/actions/runs/34030005220) |
+| Коммит | `27757e19031f686ac6b31189af28b9f43ff4e115` |
+| Router workflow | PASS — [run 34118502159](https://github.com/rkfsociety/EvoHime/actions/runs/34118502159); без изменений модулей не dispatch’ит модульные workflow |
+| Updater workflow | PASS — [run 34117650390](https://github.com/rkfsociety/EvoHime/actions/runs/34117650390) |
 | Полный ручной workflow | Выполняется — [run 34034590713](https://github.com/rkfsociety/EvoHime/actions/runs/34034590713) |
 | Постоянный installer | [release `installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer), опубликован 2026-08-14 |
-| Module releases | отдельные релизы для shell-host, ui-bundle, core, supervisor, cli, analysis-worker, listener, transaction, verifier и listener-runtime |
+| Module releases | отдельные релизы для shell-host, ui-bundle, core, supervisor, cli, analysis-worker, listener, listener-runtime, transaction, verifier и updater |
 | Installer | [release `installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer), только `EvoHime-Setup.exe` и `EvoHime-Setup.json` |
 
 Локальная проверка этого обновления ограничена документационным тестом и
