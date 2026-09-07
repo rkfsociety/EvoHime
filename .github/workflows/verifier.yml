@@ -8,4 +8,5 @@ on:
 jobs:
   module:
     uses: ./.github/workflows/module-native.yml
+    permissions: { contents: write }
     with: { module: verifier, package: evohime-receipts, artifact: evohime-verify.exe, version_file: release-versions/verifier.txt }

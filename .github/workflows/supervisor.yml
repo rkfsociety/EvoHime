@@ -8,4 +8,5 @@ on:
 jobs:
   module:
     uses: ./.github/workflows/module-native.yml
+    permissions: { contents: write }
     with: { module: supervisor, package: evohime-supervisor, artifact: evohime-supervisor.exe, version_file: release-versions/supervisor.txt }
