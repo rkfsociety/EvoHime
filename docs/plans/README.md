@@ -37,6 +37,25 @@
 | [141](141-0-runtime-service-graph.md) | Runtime service graph | незавершён |
 | [142](142-0-agent-program-optimizer.md) | Agent program optimizer | незавершён |
 | [143](143-0-project-knowledge-notebook.md) | Project knowledge notebook | незавершён |
+| [145](145-0-git-remote-publication-protocol.md) | Git Remote Publication Protocol | незавершён |
+| [146](146-0-voice-input-dictation.md) | Voice Input & Dictation | незавершён |
+| [147](147-0-offline-experience-consolidation-cycle.md) | Offline Experience Consolidation Cycle | незавершён |
+| [148](148-0-deterministic-review-execution-plan.md) | Deterministic Review Execution Plan | незавершён |
+| [149](149-0-interactive-model-compare-workbench.md) | Interactive Model Compare Workbench | незавершён |
+| [150](150-0-minimal-change-policy.md) | Minimal Change Policy | незавершён |
+| [151](151-0-contextual-next-step-suggestions.md) | Contextual Next-Step Suggestions | незавершён |
+| [152](152-0-autonomous-metric-experiment-runtime.md) | Autonomous Metric Experiment Runtime | незавершён |
+| [153](153-0-native-computer-use-runtime.md) | Native Computer-Use Runtime | незавершён |
+| [154](154-0-project-execution-board.md) | Project Execution Board | незавершён |
+| [155](155-0-mobile-device-automation-runtime.md) | Mobile Device Automation Runtime | незавершён |
+| [156](156-0-cross-modal-ui-grounding.md) | Cross-Modal UI Grounding | незавершён |
+| [157](157-0-external-source-acquisition-runtime.md) | External Source Acquisition Runtime | незавершён |
+| [158](158-0-temporal-signal-intelligence.md) | Temporal Signal Intelligence | незавершён |
+| [159](159-0-temporal-memory-facts.md) | Temporal Memory Facts | незавершён |
+| [160](160-0-ide-companion-bridge.md) | IDE Companion Bridge | незавершён |
+| [161](161-0-verified-git-checkpoints.md) | Verified Git Checkpoints | незавершён |
+| [162](162-0-verified-technical-diagram-artifacts.md) | Verified Technical Diagram Artifacts | незавершён |
+| [163](163-0-local-model-compatibility-gateway.md) | Local Model Compatibility Gateway | незавершён |
 | 144 | Modular release and component update | реализован, контракт перенесён в канонические документы |
 
 Следующее новое направление получает номер `145`, если отдельное решение не
