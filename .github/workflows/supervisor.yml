@@ -1,0 +1,12 @@
+name: EvoHime — supervisor module
+on:
+  push:
+    branches: [main]
+    paths: ['crates/evohime-supervisor/**', 'crates/evohime-process/**', 'release-versions/supervisor.txt', '.github/workflows/supervisor.yml', '.github/workflows/module-native.yml']
+  pull_request:
+    paths: ['crates/evohime-supervisor/**', 'crates/evohime-process/**', 'release-versions/supervisor.txt', '.github/workflows/supervisor.yml', '.github/workflows/module-native.yml']
+jobs:
+  module:
+    uses: ./.github/workflows/module-native.yml
+    with: { module: supervisor, package: evohime-supervisor, artifact: evohime-supervisor.exe, version-file: release-versions/supervisor.txt }
+    secrets: { GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} }

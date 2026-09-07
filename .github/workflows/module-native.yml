@@ -1,0 +1,64 @@
+name: EvoHime — native module reusable workflow
+
+on:
+  workflow_call:
+    inputs:
+      module:
+        required: true
+        type: string
+      package:
+        required: true
+        type: string
+      artifact:
+        required: true
+        type: string
+      version-file:
+        required: true
+        type: string
+    secrets:
+      GH_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ inputs.module }} — tests and build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+      - run: cargo fmt --all -- --check
+      - run: cargo test --locked -p ${{ inputs.package }}
+      - run: cargo clippy --locked -p ${{ inputs.package }} --all-targets -- -D warnings
+      - run: cargo build --locked --release -p ${{ inputs.package }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: module-${{ inputs.module }}
+          path: target/release/${{ inputs.artifact }}
+          if-no-files-found: error
+
+  publish:
+    name: ${{ inputs.module }} — release
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: module-${{ inputs.module }}
+          path: module-output
+      - name: Publish module release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          $version = (Get-Content -LiteralPath "${{ inputs.version-file }}" -Raw).Trim()
+          ./scripts/module-release.ps1 -Module "${{ inputs.module }}" -Version $version -Artifact (Join-Path $env:GITHUB_WORKSPACE "module-output\${{ inputs.artifact }}")

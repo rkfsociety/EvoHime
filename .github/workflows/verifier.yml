@@ -1,0 +1,12 @@
+name: EvoHime — verifier module
+on:
+  push:
+    branches: [main]
+    paths: ['crates/evohime-receipts/**', 'release-versions/verifier.txt', '.github/workflows/verifier.yml', '.github/workflows/module-native.yml']
+  pull_request:
+    paths: ['crates/evohime-receipts/**', 'release-versions/verifier.txt', '.github/workflows/verifier.yml', '.github/workflows/module-native.yml']
+jobs:
+  module:
+    uses: ./.github/workflows/module-native.yml
+    with: { module: verifier, package: evohime-receipts, artifact: evohime-verify.exe, version-file: release-versions/verifier.txt }
+    secrets: { GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} }

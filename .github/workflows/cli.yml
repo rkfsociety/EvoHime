@@ -1,0 +1,12 @@
+name: EvoHime — cli module
+on:
+  push:
+    branches: [main]
+    paths: ['crates/evohime-cli/**', 'release-versions/cli.txt', '.github/workflows/cli.yml', '.github/workflows/module-native.yml']
+  pull_request:
+    paths: ['crates/evohime-cli/**', 'release-versions/cli.txt', '.github/workflows/cli.yml', '.github/workflows/module-native.yml']
+jobs:
+  module:
+    uses: ./.github/workflows/module-native.yml
+    with: { module: cli, package: evohime-cli, artifact: eva.exe, version-file: release-versions/cli.txt }
+    secrets: { GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} }

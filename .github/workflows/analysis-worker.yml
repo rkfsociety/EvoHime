@@ -1,0 +1,12 @@
+name: EvoHime — analysis worker module
+on:
+  push:
+    branches: [main]
+    paths: ['crates/evohime-analysis-worker/**', 'release-versions/analysis-worker.txt', '.github/workflows/analysis-worker.yml', '.github/workflows/module-native.yml']
+  pull_request:
+    paths: ['crates/evohime-analysis-worker/**', 'release-versions/analysis-worker.txt', '.github/workflows/analysis-worker.yml', '.github/workflows/module-native.yml']
+jobs:
+  module:
+    uses: ./.github/workflows/module-native.yml
+    with: { module: analysis-worker, package: evohime-supervisor, artifact: evohime-analysis-worker.exe, version-file: release-versions/analysis-worker.txt }
+    secrets: { GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} }
