@@ -4,7 +4,7 @@ use evohime_update_agent::{
     compare_semver, is_valid_semver, select_outdated, InstalledManifest, ModuleRecord,
     UpdateCandidate, UpdaterModuleStatus, UpdaterStatus,
 };
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::Digest;
 use std::{
     env, fs,
@@ -218,20 +218,12 @@ fn remote_updates(data_dir: &Path, install_dir: &Path) -> Result<Vec<UpdateCandi
         return Err("updater: разрешён только GitHub HTTPS repository".into());
     };
     let repository = repository.trim_end_matches('/');
-    let client = reqwest::blocking::Client::builder()
-        .user_agent("EvoHime-Updater")
-        .build()
-        .map_err(|error| error.to_string())?;
-    let releases: Vec<Release> = client
-        .get(format!(
-            "https://api.github.com/repos/{repository}/releases?per_page=100"
-        ))
-        .send()
-        .map_err(|error| error.to_string())?
-        .error_for_status()
-        .map_err(|error| error.to_string())?
-        .json()
-        .map_err(|error| error.to_string())?;
+    let client = updater_http_client()?;
+    let releases: Vec<Release> = get_json(
+        &client,
+        &format!("https://api.github.com/repos/{repository}/releases?per_page=100"),
+        "список GitHub Release",
+    )?;
     let installed_manifest = read_installed_module_manifest(install_dir)?;
     let mut installed_manifest = installed_manifest;
     if let Some(runtime) = read_runtime_version(data_dir)? {
@@ -272,14 +264,11 @@ fn remote_updates(data_dir: &Path, install_dir: &Path) -> Result<Vec<UpdateCandi
             .find(|asset| asset.name == manifest_asset_name)
             .ok_or_else(|| format!("updater: manifest отсутствует для {module}"))?;
         let manifest = if *module == "listener-runtime" {
-            let runtime: RuntimeReleaseManifest = client
-                .get(&asset.browser_download_url)
-                .send()
-                .map_err(|error| error.to_string())?
-                .error_for_status()
-                .map_err(|error| error.to_string())?
-                .json()
-                .map_err(|error| error.to_string())?;
+            let runtime: RuntimeReleaseManifest = get_json(
+                &client,
+                &asset.browser_download_url,
+                &format!("manifest {module}"),
+            )?;
             validate_runtime_manifest(&runtime)?;
             RemoteManifest {
                 module: runtime.module,
@@ -293,14 +282,11 @@ fn remote_updates(data_dir: &Path, install_dir: &Path) -> Result<Vec<UpdateCandi
                 restart: "listener".to_owned(),
             }
         } else {
-            client
-                .get(&asset.browser_download_url)
-                .send()
-                .map_err(|error| error.to_string())?
-                .error_for_status()
-                .map_err(|error| error.to_string())?
-                .json::<RemoteManifest>()
-                .map_err(|error| error.to_string())?
+            get_json(
+                &client,
+                &asset.browser_download_url,
+                &format!("manifest {module}"),
+            )?
         };
         if manifest.module != *module {
             return Err(format!("updater: manifest module mismatch for {module}"));
@@ -360,6 +346,63 @@ fn remote_updates(data_dir: &Path, install_dir: &Path) -> Result<Vec<UpdateCandi
         })
         .collect();
     Ok(updates)
+}
+
+fn updater_http_client() -> Result<reqwest::blocking::Client, String> {
+    reqwest::blocking::Client::builder()
+        .user_agent("EvoHime-Updater")
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|error| format!("updater: не удалось создать HTTP-клиент: {error}"))
+}
+
+fn get_json<T: DeserializeOwned>(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    purpose: &str,
+) -> Result<T, String> {
+    let mut last_error = String::new();
+    for attempt in 1..=2 {
+        match get_json_once(client, url, purpose) {
+            Ok(value) => return Ok(value),
+            Err(error) => last_error = error,
+        }
+        if attempt == 1 {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+    }
+    Err(last_error)
+}
+
+fn get_json_once<T: DeserializeOwned>(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    purpose: &str,
+) -> Result<T, String> {
+    let response = client
+        .get(url)
+        .send()
+        .map_err(|error| format!("updater: {purpose}: сетевой запрос не удался: {error}"))?;
+    let status = response.status();
+    let body = response
+        .text()
+        .map_err(|error| format!("updater: {purpose}: не удалось прочитать ответ: {error}"))?;
+    if !status.is_success() {
+        return Err(format!("updater: {purpose}: GitHub вернул HTTP {status}"));
+    }
+    parse_json_body(&body, purpose)
+}
+
+fn parse_json_body<T: DeserializeOwned>(body: &str, purpose: &str) -> Result<T, String> {
+    let body = body.trim_start_matches('\u{feff}').trim();
+    if body.is_empty() {
+        return Err(format!(
+            "updater: {purpose}: GitHub вернул пустой ответ вместо JSON"
+        ));
+    }
+    serde_json::from_str(body)
+        .map_err(|error| format!("updater: {purpose}: GitHub вернул некорректный JSON: {error}"))
 }
 
 fn read_installed_module_manifest(install_dir: &Path) -> Result<InstalledManifest, String> {
@@ -458,10 +501,7 @@ fn apply_updates(
         fs::remove_dir_all(&staging).map_err(|error| error.to_string())?;
     }
     fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
-    let client = reqwest::blocking::Client::builder()
-        .user_agent("EvoHime-Updater")
-        .build()
-        .map_err(|error| error.to_string())?;
+    let client = updater_http_client()?;
     let mut selected = Vec::new();
     let mut applied = Vec::new();
     let mut ui_update = None;
@@ -751,14 +791,8 @@ fn apply_listener_runtime(
     data_dir: &Path,
     progress: &dyn Fn(&str, u8),
 ) -> Result<(), String> {
-    let runtime: RuntimeReleaseManifest = client
-        .get(&update.download_url)
-        .send()
-        .map_err(|error| error.to_string())?
-        .error_for_status()
-        .map_err(|error| error.to_string())?
-        .json()
-        .map_err(|error| error.to_string())?;
+    let runtime: RuntimeReleaseManifest =
+        get_json(client, &update.download_url, "manifest listener-runtime")?;
     validate_runtime_manifest(&runtime)?;
     let entries = runtime
         .files
@@ -965,4 +999,27 @@ fn read<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, String> {
 fn fail(error: impl std::fmt::Display) -> ExitCode {
     eprintln!("updater: {error}");
     ExitCode::from(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_json_body;
+
+    #[test]
+    fn json_response_reports_an_empty_body_without_a_raw_parser_error() {
+        let error = parse_json_body::<serde_json::Value>("  \n", "manifest core").unwrap_err();
+        assert_eq!(
+            error,
+            "updater: manifest core: GitHub вернул пустой ответ вместо JSON"
+        );
+    }
+
+    #[test]
+    fn json_response_reports_invalid_json_with_its_purpose() {
+        let error =
+            parse_json_body::<serde_json::Value>("<html>", "список GitHub Release").unwrap_err();
+        assert!(
+            error.starts_with("updater: список GitHub Release: GitHub вернул некорректный JSON:")
+        );
+    }
 }

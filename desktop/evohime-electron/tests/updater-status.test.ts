@@ -66,4 +66,15 @@ describe('updaterUiStatus', () => {
     expect(updaterUiStatus(status({ phase: 'applying', message: 'Скачивание core — 144%' })).percent).toBe(100)
     expect(updaterUiStatus(status({ phase: 'applying', message: 'Подготовка' })).percent).toBeNull()
   })
+
+  it('never shows a ready state when the worker supplied an error', () => {
+    const view = updaterUiStatus(status({
+      phase: 'up-to-date',
+      error: 'updater: manifest core: GitHub вернул пустой ответ вместо JSON'
+    }))
+
+    expect(view.phase).toBe('failed')
+    expect(view.heading).toBe('Проверка требует внимания')
+    expect(view.badge).toBe('Ошибка')
+  })
 })

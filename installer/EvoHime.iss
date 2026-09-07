@@ -1,6 +1,6 @@
 #define AppName "EvoHime"
 #ifndef AppVersion
-  #define AppVersion "0.0.000034"
+  #define AppVersion "0.0.000035"
 #endif
 #define AppPublisher "EvoHime"
 #define AppExeName "EvoHime.exe"

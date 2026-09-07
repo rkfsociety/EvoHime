@@ -47,7 +47,7 @@ const MODULE_LABELS: Readonly<Record<string, string>> = {
 const DEFAULT_MODULES = ['core', 'shell-host', 'supervisor', 'listener']
 
 export function updaterUiStatus(status: UpdateStatus): UpdaterUiStatus {
-  const phase = toUiPhase(status.phase)
+  const phase = status.error ? 'failed' : toUiPhase(status.phase)
   const available = status.availableModules ?? []
   const installed = status.installedModules ?? {}
   const versions = status.availableModuleVersions ?? {}
