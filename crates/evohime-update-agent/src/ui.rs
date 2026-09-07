@@ -1,17 +1,13 @@
 use evohime_update_agent::UpdateCandidate;
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-    ptr::null_mut,
-};
+use std::{path::Path, ptr::null_mut};
 use windows_sys::Win32::{
     System::LibraryLoader::GetModuleHandleW,
     UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, KillTimer,
-        LoadCursorW, MessageBoxW, PostQuitMessage, RegisterClassW, SetTimer, ShowWindow,
-        TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, IDC_ARROW, MB_ICONERROR, MB_OK,
-        MSG, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_TIMER, WNDCLASSW, WS_CAPTION,
-        WS_CHILD, WS_EX_DLGMODALFRAME, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+        LoadCursorW, PostQuitMessage, RegisterClassW, SetTimer, ShowWindow, TranslateMessage,
+        CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, IDC_ARROW, MSG, SW_SHOW, WM_CLOSE, WM_COMMAND,
+        WM_CREATE, WM_DESTROY, WM_TIMER, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_EX_DLGMODALFRAME,
+        WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
     },
 };
 
@@ -192,12 +188,12 @@ unsafe extern "system" fn window_proc(
         }
         WM_TIMER => {
             KillTimer(hwnd, TIMER_ID);
-            launch_shell(hwnd);
+            request_launch(hwnd);
             0
         }
         WM_COMMAND if (wparam & 0xffff) == RUN_BUTTON => {
             KillTimer(hwnd, TIMER_ID);
-            launch_shell(hwnd);
+            request_launch(hwnd);
             0
         }
         WM_COMMAND if (wparam & 0xffff) == UPDATE_BUTTON => {
@@ -208,7 +204,7 @@ unsafe extern "system" fn window_proc(
         }
         WM_CLOSE => {
             KillTimer(hwnd, TIMER_ID);
-            launch_shell(hwnd);
+            request_launch(hwnd);
             0
         }
         WM_DESTROY => {
@@ -219,19 +215,6 @@ unsafe extern "system" fn window_proc(
     }
 }
 
-unsafe fn launch_shell(hwnd: windows_sys::Win32::Foundation::HWND) {
-    let Some(directory) = std::env::current_exe()
-        .ok()
-        .and_then(|path| path.parent().map(PathBuf::from))
-    else {
-        DestroyWindow(hwnd);
-        return;
-    };
-    let shell = directory.join("EvoHime.exe");
-    if let Err(error) = Command::new(&shell).current_dir(&directory).spawn() {
-        let text = wide(&format!("Не удалось запустить EvoHime: {error}"));
-        let caption = wide("EvoHime Updater");
-        MessageBoxW(hwnd, text.as_ptr(), caption.as_ptr(), MB_OK | MB_ICONERROR);
-    }
+unsafe fn request_launch(hwnd: windows_sys::Win32::Foundation::HWND) {
     DestroyWindow(hwnd);
 }

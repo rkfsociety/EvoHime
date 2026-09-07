@@ -100,15 +100,12 @@ fn launch_shell(args: &[String]) -> ExitCode {
         updates.iter().map(|item| item.module.clone()).collect(),
     );
     #[cfg(windows)]
-    {
-        let action = match ui::run_preflight_window(&install_dir, &updates, remote_error.as_deref())
-        {
-            Ok(action) => action,
-            Err(error) => return fail(error),
-        };
-        if action == ui::UiAction::Launch {
-            return ExitCode::SUCCESS;
-        }
+    let action = match ui::run_preflight_window(&install_dir, &updates, remote_error.as_deref()) {
+        Ok(action) => action,
+        Err(error) => return fail(error),
+    };
+    #[cfg(windows)]
+    if action == ui::UiAction::Update {
         if let Err(error) = apply_updates(&install_dir, &data_dir, &updates) {
             return fail(error);
         }
@@ -117,10 +114,14 @@ fn launch_shell(args: &[String]) -> ExitCode {
     if !shell.is_file() {
         return fail(format!("shell is missing: {}", shell.display()));
     }
-    match Command::new(shell).current_dir(&install_dir).spawn() {
-        Ok(_) => ExitCode::SUCCESS,
-        Err(error) => fail(error),
-    }
+    let mut child = match Command::new(shell).current_dir(&install_dir).spawn() {
+        Ok(child) => child,
+        Err(error) => return fail(error),
+    };
+    #[cfg(windows)]
+    monitor_running_shell(&mut child, &data_dir, &install_dir);
+    let _ = child;
+    ExitCode::SUCCESS
 }
 
 const MODULE_IDS: &[&str] = &[
@@ -413,6 +414,32 @@ fn merge_installed_manifest(
     )
     .map_err(|error| error.to_string())?;
     fs::rename(temporary, path).map_err(|error| error.to_string())
+}
+
+fn monitor_running_shell(child: &mut std::process::Child, data_dir: &Path, install_dir: &Path) {
+    while child.try_wait().ok().flatten().is_none() {
+        std::thread::sleep(std::time::Duration::from_secs(30 * 60));
+        if child.try_wait().ok().flatten().is_some() {
+            break;
+        }
+        match remote_updates(data_dir, install_dir) {
+            Ok(updates) => write_status(
+                data_dir,
+                if updates.is_empty() {
+                    "ready"
+                } else {
+                    "available"
+                },
+                if updates.is_empty() {
+                    "Все модули актуальны."
+                } else {
+                    "Доступны обновления модулей."
+                },
+                updates.iter().map(|item| item.module.clone()).collect(),
+            ),
+            Err(error) => write_status(data_dir, "check-failed", &error, Vec::new()),
+        }
+    }
 }
 
 fn write_status(data_dir: &Path, phase: &'static str, message: &str, modules: Vec<String>) {
