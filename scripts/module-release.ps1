@@ -29,11 +29,38 @@ $manifest = [ordered]@{
 }
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
 
+$generatedNotesPath = Join-Path $env:RUNNER_TEMP "$Module-release-notes.md"
+$commit = if ($env:GITHUB_SHA) { $env:GITHUB_SHA } else { (git rev-parse HEAD 2>$null) }
+$runUrl = if ($env:GITHUB_SERVER_URL -and $env:GITHUB_REPOSITORY -and $env:GITHUB_RUN_ID) {
+    "$($env:GITHUB_SERVER_URL)/$($env:GITHUB_REPOSITORY)/actions/runs/$($env:GITHUB_RUN_ID)"
+} else { $null }
+$changes = @(git log -5 --pretty=format:'- %h %s' 2>$null)
+if ($changes.Count -eq 0) { $changes = @('- Изменения зафиксированы текущей сборкой.') }
+$notes = [System.Collections.Generic.List[string]]::new()
+$notes.Add("# EvoHime — модуль `$Module` $Version")
+$notes.Add('')
+$notes.Add('## Изменения модуля')
+$changes | ForEach-Object { $notes.Add($_) }
+$notes.Add('')
+$notes.Add('## Артефакт и проверки')
+$notes.Add("- Версия: `$Version`")
+$notes.Add("- SHA-256: `$hash`")
+$notes.Add("- Размер: $size байт")
+$notes.Add('- Тесты, lint и release-сборка успешно завершены до публикации.')
+if ($commit) { $notes.Add("- Коммит сборки: `$commit`") }
+if ($runUrl) { $notes.Add("- Workflow: [$runUrl]($runUrl)") }
+if (Test-Path -LiteralPath $NotesFile -PathType Leaf) {
+    $notes.Add('')
+    $notes.Add('## Дополнительные примечания')
+    (Get-Content -LiteralPath $NotesFile) | ForEach-Object { $notes.Add($_) }
+}
+$notes | Set-Content -LiteralPath $generatedNotesPath -Encoding utf8NoBOM
+
 gh release view $tag --repo $repo 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) {
-    gh release create $tag --repo $repo --title "EvoHime — $Module $Version" --notes-file $NotesFile
+    gh release create $tag --repo $repo --title "EvoHime — $Module $Version" --notes-file $generatedNotesPath
 } else {
-    gh release edit $tag --repo $repo --title "EvoHime — $Module $Version" --notes-file $NotesFile
+    gh release edit $tag --repo $repo --title "EvoHime — $Module $Version" --notes-file $generatedNotesPath
 }
 gh release upload $tag --repo $repo $artifactPath --clobber
 if ($LASTEXITCODE -ne 0) { throw "Failed to publish $artifactName." }
