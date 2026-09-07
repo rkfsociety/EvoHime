@@ -26,7 +26,7 @@ import {
 } from './commit-status'
 import { readBuildMarker, type UpdateConfig } from './config'
 import { resolveGithubToken } from './github-token'
-import { downloadReleaseComponents, downloadReleaseInstaller, readModuleReleaseManifest, readReleaseInstallerCommit } from './release-installer'
+import { downloadModuleRelease, downloadReleaseComponents, downloadReleaseInstaller, readModuleReleaseManifest, readReleaseInstallerCommit } from './release-installer'
 import { selectOutdatedModules, type ModuleVersionRecord } from './module-versions'
 import { readRemoteHead, syncCheckout } from './source-checkout'
 import { detectToolchain, ensureToolchain, toolPath, type ToolchainReport } from './toolchain'
@@ -68,6 +68,7 @@ export interface UpdateServiceDeps {
   readonly build?: typeof buildStagedPackage
   readonly downloadInstaller?: typeof downloadReleaseInstaller
   readonly downloadComponents?: typeof downloadReleaseComponents
+  readonly downloadModule?: typeof downloadModuleRelease
   readonly publishedInstallerCommit?: typeof readReleaseInstallerCommit
   readonly reset?: typeof clearDerivedState
   readonly buildLog?: BuildLogWriter
@@ -469,12 +470,18 @@ export class UpdateService {
     if (selected.length === 0 || selected.length > 32) return this.fail('Набор компонентов некорректен', new Error('empty or oversized selection'))
     this.running = true
     try {
-      const downloaded = await (this.deps.downloadComponents ?? downloadReleaseComponents)(
-        this.deps.config.repositoryUrl, this.deps.config.stagingDirectory, selected,
-        await this.githubToken(), { onProgress: (downloadedBytes, totalBytes) => this.patch({ downloadedBytes, totalBytes: totalBytes || null, downloadProgress: totalBytes ? downloadedBytes / totalBytes : null }) }
-      )
-      const selectedPaths = downloaded.manifest.components
-        .filter((component) => selected.includes(component.id)).map((component) => component.path)
+      const token = await this.githubToken()
+      const progress = { onProgress: (downloadedBytes: number, totalBytes: number) => this.patch({ downloadedBytes, totalBytes: totalBytes || null, downloadProgress: totalBytes ? downloadedBytes / totalBytes : null }) }
+      const selectedPaths: string[] = []
+      if (this.deps.downloadComponents) {
+        const downloaded = await this.deps.downloadComponents(this.deps.config.repositoryUrl, this.deps.config.stagingDirectory, selected, token, progress)
+        selectedPaths.push(...downloaded.manifest.components.filter((component) => selected.includes(component.id)).map((component) => component.path))
+      } else {
+        for (const module of selected) {
+          const downloaded = await (this.deps.downloadModule ?? downloadModuleRelease)(this.deps.config.repositoryUrl, module, this.deps.config.stagingDirectory, token, progress)
+          if (module !== 'ui-bundle') selectedPaths.push(downloaded.manifest.artifact)
+        }
+      }
       this.selectedComponentPaths = selectedPaths
       if (selected.includes('ui-bundle')) this.selectedComponentPaths = ['__ui_bundle__', ...selectedPaths]
       return this.patch({ phase: 'ready', message: 'Выбранные компоненты готовы — нужен перезапуск.', selectedComponents: selected.slice(), restartRequired: true, downloadProgress: 1 })

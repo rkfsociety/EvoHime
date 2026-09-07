@@ -216,6 +216,7 @@ export async function downloadModuleRelease(
   const target = join(destination, manifest.artifact)
   const bytes = await downloadBytes(artifactUrl, target, request, { ...headers, accept: 'application/octet-stream' }, deps.onProgress, manifest.size)
   if (bytes !== manifest.size || (await sha256(target)) !== manifest.sha256) throw new Error(`GitHub module: hash mismatch: ${module}`)
+  if (module === 'ui-bundle') await extractUiArchive(target, destination)
   return { manifest, file: target }
 }
 

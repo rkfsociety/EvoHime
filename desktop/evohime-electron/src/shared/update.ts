@@ -81,6 +81,7 @@ export interface UpdateStatus {
   readonly downloadProgress: number | null
   /** Components selected by the manifest for this operation. */
   readonly selectedComponents?: readonly string[]
+  readonly availableModules?: readonly string[]
   readonly downloadedBytes?: number | null
   readonly totalBytes?: number | null
   /** True once a staged package is waiting for the restart. */
