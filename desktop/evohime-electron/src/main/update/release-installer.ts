@@ -32,7 +32,6 @@ export interface DownloadedInstaller {
 export interface ReleaseComponentManifest {
   readonly schema: 'evohime.component-manifest.v1'
   /** Retained for diagnostics/backward compatibility; never used for selection. */
-  readonly release_commit?: string
   readonly components: readonly {
     readonly id: string
     readonly version: string

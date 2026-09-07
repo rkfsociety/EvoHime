@@ -136,7 +136,7 @@ function Write-ComponentManifest {
         }
     }
     [pscustomobject]@{
-        schema = 'evohime.component-manifest.v1'; product = 'EvoHime'; release_id = $Commit
-        os = 'windows'; architecture = 'x64'; release_commit = $Commit; components = @($components)
+        schema = 'evohime.component-manifest.v1'; product = 'EvoHime'
+        os = 'windows'; architecture = 'x64'; components = @($components)
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $OutputPath -Encoding utf8NoBOM
 }
