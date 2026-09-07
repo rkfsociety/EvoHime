@@ -1,4 +1,7 @@
-use evohime_update_agent::{select_outdated, InstalledManifest, ModuleRecord};
+use evohime_update_agent::{
+    select_outdated, validate_component_manifest, ComponentManifest, InstalledManifest,
+    ModuleRecord,
+};
 use std::{
     env, fs,
     path::PathBuf,
@@ -59,6 +62,20 @@ fn launch_shell(args: &[String]) -> ExitCode {
     let Some(install_dir) = install_dir else {
         return fail("cannot determine install directory");
     };
+    let manifest_path = install_dir.join("evohime.components.json");
+    if manifest_path.is_file() {
+        let manifest = match fs::read_to_string(&manifest_path)
+            .map_err(|error| error.to_string())
+            .and_then(|text| {
+                serde_json::from_str::<ComponentManifest>(&text).map_err(|error| error.to_string())
+            }) {
+            Ok(value) => value,
+            Err(error) => return fail(format!("invalid component manifest: {error}")),
+        };
+        if let Err(error) = validate_component_manifest(&manifest, &install_dir) {
+            return fail(format!("installation integrity check failed: {error}"));
+        }
+    }
     let shell = install_dir.join("EvoHime.exe");
     if !shell.is_file() {
         return fail(format!("shell is missing: {}", shell.display()));

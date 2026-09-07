@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 use std::cmp::Ordering;
+use std::path::Path;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ModuleRecord {
@@ -17,6 +19,49 @@ pub struct InstalledManifest {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct UpdatePlan {
     pub modules: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct InstalledComponent {
+    pub id: String,
+    pub path: String,
+    pub size: u64,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ComponentManifest {
+    pub components: Vec<InstalledComponent>,
+}
+
+/// Validate the immutable package manifest before starting any product process.
+/// A mismatch is fatal: running a partially replaced installation would make
+/// dependency and rollback guarantees impossible.
+pub fn validate_component_manifest(
+    manifest: &ComponentManifest,
+    install_dir: &Path,
+) -> Result<(), String> {
+    for component in &manifest.components {
+        if component.path.contains("..") || Path::new(&component.path).is_absolute() {
+            return Err(format!("invalid path for {}", component.id));
+        }
+        let path = install_dir.join(&component.path);
+        let metadata =
+            std::fs::metadata(&path).map_err(|error| format!("{}: {error}", component.id))?;
+        if metadata.len() != component.size {
+            return Err(format!("size mismatch for {}", component.id));
+        }
+        let bytes = std::fs::read(&path).map_err(|error| format!("{}: {error}", component.id))?;
+        let digest = sha2::Sha256::digest(&bytes);
+        let actual = digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        if actual != component.sha256.to_ascii_lowercase() {
+            return Err(format!("sha256 mismatch for {}", component.id));
+        }
+    }
+    Ok(())
 }
 
 pub fn select_outdated(
