@@ -78,18 +78,18 @@ $notes.Add('## Назначение')
 $notes.Add($summaryText)
 $notes.Add('')
 $notes.Add('## Изменения модуля')
-$notes.Add("Выпущена версия `$Version` после успешных проверок и сборки этого модуля.")
+$notes.Add(('Выпущена версия `{0}` после успешных проверок и сборки этого модуля.' -f $Version))
 $notes.Add('Обновление заменяет только данный модуль; остальные модули не изменяются.')
 $notes.Add('')
 $notes.Add('## Артефакт и проверки')
-$notes.Add("- Версия: `$Version`")
-$notes.Add("- SHA-256: `$hash`")
+$notes.Add(('- Версия: `{0}`' -f $Version))
+$notes.Add(('- SHA-256: `{0}`' -f $hash))
 $notes.Add("- Размер: $size байт")
 $notes.Add('- Тесты, lint и release-сборка успешно завершены до публикации.')
 $notes.Add('')
 $notes.Add('## Техническая история сборки')
 $changes | ForEach-Object { $notes.Add($_) }
-if ($commit) { $notes.Add("- Коммит сборки: `$commit`") }
+if ($commit) { $notes.Add(('- Коммит сборки: `{0}`' -f $commit)) }
 if ($runUrl) { $notes.Add("- Workflow: [$runUrl]($runUrl)") }
 if (Test-Path -LiteralPath $NotesFile -PathType Leaf) {
     $notes.Add('')
