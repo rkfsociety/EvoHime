@@ -1,6 +1,6 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-09-06.
+Обновлено: 2026-09-07.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
@@ -12,10 +12,10 @@ output, transcripts, absolute paths и PII запрещены.
 Статус: `TECHNICAL_GATES_PASS / RELEASE_GREEN` для последнего успешного
 push-workflow; ручной полный workflow на текущем коммите ещё выполняется.
 
-Статус относится к постоянному release channel `installer`; новый installer в
-этом документальном обновлении не публиковался. Последний опубликованный
-`installer` содержит `EvoHime-Setup.exe`, `EvoHime.exe`, Core, Supervisor,
-transaction/verify и `evohime.components.json`.
+Поставка разделена на постоянные module releases с тегами `module-*` и один
+`installer` для первоначальной установки или полного восстановления.
+`installer` содержит только `EvoHime-Setup.exe` и `EvoHime-Setup.json`; бинарники
+и runtime публикуются только в собственных релизах модулей.
 
 ## Evidence текущего GitHub workflow — 2026-09-06
 
@@ -25,7 +25,8 @@ transaction/verify и `evohime.components.json`.
 | Push workflow | PASS — [run 34030005220](https://github.com/rkfsociety/EvoHime/actions/runs/34030005220) |
 | Полный ручной workflow | Выполняется — [run 34034590713](https://github.com/rkfsociety/EvoHime/actions/runs/34034590713) |
 | Постоянный installer | [release `installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer), опубликован 2026-08-14 |
-| Listener runtime | общий [release `installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer), публикуется как модульный артефакт |
+| Module releases | отдельные релизы для shell-host, ui-bundle, core, supervisor, cli, analysis-worker, listener, transaction, verifier и listener-runtime |
+| Installer | [release `installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer), только `EvoHime-Setup.exe` и `EvoHime-Setup.json` |
 
 Локальная проверка этого обновления ограничена документационным тестом и
 `git diff --check`. Полный Rust/Electron/package/installer acceptance-прогон

@@ -214,10 +214,12 @@ runtime переиспользует canonical hash, ограничивает г
 релизный acceptance-прогон выполнен заново.
 
 В текущем checkout реализован план 144:
-native package генерирует `evohime.components.json`, updater проверяет его
-границы, общий `component-set` apply с native backup и UI pointer rollback, а
-Electron renderer собирается в отдельный `out/ui-bundle`. Legacy full-installer
-сохраняется как fallback для старых и несовместимых выпусков.
+native package генерирует `evohime.components.json` для первоначальной поставки;
+каждый runtime-модуль имеет отдельную semver-версию и собственный Release
+`module-*` с manifest, размером, SHA-256, зависимостями и restart policy.
+Updater сравнивает версии module releases и скачивает только устаревшие модули.
+`installer` оставлен только для первоначальной установки или полного
+восстановления; общий component Release не используется.
 
 ## Следующий незавершённый порядок
 
