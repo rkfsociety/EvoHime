@@ -84,6 +84,10 @@ export interface UpdateStatus {
   readonly availableModules?: readonly string[]
   /** New versions for the modules listed in availableModules. */
   readonly availableModuleVersions?: Readonly<Record<string, string>>
+  /** Human-readable module purpose shown in the compact update window. */
+  readonly availableModuleSummaries?: Readonly<Record<string, string>>
+  /** Structured release changes shown below the version pair. */
+  readonly availableModuleChanges?: Readonly<Record<string, readonly string[]>>
   readonly downloadedBytes?: number | null
   readonly totalBytes?: number | null
   /** True once a staged package is waiting for the restart. */

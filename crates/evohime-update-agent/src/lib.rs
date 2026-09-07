@@ -27,6 +27,16 @@ pub struct UpdaterStatus {
     pub phase: &'static str,
     pub message: String,
     pub modules: Vec<String>,
+    pub available: Vec<UpdaterModuleStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct UpdaterModuleStatus {
+    pub module: String,
+    pub installed: String,
+    pub available: String,
+    pub summary: String,
+    pub changes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -34,6 +44,10 @@ pub struct UpdateCandidate {
     pub module: String,
     pub installed: String,
     pub available: String,
+    pub summary: String,
+    pub changes: Vec<String>,
+    pub dependencies: Vec<String>,
+    pub restart: String,
     pub artifact: String,
     pub size: u64,
     pub sha256: String,
@@ -94,7 +108,7 @@ pub fn select_outdated(
         .collect::<std::collections::HashMap<_, _>>();
     let mut selected = std::collections::BTreeSet::new();
     for item in available {
-        if !is_semver(&item.version) {
+        if !is_valid_semver(&item.version) {
             return Err(format!("invalid version for {}", item.id));
         }
         if current
@@ -104,17 +118,25 @@ pub fn select_outdated(
             selected.insert(item.id.clone());
         }
     }
+    // Подтягиваем зависимости самого обновляемого модуля. Нельзя выбирать
+    // все модули, которые зависят от него: это вызовет лишние перезапуски.
     let mut changed = true;
     while changed {
         changed = false;
-        for item in available {
-            if !selected.contains(&item.id)
-                && item
-                    .dependencies
-                    .iter()
-                    .any(|dependency| selected.contains(dependency))
+        let dependencies = available
+            .iter()
+            .filter(|item| selected.contains(&item.id))
+            .flat_map(|item| item.dependencies.iter())
+            .cloned()
+            .collect::<Vec<_>>();
+        for dependency in dependencies {
+            let Some(item) = available.iter().find(|item| item.id == dependency) else {
+                return Err(format!("dependency {dependency} is not published"));
+            };
+            let installed_version = current.get(item.id.as_str()).copied().unwrap_or("0.0.0");
+            if compare_semver(installed_version, &item.version) == Ordering::Less
+                && selected.insert(item.id.clone())
             {
-                selected.insert(item.id.clone());
                 changed = true;
             }
         }
@@ -134,7 +156,7 @@ pub fn compare_semver(left: &str, right: &str) -> Ordering {
     a.cmp(&b)
 }
 
-fn is_semver(value: &str) -> bool {
+pub fn is_valid_semver(value: &str) -> bool {
     parse_semver(value).is_some()
 }
 
@@ -190,6 +212,40 @@ mod tests {
             ModuleRecord {
                 id: "shell".into(),
                 version: "1.0.0".into(),
+                dependencies: vec!["core".into()],
+            },
+        ];
+        assert_eq!(
+            select_outdated(&installed, &available).unwrap().modules,
+            vec!["core"]
+        );
+    }
+
+    #[test]
+    fn selects_outdated_dependencies_without_selecting_dependents() {
+        let installed = InstalledManifest {
+            components: vec![
+                ModuleRecord {
+                    id: "core".into(),
+                    version: "1.0.0".into(),
+                    dependencies: vec![],
+                },
+                ModuleRecord {
+                    id: "shell".into(),
+                    version: "1.0.0".into(),
+                    dependencies: vec!["core".into()],
+                },
+            ],
+        };
+        let available = vec![
+            ModuleRecord {
+                id: "core".into(),
+                version: "1.1.0".into(),
+                dependencies: vec![],
+            },
+            ModuleRecord {
+                id: "shell".into(),
+                version: "1.1.0".into(),
                 dependencies: vec!["core".into()],
             },
         ];

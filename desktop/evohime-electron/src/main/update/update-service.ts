@@ -49,6 +49,18 @@ const MODULE_IDS = ['shell-host', 'ui-bundle', 'core', 'supervisor', 'cli', 'ana
 
 export type GateOutcome = 'continue' | 'applying'
 
+/** Common bridge surface shared by the dev source updater and native updater. */
+export interface UpdateController {
+  readonly status: UpdateStatus
+  runLaunchGate(): Promise<GateOutcome>
+  check(): Promise<UpdateStatus>
+  prepare(): Promise<UpdateStatus>
+  prepareComponents(selected: readonly string[]): Promise<UpdateStatus>
+  restart(): boolean
+  skip(): UpdateStatus
+  stop(): void
+}
+
 export interface UpdateServiceDeps {
   readonly config: UpdateConfig
   readonly emit: (status: UpdateStatus) => void

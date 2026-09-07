@@ -60,7 +60,13 @@ export function UpdateIndicator({ status }: UpdateIndicatorProps): React.JSX.Ele
             <ul className="update-confirm__modules">
               {status.availableModules.map((module) => (
                 <li key={module}>
-                  <span>{module}</span>
+                  <span>
+                    <strong>{module}</strong>
+                    {status.availableModuleSummaries?.[module] ? <small>{status.availableModuleSummaries[module]}</small> : null}
+                    {status.availableModuleChanges?.[module]?.length ? (
+                      <small>{status.availableModuleChanges[module]!.join(' ')}</small>
+                    ) : null}
+                  </span>
                   <strong>{status.installedModules?.[module] ?? '—'} → {status.availableModuleVersions?.[module] ?? 'новая версия'}</strong>
                 </li>
               ))}

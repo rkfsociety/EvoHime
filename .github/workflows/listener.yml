@@ -62,8 +62,6 @@ jobs:
           $version = (Get-Content -LiteralPath 'release-versions/listener-runtime.txt' -Raw).Trim()
           $notesPath = Join-Path $env:RUNNER_TEMP 'listener-runtime-release-notes.md'
           @(
-            "# listener-runtime $version"
-            ''
             '## Назначение'
             'Комплект библиотек распознавания речи и моделей для модуля listener-runtime.'
             ''

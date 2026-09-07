@@ -5,8 +5,8 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      base:
-        description: 'Базовый commit для ручной проверки'
+      modules:
+        description: 'Модули для ручного запуска через запятую; пусто — только версии выше опубликованных'
         required: false
         type: string
 
@@ -38,34 +38,52 @@ jobs:
         with:
           fetch-depth: 0
       - id: select
-        name: Вычислить граф изменений и зависимостей
+        name: Сопоставить версии модулей с последними релизами
         shell: pwsh
         env:
-          BEFORE: ${{ github.event.before }}
-          AFTER: ${{ github.sha }}
-          MANUAL_BASE: ${{ inputs.base }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          MANUAL_MODULES: ${{ inputs.modules }}
         run: |
-          $base = if ($env:MANUAL_BASE) { $env:MANUAL_BASE } elseif ($env:BEFORE -and $env:BEFORE -ne ('0' * 40)) { $env:BEFORE } else { (git rev-list --max-parents=0 HEAD) }
-          $paths = @(git diff --name-only $base $env:AFTER)
-          function Has-Path([scriptblock]$predicate) { @($paths | Where-Object $predicate).Count -gt 0 }
-          $workflowShared = Has-Path { $_ -eq '.github/workflows/module-native.yml' -or $_ -eq 'scripts/module-release.ps1' }
-          $all = ($paths -contains 'Cargo.toml' -or $paths -contains 'Cargo.lock' -or $workflowShared)
-          $rustShared = $all -or (Has-Path { $_ -like 'crates/evohime-model-gateway/*' -or $_ -like 'crates/evohime-permissions/*' -or $_ -like 'crates/tool-runtime/*' -or $_ -like 'crates/evohime-local-storage/*' -or $_ -like 'crates/local-storage/*' })
-          $electronShared = $all -or (Has-Path { $_ -like 'desktop/evohime-electron/src/shared/*' -or $_ -like 'desktop/evohime-electron/package*.json' })
-          $core = $all -or $rustShared -or (Has-Path { $_ -like 'crates/evohime-core/*' -or $_ -eq 'release-versions/core.txt' -or $_ -eq '.github/workflows/core.yml' })
-          $supervisor = $all -or $rustShared -or (Has-Path { $_ -like 'crates/evohime-supervisor/*' -or $_ -like 'crates/evohime-process/*' -or $_ -eq 'release-versions/supervisor.txt' -or $_ -eq '.github/workflows/supervisor.yml' })
-          $cli = $all -or $core -or (Has-Path { $_ -like 'crates/evohime-cli/*' -or $_ -eq 'release-versions/cli.txt' -or $_ -eq '.github/workflows/cli.yml' })
-          $analysis = $all -or $core -or $supervisor -or (Has-Path { $_ -eq 'release-versions/analysis-worker.txt' -or $_ -eq '.github/workflows/analysis-worker.yml' })
-          $transaction = $all -or $rustShared -or (Has-Path { $_ -like 'crates/evohime-updater/*' -or $_ -eq 'release-versions/transaction.txt' -or $_ -eq '.github/workflows/transaction.yml' })
-          $verifier = $all -or $rustShared -or (Has-Path { $_ -like 'crates/evohime-receipts/*' -or $_ -eq 'release-versions/verifier.txt' -or $_ -eq '.github/workflows/verifier.yml' })
-          $updater = $all -or (Has-Path { $_ -like 'crates/evohime-update-agent/*' -or $_ -eq 'release-versions/updater.txt' -or $_ -eq '.github/workflows/update-agent.yml' })
-          $listener = $all -or $core -or (Has-Path { $_ -like 'crates/evohime-listener/*' -or $_ -like 'crates/evohime-listener-*/*' -or $_ -eq 'release-versions/listener.txt' -or $_ -eq '.github/workflows/listener-module.yml' })
-          $runtime = $all -or $listener -or (Has-Path { $_ -eq 'release-versions/listener-runtime.txt' -or $_ -eq 'scripts/build-listener-runtime.ps1' -or $_ -eq '.github/workflows/listener.yml' })
-          $ui = $all -or $electronShared -or (Has-Path { $_ -like 'desktop/evohime-electron/src/renderer/*' -or $_ -like 'desktop/evohime-electron/vite.config.*' -or $_ -eq 'release-versions/ui-bundle.txt' -or $_ -eq '.github/workflows/ui-bundle.yml' })
-          $shell = $all -or $electronShared -or $core -or $supervisor -or $transaction -or $verifier -or (Has-Path { $_ -like 'desktop/evohime-electron/src/main/*' -or $_ -like 'desktop/evohime-electron/src/preload/*' -or $_ -eq 'release-versions/shell-host.txt' -or $_ -eq '.github/workflows/shell-host.yml' })
-          foreach ($item in @{'shell-host'=$shell;'ui-bundle'=$ui;'core'=$core;'supervisor'=$supervisor;'cli'=$cli;'analysis-worker'=$analysis;'listener'=$listener;'listener-runtime'=$runtime;'transaction'=$transaction;'verifier'=$verifier;'updater'=$updater}.GetEnumerator()) {
-            $value = ([bool]$item.Value).ToString().ToLower()
-            "$($item.Key)=$value" >> $env:GITHUB_OUTPUT
+          $modules = @('shell-host', 'ui-bundle', 'core', 'supervisor', 'cli', 'analysis-worker', 'listener', 'listener-runtime', 'transaction', 'verifier', 'updater')
+          $manual = @($env:MANUAL_MODULES -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+          $manualSet = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+          foreach ($module in $manual) {
+            if ($module -notin $modules) { throw "Неизвестный модуль для ручного запуска: $module" }
+            [void]$manualSet.Add($module)
+          }
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+          $releases = @(Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$env:REPOSITORY/releases?per_page=100")
+          function Parse-Version([string]$value) {
+            if ($value -notmatch '^\d+\.\d+\.\d+$') { return $null }
+            return [Version]::Parse($value)
+          }
+          function Latest-Version([string]$module) {
+            $prefix = "module-$module-v"
+            $versions = foreach ($release in $releases) {
+              if ($release.tag_name -is [string] -and $release.tag_name.StartsWith($prefix)) {
+                $candidate = Parse-Version $release.tag_name.Substring($prefix.Length)
+                if ($null -ne $candidate) { $candidate }
+              }
+            }
+            return @($versions | Sort-Object -Descending | Select-Object -First 1)
+          }
+          foreach ($module in $modules) {
+            $versionPath = Join-Path $env:GITHUB_WORKSPACE "release-versions/$module.txt"
+            if (-not (Test-Path -LiteralPath $versionPath -PathType Leaf)) { throw "Не найден файл версии: $versionPath" }
+            $currentText = (Get-Content -LiteralPath $versionPath -Raw).Trim()
+            $current = Parse-Version $currentText
+            if ($null -eq $current) { throw "Некорректная версия $module`: $currentText" }
+            $latest = Latest-Version $module
+            $selected = $manualSet.Contains($module) -or ($manual.Count -eq 0 -and ($latest.Count -eq 0 -or $current -gt $latest[0]))
+            $value = $selected.ToString().ToLowerInvariant()
+            "$module=$value" >> $env:GITHUB_OUTPUT
+            if ($selected) {
+              $latestText = if ($latest.Count) { $latest[0].ToString() } else { 'нет релиза' }
+              Write-Host "$module`: $currentText -> $latestText, workflow будет запущен"
+            } else {
+              Write-Host "$module`: $currentText уже опубликован, workflow пропускается"
+            }
           }
 
   dispatch:

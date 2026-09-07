@@ -24,7 +24,8 @@ import { BUILD_WORKER_FLAG, runBuildWorkerProcess } from './update/build-worker'
 import { loadUpdateConfig } from './update/config'
 import { resolveGithubToken } from './update/github-token'
 import { ListenerRuntimeService } from './update/listener-runtime'
-import { UpdateService } from './update/update-service'
+import { ModuleUpdateService } from './update/module-update-service'
+import { UpdateService, type UpdateController } from './update/update-service'
 import { createOverlay, type OverlayController } from './overlay'
 import { createMainWindow, focusWindow, loadRenderer } from './window'
 import { WorkspaceService, windowChooser } from './workspace-service'
@@ -51,7 +52,7 @@ let client: CorePipeClient | null = null
 let supervisorProcess: ChildProcess | null = null
 let supervisorLivenessTimer: NodeJS.Timeout | null = null
 let recoveryMode = false
-let updates: UpdateService | null = null
+let updates: UpdateController | null = null
 let listenerRuntime: ListenerRuntimeService | null = null
 let codex: CodexService | null = null
 let repair: RepairService | null = null
@@ -229,7 +230,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
     // swapped in, so the gate runs before the supervisor is started. An updater
     // that fails in an unforeseen way must never keep the client from starting:
     // the installed build is always launchable.
-    let gate: Awaited<ReturnType<UpdateService['runLaunchGate']>> = 'continue'
+    let gate: Awaited<ReturnType<UpdateController['runLaunchGate']>> = 'continue'
     try {
       gate = await launchGate
     } catch (error) {
@@ -439,12 +440,28 @@ function createListenerRuntimeService(): ListenerRuntimeService {
   })
 }
 
-function createUpdateService(): UpdateService {
+function createUpdateService(): UpdateController {
   const config = loadUpdateConfig({
     dataDirectory: dataDirectory(),
     executablePath: app.getPath('exe')
   })
   const enabled = config.enabled && app.isPackaged
+  if (enabled) {
+    const service = new ModuleUpdateService({
+      dataDirectory: dataDirectory(),
+      branch: config.branch,
+      enabled: true,
+      updaterPath: join(app.getAppPath(), '..', 'evohime-updater.exe'),
+      installDirectory: dirname(app.getPath('exe')),
+      intervalMs: config.checkIntervalMs,
+      emit: (status) => {
+        lastUpdateStatus = status
+        broadcast({ kind: 'update', status })
+      }
+    })
+    lastUpdateStatus = service.status
+    return service
+  }
   const service = new UpdateService({
     config: { ...config, enabled, launchPolicy: enabled ? config.launchPolicy : 'off' },
     emit: (status) => {

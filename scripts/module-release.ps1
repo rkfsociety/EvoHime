@@ -38,6 +38,37 @@ $moduleRestart = @{
 }
 $dependencies = if ($moduleDependencies.ContainsKey($Module)) { $moduleDependencies[$Module] } else { @() }
 $restart = if ($moduleRestart.ContainsKey($Module)) { $moduleRestart[$Module] } else { 'module' }
+$modulePaths = @{
+    'shell-host' = @('desktop/evohime-electron/src/main', 'desktop/evohime-electron/src/preload')
+    'ui-bundle' = @('desktop/evohime-electron/src/renderer', 'desktop/evohime-electron/src/shared')
+    'core' = @('crates/evohime-core', 'crates/evohime-model-gateway', 'crates/evohime-permissions', 'crates/tool-runtime', 'crates/evohime-local-storage')
+    'supervisor' = @('crates/evohime-supervisor', 'crates/evohime-process')
+    'cli' = @('crates/evohime-cli')
+    'analysis-worker' = @('crates/evohime-supervisor/src/analysis_worker.rs')
+    'listener' = @('crates/evohime-listener', 'crates/evohime-listener-ipc')
+    'listener-runtime' = @('scripts/build-listener-runtime.ps1', 'crates/evohime-listener/src/tools_dir.rs')
+    'transaction' = @('crates/evohime-updater')
+    'verifier' = @('crates/evohime-receipts')
+    'updater' = @('crates/evohime-update-agent')
+}
+$changes = if ($modulePaths.ContainsKey($Module)) { @(git log -5 --pretty=format:'- %s' -- $modulePaths[$Module] 2>$null) } else { @() }
+if ($changes.Count -eq 0) { $changes = @('- Обновлён состав поставки модуля и его проверенный бинарный артефакт.') }
+$summaryText = if ($Summary) { $Summary } else {
+    switch ($Module) {
+        'shell-host' { 'Оболочка Electron: окно приложения, IPC-адаптеры, preload и запуск пользовательского интерфейса.'; break }
+        'ui-bundle' { 'Собранный renderer-интерфейс приложения с проверкой IPC-контракта и типизации.'; break }
+        'core' { 'Основной Rust runtime агента: инструменты, провайдеры, локальное состояние и обработка задач.'; break }
+        'supervisor' { 'Windows supervisor: жизненный цикл Core, mutex, Job Object, восстановление и журналы.'; break }
+        'cli' { 'Официальный консольный клиент для диагностики, запуска задач и чтения статуса Core.'; break }
+        'analysis-worker' { 'Фоновый worker анализа данных и выполнения связанных аналитических операций.'; break }
+        'listener' { 'Исполняемый listener для захвата аудио и обмена с Core по защищённому IPC.'; break }
+        'listener-runtime' { 'Библиотеки распознавания речи и модели, используемые модулем listener.'; break }
+        'transaction' { 'Worker транзакционного обновления: безопасная замена файлов, backup и rollback.'; break }
+        'verifier' { 'Проверяющий worker целостности и контрактов поставляемых файлов.'; break }
+        'updater' { 'Независимый агент проверки и координации модульных обновлений.'; break }
+        default { "Компонент `$Module` поставлен как самостоятельный модуль EvoHime."; break }
+    }
+}
 $manifest = [ordered]@{
     schema = 'evohime.module-release.v1'
     module = $Module
@@ -48,6 +79,8 @@ $manifest = [ordered]@{
     release_tag = $tag
     dependencies = $dependencies
     restart = $restart
+    summary = $summaryText
+    changes = $changes
 }
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
 
@@ -55,38 +88,9 @@ $generatedNotesPath = Join-Path $env:RUNNER_TEMP "$Module-release-notes.md"
 $runUrl = if ($env:GITHUB_SERVER_URL -and $env:GITHUB_REPOSITORY -and $env:GITHUB_RUN_ID) {
     "$($env:GITHUB_SERVER_URL)/$($env:GITHUB_REPOSITORY)/actions/runs/$($env:GITHUB_RUN_ID)"
 } else { $null }
-$modulePaths = @{
-    'shell-host' = @('desktop/evohime-electron/src/main', 'desktop/evohime-electron/src/preload')
-    'ui-bundle' = @('desktop/evohime-electron/src/renderer', 'desktop/evohime-electron/src/shared')
-    'core' = @('crates/evohime-core', 'crates/evohime-model-gateway', 'crates/evohime-permissions', 'crates/tool-runtime', 'crates/evohime-local-storage')
-    'supervisor' = @('crates/evohime-supervisor', 'crates/evohime-process')
-    'cli' = @('crates/evohime-cli')
-    'analysis-worker' = @('crates/evohime-supervisor/src/analysis_worker.rs')
-    'listener' = @('crates/evohime-listener', 'crates/evohime-listener-ipc')
-    'transaction' = @('crates/evohime-updater')
-    'verifier' = @('crates/evohime-receipts')
-    'updater' = @('crates/evohime-update-agent')
-}
-$changes = if ($modulePaths.ContainsKey($Module)) { @(git log -5 --pretty=format:'- %s' -- $modulePaths[$Module] 2>$null) } else { @() }
-if ($changes.Count -eq 0) { $changes = @('- Обновлён состав поставки модуля и его проверенный бинарный артефакт.') }
 $notes = [System.Collections.Generic.List[string]]::new()
 $notes.Add(('Версия модуля `{0}` опубликована после успешных проверок и сборки.' -f $Version))
 $notes.Add('')
-$summaryText = if ($Summary) { $Summary } else {
-    switch ($Module) {
-        'shell-host' { 'Оболочка Electron: окно приложения, IPC-адаптеры, preload и запуск пользовательского интерфейса.'; break }
-        'ui-bundle' { 'Собранный renderer-интерфейс приложения с проверкой IPC-контракта и типизации.'; break }
-        'core' { 'Основной Rust runtime агента: инструменты, провайдеры, локальное состояние и обработка задач.'; break }
-        'supervisor' { 'Windows supervisor: жизненный цикл Core, mutex, Job Object, восстановление и журналы.'; break }
-        'cli' { 'Официальный консольный клиент для диагностики, запуска задач и чтения статуса Core.'; break }
-        'analysis-worker' { 'Фоновый worker анализа данных и выполнения связанных аналитических операций.'; break }
-        'listener' { 'Исполняемый listener для захвата аудио и обмена с Core по защищённому IPC.'; break }
-        'transaction' { 'Worker транзакционного обновления: безопасная замена файлов, backup и rollback.'; break }
-        'verifier' { 'Проверяющий worker целостности и контрактов поставляемых файлов.'; break }
-        'updater' { 'Независимый агент проверки и координации модульных обновлений.'; break }
-        default { "Компонент `$Module` поставлен как самостоятельный модуль EvoHime."; break }
-    }
-}
 $notes.Add('## Назначение')
 $notes.Add($summaryText)
 $notes.Add('')

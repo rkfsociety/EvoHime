@@ -36,7 +36,7 @@ import {
 } from './provider-store'
 import { isAllowedExternalUrl } from './security-policy'
 import type { ListenerRuntimeService } from './update/listener-runtime'
-import type { UpdateService } from './update/update-service'
+import type { UpdateController } from './update/update-service'
 import type { WorkspaceService } from './workspace-service'
 
 /**
@@ -70,7 +70,7 @@ export interface ShellBridgeOptions {
    */
   readonly restartCore: () => Promise<boolean>
   /** Owns the source update; the renderer may only observe and trigger it. */
-  readonly updates: UpdateService
+  readonly updates: UpdateController
   /** Owns the speech runtime download; the renderer only observes and asks. */
   readonly listenerRuntime: ListenerRuntimeService
   /**
