@@ -217,7 +217,7 @@ mod tests {
         ];
         assert_eq!(
             select_outdated(&installed, &available).unwrap().modules,
-            vec!["core"]
+            vec!["core", "shell"]
         );
     }
 
