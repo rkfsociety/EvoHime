@@ -26,7 +26,8 @@ import {
 } from './commit-status'
 import { readBuildMarker, type UpdateConfig } from './config'
 import { resolveGithubToken } from './github-token'
-import { downloadReleaseComponents, downloadReleaseInstaller, readReleaseInstallerCommit } from './release-installer'
+import { downloadReleaseComponents, downloadReleaseInstaller, readModuleReleaseManifest, readReleaseInstallerCommit } from './release-installer'
+import { selectOutdatedModules, type ModuleVersionRecord } from './module-versions'
 import { readRemoteHead, syncCheckout } from './source-checkout'
 import { detectToolchain, ensureToolchain, toolPath, type ToolchainReport } from './toolchain'
 import { reportUpdateFailure } from './update-issue-reporter'
@@ -44,6 +45,7 @@ import { reportUpdateFailure } from './update-issue-reporter'
 
 export const TRANSACTION_EXECUTABLE = 'evohime-transaction.exe'
 export const SHELL_EXECUTABLE = 'EvoHime.exe'
+const MODULE_IDS = ['shell-host', 'ui-bundle', 'core', 'supervisor', 'cli', 'analysis-worker', 'listener', 'transaction', 'verifier'] as const
 
 export type GateOutcome = 'continue' | 'applying'
 
@@ -162,6 +164,11 @@ export class UpdateService {
       return this.releaseGate()
     }
 
+    if (checked.availableModules && checked.availableModules.length > 0) {
+      const modulePrepared = await this.prepareComponents(checked.availableModules)
+      if (this.skipped || modulePrepared.phase !== 'ready') return this.releaseGate()
+      return this.apply() ? 'applying' : this.releaseGate()
+    }
     const prepared = await this.prepare()
     if (this.skipped || prepared.phase !== 'ready') {
       return this.releaseGate()
@@ -183,6 +190,16 @@ export class UpdateService {
 
     try {
       if (config.launchPolicy === 'installer') {
+        const moduleCheck = await this.checkModuleVersions()
+        if (moduleCheck.length > 0) {
+          return this.patch({
+            phase: 'available',
+            message: `Доступны обновления модулей: ${moduleCheck.join(', ')}.`,
+            remoteCommit: null,
+            availableModules: moduleCheck,
+            checkedAtMs: this.time()
+          })
+        }
         const apiBase = githubApiBase(config.repositoryUrl)
         if (!apiBase) {
           return this.patch({
@@ -716,6 +733,20 @@ export class UpdateService {
     } catch {
       return {}
     }
+  }
+
+  private async checkModuleVersions(): Promise<string[]> {
+    const available: ModuleVersionRecord[] = []
+    try {
+      for (const module of MODULE_IDS) {
+        const manifest = await readModuleReleaseManifest(this.deps.config.repositoryUrl, module, await this.githubToken())
+        available.push(manifest)
+      }
+    } catch (error) {
+      this.deps.log('info', 'update.module_releases_unavailable', { reason: redactError(error) })
+      return []
+    }
+    return selectOutdatedModules(this.installedModules(), available).map((item) => item.module)
   }
 
   private stagedMarker(): { readonly commit: string } | null {
