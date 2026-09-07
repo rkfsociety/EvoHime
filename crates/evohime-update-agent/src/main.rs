@@ -4,9 +4,12 @@ use evohime_update_agent::{
 };
 use std::{
     env, fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, ExitCode},
 };
+
+#[cfg(windows)]
+mod ui;
 
 fn main() -> ExitCode {
     let args = env::args().collect::<Vec<_>>();
@@ -82,6 +85,10 @@ fn launch_shell(args: &[String]) -> ExitCode {
         "Проверка модулей завершена.",
         Vec::new(),
     );
+    #[cfg(windows)]
+    if let Err(error) = ui::run_preflight_window(&install_dir) {
+        return fail(error);
+    }
     let shell = install_dir.join("EvoHime.exe");
     if !shell.is_file() {
         return fail(format!("shell is missing: {}", shell.display()));
@@ -92,7 +99,7 @@ fn launch_shell(args: &[String]) -> ExitCode {
     }
 }
 
-fn write_status(install_dir: &PathBuf, phase: &'static str, message: &str, modules: Vec<String>) {
+fn write_status(install_dir: &Path, phase: &'static str, message: &str, modules: Vec<String>) {
     let state = install_dir.join("update-state");
     if fs::create_dir_all(&state).is_ok() {
         let status = UpdaterStatus {
