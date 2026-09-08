@@ -525,12 +525,14 @@ pub async fn undo_candidate(
         if snapshot.head.as_deref() != Some(commit_id.as_str()) {
             return Err(ChangeSetError::Stale);
         }
-        let baseline_paths = baseline_paths(baseline);
-        let current_paths = snapshot.paths.keys().cloned().collect::<BTreeSet<_>>();
-        if current_paths != baseline_paths {
+        if baseline_fingerprint(&snapshot.baseline) != baseline_fingerprint(baseline) {
             return Err(ChangeSetError::Stale);
         }
         run_git(&root, &["revert", "--no-edit", commit_id], None).await?;
+        let after = capture_snapshot(root.clone(), candidate.created_at_ms).await?;
+        if baseline_fingerprint(&after.baseline) != baseline_fingerprint(baseline) {
+            return Err(ChangeSetError::CommitOutcomeUnknown);
+        }
         return current_head(&root)
             .await?
             .ok_or(ChangeSetError::CommitOutcomeUnknown);
@@ -581,16 +583,6 @@ pub async fn undo_candidate(
     current_head(&after.root)
         .await?
         .ok_or(ChangeSetError::CommitOutcomeUnknown)
-}
-
-fn baseline_paths(baseline: &GitDirtyBaseline) -> BTreeSet<String> {
-    baseline
-        .tracked_modified
-        .iter()
-        .chain(baseline.staged.iter())
-        .chain(baseline.untracked.iter())
-        .cloned()
-        .collect()
 }
 
 fn bounded_paths(paths: &[String]) -> Result<BTreeSet<String>, ChangeSetError> {

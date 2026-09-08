@@ -167,6 +167,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     }
                     "candidate" => {
                         let set = load_change_set(&journal, &change_set_id).await?;
+                        validate_agent_git_integrations(&journal, &set).await?;
                         if expected_version != 0 && expected_version != set.revision {
                             return Err("agent_git_change_set_stale_version".into());
                         }
@@ -174,6 +175,8 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             .await
                             .map_err(|error| error.to_string())?;
                         next.revision = set.revision.saturating_add(1);
+                        let mut candidate = candidate;
+                        candidate.revision = next.revision;
                         next.content_hash = recompute_content_hash(&next)?;
                         let set_json = serde_json::to_vec(&next)
                             .map_err(|_| "serialization_failed".to_string())?;
@@ -222,6 +225,10 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     "keep" => {
                         let candidate = load_candidate(&journal, &change_set_id).await?;
                         let mut set = load_change_set(&journal, &candidate.change_set_ref).await?;
+                        validate_agent_git_integrations(&journal, &set).await?;
+                        if candidate.revision != set.revision {
+                            return Err("agent_git_change_set_stale_version".into());
+                        }
                         if expected_version != 0 && expected_version != set.revision {
                             return Err("agent_git_change_set_stale_version".into());
                         }
@@ -265,6 +272,10 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             candidate_projection(&candidate)?
                         } else {
                             let set = load_change_set(&journal, &candidate.change_set_ref).await?;
+                            validate_agent_git_integrations(&journal, &set).await?;
+                            if candidate.revision != set.revision {
+                                return Err("agent_git_change_set_stale_version".into());
+                            }
                             if expected_version != 0 && expected_version != set.revision {
                                 return Err("agent_git_change_set_stale_version".into());
                             }
@@ -311,6 +322,10 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     "undo" => {
                         let candidate = load_candidate(&journal, &change_set_id).await?;
                         let set = load_change_set(&journal, &candidate.change_set_ref).await?;
+                        validate_agent_git_integrations(&journal, &set).await?;
+                        if candidate.revision != set.revision {
+                            return Err("agent_git_change_set_stale_version".into());
+                        }
                         if expected_version != 0 && expected_version != set.revision {
                             return Err("agent_git_change_set_stale_version".into());
                         }
