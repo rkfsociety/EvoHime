@@ -1054,27 +1054,63 @@ fn schedule_updater_replacement(
     let staged = staging.join("evohime-updater.exe.next");
     let backup = state_dir.join("updater-previous.exe");
     let manifest_backup = state_dir.join("components-previous.json");
-    let quote = |path: &Path| format!("\"{}\"", path.display());
-    let content = format!(
-        "@echo off\r\nsetlocal\r\n:wait\r\ntasklist /FI \"PID eq {pid}\" 2>NUL | findstr /C:\"{pid}\" >NUL\r\nif not errorlevel 1 (timeout /t 1 /nobreak >NUL & goto wait)\r\ncopy /Y {updater} {backup} >NUL\r\nmove /Y {staged} {updater} >NUL\r\nif errorlevel 1 (move /Y {backup} {updater} >NUL & exit /b 1)\r\ncopy /Y {manifest} {manifest_backup} >NUL\r\nmove /Y {manifest_next} {manifest} >NUL\r\nif errorlevel 1 (move /Y {backup} {updater} >NUL & move /Y {manifest_backup} {manifest} >NUL & exit /b 1)\r\ndel /Q {backup} 2>NUL\r\ndel /Q {manifest_backup} 2>NUL\r\ndel /Q {marker} 2>NUL\r\nstart \"\" {updater_ui} --evohime-updater --install-dir {install_dir}\r\ndel /Q \"%~f0\" 2>NUL\r\n",
-        pid = std::process::id(),
-        updater = quote(&updater),
-        updater_ui = quote(&updater_ui),
-        staged = quote(&staged),
-        backup = quote(&backup),
-        manifest = quote(&install_dir.join("evohime.components.json")),
-        manifest_next = quote(manifest_next),
-        manifest_backup = quote(&manifest_backup),
-        marker = quote(&marker),
-        install_dir = quote(install_dir),
-    );
+    let manifest = install_dir.join("evohime.components.json");
+    let paths = UpdaterBootstrapPaths {
+        updater: &updater,
+        updater_ui: &updater_ui,
+        staged: &staged,
+        backup: &backup,
+        manifest: &manifest,
+        manifest_next,
+        manifest_backup: &manifest_backup,
+        marker: &marker,
+        install_dir,
+    };
+    let content = updater_bootstrap_script(std::process::id(), &paths);
     fs::write(&script, content).map_err(|error| error.to_string())?;
     fs::write(&marker, format!("{}\n", update.available)).map_err(|error| error.to_string())?;
     Command::new("cmd.exe")
-        .args(["/D", "/C", script.to_string_lossy().as_ref()])
+        .current_dir(&state_dir)
+        .args([
+            "/D",
+            "/C",
+            script
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default(),
+        ])
         .spawn()
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+struct UpdaterBootstrapPaths<'a> {
+    updater: &'a Path,
+    updater_ui: &'a Path,
+    staged: &'a Path,
+    backup: &'a Path,
+    manifest: &'a Path,
+    manifest_next: &'a Path,
+    manifest_backup: &'a Path,
+    marker: &'a Path,
+    install_dir: &'a Path,
+}
+
+fn updater_bootstrap_script(pid: u32, paths: &UpdaterBootstrapPaths<'_>) -> String {
+    let quote = |path: &Path| format!("\"{}\"", path.display().to_string().replace('%', "%%"));
+    format!(
+        "@echo off\r\nsetlocal\r\nset \"UPDATER={updater}\"\r\nset \"UPDATER_UI={updater_ui}\"\r\nset \"STAGED={staged}\"\r\nset \"BACKUP={backup}\"\r\nset \"MANIFEST={manifest}\"\r\nset \"MANIFEST_NEXT={manifest_next}\"\r\nset \"MANIFEST_BACKUP={manifest_backup}\"\r\nset \"MARKER={marker}\"\r\nset \"INSTALL_DIR={install_dir}\"\r\n:wait\r\ntasklist /FI \"PID eq {pid}\" 2>NUL | findstr /C:\"{pid}\" >NUL\r\nif not errorlevel 1 (timeout /t 1 /nobreak >NUL & goto wait)\r\nif not exist \"%STAGED%\" goto fail\r\ncopy /Y \"%UPDATER%\" \"%BACKUP%\" >NUL\r\nif errorlevel 1 goto fail\r\nmove /Y \"%STAGED%\" \"%UPDATER%\" >NUL\r\nif errorlevel 1 goto restore\r\ncopy /Y \"%MANIFEST%\" \"%MANIFEST_BACKUP%\" >NUL\r\nif errorlevel 1 goto restore\r\nmove /Y \"%MANIFEST_NEXT%\" \"%MANIFEST%\" >NUL\r\nif errorlevel 1 goto restore_manifest\r\n\"%UPDATER%\" --check --install-dir \"%INSTALL_DIR%\" >NUL 2>NUL\r\nif errorlevel 1 goto restore_manifest\r\ndel /Q \"%BACKUP%\" 2>NUL\r\ndel /Q \"%MANIFEST_BACKUP%\" 2>NUL\r\ndel /Q \"%MARKER%\" 2>NUL\r\nstart \"\" \"%UPDATER_UI%\" --evohime-updater --install-dir \"%INSTALL_DIR%\"\r\ngoto cleanup\r\n:restore_manifest\r\nmove /Y \"%MANIFEST_BACKUP%\" \"%MANIFEST%\" >NUL\r\n:restore\r\nif exist \"%UPDATER%\" del /Q \"%UPDATER%\" 2>NUL\r\nif exist \"%BACKUP%\" move /Y \"%BACKUP%\" \"%UPDATER%\" >NUL\r\n:fail\r\ndel /Q \"%MARKER%\" 2>NUL\r\nstart \"\" \"%UPDATER_UI%\" --evohime-updater --install-dir \"%INSTALL_DIR%\"\r\n:cleanup\r\ndel /Q \"%~f0\" 2>NUL\r\n",
+        pid = pid,
+        updater = quote(paths.updater),
+        updater_ui = quote(paths.updater_ui),
+        staged = quote(paths.staged),
+        backup = quote(paths.backup),
+        manifest = quote(paths.manifest),
+        manifest_next = quote(paths.manifest_next),
+        manifest_backup = quote(paths.manifest_backup),
+        marker = quote(paths.marker),
+        install_dir = quote(paths.install_dir),
+    )
 }
 
 fn write_status(data_dir: &Path, phase: &'static str, message: &str, updates: &[UpdateCandidate]) {
@@ -1117,10 +1153,12 @@ fn fail(error: impl std::fmt::Display) -> ExitCode {
 mod tests {
     use super::{
         is_github_api_url, normalize_github_token, parse_json_body, read_update_config,
-        resolve_github_token_with, updater_http_client,
+        resolve_github_token_with, updater_bootstrap_script, updater_http_client,
+        UpdaterBootstrapPaths,
     };
     use std::{
         fs,
+        path::Path,
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -1238,5 +1276,45 @@ mod tests {
             .headers()
             .get(reqwest::header::AUTHORIZATION)
             .is_none());
+    }
+
+    #[test]
+    fn updater_bootstrap_validates_new_worker_before_removing_backup() {
+        let updater = Path::new(r"C:\Program Files\EvoHime\evohime-updater.exe");
+        let updater_ui = Path::new(r"C:\Program Files\EvoHime\EvoHimeUpdater.exe");
+        let staged = Path::new(
+            r"C:\Users\Roman\AppData\Local\EvoHime\update-staging\evohime-updater.exe.next",
+        );
+        let backup =
+            Path::new(r"C:\Users\Roman\AppData\Local\EvoHime\update-state\updater-previous.exe");
+        let manifest = Path::new(r"C:\Program Files\EvoHime\evohime.components.json");
+        let manifest_next = Path::new(r"C:\Program Files\EvoHime\evohime.components.json.next");
+        let manifest_backup = Path::new(
+            r"C:\Users\Roman\AppData\Local\EvoHime\update-state\components-previous.json",
+        );
+        let marker = Path::new(
+            r"C:\Users\Roman\AppData\Local\EvoHime\update-state\updater-relaunch.pending",
+        );
+        let paths = UpdaterBootstrapPaths {
+            updater,
+            updater_ui,
+            staged,
+            backup,
+            manifest,
+            manifest_next,
+            manifest_backup,
+            marker,
+            install_dir: Path::new(r"C:\Program Files\EvoHime"),
+        };
+        let script = updater_bootstrap_script(42, &paths);
+
+        let verify = script
+            .find("--check --install-dir")
+            .expect("new worker check");
+        let cleanup_backup = script.find("del /Q \"%BACKUP%\"").expect("backup cleanup");
+        assert!(verify < cleanup_backup);
+        assert!(script.contains(":restore_manifest"));
+        assert!(script.contains("move /Y \"%BACKUP%\" \"%UPDATER%\""));
+        assert!(script.contains("Program Files"));
     }
 }
