@@ -13,6 +13,9 @@ foreach ($workflow in @('core.yml','supervisor.yml','cli.yml','analysis-worker.y
     if ($text -match '(?m)^\s{2}push:') { throw "$workflow still has a direct push trigger." }
     if ($text -notmatch '(?m)^\s{2}workflow_call:') { throw "$workflow is not reusable." }
     if ($text -notmatch '(?m)^\s{2}workflow_dispatch:') { throw "$workflow cannot be dispatched separately." }
+    if ($text -notmatch '(?m)^concurrency:\s*$') { throw "$workflow has no concurrency block." }
+    if ($text -notmatch [regex]::Escape('group: evohime-module-${{ github.workflow }}-${{ github.ref }}')) { throw "$workflow does not isolate its own concurrency group." }
+    if ($text -notmatch '(?m)^\s+cancel-in-progress:\s*true\s*$') { throw "$workflow does not cancel the previous module run." }
 }
 $installer = Get-Content -LiteralPath (Join-Path $root '.github\workflows\windows.yml') -Raw
 if ($installer -match '(?m)^\s{2}push:') { throw 'installer workflow still has a direct push trigger.' }

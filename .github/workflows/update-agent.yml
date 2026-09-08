@@ -11,6 +11,10 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
 
+concurrency:
+  group: evohime-module-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

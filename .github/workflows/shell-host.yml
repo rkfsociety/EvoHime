@@ -14,6 +14,10 @@ on:
       - 'release-versions/shell-host.txt'
       - '.github/workflows/shell-host.yml'
 
+concurrency:
+  group: evohime-module-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

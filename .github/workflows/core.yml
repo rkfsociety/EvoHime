@@ -15,6 +15,10 @@ on:
       - 'release-versions/core.txt'
       - '.github/workflows/core.yml'
 
+concurrency:
+  group: evohime-module-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

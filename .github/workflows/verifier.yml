@@ -4,6 +4,11 @@ on:
   workflow_dispatch:
   pull_request:
     paths: ['crates/evohime-receipts/**', 'release-versions/verifier.txt', '.github/workflows/verifier.yml', '.github/workflows/module-native.yml']
+
+concurrency:
+  group: evohime-module-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   module:
     uses: ./.github/workflows/module-native.yml

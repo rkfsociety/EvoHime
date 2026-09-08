@@ -4,6 +4,11 @@ on:
   workflow_dispatch:
   pull_request:
     paths: ['crates/evohime-supervisor/**', 'crates/evohime-process/**', 'release-versions/supervisor.txt', '.github/workflows/supervisor.yml', '.github/workflows/module-native.yml']
+
+concurrency:
+  group: evohime-module-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   module:
     uses: ./.github/workflows/module-native.yml
