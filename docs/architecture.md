@@ -2638,3 +2638,10 @@ Core contract `confidence_gated_model_cascade` задаёт bounded policy с
 threshold/revision/hash и fail-closed decisions `Unavailable`, `NeedsReview`,
 `Eligible` или `Denied`. Model Gateway остаётся единственным routing owner;
 без versioned confidence producer или eligible route cascade не исполняется.
+
+## Task Ownership & Lease Fencing v1 (план 130, MVP реализован 2026-09-09)
+
+`task_ownership_lease_fencing` формализует проверку owner, generation и
+deadline поверх существующих `run_leases`, `agent_run_leases` и child
+checkpoint leases. Wrong owner, stale generation и expiry fail closed; новый
+ownership store или blind retry не добавляются.

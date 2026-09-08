@@ -22,7 +22,7 @@
 | 127 | Remote client control plane | реализован MVP-контур; Android/server deployment unavailable |
 | 128 | Local inference scheduler | реализован MVP-контур; inference adapter unavailable |
 | 129 | Confidence-gated model cascade | реализован MVP-контур; producer/executor unavailable |
-| [130](130-0-task-ownership-lease-fencing.md) | Task ownership lease fencing | незавершён |
+| 130 | Task ownership lease fencing | реализован MVP-контур |
 | [131](131-0-unified-context-namespace.md) | Unified context namespace | незавершён |
 | [132](132-0-durable-background-execution-plane.md) | Durable background execution plane | незавершён |
 | [133](133-0-built-in-deterministic-developer-utilities.md) | Built-in deterministic developer utilities | незавершён |

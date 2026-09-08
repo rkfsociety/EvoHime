@@ -1082,6 +1082,16 @@ Verification evidence: `cargo fmt --all` и `git diff --check` выполнен�
 локальные tests/builds/linters/smoke-tests не запускались по указанию Романа,
 CI не отслеживался. Установленный клиент не затрагивался.
 
+## Plan 130 — Task Ownership & Lease Fencing MVP (2026-09-09)
+
+Implementation: добавлен общий Core contract `LeaseFence` для owner,
+generation и deadline checks поверх существующих lease stores; stale/expired/
+wrong-owner paths не допускают effect.
+
+Verification evidence: `cargo fmt --all` и `git diff --check` выполнены;
+локальные tests/builds/linters/smoke-tests не запускались по указанию Романа,
+CI не отслеживался. Установленный клиент не затрагивался.
+
 ## Plan 128 — Local Inference Scheduler MVP (2026-09-09)
 
 Implementation: добавлен bounded Core contract с revision/hash/status/priority

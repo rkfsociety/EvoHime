@@ -334,6 +334,12 @@ runtime execution, worker queue и measured scheduling остаются
 decision. Existing Model Gateway остаётся routing owner; без versioned
 confidence producer или eligible route cascade имеет `Unavailable`/`NeedsReview`.
 
+## Plan 130 — Task Ownership & Lease Fencing (MVP закрыт 2026-09-09)
+
+Добавлен общий Core fencing contract поверх существующих lease owners. Проверки
+owner/generation/deadline возвращают fail-closed decision; новая authority и
+новая durable таблица не добавлялись.
+
 ## Как поддерживать этот документ
 
 Обновляйте дату и этот файл только по фактам из кода, тестов и release evidence.

@@ -43,7 +43,7 @@ restart подтверждаются отдельно. Автоматическ�
 | 125 | free provider reliability routing | реализован 2026-09-09 |
 | 126 | design intent review lane | реализован 2026-09-09 |
 | 127–129 | remote control, local inference, model cascade | 127–129 реализованы MVP |
-| 130–135 | task leases, context namespace, durable background execution, deterministic utilities, resource guard, code review | очередь по графу |
+| 130–135 | task leases, context namespace, durable background execution, deterministic utilities, resource guard, code review | 130 реализован MVP; очередь 131–135 |
 | 136–140 | static-analysis packs, context loadouts, skill updates, capability facade, authorized security assessment | очередь по графу |
 | 141–143 | service graph, program optimizer, project knowledge notebook | очередь по графу |
 | 144 | модульный manifest и выборочное обновление компонентов | реализовано |

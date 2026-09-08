@@ -33,6 +33,7 @@ pub(crate) mod safe_ui_extension_framework;
 pub mod schema_driven_agent_configuration;
 pub mod sensitive_data_guardrails;
 pub(crate) mod standing_approval_profiles;
+pub mod task_ownership_lease_fencing;
 pub mod team_coordinator;
 pub(crate) mod team_sop_protocols;
 pub(crate) mod typed_context_references;
