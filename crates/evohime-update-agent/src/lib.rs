@@ -1,4 +1,7 @@
-use serde::{Deserialize, Serialize};
+use serde::{
+    de::{Deserializer, Error as DeError},
+    Deserialize, Serialize,
+};
 use sha2::Digest;
 use std::cmp::Ordering;
 use std::path::Path;
@@ -7,8 +10,23 @@ use std::path::Path;
 pub struct ModuleRecord {
     pub id: String,
     pub version: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_nullable_vec")]
     pub dependencies: Vec<String>,
+}
+
+pub fn deserialize_nullable_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::Null => Ok(Vec::new()),
+        serde_json::Value::String(value) => Ok(vec![value]),
+        serde_json::Value::Array(value) => serde_json::from_value(serde_json::Value::Array(value))
+            .map_err(|error| D::Error::custom(format!("expected string array: {error}"))),
+        value => Err(D::Error::custom(format!(
+            "expected null, string, or string array, got {value}"
+        ))),
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -253,6 +271,23 @@ mod tests {
             select_outdated(&installed, &available).unwrap().modules,
             vec!["core", "shell"]
         );
+    }
+
+    #[test]
+    fn accepts_null_dependencies_in_installed_manifest() {
+        let installed: InstalledManifest = serde_json::from_value(serde_json::json!({
+            "components": [{"id": "core", "version": "1.0.0", "dependencies": null}]
+        }))
+        .expect("manifest with nullable dependencies");
+
+        assert!(installed.components[0].dependencies.is_empty());
+
+        let installed: InstalledManifest = serde_json::from_value(serde_json::json!({
+            "components": [{"id": "core", "version": "1.0.0", "dependencies": "supervisor"}]
+        }))
+        .expect("manifest with a single dependency");
+
+        assert_eq!(installed.components[0].dependencies, vec!["supervisor"]);
     }
 
     #[test]

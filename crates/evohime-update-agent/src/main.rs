@@ -1,8 +1,8 @@
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 use evohime_update_agent::{
-    compare_semver, is_valid_semver, select_outdated, InstalledManifest, ModuleRecord,
-    UpdateCandidate, UpdaterModuleStatus, UpdaterStatus,
+    compare_semver, deserialize_nullable_vec, is_valid_semver, select_outdated, InstalledManifest,
+    ModuleRecord, UpdateCandidate, UpdaterModuleStatus, UpdaterStatus,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::Digest;
@@ -10,7 +10,9 @@ use std::{
     env, fs,
     io::{Read, Write},
     path::{Path, PathBuf},
-    process::{Command, ExitCode},
+    process::{Command, ExitCode, Stdio},
+    thread,
+    time::{Duration, Instant},
 };
 
 fn main() -> ExitCode {
@@ -181,9 +183,9 @@ struct RemoteManifest {
     sha256: String,
     #[serde(default)]
     summary: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_nullable_vec")]
     changes: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_nullable_vec")]
     dependencies: Vec<String>,
     #[serde(default = "default_restart")]
     restart: String,
@@ -215,7 +217,7 @@ fn remote_updates(data_dir: &Path, install_dir: &Path) -> Result<Vec<UpdateCandi
         return Err("updater: разрешён только GitHub HTTPS repository".into());
     };
     let repository = repository.trim_end_matches('/');
-    let client = updater_http_client()?;
+    let client = updater_http_client(resolve_github_token(&config))?;
     let releases: Vec<Release> = get_json(
         &client,
         &format!("https://api.github.com/repos/{repository}/releases?per_page=100"),
@@ -354,17 +356,119 @@ fn read_update_config(path: &Path) -> Result<serde_json::Value, String> {
         .map_err(|error| format!("updater: update.json содержит некорректный JSON: {error}"))
 }
 
-fn updater_http_client() -> Result<reqwest::blocking::Client, String> {
-    reqwest::blocking::Client::builder()
+struct UpdaterHttpClient {
+    client: reqwest::blocking::Client,
+    github_token: Option<String>,
+}
+
+impl UpdaterHttpClient {
+    fn get(&self, url: &str) -> reqwest::blocking::RequestBuilder {
+        let request = self.client.get(url);
+        if self.github_token.is_some() && is_github_api_url(url) {
+            request.bearer_auth(self.github_token.as_deref().expect("token is present"))
+        } else {
+            request
+        }
+    }
+}
+
+fn updater_http_client(github_token: Option<String>) -> Result<UpdaterHttpClient, String> {
+    let client = reqwest::blocking::Client::builder()
         .user_agent("EvoHime-Updater")
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(30))
         .build()
-        .map_err(|error| format!("updater: не удалось создать HTTP-клиент: {error}"))
+        .map_err(|error| format!("updater: не удалось создать HTTP-клиент: {error}"))?;
+    Ok(UpdaterHttpClient {
+        client,
+        github_token,
+    })
+}
+
+fn is_github_api_url(value: &str) -> bool {
+    value
+        .parse::<reqwest::Url>()
+        .map(|url| url.scheme() == "https" && url.host_str() == Some("api.github.com"))
+        .unwrap_or(false)
+}
+
+fn resolve_github_token(config: &serde_json::Value) -> Option<String> {
+    resolve_github_token_with(config, |name| env::var(name).ok(), read_gh_cli_token)
+}
+
+fn resolve_github_token_with<Environment, GhToken>(
+    config: &serde_json::Value,
+    environment: Environment,
+    gh_token: GhToken,
+) -> Option<String>
+where
+    Environment: Fn(&str) -> Option<String>,
+    GhToken: Fn() -> Option<String>,
+{
+    normalize_github_token(environment("EVOHIME_UPDATE_GITHUB_TOKEN").as_deref())
+        .or_else(|| {
+            normalize_github_token(config.get("githubToken").and_then(|value| value.as_str()))
+        })
+        .or_else(|| normalize_github_token(environment("GH_TOKEN").as_deref()))
+        .or_else(|| normalize_github_token(environment("GITHUB_TOKEN").as_deref()))
+        .or_else(gh_token)
+}
+
+fn normalize_github_token(value: Option<&str>) -> Option<String> {
+    let candidate = value?.trim();
+    if !(20..=255).contains(&candidate.len())
+        || !candidate
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+    {
+        return None;
+    }
+    Some(candidate.to_owned())
+}
+
+fn read_gh_cli_token() -> Option<String> {
+    let mut command = Command::new("gh");
+    command
+        .args(["auth", "token"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    configure_hidden_process(&mut command);
+    let mut child = command.spawn().ok()?;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(50)),
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            Err(_) => return None,
+        }
+    }
+    let output = child.wait_with_output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .find_map(|line| normalize_github_token(Some(line)))
+}
+
+fn configure_hidden_process(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
 }
 
 fn get_json<T: DeserializeOwned>(
-    client: &reqwest::blocking::Client,
+    client: &UpdaterHttpClient,
     url: &str,
     purpose: &str,
 ) -> Result<T, String> {
@@ -382,7 +486,7 @@ fn get_json<T: DeserializeOwned>(
 }
 
 fn get_json_once<T: DeserializeOwned>(
-    client: &reqwest::blocking::Client,
+    client: &UpdaterHttpClient,
     url: &str,
     purpose: &str,
 ) -> Result<T, String> {
@@ -507,7 +611,9 @@ fn apply_updates(
         fs::remove_dir_all(&staging).map_err(|error| error.to_string())?;
     }
     fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
-    let client = updater_http_client()?;
+    let client = updater_http_client(resolve_github_token(&read_update_config(
+        &data_dir.join("update.json"),
+    )?))?;
     let mut selected = Vec::new();
     let mut applied = Vec::new();
     let mut ui_update = None;
@@ -680,7 +786,7 @@ fn apply_updates(
 }
 
 fn apply_listener_runtime_if_needed(
-    client: &reqwest::blocking::Client,
+    client: &UpdaterHttpClient,
     update: Option<&UpdateCandidate>,
     data_dir: &Path,
     progress: &dyn Fn(&str, u8),
@@ -699,7 +805,7 @@ fn progress_percent(done: u64, total: u64) -> u8 {
 }
 
 fn download_verified_file(
-    client: &reqwest::blocking::Client,
+    client: &UpdaterHttpClient,
     update: &UpdateCandidate,
     target: &Path,
     on_progress: impl Fn(u64),
@@ -792,7 +898,7 @@ fn extract_ui_bundle(archive_path: &Path, destination: &Path) -> Result<(), Stri
 }
 
 fn apply_listener_runtime(
-    client: &reqwest::blocking::Client,
+    client: &UpdaterHttpClient,
     update: &UpdateCandidate,
     data_dir: &Path,
     progress: &dyn Fn(&str, u8),
@@ -1009,7 +1115,10 @@ fn fail(error: impl std::fmt::Display) -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_json_body, read_update_config};
+    use super::{
+        is_github_api_url, normalize_github_token, parse_json_body, read_update_config,
+        resolve_github_token_with, updater_http_client,
+    };
     use std::{
         fs,
         time::{SystemTime, UNIX_EPOCH},
@@ -1048,5 +1157,86 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert_eq!(config["enabled"], true);
+    }
+
+    #[test]
+    fn github_token_resolution_uses_the_documented_precedence() {
+        let config = serde_json::json!({"githubToken": "config_token_1234567890"});
+        let token = resolve_github_token_with(
+            &config,
+            |name| match name {
+                "EVOHIME_UPDATE_GITHUB_TOKEN" => Some("explicit_token_1234567890".to_owned()),
+                "GH_TOKEN" => Some("ambient_token_1234567890".to_owned()),
+                _ => None,
+            },
+            || Some("gh_token_1234567890".to_owned()),
+        );
+        assert_eq!(token.as_deref(), Some("explicit_token_1234567890"));
+
+        let token =
+            resolve_github_token_with(&config, |_| None, || Some("gh_token_1234567890".to_owned()));
+        assert_eq!(token.as_deref(), Some("config_token_1234567890"));
+
+        let token = resolve_github_token_with(
+            &serde_json::json!({}),
+            |name| (name == "GH_TOKEN").then(|| "ambient_token_1234567890".to_owned()),
+            || Some("gh_token_1234567890".to_owned()),
+        );
+        assert_eq!(token.as_deref(), Some("ambient_token_1234567890"));
+
+        let token = resolve_github_token_with(
+            &serde_json::json!({}),
+            |_| None,
+            || Some("gh_token_1234567890".to_owned()),
+        );
+        assert_eq!(token.as_deref(), Some("gh_token_1234567890"));
+    }
+
+    #[test]
+    fn github_token_normalization_rejects_invalid_values() {
+        assert_eq!(normalize_github_token(Some(" too-short ")), None);
+        assert_eq!(
+            normalize_github_token(Some("token with spaces 1234567890")),
+            None
+        );
+        assert_eq!(
+            normalize_github_token(Some(" valid_token_1234567890 ")).as_deref(),
+            Some("valid_token_1234567890")
+        );
+    }
+
+    #[test]
+    fn github_authorization_is_limited_to_api_host() {
+        assert!(is_github_api_url(
+            "https://api.github.com/repos/example/project/releases"
+        ));
+        assert!(!is_github_api_url(
+            "https://github.com/example/project/releases/download/v1/file.zip"
+        ));
+        assert!(!is_github_api_url(
+            "http://api.github.com/repos/example/project"
+        ));
+
+        let client = updater_http_client(Some("token_1234567890".to_owned())).expect("client");
+        let api_request = client
+            .get("https://api.github.com/repos/example/project/releases")
+            .build()
+            .expect("API request");
+        assert_eq!(
+            api_request
+                .headers()
+                .get(reqwest::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer token_1234567890")
+        );
+
+        let asset_request = client
+            .get("https://github.com/example/project/releases/download/v1/file.zip")
+            .build()
+            .expect("asset request");
+        assert!(asset_request
+            .headers()
+            .get(reqwest::header::AUTHORIZATION)
+            .is_none());
     }
 }
