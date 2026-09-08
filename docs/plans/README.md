@@ -21,7 +21,7 @@
 | 126 | Design intent review lane | реализован, контракт перенесён в канонические документы |
 | 127 | Remote client control plane | реализован MVP-контур; Android/server deployment unavailable |
 | 128 | Local inference scheduler | реализован MVP-контур; inference adapter unavailable |
-| [129](129-0-confidence-gated-model-cascade.md) | Confidence-gated model cascade | незавершён |
+| 129 | Confidence-gated model cascade | реализован MVP-контур; producer/executor unavailable |
 | [130](130-0-task-ownership-lease-fencing.md) | Task ownership lease fencing | незавершён |
 | [131](131-0-unified-context-namespace.md) | Unified context namespace | незавершён |
 | [132](132-0-durable-background-execution-plane.md) | Durable background execution plane | незавершён |

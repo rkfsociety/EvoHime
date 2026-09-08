@@ -1072,6 +1072,16 @@ Verification evidence: `cargo fmt --all` и `git diff --check` выполнен�
 локальные tests/builds/linters/smoke-tests не запускались по прямому указанию
 Романа, CI не отслеживался. Установленный клиент не затрагивался.
 
+## Plan 129 — Confidence-Gated Model Cascade MVP (2026-09-09)
+
+Implementation: добавлен Core policy contract с bounded threshold, immutable
+revision/hash и fail-closed decisions. Второй gateway и synthetic confidence
+не добавлялись; отсутствие producer/route остаётся `unavailable`.
+
+Verification evidence: `cargo fmt --all` и `git diff --check` выполнены;
+локальные tests/builds/linters/smoke-tests не запускались по указанию Романа,
+CI не отслеживался. Установленный клиент не затрагивался.
+
 ## Plan 128 — Local Inference Scheduler MVP (2026-09-09)
 
 Implementation: добавлен bounded Core contract с revision/hash/status/priority

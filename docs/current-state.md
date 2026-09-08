@@ -328,6 +328,12 @@ fail-closed admission. Поскольку versioned inference-stream adapter о�
 runtime execution, worker queue и measured scheduling остаются
 `unavailable`; metadata-only contract не объявляет локальный inference рабочим.
 
+## Plan 129 — Confidence-Gated Model Cascade (MVP закрыт 2026-09-09)
+
+Добавлен bounded Core policy contract с threshold/revision/hash и fail-closed
+decision. Existing Model Gateway остаётся routing owner; без versioned
+confidence producer или eligible route cascade имеет `Unavailable`/`NeedsReview`.
+
 ## Как поддерживать этот документ
 
 Обновляйте дату и этот файл только по фактам из кода, тестов и release evidence.

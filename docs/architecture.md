@@ -2631,3 +2631,10 @@ server installer отсутствуют в checkout и остаются отде
 schema/revision/status/priority/hash и fail-closed admission. При отсутствии
 versioned inference-stream adapter статус всегда `Unavailable`; модуль не
 создаёт worker queue, не измеряет inference и не дублирует Model Gateway.
+
+## Confidence-Gated Model Cascade v1 (план 129, MVP реализован 2026-09-09)
+
+Core contract `confidence_gated_model_cascade` задаёт bounded policy с
+threshold/revision/hash и fail-closed decisions `Unavailable`, `NeedsReview`,
+`Eligible` или `Denied`. Model Gateway остаётся единственным routing owner;
+без versioned confidence producer или eligible route cascade не исполняется.

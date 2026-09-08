@@ -11,6 +11,7 @@ pub(crate) mod approval_policy_profiles;
 pub mod capability_workbenches;
 pub(crate) mod checkpoint_forking_and_replay;
 pub mod code_diagnostics_feedback_loop;
+pub mod confidence_gated_model_cascade;
 pub(crate) mod conversation_bridge_adapters;
 pub mod core_topic_subscription_event_bus;
 pub(crate) mod customization_inventory;
