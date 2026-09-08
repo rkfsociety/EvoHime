@@ -235,6 +235,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     }
                     "keep" => {
                         let candidate = load_candidate(&journal, &change_set_id).await?;
+                        if candidate.verification_status == "commit_pending" {
+                            return Err("commit_outcome_unknown".into());
+                        }
                         let mut set = load_change_set(&journal, &candidate.change_set_ref).await?;
                         validate_agent_git_integrations(&journal, &set).await?;
                         if candidate.revision != set.revision {
