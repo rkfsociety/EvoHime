@@ -742,6 +742,9 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Incremental Change and Task Worktree integrations use durable IDs checked by
   Core; terminal runs, missing records, non-ready worktrees and base-HEAD drift
   are rejected before the Git change set is stored.
+- Rust regression coverage includes a staged unrelated-path exclusion and a
+  committed undo/revert path with baseline reconciliation; the tests are
+  compiled locally and executed by the Rust CI job.
 - Fresh local checks for this implementation: Rust `cargo check` on the three
   affected crates, generated protocol check, and both Electron TypeScript
   projects. The full Rust/Electron/package acceptance suite is intentionally

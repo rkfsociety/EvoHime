@@ -997,6 +997,7 @@ mod tests {
             .unwrap();
         std::fs::write(root.join("agent.txt"), "agent").unwrap();
         std::fs::write(root.join("user.txt"), "user").unwrap();
+        git(&root, &["add", "user.txt"]).await;
         let payload =
             serde_json::json!({"message":"agent: change", "approved_paths":["agent.txt"]})
                 .to_string();
@@ -1007,7 +1008,49 @@ mod tests {
         assert!(!commit.is_empty());
         assert!(root.join("agent.txt").exists());
         assert!(root.join("user.txt").exists());
+        let status = git_output(&root, &["status", "--porcelain=v1"]).await;
+        assert!(
+            status.contains("A  user.txt"),
+            "unrelated staged change was committed: {status}"
+        );
         assert_eq!(set.status, ChangeSetStatus::CandidateReady);
+    }
+
+    #[tokio::test]
+    async fn committed_undo_reverts_only_after_baseline_reconciliation() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        git(&root, &["init"]).await;
+        git(&root, &["config", "user.email", "test@example.invalid"]).await;
+        git(&root, &["config", "user.name", "EvoHime Test"]).await;
+        std::fs::write(root.join("existing.txt"), "existing").unwrap();
+        git(&root, &["add", "existing.txt"]).await;
+        git(&root, &["commit", "-m", "initial"]).await;
+
+        let binding = crate::task_memory::workspace_scope_id(&root);
+        let observe_payload = serde_json::json!({"workspace_binding_id": binding}).to_string();
+        let set = observe(
+            observe_payload.as_bytes(),
+            "set-undo",
+            &root.to_string_lossy(),
+            1,
+        )
+        .await
+        .unwrap();
+        std::fs::write(root.join("agent.txt"), "agent").unwrap();
+        let candidate_payload =
+            serde_json::json!({"message":"agent: undoable", "approved_paths":["agent.txt"]})
+                .to_string();
+        let (_next, candidate) = make_candidate(&set, candidate_payload.as_bytes(), 2)
+            .await
+            .unwrap();
+        let commit_id = commit_candidate(&candidate).await.unwrap();
+        let mut committed = candidate;
+        committed.commit_id = Some(commit_id.clone());
+        let reverted_head = undo_candidate(&committed, &set.baseline).await.unwrap();
+
+        assert_ne!(reverted_head, commit_id);
+        assert!(!root.join("agent.txt").exists());
     }
 
     async fn git(root: &Path, args: &[&str]) {
@@ -1018,5 +1061,16 @@ mod tests {
             .await
             .unwrap();
         assert!(status.success(), "git command failed: {args:?}");
+    }
+
+    async fn git_output(root: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .current_dir(root)
+            .args(args)
+            .output()
+            .await
+            .unwrap();
+        assert!(output.status.success(), "git command failed: {args:?}");
+        String::from_utf8(output.stdout).unwrap()
     }
 }
