@@ -251,8 +251,6 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         candidate.verification_status = "kept".into();
                         let set_json = serde_json::to_vec(&set)
                             .map_err(|_| "serialization_failed".to_string())?;
-                        let candidate_json = serde_json::to_vec(&candidate)
-                            .map_err(|_| "serialization_failed".to_string())?;
                         let database = journal.database().lock().await;
                         if !store::update_change_set(
                             database.connection(),
@@ -267,6 +265,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         {
                             return Err("agent_git_change_set_stale_version".into());
                         }
+                        candidate.revision = set.revision;
+                        let candidate_json = serde_json::to_vec(&candidate)
+                            .map_err(|_| "serialization_failed".to_string())?;
                         store::update_candidate(
                             database.connection(),
                             &candidate.id,
@@ -324,6 +325,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             committed_set.status = git_sets::ChangeSetStatus::Committed;
                             let old_revision = committed_set.revision;
                             committed_set.revision = committed_set.revision.saturating_add(1);
+                            committed_candidate.revision = committed_set.revision;
                             committed_set.content_hash = recompute_content_hash(&committed_set)?;
                             let set_json = serde_json::to_vec(&committed_set)
                                 .map_err(|_| "serialization_failed".to_string())?;
@@ -376,6 +378,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         undone_set.status = git_sets::ChangeSetStatus::Kept;
                         let old_revision = undone_set.revision;
                         undone_set.revision = undone_set.revision.saturating_add(1);
+                        undone_candidate.revision = undone_set.revision;
                         undone_set.content_hash = recompute_content_hash(&undone_set)?;
                         let set_json = serde_json::to_vec(&undone_set)
                             .map_err(|_| "serialization_failed".to_string())?;
