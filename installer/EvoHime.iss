@@ -76,7 +76,8 @@ begin
   { Модули проверяются по версиям и хешам component manifest. }
   Lines[7] := '  "moduleManifest": "evohime.components.json"';
   Lines[8] := '}';
-  SaveStringsToUTF8File(Directory + '\update.json', Lines, False);
+  { JSON does not permit a BOM before its first token. }
+  SaveStringsToUTF8FileWithoutBOM(Directory + '\update.json', Lines, False);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

@@ -205,10 +205,7 @@ fn data_directory(install_dir: &Path) -> PathBuf {
 }
 
 fn remote_updates(data_dir: &Path, install_dir: &Path) -> Result<Vec<UpdateCandidate>, String> {
-    let config: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(data_dir.join("update.json")).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| error.to_string())?;
+    let config = read_update_config(&data_dir.join("update.json"))?;
     let repository = config
         .get("repositoryUrl")
         .and_then(serde_json::Value::as_str)
@@ -346,6 +343,15 @@ fn remote_updates(data_dir: &Path, install_dir: &Path) -> Result<Vec<UpdateCandi
         })
         .collect();
     Ok(updates)
+}
+
+/// The installer writes this local JSON file. Accept a UTF-8 BOM so clients
+/// installed by older packages remain updateable; JSON itself does not permit
+/// that marker before its first token.
+fn read_update_config(path: &Path) -> Result<serde_json::Value, String> {
+    let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    serde_json::from_str(text.strip_prefix('\u{feff}').unwrap_or(&text))
+        .map_err(|error| format!("updater: update.json содержит некорректный JSON: {error}"))
 }
 
 fn updater_http_client() -> Result<reqwest::blocking::Client, String> {
@@ -1003,7 +1009,11 @@ fn fail(error: impl std::fmt::Display) -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_json_body;
+    use super::{parse_json_body, read_update_config};
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     #[test]
     fn json_response_reports_an_empty_body_without_a_raw_parser_error() {
@@ -1021,5 +1031,22 @@ mod tests {
         assert!(
             error.starts_with("updater: список GitHub Release: GitHub вернул некорректный JSON:")
         );
+    }
+
+    #[test]
+    fn update_config_accepts_the_bom_written_by_older_installers() {
+        let path = std::env::temp_dir().join(format!(
+            "evohime-update-config-{}.json",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        fs::write(&path, b"\xef\xbb\xbf{\"enabled\":true}").expect("write update config");
+
+        let config = read_update_config(&path).expect("read BOM-prefixed update config");
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(config["enabled"], true);
     }
 }
