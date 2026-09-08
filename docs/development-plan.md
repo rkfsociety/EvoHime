@@ -28,13 +28,13 @@ restart подтверждаются отдельно. Автоматическ�
 Незавершённые планы выполняются по графу зависимостей и по этапам `0 → 4`.
 Рекомендуемый порядок планов:
 
-`139 → 141 → 122 → 124 → 134 → 130 → 132 → 119 → 131 → 137 → 121 → 128 →
+`139 → 141 → 122 → 124 → 134 → 130 → 132 → 131 → 137 → 121 → 128 →
 125 → 129 → 120 → 123 → 133 → 135 → 136 → 140 → 143 → 138 → 127 → 142`.
 
 | Диапазон | Содержание | Статус |
 | --- | --- | --- |
 | 118 | persistent agent organization registry | реализован 2026-09-04 |
-| 119–123 | execution profiles, grounded research, calibration, evidence ledger, context compression | очередь по графу |
+| 120–123 | grounded research, calibration, evidence ledger, context compression | очередь по графу |
 | 124–129 | project quality, provider routing, design review, remote control, local inference, model cascade | очередь по графу |
 | 130–135 | task leases, context namespace, durable background execution, deterministic utilities, resource guard, code review | очередь по графу |
 | 136–140 | static-analysis packs, context loadouts, skill updates, capability facade, authorized security assessment | очередь по графу |
@@ -53,6 +53,16 @@ recovery, IPC/UI при наличии, focused tests, release evidence и об�
 authenticated IPC 259/104, Electron projection/UI, startup recovery,
 focused/regression checks и переноса контракта в `architecture.md` и состояния
 в `current-state.md`. Schema v92 также активирует пропущенную migration v91.
+
+## План 119: Execution Environment Profiles (реализован)
+
+План закрыт после итерационного ревью, Core/storage vertical slice, schema v93,
+authenticated IPC 260/105, replay/resync, metadata-only Electron projection,
+fail-closed owner resolution, focused/full Rust and Electron checks, production
+bundle и native-package smoke. Контракт и ограничения перенесены в
+`architecture.md` и `current-state.md`; evidence находится в
+`release-evidence.md`. Следующие планы используют этот canonical contract, а
+не удалённые stage-файлы.
 
 ## План 144: модульные релизы (реализован)
 

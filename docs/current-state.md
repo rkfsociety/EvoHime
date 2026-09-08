@@ -8,7 +8,7 @@ release-gates и результаты отдельных завершённых 
 [`plans/README.md`](plans/README.md).
 
 `evohime-local-storage` сейчас имеет внутреннюю migration boundary
-`src/migrations.rs` с numbered installers для v1–v26 и v32–v92, а также
+`src/migrations.rs` с numbered installers для v1–v26 и v32–v93, а также
 bounded-context фасады в `src/domains.rs`. Все исторические installers теперь
 вынесены из `lib.rs`; старые store-модули сохраняются только там, где они
 ещё являются совместимым публичным контрактом, а новые доменные вызовы
@@ -258,9 +258,26 @@ updater ниже требования, сначала обновляется с�
 только при подтверждённом HTTP 404, а сетевые и повреждённые ответы останавливают
 маршрутизацию. Общий component Release не используется.
 
+## Plan 119 — Execution Environment Profiles v1 (закрыт 2026-09-08)
+
+Core/storage реализуют bounded profile envelope, canonical hash, typed owner
+references, pinned/follow-compatible preflight, fail-closed diagnostics,
+activation/current snapshots, run pinning, optimistic revision и durable
+idempotency outcomes в schema v93. Поддержанные metadata adapters — routing,
+backend, external-agent preset, execution policy и approval policy; остальные
+owner kinds остаются typed `unavailable_owner` до появления безопасного
+versioned lookup и не могут незаметно активироваться.
+
+IPC command 260/event 105 проходит authenticated Core path, replay/resync и
+Electron metadata-only projection. Свежие проверки: Core profile 6/6,
+local-storage profile 3/3, protocol/typecheck/focused UI 1/1, полный Electron
+suite 129 files / 572 tests passed / 1 skipped file / 4 skipped tests,
+production build и bundle check, native package smoke. Полный Rust suite для
+затронутых crates также прошёл до финального documentation-only переноса.
+
 ## Следующий незавершённый порядок
 
-Планы 119–143 остаются незавершённой очередью. План 144 реализован и закрыт;
+Планы 120–143 остаются незавершённой очередью. Планы 119 и 144 реализованы и закрыты;
 его подтверждённый контракт находится в `architecture.md`, а evidence — в
 `release-evidence.md`.
 Полный каталог, блокирующие и опциональные зависимости находятся в

@@ -159,6 +159,15 @@ impl EventJournal {
             model_route_snapshot: Vec::new(),
         };
         let stored = database.prepare_run_effect(&run, &checkpoint, &effect)?;
+        // A selected Environment Profile applies only at a run boundary.  The
+        // current application snapshot is copied once; retry/recovery cannot
+        // replace the profile revision that this run started with.
+        evohime_local_storage::execution_environment_profiles_store::bind_current_to_run(
+            database.connection(),
+            run_id,
+            "application:application",
+            crate::task_memory::now_millis() as i64,
+        )?;
         if stored.immutable_intent_hash != intent_hash {
             return Err(StorageError::InvalidRunEffect(
                 "intent hash conflict".into(),

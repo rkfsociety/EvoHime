@@ -47,6 +47,7 @@ pub mod durable_remote_task_bridge_store;
 pub(crate) mod event_trigger_runtime_store;
 pub mod event_visualizer_registry_store;
 pub mod execution_backend_registry_store;
+pub mod execution_environment_profiles_store;
 pub mod execution_ledger;
 pub(crate) mod execution_policy_profiles_store;
 pub mod experience_replay_library_store;
@@ -107,7 +108,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 92;
+pub const SCHEMA_VERSION: u32 = 93;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -662,6 +663,7 @@ impl LocalDatabase {
         reasoning_operator_library_store::install_schema(&connection)?;
         output_guardrail_pipeline_store::install_schema(&connection)?;
         persistent_agent_registry_store::install_schema(&connection)?;
+        execution_environment_profiles_store::install_schema(&connection)?;
         customization_inventory_store::install_schema(&connection)?;
         standing_approval_profiles_store::install_schema(&connection)?;
         approval_policy_profiles_store::install_schema(&connection)?;
@@ -2859,6 +2861,7 @@ impl LocalDatabase {
         migrations::v090::apply(&transaction, current)?;
         migrations::v091::apply(&transaction, current)?;
         migrations::v092::apply(&transaction, current)?;
+        migrations::v093::apply(&transaction, current)?;
         transaction.commit()?;
         Ok(())
     }

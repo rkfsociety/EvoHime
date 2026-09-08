@@ -2443,3 +2443,42 @@ references. Renderer получает только typed redacted projection в 
 панели `Интерфейс разработчика`. При старте Core assignments с потерянным
 source переводятся в `unknown_after_restart`; неизвестное состояние не
 объявляется успешным и retired history не удаляется.
+
+## Execution Environment Profiles v1 (план 119, реализован 2026-09-08)
+
+`ExecutionEnvironmentProfile` — Core-owned bounded metadata envelope для
+композиции ссылок на authoritative owners. Он содержит только id, revision,
+scope, typed bindings, reference mode, required-флаг и canonical SHA-256;
+произвольные поля, credentials, prompts, outputs, executable paths и owner
+payloads отвергаются либо не допускаются схемой. `PinnedRevision` фиксирует
+revision, а `FollowCompatible` сохраняет фактически разрешённую revision в
+effective snapshot.
+
+В SQLite schema v93 добавлены профиль и immutable revision history,
+activation history/current snapshot, run-pinned snapshot и bounded
+idempotency outcomes. Revision fence, размер записи 64 KiB и одна транзакция
+для activation/current не допускают частичного переключения. Повторная
+привязка run сохраняет первый snapshot (`INSERT OR IGNORE`), поэтому активная
+среда не меняется внутри уже созданного run. Startup recovery только
+валидирует сохранённые canonical records и не объявляет неизвестную среду
+успешной.
+
+Resolver остаётся adapter boundary: в этом checkout есть безопасные metadata
+lookups для Model Purpose Routing, Execution Backend Registry, External Coding
+Agent Preset, Execution Policy и Approval Policy. Для Workbench, MCP Server,
+Skill Set, Instruction Stack, Continuation/Budget Policy и Credential Binding
+отсутствие versioned owner lookup даёт typed `unavailable_owner`; обязательная
+ссылка делает профиль `Broken`, необязательная — `Degraded`. Это намеренный
+fail-closed результат проверки владельцев, а не копия их state в профиле.
+Required failures блокируют activation; drift pinned revision даёт
+`NeedsReview`; effective snapshot разрешён только в `Ready`/`Degraded`.
+Backend, external agent, workbench, MCP и credential changes получают
+`NewRunOnly`, остальные безопасные metadata changes — bounded `NextTurn`.
+
+Authenticated additive IPC использует command 260/event 105. Command содержит
+operation, owner scope, profile id, bounded payload, expected revision и
+idempotency key; Core проверяет canonical hash, optimistic revision и
+idempotency command hash/conflict. Replay/resync восстанавливает typed event,
+а Electron получает только bounded metadata projection через `Профили сред`.
+Renderer не является источником effective state и не получает secret-like
+unknown fields.

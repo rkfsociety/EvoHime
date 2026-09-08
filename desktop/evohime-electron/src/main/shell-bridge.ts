@@ -608,6 +608,19 @@ function dispatch(
       if (operation === null || agentId === null || ownerScope === null || body === null || expectedRevision === null || idempotencyKey === null || agentId.length > 128 || ownerScope.length > 128 || body.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректный запрос реестра постоянных агентов.')
       return accepted(client.send({persistentAgentOrganizationRegistry:{schemaVersion:1,requestId:randomUUID(),ownerScope,operation,agentId,actor:'user',payload:Buffer.from(body,'utf8'),expectedRevision,idempotencyKey}}))
     }
+    case 'core.executionEnvironmentProfile': {
+      const value = asRecord(payload)
+      const allowed = ['list','get','create','revise','preflight','activate','rollback','current','history']
+      const requested = asBoundedString(value['operation'])
+      const operation = requested !== null && allowed.includes(requested) ? requested : null
+      const profileId = value['profileId'] === undefined ? '' : asBoundedString(value['profileId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const body = value['payload'] === undefined ? '' : asBoundedString(value['payload'])
+      const expectedRevision = value['expectedRevision'] === undefined ? 0 : asNonNegativeInteger(value['expectedRevision'])
+      const idempotencyKey = value['idempotencyKey'] === undefined ? randomUUID() : asBoundedString(value['idempotencyKey'])
+      if (operation === null || profileId === null || ownerScope === null || body === null || expectedRevision === null || idempotencyKey === null || profileId.length > 128 || ownerScope.length > 128 || body.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректный запрос execution environment profile.')
+      return accepted(client.send({executionEnvironmentProfile:{schemaVersion:1,requestId:randomUUID(),ownerScope,operation,profileId,payload:Buffer.from(body,'utf8'),expectedRevision,idempotencyKey}}))
+    }
     case 'core.agentGitChangeSets': {
       const value = asRecord(payload)
       const operations = ['observe', 'candidate', 'get_candidate', 'commit', 'undo', 'keep']

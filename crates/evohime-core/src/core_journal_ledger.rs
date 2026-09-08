@@ -70,6 +70,7 @@ impl EventJournal {
             CoreEvent::GuidedCalibrationSessions { session_id, .. } => session_id,
             CoreEvent::ExtensionConformanceKit { subject_id, .. } => subject_id,
             CoreEvent::PersistentAgentOrganizationRegistry { agent_id, .. } => agent_id,
+            CoreEvent::ExecutionEnvironmentProfile { profile_id, .. } => profile_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -153,6 +154,7 @@ impl EventJournal {
             CoreEvent::PersistentAgentOrganizationRegistry { .. } => {
                 "persistent_agent_organization_registry.result"
             }
+            CoreEvent::ExecutionEnvironmentProfile { .. } => "execution_environment_profile.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {

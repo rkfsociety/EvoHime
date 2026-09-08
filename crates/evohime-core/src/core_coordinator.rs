@@ -598,6 +598,9 @@ impl TaskCoordinator {
             c @ CoreCommand::PersistentAgentOrganizationRegistry { .. } => {
                 memory_runtime::handle(state, c).await
             }
+            c @ CoreCommand::ExecutionEnvironmentProfile { .. } => {
+                memory_runtime::handle(state, c).await
+            }
             c @ CoreCommand::GetMemory { .. } => memory_runtime::handle(state, c).await,
             c @ CoreCommand::ListMemoryPending { .. } => memory_runtime::handle(state, c).await,
             c @ CoreCommand::GetMemoryConflicts { .. } => memory_runtime::handle(state, c).await,

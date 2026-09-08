@@ -984,3 +984,35 @@ desktop-ipc 36/36, doctests 0), rustfmt, workspace Clippy, supervisor/updater ch
 production bundle checks, Electron package and native-package smoke passed.
 Documentation and Runtime Stall Guard gates also passed; `git diff --check`
 is the final release gate.
+
+## Plan 119 — Execution Environment Profiles v1 (2026-09-08)
+
+Implementation commit: task-only commit on `main`; no push was performed.
+The final commit hash is reported with the task result. Schema/protocol:
+SQLite v93, authenticated command 260/event
+105, protocol major 1. The profile envelope is bounded to 32 typed bindings
+and 64 KiB records; canonical hashes, optimistic revisions, idempotency command
+hashes, activation/current transactions and first-snapshot run pinning are
+covered. Unsupported owner kinds produce typed `unavailable_owner` and never
+silently become active.
+
+Verification evidence:
+
+- Core profile unit tests: 6/6; local-storage profile tests: 3/3;
+  `cargo check -p evohime-core` and locked Clippy for Core/storage: PASS.
+- Full Rust command `cargo test -p evohime-core -p evohime-local-storage
+  -p evohime-desktop-ipc`: PASS before the final documentation-only edits;
+  the profile tests were rerun after the last code changes.
+- Generated protocol check, node/web TypeScript typecheck and focused panel:
+  PASS, 1/1.
+- Full Electron regression: 129 files passed, 1 skipped file; 572 tests
+  passed, 4 skipped tests. Real-Core IPC E2E passed; source-update E2E remained
+  intentionally skipped by its explicit environment flag.
+- Production Electron build and production-bundle checks: PASS. Native
+  package smoke: PASS.
+
+Privacy and rollback review: only profile/snapshot/diagnostic metadata crosses
+IPC; unknown profile fields are rejected, owner payloads and secrets are not
+stored, and an unknown/invalid activation is not reported as success or
+retried blindly. The installed client was not started, stopped, updated or
+modified. `git diff --check` is the final gate before the task-only commit.

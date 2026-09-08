@@ -103,6 +103,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .await
         .map_err(|e| format!("persistent agent registry recovery failed: {e}"))?;
     journal
+        .recover_execution_environment_profiles()
+        .await
+        .map_err(|e| format!("execution environment profile recovery failed: {e}"))?;
+    journal
         .recover_model_provenance_on_startup()
         .await
         .map_err(|e| format!("model provenance recovery failed: {e}"))?;
@@ -926,6 +930,7 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::PrivacyTelemetryGovernance { category, operation, version, .. } => console_line!("privacy_telemetry_governance.result {category}: {operation} version={version}"),
         evohime_core::CoreEvent::ConversationBridgeAdapters { bridge_id, operation, revision, .. } => console_line!("conversation_bridge_adapters.result {bridge_id}: {operation} revision={revision}"),
         evohime_core::CoreEvent::PersistentAgentOrganizationRegistry { agent_id, operation, revision, .. } => console_line!("persistent_agent_organization_registry.result {agent_id}: {operation} revision={revision}"),
+        evohime_core::CoreEvent::ExecutionEnvironmentProfile { profile_id, operation, revision, .. } => console_line!("execution_environment_profile.result {profile_id}: {operation} revision={revision}"),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             console_line!("review.history_cleared {marker_id}")
         }

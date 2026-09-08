@@ -933,6 +933,7 @@ pub(crate) fn core_info() -> generated::CoreInfo {
             "goals".into(),
             "workflow_builder".into(),
             "persistent_agent_organization_registry".into(),
+            "execution_environment_profile".into(),
         ],
         feature_flags: vec!["authenticated-ipc".into()],
         max_frame_bytes: evohime_desktop_ipc::MAX_FRAME_BYTES as u32,

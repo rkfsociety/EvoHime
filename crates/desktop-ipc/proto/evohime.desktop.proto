@@ -1910,6 +1910,7 @@ message CommandEnvelope {
     LocalModelRuntimeManagerCommand local_model_runtime_manager = 257;
     ArchitectureSnapshotCommand architecture_snapshot = 258;
     PersistentAgentOrganizationRegistryCommand persistent_agent_organization_registry = 259;
+    ExecutionEnvironmentProfileCommand execution_environment_profile = 260;
   }
 }
 
@@ -2063,7 +2064,8 @@ message EventEnvelope {
   ModelPurposeRoutingEvent model_purpose_routing = 101;
   LocalModelRuntimeManagerEvent local_model_runtime_manager = 102;
   ArchitectureSnapshotEvent architecture_snapshot = 103;
-  PersistentAgentOrganizationRegistryEvent persistent_agent_organization_registry = 104;
+    PersistentAgentOrganizationRegistryEvent persistent_agent_organization_registry = 104;
+    ExecutionEnvironmentProfileEvent execution_environment_profile = 105;
   }
 }
 
@@ -3279,6 +3281,30 @@ message PersistentAgentOrganizationRegistryEvent {
   uint32 schema_version = 1;
   string request_id = 2;
   string agent_id = 3;
+  string operation = 4;
+  uint64 revision = 5;
+  string status = 6;
+  string error_code = 7;
+  bytes projection_json = 8;
+  bool truncated = 9;
+}
+
+// Plan 119: Core-owned composition metadata. Payload and projection are
+// bounded and redacted; this message never transports owner bodies or secrets.
+message ExecutionEnvironmentProfileCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string operation = 4;
+  string profile_id = 5;
+  bytes payload = 6;
+  uint64 expected_revision = 7;
+  string idempotency_key = 8;
+}
+message ExecutionEnvironmentProfileEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string profile_id = 3;
   string operation = 4;
   uint64 revision = 5;
   string status = 6;

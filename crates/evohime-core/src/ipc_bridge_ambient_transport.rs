@@ -425,6 +425,45 @@ impl IpcBridge {
                             },
                         )
                     })
+            } else if record.event_type == "execution_environment_profile.result" {
+                serde_json::from_slice::<serde_json::Value>(&record.payload)
+                    .ok()
+                    .map(|value| {
+                        let profile = value.get("profile").unwrap_or(&value);
+                        let snapshot = value.get("snapshot").unwrap_or(&value);
+                        generated::event_envelope::Event::ExecutionEnvironmentProfile(
+                            generated::ExecutionEnvironmentProfileEvent {
+                                schema_version: 1,
+                                request_id: String::new(),
+                                profile_id: profile
+                                    .get("id")
+                                    .or_else(|| snapshot.get("profile_id"))
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_owned(),
+                                operation: value
+                                    .get("operation")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_owned(),
+                                revision: profile
+                                    .get("revision")
+                                    .or_else(|| snapshot.get("profile_revision"))
+                                    .and_then(serde_json::Value::as_u64)
+                                    .unwrap_or_default(),
+                                status: value
+                                    .get("preflight")
+                                    .and_then(|check| check.get("state"))
+                                    .or_else(|| snapshot.get("state"))
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or("unknown")
+                                    .to_owned(),
+                                error_code: String::new(),
+                                projection_json: record.payload.clone(),
+                                truncated: record.payload.len() > 64 * 1024,
+                            },
+                        )
+                    })
             } else {
                 execution_event
                     .map(|event| generated::event_envelope::Event::ExecutionEvent(Box::new(event)))

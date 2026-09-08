@@ -603,6 +603,60 @@ impl IpcBridge {
         Ok(())
     }
 
+    pub(crate) async fn write_execution_environment_profile_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        request_id: &str,
+        profile_id: &str,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let revision = value
+            .get("profile")
+            .and_then(|p| p.get("revision"))
+            .and_then(serde_json::Value::as_u64)
+            .or_else(|| value.get("revision").and_then(serde_json::Value::as_u64))
+            .unwrap_or(0);
+        let operation = value
+            .get("operation")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let status = value
+            .get("preflight")
+            .and_then(|p| p.get("state"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("unknown")
+            .to_owned();
+        let encoded = generated::ExecutionEnvironmentProfileEvent {
+            schema_version: 1,
+            request_id: request_id.to_owned(),
+            profile_id: profile_id.to_owned(),
+            operation,
+            revision,
+            status,
+            error_code: String::new(),
+            projection_json: payload.clone(),
+            truncated: payload.len() > 64 * 1024,
+        };
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: "execution_environment_profile.result".into(),
+                payload,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: Some(generated::event_envelope::Event::ExecutionEnvironmentProfile(encoded)),
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
+    }
+
     pub(crate) async fn write_invocation_preset_response<W: AsyncWrite + Unpin>(
         &self,
         writer: &mut W,

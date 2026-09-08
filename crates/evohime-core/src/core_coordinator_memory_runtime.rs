@@ -124,6 +124,56 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
+        CoreCommand::ExecutionEnvironmentProfile {
+            operation,
+            profile_id,
+            owner_scope,
+            payload,
+            expected_revision,
+            idempotency_key,
+            reply,
+        } => {
+            let event_operation = operation.clone();
+            let event_profile_id = profile_id.clone();
+            let result = async {
+                let journal = state
+                    .lock()
+                    .await
+                    .journal
+                    .clone()
+                    .ok_or_else(|| "storage journal is not configured".to_string())?;
+                journal
+                    .execution_environment_profile_command(
+                        crate::execution_environment_profiles::EnvironmentProfileCommand {
+                            operation,
+                            profile_id,
+                            owner_scope,
+                            payload,
+                            expected_revision,
+                            idempotency_key,
+                        },
+                    )
+                    .await
+                    .map_err(|error| error.to_string())
+            }
+            .await;
+            let projection_json = result
+                .as_ref()
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+                .unwrap_or_else(|| "{}".into());
+            let event = CoreEvent::ExecutionEnvironmentProfile {
+                profile_id: event_profile_id,
+                operation: event_operation,
+                revision: expected_revision,
+                projection_json,
+            };
+            if let Some(journal) = state.lock().await.journal.clone() {
+                let _ = journal.record(&event).await;
+            }
+            TaskCoordinator::emit_state_event(&state, event).await;
+            let _ = reply.send(result);
+        }
         CoreCommand::GetMemory { id, reply } => {
             let journal = state.lock().await.journal.clone();
             let result = async {

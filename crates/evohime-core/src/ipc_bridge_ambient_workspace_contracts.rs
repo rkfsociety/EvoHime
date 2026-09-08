@@ -648,6 +648,25 @@ impl IpcBridge {
                 )
                 .await?;
             }
+            Some(generated::command_envelope::Command::ExecutionEnvironmentProfile(request)) => {
+                let operation = if request.operation.is_empty() {
+                    "list".to_owned()
+                } else {
+                    request.operation.clone()
+                };
+                let profile_id = request.profile_id.clone();
+                let request_id = request.request_id.clone();
+                let result = self
+                    .dispatch_execution_environment_profile(operation, request)
+                    .await?;
+                self.write_execution_environment_profile_response(
+                    writer,
+                    &request_id,
+                    &profile_id,
+                    result,
+                )
+                .await?;
+            }
 
             _ => unreachable!("command routed to the wrong domain"),
         }
