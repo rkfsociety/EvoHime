@@ -18,7 +18,7 @@
 | 123 | Content-aware context compression | реализован, контракт перенесён в канонические документы |
 | 124 | Project quality contract | реализован, контракт перенесён в канонические документы |
 | 125 | Free provider reliability routing | реализован, контракт перенесён в канонические документы |
-| [126](126-0-design-intent-review-lane.md) | Design intent review lane | незавершён |
+| 126 | Design intent review lane | реализован, контракт перенесён в канонические документы |
 | [127](127-0-remote-client-control-plane.md) | Remote client control plane | незавершён |
 | [128](128-0-local-inference-scheduler.md) | Local inference scheduler | незавершён |
 | [129](129-0-confidence-gated-model-cascade.md) | Confidence-gated model cascade | незавершён |

@@ -1067,6 +1067,13 @@ or stale observations remain unknown; gateway, credentials and retry ownership
 are unchanged. `cargo fmt --all` and `git diff --check` passed; local tests,
 builds and CI monitoring were skipped by instruction.
 
+## Plan 126 — Design Intent Review Lane v1 (2026-09-09)
+
+Added bounded intent/review contract and schema 101 metadata. Plan Artifact and
+Architecture Snapshot ownership remains separate; missing evidence is
+Unknown/NeedsReview. `cargo fmt --all` and `git diff --check` passed; local
+tests/builds and CI monitoring were skipped by instruction.
+
 ## Plan 124 — Project Quality Contract v1 (2026-09-09)
 
 Implemented Core quality constraints, immutable schema 99 metadata and

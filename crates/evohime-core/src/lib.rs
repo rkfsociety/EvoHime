@@ -130,6 +130,7 @@ pub(crate) mod continuation;
 pub(crate) mod conversation_event_log;
 pub(crate) mod conversation_workbench;
 pub(crate) mod conversational_workflow_composer;
+pub mod design_intent_review_lane;
 pub(crate) mod doctor;
 pub mod evals;
 pub(crate) mod event_trigger_runtime;

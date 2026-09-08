@@ -2606,3 +2606,11 @@ reliability snapshot; Model Gateway остаётся transport/retry authority.
 Недостаток свежего evidence даёт `UnknownNeedsRefresh`/`Unknown`, sparse samples
 не становятся Healthy, а credentials и raw provider payloads не сохраняются.
 SQLite schema v100 добавляет только reliability metadata.
+
+## Design Intent Review Lane v1 (план 126, реализован 2026-09-09)
+
+Design Intent — bounded Core-owned statement с exact scope/hash/revision;
+review record хранит только verdict, reviewer и bounded evidence refs. Plan
+Artifact и Architecture Snapshot сохраняют собственных владельцев. SQLite
+schema v101 добавляет metadata-only review storage; отсутствие evidence даёт
+Unknown/NeedsReview.
