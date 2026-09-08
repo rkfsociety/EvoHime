@@ -2598,3 +2598,11 @@ Core-owned contract связывает required constraints с Verification Evid
 Ledger, хранит immutable revision metadata в schema 99 и выдаёт conservative
 quality readiness. Без Passed evidence required constraint остаётся
 NeedsVerification; model-authored metrics не принимаются.
+
+## Free Provider Reliability Routing v1 (план 125, реализован 2026-09-09)
+
+Core contract хранит provider identity, scoped free access state и bounded
+reliability snapshot; Model Gateway остаётся transport/retry authority.
+Недостаток свежего evidence даёт `UnknownNeedsRefresh`/`Unknown`, sparse samples
+не становятся Healthy, а credentials и raw provider payloads не сохраняются.
+SQLite schema v100 добавляет только reliability metadata.

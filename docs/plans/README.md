@@ -17,7 +17,7 @@
 | 122 | Verification evidence ledger | реализован, контракт перенесён в канонические документы |
 | 123 | Content-aware context compression | реализован, контракт перенесён в канонические документы |
 | 124 | Project quality contract | реализован, контракт перенесён в канонические документы |
-| [125](125-0-free-provider-reliability-routing.md) | Free provider reliability routing | незавершён |
+| 125 | Free provider reliability routing | реализован, контракт перенесён в канонические документы |
 | [126](126-0-design-intent-review-lane.md) | Design intent review lane | незавершён |
 | [127](127-0-remote-client-control-plane.md) | Remote client control plane | незавершён |
 | [128](128-0-local-inference-scheduler.md) | Local inference scheduler | незавершён |

@@ -40,6 +40,7 @@ restart подтверждаются отдельно. Автоматическ�
 | 122 | verification evidence ledger | реализован 2026-09-09 |
 | 123 | content-aware context compression | реализован 2026-09-09 |
 | 124 | project quality contract | реализован 2026-09-09 |
+| 125 | free provider reliability routing | реализован 2026-09-09 |
 | 124–129 | project quality, provider routing, design review, remote control, local inference, model cascade | очередь по графу |
 | 130–135 | task leases, context namespace, durable background execution, deterministic utilities, resource guard, code review | очередь по графу |
 | 136–140 | static-analysis packs, context loadouts, skill updates, capability facade, authorized security assessment | очередь по графу |

@@ -138,6 +138,7 @@ pub mod execution_environment_profiles;
 pub(crate) mod export;
 pub mod extension_conformance_kit;
 pub(crate) mod external_coding_agent_adapter;
+pub mod free_provider_reliability_routing;
 pub mod goal;
 pub mod guided_calibration_sessions;
 pub mod human_work_items;
