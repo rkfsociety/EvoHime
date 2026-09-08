@@ -736,7 +736,9 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   Electron panel expose only bounded redacted metadata and explicit actions.
 - Commit uses fresh preflight plus `git commit --only` and NUL pathspec input;
   shared index, force/reset/rebase/push, identity spoofing and secret payloads
-  are excluded. Keep/undo are Core-owned and stale/unknown outcomes are typed.
+  are excluded. A durable `commit_pending` marker makes dispatch/persistence
+  crash windows reconciliation-required; keep/undo are Core-owned and
+  stale/unknown outcomes are typed.
 - Incremental Change and Task Worktree integrations use durable IDs checked by
   Core; terminal runs, missing records, non-ready worktrees and base-HEAD drift
   are rejected before the Git change set is stored.

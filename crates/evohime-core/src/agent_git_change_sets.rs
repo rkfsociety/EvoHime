@@ -492,7 +492,7 @@ pub async fn make_candidate(
     Ok((next, candidate))
 }
 
-pub async fn commit_candidate(candidate: &GitCommitCandidate) -> Result<String, ChangeSetError> {
+pub async fn preflight_candidate(candidate: &GitCommitCandidate) -> Result<(), ChangeSetError> {
     let root = validate_workspace_root(&candidate.workspace_root)?;
     let snapshot = capture_snapshot(root.clone(), candidate.created_at_ms).await?;
     if snapshot.head != candidate.parent_head
@@ -500,6 +500,12 @@ pub async fn commit_candidate(candidate: &GitCommitCandidate) -> Result<String, 
     {
         return Err(ChangeSetError::Stale);
     }
+    Ok(())
+}
+
+pub async fn commit_candidate(candidate: &GitCommitCandidate) -> Result<String, ChangeSetError> {
+    preflight_candidate(candidate).await?;
+    let root = validate_workspace_root(&candidate.workspace_root)?;
     let pathspec = nul_pathspec(&candidate.included_paths)?;
     let args = [
         "commit",

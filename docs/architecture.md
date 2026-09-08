@@ -2180,9 +2180,11 @@ evidence — 64 KiB. Shared index, `git add -A`, force/reset/rebase/push и
 pathspec; общий index, `git add -A`, force/reset/rebase/push и подмена identity
 запрещены, hooks не обходятся. `keep` и `undo` являются отдельными
 Core-owned действиями; undo меняет только подтверждённые пути и отказывается
-при stale/shared/unknown outcome. После Git-эффекта результат сначала
-сверяется с новым HEAD, а ошибка durable persistence возвращается как
-reconciliation-required, без blind retry.
+при stale/shared/unknown outcome. Перед commit durable candidate получает
+`commit_pending`; dispatch/persistence crash-window переводит повторный запрос
+в reconciliation-required и не допускает blind retry. После Git-эффекта
+результат сначала сверяется с новым HEAD, а ошибка durable persistence также
+возвращается как reconciliation-required.
 
 При работе из Incremental Change Protocol или Task Worktree Isolation payload
 может нести durable `incremental_change_run_id` и `task_worktree_id`. Core

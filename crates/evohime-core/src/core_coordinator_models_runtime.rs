@@ -268,6 +268,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     }
                     "commit" => {
                         let candidate = load_candidate(&journal, &change_set_id).await?;
+                        if candidate.verification_status == "commit_pending" {
+                            return Err("commit_outcome_unknown".into());
+                        }
                         if candidate.commit_id.is_some() {
                             candidate_projection(&candidate)?
                         } else {
@@ -279,9 +282,30 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             if expected_version != 0 && expected_version != set.revision {
                                 return Err("agent_git_change_set_stale_version".into());
                             }
-                            let commit_id = git_sets::commit_candidate(&candidate)
+                            git_sets::preflight_candidate(&candidate)
                                 .await
                                 .map_err(|error| error.to_string())?;
+                            let mut pending_candidate = candidate.clone();
+                            pending_candidate.verification_status = "commit_pending".into();
+                            let pending_json = serde_json::to_vec(&pending_candidate)
+                                .map_err(|_| "serialization_failed".to_string())?;
+                            {
+                                let database = journal.database().lock().await;
+                                if !store::update_candidate(
+                                    database.connection(),
+                                    &pending_candidate.id,
+                                    &pending_candidate.diff_hash,
+                                    &pending_json,
+                                    now,
+                                )
+                                .map_err(|_| "storage_failed".to_string())?
+                                {
+                                    return Err("storage_failed".into());
+                                }
+                            }
+                            let commit_id = git_sets::commit_candidate(&candidate)
+                                .await
+                                .map_err(|_| "commit_outcome_unknown".to_string())?;
                             let mut committed_candidate = candidate;
                             committed_candidate.commit_id = Some(commit_id.clone());
                             committed_candidate.verification_status = "committed".into();
@@ -321,6 +345,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     }
                     "undo" => {
                         let candidate = load_candidate(&journal, &change_set_id).await?;
+                        if candidate.verification_status == "commit_pending" {
+                            return Err("commit_outcome_unknown".into());
+                        }
                         let set = load_change_set(&journal, &candidate.change_set_ref).await?;
                         validate_agent_git_integrations(&journal, &set).await?;
                         if candidate.revision != set.revision {
