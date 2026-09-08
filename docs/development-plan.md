@@ -1,6 +1,6 @@
 # План разработки EvoHime Desktop
 
-Обновлено: 2026-09-06.
+Обновлено: 2026-09-08.
 
 ## Цель
 
@@ -33,6 +33,7 @@ restart подтверждаются отдельно. Автоматическ�
 
 | Диапазон | Содержание | Статус |
 | --- | --- | --- |
+| 102 | Agent Git Change Sets v1: baseline, attribution, safe commit/undo | реализован 2026-09-08 |
 | 118 | persistent agent organization registry | реализован 2026-09-04 |
 | 120–123 | grounded research, calibration, evidence ledger, context compression | очередь по графу |
 | 124–129 | project quality, provider routing, design review, remote control, local inference, model cascade | очередь по графу |
@@ -46,6 +47,15 @@ restart подтверждаются отдельно. Автоматическ�
 по одному stage-файлу или по наличию кода: закрытие требует реализации,
 recovery, IPC/UI при наличии, focused tests, release evidence и обновления
 канонической документации.
+
+## План 102: Agent Git Change Sets v1 (реализован)
+
+План 102 закрыт после Core/storage/runtime vertical slice, additive
+authenticated IPC 233/78, bounded Electron projection, Incremental Change и
+Task Worktree references, staged-path isolation, durable commit reconciliation,
+safe undo и redacted release evidence. Контракт перенесён в
+`architecture.md`, подтверждённое состояние — в `current-state.md`, а
+временный комплект `docs/plans/102-0..4-agent-git-change-sets.md` отсутствует.
 
 ## План 118: Persistent Agent Organization Registry
 
