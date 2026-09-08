@@ -2624,3 +2624,10 @@ device/text payload и SHA-256 content hash. `SequenceGuard` fail-closed
 `Unavailable` до authenticated deployable relay; Android/server adapters не
 получают authority, secrets или SQLite access. Реальный relay, Android APK и
 server installer отсутствуют в checkout и остаются отдельным красным gate.
+
+## Local Inference Scheduler v1 (план 128, MVP реализован 2026-09-09)
+
+`evohime_core::local_inference_scheduler` хранит bounded typed contract с
+schema/revision/status/priority/hash и fail-closed admission. При отсутствии
+versioned inference-stream adapter статус всегда `Unavailable`; модуль не
+создаёт worker queue, не измеряет inference и не дублирует Model Gateway.

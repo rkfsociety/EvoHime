@@ -22,6 +22,7 @@ pub(crate) mod event_visualizer_registry;
 pub mod experience_replay_library;
 pub mod headless_core_cli;
 pub mod knowledge_source_registry_project_role;
+pub mod local_inference_scheduler;
 pub(crate) mod output_guardrail_pipeline;
 pub(crate) mod privacy_and_telemetry_governance;
 pub mod project_instruction_stack;

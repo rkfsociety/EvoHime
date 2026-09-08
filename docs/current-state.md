@@ -321,6 +321,13 @@ production build и bundle check, native package smoke. Полный Rust suite 
 Android APK, relay service и server installer отсутствуют в checkout и имеют
 явный статус `unavailable`; этот deployment gate не скрывается repository MVP.
 
+## Plan 128 — Local Inference Scheduler (MVP закрыт 2026-09-09)
+
+Добавлен Core-owned typed scheduler contract с revision/hash/status/priority и
+fail-closed admission. Поскольку versioned inference-stream adapter отсутствует,
+runtime execution, worker queue и measured scheduling остаются
+`unavailable`; metadata-only contract не объявляет локальный inference рабочим.
+
 ## Как поддерживать этот документ
 
 Обновляйте дату и этот файл только по фактам из кода, тестов и release evidence.

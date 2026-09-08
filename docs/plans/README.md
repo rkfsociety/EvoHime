@@ -20,7 +20,7 @@
 | 125 | Free provider reliability routing | реализован, контракт перенесён в канонические документы |
 | 126 | Design intent review lane | реализован, контракт перенесён в канонические документы |
 | 127 | Remote client control plane | реализован MVP-контур; Android/server deployment unavailable |
-| [128](128-0-local-inference-scheduler.md) | Local inference scheduler | незавершён |
+| 128 | Local inference scheduler | реализован MVP-контур; inference adapter unavailable |
 | [129](129-0-confidence-gated-model-cascade.md) | Confidence-gated model cascade | незавершён |
 | [130](130-0-task-ownership-lease-fencing.md) | Task ownership lease fencing | незавершён |
 | [131](131-0-unified-context-namespace.md) | Unified context namespace | незавершён |
