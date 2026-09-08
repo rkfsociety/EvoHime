@@ -98,6 +98,7 @@ function Write-ComponentManifest {
         [Parameter(Mandatory)] [string]$OutputPath,
         [Parameter(Mandatory)] [string]$PackageRoot,
         [Parameter(Mandatory)] [string]$Commit,
+        [string]$ReleaseId = 'native-package',
         [string]$Version = '0.1.0'
     )
     $versionRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'release-versions'
@@ -139,6 +140,7 @@ function Write-ComponentManifest {
     }
     [pscustomobject]@{
         schema = 'evohime.component-manifest.v1'; product = 'EvoHime'
+        release_id = $ReleaseId; release_commit = $Commit
         os = 'windows'; architecture = 'x64'; components = @($components)
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $OutputPath -Encoding utf8NoBOM
 }

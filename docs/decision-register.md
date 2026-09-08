@@ -1,6 +1,6 @@
 # EvoHime — реестр решений
 
-Обновлено: 2026-09-04.
+Обновлено: 2026-09-08.
 
 Канонический реестр решений текущего desktop-цикла. Здесь нет секретов,
 provider credentials или обещаний, не подтверждённых кодом. `accepted` означает,
@@ -23,8 +23,8 @@ provider credentials или обещаний, не подтверждённых 
 | D-UPDATE-01 | Backup удерживается до authenticated Core health marker; timeout вызывает rollback | Repair/update | `evohime-updater`, health-marker tests |
 | D-UI-01 | Основная навигация короткая; технические панели находятся в collapsed `Интерфейс разработчика` | Desktop shell | `App.tsx`, operations/sidebar tests |
 | D-MODEL-01 | API model selection действует со следующего Core-запроса; смена API-профиля и Codex model restart Core | Provider/shell | `ModelPicker`, `CodexService`, shell-bridge tests |
-| D-RELEASE-01 | Поставка выполняется одним постоянным full installer-релизом `installer` | Release | `installer/release-notes.md`, Windows workflow |
-| D-RELEASE-02 | Component manifest и selective update реализованы; full installer сохранён как fallback для старых и несовместимых выпусков | Release | `architecture.md`, `release-evidence.md`, `evohime-updater` |
+| D-RELEASE-01 | Full installer-релиз `installer` остаётся базовой установкой и полным восстановлением; штатные изменения поставляются отдельными module releases | Release | `installer/release-notes.md`, Windows workflow |
+| D-RELEASE-02 | Обновления разрешаются только через fixed `compatibility` manifest, который связывает точные module releases, hashes, зависимости и minimum updater; старый installer сначала получает совместимый updater | Release | `architecture.md`, `release-evidence.md`, `evohime-update-agent` |
 | D-REL-21 | Electron diagnostics — bounded redacted projection; recovery, approvals, backup/restore и effects остаются Core-owned | Reliability | `diagnostic-bundle.ts`, recovery projection tests |
 
 ## Закрытые acceptance records

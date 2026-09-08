@@ -6,6 +6,8 @@ param(
     [string]$Version,
     [string]$Commit,
     [string]$Branch = 'main',
+    [string]$NativeInputPath,
+    [string]$ElectronInputPath,
     [switch]$SkipBuild
 )
 
@@ -24,6 +26,12 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $electronRoot = Join-Path $repoRoot 'desktop\evohime-electron'
 $outputCandidate = if ([System.IO.Path]::IsPathRooted($OutputPath)) { $OutputPath } else { Join-Path $repoRoot $OutputPath }
 $resolvedOutput = [System.IO.Path]::GetFullPath($outputCandidate)
+$resolvedNativeInput = if ($NativeInputPath) {
+    [System.IO.Path]::GetFullPath($(if ([System.IO.Path]::IsPathRooted($NativeInputPath)) { $NativeInputPath } else { Join-Path $repoRoot $NativeInputPath }))
+} else { $null }
+$resolvedElectronInput = if ($ElectronInputPath) {
+    [System.IO.Path]::GetFullPath($(if ([System.IO.Path]::IsPathRooted($ElectronInputPath)) { $ElectronInputPath } else { Join-Path $repoRoot $ElectronInputPath }))
+} else { $null }
 $manifest = New-NativePackageManifest -Architecture 'x64' -OsMinimum 'Windows 10 2004 / Windows 11'
 $cargoProfile = if ($Configuration -eq 'Debug') { 'debug' } else { 'release' }
 $cargoArguments = @('build', '--locked')
@@ -56,7 +64,13 @@ $cargoTarget = Join-Path $repoRoot "target\$cargoProfile"
 $requiredNative = @('evohime-core.exe', 'eva.exe', 'evohime-supervisor.exe', 'evohime-analysis-worker.exe', 'evohime-listener.exe', 'evohime-transaction.exe', 'evohime-updater.exe', 'evohime-verify.exe')
 foreach ($component in $requiredNative) {
     $destination = Join-Path $resolvedOutput $component
-    $source = if ($SkipBuild) { $destination } else { Join-Path $cargoTarget $component }
+    $source = if ($resolvedNativeInput) {
+        Join-Path $resolvedNativeInput $component
+    } elseif ($SkipBuild) {
+        $destination
+    } else {
+        Join-Path $cargoTarget $component
+    }
     if (-not (Test-Path -LiteralPath $source)) { throw "Native-компонент не найден: $source" }
     if ($source -ne $destination) { Copy-Item -LiteralPath $source -Destination $destination -Force }
 }
@@ -68,10 +82,10 @@ $routingResource = Join-Path $resolvedOutput 'routing'
 New-Item -ItemType Directory -Force -Path $routingResource | Out-Null
 Copy-Item -LiteralPath (Join-Path $repoRoot 'crates\model-gateway\resources\routing-v1.jsonl') -Destination (Join-Path $routingResource 'routing-v1.jsonl') -Force
 
-$electronPayload = Join-Path $electronRoot 'release\win-unpacked'
+$electronPayload = if ($resolvedElectronInput) { $resolvedElectronInput } else { Join-Path $electronRoot 'release\win-unpacked' }
 $uiPackaged = Join-Path $resolvedOutput 'EvoHime.exe'
-if (-not $SkipBuild) {
-    if (-not (Test-Path -LiteralPath $electronPayload)) { throw "Electron package не найден: $electronPayload" }
+if (-not $SkipBuild -or $resolvedElectronInput) {
+    if (-not (Test-Path -LiteralPath $electronPayload -PathType Container)) { throw "Electron package не найден: $electronPayload" }
     foreach ($item in Get-ChildItem -LiteralPath $electronPayload -Force) {
         $destination = Join-Path $resolvedOutput $item.Name
         # Copy-Item -Recurse вкладывает каталог внутрь уже существующего вместо

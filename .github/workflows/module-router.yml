@@ -94,10 +94,24 @@ jobs:
           if ($null -eq $installerCurrent) { throw "Некорректная версия установщика: $installerText" }
           $installerLatest = $null
           $manifestPath = Join-Path $env:RUNNER_TEMP 'EvoHime-Setup.json'
-          gh release download installer --repo $env:REPOSITORY --pattern EvoHime-Setup.json --dir $env:RUNNER_TEMP --clobber 2>$null | Out-Null
-          if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $manifestPath)) {
+          # gh использует ненулевой код и для HTTP 404, и для сетевого сбоя.
+          # Только подтверждённый 404 означает, что fixed installer release
+          # ещё не создан; любой другой отказ должен остановить router.
+          $probeOutput = @(gh api "repos/$env:REPOSITORY/releases/tags/installer" 2>&1)
+          $probeExit = $LASTEXITCODE
+          $probeText = $probeOutput -join "`n"
+          $releaseAbsent = $probeExit -ne 0 -and $probeText -match '(?i)(HTTP/?[0-9.]*\s*404|HTTP 404|\(HTTP 404\)|404 Not Found)'
+          if ($probeExit -ne 0 -and -not $releaseAbsent) {
+            throw "Не удалось проверить installer release: $probeText"
+          }
+          if (-not $releaseAbsent) {
+            gh release download installer --repo $env:REPOSITORY --pattern EvoHime-Setup.json --dir $env:RUNNER_TEMP --clobber 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'Installer release существует, но его manifest не удалось получить.' }
+          }
+          if (-not $releaseAbsent -and (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
             $published = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
             $installerLatest = Parse-Version ([string]$published.installerVersion)
+            if ($null -eq $installerLatest) { throw 'Опубликованный installer manifest содержит некорректную версию.' }
           }
           $installerSelected = $manualSet.Contains('installer') -or ($manual.Count -eq 0 -and ($null -eq $installerLatest -or $installerCurrent -gt $installerLatest))
           "installer=$($installerSelected.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT

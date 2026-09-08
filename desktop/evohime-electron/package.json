@@ -13,6 +13,7 @@
     "bootstrap": "npm ci --ignore-scripts && node scripts/postinstall-allowlist.mjs",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "package:from-build": "electron-builder --dir --config electron-builder.yml && node scripts/copy-updater-executable.mjs",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",

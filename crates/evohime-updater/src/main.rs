@@ -24,6 +24,7 @@ fn main() -> ExitCode {
                 state_dir: &options.state_dir,
                 native_selected: &options.native_selected,
                 ui_version: options.ui_version.as_deref(),
+                shell_host: options.shell_host,
                 wait_pid: options.wait_pid,
                 relaunch: options.relaunch.as_deref(),
                 health_file: options.health_file.as_deref(),
@@ -115,6 +116,7 @@ struct ComponentSetArgs {
     wait_pid: Option<u32>,
     relaunch: Option<PathBuf>,
     health_file: Option<PathBuf>,
+    shell_host: bool,
 }
 
 fn parse_component_set_args(args: &[String]) -> Result<ComponentSetArgs, String> {
@@ -144,6 +146,7 @@ fn parse_component_set_args(args: &[String]) -> Result<ComponentSetArgs, String>
         wait_pid,
         relaunch: optional(args, "--relaunch").map(PathBuf::from),
         health_file: optional(args, "--health-file").map(PathBuf::from),
+        shell_host: args.iter().any(|arg| arg == "--shell-host"),
     })
 }
 

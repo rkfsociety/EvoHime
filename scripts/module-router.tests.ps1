@@ -8,6 +8,10 @@ if ($router -match 'git diff|git log|github\.event\.before|MANUAL_BASE|base:') {
 if ($router -notmatch 'module-\$module-v|Latest-Version|release-versions/\$module\.txt') { throw 'Router does not compare module versions with module releases.' }
 if ($router -notmatch 'release-versions/installer\.txt') { throw 'Router does not track installer version.' }
 if ($router -notmatch "'installer' = 'windows\.yml'") { throw 'Router does not dispatch the installer workflow.' }
+if ($router -notmatch 'probeOutput = @\(gh api') { throw 'Router does not probe the installer release explicitly.' }
+if ($router -notmatch 'releaseAbsent.*HTTP.*404') { throw 'Router does not distinguish a missing installer release from other API failures.' }
+if ($router -notmatch 'Не удалось проверить installer release') { throw 'Router does not fail closed on installer release network errors.' }
+if ($router -match 'gh release download installer.*2>\$null') { throw 'Router hides installer release errors.' }
 foreach ($workflow in @('core.yml','supervisor.yml','cli.yml','analysis-worker.yml','listener-module.yml','listener.yml','transaction.yml','verifier.yml','shell-host.yml','ui-bundle.yml','update-agent.yml')) {
     $text = Get-Content -LiteralPath (Join-Path $root ".github\workflows\$workflow") -Raw
     if ($text -match '(?m)^\s{2}push:') { throw "$workflow still has a direct push trigger." }
@@ -17,6 +21,11 @@ foreach ($workflow in @('core.yml','supervisor.yml','cli.yml','analysis-worker.y
     if ($text -notmatch [regex]::Escape('group: evohime-module-${{ github.workflow }}')) { throw "$workflow does not isolate its own concurrency group." }
     if ($text -notmatch '(?m)^\s+cancel-in-progress:\s*true\s*$') { throw "$workflow does not cancel the previous module run." }
 }
+$shellWorkflow = Get-Content -LiteralPath (Join-Path $root '.github\workflows\shell-host.yml') -Raw
+if ($shellWorkflow -notmatch 'shell-host\.zip') { throw 'Shell host workflow does not publish a complete archive.' }
+if ($shellWorkflow -notmatch 'resources\\app\.asar') { throw 'Shell host workflow does not assert app.asar delivery.' }
+$nativeWorkflow = Get-Content -LiteralPath (Join-Path $root '.github\workflows\windows.yml') -Raw
+if ($nativeWorkflow -notmatch 'actions/download-artifact@v8' -or $nativeWorkflow -notmatch 'build-windows-native\.ps1 -SkipBuild') { throw 'Native workflow still rebuilds instead of consuming checked artifacts.' }
 $installer = Get-Content -LiteralPath (Join-Path $root '.github\workflows\windows.yml') -Raw
 if ($installer -match '(?m)^\s{2}push:') { throw 'installer workflow still has a direct push trigger.' }
 if ($installer -notmatch [regex]::Escape('group: evohime-installer')) { throw 'installer workflow does not use a fixed concurrency group.' }

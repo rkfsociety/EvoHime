@@ -1,0 +1,38 @@
+name: compatible release manifest
+
+on:
+  workflow_run:
+    workflows:
+      - shell-host module
+      - ui-bundle module
+      - core module
+      - supervisor module
+      - cli module
+      - analysis-worker module
+      - listener module
+      - listener-runtime module
+      - transaction module
+      - verifier module
+      - updater module
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: evohime-compatible-manifest
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish compatible set manifest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Publish fixed compatible manifest
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/publish-compatible-manifest.ps1

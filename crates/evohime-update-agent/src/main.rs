@@ -175,24 +175,39 @@ struct ReleaseAsset {
     browser_download_url: String,
 }
 #[derive(serde::Deserialize)]
-struct RemoteManifest {
-    module: String,
+struct CompatibleManifest {
+    schema: String,
+    product: String,
+    os: String,
+    architecture: String,
+    updater: UpdaterRequirement,
+    components: Vec<CompatibleComponent>,
+}
+
+#[derive(serde::Deserialize)]
+struct UpdaterRequirement {
+    minimum_version: String,
+    update_first: bool,
+}
+
+#[derive(serde::Deserialize)]
+struct CompatibleComponent {
+    id: String,
     version: String,
-    artifact: String,
+    release_tag: String,
+    manifest_asset: String,
+    artifact: Option<String>,
     size: u64,
     sha256: String,
+    #[serde(default, deserialize_with = "deserialize_nullable_vec")]
+    dependencies: Vec<String>,
+    restart: String,
+    #[serde(default)]
+    protocol: String,
     #[serde(default)]
     summary: String,
     #[serde(default, deserialize_with = "deserialize_nullable_vec")]
     changes: Vec<String>,
-    #[serde(default, deserialize_with = "deserialize_nullable_vec")]
-    dependencies: Vec<String>,
-    #[serde(default = "default_restart")]
-    restart: String,
-}
-
-fn default_restart() -> String {
-    "module".to_owned()
 }
 
 fn data_directory(install_dir: &Path) -> PathBuf {
@@ -204,6 +219,143 @@ fn data_directory(install_dir: &Path) -> PathBuf {
     env::var("LOCALAPPDATA")
         .map(|value| PathBuf::from(value).join("EvoHime"))
         .unwrap_or_else(|_| install_dir.to_path_buf())
+}
+
+fn read_compatible_manifest(
+    client: &UpdaterHttpClient,
+    releases: &[Release],
+) -> Result<CompatibleManifest, String> {
+    let release = releases
+        .iter()
+        .find(|release| release.tag_name == "compatibility")
+        .ok_or_else(|| "updater: release совместимого комплекта отсутствует".to_owned())?;
+    let asset = release
+        .assets
+        .iter()
+        .find(|asset| asset.name == "evohime.compatible.json")
+        .ok_or_else(|| "updater: манифест совместимого комплекта отсутствует".to_owned())?;
+    get_json(
+        client,
+        &asset.browser_download_url,
+        "манифест совместимого комплекта",
+    )
+}
+
+fn validate_compatible_manifest(manifest: &CompatibleManifest) -> Result<(), String> {
+    if manifest.schema != "evohime.compatible-set.v1"
+        || manifest.product != "EvoHime"
+        || manifest.os != "windows"
+        || manifest.architecture != "x64"
+        || !is_valid_semver(&manifest.updater.minimum_version)
+        || manifest.components.is_empty()
+        || manifest.components.len() != MODULE_IDS.len()
+    {
+        return Err("updater: некорректный манифест совместимого комплекта".to_owned());
+    }
+    let mut ids = std::collections::HashSet::new();
+    for component in &manifest.components {
+        if !MODULE_IDS.contains(&component.id.as_str()) || !ids.insert(component.id.as_str()) {
+            return Err(format!(
+                "updater: некорректный компонент совместимого комплекта: {}",
+                component.id
+            ));
+        }
+        let prefix = format!("module-{}-v", component.id);
+        if !component.release_tag.starts_with(&prefix)
+            || !is_valid_semver(&component.release_tag[prefix.len()..])
+            || !is_valid_semver(&component.version)
+            || compare_semver(&component.version, &component.release_tag[prefix.len()..])
+                != std::cmp::Ordering::Equal
+            || component.manifest_asset.is_empty()
+            || component.manifest_asset.contains('/')
+            || component.manifest_asset.contains('\\')
+            || component.manifest_asset.contains("..")
+        {
+            return Err(format!(
+                "updater: некорректная запись совместимого компонента: {}",
+                component.id
+            ));
+        }
+        if component.id == "listener-runtime" {
+            if component.artifact.is_some() || component.size != 0 || !component.sha256.is_empty() {
+                return Err("updater: listener-runtime не должен иметь бинарный hash".to_owned());
+            }
+        } else if component.artifact.as_deref().is_none_or(|artifact| {
+            artifact.is_empty()
+                || artifact.contains('/')
+                || artifact.contains('\\')
+                || artifact.contains("..")
+        }) || component.size == 0
+            || component.sha256.len() != 64
+            || !component
+                .sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err(format!(
+                "updater: некорректный artifact или hash для {}",
+                component.id
+            ));
+        }
+    }
+    for component in &manifest.components {
+        for dependency in &component.dependencies {
+            if !ids.contains(dependency.as_str()) {
+                return Err(format!(
+                    "updater: зависимость {} отсутствует в совместимом комплекте",
+                    dependency
+                ));
+            }
+        }
+    }
+    let mut unresolved = ids.clone();
+    while !unresolved.is_empty() {
+        let resolved = manifest
+            .components
+            .iter()
+            .filter(|component| {
+                unresolved.contains(component.id.as_str())
+                    && component
+                        .dependencies
+                        .iter()
+                        .all(|dependency| !unresolved.contains(dependency.as_str()))
+            })
+            .map(|component| component.id.as_str())
+            .collect::<Vec<_>>();
+        if resolved.is_empty() {
+            return Err("updater: цикл зависимостей в совместимом комплекте".to_owned());
+        }
+        for id in resolved {
+            unresolved.remove(id);
+        }
+    }
+    let updater = manifest
+        .components
+        .iter()
+        .find(|component| component.id == "updater")
+        .ok_or_else(|| "updater: совместимый комплект не содержит updater".to_owned())?;
+    if compare_semver(&updater.version, &manifest.updater.minimum_version).is_lt() {
+        return Err("updater: версия updater ниже требования совместимого комплекта".to_owned());
+    }
+    Ok(())
+}
+
+fn updater_first_if_required(
+    updates: Vec<UpdateCandidate>,
+    installed_version: &str,
+    minimum_version: &str,
+    update_first: bool,
+) -> Result<Vec<UpdateCandidate>, String> {
+    if !update_first || !compare_semver(installed_version, minimum_version).is_lt() {
+        return Ok(updates);
+    }
+    updates
+        .into_iter()
+        .find(|update| update.module == "updater")
+        .map(|update| vec![update])
+        .ok_or_else(|| {
+            "updater: compatible set не содержит доступного обновления updater".to_owned()
+        })
 }
 
 fn remote_updates(data_dir: &Path, install_dir: &Path) -> Result<Vec<UpdateCandidate>, String> {
@@ -233,98 +385,69 @@ fn remote_updates(data_dir: &Path, install_dir: &Path) -> Result<Vec<UpdateCandi
         .iter()
         .map(|item| (item.id.as_str(), item.version.as_str()))
         .collect::<std::collections::HashMap<_, _>>();
+    let compatibility = read_compatible_manifest(&client, &releases)?;
+    validate_compatible_manifest(&compatibility)?;
+    let installed_updater = installed.get("updater").copied().unwrap_or("0.0.0");
+    let compatible_updater = compatibility
+        .components
+        .iter()
+        .find(|component| component.id == "updater")
+        .expect("validated compatible manifest");
+    if compare_semver(installed_updater, &compatibility.updater.minimum_version).is_lt()
+        && compare_semver(installed_updater, &compatible_updater.version).is_ge()
+    {
+        let suffix = if compatibility.updater.update_first {
+            " (updater должен обновляться первым)"
+        } else {
+            ""
+        };
+        return Err(format!(
+            "updater: совместимый комплект требует обновления updater{suffix}"
+        ));
+    }
     let mut available = Vec::new();
     let mut manifests = std::collections::HashMap::new();
-    for module in MODULE_IDS {
-        let prefix = format!("module-{module}-v");
-        let Some(release) = releases
+    for component in compatibility.components {
+        let release = releases
             .iter()
-            .filter(|release| {
-                release.tag_name.starts_with(&prefix)
-                    && is_valid_semver(&release.tag_name[prefix.len()..])
-            })
-            .max_by(|left, right| {
-                compare_semver(
-                    &left.tag_name[prefix.len()..],
-                    &right.tag_name[prefix.len()..],
-                )
-            })
-        else {
-            continue;
-        };
-        let manifest_asset_name = if *module == "listener-runtime" {
-            "listener-runtime.json".to_owned()
-        } else {
-            format!("{module}.manifest.json")
-        };
-        let asset = release
+            .find(|release| release.tag_name == component.release_tag)
+            .ok_or_else(|| format!("updater: release отсутствует для {}", component.id))?;
+        let manifest_asset = release
             .assets
             .iter()
-            .find(|asset| asset.name == manifest_asset_name)
-            .ok_or_else(|| format!("updater: manifest отсутствует для {module}"))?;
-        let manifest = if *module == "listener-runtime" {
-            let runtime: RuntimeReleaseManifest = get_json(
-                &client,
-                &asset.browser_download_url,
-                &format!("manifest {module}"),
-            )?;
-            validate_runtime_manifest(&runtime)?;
-            RemoteManifest {
-                module: runtime.module,
-                version: runtime.version,
-                artifact: manifest_asset_name,
-                size: 0,
-                sha256: String::new(),
-                summary: "Библиотеки распознавания речи и модели для listener.".to_owned(),
-                changes: vec!["Обновлён проверенный комплект библиотек и моделей.".to_owned()],
-                dependencies: Vec::new(),
-                restart: "listener".to_owned(),
-            }
+            .find(|asset| asset.name == component.manifest_asset)
+            .ok_or_else(|| format!("updater: manifest отсутствует для {}", component.id))?;
+        let (artifact, download_url) = if component.id == "listener-runtime" {
+            (
+                component.manifest_asset.clone(),
+                manifest_asset.browser_download_url.clone(),
+            )
         } else {
-            get_json(
-                &client,
-                &asset.browser_download_url,
-                &format!("manifest {module}"),
-            )?
+            let artifact = component
+                .artifact
+                .clone()
+                .ok_or_else(|| format!("updater: artifact отсутствует для {}", component.id))?;
+            let download_url = release
+                .assets
+                .iter()
+                .find(|asset| asset.name == artifact)
+                .map(|asset| asset.browser_download_url.clone())
+                .ok_or_else(|| format!("updater: artifact отсутствует для {}", component.id))?;
+            (artifact, download_url)
         };
-        if manifest.module != *module {
-            return Err(format!("updater: manifest module mismatch for {module}"));
-        }
-        if !is_valid_semver(&manifest.version) {
-            return Err(format!(
-                "updater: некорректная версия в manifest для {module}"
-            ));
-        }
-        if (*module != "listener-runtime" && manifest.artifact.is_empty())
-            || manifest.artifact.contains('/')
-            || manifest.artifact.contains('\\')
-            || (*module != "listener-runtime" && manifest.size == 0)
-            || (*module != "listener-runtime"
-                && (manifest.sha256.len() != 64
-                    || !manifest.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())))
-        {
-            return Err(format!("updater: некорректный manifest для {module}"));
-        }
-        let artifact = manifest.artifact.clone();
-        let download_url = release
-            .assets
-            .iter()
-            .find(|asset| asset.name == artifact)
-            .map(|asset| asset.browser_download_url.clone())
-            .ok_or_else(|| format!("updater: artifact отсутствует для {module}"))?;
         available.push(ModuleRecord {
-            id: (*module).into(),
-            version: manifest.version.clone(),
-            dependencies: manifest.dependencies.clone(),
+            id: component.id.clone(),
+            version: component.version.clone(),
+            dependencies: component.dependencies.clone(),
         });
-        manifests.insert((*module).to_owned(), (manifest, download_url));
+        manifests.insert(component.id.clone(), (component, artifact, download_url));
     }
     let plan = select_outdated(&installed_manifest, &available)?;
-    let updates = plan
+    let updates: Vec<UpdateCandidate> = plan
         .modules
         .into_iter()
         .filter_map(|module| {
-            let (manifest, download_url) = manifests.remove(&module)?;
+            let (manifest, artifact, download_url) = manifests.remove(&module)?;
             let current = installed.get(module.as_str()).copied().unwrap_or("0.0.0");
             if compare_semver(current, &manifest.version).is_ge() {
                 return None;
@@ -333,18 +456,31 @@ fn remote_updates(data_dir: &Path, install_dir: &Path) -> Result<Vec<UpdateCandi
                 module,
                 installed: current.to_owned(),
                 available: manifest.version,
-                summary: manifest.summary,
-                changes: manifest.changes,
+                summary: if manifest.summary.is_empty() {
+                    format!("Совместимый комплект: {}.", manifest.protocol)
+                } else {
+                    manifest.summary
+                },
+                changes: if manifest.changes.is_empty() {
+                    vec!["Обновлена версия в проверенном совместимом комплекте.".to_owned()]
+                } else {
+                    manifest.changes
+                },
                 dependencies: manifest.dependencies,
                 restart: manifest.restart,
-                artifact: manifest.artifact,
+                artifact,
                 size: manifest.size,
                 sha256: manifest.sha256,
                 download_url,
             })
         })
         .collect();
-    Ok(updates)
+    updater_first_if_required(
+        updates,
+        installed_updater,
+        &compatibility.updater.minimum_version,
+        compatibility.updater.update_first,
+    )
 }
 
 /// The installer writes this local JSON file. Accept a UTF-8 BOM so clients
@@ -617,6 +753,7 @@ fn apply_updates(
     let mut selected = Vec::new();
     let mut applied = Vec::new();
     let mut ui_update = None;
+    let mut shell_host_update = None;
     let updater_update = updates.iter().find(|update| update.module == "updater");
     let runtime_update = updates
         .iter()
@@ -626,6 +763,7 @@ fn apply_updates(
         .filter(|update| {
             update.module != "updater"
                 && update.module != "ui-bundle"
+                && update.module != "shell-host"
                 && update.module != "listener-runtime"
         })
         .collect::<Vec<_>>();
@@ -663,6 +801,25 @@ fn apply_updates(
         );
         selected.push(update.artifact.clone());
         applied.push(update);
+    }
+    if let Some(update) = updates.iter().find(|update| update.module == "shell-host") {
+        progress("Скачивание shell-host", 0);
+        download_verified_file(
+            &client,
+            update,
+            &staging.join("shell-host.zip"),
+            |downloaded| {
+                progress(
+                    "Скачивание shell-host",
+                    progress_percent(downloaded, update.size),
+                )
+            },
+        )?;
+        extract_shell_host(&staging.join("shell-host.zip"), &staging.join("shell-host"))?;
+        selected.push("shell-host.zip".to_owned());
+        applied.push(update);
+        shell_host_update = Some(update);
+        progress("shell-host подготовлен", 100);
     }
     if let Some(update) = updates.iter().find(|update| update.module == "ui-bundle") {
         progress("Скачивание ui-bundle", 0);
@@ -711,6 +868,8 @@ fn apply_updates(
     }
     let manifest = serde_json::json!({
         "schema": "evohime.component-manifest.v1", "os": "windows", "architecture": "x64",
+        "product": "EvoHime", "release_id": format!("module-update-{}", std::process::id()),
+        "release_commit": "0000000000000000000000000000000000000000",
         "components": applied.iter().chain(ui_update.iter()).map(|item| serde_json::json!({
             "id": item.module, "version": item.available, "artifact": item.artifact,
             "path": item.artifact, "size": item.size, "sha256": item.sha256,
@@ -729,11 +888,16 @@ fn apply_updates(
     let staging_arg = staging.to_string_lossy().into_owned();
     let install_arg = install_dir.to_string_lossy().into_owned();
     let state_arg = state.to_string_lossy().into_owned();
-    let selected_arg = selected.join(",");
     let worker_copy = state.join(format!("transaction-{}-worker.exe", std::process::id()));
     fs::create_dir_all(&state).map_err(|error| error.to_string())?;
     fs::copy(&worker, &worker_copy).map_err(|error| error.to_string())?;
-    let mode = if ui_update.is_some() {
+    let native_selected = selected
+        .iter()
+        .filter(|path| path.as_str() != "shell-host.zip")
+        .cloned()
+        .collect::<Vec<_>>();
+    let selected_arg = native_selected.join(",");
+    let mode = if shell_host_update.is_some() || ui_update.is_some() {
         "--apply-components"
     } else {
         "--apply-staging"
@@ -749,8 +913,11 @@ fn apply_updates(
         "--state-dir",
         state_arg.as_str(),
     ]);
-    if !selected.is_empty() {
+    if !native_selected.is_empty() {
         command.args(["--selected", selected_arg.as_str()]);
+    }
+    if shell_host_update.is_some() {
+        command.arg("--shell-host");
     }
     if let Some(update) = ui_update {
         command.args(["--ui-version", update.available.as_str()]);
@@ -897,6 +1064,40 @@ fn extract_ui_bundle(archive_path: &Path, destination: &Path) -> Result<(), Stri
     Ok(())
 }
 
+fn extract_shell_host(archive_path: &Path, destination: &Path) -> Result<(), String> {
+    let archive_file = fs::File::open(archive_path).map_err(|error| error.to_string())?;
+    let mut archive = zip::ZipArchive::new(archive_file).map_err(|error| error.to_string())?;
+    if destination.exists() {
+        fs::remove_dir_all(destination).map_err(|error| error.to_string())?;
+    }
+    fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).map_err(|error| error.to_string())?;
+        if entry.is_symlink() {
+            return Err("updater: shell-host archive содержит symlink".to_owned());
+        }
+        let relative = entry
+            .enclosed_name()
+            .ok_or_else(|| "updater: shell-host archive содержит небезопасный путь".to_owned())?;
+        let target = destination.join(relative);
+        if entry.is_dir() {
+            fs::create_dir_all(&target).map_err(|error| error.to_string())?;
+        } else {
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+            }
+            let mut file = fs::File::create(&target).map_err(|error| error.to_string())?;
+            std::io::copy(&mut entry, &mut file).map_err(|error| error.to_string())?;
+        }
+    }
+    if !destination.join("EvoHime.exe").is_file()
+        || !destination.join("resources").join("app.asar").is_file()
+    {
+        return Err("updater: shell-host archive не содержит полный Electron package".to_owned());
+    }
+    Ok(())
+}
+
 fn apply_listener_runtime(
     client: &UpdaterHttpClient,
     update: &UpdateCandidate,
@@ -1020,7 +1221,28 @@ fn merge_installed_manifest_to(
         .and_then(serde_json::Value::as_array_mut)
         .ok_or_else(|| "updater: component manifest повреждён".to_owned())?;
     for update in applied {
-        let value = serde_json::json!({"id": update.module, "version": update.available, "artifact": update.artifact, "path": update.artifact, "size": update.size, "sha256": update.sha256, "required": true, "restart": "module"});
+        let (artifact, path, size, sha256) = if update.module == "shell-host" {
+            let shell = install_dir.join("EvoHime.exe");
+            let bytes = fs::read(&shell).map_err(|error| error.to_string())?;
+            let digest = sha2::Sha256::digest(&bytes);
+            (
+                "EvoHime.exe".to_owned(),
+                "EvoHime.exe".to_owned(),
+                bytes.len() as u64,
+                digest
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>(),
+            )
+        } else {
+            (
+                update.artifact.clone(),
+                update.artifact.clone(),
+                update.size,
+                update.sha256.clone(),
+            )
+        };
+        let value = serde_json::json!({"id": update.module, "version": update.available, "artifact": artifact, "path": path, "size": size, "sha256": sha256, "dependencies": update.dependencies, "required": true, "protocol": "desktop-ipc-v1", "restart": update.restart});
         if let Some(existing) = components.iter_mut().find(|item| {
             item.get("id").and_then(serde_json::Value::as_str) == Some(update.module.as_str())
         }) {
@@ -1153,8 +1375,9 @@ fn fail(error: impl std::fmt::Display) -> ExitCode {
 mod tests {
     use super::{
         is_github_api_url, normalize_github_token, parse_json_body, read_update_config,
-        resolve_github_token_with, updater_bootstrap_script, updater_http_client,
-        UpdaterBootstrapPaths,
+        resolve_github_token_with, updater_bootstrap_script, updater_first_if_required,
+        updater_http_client, validate_compatible_manifest, CompatibleComponent, CompatibleManifest,
+        UpdateCandidate, UpdaterBootstrapPaths, UpdaterRequirement,
     };
     use std::{
         fs,
@@ -1178,6 +1401,122 @@ mod tests {
         assert!(
             error.starts_with("updater: список GitHub Release: GitHub вернул некорректный JSON:")
         );
+    }
+
+    #[test]
+    fn compatible_manifest_binds_components_to_exact_release_tags() {
+        let mut manifest = CompatibleManifest {
+            schema: "evohime.compatible-set.v1".into(),
+            product: "EvoHime".into(),
+            os: "windows".into(),
+            architecture: "x64".into(),
+            updater: UpdaterRequirement {
+                minimum_version: "1.0.0".into(),
+                update_first: true,
+            },
+            components: vec![
+                CompatibleComponent {
+                    id: "updater".into(),
+                    version: "1.1.0".into(),
+                    release_tag: "module-updater-v1.1.0".into(),
+                    manifest_asset: "updater.manifest.json".into(),
+                    artifact: Some("evohime-updater.exe".into()),
+                    size: 10,
+                    sha256: "a".repeat(64),
+                    dependencies: vec![],
+                    restart: "updater".into(),
+                    protocol: "desktop-ipc-v1".into(),
+                    summary: String::new(),
+                    changes: vec![],
+                },
+                CompatibleComponent {
+                    id: "core".into(),
+                    version: "1.0.0".into(),
+                    release_tag: "module-core-v1.0.0".into(),
+                    manifest_asset: "core.manifest.json".into(),
+                    artifact: Some("evohime-core.exe".into()),
+                    size: 10,
+                    sha256: "b".repeat(64),
+                    dependencies: vec!["updater".into()],
+                    restart: "core".into(),
+                    protocol: "desktop-ipc-v1".into(),
+                    summary: String::new(),
+                    changes: vec![],
+                },
+            ],
+        };
+        for (index, id) in super::MODULE_IDS.iter().enumerate() {
+            if manifest
+                .components
+                .iter()
+                .any(|component| component.id == *id)
+            {
+                continue;
+            }
+            let version = format!("1.0.{}", index + 1);
+            manifest.components.push(CompatibleComponent {
+                id: (*id).into(),
+                version: version.clone(),
+                release_tag: format!("module-{id}-v{version}"),
+                manifest_asset: if *id == "listener-runtime" {
+                    "listener-runtime.json".into()
+                } else {
+                    format!("{id}.manifest.json")
+                },
+                artifact: (*id != "listener-runtime").then(|| format!("{id}.bin")),
+                size: if *id == "listener-runtime" { 0 } else { 10 },
+                sha256: if *id == "listener-runtime" {
+                    String::new()
+                } else {
+                    "c".repeat(64)
+                },
+                dependencies: vec![],
+                restart: "module".into(),
+                protocol: "desktop-ipc-v1".into(),
+                summary: String::new(),
+                changes: vec![],
+            });
+        }
+        assert!(validate_compatible_manifest(&manifest).is_ok());
+
+        let mut invalid = manifest;
+        invalid.components[1].release_tag = "module-supervisor-v1.0.0".into();
+        assert!(validate_compatible_manifest(&invalid).is_err());
+    }
+
+    #[test]
+    fn oldest_base_updates_only_the_updater_first() {
+        let updates = vec![
+            UpdateCandidate {
+                module: "core".into(),
+                installed: "0.0.0".into(),
+                available: "2.0.0".into(),
+                summary: String::new(),
+                changes: vec![],
+                dependencies: vec![],
+                restart: "core".into(),
+                artifact: "evohime-core.exe".into(),
+                size: 1,
+                sha256: "a".repeat(64),
+                download_url: "https://github.com/example/core".into(),
+            },
+            UpdateCandidate {
+                module: "updater".into(),
+                installed: "0.0.0".into(),
+                available: "2.0.0".into(),
+                summary: String::new(),
+                changes: vec![],
+                dependencies: vec![],
+                restart: "updater".into(),
+                artifact: "evohime-updater.exe".into(),
+                size: 1,
+                sha256: "b".repeat(64),
+                download_url: "https://github.com/example/updater".into(),
+            },
+        ];
+        let selected = updater_first_if_required(updates, "0.0.0", "1.0.0", true).unwrap();
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].module, "updater");
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-09-07.
+Обновлено: 2026-09-08.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
@@ -16,7 +16,25 @@ push-workflow; ручной полный workflow на текущем комми
 `module-<module>-v<semver>` и один
 `installer` для первоначальной установки или полного восстановления.
 `installer` содержит только `EvoHime-Setup.exe` и `EvoHime-Setup.json`; бинарники
-и runtime публикуются только в собственных релизах модулей.
+и runtime публикуются только в собственных релизах модулей. Fixed release
+`compatibility` содержит дешёвый `evohime.compatible.json`, который связывает
+конкретные module releases в один совместимый комплект и задаёт minimum updater
+version.
+
+## Контракт новой поставки
+
+`shell-host` публикуется как полный ZIP `win-unpacked` с обязательными
+`EvoHime.exe` и `resources/app.asar`; transaction worker применяет его как
+shell-tree с rollback. Полный Windows workflow передаёт native и Electron
+артефакты из проверочных jobs в packaging job, поэтому Cargo и Electron package
+не запускаются повторно. Router выпускает installer только после различения
+подтверждённого HTTP 404 (релиза нет) и прочих ошибок получения manifest.
+
+Публикация `compatibility` запускается после успешного module workflow или
+вручную и не пересобирает installer. Старый installer остаётся пригодным для
+первичной установки: при отсутствии component marker updater считает базовые
+версии нулевыми, сначала обновляет себя при необходимости, затем применяет
+зафиксированный комплект.
 
 ## Evidence текущего GitHub workflow — 2026-09-07
 
@@ -930,7 +948,8 @@ Transaction/runtime: selected native apply preserves unselected files; the
 mixed component-set test verifies native + versioned UI update, active-pointer
 publication and preservation of Core. Transaction state records operation ID,
 selected paths, backup scope, UI target and previous pointer for restart
-recovery. Full installer remains the compatibility fallback.
+recovery. Full installer remains the baseline for first install and complete
+restore; compatible module updates use the fixed compatibility manifest.
 
 Electron/CI: full Electron regression passed, including typecheck, production
 build, bundle security checks and generated protocol check. Windows workflow

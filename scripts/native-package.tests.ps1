@@ -35,6 +35,8 @@ Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-transaction.exe') -Val
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-updater.exe') -Value 'update-agent'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-verify.exe') -Value 'verifier'
 Set-Content -LiteralPath (Join-Path $packageRoot 'ui-bundle.zip') -Value 'ui-archive-fixture'
+New-Item -ItemType Directory -Force -Path (Join-Path $packageRoot 'resources') | Out-Null
+Set-Content -LiteralPath (Join-Path $packageRoot 'resources\app.asar') -Value 'electron-shell-fixture'
 
 $commit = 'a' * 40
 & (Join-Path $PSScriptRoot 'build-windows-native.ps1') -SkipBuild -OutputPath $packageRoot -Commit $commit | Out-Null
@@ -51,6 +53,26 @@ $componentMarker = Get-Content -LiteralPath $componentMarkerPath -Raw | ConvertF
 if ($componentMarker.schema -ne 'evohime.component-manifest.v1') { throw 'component manifest schema mismatch' }
 if ($componentMarker.components.Count -ne 10) { throw 'component manifest inventory mismatch' }
 if ($componentMarker.components[0].sha256.Length -ne 64) { throw 'component manifest hash is missing' }
+if ($componentMarker.release_commit -ne $commit) { throw 'component manifest release commit mismatch' }
+
+# Native-упаковка может только собрать уже проверенные результаты CI и не
+# должна повторно запускать Cargo или Electron.
+$nativeInput = Join-Path $PSScriptRoot '..\artifacts\native-input-test'
+$electronInput = Join-Path $PSScriptRoot '..\artifacts\electron-input-test'
+New-Item -ItemType Directory -Force -Path $nativeInput, (Join-Path $electronInput 'resources') | Out-Null
+Set-Content -LiteralPath (Join-Path $nativeInput 'evohime-core.exe') -Value 'native-input'
+foreach ($name in @('eva.exe', 'evohime-supervisor.exe', 'evohime-analysis-worker.exe', 'evohime-listener.exe', 'evohime-transaction.exe', 'evohime-updater.exe', 'evohime-verify.exe')) {
+    Set-Content -LiteralPath (Join-Path $nativeInput $name) -Value "input:$name"
+}
+Set-Content -LiteralPath (Join-Path $electronInput 'EvoHime.exe') -Value 'electron-input'
+Set-Content -LiteralPath (Join-Path $electronInput 'resources\app.asar') -Value 'electron-input-asar'
+$inputPackage = Join-Path $PSScriptRoot '..\artifacts\native-input-package-test'
+New-Item -ItemType Directory -Force -Path $inputPackage | Out-Null
+Set-Content -LiteralPath (Join-Path $inputPackage 'ui-bundle.zip') -Value 'ui-input'
+& (Join-Path $PSScriptRoot 'build-windows-native.ps1') -SkipBuild -NativeInputPath $nativeInput -ElectronInputPath $electronInput -OutputPath $inputPackage -Commit $commit | Out-Null
+if ((Get-Content -LiteralPath (Join-Path $inputPackage 'evohime-core.exe') -Raw).Trim() -ne 'native-input') { throw 'Native CI artifact was not reused.' }
+if ((Get-Content -LiteralPath (Join-Path $inputPackage 'resources\app.asar') -Raw).Trim() -ne 'electron-input-asar') { throw 'Electron CI artifact was not reused.' }
+Remove-Item -LiteralPath $nativeInput, $electronInput, $inputPackage -Recurse -Force
 
 # Маркер сборки: без него клиент не знает своей версии и пересобирается зря.
 $markerPath = Join-Path $packageRoot 'evohime.build.json'

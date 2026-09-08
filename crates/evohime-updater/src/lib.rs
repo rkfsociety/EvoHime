@@ -268,6 +268,8 @@ pub struct ComponentSetApply<'a> {
     pub state_dir: &'a Path,
     pub native_selected: &'a [String],
     pub ui_version: Option<&'a str>,
+    /// Replace the complete Electron shell payload, including resources/app.asar.
+    pub shell_host: bool,
     pub wait_pid: Option<u32>,
     pub relaunch: Option<&'a Path>,
     pub health_file: Option<&'a Path>,
@@ -280,11 +282,12 @@ pub fn apply_component_set_staged(options: ComponentSetApply<'_>) -> io::Result<
         state_dir,
         native_selected,
         ui_version,
+        shell_host,
         wait_pid,
         relaunch,
         health_file,
     } = options;
-    if native_selected.is_empty() && ui_version.is_none() {
+    if native_selected.is_empty() && ui_version.is_none() && !shell_host {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "empty component set",
@@ -295,6 +298,9 @@ pub fn apply_component_set_staged(options: ComponentSetApply<'_>) -> io::Result<
     let mut marker_paths = native_selected.to_vec();
     if ui_version.is_some() {
         marker_paths.push("ui-bundle.zip".to_owned());
+    }
+    if shell_host {
+        marker_paths.push("shell-host.zip".to_owned());
     }
     validate_component_marker_for(staging, Some(&marker_paths))?;
     for path in native_selected {
@@ -315,14 +321,30 @@ pub fn apply_component_set_staged(options: ComponentSetApply<'_>) -> io::Result<
             ));
         }
     }
+    if shell_host
+        && (!staging.join("shell-host").join("EvoHime.exe").is_file()
+            || !staging
+                .join("shell-host")
+                .join("resources")
+                .join("app.asar")
+                .is_file())
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid or incomplete shell-host component",
+        ));
+    }
     if let Some(pid) = wait_pid {
         wait_for_process_exit(pid, WAIT_FOR_SHELL);
     }
     wait_until_writable(install_dir, WAIT_FOR_UNLOCK)?;
     let _ = UpdateTransaction::recover(state_dir)?;
     clear_health_file(health_file)?;
-    let mut transaction =
-        UpdateTransaction::prepare_selected(install_dir, state_dir, native_selected)?;
+    let mut transaction = if shell_host {
+        UpdateTransaction::prepare_tree(install_dir, state_dir)?
+    } else {
+        UpdateTransaction::prepare_selected(install_dir, state_dir, native_selected)?
+    };
     let old_pointer = ui_version.and_then(|_| fs::read(install_dir.join("ui-active.json")).ok());
     if let Some(version) = ui_version {
         transaction.record_ui(
@@ -332,6 +354,9 @@ pub fn apply_component_set_staged(options: ComponentSetApply<'_>) -> io::Result<
     }
     let mut new_ui_target = None;
     let outcome = (|| {
+        if shell_host {
+            copy_tree(&staging.join("shell-host"), install_dir)?;
+        }
         for path in native_selected {
             copy_file_resilient(&staging.join(path), &install_dir.join(path))?;
         }
@@ -564,6 +589,7 @@ fn wait_until_writable(install_dir: &Path, limit: Duration) -> io::Result<()> {
     loop {
         let error = match UpdateTransaction::COMPONENTS
             .iter()
+            .chain(std::iter::once(&"resources/app.asar"))
             .map(|component| install_dir.join(component))
             .filter(|path| path.exists())
             .try_for_each(|path| {
@@ -1009,6 +1035,7 @@ mod tests {
             state_dir: &state,
             native_selected: &selected,
             ui_version: Some("new"),
+            shell_host: false,
             wait_pid: None,
             relaunch: None,
             health_file: None,
@@ -1025,6 +1052,46 @@ mod tests {
         assert_eq!(
             fs::read_to_string(install.join("ui-active.json")).unwrap(),
             r#"{"version":"new"}"#
+        );
+        assert_eq!(
+            fs::read_to_string(install.join("evohime-core.exe")).unwrap(),
+            "old:evohime-core.exe"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn shell_host_component_replaces_app_asar_and_preserves_native_files() {
+        let root = temp_dir("shell-host");
+        let install = root.join("install");
+        let staging = root.join("staging");
+        let state = root.join("state");
+        write_components(&install, "old");
+        fs::create_dir_all(staging.join("shell-host/resources")).unwrap();
+        fs::write(staging.join("shell-host/EvoHime.exe"), "new:shell").unwrap();
+        fs::write(staging.join("shell-host/resources/app.asar"), "new:asar").unwrap();
+        fs::write(staging.join("shell-host.zip"), "verified archive").unwrap();
+
+        apply_component_set_staged(ComponentSetApply {
+            staging: &staging,
+            install_dir: &install,
+            state_dir: &state,
+            native_selected: &[],
+            ui_version: None,
+            shell_host: true,
+            wait_pid: None,
+            relaunch: None,
+            health_file: None,
+        })
+        .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(install.join("EvoHime.exe")).unwrap(),
+            "new:shell"
+        );
+        assert_eq!(
+            fs::read_to_string(install.join("resources/app.asar")).unwrap(),
+            "new:asar"
         );
         assert_eq!(
             fs::read_to_string(install.join("evohime-core.exe")).unwrap(),

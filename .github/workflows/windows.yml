@@ -40,6 +40,9 @@ jobs:
       - name: Регрессия определения изменённых компонентов
         shell: pwsh
         run: ./scripts/ci-selection.tests.ps1
+      - name: Регрессия совместимого release manifest
+        shell: pwsh
+        run: ./scripts/compatible-manifest.tests.ps1
       - name: Определение затронутых компонентов и зависимостей
         id: filter
         shell: pwsh
@@ -186,6 +189,23 @@ jobs:
         run: ./scripts/receipt-key-lifecycle.tests.ps1
       - name: Проверка supervisor
         run: cargo check --locked -p evohime-supervisor -p evohime-updater
+      - name: Сборка native-артефактов для упаковки
+        shell: pwsh
+        run: |
+          $output = Join-Path $env:GITHUB_WORKSPACE 'native-build-output'
+          New-Item -ItemType Directory -Force -Path $output | Out-Null
+          cargo build --locked --release -p evohime-core -p evohime-cli -p evohime-supervisor -p evohime-updater -p evohime-update-agent -p evohime-receipts -p evohime-listener
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($name in @('evohime-core.exe', 'eva.exe', 'evohime-supervisor.exe', 'evohime-analysis-worker.exe', 'evohime-listener.exe', 'evohime-transaction.exe', 'evohime-updater.exe', 'evohime-verify.exe')) {
+            $source = Join-Path $env:GITHUB_WORKSPACE "target\release\$name"
+            if (-not (Test-Path -LiteralPath $source)) { throw "Native build output missing: $source" }
+            Copy-Item -LiteralPath $source -Destination (Join-Path $output $name)
+          }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-build-output
+          path: native-build-output
+          if-no-files-found: error
       - name: Детерминированная оценка и безопасность fixtures
         shell: pwsh
         run: ./scripts/eval-gate.tests.ps1
@@ -285,8 +305,21 @@ jobs:
         run: npm run build
       - name: Проверка безопасности production bundle
         run: npm run check:bundle
-      - name: Сборка распакованного Electron package
-        run: npm run package
+      - name: Сборка распакованного Electron package из готовых bundles
+        run: npm run package:from-build
+      - name: Загрузка Electron package для native-упаковки
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:GITHUB_WORKSPACE 'desktop\evohime-electron\release\win-unpacked'
+          $output = Join-Path $env:GITHUB_WORKSPACE 'electron-build-output'
+          if (-not (Test-Path -LiteralPath (Join-Path $source 'resources\app.asar'))) { throw "Electron app.asar missing: $source" }
+          New-Item -ItemType Directory -Force -Path $output | Out-Null
+          Get-ChildItem -LiteralPath $source -Force | Copy-Item -Destination $output -Recurse -Force
+      - uses: actions/upload-artifact@v7
+        with:
+          name: electron-build-output
+          path: electron-build-output
+          if-no-files-found: error
 
   build-native:
     name: Сборка — native package и smoke
@@ -305,13 +338,18 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v8
         with:
-          toolchain: stable-x86_64-pc-windows-msvc
-      - name: Сборка native package после CI-проверок
+          name: native-build-output
+          path: native-build-output
+      - uses: actions/download-artifact@v8
+        with:
+          name: electron-build-output
+          path: electron-build-output
+      - name: Сборка native package из проверенных артефактов
         shell: pwsh
         run: |
-          ./scripts/build-windows-native.ps1 -OutputPath "$env:GITHUB_WORKSPACE\native-package" -Commit $env:GITHUB_SHA -Branch 'main'
+          ./scripts/build-windows-native.ps1 -SkipBuild -NativeInputPath "$env:GITHUB_WORKSPACE\native-build-output" -ElectronInputPath "$env:GITHUB_WORKSPACE\electron-build-output" -OutputPath "$env:GITHUB_WORKSPACE\native-package" -Commit $env:GITHUB_SHA -Branch 'main'
       - name: Smoke запуска Electron package
         shell: pwsh
         run: ./scripts/electron-acceptance.tests.ps1 -PackagePath "$env:GITHUB_WORKSPACE\native-package"

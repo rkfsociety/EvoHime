@@ -39,11 +39,20 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - run: npm run package
+      - run: npm run package:from-build
+      - name: Package complete shell host
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:GITHUB_WORKSPACE 'desktop\evohime-electron\release\win-unpacked'
+          $archive = Join-Path $env:GITHUB_WORKSPACE 'shell-host.zip'
+          if (-not (Test-Path -LiteralPath (Join-Path $source 'EvoHime.exe'))) { throw "Electron executable missing: $source" }
+          if (-not (Test-Path -LiteralPath (Join-Path $source 'resources\app.asar'))) { throw "Electron app.asar missing: $source" }
+          if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
+          Compress-Archive -Path (Join-Path $source '*') -DestinationPath $archive -CompressionLevel Optimal
       - uses: actions/upload-artifact@v7
         with:
           name: module-shell-host
-          path: desktop/evohime-electron/release/win-unpacked/EvoHime.exe
+          path: shell-host.zip
           if-no-files-found: error
 
   publish:
@@ -65,4 +74,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $version = (Get-Content -LiteralPath 'release-versions/shell-host.txt' -Raw).Trim()
-          ./scripts/module-release.ps1 -Module shell-host -Version $version -Artifact (Join-Path $env:GITHUB_WORKSPACE 'shell-output\EvoHime.exe')
+          ./scripts/module-release.ps1 -Module shell-host -Version $version -Artifact (Join-Path $env:GITHUB_WORKSPACE 'shell-output\shell-host.zip')
