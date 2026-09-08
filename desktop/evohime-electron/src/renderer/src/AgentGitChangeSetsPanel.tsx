@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AgentGitChangeSetsProjection, ConnectionState, ShellEvent } from '@shared/api'
 import { useShellApi } from './shell-api'
 
-const OPERATIONS = ['get_candidate', 'observe', 'candidate', 'commit', 'undo', 'keep'] as const
+const OPERATIONS = ['get_candidate', 'observe', 'candidate', 'reconcile', 'commit', 'undo', 'keep'] as const
 type Operation = typeof OPERATIONS[number]
 
 export function AgentGitChangeSetsPanel({ connection }: { readonly connection: ConnectionState }): React.JSX.Element {

@@ -725,13 +725,20 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Checks: focused contract/recovery/storage/migration tests, cargo fmt/check/
   clippy, protocol check, Electron typecheck and full Electron regression.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
-## Plan 102 — Agent Git Change Sets v1 (реализован 2026-09-08)
+## Plan 102 — Agent Git Change Sets v1 (реализован 2026-09-09)
 
 - Core captures the live Git baseline, validates the Core-derived workspace
   binding, classifies pre-existing/external/secret/ambiguous paths, and builds a
   bounded candidate from only agent-authored or approved-tool paths.
 - Schema v94 adds optimistic `revision` and durable idempotency outcomes to the
   existing change-set storage; migration coverage includes the v93 → v94 path.
+- Idempotency is claimed before dispatch: concurrent duplicates are blocked,
+  completed responses are replayed, and pending claims remain explicit
+  reconciliation-required state. Git subprocesses have a bounded 120-second
+  timeout; post-dispatch failures remain unknown and are not retried blindly.
+- `reconcile` performs evidence-only recovery of a pending commit: it records
+  only an exact parent/message/path match as committed, reopens preflight only
+  when no effect is proven, and otherwise persists an explicit unknown state.
 - Additive authenticated IPC command 233/event 78, generated bindings and the
   Electron panel expose only bounded redacted metadata and explicit actions.
 - Commit uses fresh preflight plus `git commit --only` and NUL pathspec input;

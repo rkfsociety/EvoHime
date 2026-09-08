@@ -2178,13 +2178,16 @@ evidence — 64 KiB. Shared index, `git add -A`, force/reset/rebase/push и
 сверяет workspace и строит bounded path/hash precondition. `commit` выполняет
 свежий preflight и использует только `git commit --only` с NUL-delimited
 pathspec; общий index, `git add -A`, force/reset/rebase/push и подмена identity
-запрещены, hooks не обходятся. `keep` и `undo` являются отдельными
-Core-owned действиями; undo меняет только подтверждённые пути и отказывается
+запрещены, hooks не обходятся. `keep`, `reconcile` и `undo` являются
+отдельными Core-owned действиями; undo меняет только подтверждённые пути и отказывается
 при stale/shared/unknown outcome. Перед commit durable candidate получает
 `commit_pending`; dispatch/persistence crash-window переводит повторный запрос
 в reconciliation-required и не допускает blind retry. После Git-эффекта
 результат сначала сверяется с новым HEAD, а ошибка durable persistence также
-возвращается как reconciliation-required.
+возвращается как reconciliation-required. `reconcile` не повторяет Git effect:
+по parent/message/path evidence он фиксирует только доказанный commit,
+возвращает candidate в preflight только при доказанном отсутствии effect,
+иначе переводит его в `unknown`.
 
 При работе из Incremental Change Protocol или Task Worktree Isolation payload
 может нести durable `incremental_change_run_id` и `task_worktree_id`. Core
@@ -2193,14 +2196,17 @@ incremental runs отклоняются, а worktree обязан быть в `r
 и иметь тот же base HEAD. Поэтому эти consumers используют тот же baseline,
 attribution и stale contract, а не второй механизм Git authority.
 
-Каждая мутация несёт idempotency key и optimistic revision; повтор запроса
-возвращает сохранённый redacted результат. Workspace root принимается только
+Каждая мутация несёт idempotency key и optimistic revision. Core сначала
+durable claim-ит ключ, поэтому конкурентный duplicate не запускает второй
+effect; завершённый запрос возвращает сохранённый redacted результат, а
+pending claim остаётся reconciliation-required. Workspace root принимается только
 через authenticated Core command и проверяется как Git worktree с
 Core-derived binding. Контракт ограничен 256 путями, candidate — 128 путями,
 message — 4 KiB, evidence — 64 KiB, а IPC-поля дополнительно ограничены
 UTF-8 byte limits (workspace root — 32 KiB, operation references — 256 bytes).
-Storage migration v94 добавляет revision и durable
-idempotency outcomes. Используются additive authenticated IPC command 233 и
+Git subprocesses имеют bounded timeout 120 секунд; timeout или ошибка после
+dispatch effect считаются unknown outcome и не ретраятся вслепую. Storage
+migration v94 добавляет revision и durable idempotency outcomes. Используются additive authenticated IPC command 233 и
 event 78; generated bindings и Electron panel остаются metadata-only.
 
 ## Stateful Tool Workbench Sessions (план 103, reuse плана 78)

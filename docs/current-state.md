@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-09-08.
+Обновлено: 2026-09-09.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -53,7 +53,12 @@ precondition и включает только attributed agent/tool paths, а pr
 external, secret и ambiguous paths исключаются. `commit` использует только
 `git commit --only` с bounded pathspec и запускаемыми hooks; `keep` и `undo`
 проходят через Core, optimistic revision и durable idempotency. Неизвестный
-результат Git не ретраится вслепую, а требует reconciliation.
+результат Git не ретраится вслепую, а требует reconciliation. Операция
+`reconcile` проверяет parent/message/path evidence без повторного Git effect и
+различает no-effect, доказанный commit и unknown. Idempotency key
+сначала durable claim-ится; конкурентный duplicate не запускает второй effect,
+а pending claim после crash остаётся reconciliation-required. Git subprocess
+ограничен 120 секундами.
 
 Change sets могут быть привязаны к существующим Incremental Change run и Task
 Worktree record. Core проверяет наличие и незавершённость run, состояние

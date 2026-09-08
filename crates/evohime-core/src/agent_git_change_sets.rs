@@ -14,7 +14,11 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tokio::{io::AsyncWriteExt, process::Command};
+use tokio::{
+    io::AsyncWriteExt,
+    process::Command,
+    time::{timeout, Duration},
+};
 
 pub const CONTRACT_VERSION: u32 = 1;
 pub const MAX_PATHS: usize = 256;
@@ -25,6 +29,7 @@ pub const MAX_EVIDENCE_BYTES: usize = 64 * 1024;
 pub const MAX_DIFF_SUMMARY_BYTES: usize = 512 * 1024;
 pub const MAX_WORKSPACE_ROOT_BYTES: usize = 32 * 1024;
 pub const MAX_REFERENCE_BYTES: usize = 256;
+const GIT_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -46,6 +51,13 @@ pub enum ChangeSetStatus {
     Committed,
     Kept,
     UndoPending,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PendingCommitReconciliation {
+    NoEffect,
+    Committed(String),
     Unknown,
 }
 
@@ -167,6 +179,8 @@ pub enum ChangeSetError {
     NoChanges,
     #[error("Git command failed")]
     GitCommandFailed,
+    #[error("Git command timed out")]
+    GitCommandTimedOut,
     #[error("commit outcome is unknown and requires reconciliation")]
     CommitOutcomeUnknown,
     #[error("undo cannot safely remove a non-file path")]
@@ -206,6 +220,9 @@ pub fn sha256(bytes: &[u8]) -> String {
 }
 
 pub fn validate_baseline(baseline: &GitDirtyBaseline) -> Result<(), ChangeSetError> {
+    if let Some(head) = &baseline.head_commit {
+        validate_commit_id(head)?;
+    }
     for paths in [
         &baseline.tracked_modified,
         &baseline.staged,
@@ -221,12 +238,35 @@ pub fn validate_baseline(baseline: &GitDirtyBaseline) -> Result<(), ChangeSetErr
     if baseline.relevant_hashes.len() > MAX_PATHS {
         return Err(ChangeSetError::LimitExceeded("hashes"));
     }
+    for entry in &baseline.relevant_hashes {
+        let (path, hash) = entry
+            .rsplit_once('=')
+            .ok_or(ChangeSetError::InvalidPayload)?;
+        validate_path(path)?;
+        validate_hash(hash)?;
+    }
     Ok(())
 }
 
 pub fn validate_change_set(set: &AgentGitChangeSet) -> Result<(), ChangeSetError> {
     if set.version != CONTRACT_VERSION {
         return Err(ChangeSetError::UnsupportedVersion);
+    }
+    if set.revision == 0 {
+        return Err(ChangeSetError::InvalidPayload);
+    }
+    validate_reference(&set.id, MAX_REFERENCE_BYTES)?;
+    validate_reference(&set.workspace_binding_id, MAX_REFERENCE_BYTES)?;
+    validate_reference(&set.run_id, MAX_REFERENCE_BYTES)?;
+    validate_reference(&set.workspace_change_set_ref, MAX_REFERENCE_BYTES)?;
+    if let Some(task_id) = &set.task_id {
+        validate_reference(task_id, MAX_REFERENCE_BYTES)?;
+    }
+    if !set.workspace_root.is_empty() {
+        validate_workspace_root_text(&set.workspace_root)?;
+    }
+    if let Some(head) = &set.base_git_head {
+        validate_commit_id(head)?;
     }
     validate_baseline(&set.baseline)?;
     if set.paths.len() > MAX_PATHS {
@@ -250,6 +290,17 @@ pub fn validate_candidate(candidate: &GitCommitCandidate) -> Result<(), ChangeSe
     if candidate.version != CONTRACT_VERSION {
         return Err(ChangeSetError::UnsupportedVersion);
     }
+    if candidate.revision == 0 {
+        return Err(ChangeSetError::InvalidPayload);
+    }
+    validate_reference(&candidate.id, MAX_REFERENCE_BYTES)?;
+    validate_reference(&candidate.change_set_ref, MAX_REFERENCE_BYTES)?;
+    if !candidate.workspace_root.is_empty() {
+        validate_workspace_root_text(&candidate.workspace_root)?;
+    }
+    if let Some(parent_head) = &candidate.parent_head {
+        validate_commit_id(parent_head)?;
+    }
     if candidate.included_paths.is_empty()
         || candidate.included_paths.len() > MAX_CANDIDATE_PATHS
         || candidate.excluded_paths.len() > MAX_PATHS
@@ -262,6 +313,15 @@ pub fn validate_candidate(candidate: &GitCommitCandidate) -> Result<(), ChangeSe
     {
         return Err(ChangeSetError::LimitExceeded("message"));
     }
+    if candidate.message_source.len() > MAX_REFERENCE_BYTES
+        || candidate
+            .message_source
+            .chars()
+            .any(|character| character.is_control())
+    {
+        return Err(ChangeSetError::InvalidPayload);
+    }
+    validate_reference(&candidate.verification_status, MAX_REFERENCE_BYTES)?;
     validate_hash(&candidate.diff_hash)?;
     validate_hash(&candidate.precondition_fingerprint)?;
     let mut seen = BTreeSet::new();
@@ -275,24 +335,25 @@ pub fn validate_candidate(candidate: &GitCommitCandidate) -> Result<(), ChangeSe
             return Err(ChangeSetError::InvalidPath);
         }
     }
+    let mut included_hash_paths = BTreeSet::new();
     for included in &candidate.included_hashes {
         let (path, hash) = included
             .rsplit_once('=')
             .ok_or(ChangeSetError::InvalidPath)?;
         validate_path(path)?;
         validate_hash(hash)?;
-        if is_sensitive_path(path) || !candidate.included_paths.iter().any(|p| p == path) {
-            return Err(ChangeSetError::InvalidPath);
-        }
-    }
-    if let Some(commit_id) = &candidate.commit_id {
-        if !matches!(commit_id.len(), 40 | 64)
-            || !commit_id
-                .chars()
-                .all(|character| character.is_ascii_hexdigit())
+        if is_sensitive_path(path)
+            || !candidate.included_paths.iter().any(|p| p == path)
+            || !included_hash_paths.insert(path)
         {
             return Err(ChangeSetError::InvalidPath);
         }
+    }
+    if included_hash_paths.len() != candidate.included_paths.len() {
+        return Err(ChangeSetError::InvalidPayload);
+    }
+    if let Some(commit_id) = &candidate.commit_id {
+        validate_commit_id(commit_id)?;
     }
     Ok(())
 }
@@ -377,12 +438,6 @@ pub async fn observe(
 ) -> Result<AgentGitChangeSet, ChangeSetError> {
     let value = serde_json::from_slice::<serde_json::Value>(payload)
         .map_err(|_| ChangeSetError::InvalidPayload)?;
-    if workspace_root.trim().is_empty() && value.get("base_git_head").is_some() {
-        let set: AgentGitChangeSet =
-            serde_json::from_value(value).map_err(|_| ChangeSetError::GitCommandFailed)?;
-        validate_change_set(&set)?;
-        return Ok(set);
-    }
     let request: ObserveRequest =
         serde_json::from_value(value).map_err(|_| ChangeSetError::InvalidPayload)?;
     let root = validate_workspace_root(workspace_root)?;
@@ -452,7 +507,7 @@ pub fn validate_integration_references(set: &AgentGitChangeSet) -> Result<(), Ch
     for reference in [&set.incremental_change_run_id, &set.task_worktree_id] {
         if let Some(reference) = reference {
             if reference.is_empty()
-                || reference.len() > MAX_PATH_BYTES
+                || reference.len() > MAX_REFERENCE_BYTES
                 || reference.contains('\0')
                 || reference.chars().any(|character| character.is_control())
             {
@@ -469,6 +524,16 @@ pub async fn make_candidate(
     now_ms: i64,
 ) -> Result<(AgentGitChangeSet, GitCommitCandidate), ChangeSetError> {
     validate_change_set(set)?;
+    if matches!(
+        set.status,
+        ChangeSetStatus::Committed
+            | ChangeSetStatus::Kept
+            | ChangeSetStatus::Stale
+            | ChangeSetStatus::UndoPending
+            | ChangeSetStatus::Unknown
+    ) {
+        return Err(ChangeSetError::Stale);
+    }
     let root = validate_workspace_root(&set.workspace_root)?;
     if set.workspace_binding_id != crate::task_memory::workspace_scope_id(&root) {
         return Err(ChangeSetError::WorkspaceBindingMismatch);
@@ -495,7 +560,7 @@ pub async fn make_candidate(
             .paths
             .get(&path)
             .map(|state| state.hash.clone())
-            .unwrap_or_else(|| "deleted-after-baseline".into());
+            .unwrap_or_else(|| sha256(b"<deleted-after-baseline>"));
         paths.push(AttributedPath {
             path,
             attribution: PathAttribution::PreExistingUser,
@@ -594,12 +659,16 @@ pub async fn undo_candidate(
         if snapshot.head.as_deref() != Some(commit_id.as_str()) {
             return Err(ChangeSetError::Stale);
         }
-        if baseline_fingerprint(&snapshot.baseline) != baseline_fingerprint(baseline) {
+        if dirty_state_fingerprint(&snapshot.baseline) != dirty_state_fingerprint(baseline) {
             return Err(ChangeSetError::Stale);
         }
-        run_git(&root, &["revert", "--no-edit", commit_id], None).await?;
-        let after = capture_snapshot(root.clone(), candidate.created_at_ms).await?;
-        if baseline_fingerprint(&after.baseline) != baseline_fingerprint(baseline) {
+        run_git(&root, &["revert", "--no-edit", commit_id], None)
+            .await
+            .map_err(|_| ChangeSetError::CommitOutcomeUnknown)?;
+        let after = capture_snapshot(root.clone(), candidate.created_at_ms)
+            .await
+            .map_err(|_| ChangeSetError::CommitOutcomeUnknown)?;
+        if dirty_state_fingerprint(&after.baseline) != dirty_state_fingerprint(baseline) {
             return Err(ChangeSetError::CommitOutcomeUnknown);
         }
         return current_head(&root)
@@ -612,10 +681,10 @@ pub async fn undo_candidate(
     let mut tracked = Vec::new();
     let mut untracked = Vec::new();
     for path in &candidate.included_paths {
-        if run_git(&root, &["ls-files", "--error-unmatch", "--", path], None)
+        let tracked_listing = run_git(&root, &["ls-files", "--stage", "--", path], None)
             .await
-            .is_ok()
-        {
+            .map_err(|_| ChangeSetError::CommitOutcomeUnknown)?;
+        if !tracked_listing.is_empty() {
             tracked.push(path.clone());
         } else {
             untracked.push(path.clone());
@@ -634,7 +703,8 @@ pub async fn undo_candidate(
             ],
             Some(&pathspec),
         )
-        .await?;
+        .await
+        .map_err(|_| ChangeSetError::CommitOutcomeUnknown)?;
     }
     for path in untracked {
         let full = root.join(path);
@@ -642,16 +712,89 @@ pub async fn undo_candidate(
             if metadata.is_dir() {
                 return Err(ChangeSetError::UnsafeUndo);
             }
-            std::fs::remove_file(full).map_err(|_| ChangeSetError::UnsafeUndo)?;
+            std::fs::remove_file(full).map_err(|_| ChangeSetError::CommitOutcomeUnknown)?;
         }
     }
-    let after = capture_snapshot(root, candidate.created_at_ms).await?;
+    let after = capture_snapshot(root, candidate.created_at_ms)
+        .await
+        .map_err(|_| ChangeSetError::CommitOutcomeUnknown)?;
     if baseline_fingerprint(&after.baseline) != baseline_fingerprint(baseline) {
         return Err(ChangeSetError::CommitOutcomeUnknown);
     }
     current_head(&after.root)
         .await?
         .ok_or(ChangeSetError::CommitOutcomeUnknown)
+}
+
+pub async fn reconcile_pending_commit(
+    candidate: &GitCommitCandidate,
+    baseline: &GitDirtyBaseline,
+) -> Result<PendingCommitReconciliation, ChangeSetError> {
+    validate_candidate(candidate)?;
+    if candidate.verification_status != "commit_pending" {
+        return Err(ChangeSetError::InvalidPayload);
+    }
+    let root = validate_workspace_root(&candidate.workspace_root)?;
+    let snapshot = capture_snapshot(root.clone(), candidate.created_at_ms).await?;
+    if snapshot.head == candidate.parent_head
+        && dirty_state_fingerprint(&snapshot.baseline) == dirty_state_fingerprint(baseline)
+    {
+        return Ok(PendingCommitReconciliation::NoEffect);
+    }
+    let head = match snapshot.head {
+        Some(head) => head,
+        None => return Ok(PendingCommitReconciliation::Unknown),
+    };
+    let parents = run_git(&root, &["rev-list", "--parents", "-n", "1", "HEAD"], None).await?;
+    let parent_parts = String::from_utf8_lossy(&parents)
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let observed_parent = parent_parts.get(1).cloned();
+    if parent_parts.len() > 2 || observed_parent != candidate.parent_head {
+        return Ok(PendingCommitReconciliation::Unknown);
+    }
+    let message = run_git(&root, &["show", "-s", "--format=%B", "HEAD"], None).await?;
+    let message = String::from_utf8_lossy(&message)
+        .trim_end_matches(['\r', '\n'])
+        .to_owned();
+    if message != candidate.proposed_message {
+        return Ok(PendingCommitReconciliation::Unknown);
+    }
+    let changed = run_git(
+        &root,
+        &[
+            "diff-tree",
+            "--no-commit-id",
+            "--no-renames",
+            "--name-only",
+            "-r",
+            "-z",
+            "HEAD",
+        ],
+        None,
+    )
+    .await?;
+    let mut changed_paths = BTreeSet::new();
+    for path in changed
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+    {
+        let path = String::from_utf8(path.to_vec()).map_err(|_| ChangeSetError::InvalidPayload)?;
+        validate_path(&path)?;
+        changed_paths.insert(path);
+    }
+    let expected_paths = candidate
+        .included_paths
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    if changed_paths != expected_paths
+        || dirty_state_fingerprint(&snapshot.baseline) != dirty_state_fingerprint(baseline)
+    {
+        return Ok(PendingCommitReconciliation::Unknown);
+    }
+    Ok(PendingCommitReconciliation::Committed(head))
 }
 
 fn bounded_paths(paths: &[String]) -> Result<BTreeSet<String>, ChangeSetError> {
@@ -681,8 +824,46 @@ fn validate_hash(value: &str) -> Result<(), ChangeSetError> {
     Ok(())
 }
 
+fn validate_commit_id(value: &str) -> Result<(), ChangeSetError> {
+    if !matches!(value.len(), 40 | 64)
+        || !value.chars().all(|character| character.is_ascii_hexdigit())
+    {
+        return Err(ChangeSetError::InvalidPayload);
+    }
+    Ok(())
+}
+
+fn validate_reference(value: &str, max_bytes: usize) -> Result<(), ChangeSetError> {
+    if value.is_empty()
+        || value.len() > max_bytes
+        || value.chars().any(|character| character.is_control())
+    {
+        return Err(ChangeSetError::InvalidPayload);
+    }
+    Ok(())
+}
+
+fn validate_workspace_root_text(value: &str) -> Result<(), ChangeSetError> {
+    if value.is_empty()
+        || value.len() > MAX_WORKSPACE_ROOT_BYTES
+        || value.chars().any(|character| character.is_control())
+    {
+        return Err(ChangeSetError::LimitExceeded("workspace_root"));
+    }
+    Ok(())
+}
+
 fn baseline_fingerprint(baseline: &GitDirtyBaseline) -> String {
     let mut copy = baseline.clone();
+    copy.captured_at_ms = 0;
+    serde_json::to_vec(&copy)
+        .map(|bytes| sha256(&bytes))
+        .unwrap_or_default()
+}
+
+fn dirty_state_fingerprint(baseline: &GitDirtyBaseline) -> String {
+    let mut copy = baseline.clone();
+    copy.head_commit = None;
     copy.captured_at_ms = 0;
     serde_json::to_vec(&copy)
         .map(|bytes| sha256(&bytes))
@@ -694,6 +875,7 @@ fn validate_path(path: &str) -> Result<(), ChangeSetError> {
         || path.len() > MAX_PATH_BYTES
         || path.starts_with('/')
         || path.starts_with('\\')
+        || path.contains('\\')
         || path.contains(':')
         || path
             .split('/')
@@ -721,12 +903,7 @@ fn is_sensitive_path(path: &str) -> bool {
 }
 
 fn validate_workspace_root(value: &str) -> Result<PathBuf, ChangeSetError> {
-    if value.is_empty()
-        || value.len() > MAX_WORKSPACE_ROOT_BYTES
-        || value.chars().any(|character| character.is_control())
-    {
-        return Err(ChangeSetError::LimitExceeded("workspace_root"));
-    }
+    validate_workspace_root_text(value)?;
     let path = PathBuf::from(value);
     if !path.is_absolute() || !path.is_dir() {
         return Err(ChangeSetError::InvalidWorkspace);
@@ -840,10 +1017,14 @@ fn hash_path(root: &Path, path: &str) -> Result<String, ChangeSetError> {
     let full = root.join(path);
     let metadata = match std::fs::symlink_metadata(&full) {
         Ok(metadata) => metadata,
-        Err(_) => return Ok("deleted".into()),
+        Err(_) => return Ok(sha256(b"<deleted>")),
     };
+    if metadata.file_type().is_symlink() {
+        let target = std::fs::read_link(full).map_err(|_| ChangeSetError::GitCommandFailed)?;
+        return Ok(sha256(target.to_string_lossy().as_bytes()));
+    }
     if metadata.is_dir() {
-        return Ok("directory".into());
+        return Ok(sha256(b"<directory>"));
     }
     let mut file = std::fs::File::open(full).map_err(|_| ChangeSetError::GitCommandFailed)?;
     let mut hasher = Sha256::new();
@@ -904,9 +1085,9 @@ async fn run_git(
             .await
             .map_err(|_| ChangeSetError::GitCommandFailed)?;
     }
-    let output = child
-        .wait_with_output()
+    let output = timeout(GIT_COMMAND_TIMEOUT, child.wait_with_output())
         .await
+        .map_err(|_| ChangeSetError::GitCommandTimedOut)?
         .map_err(|_| ChangeSetError::GitCommandFailed)?;
     if output.stdout.len() > MAX_DIFF_SUMMARY_BYTES {
         return Err(ChangeSetError::LimitExceeded("git_output"));
@@ -1041,6 +1222,16 @@ mod tests {
             observe(b"not-json", "set-invalid", "", 1).await,
             Err(ChangeSetError::InvalidPayload)
         );
+        assert_eq!(
+            observe(
+                br#"{"base_git_head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
+                "set-invalid",
+                "",
+                1,
+            )
+            .await,
+            Err(ChangeSetError::LimitExceeded("workspace_root"))
+        );
     }
 
     #[test]
@@ -1128,7 +1319,23 @@ mod tests {
         let (_next, candidate) = make_candidate(&set, candidate_payload.as_bytes(), 2)
             .await
             .unwrap();
+        let mut pending = candidate.clone();
+        pending.verification_status = "commit_pending".into();
+        assert_eq!(
+            reconcile_pending_commit(&pending, &set.baseline)
+                .await
+                .unwrap(),
+            PendingCommitReconciliation::NoEffect
+        );
         let commit_id = commit_candidate(&candidate).await.unwrap();
+        pending = candidate.clone();
+        pending.verification_status = "commit_pending".into();
+        assert_eq!(
+            reconcile_pending_commit(&pending, &set.baseline)
+                .await
+                .unwrap(),
+            PendingCommitReconciliation::Committed(commit_id.clone())
+        );
         let mut committed = candidate;
         committed.commit_id = Some(commit_id.clone());
         let reverted_head = undo_candidate(&committed, &set.baseline).await.unwrap();

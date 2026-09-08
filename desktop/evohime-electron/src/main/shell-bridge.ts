@@ -623,14 +623,14 @@ function dispatch(
     }
     case 'core.agentGitChangeSets': {
       const value = asRecord(payload)
-      const operations = ['observe', 'candidate', 'get_candidate', 'commit', 'undo', 'keep']
+      const operations = ['observe', 'candidate', 'get_candidate', 'reconcile', 'commit', 'undo', 'keep']
       const operation = operations.includes(String(value['operation'])) ? String(value['operation']) : null
       const changeSetId = asBoundedString(value['changeSetId'])
       const workspaceRoot = value['workspaceRoot'] === undefined ? '' : asBoundedString(value['workspaceRoot'])
       const changePayload = value['payload'] === undefined ? '' : asBoundedString(value['payload'])
       const expectedVersion = value['expectedVersion'] === undefined ? 0 : asNonNegativeInteger(value['expectedVersion'])
       const idempotencyKey = value['idempotencyKey'] === undefined ? randomUUID() : asBoundedString(value['idempotencyKey'])
-      if (operation === null || changeSetId === null || workspaceRoot === null || changePayload === null || expectedVersion === null || idempotencyKey === null || changeSetId.length > 128 || workspaceRoot.length > 32768 || changePayload.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Agent Git Change Sets.')
+      if (operation === null || changeSetId === null || workspaceRoot === null || changePayload === null || expectedVersion === null || idempotencyKey === null || Buffer.byteLength(changeSetId, 'utf8') > 128 || Buffer.byteLength(workspaceRoot, 'utf8') > 32768 || Buffer.byteLength(changePayload, 'utf8') > 64 * 1024 || Buffer.byteLength(idempotencyKey, 'utf8') > 128) return failure('invalid-payload', 'Некорректная операция Agent Git Change Sets.')
       return accepted(client.send({agentGitChangeSets:{schemaVersion:1,changeSetId,operation,workspaceRoot,payload:Buffer.from(changePayload,'utf8'),expectedVersion,idempotencyKey}}))
     }
     case 'core.architectEditorPipeline': {
