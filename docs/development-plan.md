@@ -55,7 +55,7 @@ authenticated IPC 233/78, bounded Electron projection, Incremental Change и
 Task Worktree references, staged-path isolation, durable commit reconciliation,
 safe undo и redacted release evidence. Контракт перенесён в
 `architecture.md`, подтверждённое состояние — в `current-state.md`, а
-временный комплект `docs/plans/102-0..4-agent-git-change-sets.md` отсутствует.
+временный комплект этапов отсутствует.
 
 ## План 118: Persistent Agent Organization Registry
 
