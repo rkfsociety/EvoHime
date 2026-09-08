@@ -111,7 +111,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 98;
+pub const SCHEMA_VERSION: u32 = 99;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -2870,6 +2870,7 @@ impl LocalDatabase {
         migrations::v096::apply(&transaction, current)?;
         migrations::v097::apply(&transaction, current)?;
         migrations::v098::apply(&transaction, current)?;
+        migrations::v099::apply(&transaction, current)?;
         transaction.commit()?;
         Ok(())
     }

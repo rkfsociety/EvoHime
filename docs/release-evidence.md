@@ -1060,6 +1060,13 @@ tests, builds, linters and runtime smoke tests were intentionally not run per
 the task instruction; CI was not monitored. The installed client was not
 touched.
 
+## Plan 124 — Project Quality Contract v1 (2026-09-09)
+
+Implemented Core quality constraints, immutable schema 99 metadata and
+conservative readiness evaluation over ledger evidence. `cargo fmt --all` and
+`git diff --check` passed; local tests/builds and CI monitoring were skipped by
+instruction. Installed client untouched.
+
 ## Plan 120 — Grounded Research Workspace v1 (2026-09-09)
 
 Implementation: Core research contracts, bounded structural extraction, source

@@ -167,6 +167,7 @@ pub mod plan_artifact;
 pub mod policy_aware_tool_result_cache;
 pub(crate) mod policy_gate;
 pub(crate) mod prd;
+pub mod project_quality_contract;
 pub mod prompt_cache_planner;
 pub(crate) mod provider_resilience;
 pub mod remote_conversation_channels;

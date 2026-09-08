@@ -2591,3 +2591,10 @@ store. Deterministic MVP сохраняет head/tail, а diagnostics/build/test
 возвращается `NoBenefit`/fallback. SQLite schema v98 хранит только compact
 metadata. Renderer показывает projection-only diagnostic и не выполняет
 compression/recovery.
+
+## Project Quality Contract v1 (план 124, реализован 2026-09-09)
+
+Core-owned contract связывает required constraints с Verification Evidence
+Ledger, хранит immutable revision metadata в schema 99 и выдаёт conservative
+quality readiness. Без Passed evidence required constraint остаётся
+NeedsVerification; model-authored metrics не принимаются.
