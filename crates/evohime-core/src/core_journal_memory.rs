@@ -1,6 +1,23 @@
 use super::*;
 
 impl EventJournal {
+    pub async fn save_verification_evidence(
+        &self,
+        target_id: &str,
+        fingerprint: &str,
+        evidence: &crate::verification_evidence_ledger::VerificationEvidence,
+    ) -> Result<bool, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::verification_evidence_ledger_store::put(
+            database.connection(),
+            evidence,
+            target_id,
+            fingerprint,
+            crate::task_memory::now_millis() as i64,
+        )
+        .map_err(str::to_owned)
+    }
+
     pub async fn save_local_model_calibration_session(
         &self,
         session: &crate::local_model_performance_calibration::LocalModelCalibrationSession,

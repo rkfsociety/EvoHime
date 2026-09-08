@@ -13,7 +13,7 @@ Verification доказывает, что произошло.
 Quality Contract определяет, достаточно ли этого.
 ```
 
-Это слой над [Verification Evidence Ledger (#102)](./122-0-verification-evidence-ledger.md), а не новый test runner, CI, permission system или набор prose-инструкций.
+Это слой над [Verification Evidence Ledger (#102)](../architecture.md#verification-evidence-ledger-v1-план-122-реализован-2026-09-09), а не новый test runner, CI, permission system или набор prose-инструкций.
 
 ## Текущее основание и граница
 
@@ -47,7 +47,7 @@ Core является authority. Renderer только показывает пр
 
 ### Блокирующие
 
-- [Verification Evidence Ledger (#102)](./122-0-verification-evidence-ledger.md): registered lanes, trusted execution, typed evidence, workspace/environment identity и freshness.
+- [Verification Evidence Ledger (#102)](../architecture.md#verification-evidence-ledger-v1-план-122-реализован-2026-09-09): registered lanes, trusted execution, typed evidence, workspace/environment identity и freshness.
 - Existing Core policy/capability/approval/audit, SQLite migrations/backup, ArtifactStore и event/recovery primitives.
 - Continuation Policy, Persistent Goal, Plan Artifact, Task/Change Set и ship/deploy readiness consumers.
 

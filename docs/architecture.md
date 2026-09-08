@@ -2564,3 +2564,19 @@ adapter, поэтому операции возвращают typed `unavailable
 используется существующий authenticated Local Model Runtime Manager transport.
 Electron panel — metadata-only projection, явно различающая unavailable,
 estimated, stale и measured состояния.
+
+## Verification Evidence Ledger v1 (план 122, реализован 2026-09-09)
+
+Ledger фиксирует content-oriented `WorkspaceVerificationFingerprint` и typed
+`VerificationEvidence` с before/after fingerprint, lane/verifier identity,
+status и bounded artifact reference. Только `Passed` с совместимым fingerprint
+может участвовать в readiness; failed, unavailable, cancelled, timeout,
+protocol error и unknown остаются неуспешными. `evaluate_readiness` возвращает
+Core-owned `Ready` либо `NeedsVerification` и не доверяет commit SHA вместо
+содержимого.
+
+SQLite schema v97 добавляет metadata-only ledger; raw output остаётся в
+ArtifactStore. В текущем checkout verifier runner, selective filesystem
+scanner и consumer integrations ещё не имеют versioned owner adapters, поэтому
+их отсутствие отражается typed unavailable и не создаёт Passed/Ready. Renderer
+получает только bounded projection после Core validation.

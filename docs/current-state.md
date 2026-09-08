@@ -305,7 +305,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Следующий незавершённый порядок
 
-Планы 122–143 остаются незавершённой очередью. Планы 102, 119, 120, 121 и 144 реализованы и закрыты;
+Планы 123–143 остаются незавершённой очередью. Планы 102, 119, 120, 121, 122 и 144 реализованы и закрыты;
 его подтверждённый контракт находится в `architecture.md`, а evidence — в
 `release-evidence.md`.
 Полный каталог, блокирующие и опциональные зависимости находятся в
@@ -337,3 +337,10 @@ verified-runtime admission и Electron projection. Текущий runtime bounda
 предоставляет inference-stream adapter, поэтому подтверждённое состояние —
 typed `unavailable_adapter`; measured profile и routing signal не создаются
 без такого adapter.
+
+## Plan 122 — Verification Evidence Ledger (закрыт 2026-09-09)
+
+Добавлены content fingerprint, typed verification evidence/status/readiness
+contract, fail-closed evaluator, SQLite schema 97 и Core journal persistence.
+Существующий snapshot verifier не расширялся до новой authority; полноценный
+process runner и downstream consumer adapters остаются typed unavailable.

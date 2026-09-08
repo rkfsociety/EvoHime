@@ -28,7 +28,7 @@ restart подтверждаются отдельно. Автоматическ�
 Незавершённые планы выполняются по графу зависимостей и по этапам `0 → 4`.
 Рекомендуемый порядок планов:
 
-`139 → 141 → 122 → 124 → 134 → 130 → 132 → 131 → 137 → 128 → 125 → 129 →
+`139 → 141 → 124 → 134 → 130 → 132 → 131 → 137 → 128 → 125 → 129 →
 123 → 133 → 135 → 136 → 140 → 143 → 138 → 127 → 142`.
 
 | Диапазон | Содержание | Статус |
@@ -37,7 +37,8 @@ restart подтверждаются отдельно. Автоматическ�
 | 118 | persistent agent organization registry | реализован 2026-09-04 |
 | 120 | grounded research workspace | реализован 2026-09-09 |
 | 121 | local model performance calibration | реализован 2026-09-09 |
-| 122–123 | evidence ledger, context compression | очередь по графу |
+| 122 | verification evidence ledger | реализован 2026-09-09 |
+| 123 | context compression | очередь по графу |
 | 124–129 | project quality, provider routing, design review, remote control, local inference, model cascade | очередь по графу |
 | 130–135 | task leases, context namespace, durable background execution, deterministic utilities, resource guard, code review | очередь по графу |
 | 136–140 | static-analysis packs, context loadouts, skill updates, capability facade, authorized security assessment | очередь по графу |

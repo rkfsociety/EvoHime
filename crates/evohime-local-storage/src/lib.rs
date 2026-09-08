@@ -97,6 +97,7 @@ pub mod team_sop_protocols_store;
 pub mod toolkit_store;
 pub mod typed_agent_handoff_contract_store;
 pub(crate) mod typed_context_references_store;
+pub mod verification_evidence_ledger_store;
 pub mod visual_workflow_builder_store;
 pub mod workflow_optimization_lab_store;
 pub mod workflow_package_store;
@@ -110,7 +111,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 96;
+pub const SCHEMA_VERSION: u32 = 97;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -2867,6 +2868,7 @@ impl LocalDatabase {
         migrations::v094::apply(&transaction, current)?;
         migrations::v095::apply(&transaction, current)?;
         migrations::v096::apply(&transaction, current)?;
+        migrations::v097::apply(&transaction, current)?;
         transaction.commit()?;
         Ok(())
     }

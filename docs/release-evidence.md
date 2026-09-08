@@ -1077,3 +1077,16 @@ Verification evidence: `cargo fmt --all` and `git diff --check` passed. Local
 tests, builds, linters and runtime smoke tests were intentionally not run per
 the task instruction; CI was not monitored. The installed client was not
 touched.
+
+## Plan 122 — Verification Evidence Ledger v1 (2026-09-09)
+
+Implementation: content-oriented workspace fingerprint, typed evidence/status,
+before/after compatibility, fail-closed readiness evaluation, metadata-only
+schema 97 and journal persistence. Existing reconciliation snapshot verifier
+remains separate; unavailable runner/consumer adapters do not produce Passed or
+Ready.
+
+Verification evidence: `cargo fmt --all` and `git diff --check` passed. Local
+tests, builds, linters and runtime smoke tests were intentionally not run per
+the task instruction; CI was not monitored. The installed client was not
+touched.
