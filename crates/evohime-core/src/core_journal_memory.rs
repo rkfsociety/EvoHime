@@ -1,6 +1,147 @@
 use super::*;
 
 impl EventJournal {
+    pub async fn recover_grounded_research_sessions(&self) -> Result<usize, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::grounded_research_store::GroundedResearchStore::mark_active_sessions_interrupted(
+            database.connection(),
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Persists only immutable research revision metadata.  Source bytes stay
+    /// in ArtifactStore or the workspace-RAG generation.
+    pub async fn save_grounded_research_revision(
+        &self,
+        record: &evohime_local_storage::grounded_research_store::ResearchRevisionRecord,
+    ) -> Result<bool, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::grounded_research_store::GroundedResearchStore::insert_revision(
+            database.connection(),
+            record,
+        )
+        .map_err(str::to_owned)
+    }
+
+    pub async fn get_grounded_research_revision(
+        &self,
+        revision_id: &str,
+    ) -> Result<
+        Option<evohime_local_storage::grounded_research_store::ResearchRevisionRecord>,
+        String,
+    > {
+        let database = self.database.lock().await;
+        evohime_local_storage::grounded_research_store::GroundedResearchStore::get_revision(
+            database.connection(),
+            revision_id,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    pub async fn save_grounded_research_session(
+        &self,
+        session_id: &str,
+        workspace_id: &str,
+        collection_id: &str,
+        revision: i64,
+        mode: &str,
+        source_policy: &str,
+        pinned_revision_ids_json: &[u8],
+        tool_policy_snapshot: &[u8],
+        model_policy_snapshot: &[u8],
+        budget_json: &[u8],
+        state: &str,
+    ) -> Result<bool, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::grounded_research_store::GroundedResearchStore::insert_session(
+            database.connection(),
+            session_id,
+            workspace_id,
+            collection_id,
+            revision,
+            mode,
+            source_policy,
+            pinned_revision_ids_json,
+            tool_policy_snapshot,
+            model_policy_snapshot,
+            budget_json,
+            state,
+        )
+        .map_err(str::to_owned)
+    }
+
+    pub async fn save_grounded_research_evidence_item(
+        &self,
+        evidence: &crate::research::EvidenceItem,
+    ) -> Result<bool, String> {
+        let locator_json =
+            serde_json::to_vec(&evidence.locator).map_err(|error| error.to_string())?;
+        let database = self.database.lock().await;
+        evohime_local_storage::grounded_research_store::GroundedResearchStore::insert_evidence_item(
+            database.connection(),
+            &evidence.evidence_id,
+            &evidence.revision_id,
+            &locator_json,
+            &evidence.content_hash,
+            &serde_json::to_string(&evidence.trust).map_err(|error| error.to_string())?,
+        )
+        .map_err(str::to_owned)
+    }
+
+    pub async fn get_grounded_research_artifact(
+        &self,
+        artifact_id: &str,
+        revision: i64,
+    ) -> Result<Option<(Vec<u8>, Vec<u8>, String, String)>, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::grounded_research_store::GroundedResearchStore::get_artifact(
+            database.connection(),
+            artifact_id,
+            revision,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    pub async fn save_grounded_research_delta(
+        &self,
+        delta: &crate::research::ResearchDelta,
+    ) -> Result<bool, String> {
+        let added =
+            serde_json::to_vec(&delta.added_evidence_ids).map_err(|error| error.to_string())?;
+        let stale =
+            serde_json::to_vec(&delta.stale_evidence_ids).map_err(|error| error.to_string())?;
+        let database = self.database.lock().await;
+        evohime_local_storage::grounded_research_store::GroundedResearchStore::insert_delta(
+            database.connection(),
+            &delta.delta_id,
+            &delta.previous_artifact_id,
+            &delta.current_artifact_id,
+            &added,
+            &stale,
+        )
+        .map_err(str::to_owned)
+    }
+
+    pub async fn transition_grounded_research_session(
+        &self,
+        session_id: &str,
+        expected_revision: i64,
+        from: crate::research::ResearchSessionState,
+        next: crate::research::ResearchSessionState,
+    ) -> Result<bool, String> {
+        crate::research::transition_research_session(from, next)
+            .map_err(|error| error.to_string())?;
+        let database = self.database.lock().await;
+        evohime_local_storage::grounded_research_store::GroundedResearchStore::transition_session(
+            database.connection(),
+            session_id,
+            expected_revision,
+            &serde_json::to_string(&from).map_err(|error| error.to_string())?,
+            &serde_json::to_string(&next).map_err(|error| error.to_string())?,
+        )
+        .map_err(str::to_owned)
+    }
+
     pub async fn create_project(
         &self,
         id: &str,

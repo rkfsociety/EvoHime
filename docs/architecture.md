@@ -2518,3 +2518,26 @@ idempotency command hash/conflict. Replay/resync восстанавливает 
 а Electron получает только bounded metadata projection через `Профили сред`.
 Renderer не является источником effective state и не получает secret-like
 unknown fields.
+
+## Grounded Research Workspace v1 (план 120, реализован 2026-09-09)
+
+Grounded Research хранит только bounded metadata и lineage. `ResearchSourceRevision`
+фиксирует immutable content hash, origin snapshot, parser/index profile, typed
+trust/status и locator root; bytes остаются у ArtifactStore либо workspace-RAG.
+`EvidenceItem` обязан ссылаться на Ready revision, typed human-openable locator
+и тот же hash revision. Legacy `ResearchEvidence` и `RunResearchFetch` остаются
+совместимым direct-URL adapter и не создают новый artifact без этой цепочки.
+
+Существующая `KnowledgeCollection` остаётся владельцем коллекций. SQLite schema
+v95 добавляет revision/evidence/session/subtask/claim/citation/conflict/artifact/
+delta metadata, foreign keys, bounded JSON и immutable artifact triggers; новая
+таблица collections не создаётся. Ошибки lineage и immutable revision
+отвергаются fail-closed. Accepted artifact передаётся через существующий
+`artifact_handoff_registry_store`, без второго content store.
+
+Bounded runner выполняет `query → policy-gated selected results → HTTPS fetch →
+immutable revision/evidence → bounded extractive summary`, ограничен budget и
+поддерживает cancellation/partial coverage. `research_session_run` проходит
+через Core actor и единый `NetworkCapabilityPolicy`; startup переводит активные
+research sessions в `interrupted`. Electron получает metadata-only projection
+через authenticated `KnowledgeSourceRegistry` transport.

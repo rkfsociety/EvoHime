@@ -99,6 +99,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .await
         .map_err(|e| format!("recovery failed: {e}"))?;
     journal
+        .recover_grounded_research_sessions()
+        .await
+        .map_err(|e| format!("grounded research recovery failed: {e}"))?;
+    journal
         .recover_persistent_agent_registry()
         .await
         .map_err(|e| format!("persistent agent registry recovery failed: {e}"))?;

@@ -579,6 +579,9 @@ impl TaskCoordinator {
             c @ CoreCommand::SaveResearchEvidence { .. } => build_runtime::handle(state, c).await,
             c @ CoreCommand::ListResearchEvidence { .. } => build_runtime::handle(state, c).await,
             c @ CoreCommand::RunResearchFetch { .. } => build_runtime::handle(state, c).await,
+            c @ CoreCommand::RunGroundedResearchSession { .. } => {
+                build_runtime::handle(state, c).await
+            }
             c @ CoreCommand::CreateMemory { .. } => memory::handle(state, c).await,
             c @ CoreCommand::ListMemory { .. } => memory::handle(state, c).await,
             c @ CoreCommand::SearchMemory { .. } => memory::handle(state, c).await,

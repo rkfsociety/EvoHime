@@ -147,6 +147,33 @@ impl ResearchPolicy {
     }
 }
 
+/// Applies the explicit source-acquisition policy before a pipeline call.
+/// SelectedOnly never permits an implicit network fetch; web acquisition is
+/// allowed only by the two policies that name it or by an already approved
+/// open policy.
+pub fn permits_source_policy(
+    policy: crate::research::SourcePolicy,
+    source_kind: crate::research::ResearchSourceKind,
+    network_requested: bool,
+) -> Result<(), PipelineError> {
+    let is_web = matches!(
+        source_kind,
+        crate::research::ResearchSourceKind::WebPage
+            | crate::research::ResearchSourceKind::GitHubFile
+            | crate::research::ResearchSourceKind::GitHubRepositorySnapshot
+            | crate::research::ResearchSourceKind::ExternalConnectorDocument
+    );
+    if !network_requested || !is_web {
+        return Ok(());
+    }
+    match policy {
+        crate::research::SourcePolicy::SelectedPlusWeb
+        | crate::research::SourcePolicy::OpenResearchWithinPolicy => Ok(()),
+        crate::research::SourcePolicy::SelectedOnly
+        | crate::research::SourcePolicy::SelectedPlusWorkspace => Err(PipelineError::NetworkDenied),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResearchRequest {
     pub request_id: String,

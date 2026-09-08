@@ -478,6 +478,8 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             "state": outcome.state,
                             "evidence": outcome.evidence,
                             "citation": outcome.citation,
+                            "source_revision": outcome.revision,
+                            "evidence_item": outcome.evidence_item,
                         }))
                         .map_err(|error| error.to_string())
                     }
@@ -497,6 +499,79 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         Err(error.message)
                     }
                 }
+            }
+            .await;
+            let _ = reply.send(result);
+        }
+        CoreCommand::RunGroundedResearchSession { payload, reply } => {
+            #[derive(serde::Deserialize)]
+            struct Request {
+                request_id: String,
+                query: String,
+                mode: crate::research::ResearchMode,
+                source_policy: crate::research::SourcePolicy,
+                budget: crate::research::ResearchBudget,
+                endpoint: String,
+                results: Vec<crate::research_search::SearchResult>,
+                allowed_domains: Vec<String>,
+                max_bytes: u64,
+                max_latency_ms: u64,
+                max_cost_micros: u64,
+                ttl_ms: u64,
+                cancelled: bool,
+            }
+            let result = async {
+                let request: Request = serde_json::from_slice(&payload)
+                    .map_err(|_| "invalid_research_session_run".to_string())?;
+                let network_policy =
+                    evohime_tool_runtime::network_capability::NetworkCapabilityPolicy::new(
+                        request.allowed_domains.clone(),
+                        request.max_bytes,
+                        request.max_latency_ms,
+                        request.max_cost_micros,
+                        false,
+                        evohime_tool_runtime::network_capability::RefreshPolicy::Never,
+                    )
+                    .map_err(|error| format!("invalid_network_policy: {error:?}"))?;
+                let fetch_policy = crate::research_pipeline::ResearchPolicy {
+                    network_allowed: true,
+                    allowed_domains: request.allowed_domains,
+                    max_bytes: request.max_bytes,
+                    max_latency_ms: request.max_latency_ms,
+                    max_cost_micros: request.max_cost_micros,
+                };
+                let provider = crate::research_search::OfflineStubSearchProvider {
+                    endpoint: request.endpoint,
+                    fixed_results: request.results,
+                };
+                let outcome = crate::research_search::run_bounded_research_session(
+                    &request.request_id,
+                    &request.query,
+                    request.mode,
+                    request.source_policy,
+                    &request.budget,
+                    &provider,
+                    &crate::research_search::ExtractiveSummarizer,
+                    &network_policy,
+                    &fetch_policy,
+                    request.ttl_ms,
+                    request.cancelled,
+                )
+                .await
+                .map_err(|error| error.to_string())?;
+                serde_json::to_vec(&serde_json::json!({
+                    "schema_version": 1,
+                    "state": outcome.state,
+                    "coverage": outcome.coverage,
+                    "fetched": outcome.fetched.iter().map(|item| serde_json::json!({
+                        "revision": item.revision,
+                        "evidence_item": item.evidence_item,
+                    })).collect::<Vec<_>>(),
+                    "summary": outcome.summary,
+                    "omitted_results": outcome.omitted_results,
+                    "redacted": true,
+                }))
+                .map_err(|error| error.to_string())
             }
             .await;
             let _ = reply.send(result);

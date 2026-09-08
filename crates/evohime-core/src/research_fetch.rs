@@ -35,6 +35,8 @@ use crate::research_pipeline::{
 pub struct ResearchFetchOutcome {
     pub evidence: ResearchEvidence,
     pub citation: Citation,
+    pub revision: crate::research::ResearchSourceRevision,
+    pub evidence_item: crate::research::EvidenceItem,
     pub state: PipelineState,
 }
 
@@ -193,6 +195,48 @@ pub async fn run_research_fetch(
     let evidence = ResearchEvidence::capture(source, truncated, captured_at_ms, ttl_ms)
         .map_err(|error| fail(state, false, error.to_string()))?;
 
+    let revision = crate::research::ResearchSourceRevision::from_snapshot(
+        format!(
+            "revision-{}",
+            crate::research::sha256_hex(final_url.as_str().as_bytes())
+        ),
+        format!(
+            "source-{}",
+            crate::research::sha256_hex(final_url.as_str().as_bytes())
+        ),
+        1,
+        &body,
+        serde_json::json!({
+            "url": citation_url(&final_url),
+            "content_type": evidence.source.content_type.clone(),
+            "status": status.as_u16(),
+        })
+        .to_string(),
+        "research-fetch/v1",
+        "legacy-fetch",
+        crate::research::EvidenceTrust::AcquiredExternal,
+        citation_url(&final_url),
+    )
+    .map_err(|error| fail(state, false, error.to_string()))?;
+
+    let evidence_item = crate::research::EvidenceItem {
+        evidence_id: format!("evidence-{}", evidence.excerpt_sha256),
+        revision_id: revision.revision_id.clone(),
+        locator: crate::research::EvidenceLocator {
+            kind: crate::research::EvidenceLocatorKind::HtmlRange,
+            value: citation_url(&final_url),
+            start: Some(0),
+            end: Some(u32::try_from(body.len()).unwrap_or(u32::MAX)),
+        },
+        // Citation lineage is keyed by the immutable source revision, not by
+        // a mutable/redacted excerpt digest.
+        content_hash: revision.content_hash.clone(),
+        trust: crate::research::EvidenceTrust::AcquiredExternal,
+    };
+    evidence_item
+        .validate_against_revision(&revision)
+        .map_err(|error| fail(state, false, error.to_string()))?;
+
     let citation = Citation {
         // `research_pipeline::validate_citations` parses citation URLs with
         // its own minimal host parser, which does not accept a port (it
@@ -201,7 +245,7 @@ pub async fn run_research_fetch(
         // produces a citation the pipeline contract can validate; the
         // scheme, host, path, and query are preserved unchanged.
         url: citation_url(&final_url),
-        source_hash: crate::research::sha256_hex(&body),
+        source_hash: revision.content_hash.clone(),
         excerpt_hash: evidence.excerpt_sha256.clone(),
     };
     validate_citations(&domain, std::slice::from_ref(&citation))
@@ -213,6 +257,8 @@ pub async fn run_research_fetch(
     Ok(ResearchFetchOutcome {
         evidence,
         citation,
+        revision,
+        evidence_item,
         state: final_state,
     })
 }

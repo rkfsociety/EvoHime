@@ -63,7 +63,7 @@ impl fmt::Display for SearchPipelineError {
 impl std::error::Error for SearchPipelineError {}
 
 /// A single candidate result returned by a `SearchProvider`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SearchResult {
     pub url: String,
     pub title: String,
@@ -144,6 +144,90 @@ pub struct SummaryEvidence {
 pub struct SearchPipelineOutcome {
     pub fetched: Vec<ResearchFetchOutcome>,
     pub summary: SummaryEvidence,
+}
+
+#[derive(Debug, Clone)]
+pub struct BoundedResearchSessionOutcome {
+    pub state: crate::research::ResearchSessionState,
+    pub coverage: crate::research::ResearchCoverage,
+    pub fetched: Vec<ResearchFetchOutcome>,
+    pub summary: Option<SummaryEvidence>,
+    pub omitted_results: usize,
+}
+
+/// Executes one bounded research session using the existing search/fetch
+/// adapters.  The caller must persist the session and artifact through the
+/// Core journal; this function never writes external state and never treats a
+/// failed or cancelled run as complete.
+pub async fn run_bounded_research_session(
+    request_id: &str,
+    query: &str,
+    _mode: crate::research::ResearchMode,
+    source_policy: crate::research::SourcePolicy,
+    budget: &crate::research::ResearchBudget,
+    provider: &dyn SearchProvider,
+    summarizer: &dyn Summarizer,
+    network_policy: &NetworkCapabilityPolicy,
+    fetch_policy: &ResearchPolicy,
+    ttl_ms: u64,
+    cancelled: bool,
+) -> Result<BoundedResearchSessionOutcome, SearchPipelineError> {
+    budget
+        .validate()
+        .map_err(|error| SearchPipelineError::SearchProviderFailed(error.to_string()))?;
+    crate::research_pipeline::permits_source_policy(
+        source_policy,
+        crate::research::ResearchSourceKind::WebPage,
+        true,
+    )
+    .map_err(|error| SearchPipelineError::SearchDenied {
+        reason: error.to_string(),
+    })?;
+    if cancelled {
+        return Ok(BoundedResearchSessionOutcome {
+            state: crate::research::ResearchSessionState::Partial,
+            coverage: crate::research::ResearchCoverage::Partial,
+            fetched: Vec::new(),
+            summary: None,
+            omitted_results: 0,
+        });
+    }
+    let mut outcome = run_search_pipeline(
+        request_id,
+        query,
+        provider,
+        summarizer,
+        network_policy,
+        fetch_policy,
+        ttl_ms,
+    )
+    .await?;
+    let omitted_results = outcome
+        .fetched
+        .len()
+        .saturating_sub(budget.max_sources as usize);
+    if outcome.fetched.len() > budget.max_sources as usize {
+        outcome.fetched.truncate(budget.max_sources as usize);
+    }
+    let coverage = if outcome.fetched.is_empty() {
+        crate::research::ResearchCoverage::SourceLimited
+    } else if omitted_results > 0 {
+        crate::research::ResearchCoverage::BudgetLimited
+    } else {
+        crate::research::ResearchCoverage::Complete
+    };
+    let state = if coverage == crate::research::ResearchCoverage::Complete {
+        crate::research::ResearchSessionState::Completed
+    } else {
+        crate::research::ResearchSessionState::Partial
+    };
+    Ok(BoundedResearchSessionOutcome {
+        state,
+        coverage,
+        fetched: outcome.fetched,
+        summary: Some(outcome.summary),
+        omitted_results,
+    })
 }
 
 /// Drives `query -> search-provider policy check -> search call -> bounded

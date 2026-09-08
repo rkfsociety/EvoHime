@@ -591,6 +591,13 @@ pub enum CoreCommand {
         ttl_ms: u64,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    /// Runs the bounded research adapter and returns only a metadata
+    /// projection. The caller supplies already-selected result URLs; every
+    /// URL still passes the normal network and fetch policy.
+    RunGroundedResearchSession {
+        payload: Vec<u8>,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     /// Creates one bounded Memory v1 record. `memory_domain::MemoryDomain`
     /// runs validation, TTL expansion and content redaction server-side
     /// (its in-memory storage is not used: the real `memory_entries` table,

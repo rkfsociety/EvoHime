@@ -1047,3 +1047,18 @@ IPC; unknown profile fields are rejected, owner payloads and secrets are not
 stored, and an unknown/invalid activation is not reported as success or
 retried blindly. The installed client was not started, stopped, updated or
 modified. `git diff --check` is the final gate before the task-only commit.
+
+## Plan 120 — Grounded Research Workspace v1 (2026-09-09)
+
+Implementation: Core research contracts, bounded structural extraction, source
+revision/evidence lineage, search/fetch runner, policy gate, immutable artifact
+metadata, delta derivation and restart interruption recovery. SQLite migration
+95 is additive and reuses the existing knowledge collection owner. The
+authenticated registry transport and Electron metadata-only projection are
+wired; artifact promotion uses the existing handoff registry.
+
+Verification evidence: `cargo fmt --all` and `git diff --check` passed. Local
+tests, builds, linters and runtime smoke tests were intentionally not run per
+the task instruction; CI was not monitored. The installed client was not
+touched. Review found and fixed evidence/source identity, revision-hash and
+immutable revision conflict paths before closure.

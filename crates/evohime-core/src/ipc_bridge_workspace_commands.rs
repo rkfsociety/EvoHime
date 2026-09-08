@@ -694,13 +694,30 @@ impl IpcBridge {
             .as_ref()
             .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
         let (reply, response) = oneshot::channel();
+        let generated::KnowledgeSourceRegistryProjectRoleCommand {
+            source_id,
+            payload,
+            expected_version,
+            idempotency_key,
+        } = request;
+        if operation == "research_session_run" {
+            coordinator
+                .dispatch(CoreCommand::RunGroundedResearchSession { payload, reply })
+                .await
+                .map_err(|error| FrameError::Io(error.to_string()))?;
+            return response
+                .await
+                .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+                .map_err(FrameError::Io)
+                .map_err(IpcBridgeError::from);
+        }
         coordinator
             .dispatch(CoreCommand::KnowledgeSourceRegistryProjectRole {
                 operation,
-                source_id: request.source_id,
-                payload: request.payload,
-                expected_version: request.expected_version,
-                idempotency_key: request.idempotency_key,
+                source_id,
+                payload,
+                expected_version,
+                idempotency_key,
                 reply,
             })
             .await

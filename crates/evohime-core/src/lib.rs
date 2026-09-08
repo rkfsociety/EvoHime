@@ -182,7 +182,7 @@ pub mod run_policy;
 pub use recovery::{classify_tool_outcome, DenialSource, ToolFailureKind, ToolOutcome};
 pub mod composable_termination_conditions;
 pub(crate) mod refinement;
-pub(crate) mod research;
+pub mod research;
 pub(crate) mod research_fetch;
 pub(crate) mod research_gate;
 pub(crate) mod research_pipeline;

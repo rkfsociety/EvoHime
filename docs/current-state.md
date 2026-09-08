@@ -305,7 +305,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Следующий незавершённый порядок
 
-Планы 120–143 остаются незавершённой очередью. Планы 102, 119 и 144 реализованы и закрыты;
+Планы 121–143 остаются незавершённой очередью. Планы 102, 119, 120 и 144 реализованы и закрыты;
 его подтверждённый контракт находится в `architecture.md`, а evidence — в
 `release-evidence.md`.
 Полный каталог, блокирующие и опциональные зависимости находятся в
@@ -318,3 +318,13 @@ production build и bundle check, native package smoke. Полный Rust suite 
 Контракт завершённого плана переносится сюда и в `architecture.md`, а сам
 временный plan-комплект удаляется. Историю и гипотезы не добавляйте в раздел
 текущего состояния.
+
+## Plan 120 — Grounded Research Workspace (закрыт 2026-09-09)
+
+В checkout присутствуют typed Core-контракты source revision, evidence locator,
+session, citation, artifact и delta; additive migration 95 устанавливает
+metadata-only storage. Legacy fetch сохранён как adapter, bounded session runner
+подключён к Core actor, network policy, cancellation и startup recovery. IPC
+использует authenticated registry transport, а `ResearchWorkspacePanel`
+отображает только ограниченную проекцию. Артефакты проверяются по revision/
+evidence lineage и продвигаются через существующий Artifact Handoff registry.

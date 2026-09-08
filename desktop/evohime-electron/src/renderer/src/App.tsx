@@ -69,6 +69,7 @@ import { TeamCoordinatorPanel } from './TeamCoordinatorPanel'
 import { ProjectInstructionStackPanel } from './ProjectInstructionStackPanel'
 import { WorkspaceSetsPanel } from './WorkspaceSetsPanel'
 import { KnowledgeSourceRegistryProjectRolePanel } from './KnowledgeSourceRegistryProjectRolePanel'
+import { ResearchWorkspacePanel } from './ResearchWorkspacePanel'
 import { DurableRemoteTaskBridgePanel } from './DurableRemoteTaskBridgePanel'
 import { MessageInterventionPoliciesPanel } from './MessageInterventionPoliciesPanel'
 import { BatchInvocationRuntimePanel } from './BatchInvocationRuntimePanel'
@@ -121,7 +122,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'execution-environment-profiles' | 'tool-simulation' | 'agent-role-profiles' | 'persistent-agent-organization-registry' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'memory-views-recall' | 'model-edit-protocol-registry' | 'remote-conversation-channels' | 'prompt-cache-planner' | 'declarative-runtime-components' | 'guided-calibration-sessions' | 'extension-conformance-kit' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'dependency-aware-task-graph' | 'core-topic-subscription-event-bus' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'durable-remote-task-bridge' | 'message-intervention-policies' | 'batch-invocation-runtime' | 'policy-aware-tool-result-cache' | 'code-anchored-intent-markers' | 'model-purpose-routing' | 'local-model-runtime-manager' | 'architecture-snapshot' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
+type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'execution-environment-profiles' | 'tool-simulation' | 'agent-role-profiles' | 'persistent-agent-organization-registry' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'memory-views-recall' | 'model-edit-protocol-registry' | 'remote-conversation-channels' | 'prompt-cache-planner' | 'declarative-runtime-components' | 'guided-calibration-sessions' | 'extension-conformance-kit' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'dependency-aware-task-graph' | 'core-topic-subscription-event-bus' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'research-workspace' | 'durable-remote-task-bridge' | 'message-intervention-policies' | 'batch-invocation-runtime' | 'policy-aware-tool-result-cache' | 'code-anchored-intent-markers' | 'model-purpose-routing' | 'local-model-runtime-manager' | 'architecture-snapshot' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -204,6 +205,7 @@ const DEVELOPER_GROUPS: readonly DeveloperViewGroup[] = [
   { id: 'project-instruction-stack', label: 'Project Instructions', icon: '☷' },
   { id: 'workspace-sets', label: 'Workspace Sets', icon: '▦' },
   { id: 'knowledge-source-registry', label: 'Knowledge Sources', icon: '⌘' },
+  { id: 'research-workspace', label: 'Research Workspace', icon: '⌘' },
   { id: 'durable-remote-task-bridge', label: 'Remote Tasks', icon: '↗' },
   { id: 'message-intervention-policies', label: 'Message Interventions', icon: '⊘' },
   { id: 'batch-invocation-runtime', label: 'Batch Invocations', icon: '▤' },
@@ -637,6 +639,7 @@ export function App(): React.JSX.Element {
               {view === 'project-instruction-stack' ? <ProjectInstructionStackPanel connection={connection} /> : null}
               {view === 'workspace-sets' ? <WorkspaceSetsPanel connection={connection} /> : null}
               {view === 'knowledge-source-registry' ? <KnowledgeSourceRegistryProjectRolePanel connection={connection} /> : null}
+              {view === 'research-workspace' ? <ResearchWorkspacePanel connection={connection} /> : null}
               {view === 'durable-remote-task-bridge' ? <DurableRemoteTaskBridgePanel connection={connection} /> : null}
               {view === 'message-intervention-policies' ? <MessageInterventionPoliciesPanel connection={connection} /> : null}
               {view === 'batch-invocation-runtime' ? <BatchInvocationRuntimePanel connection={connection} /> : null}

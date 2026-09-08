@@ -186,6 +186,646 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+/// Version of the grounded-research metadata contract.  It is independent
+/// from the legacy offline evidence record above.
+pub const GROUNDED_RESEARCH_SCHEMA_VERSION: u32 = 1;
+pub const MAX_SOURCE_ID_CHARS: usize = 128;
+pub const MAX_REVISION_ID_CHARS: usize = 128;
+pub const MAX_LOCATOR_CHARS: usize = 1_024;
+pub const MAX_JSON_METADATA_CHARS: usize = 32 * 1024;
+pub const MAX_COLLECTION_SOURCES: usize = 256;
+pub const MAX_STRUCTURAL_UNITS: usize = 4_096;
+pub const MAX_STRUCTURAL_UNIT_CHARS: usize = 16 * 1024;
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StructuralUnitKind {
+    Heading,
+    Paragraph,
+    Code,
+    List,
+    Table,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StructuralUnit {
+    pub ordinal: u32,
+    pub kind: StructuralUnitKind,
+    pub text: String,
+    pub start_line: u32,
+    pub end_line: u32,
+}
+
+/// Deterministic, non-executable Markdown/text extraction.  The parser keeps
+/// only bounded structural units; it never interprets embedded scripts,
+/// macros or links as instructions.
+pub fn extract_structural_units(
+    input: &str,
+    max_units: usize,
+) -> Result<Vec<StructuralUnit>, GroundedResearchError> {
+    if max_units == 0 || max_units > MAX_STRUCTURAL_UNITS {
+        return Err(GroundedResearchError::LimitExceeded("structural units"));
+    }
+    let mut result = Vec::new();
+    let mut paragraph = Vec::new();
+    let mut paragraph_start = 0u32;
+    let flush = |result: &mut Vec<StructuralUnit>, paragraph: &mut Vec<&str>, start: u32| {
+        if paragraph.is_empty() || result.len() >= max_units {
+            return;
+        }
+        let text = paragraph.join(" ");
+        if text.chars().count() <= MAX_STRUCTURAL_UNIT_CHARS {
+            result.push(StructuralUnit {
+                ordinal: result.len() as u32,
+                kind: StructuralUnitKind::Paragraph,
+                text,
+                start_line: start,
+                end_line: start + paragraph.len().saturating_sub(1) as u32,
+            });
+        }
+        paragraph.clear();
+    };
+    for (line_index, line) in input.lines().enumerate() {
+        let line_number = line_index as u32 + 1;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            flush(&mut result, &mut paragraph, paragraph_start);
+            continue;
+        }
+        let (kind, text) = if let Some(value) = trimmed.strip_prefix("#") {
+            (Some(StructuralUnitKind::Heading), value.trim())
+        } else if trimmed.starts_with("```") {
+            (Some(StructuralUnitKind::Code), trimmed)
+        } else if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
+            (Some(StructuralUnitKind::List), trimmed)
+        } else if trimmed.starts_with('|') {
+            (Some(StructuralUnitKind::Table), trimmed)
+        } else {
+            (None, trimmed)
+        };
+        if let Some(kind) = kind {
+            flush(&mut result, &mut paragraph, paragraph_start);
+            if result.len() < max_units && text.chars().count() <= MAX_STRUCTURAL_UNIT_CHARS {
+                result.push(StructuralUnit {
+                    ordinal: result.len() as u32,
+                    kind,
+                    text: text.to_owned(),
+                    start_line: line_number,
+                    end_line: line_number,
+                });
+            }
+        } else {
+            if paragraph.is_empty() {
+                paragraph_start = line_number;
+            }
+            paragraph.push(trimmed);
+        }
+        if result.len() >= max_units {
+            break;
+        }
+    }
+    flush(&mut result, &mut paragraph, paragraph_start);
+    Ok(result)
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ResearchSourceKind {
+    WorkspaceFile,
+    WorkspaceSelection,
+    UploadedFile,
+    PlainText,
+    Markdown,
+    Pdf,
+    WebPage,
+    GitHubFile,
+    GitHubRepositorySnapshot,
+    ProjectArtifact,
+    ManualNote,
+    ExternalConnectorDocument,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ResearchSourceStatus {
+    Pending,
+    Acquiring,
+    Parsing,
+    Extracting,
+    Indexing,
+    Ready,
+    PartiallyReady,
+    Failed,
+    Stale,
+    Unavailable,
+    Removing,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceTrust {
+    Workspace,
+    UserProvided,
+    AcquiredExternal,
+    Derived,
+    Unverified,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceLocatorKind {
+    FileRange,
+    PageSection,
+    Paragraph,
+    HtmlRange,
+    ArtifactBlock,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EvidenceLocator {
+    pub kind: EvidenceLocatorKind,
+    pub value: String,
+    pub start: Option<u32>,
+    pub end: Option<u32>,
+}
+
+impl EvidenceLocator {
+    pub fn validate(&self) -> Result<(), GroundedResearchError> {
+        validate_grounded_text("locator.value", &self.value, MAX_LOCATOR_CHARS)?;
+        match (self.start, self.end) {
+            (Some(start), Some(end)) if start <= end => Ok(()),
+            (None, None) => Ok(()),
+            _ => Err(GroundedResearchError::InvalidLocator),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResearchSourceRevision {
+    pub revision_id: String,
+    pub source_id: String,
+    pub revision: u64,
+    pub content_hash: String,
+    pub origin_snapshot: String,
+    pub parser_version: String,
+    pub index_profile: String,
+    pub status: ResearchSourceStatus,
+    pub trust: EvidenceTrust,
+    pub locator_root: String,
+}
+
+impl ResearchSourceRevision {
+    /// Creates the immutable identity for an acquired snapshot.  Volatile
+    /// fetch timestamps are deliberately excluded from `content_hash`.
+    pub fn from_snapshot(
+        revision_id: impl Into<String>,
+        source_id: impl Into<String>,
+        revision: u64,
+        bytes: &[u8],
+        origin_snapshot: impl Into<String>,
+        parser_version: impl Into<String>,
+        index_profile: impl Into<String>,
+        trust: EvidenceTrust,
+        locator_root: impl Into<String>,
+    ) -> Result<Self, GroundedResearchError> {
+        let result = Self {
+            revision_id: revision_id.into(),
+            source_id: source_id.into(),
+            revision,
+            content_hash: sha256_hex(bytes),
+            origin_snapshot: origin_snapshot.into(),
+            parser_version: parser_version.into(),
+            index_profile: index_profile.into(),
+            status: ResearchSourceStatus::Ready,
+            trust,
+            locator_root: locator_root.into(),
+        };
+        result.validate()?;
+        Ok(result)
+    }
+
+    pub fn validate(&self) -> Result<(), GroundedResearchError> {
+        validate_grounded_text("revision_id", &self.revision_id, MAX_REVISION_ID_CHARS)?;
+        validate_grounded_text("source_id", &self.source_id, MAX_SOURCE_ID_CHARS)?;
+        validate_grounded_text("content_hash", &self.content_hash, 128)?;
+        validate_grounded_text(
+            "origin_snapshot",
+            &self.origin_snapshot,
+            MAX_JSON_METADATA_CHARS,
+        )?;
+        validate_grounded_text("parser_version", &self.parser_version, 64)?;
+        validate_grounded_text("index_profile", &self.index_profile, 64)?;
+        validate_grounded_text("locator_root", &self.locator_root, MAX_LOCATOR_CHARS)?;
+        if self.revision == 0 || !is_hex_hash(&self.content_hash) {
+            return Err(GroundedResearchError::InvalidIdentity);
+        }
+        serde_json::from_str::<serde_json::Value>(&self.origin_snapshot)
+            .map_err(|_| GroundedResearchError::InvalidSnapshot)?;
+        Ok(())
+    }
+
+    pub fn classify_snapshot(&self, bytes: &[u8]) -> ResearchSourceStatus {
+        if sha256_hex(bytes) == self.content_hash {
+            self.status
+        } else {
+            ResearchSourceStatus::Stale
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EvidenceItem {
+    pub evidence_id: String,
+    pub revision_id: String,
+    pub locator: EvidenceLocator,
+    pub content_hash: String,
+    pub trust: EvidenceTrust,
+}
+
+impl EvidenceItem {
+    pub fn validate(&self) -> Result<(), GroundedResearchError> {
+        validate_grounded_text("evidence_id", &self.evidence_id, 128)?;
+        validate_grounded_text("revision_id", &self.revision_id, MAX_REVISION_ID_CHARS)?;
+        validate_grounded_text("content_hash", &self.content_hash, 128)?;
+        self.locator.validate()?;
+        if !is_hex_hash(&self.content_hash) {
+            return Err(GroundedResearchError::InvalidIdentity);
+        }
+        Ok(())
+    }
+
+    pub fn validate_against_revision(
+        &self,
+        revision: &ResearchSourceRevision,
+    ) -> Result<(), GroundedResearchError> {
+        self.validate()?;
+        revision.validate()?;
+        if self.revision_id != revision.revision_id
+            || revision.status != ResearchSourceStatus::Ready
+            || self.content_hash != revision.content_hash
+        {
+            return Err(GroundedResearchError::StaleReference);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ResearchCoverage {
+    Complete,
+    Partial,
+    BudgetLimited,
+    SourceLimited,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CitationKind {
+    DirectSupport,
+    PartialSupport,
+    Context,
+    Contradiction,
+    DerivedFromMultiple,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResearchCitation {
+    pub citation_id: String,
+    pub claim_id: String,
+    pub evidence_id: String,
+    pub kind: CitationKind,
+    pub validation: String,
+}
+
+/// Validates lineage before a citation can be exposed as verified.  A
+/// verified locator proves addressability only; it never asserts factual
+/// truth of the claim.
+pub fn validate_research_citation(
+    citation: &ResearchCitation,
+    claim: &ResearchClaim,
+    evidence: &EvidenceItem,
+    revision: &ResearchSourceRevision,
+) -> Result<(), GroundedResearchError> {
+    validate_grounded_text("citation_id", &citation.citation_id, 128)?;
+    validate_grounded_text("claim_id", &citation.claim_id, 128)?;
+    validate_grounded_text("evidence_id", &citation.evidence_id, 128)?;
+    validate_grounded_text("validation", &citation.validation, 64)?;
+    validate_grounded_text("claim.text_hash", &claim.text_hash, 128)?;
+    if citation.claim_id != claim.claim_id
+        || citation.evidence_id != evidence.evidence_id
+        || citation.validation != "verified_locator"
+    {
+        return Err(GroundedResearchError::InvalidCitation);
+    }
+    evidence.validate_against_revision(revision)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResearchClaim {
+    pub claim_id: String,
+    pub text_hash: String,
+    pub inference: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResearchArtifact {
+    pub artifact_id: String,
+    pub revision: u64,
+    pub session_id: String,
+    pub content_hash: String,
+    pub coverage: ResearchCoverage,
+    pub claims: Vec<ResearchClaim>,
+    pub citations: Vec<ResearchCitation>,
+    pub immutable: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ResearchMode {
+    QuickResearch,
+    DeepResearch,
+    Comparison,
+    LiteratureReview,
+    TechnicalInvestigation,
+    LearningNotes,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SourcePolicy {
+    SelectedOnly,
+    SelectedPlusWorkspace,
+    SelectedPlusWeb,
+    OpenResearchWithinPolicy,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ResearchSessionState {
+    Queued,
+    Running,
+    Cancelling,
+    Completed,
+    Partial,
+    Failed,
+    Interrupted,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResearchBudget {
+    pub max_sources: u32,
+    pub max_subtasks: u32,
+    pub max_tool_calls: u32,
+    pub max_duration_ms: u64,
+    pub max_tokens: u64,
+}
+
+impl ResearchBudget {
+    pub fn validate(&self) -> Result<(), GroundedResearchError> {
+        if self.max_sources == 0
+            || self.max_sources > 256
+            || self.max_subtasks == 0
+            || self.max_subtasks > 64
+            || self.max_tool_calls > 512
+            || self.max_duration_ms == 0
+            || self.max_duration_ms > 30 * 60 * 1_000
+            || self.max_tokens > 2_000_000
+        {
+            return Err(GroundedResearchError::LimitExceeded("research budget"));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResearchSession {
+    pub session_id: String,
+    pub workspace_id: String,
+    pub collection_id: String,
+    pub mode: ResearchMode,
+    pub source_policy: SourcePolicy,
+    pub pinned_revision_ids: Vec<String>,
+    pub tool_policy_snapshot: String,
+    pub model_policy_snapshot: String,
+    pub budget: ResearchBudget,
+    pub state: ResearchSessionState,
+}
+
+pub fn transition_research_session(
+    from: ResearchSessionState,
+    to: ResearchSessionState,
+) -> Result<ResearchSessionState, GroundedResearchError> {
+    let valid = matches!(
+        (from, to),
+        (ResearchSessionState::Queued, ResearchSessionState::Running)
+            | (
+                ResearchSessionState::Running,
+                ResearchSessionState::Cancelling
+            )
+            | (
+                ResearchSessionState::Running,
+                ResearchSessionState::Completed
+            )
+            | (ResearchSessionState::Running, ResearchSessionState::Partial)
+            | (ResearchSessionState::Running, ResearchSessionState::Failed)
+            | (
+                ResearchSessionState::Running,
+                ResearchSessionState::Interrupted
+            )
+            | (
+                ResearchSessionState::Cancelling,
+                ResearchSessionState::Partial
+            )
+            | (
+                ResearchSessionState::Cancelling,
+                ResearchSessionState::Failed
+            )
+            | (
+                ResearchSessionState::Interrupted,
+                ResearchSessionState::Running
+            )
+    );
+    if valid {
+        Ok(to)
+    } else {
+        Err(GroundedResearchError::InvalidTransition)
+    }
+}
+
+impl ResearchSession {
+    pub fn validate(&self) -> Result<(), GroundedResearchError> {
+        validate_grounded_text("session_id", &self.session_id, 128)?;
+        validate_grounded_text("workspace_id", &self.workspace_id, 256)?;
+        validate_grounded_text("collection_id", &self.collection_id, 128)?;
+        validate_grounded_text(
+            "tool_policy_snapshot",
+            &self.tool_policy_snapshot,
+            MAX_JSON_METADATA_CHARS,
+        )?;
+        validate_grounded_text(
+            "model_policy_snapshot",
+            &self.model_policy_snapshot,
+            MAX_JSON_METADATA_CHARS,
+        )?;
+        serde_json::from_str::<serde_json::Value>(&self.tool_policy_snapshot)
+            .map_err(|_| GroundedResearchError::InvalidSnapshot)?;
+        serde_json::from_str::<serde_json::Value>(&self.model_policy_snapshot)
+            .map_err(|_| GroundedResearchError::InvalidSnapshot)?;
+        if self.pinned_revision_ids.len() > MAX_COLLECTION_SOURCES {
+            return Err(GroundedResearchError::LimitExceeded("pinned revisions"));
+        }
+        self.budget.validate()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResearchSubtask {
+    pub subtask_id: String,
+    pub session_id: String,
+    pub objective_hash: String,
+    pub state: ResearchSessionState,
+    pub evidence_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EvidenceConflict {
+    pub conflict_id: String,
+    pub evidence_ids: Vec<String>,
+    pub description_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResearchDelta {
+    pub delta_id: String,
+    pub previous_artifact_id: String,
+    pub current_artifact_id: String,
+    pub added_evidence_ids: Vec<String>,
+    pub stale_evidence_ids: Vec<String>,
+}
+
+pub fn validate_artifact_lineage(
+    artifact: &ResearchArtifact,
+    claims: &[ResearchClaim],
+    citations: &[ResearchCitation],
+) -> Result<(), GroundedResearchError> {
+    artifact.validate()?;
+    if artifact.claims != claims || artifact.citations != citations {
+        return Err(GroundedResearchError::InvalidCitation);
+    }
+    let claim_ids = claims
+        .iter()
+        .map(|claim| claim.claim_id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    for citation in citations {
+        if !claim_ids.contains(citation.claim_id.as_str()) {
+            return Err(GroundedResearchError::InvalidCitation);
+        }
+    }
+    Ok(())
+}
+
+pub fn derive_research_delta(
+    previous: &ResearchArtifact,
+    current: &ResearchArtifact,
+    delta_id: impl Into<String>,
+) -> Result<ResearchDelta, GroundedResearchError> {
+    previous.validate()?;
+    current.validate()?;
+    let previous_ids = previous
+        .citations
+        .iter()
+        .map(|citation| citation.evidence_id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let current_ids = current
+        .citations
+        .iter()
+        .map(|citation| citation.evidence_id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    Ok(ResearchDelta {
+        delta_id: delta_id.into(),
+        previous_artifact_id: previous.artifact_id.clone(),
+        current_artifact_id: current.artifact_id.clone(),
+        added_evidence_ids: current_ids.difference(&previous_ids).cloned().collect(),
+        stale_evidence_ids: previous_ids.difference(&current_ids).cloned().collect(),
+    })
+}
+
+impl ResearchArtifact {
+    pub fn validate(&self) -> Result<(), GroundedResearchError> {
+        validate_grounded_text("artifact_id", &self.artifact_id, 128)?;
+        validate_grounded_text("session_id", &self.session_id, 128)?;
+        validate_grounded_text("content_hash", &self.content_hash, 128)?;
+        if self.revision == 0 || !self.immutable || !is_hex_hash(&self.content_hash) {
+            return Err(GroundedResearchError::InvalidIdentity);
+        }
+        if self.claims.len() > 256 || self.citations.len() > 256 {
+            return Err(GroundedResearchError::LimitExceeded("artifact lineage"));
+        }
+        for claim in &self.claims {
+            validate_grounded_text("claim_id", &claim.claim_id, 128)?;
+            validate_grounded_text("claim.text_hash", &claim.text_hash, 128)?;
+        }
+        for citation in &self.citations {
+            validate_grounded_text("citation_id", &citation.citation_id, 128)?;
+            validate_grounded_text("citation.claim_id", &citation.claim_id, 128)?;
+            validate_grounded_text("citation.evidence_id", &citation.evidence_id, 128)?;
+            validate_grounded_text("citation.validation", &citation.validation, 64)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GroundedResearchError {
+    EmptyField(&'static str),
+    FieldTooLong { field: &'static str, max: usize },
+    InvalidIdentity,
+    InvalidSnapshot,
+    InvalidLocator,
+    LimitExceeded(&'static str),
+    StaleReference,
+    InvalidCitation,
+    InvalidTransition,
+}
+
+impl fmt::Display for GroundedResearchError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyField(field) => write!(f, "{field} must not be empty"),
+            Self::FieldTooLong { field, max } => write!(f, "{field} exceeds {max} characters"),
+            Self::InvalidIdentity => write!(f, "invalid immutable research identity"),
+            Self::InvalidSnapshot => write!(f, "invalid research policy snapshot"),
+            Self::InvalidLocator => write!(f, "invalid evidence locator"),
+            Self::LimitExceeded(field) => write!(f, "{field} exceeds its bound"),
+            Self::StaleReference => write!(f, "research reference is stale or unavailable"),
+            Self::InvalidCitation => write!(f, "invalid research citation lineage"),
+            Self::InvalidTransition => write!(f, "invalid research session transition"),
+        }
+    }
+}
+
+impl std::error::Error for GroundedResearchError {}
+
+fn validate_grounded_text(
+    field: &'static str,
+    value: &str,
+    max: usize,
+) -> Result<(), GroundedResearchError> {
+    if value.trim().is_empty() {
+        return Err(GroundedResearchError::EmptyField(field));
+    }
+    if value.chars().count() > max {
+        return Err(GroundedResearchError::FieldTooLong { field, max });
+    }
+    Ok(())
+}
+
+fn is_hex_hash(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
 // Small dependency-free SHA-256 implementation for the contract's content hash.
 fn sha256(input: &[u8]) -> [u8; 32] {
     const K: [u32; 64] = [
@@ -333,5 +973,66 @@ mod tests {
             sha256_hex(b"abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+    }
+
+    #[test]
+    fn grounded_snapshot_identity_and_locator_are_revision_bound() {
+        let revision = ResearchSourceRevision::from_snapshot(
+            "revision-1",
+            "source-1",
+            1,
+            b"snapshot",
+            "{\"url\":\"https://example.test\"}",
+            "parser/v1",
+            "index/v1",
+            EvidenceTrust::AcquiredExternal,
+            "https://example.test",
+        )
+        .unwrap();
+        let item = EvidenceItem {
+            evidence_id: "evidence-1".into(),
+            revision_id: revision.revision_id.clone(),
+            locator: EvidenceLocator {
+                kind: EvidenceLocatorKind::HtmlRange,
+                value: revision.locator_root.clone(),
+                start: Some(0),
+                end: Some(8),
+            },
+            content_hash: sha256_hex(b"evidence"),
+            trust: EvidenceTrust::AcquiredExternal,
+        };
+        assert!(item.validate_against_revision(&revision).is_ok());
+        let mut stale = revision.clone();
+        stale.status = ResearchSourceStatus::Stale;
+        assert!(matches!(
+            item.validate_against_revision(&stale),
+            Err(GroundedResearchError::StaleReference)
+        ));
+    }
+
+    #[test]
+    fn grounded_session_transitions_are_fail_closed() {
+        assert!(transition_research_session(
+            ResearchSessionState::Queued,
+            ResearchSessionState::Running
+        )
+        .is_ok());
+        assert!(matches!(
+            transition_research_session(
+                ResearchSessionState::Queued,
+                ResearchSessionState::Completed
+            ),
+            Err(GroundedResearchError::InvalidTransition)
+        ));
+    }
+
+    #[test]
+    fn structural_extraction_is_bounded_and_non_executable() {
+        let units =
+            extract_structural_units("# Heading\n\ntext\n\n- item\n\n<script>run()</script>", 8)
+                .unwrap();
+        assert_eq!(units[0].kind, StructuralUnitKind::Heading);
+        assert!(units.iter().any(|unit| unit.text.contains("script")));
+        assert!(extract_structural_units("text", 0).is_err());
     }
 }

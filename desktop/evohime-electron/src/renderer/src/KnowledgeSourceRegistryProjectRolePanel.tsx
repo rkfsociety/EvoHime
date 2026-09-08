@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ConnectionState, KnowledgeSourceRegistryProjection, ShellEvent } from '@shared/api'
 import { useShellApi } from './shell-api'
 
-const OPERATIONS = ['get', 'register', 'bind', 'index', 'retrieve', 'collection_get', 'collection_register', 'collection_view'] as const
+const OPERATIONS = ['get', 'register', 'bind', 'index', 'retrieve', 'collection_get', 'collection_register', 'collection_view', 'research_revision', 'research_evidence_item', 'research_session', 'research_session_run', 'research_artifact', 'research_artifact_get', 'research_delta', 'research_artifact_promote', 'research_session_transition'] as const
 type Operation = typeof OPERATIONS[number]
 export function KnowledgeSourceRegistryProjectRolePanel({ connection }: { readonly connection: ConnectionState }): React.JSX.Element {
   const api = useShellApi(); const [operation, setOperation] = useState<Operation>('get'); const [sourceId, setSourceId] = useState('source-1'); const [payload, setPayload] = useState(''); const [projection, setProjection] = useState<KnowledgeSourceRegistryProjection | null>(null); const [message, setMessage] = useState('')
