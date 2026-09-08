@@ -173,6 +173,8 @@ pub enum ChangeSetError {
     InvalidIncrementalReference,
     #[error("referenced task worktree is invalid or stale")]
     InvalidWorktreeReference,
+    #[error("agent Git change-set payload is invalid")]
+    InvalidPayload,
 }
 
 #[derive(Debug, Clone)]
@@ -371,14 +373,16 @@ pub async fn observe(
     workspace_root: &str,
     now_ms: i64,
 ) -> Result<AgentGitChangeSet, ChangeSetError> {
-    let value = serde_json::from_slice::<serde_json::Value>(payload).unwrap_or_default();
+    let value = serde_json::from_slice::<serde_json::Value>(payload)
+        .map_err(|_| ChangeSetError::InvalidPayload)?;
     if workspace_root.trim().is_empty() && value.get("base_git_head").is_some() {
         let set: AgentGitChangeSet =
             serde_json::from_value(value).map_err(|_| ChangeSetError::GitCommandFailed)?;
         validate_change_set(&set)?;
         return Ok(set);
     }
-    let request: ObserveRequest = serde_json::from_slice(payload).unwrap_or_default();
+    let request: ObserveRequest =
+        serde_json::from_value(value).map_err(|_| ChangeSetError::InvalidPayload)?;
     let root = validate_workspace_root(workspace_root)?;
     let binding = if request.workspace_binding_id.is_empty() {
         crate::task_memory::workspace_scope_id(&root)
@@ -467,7 +471,8 @@ pub async fn make_candidate(
     if set.workspace_binding_id != crate::task_memory::workspace_scope_id(&root) {
         return Err(ChangeSetError::WorkspaceBindingMismatch);
     }
-    let request: CandidateRequest = serde_json::from_slice(payload).unwrap_or_default();
+    let request: CandidateRequest =
+        serde_json::from_slice(payload).map_err(|_| ChangeSetError::InvalidPayload)?;
     let approved = bounded_paths(&request.approved_paths)?;
     let generated = bounded_paths(&request.generated_paths)?;
     let snapshot = capture_snapshot(root, now_ms).await?;
@@ -1019,6 +1024,14 @@ mod tests {
         assert_eq!(
             validate_integration_references(&set),
             Err(ChangeSetError::InvalidPath)
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_payloads_fail_closed() {
+        assert_eq!(
+            observe(b"not-json", "set-invalid", "", 1).await,
+            Err(ChangeSetError::InvalidPayload)
         );
     }
 

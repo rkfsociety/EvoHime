@@ -748,6 +748,8 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Persisted change-set and candidate metadata are revalidated for version,
   canonical hashes, bounded paths, commit IDs and secret exclusion before any
   Git effect.
+- Malformed observe/candidate JSON is rejected with a typed invalid-payload
+  outcome instead of being replaced by permissive defaults.
 - Fresh local checks for this implementation: Rust `cargo check` on the three
   affected crates, generated protocol check, and both Electron TypeScript
   projects. The full Rust/Electron/package acceptance suite is intentionally
