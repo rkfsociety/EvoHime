@@ -12,7 +12,7 @@ on:
       - 'Cargo.lock'
 
 concurrency:
-  group: evohime-module-${{ github.workflow }}-${{ github.ref }}
+  group: evohime-module-${{ github.workflow }}
   cancel-in-progress: true
 
 permissions:

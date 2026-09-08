@@ -6,7 +6,7 @@ on:
     paths: ['crates/evohime-supervisor/**', 'release-versions/analysis-worker.txt', '.github/workflows/analysis-worker.yml', '.github/workflows/module-native.yml']
 
 concurrency:
-  group: evohime-module-${{ github.workflow }}-${{ github.ref }}
+  group: evohime-module-${{ github.workflow }}
   cancel-in-progress: true
 
 jobs:
