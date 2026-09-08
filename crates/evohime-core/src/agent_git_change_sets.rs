@@ -634,6 +634,16 @@ pub async fn commit_candidate(candidate: &GitCommitCandidate) -> Result<String, 
     preflight_candidate(candidate).await?;
     let root = validate_workspace_root(&candidate.workspace_root)?;
     let pathspec = nul_pathspec(&candidate.included_paths)?;
+    // `git commit --only` does not reliably include untracked files. Stage
+    // only the candidate paths first; pre-existing staged paths remain
+    // untouched because the pathspec is bounded to the approved set.
+    run_git(
+        &root,
+        &["add", "--pathspec-from-file=-", "--pathspec-file-nul"],
+        Some(&pathspec),
+    )
+    .await
+    .map_err(|_| ChangeSetError::CommitOutcomeUnknown)?;
     let args = [
         "commit",
         "--only",
