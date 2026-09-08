@@ -19,7 +19,7 @@
 | 124 | Project quality contract | реализован, контракт перенесён в канонические документы |
 | 125 | Free provider reliability routing | реализован, контракт перенесён в канонические документы |
 | 126 | Design intent review lane | реализован, контракт перенесён в канонические документы |
-| [127](127-0-remote-client-control-plane.md) | Remote client control plane | незавершён |
+| 127 | Remote client control plane | реализован MVP-контур; Android/server deployment unavailable |
 | [128](128-0-local-inference-scheduler.md) | Local inference scheduler | незавершён |
 | [129](129-0-confidence-gated-model-cascade.md) | Confidence-gated model cascade | незавершён |
 | [130](130-0-task-ownership-lease-fencing.md) | Task ownership lease fencing | незавершён |
@@ -104,8 +104,8 @@ typed IPC/UI, tests, security/release evidence и каноническая до�
 
 Порядок реализации определяется зависимостями, а не номерами файлов:
 
-`139 → 141 → 124 → 134 → 130 → 132 → 131 → 137 → 128 → 125 → 129 →
-123 → 133 → 135 → 136 → 140 → 143 → 138 → 127 → 142`.
+`139 → 141 → 134 → 130 → 132 → 131 → 137 → 128 → 129 → 133 → 135 →
+136 → 140 → 143 → 138 → 127 → 142`.
 
 Номера планов сохраняются как идентификаторы. Внутри каждого плана этапы
 выполняются `0 → 1 → 2 → 3 → 4`. План 144 почти реализован отдельным

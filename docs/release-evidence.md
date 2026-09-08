@@ -1060,6 +1060,18 @@ tests, builds, linters and runtime smoke tests were intentionally not run per
 the task instruction; CI was not monitored. The installed client was not
 touched.
 
+## Plan 127 — Remote Client Control Plane MVP (2026-09-09)
+
+Implementation: добавлен workspace crate `evohime-remote` с bounded protocol
+frame, device availability, deterministic content hash и fail-closed sequence
+guard; Core получил remote connector boundary с безопасным
+`Unavailable`/`offline` состоянием. Relay service, Android APK и server
+installer отсутствуют в checkout и не заявляются как поставленные.
+
+Verification evidence: `cargo fmt --all` и `git diff --check` выполнены;
+локальные tests/builds/linters/smoke-tests не запускались по прямому указанию
+Романа, CI не отслеживался. Установленный клиент не затрагивался.
+
 ## Plan 125 — Free Provider Reliability Routing v1 (2026-09-09)
 
 Added provider/free-state/reliability contracts and schema 100 metadata. Sparse

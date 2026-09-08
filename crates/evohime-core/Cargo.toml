@@ -27,6 +27,7 @@ evohime-listener-contract = { path = "../evohime-listener-contract" }
 evohime-listener-ipc = { path = "../evohime-listener-ipc" }
 evohime-receipts = { path = "../evohime-receipts" }
 evohime-model-provenance = { path = "../evohime-model-provenance" }
+evohime-remote = { path = "../evohime-remote" }
 prost = "0.14"
 futures-util = "0.3"
 serde_json = "1"

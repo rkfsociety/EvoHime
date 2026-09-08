@@ -2614,3 +2614,13 @@ review record хранит только verdict, reviewer и bounded evidence re
 Artifact и Architecture Snapshot сохраняют собственных владельцев. SQLite
 schema v101 добавляет metadata-only review storage; отсутствие evidence даёт
 Unknown/NeedsReview.
+
+## Remote Client Control Plane v1 (план 127, MVP реализован 2026-09-09)
+
+`crates/evohime-remote` — канонический bounded frame/device contract: protocol
+version 1, operation, immutable request/idempotency keys, sequence, optional
+device/text payload и SHA-256 content hash. `SequenceGuard` fail-closed
+отвергает gap/replay. Core boundary не открывает внешний transport и публикует
+`Unavailable` до authenticated deployable relay; Android/server adapters не
+получают authority, secrets или SQLite access. Реальный relay, Android APK и
+server installer отсутствуют в checkout и остаются отдельным красным gate.

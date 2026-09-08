@@ -28,8 +28,8 @@ restart подтверждаются отдельно. Автоматическ�
 Незавершённые планы выполняются по графу зависимостей и по этапам `0 → 4`.
 Рекомендуемый порядок планов:
 
-`139 → 141 → 124 → 134 → 130 → 132 → 131 → 137 → 128 → 125 → 129 →
-123 → 133 → 135 → 136 → 140 → 143 → 138 → 127 → 142`.
+`139 → 141 → 134 → 130 → 132 → 131 → 137 → 128 → 129 → 133 → 135 →
+136 → 140 → 143 → 138 → 127 → 142`.
 
 | Диапазон | Содержание | Статус |
 | --- | --- | --- |
@@ -42,7 +42,7 @@ restart подтверждаются отдельно. Автоматическ�
 | 124 | project quality contract | реализован 2026-09-09 |
 | 125 | free provider reliability routing | реализован 2026-09-09 |
 | 126 | design intent review lane | реализован 2026-09-09 |
-| 124–129 | project quality, provider routing, design review, remote control, local inference, model cascade | очередь по графу |
+| 127–129 | remote control, local inference, model cascade | очередь по графу |
 | 130–135 | task leases, context namespace, durable background execution, deterministic utilities, resource guard, code review | очередь по графу |
 | 136–140 | static-analysis packs, context loadouts, skill updates, capability facade, authorized security assessment | очередь по графу |
 | 141–143 | service graph, program optimizer, project knowledge notebook | очередь по графу |

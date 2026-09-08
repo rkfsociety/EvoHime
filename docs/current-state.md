@@ -312,6 +312,15 @@ production build и bundle check, native package smoke. Полный Rust suite 
 [`plans/README.md`](plans/README.md), исполняемый порядок — в
 [`development-plan.md`](development-plan.md).
 
+## Plan 127 — Remote Client Control Plane (MVP закрыт 2026-09-09)
+
+Добавлен `evohime-remote` с versioned bounded frame/device/availability
+контрактом, content hash и sequence replay guard. Core boundary
+`remote_client_control_plane` без deployable relay остаётся `Unavailable` или
+`offline`: он не открывает socket, не читает SQLite и не получает authority.
+Android APK, relay service и server installer отсутствуют в checkout и имеют
+явный статус `unavailable`; этот deployment gate не скрывается repository MVP.
+
 ## Как поддерживать этот документ
 
 Обновляйте дату и этот файл только по фактам из кода, тестов и release evidence.
