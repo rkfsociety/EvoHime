@@ -91,6 +91,7 @@ import { CodeAnchoredIntentMarkersPanel } from './CodeAnchoredIntentMarkersPanel
 import { ModelPurposeRoutingPanel } from './ModelPurposeRoutingPanel'
 import { LocalModelRuntimeManagerPanel } from './LocalModelRuntimeManagerPanel'
 import { LocalModelPerformanceCalibrationPanel } from './LocalModelPerformanceCalibrationPanel'
+import { ContentAwareContextCompressionPanel } from './ContentAwareContextCompressionPanel'
 import { ArchitectureSnapshotPanel } from './ArchitectureSnapshotPanel'
 import { DeclarativeRuntimeComponentsPanel } from './DeclarativeRuntimeComponentsPanel'
 import { GuidedCalibrationSessionsPanel } from './GuidedCalibrationSessionsPanel'
@@ -123,7 +124,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'execution-environment-profiles' | 'tool-simulation' | 'agent-role-profiles' | 'persistent-agent-organization-registry' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'memory-views-recall' | 'model-edit-protocol-registry' | 'remote-conversation-channels' | 'prompt-cache-planner' | 'declarative-runtime-components' | 'guided-calibration-sessions' | 'extension-conformance-kit' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'dependency-aware-task-graph' | 'core-topic-subscription-event-bus' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'research-workspace' | 'durable-remote-task-bridge' | 'message-intervention-policies' | 'batch-invocation-runtime' | 'policy-aware-tool-result-cache' | 'code-anchored-intent-markers' | 'model-purpose-routing' | 'local-model-runtime-manager' | 'local-model-performance-calibration' | 'architecture-snapshot' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
+type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'execution-environment-profiles' | 'tool-simulation' | 'agent-role-profiles' | 'persistent-agent-organization-registry' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'memory-views-recall' | 'model-edit-protocol-registry' | 'remote-conversation-channels' | 'prompt-cache-planner' | 'declarative-runtime-components' | 'guided-calibration-sessions' | 'extension-conformance-kit' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'dependency-aware-task-graph' | 'core-topic-subscription-event-bus' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'research-workspace' | 'durable-remote-task-bridge' | 'message-intervention-policies' | 'batch-invocation-runtime' | 'policy-aware-tool-result-cache' | 'code-anchored-intent-markers' | 'model-purpose-routing' | 'local-model-runtime-manager' | 'local-model-performance-calibration' | 'content-aware-context-compression' | 'architecture-snapshot' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -172,6 +173,7 @@ const DEVELOPER_GROUPS: readonly DeveloperViewGroup[] = [
   { id: 'model-edit-protocol-registry', label: 'Model Edit Protocols', icon: '✎' },
   { id: 'remote-conversation-channels', label: 'Remote Channels', icon: '⇄' },
   { id: 'prompt-cache-planner', label: 'Prompt Cache', icon: '▤' },
+  { id: 'content-aware-context-compression', label: 'Context Compression', icon: '◌' },
   { id: 'policy-aware-tool-result-cache', label: 'Tool Result Cache', icon: '▤' },
   { id: 'code-anchored-intent-markers', label: 'Code Intent Markers', icon: '▤' },
   { id: 'model-purpose-routing', label: 'Model Purpose Routing', icon: '◇' },
@@ -617,6 +619,7 @@ export function App(): React.JSX.Element {
               {view === 'model-edit-protocol-registry' ? <ModelEditProtocolRegistryPanel connection={connection} events={events} /> : null}
               {view === 'remote-conversation-channels' ? <RemoteConversationChannelsPanel connection={connection} events={events} /> : null}
               {view === 'prompt-cache-planner' ? <PromptCachePlannerPanel connection={connection} events={events} /> : null}
+              {view === 'content-aware-context-compression' ? <ContentAwareContextCompressionPanel /> : null}
               {view === 'policy-aware-tool-result-cache' ? <PolicyAwareToolResultCachePanel connection={connection} /> : null}
               {view === 'code-anchored-intent-markers' ? <CodeAnchoredIntentMarkersPanel connection={connection} /> : null}
               {view === 'model-purpose-routing' ? <ModelPurposeRoutingPanel connection={connection} /> : null}

@@ -2580,3 +2580,14 @@ ArtifactStore. В текущем checkout verifier runner, selective filesystem
 scanner и consumer integrations ещё не имеют versioned owner adapters, поэтому
 их отсутствие отражается typed unavailable и не создаёт Passed/Ready. Renderer
 получает только bounded projection после Core validation.
+
+## Content-Aware Context Compression v1 (план 123, реализован 2026-09-09)
+
+Compression добавляет Core-owned typed classifier, loss class, compact block,
+omitted regions и bounded recovery request поверх существующего Context Budget
+Ledger. Source hash/ref остаются exact lineage, raw source не копируется в новый
+store. Deterministic MVP сохраняет head/tail, а diagnostics/build/test regions
+с error/fail/panic выбирают ordinary bounded path; при отсутствии benefit
+возвращается `NoBenefit`/fallback. SQLite schema v98 хранит только compact
+metadata. Renderer показывает projection-only diagnostic и не выполняет
+compression/recovery.

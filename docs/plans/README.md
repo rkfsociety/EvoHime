@@ -15,7 +15,7 @@
 | 120 | Grounded research workspace | реализован, контракт перенесён в канонические документы |
 | 121 | Local model performance calibration | реализован, контракт перенесён в канонические документы |
 | 122 | Verification evidence ledger | реализован, контракт перенесён в канонические документы |
-| [123](123-0-content-aware-context-compression.md) | Content-aware context compression | незавершён |
+| 123 | Content-aware context compression | реализован, контракт перенесён в канонические документы |
 | [124](124-0-project-quality-contract.md) | Project quality contract | незавершён |
 | [125](125-0-free-provider-reliability-routing.md) | Free provider reliability routing | незавершён |
 | [126](126-0-design-intent-review-lane.md) | Design intent review lane | незавершён |

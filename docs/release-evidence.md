@@ -1048,6 +1048,18 @@ stored, and an unknown/invalid activation is not reported as success or
 retried blindly. The installed client was not started, stopped, updated or
 modified. `git diff --check` is the final gate before the task-only commit.
 
+## Plan 123 — Content-Aware Context Compression v1 (2026-09-09)
+
+Implementation: typed classifier/loss/recovery contract, deterministic bounded
+compaction, explicit omission/incomplete metadata, protected diagnostic
+fallback, schema 98 and renderer diagnostics projection. Existing Context
+Ledger and ArtifactStore remain the source authorities.
+
+Verification evidence: `cargo fmt --all` and `git diff --check` passed. Local
+tests, builds, linters and runtime smoke tests were intentionally not run per
+the task instruction; CI was not monitored. The installed client was not
+touched.
+
 ## Plan 120 — Grounded Research Workspace v1 (2026-09-09)
 
 Implementation: Core research contracts, bounded structural extraction, source

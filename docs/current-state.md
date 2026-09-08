@@ -305,7 +305,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Следующий незавершённый порядок
 
-Планы 123–143 остаются незавершённой очередью. Планы 102, 119, 120, 121, 122 и 144 реализованы и закрыты;
+Планы 124–143 остаются незавершённой очередью. Планы 102, 119, 120, 121, 122, 123 и 144 реализованы и закрыты;
 его подтверждённый контракт находится в `architecture.md`, а evidence — в
 `release-evidence.md`.
 Полный каталог, блокирующие и опциональные зависимости находятся в
@@ -344,3 +344,10 @@ typed `unavailable_adapter`; measured profile и routing signal не созда�
 contract, fail-closed evaluator, SQLite schema 97 и Core journal persistence.
 Существующий snapshot verifier не расширялся до новой authority; полноценный
 process runner и downstream consumer adapters остаются typed unavailable.
+
+## Plan 123 — Content-Aware Context Compression (закрыт 2026-09-09)
+
+Добавлены typed content classification/loss/recovery contracts, deterministic
+bounded compactor, schema 98 metadata и projection-only diagnostics. Existing
+Context Budget/Ledger и ArtifactStore остаются authoritative; protected
+diagnostic lines выбирают fallback, а renderer не получает recovery authority.
