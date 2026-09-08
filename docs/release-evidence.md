@@ -737,6 +737,9 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Commit uses fresh preflight plus `git commit --only` and NUL pathspec input;
   shared index, force/reset/rebase/push, identity spoofing and secret payloads
   are excluded. Keep/undo are Core-owned and stale/unknown outcomes are typed.
+- Incremental Change and Task Worktree integrations use durable IDs checked by
+  Core; terminal runs, missing records, non-ready worktrees and base-HEAD drift
+  are rejected before the Git change set is stored.
 - Fresh local checks for this implementation: Rust `cargo check` on the three
   affected crates, generated protocol check, and both Electron TypeScript
   projects. The full Rust/Electron/package acceptance suite is intentionally

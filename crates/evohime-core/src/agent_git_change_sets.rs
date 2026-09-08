@@ -84,6 +84,10 @@ pub struct AgentGitChangeSet {
     pub baseline: GitDirtyBaseline,
     #[serde(default)]
     pub workspace_root: String,
+    #[serde(default)]
+    pub incremental_change_run_id: Option<String>,
+    #[serde(default)]
+    pub task_worktree_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -121,6 +125,10 @@ pub struct ObserveRequest {
     pub task_id: Option<String>,
     #[serde(default)]
     pub workspace_change_set_ref: String,
+    #[serde(default)]
+    pub incremental_change_run_id: Option<String>,
+    #[serde(default)]
+    pub task_worktree_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -161,6 +169,10 @@ pub enum ChangeSetError {
     CommitOutcomeUnknown,
     #[error("undo cannot safely remove a non-file path")]
     UnsafeUndo,
+    #[error("referenced incremental change run is invalid")]
+    InvalidIncrementalReference,
+    #[error("referenced task worktree is invalid or stale")]
+    InvalidWorktreeReference,
 }
 
 #[derive(Debug, Clone)]
@@ -216,6 +228,7 @@ pub fn validate_change_set(set: &AgentGitChangeSet) -> Result<(), ChangeSetError
     if set.paths.len() > MAX_PATHS {
         return Err(ChangeSetError::LimitExceeded("paths"));
     }
+    validate_integration_references(set)?;
     let mut seen = BTreeSet::new();
     for path in &set.paths {
         validate_path(&path.path)?;
@@ -367,9 +380,27 @@ pub async fn observe(
         content_hash: String::new(),
         baseline: snapshot.baseline,
         workspace_root: snapshot.root.to_string_lossy().into_owned(),
+        incremental_change_run_id: request.incremental_change_run_id,
+        task_worktree_id: request.task_worktree_id,
     };
+    validate_integration_references(&set)?;
     set.content_hash = content_hash(&set)?;
     Ok(set)
+}
+
+pub fn validate_integration_references(set: &AgentGitChangeSet) -> Result<(), ChangeSetError> {
+    for reference in [&set.incremental_change_run_id, &set.task_worktree_id] {
+        if let Some(reference) = reference {
+            if reference.is_empty()
+                || reference.len() > MAX_PATH_BYTES
+                || reference.contains('\0')
+                || reference.chars().any(|character| character.is_control())
+            {
+                return Err(ChangeSetError::InvalidPath);
+            }
+        }
+    }
+    Ok(())
 }
 
 pub async fn make_candidate(
@@ -858,6 +889,8 @@ mod tests {
             content_hash: "c".repeat(64),
             baseline: GitDirtyBaseline::default(),
             workspace_root: String::new(),
+            incremental_change_run_id: None,
+            task_worktree_id: None,
         }
     }
 
@@ -912,6 +945,20 @@ mod tests {
         let candidate = build_candidate(&sensitive, "x".into(), 1).unwrap();
         assert_eq!(candidate.included_paths, vec!["y".to_owned()]);
         assert_eq!(candidate.excluded_paths, vec![".env".to_owned()]);
+    }
+
+    #[test]
+    fn integration_references_are_bounded_and_optional() {
+        let mut set = set(Vec::new());
+        assert!(validate_integration_references(&set).is_ok());
+        set.incremental_change_run_id = Some("incremental-run-1".into());
+        set.task_worktree_id = Some("worktree-1".into());
+        assert!(validate_integration_references(&set).is_ok());
+        set.task_worktree_id = Some("bad\0reference".into());
+        assert_eq!(
+            validate_integration_references(&set),
+            Err(ChangeSetError::InvalidPath)
+        );
     }
 
     #[test]

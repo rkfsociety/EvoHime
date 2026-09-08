@@ -55,6 +55,11 @@ external, secret и ambiguous paths исключаются. `commit` испол�
 проходят через Core, optimistic revision и durable idempotency. Неизвестный
 результат Git не ретраится вслепую, а требует reconciliation.
 
+Change sets могут быть привязаны к существующим Incremental Change run и Task
+Worktree record. Core проверяет наличие и незавершённость run, состояние
+worktree и совпадение его base HEAD до durable записи change set; отдельной
+Git-authority для этих consumers нет.
+
 Storage schema — v94. Authenticated IPC command 233/event 78 и generated
 Electron bindings передают только bounded redacted metadata; renderer не
 получает workspace authority, секреты или raw Git payload. Локально после

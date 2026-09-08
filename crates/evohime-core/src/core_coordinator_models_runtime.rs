@@ -138,6 +138,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         let set = git_sets::observe(&payload, &change_set_id, &workspace_root, now)
                             .await
                             .map_err(|error| error.to_string())?;
+                        validate_agent_git_integrations(&journal, &set).await?;
                         let json = serde_json::to_vec(&set)
                             .map_err(|_| "serialization_failed".to_string())?;
                         let database = journal.database().lock().await;
@@ -525,6 +526,41 @@ async fn load_change_set(
     .map_err(|_| "storage_failed".to_string())?
     .ok_or_else(|| "change_set_not_found".to_string())?;
     serde_json::from_slice(&json).map_err(|_| "corrupt_agent_git_change_set".to_string())
+}
+
+async fn validate_agent_git_integrations(
+    journal: &EventJournal,
+    set: &crate::agent_git_change_sets::AgentGitChangeSet,
+) -> Result<(), String> {
+    crate::agent_git_change_sets::validate_integration_references(set)
+        .map_err(|error| error.to_string())?;
+    let database = journal.database().lock().await;
+    if let Some(run_id) = &set.incremental_change_run_id {
+        let run = evohime_local_storage::incremental_change_protocol_store::get(
+            database.connection(),
+            run_id,
+        )
+        .map_err(|_| "incremental_change_storage_failed".to_string())?
+        .ok_or_else(|| "incremental_change_reference_not_found".to_string())?;
+        if matches!(
+            run.state.as_str(),
+            "applied" | "cancelled" | "unknown_reconciliation_required"
+        ) {
+            return Err("incremental_change_reference_terminal".into());
+        }
+    }
+    if let Some(worktree_id) = &set.task_worktree_id {
+        let worktree =
+            evohime_local_storage::domains::workflow::get(database.connection(), worktree_id)
+                .map_err(|_| "task_worktree_storage_failed".to_string())?
+                .ok_or_else(|| "task_worktree_reference_not_found".to_string())?;
+        if !matches!(worktree.state.as_str(), "ready" | "integrating")
+            || set.base_git_head.as_deref() != Some(worktree.base_commit.as_str())
+        {
+            return Err("task_worktree_reference_stale".into());
+        }
+    }
+    Ok(())
 }
 
 async fn load_candidate(

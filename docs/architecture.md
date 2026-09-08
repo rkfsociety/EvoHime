@@ -2184,6 +2184,13 @@ Core-owned действиями; undo меняет только подтверж
 сверяется с новым HEAD, а ошибка durable persistence возвращается как
 reconciliation-required, без blind retry.
 
+При работе из Incremental Change Protocol или Task Worktree Isolation payload
+может нести durable `incremental_change_run_id` и `task_worktree_id`. Core
+разрешает такие ссылки только по существующим storage records: terminal
+incremental runs отклоняются, а worktree обязан быть в `ready`/`integrating`
+и иметь тот же base HEAD. Поэтому эти consumers используют тот же baseline,
+attribution и stale contract, а не второй механизм Git authority.
+
 Каждая мутация несёт idempotency key и optimistic revision; повтор запроса
 возвращает сохранённый redacted результат. Workspace root принимается только
 через authenticated Core command и проверяется как Git worktree с
