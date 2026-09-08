@@ -1,6 +1,55 @@
 use super::*;
 
 impl EventJournal {
+    pub async fn save_local_model_calibration_session(
+        &self,
+        session: &crate::local_model_performance_calibration::LocalModelCalibrationSession,
+        revision: i64,
+    ) -> Result<bool, String> {
+        session.validate().map_err(|error| error.to_string())?;
+        let identity = serde_json::to_vec(&session.identity).map_err(|error| error.to_string())?;
+        let samples = serde_json::to_vec(&session.samples).map_err(|error| error.to_string())?;
+        let database = self.database.lock().await;
+        evohime_local_storage::local_model_performance_calibration_store::put_session(
+            database.connection(),
+            &session.session_id,
+            revision,
+            &identity,
+            &serde_json::to_string(&session.state).map_err(|error| error.to_string())?,
+            &samples,
+            session.cancellation_requested,
+            crate::task_memory::now_millis() as i64,
+        )
+        .map_err(str::to_owned)
+    }
+
+    pub async fn save_local_model_performance_profile(
+        &self,
+        profile: &crate::local_model_performance_calibration::LocalModelPerformanceProfile,
+    ) -> Result<bool, String> {
+        profile.validate().map_err(|error| error.to_string())?;
+        let identity = serde_json::to_vec(&profile.identity).map_err(|error| error.to_string())?;
+        let aggregate =
+            serde_json::to_vec(&profile.aggregate).map_err(|error| error.to_string())?;
+        let points =
+            serde_json::to_vec(&profile.context_points).map_err(|error| error.to_string())?;
+        let evidence =
+            serde_json::to_string(&profile.evidence).map_err(|error| error.to_string())?;
+        let database = self.database.lock().await;
+        evohime_local_storage::local_model_performance_calibration_store::put_profile(
+            database.connection(),
+            &profile.profile_id,
+            profile.revision as i64,
+            &identity,
+            &aggregate,
+            &evidence,
+            &points,
+            &profile.confidence,
+            crate::task_memory::now_millis() as i64,
+        )
+        .map_err(str::to_owned)
+    }
+
     pub async fn recover_grounded_research_sessions(&self) -> Result<usize, String> {
         let database = self.database.lock().await;
         evohime_local_storage::grounded_research_store::GroundedResearchStore::mark_active_sessions_interrupted(

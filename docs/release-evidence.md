@@ -1062,3 +1062,18 @@ tests, builds, linters and runtime smoke tests were intentionally not run per
 the task instruction; CI was not monitored. The installed client was not
 touched. Review found and fixed evidence/source identity, revision-hash and
 immutable revision conflict paths before closure.
+
+## Plan 121 — Local Model Performance Calibration v1 (2026-09-09)
+
+Implementation: exact model/runtime/hardware/config/suite identity contract,
+warmup/measured sample semantics, unknown telemetry, bounded aggregation,
+schema 96 session/profile metadata, Core admission and metadata-only Electron
+projection. The existing Local Model Runtime Manager has no versioned
+inference-stream adapter in this checkout; Core therefore reports
+`unavailable_adapter` and does not manufacture measured evidence or routing
+changes.
+
+Verification evidence: `cargo fmt --all` and `git diff --check` passed. Local
+tests, builds, linters and runtime smoke tests were intentionally not run per
+the task instruction; CI was not monitored. The installed client was not
+touched.

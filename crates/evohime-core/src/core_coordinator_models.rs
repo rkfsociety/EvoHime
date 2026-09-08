@@ -114,6 +114,15 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     };
                     let value = serde_json::to_value(&request).map_err(|_| "invalid_local_model_manager_payload".to_string())?;
                     match operation.as_str() {
+                        "calibration_admit" => {
+                            let session: crate::local_model_runtime_manager::LocalModelRuntimeSession = serde_json::from_value(value.get("session").cloned().ok_or_else(|| "session_required".to_string())?).map_err(|_| "invalid_session".to_string())?;
+                            let model: crate::local_model_runtime_manager::LocalModelDescriptor = serde_json::from_value(value.get("model").cloned().ok_or_else(|| "model_required".to_string())?).map_err(|_| "invalid_model".to_string())?;
+                            let runtime: crate::local_model_runtime_manager::LocalInferenceRuntime = serde_json::from_value(value.get("runtime").cloned().ok_or_else(|| "runtime_required".to_string())?).map_err(|_| "invalid_runtime".to_string())?;
+                            let adapter = value.get("stream_adapter_available").and_then(serde_json::Value::as_bool).unwrap_or(false);
+                            let admission = crate::local_model_performance_calibration::admit_calibration(&session, &model, &runtime, adapter).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":"admission_evaluated","admission":format!("{admission:?}").to_ascii_lowercase(),"measured_profile_created":false,"redacted":true})).map_err(|_| "serialization_failed".to_string())
+                        }
+                        "calibration_inspect" => serde_json::to_vec(&serde_json::json!({"contract_id":crate::local_model_performance_calibration::CONTRACT_ID,"status":"unavailable_adapter","measured_profile_created":false,"routing_integration":"unavailable_integration","redacted":true})).map_err(|_| "serialization_failed".to_string()),
                         "hardware" => {
                             let profile = crate::local_model_runtime_manager::discover_hardware().map_err(|e| e.to_string())?;
                             serde_json::to_vec(&serde_json::json!({"status":"discovered","hardware":profile,"redacted":true})).map_err(|_| "serialization_failed".to_string())

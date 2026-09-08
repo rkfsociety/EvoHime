@@ -2541,3 +2541,26 @@ immutable revision/evidence → bounded extractive summary`, ограничен 
 через Core actor и единый `NetworkCapabilityPolicy`; startup переводит активные
 research sessions в `interrupted`. Electron получает metadata-only projection
 через authenticated `KnowledgeSourceRegistry` transport.
+
+## Local Model Performance Calibration v1 (план 121, реализован 2026-09-09)
+
+Calibration владеет только machine-specific bounded metadata и не заменяет
+Agent Benchmark Matrix, Local Model Runtime Manager или Model Purpose Routing.
+`CalibrationIdentity` связывает model artifact hash, runtime/version, hardware
+hash, optional driver, launch config, context profile и suite hash. Samples
+разделяют warmup и measured, недоступные TTFT/TPS/RAM/VRAM остаются `Unknown`, а
+aggregate использует bounded median/p90/variance/failure rate. Отменённая,
+неполная или stale-сессия не становится `MeasuredLocal`.
+
+SQLite schema v96 добавляет durable calibration sessions и immutable performance
+profile metadata без raw prompts/outputs, credentials или executable args.
+Core admission повторно проверяет verified ready model/runtime/artifact и
+hardware-safe identity. В текущем checkout нет versioned inference-stream
+adapter, поэтому операции возвращают typed `unavailable_adapter`, не создают
+измеренный профиль и не меняют routing/recommendation; будущая интеграция
+разрешена только через explicit versioned lookup и capability gates.
+
+Для evidence freeze highest proto tags были `260/105`; до dedicated `261/106`
+используется существующий authenticated Local Model Runtime Manager transport.
+Electron panel — metadata-only projection, явно различающая unavailable,
+estimated, stale и measured состояния.

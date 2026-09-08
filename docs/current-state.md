@@ -305,7 +305,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Следующий незавершённый порядок
 
-Планы 121–143 остаются незавершённой очередью. Планы 102, 119, 120 и 144 реализованы и закрыты;
+Планы 122–143 остаются незавершённой очередью. Планы 102, 119, 120, 121 и 144 реализованы и закрыты;
 его подтверждённый контракт находится в `architecture.md`, а evidence — в
 `release-evidence.md`.
 Полный каталог, блокирующие и опциональные зависимости находятся в
@@ -328,3 +328,12 @@ metadata-only storage. Legacy fetch сохранён как adapter, bounded ses
 использует authenticated registry transport, а `ResearchWorkspacePanel`
 отображает только ограниченную проекцию. Артефакты проверяются по revision/
 evidence lineage и продвигаются через существующий Artifact Handoff registry.
+
+## Plan 121 — Local Model Performance Calibration (закрыт 2026-09-09)
+
+Добавлены Core contracts exact calibration identity, bounded samples и
+deterministic aggregation, SQLite schema 96 для session/profile metadata,
+verified-runtime admission и Electron projection. Текущий runtime boundary не
+предоставляет inference-stream adapter, поэтому подтверждённое состояние —
+typed `unavailable_adapter`; measured profile и routing signal не создаются
+без такого adapter.

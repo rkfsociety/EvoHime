@@ -146,6 +146,7 @@ pub(crate) mod integration_provider_sdk;
 pub(crate) mod invocation_presets;
 #[cfg(windows)]
 mod listener_pipe;
+pub mod local_model_performance_calibration;
 pub(crate) mod local_model_runtime_manager;
 pub(crate) mod memory_api;
 pub(crate) mod memory_domain;
