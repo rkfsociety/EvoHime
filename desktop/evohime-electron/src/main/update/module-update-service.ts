@@ -101,9 +101,11 @@ export class ModuleUpdateService {
     if (!this.options.enabled) return
     try {
       const child = spawn(
-        this.options.updaterPath,
-        [mode, '--install-dir', this.options.installDirectory],
-        { detached: true, stdio: 'ignore', windowsHide: true }
+        process.platform === 'win32' ? quoteShellArgument(this.options.updaterPath) : this.options.updaterPath,
+        process.platform === 'win32'
+          ? [mode, '--install-dir', quoteShellArgument(this.options.installDirectory)]
+          : [mode, '--install-dir', this.options.installDirectory],
+        { detached: true, stdio: 'ignore', windowsHide: true, shell: process.platform === 'win32' }
       )
       child.once('error', () => {
         this.patchLocal({ phase: 'failed', message: 'Не удалось запустить updater worker.', error: 'Updater worker недоступен.' })
@@ -167,6 +169,10 @@ export class ModuleUpdateService {
     this.current = next
     this.options.emit(next)
   }
+}
+
+function quoteShellArgument(value: string): string {
+  return `"${value.replace(/"/g, '\\"')}"`
 }
 
 function toUpdatePhase(value: string | undefined, hasAvailable: boolean): UpdateStatus['phase'] {
