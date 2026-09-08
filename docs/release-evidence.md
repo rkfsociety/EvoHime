@@ -745,6 +745,9 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Rust regression coverage includes a staged unrelated-path exclusion and a
   committed undo/revert path with baseline reconciliation; the tests are
   compiled locally and executed by the Rust CI job.
+- Persisted change-set and candidate metadata are revalidated for version,
+  canonical hashes, bounded paths, commit IDs and secret exclusion before any
+  Git effect.
 - Fresh local checks for this implementation: Rust `cargo check` on the three
   affected crates, generated protocol check, and both Electron TypeScript
   projects. The full Rust/Electron/package acceptance suite is intentionally

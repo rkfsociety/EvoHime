@@ -228,11 +228,65 @@ pub fn validate_change_set(set: &AgentGitChangeSet) -> Result<(), ChangeSetError
     if set.paths.len() > MAX_PATHS {
         return Err(ChangeSetError::LimitExceeded("paths"));
     }
+    validate_hash(&set.base_dirty_fingerprint)?;
+    validate_hash(&set.content_hash)?;
     validate_integration_references(set)?;
     let mut seen = BTreeSet::new();
     for path in &set.paths {
         validate_path(&path.path)?;
+        validate_hash(&path.hash)?;
         if !seen.insert(path.path.as_str()) {
+            return Err(ChangeSetError::InvalidPath);
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_candidate(candidate: &GitCommitCandidate) -> Result<(), ChangeSetError> {
+    if candidate.version != CONTRACT_VERSION {
+        return Err(ChangeSetError::UnsupportedVersion);
+    }
+    if candidate.included_paths.is_empty()
+        || candidate.included_paths.len() > MAX_CANDIDATE_PATHS
+        || candidate.excluded_paths.len() > MAX_PATHS
+        || candidate.included_hashes.len() != candidate.included_paths.len()
+    {
+        return Err(ChangeSetError::LimitExceeded("candidate_paths"));
+    }
+    if candidate.proposed_message.len() > MAX_MESSAGE_BYTES
+        || candidate.proposed_message.as_bytes().contains(&0)
+    {
+        return Err(ChangeSetError::LimitExceeded("message"));
+    }
+    validate_hash(&candidate.diff_hash)?;
+    validate_hash(&candidate.precondition_fingerprint)?;
+    let mut seen = BTreeSet::new();
+    for path in candidate
+        .included_paths
+        .iter()
+        .chain(candidate.excluded_paths.iter())
+    {
+        validate_path(path)?;
+        if !seen.insert(path.as_str()) {
+            return Err(ChangeSetError::InvalidPath);
+        }
+    }
+    for included in &candidate.included_hashes {
+        let (path, hash) = included
+            .rsplit_once('=')
+            .ok_or(ChangeSetError::InvalidPath)?;
+        validate_path(path)?;
+        validate_hash(hash)?;
+        if is_sensitive_path(path) || !candidate.included_paths.iter().any(|p| p == path) {
+            return Err(ChangeSetError::InvalidPath);
+        }
+    }
+    if let Some(commit_id) = &candidate.commit_id {
+        if !matches!(commit_id.len(), 40 | 64)
+            || !commit_id
+                .chars()
+                .all(|character| character.is_ascii_hexdigit())
+        {
             return Err(ChangeSetError::InvalidPath);
         }
     }
@@ -493,6 +547,7 @@ pub async fn make_candidate(
 }
 
 pub async fn preflight_candidate(candidate: &GitCommitCandidate) -> Result<(), ChangeSetError> {
+    validate_candidate(candidate)?;
     let root = validate_workspace_root(&candidate.workspace_root)?;
     let snapshot = capture_snapshot(root.clone(), candidate.created_at_ms).await?;
     if snapshot.head != candidate.parent_head
@@ -525,6 +580,7 @@ pub async fn undo_candidate(
     candidate: &GitCommitCandidate,
     baseline: &GitDirtyBaseline,
 ) -> Result<String, ChangeSetError> {
+    validate_candidate(candidate)?;
     let root = validate_workspace_root(&candidate.workspace_root)?;
     let snapshot = capture_snapshot(root.clone(), candidate.created_at_ms).await?;
     if let Some(commit_id) = &candidate.commit_id {
@@ -609,6 +665,13 @@ fn content_hash(set: &AgentGitChangeSet) -> Result<String, ChangeSetError> {
     copy.content_hash.clear();
     let bytes = serde_json::to_vec(&copy).map_err(|_| ChangeSetError::GitCommandFailed)?;
     Ok(sha256(&bytes))
+}
+
+fn validate_hash(value: &str) -> Result<(), ChangeSetError> {
+    if value.len() != 64 || !value.chars().all(|character| character.is_ascii_hexdigit()) {
+        return Err(ChangeSetError::InvalidPath);
+    }
+    Ok(())
 }
 
 fn baseline_fingerprint(baseline: &GitDirtyBaseline) -> String {
