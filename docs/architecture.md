@@ -2176,9 +2176,10 @@ evidence — 64 KiB. Shared index, `git add -A`, force/reset/rebase/push и
 
 `observe` захватывает состояние непосредственно из Git, а `candidate` повторно
 сверяет workspace и строит bounded path/hash precondition. `commit` выполняет
-свежий preflight и использует только `git commit --only` с NUL-delimited
-pathspec; общий index, `git add -A`, force/reset/rebase/push и подмена identity
-запрещены, hooks не обходятся. `keep`, `reconcile` и `undo` являются
+свежий preflight, точечно stage-ит только approved paths и затем использует
+`git commit --only` с NUL-delimited pathspec; общий index, `git add -A`,
+force/reset/rebase/push и подмена identity запрещены, hooks не обходятся. `keep`,
+`reconcile` и `undo` являются
 отдельными Core-owned действиями; undo меняет только подтверждённые пути и отказывается
 при stale/shared/unknown outcome. Перед commit durable candidate получает
 `commit_pending`; dispatch/persistence crash-window переводит повторный запрос

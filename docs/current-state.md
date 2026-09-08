@@ -50,8 +50,9 @@ E2E запускается отдельным обязательным шаго�
 Текущий checkout содержит Core-owned change-set flow: `observe` захватывает
 точный Git baseline и workspace binding, `candidate` повторно проверяет
 precondition и включает только attributed agent/tool paths, а pre-existing,
-external, secret и ambiguous paths исключаются. `commit` использует только
-`git commit --only` с bounded pathspec и запускаемыми hooks; `keep` и `undo`
+external, secret и ambiguous paths исключаются. `commit` сначала точечно
+stage-ит только approved paths, затем использует `git commit --only` с bounded
+pathspec и запускаемыми hooks; `keep` и `undo`
 проходят через Core, optimistic revision и durable idempotency. Неизвестный
 результат Git не ретраится вслепую, а требует reconciliation. Операция
 `reconcile` проверяет parent/message/path evidence без повторного Git effect и
