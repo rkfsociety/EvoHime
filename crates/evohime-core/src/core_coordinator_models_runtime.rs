@@ -103,57 +103,293 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
         CoreCommand::AgentGitChangeSets {
             operation,
             change_set_id,
+            workspace_root,
             payload,
             expected_version,
-            idempotency_key: _,
+            idempotency_key,
             reply,
         } => {
+            let event_operation = operation.clone();
+            let event_change_set_id = change_set_id.clone();
             let result = async {
-                    let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                if idempotency_key.is_empty() {
+                    return Err("invalid_agent_git_idempotency_key".to_string());
+                }
+                let journal = state
+                    .lock()
+                    .await
+                    .journal
+                    .clone()
+                    .ok_or_else(|| "storage journal is not configured".to_string())?;
+                use crate::agent_git_change_sets as git_sets;
+                use evohime_local_storage::agent_git_change_sets_store as store;
+                {
                     let database = journal.database().lock().await;
-                    use crate::agent_git_change_sets as git_sets;
-                    use evohime_local_storage::agent_git_change_sets_store as store;
-                    match operation.as_str() {
-                        "observe" => {
-                            let set: git_sets::AgentGitChangeSet = serde_json::from_slice(&payload).map_err(|_| "invalid_agent_git_change_set".to_string())?;
-                            git_sets::validate_change_set(&set).map_err(|e| e.to_string())?;
-                            let json = serde_json::to_vec(&set).map_err(|_| "serialization_failed".to_string())?;
-                            store::put_change_set(database.connection(), &set.id, set.version, &set.content_hash, &json, set.created_at_ms).map_err(|_| "storage_failed".to_string())?;
-                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"change_set_id":set.id,"status":"observed","path_count":set.paths.len(),"redacted":true})).map_err(|_| "serialization_failed".to_string())
-                        }
-                        "candidate" => {
-                            let json = store::get_change_set(database.connection(), &change_set_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "change_set_not_found".to_string())?;
-                            let set: git_sets::AgentGitChangeSet = serde_json::from_slice(&json).map_err(|_| "corrupt_agent_git_change_set".to_string())?;
-                            if expected_version != 0 && expected_version != set.version as u64 { return Err("agent_git_change_set_stale_version".into()); }
-                            let message = serde_json::from_slice::<serde_json::Value>(&payload).ok().and_then(|v| v.get("message").and_then(|m| m.as_str()).map(str::to_owned)).unwrap_or_else(|| "Agent change set".into());
-                            let candidate = git_sets::build_candidate(&set, message, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
-                            let candidate_json = serde_json::to_vec(&candidate).map_err(|_| "serialization_failed".to_string())?;
-                            store::put_candidate(database.connection(), &candidate.id, &set.id, &candidate.diff_hash, &candidate_json, candidate.created_at_ms).map_err(|_| "storage_failed".to_string())?;
-                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"candidate_id":candidate.id,"change_set_id":set.id,"included_paths":candidate.included_paths,"excluded_paths":candidate.excluded_paths,"diff_hash":candidate.diff_hash,"verification_status":candidate.verification_status,"redacted":true})).map_err(|_| "serialization_failed".to_string())
-                        }
-                        "get_candidate" => {
-                            let json = store::get_candidate(database.connection(), &change_set_id).map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "candidate_not_found".to_string())?;
-                            let candidate: git_sets::GitCommitCandidate = serde_json::from_slice(&json).map_err(|_| "corrupt_agent_git_candidate".to_string())?;
-                            serde_json::to_vec(&serde_json::json!({"schema_version":1,"candidate_id":candidate.id,"change_set_id":candidate.change_set_ref,"included_paths":candidate.included_paths,"excluded_paths":candidate.excluded_paths,"diff_hash":candidate.diff_hash,"proposed_message":candidate.proposed_message,"verification_status":candidate.verification_status,"redacted":true})).map_err(|_| "serialization_failed".to_string())
-                        }
-                        "keep" | "undo" | "commit" => Err("agent_git_effect_requires_explicit_git_preflight".into()),
-                        _ => Err("unsupported_agent_git_change_sets_operation".into()),
+                    if let Some(response) =
+                        store::get_idempotent(database.connection(), &idempotency_key)
+                            .map_err(|_| "storage_failed".to_string())?
+                    {
+                        return Ok(response);
                     }
-                }.await;
-            let projection_json = result
-                .as_ref()
+                }
+                let now = crate::task_memory::now_millis() as i64;
+                let response = match operation.as_str() {
+                    "observe" => {
+                        let set = git_sets::observe(&payload, &change_set_id, &workspace_root, now)
+                            .await
+                            .map_err(|error| error.to_string())?;
+                        let json = serde_json::to_vec(&set)
+                            .map_err(|_| "serialization_failed".to_string())?;
+                        let database = journal.database().lock().await;
+                        if !store::put_change_set(
+                            database.connection(),
+                            &set.id,
+                            set.version,
+                            &set.content_hash,
+                            &json,
+                            set.created_at_ms,
+                        )
+                        .map_err(|_| "storage_failed".to_string())?
+                        {
+                            return Err("agent_git_change_set_already_exists".into());
+                        }
+                        serde_json::to_vec(&serde_json::json!({
+                            "schema_version": 1,
+                            "change_set_id": set.id,
+                            "revision": set.revision,
+                            "status": "observed",
+                            "path_count": set.paths.len(),
+                            "baseline_fingerprint": set.base_dirty_fingerprint,
+                            "redacted": true
+                        }))
+                        .map_err(|_| "serialization_failed".to_string())?
+                    }
+                    "candidate" => {
+                        let set = load_change_set(&journal, &change_set_id).await?;
+                        if expected_version != 0 && expected_version != set.revision {
+                            return Err("agent_git_change_set_stale_version".into());
+                        }
+                        let (mut next, candidate) = git_sets::make_candidate(&set, &payload, now)
+                            .await
+                            .map_err(|error| error.to_string())?;
+                        next.revision = set.revision.saturating_add(1);
+                        next.content_hash = recompute_content_hash(&next)?;
+                        let set_json = serde_json::to_vec(&next)
+                            .map_err(|_| "serialization_failed".to_string())?;
+                        let candidate_json = serde_json::to_vec(&candidate)
+                            .map_err(|_| "serialization_failed".to_string())?;
+                        let database = journal.database().lock().await;
+                        if !store::update_change_set(
+                            database.connection(),
+                            &set.id,
+                            set.revision,
+                            next.version,
+                            &next.content_hash,
+                            &set_json,
+                            now,
+                        )
+                        .map_err(|_| "storage_failed".to_string())?
+                        {
+                            return Err("agent_git_change_set_stale_version".into());
+                        }
+                        store::put_candidate(
+                            database.connection(),
+                            &candidate.id,
+                            &set.id,
+                            &candidate.diff_hash,
+                            &candidate_json,
+                            candidate.created_at_ms,
+                        )
+                        .map_err(|_| "storage_failed".to_string())?;
+                        bounded_projection(serde_json::json!({
+                            "schema_version": 1,
+                            "change_set_id": next.id,
+                            "candidate_id": candidate.id,
+                            "revision": next.revision,
+                            "status": "candidate_ready",
+                            "included_paths": candidate.included_paths,
+                            "excluded_paths": candidate.excluded_paths,
+                            "diff_hash": candidate.diff_hash,
+                            "verification_status": candidate.verification_status,
+                            "redacted": true
+                        }))?
+                    }
+                    "get_candidate" => {
+                        let candidate = load_candidate(&journal, &change_set_id).await?;
+                        candidate_projection(&candidate)?
+                    }
+                    "keep" => {
+                        let candidate = load_candidate(&journal, &change_set_id).await?;
+                        let mut set = load_change_set(&journal, &candidate.change_set_ref).await?;
+                        if expected_version != 0 && expected_version != set.revision {
+                            return Err("agent_git_change_set_stale_version".into());
+                        }
+                        set.status = git_sets::ChangeSetStatus::Kept;
+                        let old_revision = set.revision;
+                        set.revision = set.revision.saturating_add(1);
+                        set.content_hash = recompute_content_hash(&set)?;
+                        let mut candidate = candidate;
+                        candidate.verification_status = "kept".into();
+                        let set_json = serde_json::to_vec(&set)
+                            .map_err(|_| "serialization_failed".to_string())?;
+                        let candidate_json = serde_json::to_vec(&candidate)
+                            .map_err(|_| "serialization_failed".to_string())?;
+                        let database = journal.database().lock().await;
+                        if !store::update_change_set(
+                            database.connection(),
+                            &set.id,
+                            old_revision,
+                            set.version,
+                            &set.content_hash,
+                            &set_json,
+                            now,
+                        )
+                        .map_err(|_| "storage_failed".to_string())?
+                        {
+                            return Err("agent_git_change_set_stale_version".into());
+                        }
+                        store::update_candidate(
+                            database.connection(),
+                            &candidate.id,
+                            &candidate.diff_hash,
+                            &candidate_json,
+                            now,
+                        )
+                        .map_err(|_| "storage_failed".to_string())?;
+                        candidate_projection(&candidate)?
+                    }
+                    "commit" => {
+                        let candidate = load_candidate(&journal, &change_set_id).await?;
+                        if candidate.commit_id.is_some() {
+                            candidate_projection(&candidate)?
+                        } else {
+                            let set = load_change_set(&journal, &candidate.change_set_ref).await?;
+                            if expected_version != 0 && expected_version != set.revision {
+                                return Err("agent_git_change_set_stale_version".into());
+                            }
+                            let commit_id = git_sets::commit_candidate(&candidate)
+                                .await
+                                .map_err(|error| error.to_string())?;
+                            let mut committed_candidate = candidate;
+                            committed_candidate.commit_id = Some(commit_id.clone());
+                            committed_candidate.verification_status = "committed".into();
+                            let mut committed_set = set;
+                            committed_set.status = git_sets::ChangeSetStatus::Committed;
+                            let old_revision = committed_set.revision;
+                            committed_set.revision = committed_set.revision.saturating_add(1);
+                            committed_set.content_hash = recompute_content_hash(&committed_set)?;
+                            let set_json = serde_json::to_vec(&committed_set)
+                                .map_err(|_| "serialization_failed".to_string())?;
+                            let candidate_json = serde_json::to_vec(&committed_candidate)
+                                .map_err(|_| "serialization_failed".to_string())?;
+                            let database = journal.database().lock().await;
+                            if !store::update_change_set(
+                                database.connection(),
+                                &committed_set.id,
+                                old_revision,
+                                committed_set.version,
+                                &committed_set.content_hash,
+                                &set_json,
+                                now,
+                            )
+                            .map_err(|_| "storage_failed".to_string())?
+                            {
+                                return Err("commit_outcome_unknown".into());
+                            }
+                            store::update_candidate(
+                                database.connection(),
+                                &committed_candidate.id,
+                                &committed_candidate.diff_hash,
+                                &candidate_json,
+                                now,
+                            )
+                            .map_err(|_| "commit_outcome_unknown".to_string())?;
+                            candidate_projection(&committed_candidate)?
+                        }
+                    }
+                    "undo" => {
+                        let candidate = load_candidate(&journal, &change_set_id).await?;
+                        let set = load_change_set(&journal, &candidate.change_set_ref).await?;
+                        if expected_version != 0 && expected_version != set.revision {
+                            return Err("agent_git_change_set_stale_version".into());
+                        }
+                        let head = git_sets::undo_candidate(&candidate, &set.baseline)
+                            .await
+                            .map_err(|error| error.to_string())?;
+                        let mut undone_candidate = candidate;
+                        undone_candidate.verification_status = "undone".into();
+                        let mut undone_set = set;
+                        undone_set.status = git_sets::ChangeSetStatus::Kept;
+                        let old_revision = undone_set.revision;
+                        undone_set.revision = undone_set.revision.saturating_add(1);
+                        undone_set.content_hash = recompute_content_hash(&undone_set)?;
+                        let set_json = serde_json::to_vec(&undone_set)
+                            .map_err(|_| "serialization_failed".to_string())?;
+                        let candidate_json = serde_json::to_vec(&undone_candidate)
+                            .map_err(|_| "serialization_failed".to_string())?;
+                        let database = journal.database().lock().await;
+                        if !store::update_change_set(
+                            database.connection(),
+                            &undone_set.id,
+                            old_revision,
+                            undone_set.version,
+                            &undone_set.content_hash,
+                            &set_json,
+                            now,
+                        )
+                        .map_err(|_| "commit_outcome_unknown".to_string())?
+                        {
+                            return Err("commit_outcome_unknown".into());
+                        }
+                        store::update_candidate(
+                            database.connection(),
+                            &undone_candidate.id,
+                            &undone_candidate.diff_hash,
+                            &candidate_json,
+                            now,
+                        )
+                        .map_err(|_| "commit_outcome_unknown".to_string())?;
+                        serde_json::to_vec(&serde_json::json!({
+                            "schema_version": 1,
+                            "candidate_id": undone_candidate.id,
+                            "status": "undone",
+                            "head": head,
+                            "redacted": true
+                        }))
+                        .map_err(|_| "serialization_failed".to_string())?
+                    }
+                    _ => return Err("unsupported_agent_git_change_sets_operation".into()),
+                };
+                let database = journal.database().lock().await;
+                store::put_idempotent(&database.connection(), &idempotency_key, &response, now)
+                    .map_err(|_| "storage_failed".to_string())?;
+                Ok(response)
+            }
+            .await;
+            let projection_json = match &result {
+                Ok(bytes) => String::from_utf8(bytes.clone()).unwrap_or_else(|_| "{}".into()),
+                Err(error) => serde_json::json!({
+                    "status": "error",
+                    "error_code": error,
+                    "redacted": true
+                })
+                .to_string(),
+            };
+            let event_version = serde_json::from_str::<serde_json::Value>(&projection_json)
                 .ok()
-                .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
-                .unwrap_or_else(|| "{}".into());
+                .and_then(|value| {
+                    value
+                        .get("revision")
+                        .or_else(|| value.get("version"))
+                        .and_then(serde_json::Value::as_u64)
+                })
+                .unwrap_or(expected_version);
             let event = CoreEvent::AgentGitChangeSets {
-                change_set_id,
-                operation,
-                version: expected_version,
+                change_set_id: event_change_set_id,
+                operation: event_operation,
+                version: event_version,
                 projection_json,
             };
-            if let Some(journal) = state.lock().await.journal.clone() {
-                let _ = journal.record(&event).await;
-            }
             TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
@@ -275,4 +511,75 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
         }
         _ => unreachable!("command routed to the wrong coordinator domain"),
     }
+}
+
+async fn load_change_set(
+    journal: &EventJournal,
+    id: &str,
+) -> Result<crate::agent_git_change_sets::AgentGitChangeSet, String> {
+    let database = journal.database().lock().await;
+    let json = evohime_local_storage::agent_git_change_sets_store::get_change_set(
+        database.connection(),
+        id,
+    )
+    .map_err(|_| "storage_failed".to_string())?
+    .ok_or_else(|| "change_set_not_found".to_string())?;
+    serde_json::from_slice(&json).map_err(|_| "corrupt_agent_git_change_set".to_string())
+}
+
+async fn load_candidate(
+    journal: &EventJournal,
+    id: &str,
+) -> Result<crate::agent_git_change_sets::GitCommitCandidate, String> {
+    let database = journal.database().lock().await;
+    let store = evohime_local_storage::agent_git_change_sets_store::get_candidate(
+        database.connection(),
+        id,
+    )
+    .map_err(|_| "storage_failed".to_string())?;
+    let json = match store {
+        Some(json) => json,
+        None => evohime_local_storage::agent_git_change_sets_store::get_latest_candidate(
+            database.connection(),
+            id,
+        )
+        .map_err(|_| "storage_failed".to_string())?
+        .ok_or_else(|| "candidate_not_found".to_string())?,
+    };
+    serde_json::from_slice(&json).map_err(|_| "corrupt_agent_git_candidate".to_string())
+}
+
+fn candidate_projection(
+    candidate: &crate::agent_git_change_sets::GitCommitCandidate,
+) -> Result<Vec<u8>, String> {
+    bounded_projection(serde_json::json!({
+        "schema_version": 1,
+        "candidate_id": candidate.id,
+        "change_set_id": candidate.change_set_ref,
+        "revision": candidate.revision,
+        "included_paths": candidate.included_paths,
+        "excluded_paths": candidate.excluded_paths,
+        "diff_hash": candidate.diff_hash,
+        "proposed_message": candidate.proposed_message,
+        "verification_status": candidate.verification_status,
+        "commit_id": candidate.commit_id,
+        "redacted": true
+    }))
+}
+
+fn bounded_projection(value: serde_json::Value) -> Result<Vec<u8>, String> {
+    let bytes = serde_json::to_vec(&value).map_err(|_| "serialization_failed".to_string())?;
+    if bytes.len() > crate::agent_git_change_sets::MAX_EVIDENCE_BYTES {
+        return Err("projection_too_large".into());
+    }
+    Ok(bytes)
+}
+
+fn recompute_content_hash(
+    set: &crate::agent_git_change_sets::AgentGitChangeSet,
+) -> Result<String, String> {
+    let mut copy = set.clone();
+    copy.content_hash.clear();
+    let bytes = serde_json::to_vec(&copy).map_err(|_| "serialization_failed".to_string())?;
+    Ok(crate::agent_git_change_sets::sha256(&bytes))
 }

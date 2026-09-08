@@ -22271,6 +22271,9 @@ export namespace evohime {
                 /** AgentGitChangeSetsCommand idempotencyKey. */
                 idempotencyKey: string;
 
+                /** AgentGitChangeSetsCommand workspaceRoot. */
+                workspaceRoot: string;
+
                 /**
                  * Encodes the specified AgentGitChangeSetsCommand message. Does not implicitly {@link evohime.desktop.v1.AgentGitChangeSetsCommand.verify|verify} messages.
                  * @param message AgentGitChangeSetsCommand message or plain object to encode
@@ -22319,6 +22322,9 @@ export namespace evohime {
 
                     /** AgentGitChangeSetsCommand idempotencyKey */
                     idempotencyKey?: (string|null);
+
+                    /** AgentGitChangeSetsCommand workspaceRoot */
+                    workspaceRoot?: (string|null);
 
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];

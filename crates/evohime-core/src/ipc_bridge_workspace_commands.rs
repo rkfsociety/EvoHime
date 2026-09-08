@@ -726,6 +726,7 @@ impl IpcBridge {
             .dispatch(CoreCommand::AgentGitChangeSets {
                 operation,
                 change_set_id: request.change_set_id,
+                workspace_root: request.workspace_root,
                 payload: request.payload,
                 expected_version: request.expected_version,
                 idempotency_key: request.idempotency_key,

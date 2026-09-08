@@ -54161,6 +54161,7 @@ export const evohime = $root.evohime = (() => {
                  * @property {Uint8Array|null} [payload] AgentGitChangeSetsCommand payload
                  * @property {number|null} [expectedVersion] AgentGitChangeSetsCommand expectedVersion
                  * @property {string|null} [idempotencyKey] AgentGitChangeSetsCommand idempotencyKey
+                 * @property {string|null} [workspaceRoot] AgentGitChangeSetsCommand workspaceRoot
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -54241,6 +54242,14 @@ export const evohime = $root.evohime = (() => {
                 AgentGitChangeSetsCommand.prototype.idempotencyKey = "";
 
                 /**
+                 * AgentGitChangeSetsCommand workspaceRoot.
+                 * @member {string} workspaceRoot
+                 * @memberof evohime.desktop.v1.AgentGitChangeSetsCommand
+                 * @instance
+                 */
+                AgentGitChangeSetsCommand.prototype.workspaceRoot = "";
+
+                /**
                  * Encodes the specified AgentGitChangeSetsCommand message. Does not implicitly {@link evohime.desktop.v1.AgentGitChangeSetsCommand.verify|verify} messages.
                  * @function encode
                  * @memberof evohime.desktop.v1.AgentGitChangeSetsCommand
@@ -54268,6 +54277,8 @@ export const evohime = $root.evohime = (() => {
                         writer.uint32(/* id 5, wireType 0 =*/40).uint64(message.expectedVersion);
                     if (message.idempotencyKey != null && $Object.hasOwnProperty.call(message, "idempotencyKey") && message.idempotencyKey !== "")
                         writer.uint32(/* id 6, wireType 2 =*/50).string(message.idempotencyKey);
+                    if (message.workspaceRoot != null && $Object.hasOwnProperty.call(message, "workspaceRoot") && message.workspaceRoot !== "")
+                        writer.uint32(/* id 7, wireType 2 =*/58).string(message.workspaceRoot);
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -54354,6 +54365,15 @@ export const evohime = $root.evohime = (() => {
                                     message.idempotencyKey = value;
                                 else
                                     delete message.idempotencyKey;
+                                continue;
+                            }
+                        case 7: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.workspaceRoot = value;
+                                else
+                                    delete message.workspaceRoot;
                                 continue;
                             }
                         }

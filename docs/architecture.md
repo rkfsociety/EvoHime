@@ -2174,6 +2174,25 @@ evidence — 64 KiB. Shared index, `git add -A`, force/reset/rebase/push и
 неподтверждённые commit/undo effects запрещены; stale/ambiguous outcomes
 возвращаются типизированно.
 
+`observe` захватывает состояние непосредственно из Git, а `candidate` повторно
+сверяет workspace и строит bounded path/hash precondition. `commit` выполняет
+свежий preflight и использует только `git commit --only` с NUL-delimited
+pathspec; общий index, `git add -A`, force/reset/rebase/push и подмена identity
+запрещены, hooks не обходятся. `keep` и `undo` являются отдельными
+Core-owned действиями; undo меняет только подтверждённые пути и отказывается
+при stale/shared/unknown outcome. После Git-эффекта результат сначала
+сверяется с новым HEAD, а ошибка durable persistence возвращается как
+reconciliation-required, без blind retry.
+
+Каждая мутация несёт idempotency key и optimistic revision; повтор запроса
+возвращает сохранённый redacted результат. Workspace root принимается только
+через authenticated Core command и проверяется как Git worktree с
+Core-derived binding. Контракт ограничен 256 путями, candidate — 128 путями,
+message — 4 KiB, evidence — 64 KiB, а IPC-поля дополнительно ограничены
+UTF-8 byte limits. Storage migration v94 добавляет revision и durable
+idempotency outcomes. Используются additive authenticated IPC command 233 и
+event 78; generated bindings и Electron panel остаются metadata-only.
+
 ## Stateful Tool Workbench Sessions (план 103, reuse плана 78)
 
 Stateful tool collections используют существующий Core-owned Capability

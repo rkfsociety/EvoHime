@@ -725,14 +725,22 @@ SkillCatalogPanel regression. Полные release gates выполняются 
 - Checks: focused contract/recovery/storage/migration tests, cargo fmt/check/
   clippy, protocol check, Electron typecheck and full Electron regression.
   Evidence excludes secrets, raw prompts/outputs, absolute paths and PII.
-## Plan 102 — Agent Git Change Sets v1 (2026-09-02)
+## Plan 102 — Agent Git Change Sets v1 (реализован 2026-09-08)
 
-- Rust contract/storage: baseline, attribution, candidate hash, path traversal,
-  ambiguity and bounded payload tests.
-- Schema 79 and additive authenticated IPC command 233/event 78.
-- Electron bridge/panel exposes only redacted included/excluded path metadata.
-- Commit/undo/keep effects refuse without explicit Git preflight; no shared
-  index, force operation, automatic push or secret payload.
+- Core captures the live Git baseline, validates the Core-derived workspace
+  binding, classifies pre-existing/external/secret/ambiguous paths, and builds a
+  bounded candidate from only agent-authored or approved-tool paths.
+- Schema v94 adds optimistic `revision` and durable idempotency outcomes to the
+  existing change-set storage; migration coverage includes the v93 → v94 path.
+- Additive authenticated IPC command 233/event 78, generated bindings and the
+  Electron panel expose only bounded redacted metadata and explicit actions.
+- Commit uses fresh preflight plus `git commit --only` and NUL pathspec input;
+  shared index, force/reset/rebase/push, identity spoofing and secret payloads
+  are excluded. Keep/undo are Core-owned and stale/unknown outcomes are typed.
+- Fresh local checks for this implementation: Rust `cargo check` on the three
+  affected crates, generated protocol check, and both Electron TypeScript
+  projects. The full Rust/Electron/package acceptance suite is intentionally
+  reserved for GitHub Actions and was not run locally.
 
 ## Plan 90 — Runtime Stall Guard (2026-09-02)
 

@@ -8,7 +8,7 @@ release-gates и результаты отдельных завершённых 
 [`plans/README.md`](plans/README.md).
 
 `evohime-local-storage` сейчас имеет внутреннюю migration boundary
-`src/migrations.rs` с numbered installers для v1–v26 и v32–v93, а также
+`src/migrations.rs` с numbered installers для v1–v26 и v32–v94, а также
 bounded-context фасады в `src/domains.rs`. Все исторические installers теперь
 вынесены из `lib.rs`; старые store-модули сохраняются только там, где они
 ещё являются совместимым публичным контрактом, а новые доменные вызовы
@@ -44,6 +44,23 @@ bounded-context фасады в `src/domains.rs`. Все исторически�
 E2E запускается отдельным обязательным шагом после сборки Core с
 `EVOHIME_REQUIRE_REAL_CORE_E2E=1`; локальный режим по-прежнему может пропускать
 этот тест без собранного Windows Core.
+
+## Agent Git Change Sets v1 (план 102, реализован)
+
+Текущий checkout содержит Core-owned change-set flow: `observe` захватывает
+точный Git baseline и workspace binding, `candidate` повторно проверяет
+precondition и включает только attributed agent/tool paths, а pre-existing,
+external, secret и ambiguous paths исключаются. `commit` использует только
+`git commit --only` с bounded pathspec и запускаемыми hooks; `keep` и `undo`
+проходят через Core, optimistic revision и durable idempotency. Неизвестный
+результат Git не ретраится вслепую, а требует reconciliation.
+
+Storage schema — v94. Authenticated IPC command 233/event 78 и generated
+Electron bindings передают только bounded redacted metadata; renderer не
+получает workspace authority, секреты или raw Git payload. Локально после
+реализации обновлены и прошли protocol check, TypeScript typecheck и
+компиляционная проверка затронутых Rust crates. Полный acceptance-набор
+оставлен GitHub Actions согласно правилу проекта.
 
 ## Продуктовая граница
 
@@ -277,7 +294,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Следующий незавершённый порядок
 
-Планы 120–143 остаются незавершённой очередью. Планы 119 и 144 реализованы и закрыты;
+Планы 120–143 остаются незавершённой очередью. Планы 102, 119 и 144 реализованы и закрыты;
 его подтверждённый контракт находится в `architecture.md`, а evidence — в
 `release-evidence.md`.
 Полный каталог, блокирующие и опциональные зависимости находятся в

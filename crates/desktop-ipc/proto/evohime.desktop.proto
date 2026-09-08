@@ -2347,6 +2347,7 @@ message KnowledgeSourceRegistryProjectRoleEvent {
 message AgentGitChangeSetsCommand {
   uint32 schema_version = 1; string change_set_id = 2; string operation = 3;
   bytes payload = 4; uint64 expected_version = 5; string idempotency_key = 6;
+  string workspace_root = 7;
 }
 message AgentGitChangeSetsEvent {
   uint32 schema_version = 1; string change_set_id = 2; string operation = 3;

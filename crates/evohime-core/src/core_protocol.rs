@@ -370,6 +370,7 @@ pub enum CoreCommand {
     AgentGitChangeSets {
         operation: String,
         change_set_id: String,
+        workspace_root: String,
         payload: Vec<u8>,
         expected_version: u64,
         idempotency_key: String,

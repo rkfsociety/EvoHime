@@ -479,6 +479,27 @@ describe('renderer command surface', () => {
     ])
   })
 
+  it('forwards Agent Git Change Sets with an explicit workspace root and bounded payload', () => {
+    expect(invoke('core.agentGitChangeSets', {
+      operation: 'observe',
+      changeSetId: 'set-1',
+      workspaceRoot: 'C:\\work',
+      payload: '{"run_id":"run-1"}',
+      idempotencyKey: 'git-set-1'
+    })).toEqual({ ok: true, value: { accepted: true } })
+    expect(sent.at(-1)).toEqual({
+      agentGitChangeSets: {
+        schemaVersion: 1,
+        changeSetId: 'set-1',
+        operation: 'observe',
+        workspaceRoot: 'C:\\work',
+        payload: Buffer.from('{"run_id":"run-1"}', 'utf8'),
+        expectedVersion: 0,
+        idempotencyKey: 'git-set-1'
+      }
+    })
+  })
+
   it('forwards stage 01.4 receipt listing, verify and export commands with defaulted filters', () => {
     expect(invoke('core.listReceipts', { taskId: 'task-1' })).toEqual({ ok: true, value: { accepted: true } })
     expect(invoke('core.verifyReceipts', { taskId: 'task-1', limit: 200 })).toEqual({ ok: true, value: { accepted: true } })
