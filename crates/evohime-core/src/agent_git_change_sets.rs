@@ -23,6 +23,8 @@ pub const MAX_PATH_BYTES: usize = 4096;
 pub const MAX_MESSAGE_BYTES: usize = 4096;
 pub const MAX_EVIDENCE_BYTES: usize = 64 * 1024;
 pub const MAX_DIFF_SUMMARY_BYTES: usize = 512 * 1024;
+pub const MAX_WORKSPACE_ROOT_BYTES: usize = 32 * 1024;
+pub const MAX_REFERENCE_BYTES: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -719,6 +721,12 @@ fn is_sensitive_path(path: &str) -> bool {
 }
 
 fn validate_workspace_root(value: &str) -> Result<PathBuf, ChangeSetError> {
+    if value.is_empty()
+        || value.len() > MAX_WORKSPACE_ROOT_BYTES
+        || value.chars().any(|character| character.is_control())
+    {
+        return Err(ChangeSetError::LimitExceeded("workspace_root"));
+    }
     let path = PathBuf::from(value);
     if !path.is_absolute() || !path.is_dir() {
         return Err(ChangeSetError::InvalidWorkspace);

@@ -115,6 +115,17 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 if idempotency_key.is_empty() {
                     return Err("invalid_agent_git_idempotency_key".to_string());
                 }
+                if idempotency_key.len() > git_sets::MAX_REFERENCE_BYTES
+                    || change_set_id.len() > git_sets::MAX_REFERENCE_BYTES
+                    || idempotency_key
+                        .chars()
+                        .any(|character| character.is_control())
+                    || change_set_id
+                        .chars()
+                        .any(|character| character.is_control())
+                {
+                    return Err("agent_git_reference_limit_exceeded".into());
+                }
                 let journal = state
                     .lock()
                     .await

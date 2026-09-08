@@ -750,6 +750,8 @@ SkillCatalogPanel regression. Полные release gates выполняются 
   Git effect.
 - Malformed observe/candidate JSON is rejected with a typed invalid-payload
   outcome instead of being replaced by permissive defaults.
+- Core independently enforces 32 KiB workspace-root and 256-byte operation
+  reference limits in addition to adapter-level validation.
 - Fresh local checks for this implementation: Rust `cargo check` on the three
   affected crates, generated protocol check, and both Electron TypeScript
   projects. The full Rust/Electron/package acceptance suite is intentionally

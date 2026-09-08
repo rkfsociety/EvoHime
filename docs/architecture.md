@@ -2198,7 +2198,8 @@ attribution и stale contract, а не второй механизм Git authori
 через authenticated Core command и проверяется как Git worktree с
 Core-derived binding. Контракт ограничен 256 путями, candidate — 128 путями,
 message — 4 KiB, evidence — 64 KiB, а IPC-поля дополнительно ограничены
-UTF-8 byte limits. Storage migration v94 добавляет revision и durable
+UTF-8 byte limits (workspace root — 32 KiB, operation references — 256 bytes).
+Storage migration v94 добавляет revision и durable
 idempotency outcomes. Используются additive authenticated IPC command 233 и
 event 78; generated bindings и Electron panel остаются metadata-only.
 
