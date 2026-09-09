@@ -29,7 +29,6 @@
 
 | План | Тема | Состояние |
 | --- | --- | --- |
-| [134](134-0-host-resource-telemetry-pressure-guard.md) | Host resource telemetry pressure guard | незавершён |
 | [135](135-0-code-review-lane.md) | Code review lane | незавершён |
 | [136](136-0-evidence-preserving-static-analysis-packs.md) | Evidence-preserving static analysis packs | незавершён |
 | [137](137-0-agent-context-loadouts.md) | Agent context loadouts | незавершён |

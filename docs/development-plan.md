@@ -110,6 +110,13 @@ permission, receipt, cancellation, timeout, provenance и adaptive catalog
 границы остаются владельцами. Core module version повышена только для
 изменённого `tool-runtime`; UI/shell и другие модули не менялись.
 
+## План 134: Host Resource Telemetry & Pressure Guard (реализован 2026-09-09)
+
+Добавлены Core-owned bounded metric/sensor/pressure contracts, conservative
+pressure evaluator и in-memory history ring. Service подключён к
+`TaskCoordinator`; storage persistence, active probes и privileged collectors
+остаются вне scope, а unavailable/stale/invalid signals не считаются healthy.
+
 ## План 144: модульные релизы (реализован)
 
 План 144 реализован в текущем checkout. Его scope:

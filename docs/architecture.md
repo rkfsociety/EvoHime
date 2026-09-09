@@ -2737,3 +2737,17 @@ filesystem/network/shell capability или отдельный IPC dispatcher. О
 неизвестный tool ID завершаются non-success. Renderer и workflow используют
 тот же Core-owned manifest/result contract; raw secret material не пишется в
 utility metadata.
+
+## Host Resource Telemetry & Pressure Guard v1 (план 134, реализован 2026-09-09)
+
+`host_resource_telemetry` — Core-owned read-only contract для bounded CPU,
+available-memory и storage-free samples. `MeasuredMetric` хранит value/unit,
+collector source, timestamp, freshness и explicit `MetricStatus`; unsupported,
+permission-denied, transient, stale и invalid sensors никогда не кодируются как
+числовой ноль. `PressurePolicy` v1 применяет bounded freshness и thresholds,
+возвращая `Unknown`, `Normal`, `Elevated`, `High` или `Critical`. `HostTelemetryService`
+хранит не более 120 последних валидных snapshots в памяти и после restart не
+выдаёт старое значение как current authority. `TaskCoordinator` предоставляет
+единственную запись через `record_host_resource_snapshot`; renderer и
+collectors не могут подделать pressure. Network probes, shell/PowerShell
+polling, serials и process lists не входят в этот контракт.

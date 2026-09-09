@@ -1176,6 +1176,23 @@ were not run by explicit instruction. Static source/manifest/registry/workflow/
 documentation review and `git diff --check` are the only local evidence; CI
 after a future push remains the runtime gate.
 
+## Plan 134 — Host Resource Telemetry & Pressure Guard v1 (2026-09-09)
+
+Implementation: `evohime-core::host_resource_telemetry` provides bounded
+validated metrics, explicit sensor health, freshness checks, deterministic
+pressure policy and a 120-entry in-memory ring wired through
+`TaskCoordinator::record_host_resource_snapshot`. No SQLite, network probe,
+shell polling, privileged collector or renderer authority was introduced.
+
+Module routing: Core sources changed, so `release-versions/core.txt` advances
+from `0.0.000042` to `0.0.000043`; other module versions remain unchanged.
+Because the commit is not pushed, exact-commit CI/module-router evidence is
+`UNAVAILABLE`.
+
+Verification is limited to static source/docs/workflow review and
+`git diff --check`; local project tests, builds, linters, smoke/E2E and runtime
+were not run by explicit instruction.
+
 ## Plan 131 — Unified Context Namespace v1 (2026-09-09)
 
 Implementation: Core-owned bounded node/projection/view/retrieval/trace

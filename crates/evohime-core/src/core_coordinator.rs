@@ -29,6 +29,7 @@ pub(crate) struct CoordinatorState {
     audit: crate::audit::AuditTrail,
     retained_children: crate::retained_child::RetainedRegistry,
     background_tasks: Arc<crate::bounded_tasks::BoundedTaskGroup>,
+    host_telemetry: crate::host_resource_telemetry::HostTelemetryService,
     persistence_error: Option<String>,
 }
 
@@ -132,6 +133,17 @@ impl TaskCoordinator {
         self.state.lock().await.routing_approvals = approvals;
     }
 
+    /// Records a validated host snapshot in the Core-owned bounded ring.
+    /// Collectors remain adapters and cannot publish a fabricated pressure
+    /// value directly to the renderer or scheduler.
+    pub async fn record_host_resource_snapshot(
+        &self,
+        snapshot: crate::host_resource_telemetry::HostResourceSnapshot,
+        now_ms: i64,
+    ) -> Result<crate::host_resource_telemetry::PressureLevel, crate::host_resource_telemetry::TelemetryError> {
+        self.state.lock().await.host_telemetry.record(snapshot, now_ms)
+    }
+
     pub fn new_with_executor(
         buffer: usize,
         executor: Option<Arc<dyn TaskExecutor>>,
@@ -175,6 +187,7 @@ impl TaskCoordinator {
             audit: crate::audit::AuditTrail::default(),
             retained_children: crate::retained_child::RetainedRegistry::default(),
             background_tasks,
+            host_telemetry: crate::host_resource_telemetry::HostTelemetryService::new(crate::host_resource_telemetry::PressurePolicy::default()),
             persistence_error: None,
         }));
         // The shell is fed from the journal, so it must be told after a record
