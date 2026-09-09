@@ -445,6 +445,15 @@ partial coverage не считается clean, а Code Diagnostics, Verificatio
 Code Review Lane сохраняют свои authorities. IPC 264/109 и Electron дают
 только redacted metadata projection.
 
+## Plan 138 — Skill Source & Update Lifecycle (закрыт 2026-09-09)
+
+Добавлены Core provenance/source и installed-revision contracts с различением
+bundled/managed/vendored/workspace/imported modes, trust/update/divergence
+state и exact runtime identity. Schema v107 хранит metadata-only revisions;
+проверка update возвращает explicit review для divergence и не перезаписывает
+локальные skill bytes. Existing Skill Registry, trust pipeline и workspace
+mutation остаются owners. IPC 266/111 и Electron проецируют только metadata.
+
 ## Plan 137 — Agent Context Loadouts (закрыт 2026-09-09)
 
 Добавлен versioned Core profile/binding/snapshot contract для разрешённых

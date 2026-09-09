@@ -2797,3 +2797,13 @@ idempotency. Resolve сохраняет exact snapshot identity и fail-closed h
 missing required entries блокируют, rejected entries деградируют.
 Authenticated IPC command 265/event 110 и Electron дают metadata-only
 projection; active run остаётся pinned к snapshot.
+
+## Skill Source & Update Lifecycle v1 (план 138)
+
+`skill_source_lifecycle` хранит provenance источника, installation mode, exact
+installed revision, package/content hashes, trust reference, update state и
+divergence. Skill Registry, trust scan и workspace mutation остаются
+владельцами своих authorities. Migration v107 хранит только bounded metadata;
+`check_update` запрещает silent overwrite локально изменённых/vendored копий.
+Managed staging и активация проходят explicit policy boundary, active runs
+остаются pinned. IPC 266/111 и Electron дают metadata-only projection.

@@ -194,6 +194,7 @@ impl IpcBridge {
                 self.write_response(writer, &format!("static_analysis_packs.{operation}"), result).await?;
             }
             Some(generated::command_envelope::Command::ContextLoadouts(request)) => { let operation=if request.operation.is_empty(){"get".to_owned()}else{request.operation.clone()}; let result=self.dispatch_context_loadouts(request).await?; self.write_response(writer,&format!("context_loadouts.{operation}"),result).await?; }
+            Some(generated::command_envelope::Command::SkillSourceLifecycle(request)) => { let operation=if request.operation.is_empty(){"get".to_owned()}else{request.operation.clone()}; let result=self.dispatch_skill_source_lifecycle(request).await?; self.write_response(writer,&format!("skill_source_lifecycle.{operation}"),result).await?; }
             Some(generated::command_envelope::Command::WorkflowOptimizationLab(request)) => {
                 let operation = if request.operation.is_empty() {
                     "get_run".to_owned()

@@ -61,6 +61,7 @@ import { CodeDiagnosticsFeedbackLoopPanel } from './CodeDiagnosticsFeedbackLoopP
 import { CodeReviewLanePanel } from './CodeReviewLanePanel'
 import { StaticAnalysisPacksPanel } from './StaticAnalysisPacksPanel'
 import { ContextLoadoutsPanel } from './ContextLoadoutsPanel'
+import { SkillSourceLifecyclePanel } from './SkillSourceLifecyclePanel'
 import { WorkflowOptimizationLabPanel } from './WorkflowOptimizationLabPanel'
 import { CoreTopicSubscriptionEventBusPanel } from './CoreTopicSubscriptionEventBusPanel'
 import { DependencyAwareTaskGraphPanel } from './DependencyAwareTaskGraphPanel'
@@ -642,7 +643,7 @@ export function App(): React.JSX.Element {
               {view === 'schema-driven-agent-configuration' ? <SchemaDrivenAgentConfigurationPanel connection={connection} events={events} /> : null}
               {view === 'experience-replay-library' ? <ExperienceReplayLibraryPanel connection={connection} events={events} /> : null}
               {view === 'runtime-intervention-pipeline' ? <RuntimeInterventionPipelinePanel connection={connection} events={events} /> : null}
-              {view === 'code-diagnostics-feedback-loop' ? <><CodeDiagnosticsFeedbackLoopPanel connection={connection} /><CodeReviewLanePanel connection={connection} /><StaticAnalysisPacksPanel connection={connection} /><ContextLoadoutsPanel connection={connection} /></> : null}
+              {view === 'code-diagnostics-feedback-loop' ? <><CodeDiagnosticsFeedbackLoopPanel connection={connection} /><CodeReviewLanePanel connection={connection} /><StaticAnalysisPacksPanel connection={connection} /><ContextLoadoutsPanel connection={connection} /><SkillSourceLifecyclePanel connection={connection} /></> : null}
               {view === 'workflow-optimization-lab' ? <WorkflowOptimizationLabPanel connection={connection} /> : null}
               {view === 'core-topic-subscription-event-bus' ? <CoreTopicSubscriptionEventBusPanel connection={connection} /> : null}
               {view === 'dependency-aware-task-graph' ? <DependencyAwareTaskGraphPanel connection={connection} /> : null}

@@ -1916,6 +1916,7 @@ message CommandEnvelope {
     CodeReviewLaneCommand code_review_lane = 263;
     StaticAnalysisPacksCommand static_analysis_packs = 264;
     ContextLoadoutsCommand context_loadouts = 265;
+    SkillSourceLifecycleCommand skill_source_lifecycle = 266;
   }
 }
 
@@ -1942,6 +1943,8 @@ message StaticAnalysisPacksEvent {
 }
 message ContextLoadoutsCommand { uint32 schema_version=1; string request_id=2; string operation=3; string profile_id=4; bytes payload=5; uint64 expected_revision=6; string idempotency_key=7; }
 message ContextLoadoutsEvent { uint32 schema_version=1; string request_id=2; string operation=3; string status=4; uint64 revision=5; bytes projection_json=6; string error_code=7; bool truncated=8; }
+message SkillSourceLifecycleCommand { uint32 schema_version=1; string request_id=2; string operation=3; string installation_id=4; bytes payload=5; uint64 expected_revision=6; string idempotency_key=7; }
+message SkillSourceLifecycleEvent { uint32 schema_version=1; string request_id=2; string operation=3; string status=4; uint64 revision=5; bytes projection_json=6; string error_code=7; bool truncated=8; }
 
 // Plan 30: package bytes are bounded JSON and are processed only by Core.
 message PreviewWorkflowPackage {
@@ -2100,6 +2103,7 @@ message EventEnvelope {
     CodeReviewLaneEvent code_review_lane = 108;
     StaticAnalysisPacksEvent static_analysis_packs = 109;
     ContextLoadoutsEvent context_loadouts = 110;
+    SkillSourceLifecycleEvent skill_source_lifecycle = 111;
   }
 }
 

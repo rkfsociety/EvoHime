@@ -130,6 +130,7 @@ pub mod child_workflow;
 pub mod code_review_lane;
 pub mod static_analysis_packs;
 pub mod context_loadouts;
+pub mod skill_source_lifecycle;
 pub mod code_anchored_intent_markers;
 pub mod content_aware_context_compression;
 pub(crate) mod context_budget;

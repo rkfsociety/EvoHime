@@ -1107,6 +1107,19 @@ Verification evidence: static source audit and `git diff --check` only. Local
 tests, builds, linters, smoke/E2E and other project checks were not run per
 task instruction; CI was not monitored and push was not performed.
 
+## Plan 138 — Skill Source & Update Lifecycle v1 (2026-09-09)
+
+Implementation: bounded source/install provenance, exact revision and content
+hash identity, managed/vendored/workspace/imported modes, trust/update/
+divergence states, migration v107, Core transitions, authenticated IPC 266/111
+and metadata-only Electron projection. Diverged editable copies cannot be
+silently overwritten; Skill Registry, trust and workspace mutation remain
+authoritative elsewhere.
+
+Verification evidence: static source audit and `git diff --check` only. Local
+tests, builds, linters, smoke/E2E and other project checks were not run per
+task instruction; CI was not monitored and push was not performed.
+
 ## Plan 127 — Remote Client Control Plane MVP (2026-09-09)
 
 Implementation: добавлен workspace crate `evohime-remote` с bounded protocol

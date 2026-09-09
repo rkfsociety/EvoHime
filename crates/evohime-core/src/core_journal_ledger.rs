@@ -35,6 +35,7 @@ impl EventJournal {
             CoreEvent::CodeReviewLane { review_id, .. } => review_id,
             CoreEvent::StaticAnalysisPacks { pack_id, .. } => pack_id,
             CoreEvent::ContextLoadouts { profile_id, .. } => profile_id,
+            CoreEvent::SkillSourceLifecycle { installation_id, .. } => installation_id,
             CoreEvent::WorkflowOptimizationLab { run_id, .. } => run_id,
             CoreEvent::CoreTopicSubscriptionEventBus { .. } => "core-topic-bus",
             CoreEvent::DependencyAwareTaskGraph { graph_id, .. } => graph_id,
@@ -112,6 +113,7 @@ impl EventJournal {
             CoreEvent::CodeReviewLane { .. } => "code_review_lane.result",
             CoreEvent::StaticAnalysisPacks { .. } => "static_analysis_packs.result",
             CoreEvent::ContextLoadouts { .. } => "context_loadouts.result",
+            CoreEvent::SkillSourceLifecycle { .. } => "skill_source_lifecycle.result",
             CoreEvent::WorkflowOptimizationLab { .. } => "workflow_optimization_lab.result",
             CoreEvent::CoreTopicSubscriptionEventBus { .. } => {
                 "core_topic_subscription_event_bus.result"

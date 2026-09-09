@@ -887,6 +887,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::ContextLoadouts { profile_id, operation, revision, .. } => console_line!(
             "context_loadouts.result {profile_id}: {operation} revision={revision}"
         ),
+        evohime_core::CoreEvent::SkillSourceLifecycle { installation_id, operation, revision, .. } => console_line!(
+            "skill_source_lifecycle.result {installation_id}: {operation} revision={revision}"
+        ),
         evohime_core::CoreEvent::WorkflowOptimizationLab { run_id, operation, revision, .. } => console_line!(
             "workflow_optimization_lab.result {run_id}: {operation} revision={revision}"
         ),
