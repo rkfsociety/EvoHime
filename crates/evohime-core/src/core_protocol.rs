@@ -220,6 +220,15 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    CodeReviewLane {
+        operation: String,
+        review_id: String,
+        target_id: String,
+        payload: Vec<u8>,
+        expected_revision: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     WorkflowOptimizationLab {
         operation: String,
         run_id: String,
@@ -1239,6 +1248,12 @@ pub enum CoreEvent {
     },
     CodeDiagnosticsFeedbackLoop {
         workspace_root_id: String,
+        operation: String,
+        revision: u64,
+        projection_json: String,
+    },
+    CodeReviewLane {
+        review_id: String,
         operation: String,
         revision: u64,
         projection_json: String,

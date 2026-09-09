@@ -32,6 +32,7 @@ impl EventJournal {
             CoreEvent::CodeDiagnosticsFeedbackLoop {
                 workspace_root_id, ..
             } => workspace_root_id,
+            CoreEvent::CodeReviewLane { review_id, .. } => review_id,
             CoreEvent::WorkflowOptimizationLab { run_id, .. } => run_id,
             CoreEvent::CoreTopicSubscriptionEventBus { .. } => "core-topic-bus",
             CoreEvent::DependencyAwareTaskGraph { graph_id, .. } => graph_id,
@@ -106,6 +107,7 @@ impl EventJournal {
             CoreEvent::CodeDiagnosticsFeedbackLoop { .. } => {
                 "code_diagnostics_feedback_loop.result"
             }
+            CoreEvent::CodeReviewLane { .. } => "code_review_lane.result",
             CoreEvent::WorkflowOptimizationLab { .. } => "workflow_optimization_lab.result",
             CoreEvent::CoreTopicSubscriptionEventBus { .. } => {
                 "core_topic_subscription_event_bus.result"

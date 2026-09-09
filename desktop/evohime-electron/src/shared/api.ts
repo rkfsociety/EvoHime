@@ -1201,6 +1201,7 @@ export const RENDERER_COMMANDS = [
   'core.experienceReplayLibrary',
   'core.runtimeInterventionPipeline',
   'core.codeDiagnosticsFeedbackLoop',
+  'core.codeReviewLane',
   'core.workflowOptimizationLab',
   'core.coreTopicSubscriptionEventBus',
   'core.dependencyAwareTaskGraph',
@@ -1539,6 +1540,7 @@ export interface CommandPayloads {
   'core.experienceReplayLibrary': { operation: 'write' | 'list' | 'context'; scope: string; scopeId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.runtimeInterventionPipeline': { operation: 'evaluate'; runId: string; payload: string; idempotencyKey: string }
   'core.codeDiagnosticsFeedbackLoop': { operation: 'register_provider' | 'snapshot' | 'delta' | 'gate'; workspaceRootId: string; payload: string; baselineSnapshotId?: string; expectedRevision?: number; idempotencyKey: string }
+  'core.codeReviewLane': { operation: 'save' | 'get' | 'reconcile' | 'interrupt'; reviewId: string; targetId?: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.workflowOptimizationLab': { operation: 'evaluate' | 'save_run' | 'get_run' | 'validate_candidate' | 'promote'; runId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.coreTopicSubscriptionEventBus': { operation: 'publish' | 'subscribe' | 'ack' | 'nack'; capability: string; payload: string; idempotencyKey: string }
   'core.dependencyAwareTaskGraph': { operation: 'create' | 'get' | 'validate' | 'apply_patch'; graphId: string; payload: string; expectedRevision?: number; grants?: readonly string[] }
@@ -2061,6 +2063,7 @@ export interface CommandResults {
   'core.experienceReplayLibrary': { accepted: boolean }
   'core.runtimeInterventionPipeline': { accepted: boolean }
   'core.codeDiagnosticsFeedbackLoop': { accepted: boolean }
+  'core.codeReviewLane': { accepted: boolean }
   'core.workflowOptimizationLab': { accepted: boolean }
   'core.coreTopicSubscriptionEventBus': { accepted: boolean }
   'core.dependencyAwareTaskGraph': { accepted: boolean }

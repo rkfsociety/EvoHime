@@ -127,6 +127,7 @@ pub mod child_contracts;
 pub mod child_roles;
 pub mod child_runtime;
 pub mod child_workflow;
+pub mod code_review_lane;
 pub mod code_anchored_intent_markers;
 pub mod content_aware_context_compression;
 pub(crate) mod context_budget;

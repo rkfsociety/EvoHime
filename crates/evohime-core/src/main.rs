@@ -878,6 +878,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::CodeDiagnosticsFeedbackLoop { workspace_root_id, operation, revision, .. } => console_line!(
             "code_diagnostics_feedback_loop.result {workspace_root_id}: {operation} revision={revision}"
         ),
+        evohime_core::CoreEvent::CodeReviewLane { review_id, operation, revision, .. } => console_line!(
+            "code_review_lane.result {review_id}: {operation} revision={revision}"
+        ),
         evohime_core::CoreEvent::WorkflowOptimizationLab { run_id, operation, revision, .. } => console_line!(
             "workflow_optimization_lab.result {run_id}: {operation} revision={revision}"
         ),

@@ -1068,6 +1068,19 @@ tests, builds, linters and runtime smoke tests were intentionally not run per
 the task instruction; CI was not monitored. The installed client was not
 touched.
 
+## Plan 135 — Code Review Lane v1 (2026-09-09)
+
+Implementation: Core-owned bounded target/finding/coverage/verdict contract,
+transactional storage migration v104, revision/idempotency fences, stale
+fingerprint reconciliation, interruption recovery, journaled runtime commands,
+authenticated IPC command 263 and metadata-only Electron projection. No raw
+patches, prompts, credentials or logs cross the review lane contract.
+
+Verification evidence: static source audit and `git diff --check` only. Local
+tests, builds, linters, smoke/E2E and other project checks were intentionally
+not run per task instruction; CI was not monitored and push was not performed.
+Installed client was not touched.
+
 ## Plan 127 — Remote Client Control Plane MVP (2026-09-09)
 
 Implementation: добавлен workspace crate `evohime-remote` с bounded protocol

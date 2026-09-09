@@ -2751,3 +2751,21 @@ permission-denied, transient, stale и invalid sensors никогда не ко�
 единственную запись через `record_host_resource_snapshot`; renderer и
 collectors не могут подделать pressure. Network probes, shell/PowerShell
 polling, serials и process lists не входят в этот контракт.
+
+## Code Review Lane v1 (план 135)
+
+`evohime-local-storage::code_review_lane_store` — единственная durable
+authority для bounded review revisions. Core target identity фиксирует kind,
+base/head, diff hash, workspace fingerprint и changed paths; findings имеют
+stable fingerprint и typed lifecycle, а coverage и verdict fail closed.
+Migration v104 использует общий backup/transaction ladder, revision fence и
+idempotency key. В storage не попадают patch bodies, prompts, credentials или
+raw logs.
+
+`CodeReviewLane` runtime принимает только `save`, `get`, `reconcile` и
+`interrupt`, журналирует projection и после restart восстанавливает только
+проверенный durable record. Partial/failed/unknown coverage либо interrupted
+review дают `ReviewIncomplete`; stale re-review находится по fingerprint.
+Authenticated additive IPC command 263 и generated Electron bindings
+проецируют только bounded metadata. Renderer не вычисляет verdict и не
+получает Core/storage authority.

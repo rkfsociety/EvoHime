@@ -1913,7 +1913,20 @@ message CommandEnvelope {
     ExecutionEnvironmentProfileCommand execution_environment_profile = 260;
     ContextNamespaceCommand context_namespace = 261;
     BackgroundExecutionCommand background_execution = 262;
+    CodeReviewLaneCommand code_review_lane = 263;
   }
+}
+
+// Plan 135: bounded Core-owned review target/findings projection.
+message CodeReviewLaneCommand {
+  uint32 schema_version = 1; string request_id = 2; string operation = 3;
+  string review_id = 4; bytes payload = 5; uint64 expected_revision = 6;
+  string idempotency_key = 7; string target_id = 8;
+}
+message CodeReviewLaneEvent {
+  uint32 schema_version = 1; string request_id = 2; string operation = 3;
+  string status = 4; uint64 revision = 5; bytes projection_json = 6;
+  string error_code = 7; bool truncated = 8;
 }
 
 // Plan 30: package bytes are bounded JSON and are processed only by Core.
@@ -2070,6 +2083,7 @@ message EventEnvelope {
     ExecutionEnvironmentProfileEvent execution_environment_profile = 105;
     ContextNamespaceEvent context_namespace = 106;
     BackgroundExecutionEvent background_execution = 107;
+    CodeReviewLaneEvent code_review_lane = 108;
   }
 }
 

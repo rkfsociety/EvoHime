@@ -8,7 +8,7 @@ release-gates и результаты отдельных завершённых 
 [`plans/README.md`](plans/README.md).
 
 `evohime-local-storage` сейчас имеет внутреннюю migration boundary
-`src/migrations.rs` с numbered installers для v1–v26 и v32–v94, а также
+`src/migrations.rs` с numbered installers для v1–v26 и v32–v104, а также
 bounded-context фасады в `src/domains.rs`. Все исторические installers теперь
 вынесены из `lib.rs`; старые store-модули сохраняются только там, где они
 ещё являются совместимым публичным контрактом, а новые доменные вызовы
@@ -427,3 +427,9 @@ process runner и downstream consumer adapters остаются typed unavailabl
 bounded compactor, schema 98 metadata и projection-only diagnostics. Existing
 Context Budget/Ledger и ArtifactStore остаются authoritative; protected
 diagnostic lines выбирают fallback, а renderer не получает recovery authority.
+
+## Plan 135 — Code Review Lane (закрыт 2026-09-09)
+
+Core владеет diff-bound target identity для workspace changesets, agent git changesets, task worktrees, commit ranges и remote PR metadata. Контракт хранит immutable target/content hashes, bounded changed paths, typed findings, coverage и fail-closed verdict. Storage v104 сохраняет только bounded metadata в транзакционных revision rows, проверяет idempotency/optimistic revision и не принимает secrets, prompts или raw logs.
+
+Команды `save`, `get`, `reconcile` и `interrupt` проходят Core coordinator и journal/replay path; interrupted/partial/unknown coverage не становится `Clean`, re-review сопоставляет findings по fingerprint и помечает отсутствующие open findings stale. Authenticated IPC command 263 и Electron generated bindings дают metadata-only projection; renderer не владеет storage, target identity, verdict или policy.
