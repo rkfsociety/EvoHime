@@ -2874,3 +2874,16 @@ Authenticated additive IPC command 271/event 116 проецирует status, re
 entry count, hash prefix и typed errors. Existing knowledge/source owners
 остаются владельцами содержания и прав; renderer не получает raw data,
 secrets или authority, а invalid/stale/unknown paths fail closed.
+
+## Git Remote Publication Protocol v1 (план 145)
+
+`git_remote_publication_protocol.rs` хранит bounded intent для remote ref,
+branch, commit hash, scope и immutable revision. Schema v113 хранит только
+metadata и idempotency. `inspect/publish` остаются typed
+`transport_unavailable`: внешний Git transport, credentials и push authority
+не добавлены; существующий Core Git/change-set owner остаётся единственным
+effect owner.
+
+Authenticated additive IPC command 272/event 117 даёт redacted projection с
+hash prefix, status и typed failure. Renderer не получает secrets, raw Git
+output или authority; unknown/stale/denied outcomes не объявляются success.

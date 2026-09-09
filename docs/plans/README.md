@@ -16,7 +16,7 @@
 ## Закрытые направления
 
 Временные plan-файлы закрытых направлений удалены после переноса их контракта
-и evidence в канонические документы. К закрытым относятся планы `01–143` и
+и evidence в канонические документы. К закрытым относятся планы `01–145` и
 `144`; планы `127–130` закрыты как MVP-контуры с явно сохранёнными
 `unavailable` deployment/adapter gates. Их отсутствие из каталога не означает
 отсутствие контракта: он находится в `architecture.md` и `current-state.md`.
@@ -29,7 +29,6 @@
 
 | План | Тема | Состояние |
 | --- | --- | --- |
-| [145](145-0-git-remote-publication-protocol.md) | Git Remote Publication Protocol | незавершён |
 | [146](146-0-voice-input-dictation.md) | Voice Input & Dictation | незавершён |
 | [147](147-0-offline-experience-consolidation-cycle.md) | Offline Experience Consolidation Cycle | незавершён |
 | [148](148-0-deterministic-review-execution-plan.md) | Deterministic Review Execution Plan | незавершён |
@@ -53,7 +52,7 @@
 | [166](166-0-optional-voice-output-adapter.md) | Optional Voice Output Adapter | незавершён |
 | [167](167-0-command-center.md) | Command Center | незавершён |
 
-Номера `145–167` являются текущими идентификаторами активной
+Номера `146–167` являются текущими идентификаторами активной
 очереди. Пропуск `144` намеренный: это закрытый план модульного обновления.
 Новая работа получает следующий свободный номер только после проверки
 дубликатов и зависимостей.

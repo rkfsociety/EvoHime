@@ -499,6 +499,15 @@ program metadata, idempotency и pin; optimizer не исполняет шаги
 panel дают redacted projection. Локальные tests, builds, linters, smoke/E2E
 не запускались; CI для локального commit недоступен до push.
 
+## Plan 145 — Git Remote Publication Protocol (закрыт 2026-09-09)
+
+Добавлен bounded Core-owned publication intent с schema v113,
+revision/idempotency storage и redacted IPC 272/117. Внешний Git transport,
+credentials и push не реализованы: результат остаётся typed
+`transport_unavailable`, effect owner — существующий Git/change-set subsystem.
+Локальные tests, builds, linters, smoke/E2E не запускались; CI недоступен до
+push.
+
 ## Plan 143 — Project Knowledge Notebook (закрыт 2026-09-09)
 
 Добавлен Core-owned metadata-only notebook с bounded note references,

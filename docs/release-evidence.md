@@ -1354,6 +1354,13 @@ Implemented bounded Core notebook contract, schema v112 migration, metadata-only
 revisioned storage, idempotency/run pin, authenticated IPC command 271/event
 116 and redacted Electron projection. Local tests, builds, linters, smoke/E2E
 and runtime were not run; exact-commit CI is `UNAVAILABLE` until push.
+
+## Plan 145 — Git Remote Publication Protocol v1 (2026-09-09)
+
+Implemented bounded publication intent, schema v113, idempotent metadata
+storage, typed transport-unavailable result, authenticated IPC 272/117 and
+redacted Electron projection. Local tests/builds/linters/smoke/E2E/runtime
+were not run; exact-commit CI is `UNAVAILABLE` until push.
 ## Plan 141 — Runtime Service Graph v1 (2026-09-09)
 
 Implemented Core contract, schema v110 migration, bounded validation,

@@ -121,6 +121,7 @@ impl EventJournal {
             CoreEvent::RuntimeServiceGraph { .. } => "runtime_service_graph.result",
             CoreEvent::AgentProgramOptimizer { .. } => "agent_program_optimizer.result",
             CoreEvent::ProjectKnowledgeNotebook { .. } => "project_knowledge_notebook.result",
+            CoreEvent::GitRemotePublicationProtocol { .. } => "git_remote_publication_protocol.result",
             CoreEvent::WorkflowOptimizationLab { .. } => "workflow_optimization_lab.result",
             CoreEvent::CoreTopicSubscriptionEventBus { .. } => {
                 "core_topic_subscription_event_bus.result"

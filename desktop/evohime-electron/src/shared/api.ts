@@ -1553,6 +1553,7 @@ export interface CommandPayloads {
   'core.runtimeServiceGraph': { operation: 'save' | 'get' | 'pin' | 'activate' | 'supersede'; graphId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.agentProgramOptimizer': { operation: 'save' | 'get' | 'optimize' | 'pin' | 'activate' | 'supersede'; programId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.projectKnowledgeNotebook': { operation: 'save' | 'get' | 'pin' | 'activate' | 'supersede'; notebookId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
+  'core.gitRemotePublicationProtocol': { operation: 'save' | 'get' | 'publish'; protocolId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.workflowOptimizationLab': { operation: 'evaluate' | 'save_run' | 'get_run' | 'validate_candidate' | 'promote'; runId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.coreTopicSubscriptionEventBus': { operation: 'publish' | 'subscribe' | 'ack' | 'nack'; capability: string; payload: string; idempotencyKey: string }
   'core.dependencyAwareTaskGraph': { operation: 'create' | 'get' | 'validate' | 'apply_patch'; graphId: string; payload: string; expectedRevision?: number; grants?: readonly string[] }
@@ -2084,6 +2085,7 @@ export interface CommandResults {
   'core.runtimeServiceGraph': { accepted: boolean }
   'core.agentProgramOptimizer': { accepted: boolean }
   'core.projectKnowledgeNotebook': { accepted: boolean }
+  'core.gitRemotePublicationProtocol': { accepted: boolean }
   'core.workflowOptimizationLab': { accepted: boolean }
   'core.coreTopicSubscriptionEventBus': { accepted: boolean }
   'core.dependencyAwareTaskGraph': { accepted: boolean }

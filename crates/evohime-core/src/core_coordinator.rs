@@ -511,6 +511,7 @@ impl TaskCoordinator {
             c @ CoreCommand::RuntimeServiceGraph { .. } => { workflow_subsystems::handle(state, c).await }
             c @ CoreCommand::AgentProgramOptimizer { .. } => { workflow_subsystems::handle(state, c).await }
             c @ CoreCommand::ProjectKnowledgeNotebook { .. } => { workflow_subsystems::handle(state, c).await }
+            c @ CoreCommand::GitRemotePublicationProtocol { .. } => { workflow_subsystems::handle(state, c).await }
             c @ CoreCommand::WorkflowOptimizationLab { .. } => {
                 workflow_subsystems::handle(state, c).await
             }
