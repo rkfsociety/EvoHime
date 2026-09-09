@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { render, screen } from '@testing-library/react'
-import { test } from 'vitest'
+import { expect, test } from 'vitest'
 import { BackgroundExecutionPanel } from '../src/renderer/src/BackgroundExecutionPanel'
 
 test('background execution panel keeps detached state Core-owned and redacted', () => {
