@@ -908,6 +908,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::GitRemotePublicationProtocol { protocol_id, operation, revision, .. } => console_line!(
             "git_remote_publication_protocol.result {protocol_id}: {operation} revision={revision}"
         ),
+        evohime_core::CoreEvent::VoiceInputDictation { profile_id, operation, revision, .. } => console_line!(
+            "voice_input_dictation.result {profile_id}: {operation} revision={revision}"
+        ),
         evohime_core::CoreEvent::WorkflowOptimizationLab { run_id, operation, revision, .. } => console_line!(
             "workflow_optimization_lab.result {run_id}: {operation} revision={revision}"
         ),

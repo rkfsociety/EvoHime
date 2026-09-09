@@ -2887,3 +2887,16 @@ effect owner.
 Authenticated additive IPC command 272/event 117 даёт redacted projection с
 hash prefix, status и typed failure. Renderer не получает secrets, raw Git
 output или authority; unknown/stale/denied outcomes не объявляются success.
+
+## Voice Input & Dictation v1 (план 146)
+
+`voice_input_dictation.rs` хранит bounded profile metadata: locale, adapter,
+scope, lifecycle и immutable revision/hash. Schema v114 хранит только
+revisioned metadata и idempotency; raw audio/transcript не сохраняются. Core
+availability fail-closed сообщает `unavailable` до подтверждённого listener
+runtime evidence, не создавая второй audio owner.
+
+Authenticated additive IPC command 273/event 118 проецирует только bounded
+availability и adapter metadata. Renderer не получает audio, transcript,
+secrets или authority; unknown/unsupported adapter состояния не являются
+success.
