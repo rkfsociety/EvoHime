@@ -11,6 +11,8 @@ description: Полностью реализовать и закрыть numbere
 провести план через ревью, код, интеграцию, release routing, документацию,
 удаление plan-файлов и коммит. Для одного только ревью используй
 `evohime-plan-review`; для одного только аудита — `evohime-implementation-audit`.
+Короткий канонический prompt с маршрутизацией skills находится в
+`../../prompts/implement-and-close-plan.md`.
 
 ## Жёсткие границы
 
