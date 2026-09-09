@@ -2,20 +2,31 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 pub fn put(
     connection: &Connection,
-    evidence: &crate::verification_evidence_ledger::VerificationEvidence,
+    evidence_id: &str,
+    lane_id: &str,
+    status: &str,
+    evidence_json: &[u8],
     target_id: &str,
     fingerprint: &str,
     now_ms: i64,
 ) -> Result<bool, &'static str> {
-    evidence.validate().map_err(|_| "invalid evidence")?;
-    if target_id.trim().is_empty() || fingerprint.trim().is_empty() || now_ms <= 0 {
+    if evidence_id.trim().is_empty()
+        || evidence_id.len() > 256
+        || lane_id.trim().is_empty()
+        || lane_id.len() > 256
+        || status.trim().is_empty()
+        || status.len() > 64
+        || evidence_json.is_empty()
+        || target_id.trim().is_empty()
+        || fingerprint.trim().is_empty()
+        || now_ms <= 0
+    {
         return Err("invalid ledger scope");
     }
-    let json = serde_json::to_vec(evidence).map_err(|_| "serialization")?;
-    if json.len() > 64 * 1024 {
+    if evidence_json.len() > 64 * 1024 {
         return Err("evidence too large");
     }
-    connection.execute("INSERT OR IGNORE INTO verification_evidence_ledger (evidence_id,target_id,lane_id,status,fingerprint,evidence_json,created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![evidence.evidence_id, target_id, evidence.lane_id, serde_json::to_string(&evidence.status).map_err(|_| "serialization")?, fingerprint, json, now_ms]).map(|count| count == 1).map_err(|_| "sqlite")
+    connection.execute("INSERT OR IGNORE INTO verification_evidence_ledger (evidence_id,target_id,lane_id,status,fingerprint,evidence_json,created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![evidence_id, target_id, lane_id, status, fingerprint, evidence_json, now_ms]).map(|count| count == 1).map_err(|_| "sqlite")
 }
 
 pub fn get(connection: &Connection, evidence_id: &str) -> rusqlite::Result<Option<Vec<u8>>> {

@@ -74,7 +74,7 @@ pub struct SearchResult {
 /// answer. `endpoint_url` is the URL the trait implementation would call,
 /// used here purely for the network-capability policy decision — this
 /// module never performs the HTTP call itself.
-pub trait SearchProvider {
+pub trait SearchProvider: Send + Sync {
     /// The URL the provider will call for `query`, used only for the
     /// bounded network-capability policy check (no request is sent here).
     fn endpoint_url(&self, query: &str) -> String;
@@ -107,7 +107,7 @@ impl SearchProvider for OfflineStubSearchProvider {
 /// may call an LLM (e.g. via `evohime-model-gateway`); the returned text is
 /// still passed through `research::redact_excerpt` and length-bounded by
 /// this module, so free model output cannot bypass the evidence contract.
-pub trait Summarizer {
+pub trait Summarizer: Send + Sync {
     fn summarize(&self, query: &str, excerpts: &[String]) -> Result<String, String>;
 }
 

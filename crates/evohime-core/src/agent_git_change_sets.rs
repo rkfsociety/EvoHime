@@ -747,7 +747,7 @@ pub async fn reconcile_pending_commit(
     let root = validate_workspace_root(&candidate.workspace_root)?;
     let snapshot = capture_snapshot(root.clone(), candidate.created_at_ms).await?;
     if snapshot.head == candidate.parent_head
-        && dirty_state_fingerprint(&snapshot.baseline) == dirty_state_fingerprint(baseline)
+        && baseline_fingerprint(&snapshot.baseline) == candidate.precondition_fingerprint
     {
         return Ok(PendingCommitReconciliation::NoEffect);
     }

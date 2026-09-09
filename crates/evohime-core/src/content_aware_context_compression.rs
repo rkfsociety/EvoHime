@@ -183,10 +183,10 @@ pub fn compact(
     let body = keep.join("\n");
     let mut hasher = Sha256::new();
     hasher.update(input.as_bytes());
-    let source_hash = format!("{hasher:x}");
+    let source_hash = format!("{:x}", hasher.finalize());
     let mut compact_hasher = Sha256::new();
     compact_hasher.update(body.as_bytes());
-    let compact_hash = format!("{compact_hasher:x}");
+    let compact_hash = format!("{:x}", compact_hasher.finalize());
     let mut omitted = Vec::new();
     if lines.len() > max_lines {
         omitted.push(OmittedRegion {

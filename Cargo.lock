@@ -879,6 +879,7 @@ dependencies = [
  "evohime-model-provenance",
  "evohime-permissions",
  "evohime-receipts",
+ "evohime-remote",
  "evohime-tool-runtime",
  "futures-util",
  "hex",
@@ -1057,6 +1058,16 @@ dependencies = [
  "uuid",
  "windows-sys 0.61.2",
  "zeroize",
+]
+
+[[package]]
+name = "evohime-remote"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

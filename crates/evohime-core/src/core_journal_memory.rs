@@ -7,10 +7,16 @@ impl EventJournal {
         fingerprint: &str,
         evidence: &crate::verification_evidence_ledger::VerificationEvidence,
     ) -> Result<bool, String> {
+        evidence.validate().map_err(|error| error.to_string())?;
+        let evidence_json = serde_json::to_vec(evidence).map_err(|error| error.to_string())?;
+        let status = serde_json::to_string(&evidence.status).map_err(|error| error.to_string())?;
         let database = self.database.lock().await;
         evohime_local_storage::verification_evidence_ledger_store::put(
             database.connection(),
-            evidence,
+            &evidence.evidence_id,
+            &evidence.lane_id,
+            &status,
+            &evidence_json,
             target_id,
             fingerprint,
             crate::task_memory::now_millis() as i64,

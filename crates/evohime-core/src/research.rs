@@ -998,7 +998,7 @@ mod tests {
                 start: Some(0),
                 end: Some(8),
             },
-            content_hash: sha256_hex(b"evidence"),
+            content_hash: revision.content_hash.clone(),
             trust: EvidenceTrust::AcquiredExternal,
         };
         assert!(item.validate_against_revision(&revision).is_ok());

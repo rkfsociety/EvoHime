@@ -699,6 +699,7 @@ impl IpcBridge {
             payload,
             expected_version,
             idempotency_key,
+            ..
         } = request;
         if operation == "research_session_run" {
             coordinator
