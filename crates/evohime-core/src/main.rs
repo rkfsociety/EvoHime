@@ -893,6 +893,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::KernelCapabilityFacade { record_id, operation, revision, .. } => console_line!(
             "kernel_capability_facade.result {record_id}: {operation} revision={revision}"
         ),
+        evohime_core::CoreEvent::AuthorizedSecurityAssessment { assessment_id, operation, revision, .. } => console_line!(
+            "authorized_security_assessment.result {assessment_id}: {operation} revision={revision}"
+        ),
         evohime_core::CoreEvent::WorkflowOptimizationLab { run_id, operation, revision, .. } => console_line!(
             "workflow_optimization_lab.result {run_id}: {operation} revision={revision}"
         ),

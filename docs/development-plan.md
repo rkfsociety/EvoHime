@@ -26,7 +26,7 @@ restart подтверждаются отдельно. Автоматическ�
 ## Исполняемая очередь
 
 Незавершённые планы выполняются по графу зависимостей и по этапам `0 → 4`.
-Текущий активный каталог — планы `140–143` и `145–167`; блокирующие и
+Текущий активный каталог — планы `141–143` и `145–167`; блокирующие и
 опциональные зависимости указаны в overview каждого плана и сведены в
 [`plans/README.md`](plans/README.md). Закрытые MVP-планы `127–130` не входят в
 очередь повторно.
@@ -52,7 +52,8 @@ restart подтверждаются отдельно. Автоматическ�
 | 137 | agent context loadouts | реализован 2026-09-09 |
 | 138 | skill source & update lifecycle | реализован 2026-09-09 |
 | 139 | kernel capability facade | реализован 2026-09-09 |
-| 140–143 | security, service graph, optimizer, notebook | активная очередь по графу |
+| 140 | authorized security assessment lane | реализован 2026-09-09 |
+| 141–143 | service graph, optimizer, notebook | активная очередь по графу |
 | 144 | модульный manifest и выборочное обновление компонентов | реализовано 2026-09-04 |
 | 145–167 | publication, voice, offline consolidation, review, model compare, policy, suggestions, experiments, computer use, execution board, grounding, temporal memory, IDE, checkpoints, diagrams, compatibility, motion, recipes, voice output, command center | активная очередь по графу |
 

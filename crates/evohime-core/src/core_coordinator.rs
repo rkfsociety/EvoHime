@@ -507,6 +507,7 @@ impl TaskCoordinator {
             c @ CoreCommand::ContextLoadouts { .. } => { workflow_subsystems::handle(state, c).await }
             c @ CoreCommand::SkillSourceLifecycle { .. } => { workflow_subsystems::handle(state, c).await }
             c @ CoreCommand::KernelCapabilityFacade { .. } => { workflow_subsystems::handle(state, c).await }
+            c @ CoreCommand::AuthorizedSecurityAssessment { .. } => { workflow_subsystems::handle(state, c).await }
             c @ CoreCommand::WorkflowOptimizationLab { .. } => {
                 workflow_subsystems::handle(state, c).await
             }

@@ -1331,3 +1331,11 @@ Verification evidence: `cargo fmt --all` and `git diff --check` passed. Local
 tests, builds, linters and runtime smoke tests were intentionally not run per
 the task instruction; CI was not monitored. The installed client was not
 touched.
+## Plan 140 — Authorized Security Assessment Lane v1 (2026-09-09)
+
+Implemented Core contract, schema v109 migration, authorization expiry and
+scope bounds, revisioned metadata storage, fail-closed start/finding/cancel
+transitions, authenticated IPC command 268/event 113 and redacted Electron
+projection. No local tests, builds, linters, smoke/E2E or push were run by the
+plan closure task; allowed evidence is static diff/link validation and
+read-only CI/workflow/module-router inspection.

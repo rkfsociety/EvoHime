@@ -470,3 +470,12 @@ handles: exact snapshot/capability/version проверяются Core, недо
 capability возвращает `Unavailable`. Existing Tool/Workflow/Child/Context/
 Analysis Kernel и policy owners не дублируются. Schema v108 хранит только
 bounded facade metadata; IPC 267/112 и Electron остаются projection-only.
+## Plan 140 — Authorized Security Assessment Lane (закрыт 2026-09-09)
+
+Core владеет bounded scope/authorization/finding lifecycle с immutable hash и
+revision-aware SQLite storage (schema v109). Запуск требует действующей
+authorization, policy hash, scope bounds и evidence reference; expired,
+denied, revoked, stale и unknown состояния дают non-success. Реализация
+metadata-only и не является scanner/executor: эффекты остаются у существующих
+policy, approval, provenance и tool owners. Authenticated IPC command 268 и
+event 113 проецируют в Electron только redacted metadata.

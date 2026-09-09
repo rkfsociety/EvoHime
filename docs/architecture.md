@@ -2817,3 +2817,15 @@ version и availability against existing Core policy/approval/tool/workflow/
 child/context owners. Migration v108 хранит только metadata; facade не
 исполняет shell/network/code и не создаёт второй registry. IPC 267/112 и
 Electron показывают redacted status/provenance.
+## Authorized Security Assessment Lane v1 (план 140)
+
+`authorized_security_assessment.rs` — единственный Core-owned contract для
+bounded scope, authorization, assessment status и evidence-backed findings.
+`validate_authorization` fail-closed проверяет actor, policy hash, expiry,
+scope/path limits и canonical hash; `start_allowed` повторно связывает
+assessment с authorization перед любым переходом. Storage schema v109 хранит
+только revisioned metadata и idempotency key. Команды IPC 268/event 113 дают
+authenticated replay-safe metadata projection; renderer не получает secrets,
+raw prompts, logs или authority. Это adapter/lane, а не новый scanner,
+executor, scheduler или permission system: фактический эффект остаётся у
+существующих Core owners.

@@ -29,7 +29,6 @@
 
 | План | Тема | Состояние |
 | --- | --- | --- |
-| [140](140-0-authorized-security-assessment-lane.md) | Authorized security assessment lane | незавершён |
 | [141](141-0-runtime-service-graph.md) | Runtime service graph | незавершён |
 | [142](142-0-agent-program-optimizer.md) | Agent program optimizer | незавершён |
 | [143](143-0-project-knowledge-notebook.md) | Project knowledge notebook | незавершён |
@@ -57,7 +56,7 @@
 | [166](166-0-optional-voice-output-adapter.md) | Optional Voice Output Adapter | незавершён |
 | [167](167-0-command-center.md) | Command Center | незавершён |
 
-Номера `140–143` и `145–167` являются текущими идентификаторами активной
+Номера `141–143` и `145–167` являются текущими идентификаторами активной
 очереди. Пропуск `144` намеренный: это закрытый план модульного обновления.
 Новая работа получает следующий свободный номер только после проверки
 дубликатов и зависимостей.

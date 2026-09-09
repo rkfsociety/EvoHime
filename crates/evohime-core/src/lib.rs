@@ -7,6 +7,7 @@ pub use core_prelude::{
 };
 
 pub(crate) mod adaptive_tool_catalog;
+pub mod authorized_security_assessment;
 pub(crate) mod approval_policy_profiles;
 pub mod capability_workbenches;
 pub(crate) mod checkpoint_forking_and_replay;
