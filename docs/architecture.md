@@ -2900,3 +2900,15 @@ Authenticated additive IPC command 273/event 118 проецирует тольк
 availability и adapter metadata. Renderer не получает audio, transcript,
 secrets или authority; unknown/unsupported adapter состояния не являются
 success.
+
+## Offline Experience Consolidation Cycle v1 (план 147)
+
+`offline_experience_consolidation.rs` хранит bounded cycle metadata, input
+references, output hash и immutable revision. Schema v115 хранит только
+metadata/idempotency; `consolidate` является offline metadata-only verdict и
+не вызывает external effects, scheduler или второй knowledge owner.
+
+Authenticated additive IPC command 274/event 119 проецирует status, counts,
+hash prefix и effect boundary. Raw experience, prompts, transcripts, secrets
+и external outputs не проходят через storage или renderer; invalid/unknown
+состояния fail closed.

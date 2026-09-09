@@ -1924,6 +1924,7 @@ message CommandEnvelope {
     ProjectKnowledgeNotebookCommand project_knowledge_notebook = 271;
     GitRemotePublicationProtocolCommand git_remote_publication_protocol = 272;
     VoiceInputDictationCommand voice_input_dictation = 273;
+    OfflineExperienceConsolidationCommand offline_experience_consolidation = 274;
   }
 }
 
@@ -1966,6 +1967,8 @@ message GitRemotePublicationProtocolCommand { uint32 schema_version=1; string re
 message GitRemotePublicationProtocolEvent { uint32 schema_version=1; string request_id=2; string operation=3; string status=4; uint64 revision=5; bytes projection_json=6; string error_code=7; bool truncated=8; }
 message VoiceInputDictationCommand { uint32 schema_version=1; string request_id=2; string operation=3; string profile_id=4; bytes payload=5; uint64 expected_revision=6; string idempotency_key=7; }
 message VoiceInputDictationEvent { uint32 schema_version=1; string request_id=2; string operation=3; string status=4; uint64 revision=5; bytes projection_json=6; string error_code=7; bool truncated=8; }
+message OfflineExperienceConsolidationCommand { uint32 schema_version=1; string request_id=2; string operation=3; string cycle_id=4; bytes payload=5; uint64 expected_revision=6; string idempotency_key=7; }
+message OfflineExperienceConsolidationEvent { uint32 schema_version=1; string request_id=2; string operation=3; string status=4; uint64 revision=5; bytes projection_json=6; string error_code=7; bool truncated=8; }
 
 // Plan 30: package bytes are bounded JSON and are processed only by Core.
 message PreviewWorkflowPackage {
@@ -2132,6 +2135,7 @@ message EventEnvelope {
     ProjectKnowledgeNotebookEvent project_knowledge_notebook = 116;
     GitRemotePublicationProtocolEvent git_remote_publication_protocol = 117;
     VoiceInputDictationEvent voice_input_dictation = 118;
+    OfflineExperienceConsolidationEvent offline_experience_consolidation = 119;
   }
 }
 

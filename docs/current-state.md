@@ -297,7 +297,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Следующий незавершённый порядок
 
-Незавершённый каталог состоит из планов `147–167`. Планы `102`,
+Незавершённый каталог состоит из планов `148–167`. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а
@@ -523,4 +523,12 @@ redacted projection. Локальные tests, builds, linters, smoke/E2E не
 idempotent metadata storage и typed `unavailable` availability. Raw audio и
 transcript не сохраняются и не проецируются; authenticated IPC 273/118 и
 Electron panel остаются metadata-only. Локальные tests, builds, linters,
+smoke/E2E не запускались; CI недоступен до push.
+
+## Plan 147 — Offline Experience Consolidation Cycle (закрыт 2026-09-09)
+
+Добавлен bounded Core cycle с schema v115, revision/idempotency storage и
+offline metadata-only evaluation. External effects, raw experience,
+transcripts и secrets не сохраняются; authenticated IPC 274/119 и Electron
+panel проецируют только redacted state. Локальные tests, builds, linters,
 smoke/E2E не запускались; CI недоступен до push.

@@ -1375,3 +1375,10 @@ revisioned metadata storage, active-revision pinning, authenticated IPC command
 269/event 114 and redacted Electron projection. Local tests, builds, linters,
 smoke/E2E and runtime were prohibited and not run; the local commit is not
 published, so exact-commit CI evidence is `UNAVAILABLE` until a later push.
+
+## Plan 147 — Offline Experience Consolidation Cycle v1 (2026-09-09)
+
+Implemented bounded cycle contract, schema v115, idempotent metadata storage,
+offline metadata-only verdict, authenticated IPC 274/119 and redacted Electron
+projection. Local tests/builds/linters/smoke/E2E/runtime were not run;
+exact-commit CI is `UNAVAILABLE` until push.
