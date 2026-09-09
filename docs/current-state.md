@@ -288,11 +288,26 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Следующий незавершённый порядок
 
-Незавершённый каталог состоит из планов `131–143` и `145–167`. Планы `102`,
+Незавершённый каталог состоит из планов `132–143` и `145–167`. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а
 не по старому линейному списку.
+
+## Plan 131 — Unified Context Namespace (закрыт 2026-09-09)
+
+Core реализует bounded metadata-only namespace поверх ссылок на существующие
+owners. Schema v102 хранит node/projection/view/trace/idempotency metadata;
+stale, corrupt, unauthorized и budget-exhausted paths fail closed. Retrieval
+проверяет immutable view, sensitivity, roots, depth, quotas, explicit refs и
+stable ordering, а trace сохраняет только typed selection metadata.
+
+Authenticated IPC — command 261/event 106. Electron Context Namespace Explorer
+находится в свёрнутом `Интерфейс разработчика`, доступен только для чтения и
+получает redacted Core projection. `ContextDetailResolver` остаётся versioned
+adapter boundary: в текущем checkout detail явно имеет
+`projection_generation_failed/detail_resolver_unavailable`; успешный raw
+detail не создаётся. Установленный клиент не запускался и не изменялся.
 Полный каталог, блокирующие и опциональные зависимости находятся в
 [`plans/README.md`](plans/README.md), исполняемый порядок — в
 [`development-plan.md`](development-plan.md).

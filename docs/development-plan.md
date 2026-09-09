@@ -43,7 +43,8 @@ restart подтверждаются отдельно. Автоматическ�
 | 125 | free provider reliability routing | реализован 2026-09-09 |
 | 126 | design intent review lane | реализован 2026-09-09 |
 | 127–130 | remote control, local inference, model cascade, task leases | MVP-контуры реализованы 2026-09-09 |
-| 131–143 | context namespace, durable execution, utilities, resource guard, review, analysis, loadouts, skills, capability, security, service graph, optimizer, notebook | активная очередь по графу |
+| 131 | unified context namespace | реализован 2026-09-09 |
+| 132–143 | durable execution, utilities, resource guard, review, analysis, loadouts, skills, capability, security, service graph, optimizer, notebook | активная очередь по графу |
 | 144 | модульный manifest и выборочное обновление компонентов | реализовано 2026-09-04 |
 | 145–167 | publication, voice, offline consolidation, review, model compare, policy, suggestions, experiments, computer use, execution board, grounding, temporal memory, IDE, checkpoints, diagrams, compatibility, motion, recipes, voice output, command center | активная очередь по графу |
 
@@ -78,6 +79,16 @@ bundle и native-package smoke. Контракт и ограничения пе�
 `architecture.md` и `current-state.md`; evidence находится в
 `release-evidence.md`. Следующие планы используют этот canonical contract, а
 не удалённые stage-файлы.
+
+## План 131: Unified Context Namespace (реализован 2026-09-09)
+
+План закрыт после итерационного ревью и реализации Core/storage/runtime,
+schema v102, authenticated IPC 261/106, redacted Electron Context Explorer,
+typed detail-resolver unavailable gate, deterministic bounded retrieval и
+restart-safe metadata persistence. В соответствии с текущим ограничением
+Романа локальные тесты, сборки, линтеры и smoke-тесты не выполнялись; контракт
+перенесён в `architecture.md`, подтверждённое состояние и evidence — в
+канонические документы; комплект временных stage-файлов удалён.
 
 ## План 144: модульные релизы (реализован)
 

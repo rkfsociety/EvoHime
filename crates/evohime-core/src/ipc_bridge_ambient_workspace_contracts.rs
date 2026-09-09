@@ -667,6 +667,17 @@ impl IpcBridge {
                 )
                 .await?;
             }
+            Some(generated::command_envelope::Command::ContextNamespace(request)) => {
+                let operation = if request.operation.is_empty() {
+                    "list_children".to_owned()
+                } else {
+                    request.operation.clone()
+                };
+                let request_id = request.request_id.clone();
+                let result = self.dispatch_context_namespace(operation, request).await?;
+                self.write_context_namespace_response(writer, &request_id, result)
+                    .await?;
+            }
 
             _ => unreachable!("command routed to the wrong domain"),
         }

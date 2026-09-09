@@ -2646,3 +2646,38 @@ threshold/revision/hash и fail-closed decisions `Unavailable`, `NeedsReview`,
 deadline поверх существующих `run_leases`, `agent_run_leases` и child
 checkpoint leases. Wrong owner, stale generation и expiry fail closed; новый
 ownership store или blind retry не добавляются.
+
+## Unified Context Namespace v1 (план 131, реализован 2026-09-09)
+
+`evohime_core::context_namespace` — Core-owned metadata-only discovery layer
+поверх существующих владельцев Memory, Knowledge, Skills, Guidance, Artifacts
+и repository projections. В namespace сохраняются bounded node descriptors,
+topology, source revision/hash, projection metadata и typed retrieval traces;
+authoritative content, raw prompts, secrets, hidden reasoning и второй ACL не
+создаются. `stable_ref` и logical path — только навигация, каждое чтение
+проверяет immutable `ContextViewSnapshot`, allowed kinds, roots, exclusions и
+sensitivity ceiling.
+
+Контракт v1 использует `NodeKind`, `ProjectionLevel` (`Abstract`, `Overview`,
+`Detail`), freshness/trust/index health, provenance class и canonical bounded
+SHA-256 metadata. Projection принимается только при точном совпадении source,
+parser/profile/policy revisions; stale projection остаётся typed failure.
+Retrieval ограничен depth, visited nodes, per-level quotas и token budget,
+сохраняет explicit-ref priority и стабильный `node_id` tie-break. Trace хранит
+только visits, reason codes, selected/rejected refs, token contributions,
+fallback и status. Retrieved Memory/Knowledge маркируется provenance и не
+становится новым подтверждённым evidence.
+
+Detail не извлекается из SQLite или renderer. `ContextDetailResolver` — typed
+adapter boundary; пока versioned adapter не зарегистрирован, explicit detail
+возвращает `projection_generation_failed` с
+`detail_resolver_unavailable`, а не успешный пустой результат. Это намеренное
+fail-closed состояние; direct source locator остаётся bounded reference для
+будущего authoritative opener.
+
+SQLite schema v102 аддитивно устанавливает nodes, projections, views, traces и
+idempotency metadata с monotonic revision fences, bounded JSON и migration
+backup/transaction semantics. Authenticated additive IPC использует command
+261/event 106; replay/resync и correlation остаются общим IPC transport
+контрактом. Electron получает только redacted projection в read-only панели
+`Context Namespace` внутри свёрнутого `Интерфейс разработчика`.

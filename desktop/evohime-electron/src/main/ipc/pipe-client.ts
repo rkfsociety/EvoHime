@@ -22,6 +22,7 @@ import type {
   ArchitectureSnapshotProjection,
   PersistentAgentOrganizationRegistryProjection,
   ExecutionEnvironmentProfileProjection,
+  ContextNamespaceProjection,
   AgentGitChangeSetsProjection,
   ArchitectEditorPipelineProjection,
   EventVisualizerRegistryProjection,
@@ -601,6 +602,7 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       , architectureSnapshot: decodeArchitectureSnapshot(event.architectureSnapshot)
       , persistentAgentOrganizationRegistry: decodePersistentAgentOrganizationRegistry(event.persistentAgentOrganizationRegistry)
       , executionEnvironmentProfile: decodeExecutionEnvironmentProfile(event.executionEnvironmentProfile)
+      , contextNamespace: decodeContextNamespace(event.contextNamespace)
       , agentGitChangeSets: decodeAgentGitChangeSets(event.agentGitChangeSets)
       , architectEditorPipeline: decodeArchitectEditorPipeline(event.architectEditorPipeline)
       , eventVisualizerRegistry: decodeEventVisualizerRegistry(event.eventVisualizerRegistry)
@@ -860,6 +862,8 @@ function decodeArchitectureSnapshot(projected: evohime.desktop.v1.IArchitectureS
 function decodePersistentAgentOrganizationRegistry(projected: evohime.desktop.v1.IPersistentAgentOrganizationRegistryEvent | null | undefined): PersistentAgentOrganizationRegistryProjection | null { if (!projected) return null; const raw=decodePayload(projected.projectionJson); let projection: unknown=null; try { projection=JSON.parse(raw) } catch { projection=null }; return { schemaVersion:Number(projected.schemaVersion??0), requestId:projected.requestId??'', agentId:projected.agentId??'', operation:projected.operation??'', revision:Number(projected.revision??0), status:projected.status??'', errorCode:projected.errorCode??'', projection } }
 
 function decodeExecutionEnvironmentProfile(projected: evohime.desktop.v1.IExecutionEnvironmentProfileEvent | null | undefined): ExecutionEnvironmentProfileProjection | null { if (!projected) return null; const raw=decodePayload(projected.projectionJson); let projection: unknown=null; try { projection=JSON.parse(raw) } catch { projection=null }; return { schemaVersion:Number(projected.schemaVersion??0), requestId:projected.requestId??'', profileId:projected.profileId??'', operation:projected.operation??'', revision:Number(projected.revision??0), status:projected.status??'', errorCode:projected.errorCode??'', projection } }
+
+function decodeContextNamespace(projected: evohime.desktop.v1.IContextNamespaceEvent | null | undefined): ContextNamespaceProjection | null { if (!projected) return null; const raw=decodePayload(projected.projectionJson); let projection: unknown=null; try { projection=JSON.parse(raw) } catch { projection=null }; return { schemaVersion:Number(projected.schemaVersion??0), requestId:projected.requestId??'', operation:projected.operation??'', revision:Number(projected.revision??0), status:projected.status??'', errorCode:projected.errorCode??'', projection } }
 
 function decodeAgentGitChangeSets(projected: evohime.desktop.v1.IAgentGitChangeSetsEvent | null | undefined): AgentGitChangeSetsProjection | null {
   if (!projected) return null

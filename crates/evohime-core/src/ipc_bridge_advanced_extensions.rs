@@ -657,6 +657,57 @@ impl IpcBridge {
         Ok(())
     }
 
+    pub(crate) async fn write_context_namespace_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        request_id: &str,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value = serde_json::from_slice(&payload).unwrap_or_default();
+        let status = value
+            .get("status")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("error")
+            .to_owned();
+        let revision = value
+            .get("revision")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or_default();
+        let encoded = generated::ContextNamespaceEvent {
+            schema_version: 1,
+            revision,
+            request_id: request_id.to_owned(),
+            operation: value
+                .get("operation")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("result")
+                .to_owned(),
+            status,
+            projection_json: payload.clone(),
+            error_code: value
+                .get("error_code")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+        };
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: "context_namespace.result".into(),
+                payload,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: Some(generated::event_envelope::Event::ContextNamespace(encoded)),
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
+    }
+
     pub(crate) async fn write_invocation_preset_response<W: AsyncWrite + Unpin>(
         &self,
         writer: &mut W,

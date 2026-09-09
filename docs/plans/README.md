@@ -16,7 +16,7 @@
 ## Закрытые направления
 
 Временные plan-файлы закрытых направлений удалены после переноса их контракта
-и evidence в канонические документы. К закрытым относятся планы `01–130` и
+и evidence в канонические документы. К закрытым относятся планы `01–131` и
 `144`; планы `127–130` закрыты как MVP-контуры с явно сохранёнными
 `unavailable` deployment/adapter gates. Их отсутствие из каталога не означает
 отсутствие контракта: он находится в `architecture.md` и `current-state.md`.
@@ -29,7 +29,6 @@
 
 | План | Тема | Состояние |
 | --- | --- | --- |
-| [131](131-0-unified-context-namespace.md) | Unified context namespace | незавершён |
 | [132](132-0-durable-background-execution-plane.md) | Durable background execution plane | незавершён |
 | [133](133-0-built-in-deterministic-developer-utilities.md) | Built-in deterministic developer utilities | незавершён |
 | [134](134-0-host-resource-telemetry-pressure-guard.md) | Host resource telemetry pressure guard | незавершён |

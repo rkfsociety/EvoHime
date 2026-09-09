@@ -130,6 +130,7 @@ pub mod child_workflow;
 pub mod code_anchored_intent_markers;
 pub mod content_aware_context_compression;
 pub(crate) mod context_budget;
+pub mod context_namespace;
 pub(crate) mod continuation;
 pub(crate) mod conversation_event_log;
 pub(crate) mod conversation_workbench;

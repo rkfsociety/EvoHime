@@ -1442,6 +1442,37 @@ impl IpcBridge {
             .map_err(IpcBridgeError::from)
     }
 
+    pub(crate) async fn dispatch_context_namespace(
+        &self,
+        operation: String,
+        request: generated::ContextNamespaceCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        if request.schema_version != crate::context_namespace::SCHEMA_VERSION {
+            return Err(FrameError::Io("unsupported context namespace schema".into()).into());
+        }
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::ContextNamespace {
+                operation,
+                namespace_id: request.namespace_id,
+                payload: request.payload,
+                expected_revision: request.expected_revision,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
     pub(crate) async fn dispatch_memory_views_and_adaptive_recall(
         &self,
         operation: String,

@@ -1123,6 +1123,31 @@ Architecture Snapshot ownership remains separate; missing evidence is
 Unknown/NeedsReview. `cargo fmt --all` and `git diff --check` passed; local
 tests/builds and CI monitoring were skipped by instruction.
 
+## Plan 131 — Unified Context Namespace v1 (2026-09-09)
+
+Implementation: Core-owned bounded node/projection/view/retrieval/trace
+contract, additive SQLite schema v102, optimistic revisions and durable
+idempotency metadata. Runtime enforces immutable view authorization, sensitivity
+ceiling, logical topology, depth/visited/token/per-level budgets, explicit-ref
+priority, deterministic tie-breaks and typed degraded outcomes. Detail opening
+uses `ContextDetailResolver`; no adapter is present, so absence remains visible
+as `projection_generation_failed/detail_resolver_unavailable`.
+
+IPC/UI: authenticated additive command 261/event 106 with generated Rust and
+TypeScript bindings, replay-compatible event projection and redacted
+metadata-only Context Namespace Explorer under the developer interface. No raw
+prompt, source content, secret, hidden reasoning or renderer-computed verdict
+is stored or exposed. Module release markers `core`, `shell-host` and
+`ui-bundle` advance from `0.0.000039` to `0.0.000040`.
+
+Verification evidence: the focused test and build commands were not run after
+Роман запретил локальное тестирование, сборки, линтеры и smoke-тесты. Выполнены
+разрешённые статические сверки: `git diff --check`, отсутствие stale links на
+удалённый plan-комплект и анализ Windows workflow. Workflow уже включает
+изменённые Core/storage crates, generated protocol/typecheck/build/bundle gates
+и native-package jobs; remote CI result не заявляется, потому что push явно не
+запрашивался.
+
 ## Plan 124 — Project Quality Contract v1 (2026-09-09)
 
 Implemented Core quality constraints, immutable schema 99 metadata and

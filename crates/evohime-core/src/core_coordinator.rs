@@ -44,6 +44,8 @@ mod build_runtime;
 mod capabilities;
 #[path = "core_coordinator_capabilities_runtime.rs"]
 mod capabilities_runtime;
+#[path = "core_coordinator_context_namespace.rs"]
+mod context_namespace;
 #[path = "core_coordinator_memory.rs"]
 mod memory;
 #[path = "core_coordinator_memory_runtime.rs"]
@@ -604,6 +606,7 @@ impl TaskCoordinator {
             c @ CoreCommand::ExecutionEnvironmentProfile { .. } => {
                 memory_runtime::handle(state, c).await
             }
+            c @ CoreCommand::ContextNamespace { .. } => context_namespace::handle(state, c).await,
             c @ CoreCommand::GetMemory { .. } => memory_runtime::handle(state, c).await,
             c @ CoreCommand::ListMemoryPending { .. } => memory_runtime::handle(state, c).await,
             c @ CoreCommand::GetMemoryConflicts { .. } => memory_runtime::handle(state, c).await,

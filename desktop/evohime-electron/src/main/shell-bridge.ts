@@ -621,6 +621,17 @@ function dispatch(
       if (operation === null || profileId === null || ownerScope === null || body === null || expectedRevision === null || idempotencyKey === null || profileId.length > 128 || ownerScope.length > 128 || body.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректный запрос execution environment profile.')
       return accepted(client.send({executionEnvironmentProfile:{schemaVersion:1,requestId:randomUUID(),ownerScope,operation,profileId,payload:Buffer.from(body,'utf8'),expectedRevision,idempotencyKey}}))
     }
+    case 'core.contextNamespace': {
+      const value = asRecord(payload)
+      const operations = ['register_node','register_projection','save_view','record_trace','list_children','get_abstract','get_overview','resolve_detail','search_within','find_descendants','explain_selection','retrieve']
+      const operation = operations.includes(String(value['operation'])) ? String(value['operation']) : null
+      const namespaceId = asBoundedString(value['namespaceId'])
+      const body = value['payload'] === undefined ? '' : asBoundedString(value['payload'])
+      const expectedRevision = value['expectedRevision'] === undefined ? 0 : asNonNegativeInteger(value['expectedRevision'])
+      const idempotencyKey = value['idempotencyKey'] === undefined ? randomUUID() : asBoundedString(value['idempotencyKey'])
+      if (operation === null || namespaceId === null || body === null || expectedRevision === null || idempotencyKey === null || namespaceId.length > 128 || body.length > 128 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Context Namespace.')
+      return accepted(client.send({contextNamespace:{schemaVersion:1,requestId:randomUUID(),operation,namespaceId,payload:Buffer.from(body,'utf8'),expectedRevision,idempotencyKey}}))
+    }
     case 'core.agentGitChangeSets': {
       const value = asRecord(payload)
       const operations = ['observe', 'candidate', 'get_candidate', 'reconcile', 'commit', 'undo', 'keep']

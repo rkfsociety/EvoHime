@@ -34,6 +34,7 @@ pub mod collaboration_store;
 pub mod composable_termination_conditions_store;
 pub mod context_command_store;
 pub mod context_ledger_store;
+pub mod context_namespace_store;
 pub(crate) mod continuation_store;
 pub mod conversation_bridge_adapters_store;
 pub(crate) mod conversation_event_log_store;
@@ -111,7 +112,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 101;
+pub const SCHEMA_VERSION: u32 = 102;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -2873,6 +2874,7 @@ impl LocalDatabase {
         migrations::v099::apply(&transaction, current)?;
         migrations::v100::apply(&transaction, current)?;
         migrations::v101::apply(&transaction, current)?;
+        migrations::v102::apply(&transaction, current)?;
         transaction.commit()?;
         Ok(())
     }

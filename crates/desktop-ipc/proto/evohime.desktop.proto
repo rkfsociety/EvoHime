@@ -1911,6 +1911,7 @@ message CommandEnvelope {
     ArchitectureSnapshotCommand architecture_snapshot = 258;
     PersistentAgentOrganizationRegistryCommand persistent_agent_organization_registry = 259;
     ExecutionEnvironmentProfileCommand execution_environment_profile = 260;
+    ContextNamespaceCommand context_namespace = 261;
   }
 }
 
@@ -2066,7 +2067,28 @@ message EventEnvelope {
   ArchitectureSnapshotEvent architecture_snapshot = 103;
     PersistentAgentOrganizationRegistryEvent persistent_agent_organization_registry = 104;
     ExecutionEnvironmentProfileEvent execution_environment_profile = 105;
+    ContextNamespaceEvent context_namespace = 106;
   }
+}
+
+message ContextNamespaceCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string namespace_id = 4;
+  bytes payload = 5;
+  uint64 expected_revision = 6;
+  string idempotency_key = 7;
+}
+
+message ContextNamespaceEvent {
+  uint32 schema_version = 1;
+  uint64 revision = 2;
+  string request_id = 3;
+  string operation = 4;
+  string status = 5;
+  bytes projection_json = 6;
+  string error_code = 7;
 }
 
 // Plan 56: bounded metadata-only semantic artifact registry. Bytes, secrets,
