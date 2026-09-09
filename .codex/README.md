@@ -21,11 +21,6 @@
 `evohime-plan-implementation/SKILL.md`; он маршрутизирует работу к
 специализированным skills:
 
-Короткий готовый prompt для отправки как `/goal` находится в
-[`prompts/implement-and-close-plan.md`](prompts/implement-and-close-plan.md).
-Достаточно указать номер плана и применить его; ручное копирование длинного
-чеклиста не требуется.
-
 - `evohime-repo-orientation` — синхронизация, ветка, dirty tree, правила и
   источники истины до любых изменений;
 - `evohime-plan-review` — итерационное ревью и исправление канонического плана;
