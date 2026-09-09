@@ -85,6 +85,7 @@ pub async fn execute(ctx: &ToolContext, value: serde_json::Value) -> Result<Tool
 
     match result {
         Ok(Ok(status)) => {
+            #[cfg(windows)]
             drop(_process_guard);
             let stdout = String::from_utf8_lossy(
                 &stdout_task

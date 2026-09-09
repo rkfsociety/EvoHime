@@ -124,6 +124,7 @@ fn bounded(bytes: &[u8]) -> bool {
     !bytes.is_empty() && bytes.len() <= MAX_JSON_BYTES
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn save_run_metadata(
     c: &Connection,
     run_id: &str,

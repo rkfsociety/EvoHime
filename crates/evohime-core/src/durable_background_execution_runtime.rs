@@ -276,7 +276,7 @@ impl EventJournal {
 
     async fn poll_background_schedules(&self, now_ms: i64) -> Result<u32, StorageError> {
         let schedules = {
-            let mut database = self.database.lock().await;
+            let database = self.database.lock().await;
             store::list_background_schedules(database.connection(), "", 256)?
         };
         let mut fired = 0;

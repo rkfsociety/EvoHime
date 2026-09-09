@@ -140,6 +140,7 @@ pub async fn execute(
                 .map_err(|e| ToolError::Execution(format!("process failed: {e}")))?
         }
     };
+    #[cfg(windows)]
     drop(_process_guard);
 
     let stdout_text = stdout_task

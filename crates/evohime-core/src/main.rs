@@ -1,4 +1,5 @@
 use std::io::Write;
+#[cfg(windows)]
 use std::process::ExitCode;
 
 macro_rules! console_line {

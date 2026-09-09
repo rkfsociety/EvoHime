@@ -206,6 +206,7 @@ impl IpcBridge {
                     error_code = "duplicate_run";
                     state = *registry.runs.get(run_id).unwrap_or(&AgentState::Unknown);
                 } else {
+                    #[cfg(windows)]
                     let executable_ref = payload.executable_ref.as_ref();
                     #[cfg(windows)]
                     let supervisor_result = crate::analysis_kernel::supervisor_command(

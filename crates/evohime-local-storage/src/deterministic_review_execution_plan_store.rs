@@ -48,11 +48,4 @@ pub fn pin(c: &Connection, run: &str, id: &str, r: u64, h: &str, n: i64) -> rusq
         params![run, id, r, h, n],
     )
     .map(|_| ())
-    .or_else(|e| {
-        if matches!(e, rusqlite::Error::SqliteFailure(_, _)) {
-            Err(e)
-        } else {
-            Err(e)
-        }
-    })
 }

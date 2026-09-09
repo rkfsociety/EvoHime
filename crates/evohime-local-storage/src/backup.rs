@@ -13,9 +13,12 @@ use std::{
     fs::{self, File},
     io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
-    ptr, thread,
+    thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
+#[cfg(windows)]
+use std::ptr;
 
 pub const BACKUP_FORMAT_VERSION: u32 = 1;
 pub const MAX_BACKUP_BYTES: u64 = 512 * 1024 * 1024;

@@ -2,6 +2,7 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute_batch("CREATE TABLE IF NOT EXISTS kernel_capability_facade (record_id TEXT NOT NULL, kind TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(record_id,revision), UNIQUE(record_id,idempotency_key));")
 }
+#[allow(clippy::too_many_arguments)]
 pub fn save(
     c: &Connection,
     id: &str,

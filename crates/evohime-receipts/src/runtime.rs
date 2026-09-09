@@ -99,7 +99,7 @@ fn monotonic_ms() -> Result<i64, RuntimeError> {
             .next()
             .and_then(|value| value.parse::<f64>().ok())
             .ok_or(RuntimeError::Code("storage_key_unavailable"))?;
-        return Ok((seconds * 1000.0).floor() as i64);
+        Ok((seconds * 1000.0).floor() as i64)
     }
     #[cfg(not(any(windows, target_os = "linux")))]
     {

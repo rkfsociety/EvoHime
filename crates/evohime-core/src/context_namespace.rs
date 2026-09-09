@@ -1226,8 +1226,8 @@ impl crate::EventJournal {
                         is_direct_child(node, &command.namespace_id, &all_nodes)
                             && view.authorize_node(node, &all_nodes).is_ok()
                     })
-                    .cloned()
                     .take(256)
+                    .cloned()
                     .collect::<Vec<_>>();
                 serde_json::to_vec(&serde_json::json!({"status":"ok","nodes":nodes}))?
             }
@@ -1301,8 +1301,8 @@ impl crate::EventJournal {
                                     || node.stable_ref.to_ascii_lowercase().contains(&query))
                             }
                     })
-                    .cloned()
                     .take(256)
+                    .cloned()
                     .collect::<Vec<_>>();
                 serde_json::to_vec(&serde_json::json!({"status":"ok","nodes":nodes}))?
             }
@@ -1501,7 +1501,7 @@ mod tests {
     fn guessed_path_does_not_bypass_view() {
         let n = node("hidden", None, NodeKind::MemoryRecord);
         assert_eq!(
-            view().authorize_node(&n, &[n.clone()]),
+            view().authorize_node(&n, std::slice::from_ref(&n)),
             Err(NamespaceError::Unauthorized)
         );
     }
