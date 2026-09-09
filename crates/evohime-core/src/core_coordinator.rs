@@ -140,8 +140,15 @@ impl TaskCoordinator {
         &self,
         snapshot: crate::host_resource_telemetry::HostResourceSnapshot,
         now_ms: i64,
-    ) -> Result<crate::host_resource_telemetry::PressureLevel, crate::host_resource_telemetry::TelemetryError> {
-        self.state.lock().await.host_telemetry.record(snapshot, now_ms)
+    ) -> Result<
+        crate::host_resource_telemetry::PressureLevel,
+        crate::host_resource_telemetry::TelemetryError,
+    > {
+        self.state
+            .lock()
+            .await
+            .host_telemetry
+            .record(snapshot, now_ms)
     }
 
     pub fn new_with_executor(
@@ -187,7 +194,9 @@ impl TaskCoordinator {
             audit: crate::audit::AuditTrail::default(),
             retained_children: crate::retained_child::RetainedRegistry::default(),
             background_tasks,
-            host_telemetry: crate::host_resource_telemetry::HostTelemetryService::new(crate::host_resource_telemetry::PressurePolicy::default()),
+            host_telemetry: crate::host_resource_telemetry::HostTelemetryService::new(
+                crate::host_resource_telemetry::PressurePolicy::default(),
+            ),
             persistence_error: None,
         }));
         // The shell is fed from the journal, so it must be told after a record
@@ -498,23 +507,41 @@ impl TaskCoordinator {
             c @ CoreCommand::CodeDiagnosticsFeedbackLoop { .. } => {
                 workflow_subsystems::handle(state, c).await
             }
-            c @ CoreCommand::CodeReviewLane { .. } => {
-                workflow_subsystems::handle(state, c).await
-            }
+            c @ CoreCommand::CodeReviewLane { .. } => workflow_subsystems::handle(state, c).await,
             c @ CoreCommand::StaticAnalysisPacks { .. } => {
                 workflow_subsystems::handle(state, c).await
             }
-            c @ CoreCommand::ContextLoadouts { .. } => { workflow_subsystems::handle(state, c).await }
-            c @ CoreCommand::SkillSourceLifecycle { .. } => { workflow_subsystems::handle(state, c).await }
-            c @ CoreCommand::KernelCapabilityFacade { .. } => { workflow_subsystems::handle(state, c).await }
-            c @ CoreCommand::AuthorizedSecurityAssessment { .. } => { workflow_subsystems::handle(state, c).await }
-            c @ CoreCommand::RuntimeServiceGraph { .. } => { workflow_subsystems::handle(state, c).await }
-            c @ CoreCommand::AgentProgramOptimizer { .. } => { workflow_subsystems::handle(state, c).await }
-            c @ CoreCommand::ProjectKnowledgeNotebook { .. } => { workflow_subsystems::handle(state, c).await }
-            c @ CoreCommand::GitRemotePublicationProtocol { .. } => { workflow_subsystems::handle(state, c).await }
-            c @ CoreCommand::VoiceInputDictation { .. } => { workflow_subsystems::handle(state, c).await }
-            c @ CoreCommand::OfflineExperienceConsolidation { .. } => { workflow_subsystems::handle(state, c).await }
-            c @ CoreCommand::DeterministicReviewExecutionPlan { .. } => { workflow_subsystems::handle(state, c).await }
+            c @ CoreCommand::ContextLoadouts { .. } => workflow_subsystems::handle(state, c).await,
+            c @ CoreCommand::SkillSourceLifecycle { .. } => {
+                workflow_subsystems::handle(state, c).await
+            }
+            c @ CoreCommand::KernelCapabilityFacade { .. } => {
+                workflow_subsystems::handle(state, c).await
+            }
+            c @ CoreCommand::AuthorizedSecurityAssessment { .. } => {
+                workflow_subsystems::handle(state, c).await
+            }
+            c @ CoreCommand::RuntimeServiceGraph { .. } => {
+                workflow_subsystems::handle(state, c).await
+            }
+            c @ CoreCommand::AgentProgramOptimizer { .. } => {
+                workflow_subsystems::handle(state, c).await
+            }
+            c @ CoreCommand::ProjectKnowledgeNotebook { .. } => {
+                workflow_subsystems::handle(state, c).await
+            }
+            c @ CoreCommand::GitRemotePublicationProtocol { .. } => {
+                workflow_subsystems::handle(state, c).await
+            }
+            c @ CoreCommand::VoiceInputDictation { .. } => {
+                workflow_subsystems::handle(state, c).await
+            }
+            c @ CoreCommand::OfflineExperienceConsolidation { .. } => {
+                workflow_subsystems::handle(state, c).await
+            }
+            c @ CoreCommand::DeterministicReviewExecutionPlan { .. } => {
+                workflow_subsystems::handle(state, c).await
+            }
             c @ CoreCommand::WorkflowOptimizationLab { .. } => {
                 workflow_subsystems::handle(state, c).await
             }

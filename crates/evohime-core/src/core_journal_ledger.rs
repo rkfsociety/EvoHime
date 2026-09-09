@@ -35,7 +35,9 @@ impl EventJournal {
             CoreEvent::CodeReviewLane { review_id, .. } => review_id,
             CoreEvent::StaticAnalysisPacks { pack_id, .. } => pack_id,
             CoreEvent::ContextLoadouts { profile_id, .. } => profile_id,
-            CoreEvent::SkillSourceLifecycle { installation_id, .. } => installation_id,
+            CoreEvent::SkillSourceLifecycle {
+                installation_id, ..
+            } => installation_id,
             CoreEvent::KernelCapabilityFacade { record_id, .. } => record_id,
             CoreEvent::AuthorizedSecurityAssessment { assessment_id, .. } => assessment_id,
             CoreEvent::RuntimeServiceGraph { graph_id, .. } => graph_id,
@@ -124,14 +126,22 @@ impl EventJournal {
             CoreEvent::ContextLoadouts { .. } => "context_loadouts.result",
             CoreEvent::SkillSourceLifecycle { .. } => "skill_source_lifecycle.result",
             CoreEvent::KernelCapabilityFacade { .. } => "kernel_capability_facade.result",
-            CoreEvent::AuthorizedSecurityAssessment { .. } => "authorized_security_assessment.result",
+            CoreEvent::AuthorizedSecurityAssessment { .. } => {
+                "authorized_security_assessment.result"
+            }
             CoreEvent::RuntimeServiceGraph { .. } => "runtime_service_graph.result",
             CoreEvent::AgentProgramOptimizer { .. } => "agent_program_optimizer.result",
             CoreEvent::ProjectKnowledgeNotebook { .. } => "project_knowledge_notebook.result",
-            CoreEvent::GitRemotePublicationProtocol { .. } => "git_remote_publication_protocol.result",
+            CoreEvent::GitRemotePublicationProtocol { .. } => {
+                "git_remote_publication_protocol.result"
+            }
             CoreEvent::VoiceInputDictation { .. } => "voice_input_dictation.result",
-            CoreEvent::OfflineExperienceConsolidation { .. } => "offline_experience_consolidation.result",
-            CoreEvent::DeterministicReviewExecutionPlan { .. } => "deterministic_review_execution_plan.result",
+            CoreEvent::OfflineExperienceConsolidation { .. } => {
+                "offline_experience_consolidation.result"
+            }
+            CoreEvent::DeterministicReviewExecutionPlan { .. } => {
+                "deterministic_review_execution_plan.result"
+            }
             CoreEvent::WorkflowOptimizationLab { .. } => "workflow_optimization_lab.result",
             CoreEvent::CoreTopicSubscriptionEventBus { .. } => {
                 "core_topic_subscription_event_bus.result"

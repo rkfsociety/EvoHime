@@ -1,6 +1,68 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
-pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> { tx.execute_batch("CREATE TABLE IF NOT EXISTS agent_program_optimizer (program_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(program_id, revision), UNIQUE(program_id, idempotency_key)); CREATE TABLE IF NOT EXISTS agent_program_optimizer_run (run_id TEXT PRIMARY KEY, program_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, updated_at_ms INTEGER NOT NULL);") }
-pub fn save(c: &Connection, id: &str, revision: u64, hash: &str, json: &[u8], key: &str, now: i64) -> rusqlite::Result<()> { let existing: Option<(u64,String)> = c.query_row("SELECT revision,content_hash FROM agent_program_optimizer WHERE program_id=?1 AND idempotency_key=?2", params![id,key], |r| Ok((r.get(0)?,r.get(1)?))).optional()?; if let Some((r,h))=existing { if r==revision && h==hash {return Ok(())} return Err(rusqlite::Error::InvalidParameterName("optimizer idempotency conflict".into())); } let current: Option<u64>=c.query_row("SELECT MAX(revision) FROM agent_program_optimizer WHERE program_id=?1",params![id],|r|r.get(0)).optional()?.flatten(); if revision!=current.unwrap_or(0)+1{return Err(rusqlite::Error::InvalidParameterName("optimizer revision conflict".into()))} c.execute("INSERT INTO agent_program_optimizer VALUES(?1,?2,?3,?4,?5,?6)",params![id,revision,hash,json,key,now])?; Ok(()) }
-pub fn current(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> { c.query_row("SELECT json FROM agent_program_optimizer WHERE program_id=?1 ORDER BY revision DESC LIMIT 1",params![id],|r|r.get(0)).optional() }
-pub fn pin(c: &Connection, run_id: &str, id: &str, revision: u64, hash: &str, now: i64) -> rusqlite::Result<()> { let existing: Option<(String,u64,String)>=c.query_row("SELECT program_id,revision,content_hash FROM agent_program_optimizer_run WHERE run_id=?1",params![run_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?; if let Some((eid,er,eh))=existing {if eid==id&&er==revision&&eh==hash{return Ok(())} return Err(rusqlite::Error::InvalidParameterName("optimizer run already pinned".into()))} c.execute("INSERT INTO agent_program_optimizer_run VALUES(?1,?2,?3,?4,?5)",params![run_id,id,revision,hash,now])?; Ok(()) }
+pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
+    tx.execute_batch("CREATE TABLE IF NOT EXISTS agent_program_optimizer (program_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(program_id, revision), UNIQUE(program_id, idempotency_key)); CREATE TABLE IF NOT EXISTS agent_program_optimizer_run (run_id TEXT PRIMARY KEY, program_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, updated_at_ms INTEGER NOT NULL);")
+}
+pub fn save(
+    c: &Connection,
+    id: &str,
+    revision: u64,
+    hash: &str,
+    json: &[u8],
+    key: &str,
+    now: i64,
+) -> rusqlite::Result<()> {
+    let existing: Option<(u64,String)> = c.query_row("SELECT revision,content_hash FROM agent_program_optimizer WHERE program_id=?1 AND idempotency_key=?2", params![id,key], |r| Ok((r.get(0)?,r.get(1)?))).optional()?;
+    if let Some((r, h)) = existing {
+        if r == revision && h == hash {
+            return Ok(());
+        }
+        return Err(rusqlite::Error::InvalidParameterName(
+            "optimizer idempotency conflict".into(),
+        ));
+    }
+    let current: Option<u64> = c
+        .query_row(
+            "SELECT MAX(revision) FROM agent_program_optimizer WHERE program_id=?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten();
+    if revision != current.unwrap_or(0) + 1 {
+        return Err(rusqlite::Error::InvalidParameterName(
+            "optimizer revision conflict".into(),
+        ));
+    }
+    c.execute(
+        "INSERT INTO agent_program_optimizer VALUES(?1,?2,?3,?4,?5,?6)",
+        params![id, revision, hash, json, key, now],
+    )?;
+    Ok(())
+}
+pub fn current(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
+    c.query_row("SELECT json FROM agent_program_optimizer WHERE program_id=?1 ORDER BY revision DESC LIMIT 1",params![id],|r|r.get(0)).optional()
+}
+pub fn pin(
+    c: &Connection,
+    run_id: &str,
+    id: &str,
+    revision: u64,
+    hash: &str,
+    now: i64,
+) -> rusqlite::Result<()> {
+    let existing: Option<(String,u64,String)>=c.query_row("SELECT program_id,revision,content_hash FROM agent_program_optimizer_run WHERE run_id=?1",params![run_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+    if let Some((eid, er, eh)) = existing {
+        if eid == id && er == revision && eh == hash {
+            return Ok(());
+        }
+        return Err(rusqlite::Error::InvalidParameterName(
+            "optimizer run already pinned".into(),
+        ));
+    }
+    c.execute(
+        "INSERT INTO agent_program_optimizer_run VALUES(?1,?2,?3,?4,?5)",
+        params![run_id, id, revision, hash, now],
+    )?;
+    Ok(())
+}

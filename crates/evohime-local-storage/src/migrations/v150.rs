@@ -1,1 +1,8 @@
-use rusqlite::Transaction;pub(crate)fn apply(tx:&Transaction<'_>,current:u32)->rusqlite::Result<()>{if current<150{crate::minimal_change_policy_store::install_schema(tx)?;tx.execute_batch("PRAGMA user_version = 150;")?;}Ok(())}
+use rusqlite::Transaction;
+pub(crate) fn apply(tx: &Transaction<'_>, current: u32) -> rusqlite::Result<()> {
+    if current < 150 {
+        crate::minimal_change_policy_store::install_schema(tx)?;
+        tx.execute_batch("PRAGMA user_version = 150;")?;
+    }
+    Ok(())
+}

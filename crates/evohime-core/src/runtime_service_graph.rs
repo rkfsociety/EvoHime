@@ -84,7 +84,8 @@ pub fn validate(graph: &RuntimeServiceGraph) -> Result<(), GraphError> {
     if graph.edges.len() > MAX_EDGES {
         return Err(GraphError::Invalid("edge_count_out_of_bounds".into()));
     }
-    let ids: std::collections::BTreeSet<_> = graph.nodes.iter().map(|node| node.id.as_str()).collect();
+    let ids: std::collections::BTreeSet<_> =
+        graph.nodes.iter().map(|node| node.id.as_str()).collect();
     if ids.len() != graph.nodes.len() {
         return Err(GraphError::Invalid("duplicate_node_id".into()));
     }
@@ -114,7 +115,12 @@ pub fn pin(graph: &RuntimeServiceGraph, run_id: &str) -> Result<PinnedRevision, 
     if graph.lifecycle != Lifecycle::Active {
         return Err(GraphError::Invalid("graph_is_not_active".into()));
     }
-    Ok(PinnedRevision { graph_id: graph.id.clone(), revision: graph.revision, content_hash: graph.content_hash.clone(), run_id: run_id.into() })
+    Ok(PinnedRevision {
+        graph_id: graph.id.clone(),
+        revision: graph.revision,
+        content_hash: graph.content_hash.clone(),
+        run_id: run_id.into(),
+    })
 }
 
 #[cfg(test)]
@@ -122,7 +128,21 @@ mod tests {
     use super::*;
 
     fn graph(lifecycle: Lifecycle) -> RuntimeServiceGraph {
-        let mut value = RuntimeServiceGraph { schema_version: SCHEMA_VERSION, id: "graph".into(), revision: 1, lifecycle, scope: "workspace".into(), nodes: vec![ServiceNode { id: "core".into(), kind: "owner".into(), owner: "core-policy".into(), capability: "runtime.observe".into() }], edges: Vec::new(), content_hash: String::new() };
+        let mut value = RuntimeServiceGraph {
+            schema_version: SCHEMA_VERSION,
+            id: "graph".into(),
+            revision: 1,
+            lifecycle,
+            scope: "workspace".into(),
+            nodes: vec![ServiceNode {
+                id: "core".into(),
+                kind: "owner".into(),
+                owner: "core-policy".into(),
+                capability: "runtime.observe".into(),
+            }],
+            edges: Vec::new(),
+            content_hash: String::new(),
+        };
         value.content_hash = canonical_hash(&value).expect("hash");
         value
     }
@@ -132,16 +152,26 @@ mod tests {
         let active = graph(Lifecycle::Active);
         assert!(validate(&active).is_ok());
         assert_eq!(pin(&active, "run-1").expect("pin").revision, 1);
-        assert_eq!(pin(&graph(Lifecycle::Draft), "run-1").unwrap_err(), GraphError::Invalid("graph_is_not_active".into()));
+        assert_eq!(
+            pin(&graph(Lifecycle::Draft), "run-1").unwrap_err(),
+            GraphError::Invalid("graph_is_not_active".into())
+        );
     }
 
     #[test]
     fn rejects_unknown_edge_and_hash_mutation() {
         let mut invalid = graph(Lifecycle::Active);
-        invalid.edges.push(ServiceEdge { from: "core".into(), to: "missing".into(), relation: "depends_on".into() });
+        invalid.edges.push(ServiceEdge {
+            from: "core".into(),
+            to: "missing".into(),
+            relation: "depends_on".into(),
+        });
         assert!(validate(&invalid).is_err());
         let mut tampered = graph(Lifecycle::Active);
         tampered.scope = "other".into();
-        assert_eq!(validate(&tampered).unwrap_err(), GraphError::Invalid("content_hash_mismatch".into()));
+        assert_eq!(
+            validate(&tampered).unwrap_err(),
+            GraphError::Invalid("content_hash_mismatch".into())
+        );
     }
 }

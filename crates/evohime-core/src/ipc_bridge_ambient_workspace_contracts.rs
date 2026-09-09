@@ -184,26 +184,189 @@ impl IpcBridge {
                     .await?;
             }
             Some(generated::command_envelope::Command::CodeReviewLane(request)) => {
-                let operation = if request.operation.is_empty() { "get".to_owned() } else { request.operation.clone() };
+                let operation = if request.operation.is_empty() {
+                    "get".to_owned()
+                } else {
+                    request.operation.clone()
+                };
                 let result = self.dispatch_code_review_lane(request).await?;
-                self.write_response(writer, &format!("code_review_lane.{operation}"), result).await?;
+                self.write_response(writer, &format!("code_review_lane.{operation}"), result)
+                    .await?;
             }
             Some(generated::command_envelope::Command::StaticAnalysisPacks(request)) => {
-                let operation = if request.operation.is_empty() { "inspect".to_owned() } else { request.operation.clone() };
+                let operation = if request.operation.is_empty() {
+                    "inspect".to_owned()
+                } else {
+                    request.operation.clone()
+                };
                 let result = self.dispatch_static_analysis_packs(request).await?;
-                self.write_response(writer, &format!("static_analysis_packs.{operation}"), result).await?;
+                self.write_response(
+                    writer,
+                    &format!("static_analysis_packs.{operation}"),
+                    result,
+                )
+                .await?;
             }
-            Some(generated::command_envelope::Command::ContextLoadouts(request)) => { let operation=if request.operation.is_empty(){"get".to_owned()}else{request.operation.clone()}; let result=self.dispatch_context_loadouts(request).await?; self.write_response(writer,&format!("context_loadouts.{operation}"),result).await?; }
-            Some(generated::command_envelope::Command::SkillSourceLifecycle(request)) => { let operation=if request.operation.is_empty(){"get".to_owned()}else{request.operation.clone()}; let result=self.dispatch_skill_source_lifecycle(request).await?; self.write_response(writer,&format!("skill_source_lifecycle.{operation}"),result).await?; }
-            Some(generated::command_envelope::Command::KernelCapabilityFacade(request)) => { let operation=if request.operation.is_empty(){"get".to_owned()}else{request.operation.clone()}; let result=self.dispatch_kernel_capability_facade(request).await?; self.write_response(writer,&format!("kernel_capability_facade.{operation}"),result).await?; }
-            Some(generated::command_envelope::Command::AuthorizedSecurityAssessment(request)) => { let operation=if request.operation.is_empty(){"get".to_owned()}else{request.operation.clone()}; let result=self.dispatch_authorized_security_assessment(request).await?; self.write_response(writer,&format!("authorized_security_assessment.{operation}"),result).await?; }
-            Some(generated::command_envelope::Command::RuntimeServiceGraph(request)) => { let operation=if request.operation.is_empty(){"get".to_owned()}else{request.operation.clone()}; let result=self.dispatch_runtime_service_graph(request).await?; self.write_response(writer,&format!("runtime_service_graph.{operation}"),result).await?; }
-            Some(generated::command_envelope::Command::AgentProgramOptimizer(request)) => { let operation=if request.operation.is_empty(){"get".to_owned()}else{request.operation.clone()}; let result=self.dispatch_agent_program_optimizer(request).await?; self.write_response(writer,&format!("agent_program_optimizer.{operation}"),result).await?; }
-            Some(generated::command_envelope::Command::ProjectKnowledgeNotebook(request)) => { let operation=if request.operation.is_empty(){"get".to_owned()}else{request.operation.clone()}; let result=self.dispatch_project_knowledge_notebook(request).await?; self.write_response(writer,&format!("project_knowledge_notebook.{operation}"),result).await?; }
-            Some(generated::command_envelope::Command::GitRemotePublicationProtocol(request)) => { let operation=if request.operation.is_empty(){"get".to_owned()}else{request.operation.clone()}; let result=self.dispatch_git_remote_publication_protocol(request).await?; self.write_response(writer,&format!("git_remote_publication_protocol.{operation}"),result).await?; }
-            Some(generated::command_envelope::Command::VoiceInputDictation(request)) => { let operation=if request.operation.is_empty(){"get".to_owned()}else{request.operation.clone()}; let result=self.dispatch_voice_input_dictation(request).await?; self.write_response(writer,&format!("voice_input_dictation.{operation}"),result).await?; }
-            Some(generated::command_envelope::Command::OfflineExperienceConsolidation(request)) => { let operation=if request.operation.is_empty(){"get".to_owned()}else{request.operation.clone()}; let result=self.dispatch_offline_experience_consolidation(request).await?; self.write_response(writer,&format!("offline_experience_consolidation.{operation}"),result).await?; }
-            Some(generated::command_envelope::Command::DeterministicReviewExecutionPlan(request)) => { let operation=if request.operation.is_empty(){"get".to_owned()}else{request.operation.clone()}; let result=self.dispatch_deterministic_review_execution_plan(request).await?; self.write_response(writer,&format!("deterministic_review_execution_plan.{operation}"),result).await?; }
+            Some(generated::command_envelope::Command::ContextLoadouts(request)) => {
+                let operation = if request.operation.is_empty() {
+                    "get".to_owned()
+                } else {
+                    request.operation.clone()
+                };
+                let result = self.dispatch_context_loadouts(request).await?;
+                self.write_response(writer, &format!("context_loadouts.{operation}"), result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::SkillSourceLifecycle(request)) => {
+                let operation = if request.operation.is_empty() {
+                    "get".to_owned()
+                } else {
+                    request.operation.clone()
+                };
+                let result = self.dispatch_skill_source_lifecycle(request).await?;
+                self.write_response(
+                    writer,
+                    &format!("skill_source_lifecycle.{operation}"),
+                    result,
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::KernelCapabilityFacade(request)) => {
+                let operation = if request.operation.is_empty() {
+                    "get".to_owned()
+                } else {
+                    request.operation.clone()
+                };
+                let result = self.dispatch_kernel_capability_facade(request).await?;
+                self.write_response(
+                    writer,
+                    &format!("kernel_capability_facade.{operation}"),
+                    result,
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::AuthorizedSecurityAssessment(request)) => {
+                let operation = if request.operation.is_empty() {
+                    "get".to_owned()
+                } else {
+                    request.operation.clone()
+                };
+                let result = self
+                    .dispatch_authorized_security_assessment(request)
+                    .await?;
+                self.write_response(
+                    writer,
+                    &format!("authorized_security_assessment.{operation}"),
+                    result,
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::RuntimeServiceGraph(request)) => {
+                let operation = if request.operation.is_empty() {
+                    "get".to_owned()
+                } else {
+                    request.operation.clone()
+                };
+                let result = self.dispatch_runtime_service_graph(request).await?;
+                self.write_response(
+                    writer,
+                    &format!("runtime_service_graph.{operation}"),
+                    result,
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::AgentProgramOptimizer(request)) => {
+                let operation = if request.operation.is_empty() {
+                    "get".to_owned()
+                } else {
+                    request.operation.clone()
+                };
+                let result = self.dispatch_agent_program_optimizer(request).await?;
+                self.write_response(
+                    writer,
+                    &format!("agent_program_optimizer.{operation}"),
+                    result,
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::ProjectKnowledgeNotebook(request)) => {
+                let operation = if request.operation.is_empty() {
+                    "get".to_owned()
+                } else {
+                    request.operation.clone()
+                };
+                let result = self.dispatch_project_knowledge_notebook(request).await?;
+                self.write_response(
+                    writer,
+                    &format!("project_knowledge_notebook.{operation}"),
+                    result,
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::GitRemotePublicationProtocol(request)) => {
+                let operation = if request.operation.is_empty() {
+                    "get".to_owned()
+                } else {
+                    request.operation.clone()
+                };
+                let result = self
+                    .dispatch_git_remote_publication_protocol(request)
+                    .await?;
+                self.write_response(
+                    writer,
+                    &format!("git_remote_publication_protocol.{operation}"),
+                    result,
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::VoiceInputDictation(request)) => {
+                let operation = if request.operation.is_empty() {
+                    "get".to_owned()
+                } else {
+                    request.operation.clone()
+                };
+                let result = self.dispatch_voice_input_dictation(request).await?;
+                self.write_response(
+                    writer,
+                    &format!("voice_input_dictation.{operation}"),
+                    result,
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::OfflineExperienceConsolidation(request)) => {
+                let operation = if request.operation.is_empty() {
+                    "get".to_owned()
+                } else {
+                    request.operation.clone()
+                };
+                let result = self
+                    .dispatch_offline_experience_consolidation(request)
+                    .await?;
+                self.write_response(
+                    writer,
+                    &format!("offline_experience_consolidation.{operation}"),
+                    result,
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::DeterministicReviewExecutionPlan(
+                request,
+            )) => {
+                let operation = if request.operation.is_empty() {
+                    "get".to_owned()
+                } else {
+                    request.operation.clone()
+                };
+                let result = self
+                    .dispatch_deterministic_review_execution_plan(request)
+                    .await?;
+                self.write_response(
+                    writer,
+                    &format!("deterministic_review_execution_plan.{operation}"),
+                    result,
+                )
+                .await?;
+            }
             Some(generated::command_envelope::Command::WorkflowOptimizationLab(request)) => {
                 let operation = if request.operation.is_empty() {
                     "get_run".to_owned()

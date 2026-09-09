@@ -1,1 +1,8 @@
-use rusqlite::Transaction;pub(crate)fn apply(tx:&Transaction<'_>,current:u32)->rusqlite::Result<()>{if current<157{crate::external_source_acquisition_runtime_store::install_schema(tx)?;tx.execute_batch("PRAGMA user_version = 157;")?;}Ok(())}
+use rusqlite::Transaction;
+pub(crate) fn apply(tx: &Transaction<'_>, current: u32) -> rusqlite::Result<()> {
+    if current < 157 {
+        crate::external_source_acquisition_runtime_store::install_schema(tx)?;
+        tx.execute_batch("PRAGMA user_version = 157;")?;
+    }
+    Ok(())
+}

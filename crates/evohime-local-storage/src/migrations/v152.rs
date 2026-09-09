@@ -1,1 +1,8 @@
-use rusqlite::Transaction;pub(crate)fn apply(tx:&Transaction<'_>,current:u32)->rusqlite::Result<()>{if current<152{crate::autonomous_metric_experiment_runtime_store::install_schema(tx)?;tx.execute_batch("PRAGMA user_version = 152;")?;}Ok(())}
+use rusqlite::Transaction;
+pub(crate) fn apply(tx: &Transaction<'_>, current: u32) -> rusqlite::Result<()> {
+    if current < 152 {
+        crate::autonomous_metric_experiment_runtime_store::install_schema(tx)?;
+        tx.execute_batch("PRAGMA user_version = 152;")?;
+    }
+    Ok(())
+}

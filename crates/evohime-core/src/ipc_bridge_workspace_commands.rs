@@ -466,22 +466,314 @@ impl IpcBridge {
         &self,
         request: generated::StaticAnalysisPacksCommand,
     ) -> Result<Vec<u8>, IpcBridgeError> {
-        let coordinator = self.coordinator.as_ref().ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
         let (reply, response) = oneshot::channel();
-        coordinator.dispatch(CoreCommand::StaticAnalysisPacks { operation: request.operation, pack_id: request.pack_id, payload: request.payload, expected_revision: request.expected_revision, idempotency_key: request.idempotency_key, reply }).await.map_err(|e| FrameError::Io(e.to_string()))?;
-        response.await.map_err(|_| FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from)
+        coordinator
+            .dispatch(CoreCommand::StaticAnalysisPacks {
+                operation: request.operation,
+                pack_id: request.pack_id,
+                payload: request.payload,
+                expected_revision: request.expected_revision,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
     }
-    pub(crate) async fn dispatch_context_loadouts(&self, request: generated::ContextLoadoutsCommand) -> Result<Vec<u8>, IpcBridgeError> { let coordinator=self.coordinator.as_ref().ok_or_else(||FrameError::Io("core command queue is not configured".into()))?; let(reply,response)=oneshot::channel(); coordinator.dispatch(CoreCommand::ContextLoadouts{operation:request.operation,profile_id:request.profile_id,payload:request.payload,expected_revision:request.expected_revision,idempotency_key:request.idempotency_key,reply}).await.map_err(|e|FrameError::Io(e.to_string()))?; response.await.map_err(|_|FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from) }
-    pub(crate) async fn dispatch_skill_source_lifecycle(&self, request: generated::SkillSourceLifecycleCommand) -> Result<Vec<u8>, IpcBridgeError> { let coordinator=self.coordinator.as_ref().ok_or_else(||FrameError::Io("core command queue is not configured".into()))?; let(reply,response)=oneshot::channel(); coordinator.dispatch(CoreCommand::SkillSourceLifecycle{operation:request.operation,installation_id:request.installation_id,payload:request.payload,expected_revision:request.expected_revision,idempotency_key:request.idempotency_key,reply}).await.map_err(|e|FrameError::Io(e.to_string()))?; response.await.map_err(|_|FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from) }
-    pub(crate) async fn dispatch_kernel_capability_facade(&self, request: generated::KernelCapabilityFacadeCommand) -> Result<Vec<u8>, IpcBridgeError> { let coordinator=self.coordinator.as_ref().ok_or_else(||FrameError::Io("core command queue is not configured".into()))?; let(reply,response)=oneshot::channel(); coordinator.dispatch(CoreCommand::KernelCapabilityFacade{operation:request.operation,record_id:request.record_id,payload:request.payload,expected_revision:request.expected_revision,idempotency_key:request.idempotency_key,reply}).await.map_err(|e|FrameError::Io(e.to_string()))?; response.await.map_err(|_|FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from) }
-    pub(crate) async fn dispatch_authorized_security_assessment(&self, request: generated::AuthorizedSecurityAssessmentCommand) -> Result<Vec<u8>, IpcBridgeError> { let coordinator=self.coordinator.as_ref().ok_or_else(||FrameError::Io("core command queue is not configured".into()))?; let(reply,response)=oneshot::channel(); coordinator.dispatch(CoreCommand::AuthorizedSecurityAssessment{operation:request.operation,assessment_id:request.assessment_id,payload:request.payload,expected_revision:request.expected_revision,idempotency_key:request.idempotency_key,reply}).await.map_err(|e|FrameError::Io(e.to_string()))?; response.await.map_err(|_|FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from) }
-    pub(crate) async fn dispatch_runtime_service_graph(&self, request: generated::RuntimeServiceGraphCommand) -> Result<Vec<u8>, IpcBridgeError> { let coordinator=self.coordinator.as_ref().ok_or_else(||FrameError::Io("core command queue is not configured".into()))?; let(reply,response)=oneshot::channel(); coordinator.dispatch(CoreCommand::RuntimeServiceGraph{operation:request.operation,graph_id:request.graph_id,payload:request.payload,expected_revision:request.expected_revision,idempotency_key:request.idempotency_key,reply}).await.map_err(|e|FrameError::Io(e.to_string()))?; response.await.map_err(|_|FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from) }
-    pub(crate) async fn dispatch_agent_program_optimizer(&self, request: generated::AgentProgramOptimizerCommand) -> Result<Vec<u8>, IpcBridgeError> { let coordinator=self.coordinator.as_ref().ok_or_else(||FrameError::Io("core command queue is not configured".into()))?; let(reply,response)=oneshot::channel(); coordinator.dispatch(CoreCommand::AgentProgramOptimizer{operation:request.operation,program_id:request.program_id,payload:request.payload,expected_revision:request.expected_revision,idempotency_key:request.idempotency_key,reply}).await.map_err(|e|FrameError::Io(e.to_string()))?; response.await.map_err(|_|FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from) }
-    pub(crate) async fn dispatch_project_knowledge_notebook(&self, request: generated::ProjectKnowledgeNotebookCommand) -> Result<Vec<u8>, IpcBridgeError> { let coordinator=self.coordinator.as_ref().ok_or_else(||FrameError::Io("core command queue is not configured".into()))?; let(reply,response)=oneshot::channel(); coordinator.dispatch(CoreCommand::ProjectKnowledgeNotebook{operation:request.operation,notebook_id:request.notebook_id,payload:request.payload,expected_revision:request.expected_revision,idempotency_key:request.idempotency_key,reply}).await.map_err(|e|FrameError::Io(e.to_string()))?; response.await.map_err(|_|FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from) }
-    pub(crate) async fn dispatch_git_remote_publication_protocol(&self, request: generated::GitRemotePublicationProtocolCommand) -> Result<Vec<u8>, IpcBridgeError> { let coordinator=self.coordinator.as_ref().ok_or_else(||FrameError::Io("core command queue is not configured".into()))?; let(reply,response)=oneshot::channel(); coordinator.dispatch(CoreCommand::GitRemotePublicationProtocol{operation:request.operation,protocol_id:request.protocol_id,payload:request.payload,expected_revision:request.expected_revision,idempotency_key:request.idempotency_key,reply}).await.map_err(|e|FrameError::Io(e.to_string()))?; response.await.map_err(|_|FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from) }
-    pub(crate) async fn dispatch_voice_input_dictation(&self, request: generated::VoiceInputDictationCommand) -> Result<Vec<u8>, IpcBridgeError> { let coordinator=self.coordinator.as_ref().ok_or_else(||FrameError::Io("core command queue is not configured".into()))?; let(reply,response)=oneshot::channel(); coordinator.dispatch(CoreCommand::VoiceInputDictation{operation:request.operation,profile_id:request.profile_id,payload:request.payload,expected_revision:request.expected_revision,idempotency_key:request.idempotency_key,reply}).await.map_err(|e|FrameError::Io(e.to_string()))?; response.await.map_err(|_|FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from) }
-    pub(crate) async fn dispatch_offline_experience_consolidation(&self, request: generated::OfflineExperienceConsolidationCommand) -> Result<Vec<u8>, IpcBridgeError> { let coordinator=self.coordinator.as_ref().ok_or_else(||FrameError::Io("core command queue is not configured".into()))?; let(reply,response)=oneshot::channel(); coordinator.dispatch(CoreCommand::OfflineExperienceConsolidation{operation:request.operation,cycle_id:request.cycle_id,payload:request.payload,expected_revision:request.expected_revision,idempotency_key:request.idempotency_key,reply}).await.map_err(|e|FrameError::Io(e.to_string()))?; response.await.map_err(|_|FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from) }
-    pub(crate) async fn dispatch_deterministic_review_execution_plan(&self, request: generated::DeterministicReviewExecutionPlanCommand) -> Result<Vec<u8>, IpcBridgeError> { let coordinator=self.coordinator.as_ref().ok_or_else(||FrameError::Io("core command queue is not configured".into()))?; let(reply,response)=oneshot::channel(); coordinator.dispatch(CoreCommand::DeterministicReviewExecutionPlan{operation:request.operation,plan_id:request.plan_id,payload:request.payload,expected_revision:request.expected_revision,idempotency_key:request.idempotency_key,reply}).await.map_err(|e|FrameError::Io(e.to_string()))?; response.await.map_err(|_|FrameError::Io("core command queue dropped the response".into()))?.map_err(FrameError::Io).map_err(IpcBridgeError::from) }
+    pub(crate) async fn dispatch_context_loadouts(
+        &self,
+        request: generated::ContextLoadoutsCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::ContextLoadouts {
+                operation: request.operation,
+                profile_id: request.profile_id,
+                payload: request.payload,
+                expected_revision: request.expected_revision,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+    pub(crate) async fn dispatch_skill_source_lifecycle(
+        &self,
+        request: generated::SkillSourceLifecycleCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::SkillSourceLifecycle {
+                operation: request.operation,
+                installation_id: request.installation_id,
+                payload: request.payload,
+                expected_revision: request.expected_revision,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+    pub(crate) async fn dispatch_kernel_capability_facade(
+        &self,
+        request: generated::KernelCapabilityFacadeCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::KernelCapabilityFacade {
+                operation: request.operation,
+                record_id: request.record_id,
+                payload: request.payload,
+                expected_revision: request.expected_revision,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+    pub(crate) async fn dispatch_authorized_security_assessment(
+        &self,
+        request: generated::AuthorizedSecurityAssessmentCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::AuthorizedSecurityAssessment {
+                operation: request.operation,
+                assessment_id: request.assessment_id,
+                payload: request.payload,
+                expected_revision: request.expected_revision,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+    pub(crate) async fn dispatch_runtime_service_graph(
+        &self,
+        request: generated::RuntimeServiceGraphCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::RuntimeServiceGraph {
+                operation: request.operation,
+                graph_id: request.graph_id,
+                payload: request.payload,
+                expected_revision: request.expected_revision,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+    pub(crate) async fn dispatch_agent_program_optimizer(
+        &self,
+        request: generated::AgentProgramOptimizerCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::AgentProgramOptimizer {
+                operation: request.operation,
+                program_id: request.program_id,
+                payload: request.payload,
+                expected_revision: request.expected_revision,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+    pub(crate) async fn dispatch_project_knowledge_notebook(
+        &self,
+        request: generated::ProjectKnowledgeNotebookCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::ProjectKnowledgeNotebook {
+                operation: request.operation,
+                notebook_id: request.notebook_id,
+                payload: request.payload,
+                expected_revision: request.expected_revision,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+    pub(crate) async fn dispatch_git_remote_publication_protocol(
+        &self,
+        request: generated::GitRemotePublicationProtocolCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::GitRemotePublicationProtocol {
+                operation: request.operation,
+                protocol_id: request.protocol_id,
+                payload: request.payload,
+                expected_revision: request.expected_revision,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+    pub(crate) async fn dispatch_voice_input_dictation(
+        &self,
+        request: generated::VoiceInputDictationCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::VoiceInputDictation {
+                operation: request.operation,
+                profile_id: request.profile_id,
+                payload: request.payload,
+                expected_revision: request.expected_revision,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+    pub(crate) async fn dispatch_offline_experience_consolidation(
+        &self,
+        request: generated::OfflineExperienceConsolidationCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::OfflineExperienceConsolidation {
+                operation: request.operation,
+                cycle_id: request.cycle_id,
+                payload: request.payload,
+                expected_revision: request.expected_revision,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+    pub(crate) async fn dispatch_deterministic_review_execution_plan(
+        &self,
+        request: generated::DeterministicReviewExecutionPlanCommand,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::DeterministicReviewExecutionPlan {
+                operation: request.operation,
+                plan_id: request.plan_id,
+                payload: request.payload,
+                expected_revision: request.expected_revision,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|e| FrameError::Io(e.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
 
     pub(crate) async fn dispatch_workflow_optimization_lab(
         &self,

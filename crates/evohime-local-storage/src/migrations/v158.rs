@@ -1,1 +1,8 @@
-use rusqlite::Transaction;pub(crate)fn apply(tx:&Transaction<'_>,current:u32)->rusqlite::Result<()>{if current<158{crate::temporal_signal_intelligence_store::install_schema(tx)?;tx.execute_batch("PRAGMA user_version = 158;")?;}Ok(())}
+use rusqlite::Transaction;
+pub(crate) fn apply(tx: &Transaction<'_>, current: u32) -> rusqlite::Result<()> {
+    if current < 158 {
+        crate::temporal_signal_intelligence_store::install_schema(tx)?;
+        tx.execute_batch("PRAGMA user_version = 158;")?;
+    }
+    Ok(())
+}

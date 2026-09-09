@@ -1,4 +1,36 @@
-use rusqlite::{params,Connection,OptionalExtension,Transaction};
-pub fn install_schema(tx:&Transaction<'_>)->rusqlite::Result<()>{tx.execute_batch("CREATE TABLE IF NOT EXISTS kernel_capability_facade (record_id TEXT NOT NULL, kind TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(record_id,revision), UNIQUE(record_id,idempotency_key));")}
-pub fn save(c:&Connection,id:&str,kind:&str,rev:u64,hash:&str,json:&[u8],key:&str,now:i64)->rusqlite::Result<()>{let cur:Option<u64>=c.query_row("SELECT MAX(revision) FROM kernel_capability_facade WHERE record_id=?1",params![id],|r|r.get(0)).optional()?.flatten();if rev!=cur.unwrap_or(0)+1{return Err(rusqlite::Error::InvalidParameterName("kernel facade revision conflict".into()))}c.execute("INSERT INTO kernel_capability_facade VALUES(?1,?2,?3,?4,?5,?6,?7)",params![id,kind,rev,hash,json,key,now])?;Ok(())}
-pub fn current(c:&Connection,id:&str)->rusqlite::Result<Option<Vec<u8>>>{c.query_row("SELECT json FROM kernel_capability_facade WHERE record_id=?1 ORDER BY revision DESC LIMIT 1",params![id],|r|r.get(0)).optional()}
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
+pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
+    tx.execute_batch("CREATE TABLE IF NOT EXISTS kernel_capability_facade (record_id TEXT NOT NULL, kind TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(record_id,revision), UNIQUE(record_id,idempotency_key));")
+}
+pub fn save(
+    c: &Connection,
+    id: &str,
+    kind: &str,
+    rev: u64,
+    hash: &str,
+    json: &[u8],
+    key: &str,
+    now: i64,
+) -> rusqlite::Result<()> {
+    let cur: Option<u64> = c
+        .query_row(
+            "SELECT MAX(revision) FROM kernel_capability_facade WHERE record_id=?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten();
+    if rev != cur.unwrap_or(0) + 1 {
+        return Err(rusqlite::Error::InvalidParameterName(
+            "kernel facade revision conflict".into(),
+        ));
+    }
+    c.execute(
+        "INSERT INTO kernel_capability_facade VALUES(?1,?2,?3,?4,?5,?6,?7)",
+        params![id, kind, rev, hash, json, key, now],
+    )?;
+    Ok(())
+}
+pub fn current(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
+    c.query_row("SELECT json FROM kernel_capability_facade WHERE record_id=?1 ORDER BY revision DESC LIMIT 1",params![id],|r|r.get(0)).optional()
+}

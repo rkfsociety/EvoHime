@@ -106,11 +106,14 @@ impl ToolDefinition {
             description: self.description.into(),
             input_schema: crate::builtin_input_schema(self.name),
             output_schema: serde_json::json!({"type":"object"}),
-            capability_class: if is_utility { "local_computation".into() } else { self
-                .permissions
-                .first()
-                .map(|p| format!("{p:?}"))
-                .unwrap_or_else(|| "none".into()) },
+            capability_class: if is_utility {
+                "local_computation".into()
+            } else {
+                self.permissions
+                    .first()
+                    .map(|p| format!("{p:?}"))
+                    .unwrap_or_else(|| "none".into())
+            },
             side_effect: if self.permissions.iter().any(|p| {
                 matches!(
                     p,
@@ -132,7 +135,11 @@ impl ToolDefinition {
             network_domains: vec![],
             secret_references: vec![],
             timeout_ms: self.timeout.as_millis().min(u64::MAX as u128) as u64,
-            output_size_limit: if is_utility { crate::developer_utilities::MAX_OUTPUT_BYTES as u64 } else { 512 * 1024 },
+            output_size_limit: if is_utility {
+                crate::developer_utilities::MAX_OUTPUT_BYTES as u64
+            } else {
+                512 * 1024
+            },
             retry_class: "bounded".into(),
             supports_cancellation: true,
             origin: crate::ToolOrigin::Builtin,
