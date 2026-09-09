@@ -21,7 +21,7 @@
 `evohime-plan-implementation/SKILL.md`; он маршрутизирует работу к
 специализированным skills:
 
-Короткий готовый prompt находится в
+Короткий готовый prompt для отправки как `/goal` находится в
 [`prompts/implement-and-close-plan.md`](prompts/implement-and-close-plan.md).
 Достаточно указать номер плана и применить его; ручное копирование длинного
 чеклиста не требуется.
