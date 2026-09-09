@@ -1386,3 +1386,8 @@ exact-commit CI is `UNAVAILABLE` until push.
 
 Source modules: `core`, `shell-host`, `ui-bundle`; CI evidence unavailable
 before the explicitly forbidden push. Local tests/builds/linters were not run.
+## Plans 149–167 — Core capability contract batch
+
+Source module: `core` (и его local-storage schema boundary); patch version
+маршрутизирован только для `core`. CI evidence недоступен до push, который
+запрещён задачей; локальные tests/builds/linters/smoke не запускались.

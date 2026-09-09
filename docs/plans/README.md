@@ -16,7 +16,7 @@
 ## Закрытые направления
 
 Временные plan-файлы закрытых направлений удалены после переноса их контракта
-и evidence в канонические документы. К закрытым относятся планы `01–148` и
+и evidence в канонические документы. К закрытым относятся планы `01–167` и
 `144`; планы `127–130` закрыты как MVP-контуры с явно сохранёнными
 `unavailable` deployment/adapter gates. Их отсутствие из каталога не означает
 отсутствие контракта: он находится в `architecture.md` и `current-state.md`.
@@ -29,27 +29,8 @@
 
 | План | Тема | Состояние |
 | --- | --- | --- |
-| [149](149-0-interactive-model-compare-workbench.md) | Interactive Model Compare Workbench | незавершён |
-| [150](150-0-minimal-change-policy.md) | Minimal Change Policy | незавершён |
-| [151](151-0-contextual-next-step-suggestions.md) | Contextual Next-Step Suggestions | незавершён |
-| [152](152-0-autonomous-metric-experiment-runtime.md) | Autonomous Metric Experiment Runtime | незавершён |
-| [153](153-0-native-computer-use-runtime.md) | Native Computer-Use Runtime | незавершён |
-| [154](154-0-project-execution-board.md) | Project Execution Board | незавершён |
-| [155](155-0-mobile-device-automation-runtime.md) | Mobile Device Automation Runtime | незавершён |
-| [156](156-0-cross-modal-ui-grounding.md) | Cross-Modal UI Grounding | незавершён |
-| [157](157-0-external-source-acquisition-runtime.md) | External Source Acquisition Runtime | незавершён |
-| [158](158-0-temporal-signal-intelligence.md) | Temporal Signal Intelligence | незавершён |
-| [159](159-0-temporal-memory-facts.md) | Temporal Memory Facts | незавершён |
-| [160](160-0-ide-companion-bridge.md) | IDE Companion Bridge | незавершён |
-| [161](161-0-verified-git-checkpoints.md) | Verified Git Checkpoints | незавершён |
-| [162](162-0-verified-technical-diagram-artifacts.md) | Verified Technical Diagram Artifacts | незавершён |
-| [163](163-0-local-model-compatibility-gateway.md) | Local Model Compatibility Gateway | незавершён |
-| [164](164-0-semantic-activity-motion-system.md) | Semantic Activity Motion System | незавершён |
-| [165](165-0-domain-workflow-recipes.md) | Domain Workflow Recipes | незавершён |
-| [166](166-0-optional-voice-output-adapter.md) | Optional Voice Output Adapter | незавершён |
-| [167](167-0-command-center.md) | Command Center | незавершён |
 
-Номера `149–167` являются текущими идентификаторами активной
+Номера `149–167` теперь являются закрытыми идентификаторами
 очереди. Пропуск `144` намеренный: это закрытый план модульного обновления.
 Новая работа получает следующий свободный номер только после проверки
 дубликатов и зависимостей.

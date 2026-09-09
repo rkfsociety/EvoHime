@@ -1,0 +1,1 @@
+use rusqlite::Transaction;pub(crate)fn apply(tx:&Transaction<'_>,current:u32)->rusqlite::Result<()>{if current<166{crate::optional_voice_output_adapter_store::install_schema(tx)?;tx.execute_batch("PRAGMA user_version = 166;")?;}Ok(())}

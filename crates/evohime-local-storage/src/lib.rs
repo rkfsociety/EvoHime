@@ -91,6 +91,25 @@ pub mod git_remote_publication_protocol_store;
 pub mod voice_input_dictation_store;
 pub mod offline_experience_consolidation_store;
 pub mod deterministic_review_execution_plan_store;
+pub mod interactive_model_compare_workbench_store;
+pub mod minimal_change_policy_store;
+pub mod contextual_next_step_suggestions_store;
+pub mod autonomous_metric_experiment_runtime_store;
+pub mod native_computer_use_runtime_store;
+pub mod project_execution_board_store;
+pub mod mobile_device_automation_runtime_store;
+pub mod cross_modal_ui_grounding_store;
+pub mod external_source_acquisition_runtime_store;
+pub mod temporal_signal_intelligence_store;
+pub mod temporal_memory_facts_store;
+pub mod ide_companion_bridge_store;
+pub mod verified_git_checkpoints_store;
+pub mod verified_technical_diagram_artifacts_store;
+pub mod local_model_compatibility_gateway_store;
+pub mod semantic_activity_motion_system_store;
+pub mod domain_workflow_recipes_store;
+pub mod optional_voice_output_adapter_store;
+pub mod command_center_store;
 pub(crate) mod prompt_cache_planner_store;
 pub mod reasoning_operator_library_store;
 pub(crate) mod reconciliation_verifier;
@@ -126,7 +145,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 116;
+pub const SCHEMA_VERSION: u32 = 167;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -2904,6 +2923,25 @@ impl LocalDatabase {
         migrations::v114::apply(&transaction, current)?;
         migrations::v115::apply(&transaction, current)?;
         migrations::v116::apply(&transaction, current)?;
+        migrations::v149.apply(&transaction, current)?;
+        migrations::v150.apply(&transaction, current)?;
+        migrations::v151.apply(&transaction, current)?;
+        migrations::v152.apply(&transaction, current)?;
+        migrations::v153.apply(&transaction, current)?;
+        migrations::v154.apply(&transaction, current)?;
+        migrations::v155.apply(&transaction, current)?;
+        migrations::v156.apply(&transaction, current)?;
+        migrations::v157.apply(&transaction, current)?;
+        migrations::v158.apply(&transaction, current)?;
+        migrations::v159.apply(&transaction, current)?;
+        migrations::v160.apply(&transaction, current)?;
+        migrations::v161.apply(&transaction, current)?;
+        migrations::v162.apply(&transaction, current)?;
+        migrations::v163.apply(&transaction, current)?;
+        migrations::v164.apply(&transaction, current)?;
+        migrations::v165.apply(&transaction, current)?;
+        migrations::v166.apply(&transaction, current)?;
+        migrations::v167.apply(&transaction, current)?;
         transaction.commit()?;
         Ok(())
     }

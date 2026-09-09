@@ -1,0 +1,1 @@
+use rusqlite::Transaction;pub(crate)fn apply(tx:&Transaction<'_>,current:u32)->rusqlite::Result<()>{if current<155{crate::mobile_device_automation_runtime_store::install_schema(tx)?;tx.execute_batch("PRAGMA user_version = 155;")?;}Ok(())}

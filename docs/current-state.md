@@ -297,7 +297,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Следующий незавершённый порядок
 
-Незавершённый каталог состоит из планов `149–167`. Планы `102`,
+Незавершённый каталог пуст. Планы `149–167` закрыты. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а

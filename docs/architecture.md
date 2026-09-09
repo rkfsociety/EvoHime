@@ -2918,3 +2918,9 @@ Core владеет bounded versioned review plan с canonical SHA-256, lifecycl
 actor/scope/evidence refs и безопасным verdict `unknown_without_evidence`.
 SQLite schema v116 хранит revision-aware metadata и immutable run boundary;
 IPC tags 275/120 добавлены аддитивно и проецируют только redacted metadata.
+### Plans 149–167 — Core capability contract batch
+
+Каждый закрытый контур получил отдельный bounded Core-owned record с
+canonical SHA-256, lifecycle и revision-aware validation, а также отдельную
+SQLite migration/store. Все projections metadata-only и fail-closed; внешние
+устройства, сеть, IDE и voice adapters не получают implicit authority.
