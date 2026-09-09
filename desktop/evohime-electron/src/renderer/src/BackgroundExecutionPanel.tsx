@@ -38,7 +38,7 @@ export function BackgroundExecutionPanel({ connection, events }: { readonly conn
       ownerScope: 'local',
       payload: operation === 'set_schedule_enabled' && !payload.trim() ? '{"enabled":true}' : payload,
       expectedRevision: 0,
-      idempotencyKey: operation === 'dispatch_once' ? `ui-${runId.trim()}` : undefined,
+      ...(operation === 'dispatch_once' ? { idempotencyKey: `ui-${runId.trim()}` } : {}),
     })
     setMessage(result.ok ? 'Запрос принят Core; projection обновится событием.' : result.message)
   }

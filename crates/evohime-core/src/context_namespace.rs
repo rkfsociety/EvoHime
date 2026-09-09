@@ -556,9 +556,11 @@ pub fn validate_trace(trace: &ContextRetrievalTrace) -> Result<(), NamespaceErro
     {
         return Err(NamespaceError::Invalid("trace"));
     }
-    if trace.visited_nodes.iter().any(|visit| {
-        !valid_id(&visit.node_id) || visit.token_cost > MAX_PROJECTION_BYTES as u32
-    }) {
+    if trace
+        .visited_nodes
+        .iter()
+        .any(|visit| !valid_id(&visit.node_id) || visit.token_cost > MAX_PROJECTION_BYTES as u32)
+    {
         return Err(NamespaceError::Invalid("trace_visit"));
     }
     if trace.fallback_path.len() > MAX_TRACE_ITEMS
@@ -639,13 +641,14 @@ impl ContextViewSnapshot {
             {
                 return Ok(());
             }
-            current = candidate.logical_parent_ref.as_deref().and_then(|ref_value| {
-                nodes
-                    .iter()
-                    .find(|candidate| {
+            current = candidate
+                .logical_parent_ref
+                .as_deref()
+                .and_then(|ref_value| {
+                    nodes.iter().find(|candidate| {
                         candidate.node_id == ref_value || candidate.stable_ref == ref_value
                     })
-            });
+                });
             depth += 1;
             if depth > MAX_DEPTH {
                 break;
@@ -1027,8 +1030,7 @@ fn read_view(payload: &[u8]) -> Result<ContextViewSnapshot, crate::StorageError>
     }
     let view: ContextViewSnapshot = serde_json::from_slice(payload)
         .map_err(|_| crate::StorageError::InvalidInput("invalid_context_view".into()))?;
-    validate_view(&view)
-        .map_err(|error| crate::StorageError::InvalidInput(error.to_string()))?;
+    validate_view(&view).map_err(|error| crate::StorageError::InvalidInput(error.to_string()))?;
     Ok(view)
 }
 
@@ -1227,9 +1229,7 @@ impl crate::EventJournal {
                     .cloned()
                     .take(256)
                     .collect::<Vec<_>>();
-                serde_json::to_vec(
-                    &serde_json::json!({"status":"ok","nodes":nodes}),
-                )?
+                serde_json::to_vec(&serde_json::json!({"status":"ok","nodes":nodes}))?
             }
             "get_abstract" | "get_overview" => {
                 let view = read_view(&command.payload)?;
@@ -1275,13 +1275,13 @@ impl crate::EventJournal {
                     view: ContextViewSnapshot,
                     query: Option<String>,
                 }
-                let input: Input = serde_json::from_slice(&command.payload)
-                    .map_err(|_| crate::StorageError::InvalidInput("context_view_required".into()))?;
+                let input: Input = serde_json::from_slice(&command.payload).map_err(|_| {
+                    crate::StorageError::InvalidInput("context_view_required".into())
+                })?;
                 let view = input.view;
                 validate_view(&view)
                     .map_err(|error| crate::StorageError::InvalidInput(error.to_string()))?;
-                let query = input.query.unwrap_or_default()
-                    .to_ascii_lowercase();
+                let query = input.query.unwrap_or_default().to_ascii_lowercase();
                 let all_nodes = read_nodes(connection)?;
                 authorize_target(&view, &command.namespace_id, &all_nodes)?;
                 let nodes = all_nodes
@@ -1345,12 +1345,15 @@ impl crate::EventJournal {
             }
             "explain_selection" => {
                 let view = read_view(&command.payload)?;
-                let trace_json = store::get_trace(connection, &command.namespace_id)?.ok_or_else(|| {
-                    crate::StorageError::InvalidInput("context_trace_not_found".into())
-                })?;
+                let trace_json =
+                    store::get_trace(connection, &command.namespace_id)?.ok_or_else(|| {
+                        crate::StorageError::InvalidInput("context_trace_not_found".into())
+                    })?;
                 let trace: ContextRetrievalTrace = serde_json::from_slice(&trace_json)?;
                 if trace.view_ref != view.id || trace.view_revision != view.revision {
-                    return Err(crate::StorageError::InvalidInput("context_trace_view_mismatch".into()));
+                    return Err(crate::StorageError::InvalidInput(
+                        "context_trace_view_mismatch".into(),
+                    ));
                 }
                 trace_json
             }
@@ -1362,7 +1365,7 @@ impl crate::EventJournal {
                     ));
                 }
                 validate_trace(&trace)
-                .map_err(|error| crate::StorageError::InvalidInput(error.to_string()))?;
+                    .map_err(|error| crate::StorageError::InvalidInput(error.to_string()))?;
                 let json = serde_json::to_vec(&trace)?;
                 store::put_trace(
                     connection,

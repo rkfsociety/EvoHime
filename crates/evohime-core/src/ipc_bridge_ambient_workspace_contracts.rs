@@ -679,11 +679,24 @@ impl IpcBridge {
                     .await?;
             }
             Some(generated::command_envelope::Command::BackgroundExecution(request)) => {
-                let operation = if request.operation.is_empty() { "list_runs".to_owned() } else { request.operation.clone() };
+                let operation = if request.operation.is_empty() {
+                    "list_runs".to_owned()
+                } else {
+                    request.operation.clone()
+                };
                 let request_id = request.request_id.clone();
                 let run_id = request.run_id.clone();
-                let result = self.dispatch_durable_background_execution(operation.clone(), request).await?;
-                self.write_durable_background_execution_response(writer, &request_id, &run_id, &operation, result).await?;
+                let result = self
+                    .dispatch_durable_background_execution(operation.clone(), request)
+                    .await?;
+                self.write_durable_background_execution_response(
+                    writer,
+                    &request_id,
+                    &run_id,
+                    &operation,
+                    result,
+                )
+                .await?;
             }
 
             _ => unreachable!("command routed to the wrong domain"),

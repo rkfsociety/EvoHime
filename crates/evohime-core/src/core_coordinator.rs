@@ -609,7 +609,9 @@ impl TaskCoordinator {
                 memory_runtime::handle(state, c).await
             }
             c @ CoreCommand::ContextNamespace { .. } => context_namespace::handle(state, c).await,
-            c @ CoreCommand::DurableBackgroundExecution { .. } => durable_background_execution::handle(state, c).await,
+            c @ CoreCommand::DurableBackgroundExecution { .. } => {
+                durable_background_execution::handle(state, c).await
+            }
             c @ CoreCommand::GetMemory { .. } => memory_runtime::handle(state, c).await,
             c @ CoreCommand::ListMemoryPending { .. } => memory_runtime::handle(state, c).await,
             c @ CoreCommand::GetMemoryConflicts { .. } => memory_runtime::handle(state, c).await,

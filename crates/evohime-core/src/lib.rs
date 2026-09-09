@@ -254,8 +254,8 @@ pub mod automation_acceptance;
 pub mod automation_runtime;
 pub mod automation_scheduler;
 pub mod automation_simulation;
-pub mod durable_background_execution;
-pub(crate) mod durable_background_execution_runtime;
 #[cfg(test)]
 mod core_tests;
+pub mod durable_background_execution;
+pub(crate) mod durable_background_execution_runtime;
 pub mod target_contract;
