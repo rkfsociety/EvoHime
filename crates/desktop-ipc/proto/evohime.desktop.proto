@@ -1921,6 +1921,7 @@ message CommandEnvelope {
     AuthorizedSecurityAssessmentCommand authorized_security_assessment = 268;
     RuntimeServiceGraphCommand runtime_service_graph = 269;
     AgentProgramOptimizerCommand agent_program_optimizer = 270;
+    ProjectKnowledgeNotebookCommand project_knowledge_notebook = 271;
   }
 }
 
@@ -1957,6 +1958,8 @@ message RuntimeServiceGraphCommand { uint32 schema_version=1; string request_id=
 message RuntimeServiceGraphEvent { uint32 schema_version=1; string request_id=2; string operation=3; string status=4; uint64 revision=5; bytes projection_json=6; string error_code=7; bool truncated=8; }
 message AgentProgramOptimizerCommand { uint32 schema_version=1; string request_id=2; string operation=3; string program_id=4; bytes payload=5; uint64 expected_revision=6; string idempotency_key=7; }
 message AgentProgramOptimizerEvent { uint32 schema_version=1; string request_id=2; string operation=3; string status=4; uint64 revision=5; bytes projection_json=6; string error_code=7; bool truncated=8; }
+message ProjectKnowledgeNotebookCommand { uint32 schema_version=1; string request_id=2; string operation=3; string notebook_id=4; bytes payload=5; uint64 expected_revision=6; string idempotency_key=7; }
+message ProjectKnowledgeNotebookEvent { uint32 schema_version=1; string request_id=2; string operation=3; string status=4; uint64 revision=5; bytes projection_json=6; string error_code=7; bool truncated=8; }
 
 // Plan 30: package bytes are bounded JSON and are processed only by Core.
 message PreviewWorkflowPackage {
@@ -2120,6 +2123,7 @@ message EventEnvelope {
     AuthorizedSecurityAssessmentEvent authorized_security_assessment = 113;
     RuntimeServiceGraphEvent runtime_service_graph = 114;
     AgentProgramOptimizerEvent agent_program_optimizer = 115;
+    ProjectKnowledgeNotebookEvent project_knowledge_notebook = 116;
   }
 }
 

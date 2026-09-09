@@ -902,6 +902,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::AgentProgramOptimizer { program_id, operation, revision, .. } => console_line!(
             "agent_program_optimizer.result {program_id}: {operation} revision={revision}"
         ),
+        evohime_core::CoreEvent::ProjectKnowledgeNotebook { notebook_id, operation, revision, .. } => console_line!(
+            "project_knowledge_notebook.result {notebook_id}: {operation} revision={revision}"
+        ),
         evohime_core::CoreEvent::WorkflowOptimizationLab { run_id, operation, revision, .. } => console_line!(
             "workflow_optimization_lab.result {run_id}: {operation} revision={revision}"
         ),

@@ -239,6 +239,7 @@ pub enum CoreCommand {
     AuthorizedSecurityAssessment { operation:String, assessment_id:String, payload:Vec<u8>, expected_revision:u64, idempotency_key:String, reply:oneshot::Sender<Result<Vec<u8>,String>> },
     RuntimeServiceGraph { operation:String, graph_id:String, payload:Vec<u8>, expected_revision:u64, idempotency_key:String, reply:oneshot::Sender<Result<Vec<u8>,String>> },
     AgentProgramOptimizer { operation:String, program_id:String, payload:Vec<u8>, expected_revision:u64, idempotency_key:String, reply:oneshot::Sender<Result<Vec<u8>,String>> },
+    ProjectKnowledgeNotebook { operation:String, notebook_id:String, payload:Vec<u8>, expected_revision:u64, idempotency_key:String, reply:oneshot::Sender<Result<Vec<u8>,String>> },
     WorkflowOptimizationLab {
         operation: String,
         run_id: String,
@@ -1275,6 +1276,7 @@ pub enum CoreEvent {
     AuthorizedSecurityAssessment { assessment_id:String, operation:String, revision:u64, projection_json:String },
     RuntimeServiceGraph { graph_id:String, operation:String, revision:u64, projection_json:String },
     AgentProgramOptimizer { program_id:String, operation:String, revision:u64, projection_json:String },
+    ProjectKnowledgeNotebook { notebook_id:String, operation:String, revision:u64, projection_json:String },
     WorkflowOptimizationLab {
         run_id: String,
         operation: String,

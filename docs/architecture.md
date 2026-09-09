@@ -2860,3 +2860,17 @@ Authenticated additive IPC command 270/event 115 проецирует тольк
 revision, score, counts, hash prefix и typed failures. Renderer не получает
 authority, secrets, raw prompts/outputs или executable identities; stale,
 unknown, conflict и unsupported lifecycle transitions fail closed.
+
+## Project Knowledge Notebook v1 (план 143)
+
+`project_knowledge_notebook.rs` хранит bounded metadata-only каталог ссылок
+на знания проекта: title, source reference, content hash, tags, scope,
+lifecycle и immutable revision. Raw note body не входит в контракт; schema
+v112 хранит revisioned metadata, idempotency и durable run pin в транзакционной
+migration. Core проверяет размеры, уникальность и canonical SHA-256, а `pin`
+закрепляет только active revision.
+
+Authenticated additive IPC command 271/event 116 проецирует status, revision,
+entry count, hash prefix и typed errors. Existing knowledge/source owners
+остаются владельцами содержания и прав; renderer не получает raw data,
+secrets или authority, а invalid/stale/unknown paths fail closed.

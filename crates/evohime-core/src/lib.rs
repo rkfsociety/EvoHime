@@ -29,6 +29,7 @@ pub mod local_inference_scheduler;
 pub(crate) mod output_guardrail_pipeline;
 pub(crate) mod privacy_and_telemetry_governance;
 pub mod project_instruction_stack;
+pub mod project_knowledge_notebook;
 pub(crate) mod reasoning_operator_library;
 pub mod remote_client_control_plane;
 pub mod runtime_service_graph;

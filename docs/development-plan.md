@@ -26,7 +26,7 @@ restart подтверждаются отдельно. Автоматическ�
 ## Исполняемая очередь
 
 Незавершённые планы выполняются по графу зависимостей и по этапам `0 → 4`.
-Текущий активный каталог — план `143` и `145–167`; блокирующие и
+Текущий активный каталог — планы `145–167`; блокирующие и
 опциональные зависимости указаны в overview каждого плана и сведены в
 [`plans/README.md`](plans/README.md). Закрытые MVP-планы `127–130` не входят в
 очередь повторно.
@@ -53,11 +53,11 @@ restart подтверждаются отдельно. Автоматическ�
 | 138 | skill source & update lifecycle | реализован 2026-09-09 |
 | 139 | kernel capability facade | реализован 2026-09-09 |
 | 140 | authorized security assessment lane | реализован 2026-09-09 |
-| 143 | notebook | следующая очередь по графу |
+| 145–167 | publication, voice, offline consolidation, review, model compare, policy, suggestions, experiments, computer use, execution board, grounding, temporal memory, IDE, checkpoints, diagrams, compatibility, motion, recipes, voice output, command center | активная очередь по графу |
 | 144 | модульный manifest и выборочное обновление компонентов | реализовано 2026-09-04 |
 | 145–167 | publication, voice, offline consolidation, review, model compare, policy, suggestions, experiments, computer use, execution board, grounding, temporal memory, IDE, checkpoints, diagrams, compatibility, motion, recipes, voice output, command center | активная очередь по графу |
 
-Планы 01–142 и 144 закрыты и удалены из временного каталога после переноса
+Планы 01–143 и 144 закрыты и удалены из временного каталога после переноса
 контрактов и evidence в канонические документы. Нельзя считать план закрытым
 по одному stage-файлу или по наличию кода: закрытие требует реализации,
 recovery, IPC/UI при наличии, focused tests, release evidence и обновления
