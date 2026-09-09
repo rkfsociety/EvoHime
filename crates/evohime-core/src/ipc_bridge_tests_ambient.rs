@@ -530,6 +530,7 @@ async fn agent_skills_ipc_is_typed_metadata_first_and_non_durable() {
     assert!(!String::from_utf8_lossy(&history[0].payload).contains("secretly never persisted"));
 }
 
+#[cfg(target_os = "windows")]
 #[tokio::test]
 async fn a_voice_command_card_appears_and_is_declined_without_launching_anything() {
     let (bridge, _directory) = ambient_bridge("ambient-voice");

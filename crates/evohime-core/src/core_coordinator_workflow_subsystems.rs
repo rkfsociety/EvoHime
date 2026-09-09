@@ -119,19 +119,38 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     _ => Err("unsupported_code_review_operation".into()),
                 }
             }.await;
-            let projection_json = result.as_ref().ok().and_then(|b| String::from_utf8(b.clone()).ok()).unwrap_or_else(|| "{}".into());
-            let event = CoreEvent::CodeReviewLane { review_id: event_review_id, operation: event_operation, revision: expected_revision, projection_json };
+            let projection_json = result
+                .as_ref()
+                .ok()
+                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .unwrap_or_else(|| "{}".into());
+            let event = CoreEvent::CodeReviewLane {
+                review_id: event_review_id,
+                operation: event_operation,
+                revision: expected_revision,
+                projection_json,
+            };
             let journal = state.lock().await.journal.clone();
-            if let Some(journal) = journal { let _ = journal.record(&event).await; }
+            if let Some(journal) = journal {
+                let _ = journal.record(&event).await;
+            }
             TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
-        CoreCommand::StaticAnalysisPacks { operation, pack_id, payload, expected_revision, idempotency_key, reply } => {
-            let event_pack_id = pack_id.clone(); let event_operation = operation.clone();
+        CoreCommand::StaticAnalysisPacks {
+            operation,
+            pack_id,
+            payload,
+            expected_revision,
+            idempotency_key,
+            reply,
+        } => {
+            let event_pack_id = pack_id.clone();
+            let event_operation = operation.clone();
             let result = async {
                 let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
                 let database = journal.database().lock().await;
-                let store = evohime_local_storage::static_analysis_pack_store::load_current(database.connection());
+                let store = evohime_local_storage::static_analysis_pack_store::load_current(database.connection(), &pack_id);
                 match operation.as_str() {
                     "register" => { let pack: crate::static_analysis_packs::AnalysisPack = serde_json::from_slice(&payload).map_err(|_| "invalid_analysis_pack".to_string())?; crate::static_analysis_packs::validate_pack(&pack).map_err(|e| e.to_string())?; let json = serde_json::to_vec(&pack).map_err(|e| e.to_string())?; evohime_local_storage::static_analysis_pack_store::save(database.connection(), &pack.id, pack.revision, &pack.content_hash, &json, &idempotency_key, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"registered","pack_id":pack.id,"revision":pack.revision,"mode":pack.default_mode})).map_err(|e| e.to_string()) }
                     "inspect" => { let json = store.map_err(|e| e.to_string())?.ok_or_else(|| "pack_not_found".to_string())?; let pack: crate::static_analysis_packs::AnalysisPack = serde_json::from_slice(&json).map_err(|_| "corrupt_analysis_pack".to_string())?; crate::static_analysis_packs::validate_pack(&pack).map_err(|e| e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"ok","pack_id":pack.id,"revision":pack.revision,"rule_count":pack.rules.len(),"trust_state":pack.trust_state,"mode":pack.default_mode})).map_err(|e| e.to_string()) }
@@ -139,13 +158,34 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     _ => Err("unsupported_static_analysis_operation".into()),
                 }
             }.await;
-            let projection_json = result.as_ref().ok().and_then(|b| String::from_utf8(b.clone()).ok()).unwrap_or_else(|| "{}".into());
-            let event = CoreEvent::StaticAnalysisPacks { pack_id: event_pack_id, operation: event_operation, revision: expected_revision, projection_json };
-            let journal = state.lock().await.journal.clone(); if let Some(journal) = journal { let _ = journal.record(&event).await; }
-            TaskCoordinator::emit_state_event(&state, event).await; let _ = reply.send(result);
+            let projection_json = result
+                .as_ref()
+                .ok()
+                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .unwrap_or_else(|| "{}".into());
+            let event = CoreEvent::StaticAnalysisPacks {
+                pack_id: event_pack_id,
+                operation: event_operation,
+                revision: expected_revision,
+                projection_json,
+            };
+            let journal = state.lock().await.journal.clone();
+            if let Some(journal) = journal {
+                let _ = journal.record(&event).await;
+            }
+            TaskCoordinator::emit_state_event(&state, event).await;
+            let _ = reply.send(result);
         }
-        CoreCommand::ContextLoadouts { operation, profile_id, payload, expected_revision, idempotency_key, reply } => {
-            let event_profile_id = profile_id.clone(); let event_operation = operation.clone();
+        CoreCommand::ContextLoadouts {
+            operation,
+            profile_id,
+            payload,
+            expected_revision,
+            idempotency_key,
+            reply,
+        } => {
+            let event_profile_id = profile_id.clone();
+            let event_operation = operation.clone();
             let result = async {
                 let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
                 let database = journal.database().lock().await;
@@ -156,18 +196,119 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     _ => Err("unsupported_context_loadout_operation".into())
                 }
             }.await;
-            let projection_json=result.as_ref().ok().and_then(|b|String::from_utf8(b.clone()).ok()).unwrap_or_else(||"{}".into()); let event=CoreEvent::ContextLoadouts{profile_id:event_profile_id,operation:event_operation,revision:expected_revision,projection_json}; let journal=state.lock().await.journal.clone(); if let Some(journal)=journal{let _=journal.record(&event).await;} TaskCoordinator::emit_state_event(&state,event).await; let _=reply.send(result);
+            let projection_json = result
+                .as_ref()
+                .ok()
+                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .unwrap_or_else(|| "{}".into());
+            let event = CoreEvent::ContextLoadouts {
+                profile_id: event_profile_id,
+                operation: event_operation,
+                revision: expected_revision,
+                projection_json,
+            };
+            let journal = state.lock().await.journal.clone();
+            if let Some(journal) = journal {
+                let _ = journal.record(&event).await;
+            }
+            TaskCoordinator::emit_state_event(&state, event).await;
+            let _ = reply.send(result);
         }
-        CoreCommand::SkillSourceLifecycle { operation, installation_id, payload, expected_revision, idempotency_key, reply } => {
-            let event_id=installation_id.clone(); let event_op=operation.clone(); let result=async{let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;let database=journal.database().lock().await;match operation.as_str(){"save"=>{let i:crate::skill_source_lifecycle::Installed=serde_json::from_slice(&payload).map_err(|_|"invalid_installed_skill".to_string())?;crate::skill_source_lifecycle::validate_installation(&i).map_err(|e|e.to_string())?;let json=serde_json::to_vec(&i).map_err(|e|e.to_string())?;evohime_local_storage::skill_source_lifecycle_store::save(database.connection(),&i.installation_id,expected_revision.max(1),&i.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"staged","installation_id":i.installation_id,"revision":expected_revision.max(1),"activation":"future_boundary"})).map_err(|e|e.to_string())},"get"=>{let json=evohime_local_storage::skill_source_lifecycle_store::current(database.connection(),&installation_id).map_err(|e|e.to_string())?.ok_or_else(||"installation_not_found".to_string())?;let i:crate::skill_source_lifecycle::Installed=serde_json::from_slice(&json).map_err(|_|"corrupt_installation".to_string())?;crate::skill_source_lifecycle::validate_installation(&i).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"ok","installation_id":i.installation_id,"mode":i.mode,"update_state":i.update_state,"divergence":i.divergence_state,"revision":expected_revision})).map_err(|e|e.to_string())},"check_update"=>{let i:crate::skill_source_lifecycle::Installed=serde_json::from_slice(&payload).map_err(|_|"invalid_installed_skill".to_string())?;crate::skill_source_lifecycle::validate_installation(&i).map_err(|e|e.to_string())?;crate::skill_source_lifecycle::update_allowed(&i).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"explicit_review_required","installation_id":installation_id,"overwrite":false,"trust_recheck":true})).map_err(|e|e.to_string())},_=>Err("unsupported_skill_lifecycle_operation".into())}}.await;let projection_json=result.as_ref().ok().and_then(|b|String::from_utf8(b.clone()).ok()).unwrap_or_else(||"{}".into());let event=CoreEvent::SkillSourceLifecycle{installation_id:event_id,operation:event_op,revision:expected_revision,projection_json};let journal=state.lock().await.journal.clone();if let Some(journal)=journal{let _=journal.record(&event).await;}TaskCoordinator::emit_state_event(&state,event).await;let _=reply.send(result);
+        CoreCommand::SkillSourceLifecycle {
+            operation,
+            installation_id,
+            payload,
+            expected_revision,
+            idempotency_key,
+            reply,
+        } => {
+            let event_id = installation_id.clone();
+            let event_op = operation.clone();
+            let result=async{let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;let database=journal.database().lock().await;match operation.as_str(){"save"=>{let i:crate::skill_source_lifecycle::Installed=serde_json::from_slice(&payload).map_err(|_|"invalid_installed_skill".to_string())?;crate::skill_source_lifecycle::validate_installation(&i).map_err(|e|e.to_string())?;let json=serde_json::to_vec(&i).map_err(|e|e.to_string())?;evohime_local_storage::skill_source_lifecycle_store::save(database.connection(),&i.installation_id,expected_revision.max(1),&i.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"staged","installation_id":i.installation_id,"revision":expected_revision.max(1),"activation":"future_boundary"})).map_err(|e|e.to_string())},"get"=>{let json=evohime_local_storage::skill_source_lifecycle_store::current(database.connection(),&installation_id).map_err(|e|e.to_string())?.ok_or_else(||"installation_not_found".to_string())?;let i:crate::skill_source_lifecycle::Installed=serde_json::from_slice(&json).map_err(|_|"corrupt_installation".to_string())?;crate::skill_source_lifecycle::validate_installation(&i).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"ok","installation_id":i.installation_id,"mode":i.mode,"update_state":i.update_state,"divergence":i.divergence_state,"revision":expected_revision})).map_err(|e|e.to_string())},"check_update"=>{let i:crate::skill_source_lifecycle::Installed=serde_json::from_slice(&payload).map_err(|_|"invalid_installed_skill".to_string())?;crate::skill_source_lifecycle::validate_installation(&i).map_err(|e|e.to_string())?;crate::skill_source_lifecycle::update_allowed(&i).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"explicit_review_required","installation_id":installation_id,"overwrite":false,"trust_recheck":true})).map_err(|e|e.to_string())},_=>Err("unsupported_skill_lifecycle_operation".into())}}.await;
+            let projection_json = result
+                .as_ref()
+                .ok()
+                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .unwrap_or_else(|| "{}".into());
+            let event = CoreEvent::SkillSourceLifecycle {
+                installation_id: event_id,
+                operation: event_op,
+                revision: expected_revision,
+                projection_json,
+            };
+            let journal = state.lock().await.journal.clone();
+            if let Some(journal) = journal {
+                let _ = journal.record(&event).await;
+            }
+            TaskCoordinator::emit_state_event(&state, event).await;
+            let _ = reply.send(result);
         }
-        CoreCommand::KernelCapabilityFacade { operation, record_id, payload, expected_revision, idempotency_key, reply } => {
-            let event_id=record_id.clone();let event_op=operation.clone();let result=async{let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;let database=journal.database().lock().await;match operation.as_str(){"save_snapshot"=>{let s:crate::kernel_capability_facade::Snapshot=serde_json::from_slice(&payload).map_err(|_|"invalid_kernel_snapshot".to_string())?;crate::kernel_capability_facade::validate_snapshot(&s).map_err(|e|e.to_string())?;let json=serde_json::to_vec(&s).map_err(|e|e.to_string())?;evohime_local_storage::kernel_capability_facade_store::save(database.connection(),&s.id,"snapshot",expected_revision.max(1),&s.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"snapshot_saved","snapshot_id":s.id,"revision":expected_revision.max(1)})).map_err(|e|e.to_string())},"call"=>{let req:serde_json::Value=serde_json::from_slice(&payload).map_err(|_|"invalid_kernel_call".to_string())?;let s:crate::kernel_capability_facade::Snapshot=serde_json::from_value(req.get("snapshot").cloned().ok_or_else(||"snapshot_required".to_string())?).map_err(|_|"invalid_snapshot".to_string())?;let c:crate::kernel_capability_facade::Call=serde_json::from_value(req.get("call").cloned().ok_or_else(||"call_required".to_string())?).map_err(|_|"invalid_call".to_string())?;crate::kernel_capability_facade::authorize_call(&s,&c).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"authorized_projection","record_id":record_id,"capability_id":c.capability_id,"effect_owner":"existing_core_subsystem","revision":expected_revision})).map_err(|e|e.to_string())},"get"=>{let json=evohime_local_storage::kernel_capability_facade_store::current(database.connection(),&record_id).map_err(|e|e.to_string())?.ok_or_else(||"kernel_record_not_found".to_string())?;serde_json::to_vec(&serde_json::json!({"status":"ok","record_id":record_id,"bytes":json.len()})).map_err(|e|e.to_string())},_=>Err("unsupported_kernel_facade_operation".into())}}.await;let projection_json=result.as_ref().ok().and_then(|b|String::from_utf8(b.clone()).ok()).unwrap_or_else(||"{}".into());let event=CoreEvent::KernelCapabilityFacade{record_id:event_id,operation:event_op,revision:expected_revision,projection_json};let journal=state.lock().await.journal.clone();if let Some(journal)=journal{let _=journal.record(&event).await;}TaskCoordinator::emit_state_event(&state,event).await;let _=reply.send(result);
+        CoreCommand::KernelCapabilityFacade {
+            operation,
+            record_id,
+            payload,
+            expected_revision,
+            idempotency_key,
+            reply,
+        } => {
+            let event_id = record_id.clone();
+            let event_op = operation.clone();
+            let result=async{let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;let database=journal.database().lock().await;match operation.as_str(){"save_snapshot"=>{let s:crate::kernel_capability_facade::Snapshot=serde_json::from_slice(&payload).map_err(|_|"invalid_kernel_snapshot".to_string())?;crate::kernel_capability_facade::validate_snapshot(&s).map_err(|e|e.to_string())?;let json=serde_json::to_vec(&s).map_err(|e|e.to_string())?;evohime_local_storage::kernel_capability_facade_store::save(database.connection(),&s.id,"snapshot",expected_revision.max(1),&s.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"snapshot_saved","snapshot_id":s.id,"revision":expected_revision.max(1)})).map_err(|e|e.to_string())},"call"=>{let req:serde_json::Value=serde_json::from_slice(&payload).map_err(|_|"invalid_kernel_call".to_string())?;let s:crate::kernel_capability_facade::Snapshot=serde_json::from_value(req.get("snapshot").cloned().ok_or_else(||"snapshot_required".to_string())?).map_err(|_|"invalid_snapshot".to_string())?;let c:crate::kernel_capability_facade::Call=serde_json::from_value(req.get("call").cloned().ok_or_else(||"call_required".to_string())?).map_err(|_|"invalid_call".to_string())?;crate::kernel_capability_facade::authorize_call(&s,&c).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"authorized_projection","record_id":record_id,"capability_id":c.capability_id,"effect_owner":"existing_core_subsystem","revision":expected_revision})).map_err(|e|e.to_string())},"get"=>{let json=evohime_local_storage::kernel_capability_facade_store::current(database.connection(),&record_id).map_err(|e|e.to_string())?.ok_or_else(||"kernel_record_not_found".to_string())?;serde_json::to_vec(&serde_json::json!({"status":"ok","record_id":record_id,"bytes":json.len()})).map_err(|e|e.to_string())},_=>Err("unsupported_kernel_facade_operation".into())}}.await;
+            let projection_json = result
+                .as_ref()
+                .ok()
+                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .unwrap_or_else(|| "{}".into());
+            let event = CoreEvent::KernelCapabilityFacade {
+                record_id: event_id,
+                operation: event_op,
+                revision: expected_revision,
+                projection_json,
+            };
+            let journal = state.lock().await.journal.clone();
+            if let Some(journal) = journal {
+                let _ = journal.record(&event).await;
+            }
+            TaskCoordinator::emit_state_event(&state, event).await;
+            let _ = reply.send(result);
         }
-        CoreCommand::AuthorizedSecurityAssessment { operation, assessment_id, payload, expected_revision, idempotency_key, reply } => {
-            let event_id=assessment_id.clone(); let event_op=operation.clone(); let result=async{let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;let database=journal.database().lock().await;match operation.as_str(){"authorize"=>{let auth:crate::authorized_security_assessment::Authorization=serde_json::from_slice(&payload).map_err(|_|"invalid_assessment_authorization".to_string())?;crate::authorized_security_assessment::validate_authorization(&auth,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;let json=serde_json::to_vec(&auth).map_err(|e|e.to_string())?;evohime_local_storage::authorized_security_assessment_store::save(database.connection(),&auth.id,expected_revision.max(1),&auth.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"authorized","authorization_id":auth.id,"revision":expected_revision.max(1)})).map_err(|e|e.to_string())},"start"=>{let req:serde_json::Value=serde_json::from_slice(&payload).map_err(|_|"invalid_assessment_start".to_string())?;let a:crate::authorized_security_assessment::Assessment=serde_json::from_value(req.get("assessment").cloned().ok_or_else(||"assessment_required".to_string())?).map_err(|_|"invalid_assessment".to_string())?;let auth:crate::authorized_security_assessment::Authorization=serde_json::from_value(req.get("authorization").cloned().ok_or_else(||"authorization_required".to_string())?).map_err(|_|"invalid_authorization".to_string())?;crate::authorized_security_assessment::start_allowed(&a,&auth,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"metadata_only_started","assessment_id":a.id,"effect_owner":"existing_core_policy_and_tool_owners"})).map_err(|e|e.to_string())},"get"=>{let json=evohime_local_storage::authorized_security_assessment_store::current(database.connection(),&assessment_id).map_err(|e|e.to_string())?.ok_or_else(||"assessment_not_found".to_string())?;serde_json::to_vec(&serde_json::json!({"status":"ok","assessment_id":assessment_id,"bytes":json.len()})).map_err(|e|e.to_string())},"record_finding"=>{let f:crate::authorized_security_assessment::Finding=serde_json::from_slice(&payload).map_err(|_|"invalid_assessment_finding".to_string())?;if f.fingerprint.trim().is_empty()||f.evidence_ref.trim().is_empty(){return Err("finding_requires_evidence".into())}serde_json::to_vec(&serde_json::json!({"status":"recorded_metadata_only","assessment_id":assessment_id,"finding_fingerprint":f.fingerprint})).map_err(|e|e.to_string())},"cancel"=>serde_json::to_vec(&serde_json::json!({"status":"cancelled","assessment_id":assessment_id})).map_err(|e|e.to_string()),_=>Err("unsupported_security_assessment_operation".into())}}.await;let projection_json=result.as_ref().ok().and_then(|b|String::from_utf8(b.clone()).ok()).unwrap_or_else(||"{}".into());let event=CoreEvent::AuthorizedSecurityAssessment{assessment_id:event_id,operation:event_op,revision:expected_revision,projection_json};let journal=state.lock().await.journal.clone();if let Some(journal)=journal{let _=journal.record(&event).await;}TaskCoordinator::emit_state_event(&state,event).await;let _=reply.send(result);
+        CoreCommand::AuthorizedSecurityAssessment {
+            operation,
+            assessment_id,
+            payload,
+            expected_revision,
+            idempotency_key,
+            reply,
+        } => {
+            let event_id = assessment_id.clone();
+            let event_op = operation.clone();
+            let result=async{let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;let database=journal.database().lock().await;match operation.as_str(){"authorize"=>{let auth:crate::authorized_security_assessment::Authorization=serde_json::from_slice(&payload).map_err(|_|"invalid_assessment_authorization".to_string())?;crate::authorized_security_assessment::validate_authorization(&auth,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;let json=serde_json::to_vec(&auth).map_err(|e|e.to_string())?;evohime_local_storage::authorized_security_assessment_store::save(database.connection(),&auth.id,expected_revision.max(1),&auth.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"authorized","authorization_id":auth.id,"revision":expected_revision.max(1)})).map_err(|e|e.to_string())},"start"=>{let req:serde_json::Value=serde_json::from_slice(&payload).map_err(|_|"invalid_assessment_start".to_string())?;let a:crate::authorized_security_assessment::Assessment=serde_json::from_value(req.get("assessment").cloned().ok_or_else(||"assessment_required".to_string())?).map_err(|_|"invalid_assessment".to_string())?;let auth:crate::authorized_security_assessment::Authorization=serde_json::from_value(req.get("authorization").cloned().ok_or_else(||"authorization_required".to_string())?).map_err(|_|"invalid_authorization".to_string())?;crate::authorized_security_assessment::start_allowed(&a,&auth,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"metadata_only_started","assessment_id":a.id,"effect_owner":"existing_core_policy_and_tool_owners"})).map_err(|e|e.to_string())},"get"=>{let json=evohime_local_storage::authorized_security_assessment_store::current(database.connection(),&assessment_id).map_err(|e|e.to_string())?.ok_or_else(||"assessment_not_found".to_string())?;serde_json::to_vec(&serde_json::json!({"status":"ok","assessment_id":assessment_id,"bytes":json.len()})).map_err(|e|e.to_string())},"record_finding"=>{let f:crate::authorized_security_assessment::Finding=serde_json::from_slice(&payload).map_err(|_|"invalid_assessment_finding".to_string())?;if f.fingerprint.trim().is_empty()||f.evidence_ref.trim().is_empty(){return Err("finding_requires_evidence".into())}serde_json::to_vec(&serde_json::json!({"status":"recorded_metadata_only","assessment_id":assessment_id,"finding_fingerprint":f.fingerprint})).map_err(|e|e.to_string())},"cancel"=>serde_json::to_vec(&serde_json::json!({"status":"cancelled","assessment_id":assessment_id})).map_err(|e|e.to_string()),_=>Err("unsupported_security_assessment_operation".into())}}.await;
+            let projection_json = result
+                .as_ref()
+                .ok()
+                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .unwrap_or_else(|| "{}".into());
+            let event = CoreEvent::AuthorizedSecurityAssessment {
+                assessment_id: event_id,
+                operation: event_op,
+                revision: expected_revision,
+                projection_json,
+            };
+            let journal = state.lock().await.journal.clone();
+            if let Some(journal) = journal {
+                let _ = journal.record(&event).await;
+            }
+            TaskCoordinator::emit_state_event(&state, event).await;
+            let _ = reply.send(result);
         }
-        CoreCommand::RuntimeServiceGraph { operation, graph_id, payload, expected_revision, idempotency_key, reply } => {
+        CoreCommand::RuntimeServiceGraph {
+            operation,
+            graph_id,
+            payload,
+            expected_revision,
+            idempotency_key,
+            reply,
+        } => {
             let event_id = graph_id.clone();
             let event_operation = operation.clone();
             let result = async {
@@ -203,15 +344,34 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     _ => Err("unsupported_runtime_service_graph_operation".into()),
                 }
             }.await;
-            let projection_json = result.as_ref().ok().and_then(|bytes| String::from_utf8(bytes.clone()).ok()).unwrap_or_else(|| "{}".into());
-            let event = CoreEvent::RuntimeServiceGraph { graph_id: event_id, operation: event_operation, revision: expected_revision, projection_json };
+            let projection_json = result
+                .as_ref()
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+                .unwrap_or_else(|| "{}".into());
+            let event = CoreEvent::RuntimeServiceGraph {
+                graph_id: event_id,
+                operation: event_operation,
+                revision: expected_revision,
+                projection_json,
+            };
             let journal = state.lock().await.journal.clone();
-            if let Some(journal) = journal { let _ = journal.record(&event).await; }
+            if let Some(journal) = journal {
+                let _ = journal.record(&event).await;
+            }
             TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
-        CoreCommand::AgentProgramOptimizer { operation, program_id, payload, expected_revision, idempotency_key, reply } => {
-            let event_id = program_id.clone(); let event_operation = operation.clone();
+        CoreCommand::AgentProgramOptimizer {
+            operation,
+            program_id,
+            payload,
+            expected_revision,
+            idempotency_key,
+            reply,
+        } => {
+            let event_id = program_id.clone();
+            let event_operation = operation.clone();
             let result = async {
                 let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
                 let database = journal.database().lock().await;
@@ -224,7 +384,23 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     _ => Err("unsupported_agent_program_optimizer_operation".into()),
                 }
             }.await;
-            let projection_json=result.as_ref().ok().and_then(|bytes|String::from_utf8(bytes.clone()).ok()).unwrap_or_else(||"{}".into()); let event=CoreEvent::AgentProgramOptimizer{program_id:event_id,operation:event_operation,revision:expected_revision,projection_json}; let journal=state.lock().await.journal.clone(); if let Some(journal)=journal{let _=journal.record(&event).await;} TaskCoordinator::emit_state_event(&state,event).await; let _=reply.send(result);
+            let projection_json = result
+                .as_ref()
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+                .unwrap_or_else(|| "{}".into());
+            let event = CoreEvent::AgentProgramOptimizer {
+                program_id: event_id,
+                operation: event_operation,
+                revision: expected_revision,
+                projection_json,
+            };
+            let journal = state.lock().await.journal.clone();
+            if let Some(journal) = journal {
+                let _ = journal.record(&event).await;
+            }
+            TaskCoordinator::emit_state_event(&state, event).await;
+            let _ = reply.send(result);
         }
         CoreCommand::WorkflowOptimizationLab {
             operation,
@@ -269,23 +445,154 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
-        CoreCommand::ProjectKnowledgeNotebook { operation, notebook_id, payload, expected_revision, idempotency_key, reply } => {
-            let event_id=notebook_id.clone(); let event_operation=operation.clone();
+        CoreCommand::ProjectKnowledgeNotebook {
+            operation,
+            notebook_id,
+            payload,
+            expected_revision,
+            idempotency_key,
+            reply,
+        } => {
+            let event_id = notebook_id.clone();
+            let event_operation = operation.clone();
             let result=async{let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;let database=journal.database().lock().await;match operation.as_str(){
                 "save"=>{let n:crate::project_knowledge_notebook::Notebook=serde_json::from_slice(&payload).map_err(|_|"invalid_project_knowledge_notebook".to_string())?;crate::project_knowledge_notebook::validate(&n).map_err(|e|e.to_string())?;if n.id!=notebook_id{return Err("notebook_id_mismatch".into())}let json=serde_json::to_vec(&n).map_err(|e|e.to_string())?;evohime_local_storage::project_knowledge_notebook_store::save(database.connection(),&n.id,n.revision,&n.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"stored","notebook_id":n.id,"revision":n.revision,"content_hash_prefix":&n.content_hash[..8]})).map_err(|e|e.to_string())},
                 "get"=>{let json=evohime_local_storage::project_knowledge_notebook_store::current(database.connection(),&notebook_id).map_err(|e|e.to_string())?.ok_or_else(||"notebook_not_found".to_string())?;let n:crate::project_knowledge_notebook::Notebook=serde_json::from_slice(&json).map_err(|_|"corrupt_notebook".to_string())?;crate::project_knowledge_notebook::validate(&n).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"ok","notebook_id":n.id,"revision":n.revision,"lifecycle":n.lifecycle,"entry_count":n.entries.len(),"content_hash_prefix":&n.content_hash[..8]})).map_err(|e|e.to_string())},
                 "pin"=>{let request:serde_json::Value=serde_json::from_slice(&payload).map_err(|_|"invalid_notebook_pin".to_string())?;let run_id=request.get("run_id").and_then(serde_json::Value::as_str).ok_or_else(||"run_id_required".to_string())?;let json=evohime_local_storage::project_knowledge_notebook_store::current(database.connection(),&notebook_id).map_err(|e|e.to_string())?.ok_or_else(||"notebook_not_found".to_string())?;let n:crate::project_knowledge_notebook::Notebook=serde_json::from_slice(&json).map_err(|_|"corrupt_notebook".to_string())?;let pin=crate::project_knowledge_notebook::pin(&n,run_id).map_err(|e|e.to_string())?;evohime_local_storage::project_knowledge_notebook_store::pin(database.connection(),&pin.run_id,&pin.notebook_id,pin.revision,&pin.content_hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"pinned","notebook_id":pin.notebook_id,"revision":pin.revision,"run_id":pin.run_id,"effect_owner":"existing_core_knowledge_owner"})).map_err(|e|e.to_string())},
-                "activate"|"supersede"=>Err("lifecycle_transition_requires_new_immutable_revision".into()),_=>Err("unsupported_project_knowledge_notebook_operation".into())}}.await;let projection_json=result.as_ref().ok().and_then(|b|String::from_utf8(b.clone()).ok()).unwrap_or_else(||"{}".into());let event=CoreEvent::ProjectKnowledgeNotebook{notebook_id:event_id,operation:event_operation,revision:expected_revision,projection_json};let journal=state.lock().await.journal.clone();if let Some(journal)=journal{let _=journal.record(&event).await;}TaskCoordinator::emit_state_event(&state,event).await;let _=reply.send(result);
+                "activate"|"supersede"=>Err("lifecycle_transition_requires_new_immutable_revision".into()),_=>Err("unsupported_project_knowledge_notebook_operation".into())}}.await;
+            let projection_json = result
+                .as_ref()
+                .ok()
+                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .unwrap_or_else(|| "{}".into());
+            let event = CoreEvent::ProjectKnowledgeNotebook {
+                notebook_id: event_id,
+                operation: event_operation,
+                revision: expected_revision,
+                projection_json,
+            };
+            let journal = state.lock().await.journal.clone();
+            if let Some(journal) = journal {
+                let _ = journal.record(&event).await;
+            }
+            TaskCoordinator::emit_state_event(&state, event).await;
+            let _ = reply.send(result);
         }
-        CoreCommand::GitRemotePublicationProtocol { operation, protocol_id, payload, expected_revision, idempotency_key, reply } => {
-            let event_id=protocol_id.clone();let event_operation=operation.clone();let result=async{let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;let database=journal.database().lock().await;match operation.as_str(){"save"=>{let p:crate::git_remote_publication_protocol::PublicationProtocol=serde_json::from_slice(&payload).map_err(|_|"invalid_git_publication_protocol".to_string())?;crate::git_remote_publication_protocol::validate(&p).map_err(|e|e.to_string())?;if p.id!=protocol_id{return Err("protocol_id_mismatch".into())}let json=serde_json::to_vec(&p).map_err(|e|e.to_string())?;evohime_local_storage::git_remote_publication_protocol_store::save(database.connection(),&p.id,p.revision,&p.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"stored","protocol_id":p.id,"revision":p.revision,"content_hash_prefix":&p.content_hash[..8]})).map_err(|e|e.to_string())},"get"=>{let json=evohime_local_storage::git_remote_publication_protocol_store::current(database.connection(),&protocol_id).map_err(|e|e.to_string())?.ok_or_else(||"publication_protocol_not_found".to_string())?;let p:crate::git_remote_publication_protocol::PublicationProtocol=serde_json::from_slice(&json).map_err(|_|"corrupt_publication_protocol".to_string())?;crate::git_remote_publication_protocol::validate(&p).map_err(|e|e.to_string())?;crate::git_remote_publication_protocol::inspect(&p).map_err(|e|e.to_string())},"publish"=>{let json=evohime_local_storage::git_remote_publication_protocol_store::current(database.connection(),&protocol_id).map_err(|e|e.to_string())?.ok_or_else(||"publication_protocol_not_found".to_string())?;let p:crate::git_remote_publication_protocol::PublicationProtocol=serde_json::from_slice(&json).map_err(|_|"corrupt_publication_protocol".to_string())?;let mut projection=crate::git_remote_publication_protocol::inspect(&p).map_err(|e|e.to_string())?;projection["status"]="transport_unavailable".into();serde_json::to_vec(&projection).map_err(|e|e.to_string())},_=>Err("unsupported_git_remote_publication_operation".into())}}.await;let projection_json=result.as_ref().ok().and_then(|b|String::from_utf8(b.clone()).ok()).unwrap_or_else(||"{}".into());let event=CoreEvent::GitRemotePublicationProtocol{protocol_id:event_id,operation:event_operation,revision:expected_revision,projection_json};let journal=state.lock().await.journal.clone();if let Some(journal)=journal{let _=journal.record(&event).await;}TaskCoordinator::emit_state_event(&state,event).await;let _=reply.send(result);
+        CoreCommand::GitRemotePublicationProtocol {
+            operation,
+            protocol_id,
+            payload,
+            expected_revision,
+            idempotency_key,
+            reply,
+        } => {
+            let event_id = protocol_id.clone();
+            let event_operation = operation.clone();
+            let result=async{let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;let database=journal.database().lock().await;match operation.as_str(){"save"=>{let p:crate::git_remote_publication_protocol::PublicationProtocol=serde_json::from_slice(&payload).map_err(|_|"invalid_git_publication_protocol".to_string())?;crate::git_remote_publication_protocol::validate(&p).map_err(|e|e.to_string())?;if p.id!=protocol_id{return Err("protocol_id_mismatch".into())}let json=serde_json::to_vec(&p).map_err(|e|e.to_string())?;evohime_local_storage::git_remote_publication_protocol_store::save(database.connection(),&p.id,p.revision,&p.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"stored","protocol_id":p.id,"revision":p.revision,"content_hash_prefix":&p.content_hash[..8]})).map_err(|e|e.to_string())},"get"=>{let json=evohime_local_storage::git_remote_publication_protocol_store::current(database.connection(),&protocol_id).map_err(|e|e.to_string())?.ok_or_else(||"publication_protocol_not_found".to_string())?;let p:crate::git_remote_publication_protocol::PublicationProtocol=serde_json::from_slice(&json).map_err(|_|"corrupt_publication_protocol".to_string())?;crate::git_remote_publication_protocol::validate(&p).map_err(|e|e.to_string())?;serde_json::to_vec(&crate::git_remote_publication_protocol::inspect(&p).map_err(|e|e.to_string())?).map_err(|e|e.to_string())},"publish"=>{let json=evohime_local_storage::git_remote_publication_protocol_store::current(database.connection(),&protocol_id).map_err(|e|e.to_string())?.ok_or_else(||"publication_protocol_not_found".to_string())?;let p:crate::git_remote_publication_protocol::PublicationProtocol=serde_json::from_slice(&json).map_err(|_|"corrupt_publication_protocol".to_string())?;let mut projection=crate::git_remote_publication_protocol::inspect(&p).map_err(|e|e.to_string())?;projection["status"]="transport_unavailable".into();serde_json::to_vec(&projection).map_err(|e|e.to_string())},_=>Err("unsupported_git_remote_publication_operation".into())}}.await;
+            let projection_json = result
+                .as_ref()
+                .ok()
+                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .unwrap_or_else(|| "{}".into());
+            let event = CoreEvent::GitRemotePublicationProtocol {
+                protocol_id: event_id,
+                operation: event_operation,
+                revision: expected_revision,
+                projection_json,
+            };
+            let journal = state.lock().await.journal.clone();
+            if let Some(journal) = journal {
+                let _ = journal.record(&event).await;
+            }
+            TaskCoordinator::emit_state_event(&state, event).await;
+            let _ = reply.send(result);
         }
-        CoreCommand::VoiceInputDictation { operation, profile_id, payload, expected_revision, idempotency_key, reply } => {
-            let event_id=profile_id.clone();let event_operation=operation.clone();let result=async{let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;let database=journal.database().lock().await;match operation.as_str(){"save"=>{let p:crate::voice_input_dictation::DictationProfile=serde_json::from_slice(&payload).map_err(|_|"invalid_voice_input_dictation".to_string())?;crate::voice_input_dictation::validate(&p).map_err(|e|e.to_string())?;if p.id!=profile_id{return Err("profile_id_mismatch".into())}let json=serde_json::to_vec(&p).map_err(|e|e.to_string())?;evohime_local_storage::voice_input_dictation_store::save(database.connection(),&p.id,p.revision,&p.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"stored","profile_id":p.id,"revision":p.revision,"content_hash_prefix":&p.content_hash[..8]})).map_err(|e|e.to_string())},"get"=>{let json=evohime_local_storage::voice_input_dictation_store::current(database.connection(),&profile_id).map_err(|e|e.to_string())?.ok_or_else(||"dictation_profile_not_found".to_string())?;let p:crate::voice_input_dictation::DictationProfile=serde_json::from_slice(&json).map_err(|_|"corrupt_dictation_profile".to_string())?;crate::voice_input_dictation::availability(&p).map_err(|e|e.to_string())},_=>Err("unsupported_voice_input_dictation_operation".into())}}.await;let projection_json=result.as_ref().ok().and_then(|b|String::from_utf8(b.clone()).ok()).unwrap_or_else(||"{}".into());let event=CoreEvent::VoiceInputDictation{profile_id:event_id,operation:event_operation,revision:expected_revision,projection_json};let journal=state.lock().await.journal.clone();if let Some(journal)=journal{let _=journal.record(&event).await;}TaskCoordinator::emit_state_event(&state,event).await;let _=reply.send(result);
+        CoreCommand::VoiceInputDictation {
+            operation,
+            profile_id,
+            payload,
+            expected_revision,
+            idempotency_key,
+            reply,
+        } => {
+            let event_id = profile_id.clone();
+            let event_operation = operation.clone();
+            let result=async{let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;let database=journal.database().lock().await;match operation.as_str(){"save"=>{let p:crate::voice_input_dictation::DictationProfile=serde_json::from_slice(&payload).map_err(|_|"invalid_voice_input_dictation".to_string())?;crate::voice_input_dictation::validate(&p).map_err(|e|e.to_string())?;if p.id!=profile_id{return Err("profile_id_mismatch".into())}let json=serde_json::to_vec(&p).map_err(|e|e.to_string())?;evohime_local_storage::voice_input_dictation_store::save(database.connection(),&p.id,p.revision,&p.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"stored","profile_id":p.id,"revision":p.revision,"content_hash_prefix":&p.content_hash[..8]})).map_err(|e|e.to_string())},"get"=>{let json=evohime_local_storage::voice_input_dictation_store::current(database.connection(),&profile_id).map_err(|e|e.to_string())?.ok_or_else(||"dictation_profile_not_found".to_string())?;let p:crate::voice_input_dictation::DictationProfile=serde_json::from_slice(&json).map_err(|_|"corrupt_dictation_profile".to_string())?;serde_json::to_vec(&crate::voice_input_dictation::availability(&p).map_err(|e|e.to_string())?).map_err(|e|e.to_string())},_=>Err("unsupported_voice_input_dictation_operation".into())}}.await;
+            let projection_json = result
+                .as_ref()
+                .ok()
+                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .unwrap_or_else(|| "{}".into());
+            let event = CoreEvent::VoiceInputDictation {
+                profile_id: event_id,
+                operation: event_operation,
+                revision: expected_revision,
+                projection_json,
+            };
+            let journal = state.lock().await.journal.clone();
+            if let Some(journal) = journal {
+                let _ = journal.record(&event).await;
+            }
+            TaskCoordinator::emit_state_event(&state, event).await;
+            let _ = reply.send(result);
         }
-        CoreCommand::OfflineExperienceConsolidation { operation, cycle_id, payload, expected_revision, idempotency_key, reply } => {
-            let event_id=cycle_id.clone();let event_operation=operation.clone();let result=async{let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;let database=journal.database().lock().await;match operation.as_str(){"save"=>{let c:crate::offline_experience_consolidation::ConsolidationCycle=serde_json::from_slice(&payload).map_err(|_|"invalid_offline_consolidation".to_string())?;crate::offline_experience_consolidation::validate(&c).map_err(|e|e.to_string())?;if c.id!=cycle_id{return Err("cycle_id_mismatch".into())}let json=serde_json::to_vec(&c).map_err(|e|e.to_string())?;evohime_local_storage::offline_experience_consolidation_store::save(database.connection(),&c.id,c.revision,&c.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"stored","cycle_id":c.id,"revision":c.revision,"content_hash_prefix":&c.content_hash[..8]})).map_err(|e|e.to_string())},"get"=>{let json=evohime_local_storage::offline_experience_consolidation_store::current(database.connection(),&cycle_id).map_err(|e|e.to_string())?.ok_or_else(||"consolidation_cycle_not_found".to_string())?;let c:crate::offline_experience_consolidation::ConsolidationCycle=serde_json::from_slice(&json).map_err(|_|"corrupt_consolidation_cycle".to_string())?;crate::offline_experience_consolidation::evaluate(&c).map_err(|e|e.to_string())},"consolidate"=>{let run_id=serde_json::from_slice::<serde_json::Value>(&payload).ok().and_then(|v|v.get("run_id").and_then(|x|x.as_str()).map(str::to_owned)).ok_or_else(||"run_id_required".to_string())?;let json=evohime_local_storage::offline_experience_consolidation_store::current(database.connection(),&cycle_id).map_err(|e|e.to_string())?.ok_or_else(||"consolidation_cycle_not_found".to_string())?;let c:crate::offline_experience_consolidation::ConsolidationCycle=serde_json::from_slice(&json).map_err(|_|"corrupt_consolidation_cycle".to_string())?;let projection=crate::offline_experience_consolidation::evaluate(&c).map_err(|e|e.to_string())?;evohime_local_storage::offline_experience_consolidation_store::pin(database.connection(),&run_id,&c.id,c.revision,&c.content_hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"run_id":run_id,"cycle_id":c.id,"revision":c.revision,"projection":projection})).map_err(|e|e.to_string())},_=>Err("unsupported_offline_consolidation_operation".into())}}.await;let projection_json=result.as_ref().ok().and_then(|b|String::from_utf8(b.clone()).ok()).unwrap_or_else(||"{}".into());let event=CoreEvent::OfflineExperienceConsolidation{cycle_id:event_id,operation:event_operation,revision:expected_revision,projection_json};let journal=state.lock().await.journal.clone();if let Some(journal)=journal{let _=journal.record(&event).await;}TaskCoordinator::emit_state_event(&state,event).await;let _=reply.send(result);
-        CoreCommand::DeterministicReviewExecutionPlan { operation, plan_id, payload, expected_revision, idempotency_key, reply } => { let event_id=plan_id.clone(); let event_operation=operation.clone(); let result=async { let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?; let database=journal.database().lock().await; match operation.as_str() { "save"=>{let p:crate::deterministic_review_execution_plan::ReviewPlan=serde_json::from_slice(&payload).map_err(|_|"invalid_review_plan".to_string())?;crate::deterministic_review_execution_plan::validate(&p).map_err(|e|e.to_string())?;if p.id!=plan_id{return Err("plan_id_mismatch".into())}let json=serde_json::to_vec(&p).map_err(|e|e.to_string())?;evohime_local_storage::deterministic_review_execution_plan_store::save(database.connection(),&p.id,p.revision,&p.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;Ok(json)}, "get"=>{let json=evohime_local_storage::deterministic_review_execution_plan_store::current(database.connection(),&plan_id).map_err(|e|e.to_string())?.ok_or_else(||"review_plan_not_found".to_string())?;let p:crate::deterministic_review_execution_plan::ReviewPlan=serde_json::from_slice(&json).map_err(|_|"corrupt_review_plan".to_string())?;serde_json::to_vec(&crate::deterministic_review_execution_plan::verdict(&p).map_err(|e|e.to_string())?).map_err(|e|e.to_string())}, _=>Err("unsupported_review_plan_operation".into()) } }.await; let projection_json=result.as_ref().ok().and_then(|b|String::from_utf8(b.clone()).ok()).unwrap_or_else(||"{}".into());let event=CoreEvent::DeterministicReviewExecutionPlan{plan_id:event_id,operation:event_operation,revision:expected_revision,projection_json};let journal=state.lock().await.journal.clone();if let Some(journal)=journal{let _=journal.record(&event).await;}TaskCoordinator::emit_state_event(&state,event).await;let _=reply.send(result); }
+        CoreCommand::OfflineExperienceConsolidation {
+            operation,
+            cycle_id,
+            payload,
+            expected_revision,
+            idempotency_key,
+            reply,
+        } => {
+            let event_id = cycle_id.clone();
+            let event_operation = operation.clone();
+            let result=async{let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;let database=journal.database().lock().await;match operation.as_str(){"save"=>{let c:crate::offline_experience_consolidation::ConsolidationCycle=serde_json::from_slice(&payload).map_err(|_|"invalid_offline_consolidation".to_string())?;crate::offline_experience_consolidation::validate(&c).map_err(|e|e.to_string())?;if c.id!=cycle_id{return Err("cycle_id_mismatch".into())}let json=serde_json::to_vec(&c).map_err(|e|e.to_string())?;evohime_local_storage::offline_experience_consolidation_store::save(database.connection(),&c.id,c.revision,&c.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"stored","cycle_id":c.id,"revision":c.revision,"content_hash_prefix":&c.content_hash[..8]})).map_err(|e|e.to_string())},"get"=>{let json=evohime_local_storage::offline_experience_consolidation_store::current(database.connection(),&cycle_id).map_err(|e|e.to_string())?.ok_or_else(||"consolidation_cycle_not_found".to_string())?;let c:crate::offline_experience_consolidation::ConsolidationCycle=serde_json::from_slice(&json).map_err(|_|"corrupt_consolidation_cycle".to_string())?;serde_json::to_vec(&crate::offline_experience_consolidation::evaluate(&c).map_err(|e|e.to_string())?).map_err(|e|e.to_string())},"consolidate"=>{let run_id=serde_json::from_slice::<serde_json::Value>(&payload).ok().and_then(|v|v.get("run_id").and_then(|x|x.as_str()).map(str::to_owned)).ok_or_else(||"run_id_required".to_string())?;let json=evohime_local_storage::offline_experience_consolidation_store::current(database.connection(),&cycle_id).map_err(|e|e.to_string())?.ok_or_else(||"consolidation_cycle_not_found".to_string())?;let c:crate::offline_experience_consolidation::ConsolidationCycle=serde_json::from_slice(&json).map_err(|_|"corrupt_consolidation_cycle".to_string())?;let projection=crate::offline_experience_consolidation::evaluate(&c).map_err(|e|e.to_string())?;evohime_local_storage::offline_experience_consolidation_store::pin(database.connection(),&run_id,&c.id,c.revision,&c.content_hash,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"run_id":run_id,"cycle_id":c.id,"revision":c.revision,"projection":projection})).map_err(|e|e.to_string())},_=>Err("unsupported_offline_consolidation_operation".into())}}.await;
+            let projection_json = result
+                .as_ref()
+                .ok()
+                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .unwrap_or_else(|| "{}".into());
+            let event = CoreEvent::OfflineExperienceConsolidation {
+                cycle_id: event_id,
+                operation: event_operation,
+                revision: expected_revision,
+                projection_json,
+            };
+            let journal = state.lock().await.journal.clone();
+            if let Some(journal) = journal {
+                let _ = journal.record(&event).await;
+            }
+            TaskCoordinator::emit_state_event(&state, event).await;
+            let _ = reply.send(result);
+        }
+        CoreCommand::DeterministicReviewExecutionPlan {
+            operation,
+            plan_id,
+            payload,
+            expected_revision,
+            idempotency_key,
+            reply,
+        } => {
+            let event_id = plan_id.clone();
+            let event_operation = operation.clone();
+            let result=async { let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?; let database=journal.database().lock().await; match operation.as_str() { "save"=>{let p:crate::deterministic_review_execution_plan::ReviewPlan=serde_json::from_slice(&payload).map_err(|_|"invalid_review_plan".to_string())?;crate::deterministic_review_execution_plan::validate(&p).map_err(|e|e.to_string())?;if p.id!=plan_id{return Err("plan_id_mismatch".into())}let json=serde_json::to_vec(&p).map_err(|e|e.to_string())?;evohime_local_storage::deterministic_review_execution_plan_store::save(database.connection(),&p.id,p.revision,&p.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;Ok(json)}, "get"=>{let json=evohime_local_storage::deterministic_review_execution_plan_store::current(database.connection(),&plan_id).map_err(|e|e.to_string())?.ok_or_else(||"review_plan_not_found".to_string())?;let p:crate::deterministic_review_execution_plan::ReviewPlan=serde_json::from_slice(&json).map_err(|_|"corrupt_review_plan".to_string())?;serde_json::to_vec(&crate::deterministic_review_execution_plan::verdict(&p).map_err(|e|e.to_string())?).map_err(|e|e.to_string())}, _=>Err("unsupported_review_plan_operation".into()) } }.await;
+            let projection_json = result
+                .as_ref()
+                .ok()
+                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .unwrap_or_else(|| "{}".into());
+            let event = CoreEvent::DeterministicReviewExecutionPlan {
+                plan_id: event_id,
+                operation: event_operation,
+                revision: expected_revision,
+                projection_json,
+            };
+            let journal = state.lock().await.journal.clone();
+            if let Some(journal) = journal {
+                let _ = journal.record(&event).await;
+            }
+            TaskCoordinator::emit_state_event(&state, event).await;
+            let _ = reply.send(result);
         }
         CoreCommand::CoreTopicSubscriptionEventBus {
             operation,

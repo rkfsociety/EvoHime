@@ -427,7 +427,10 @@ impl LocalArtifactRecord {
 /// root; a renderer-provided absolute path or traversal component is never a
 /// valid artifact location.
 pub fn validate_artifact_relative_path(path: &Path) -> Result<(), ManagerError> {
+    let raw = path.as_os_str().to_string_lossy();
     if path.as_os_str().is_empty()
+        || raw.contains('\\')
+        || raw.as_bytes().get(1) == Some(&b':')
         || path.components().any(|component| {
             matches!(
                 component,

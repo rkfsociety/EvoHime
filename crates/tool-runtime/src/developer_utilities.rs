@@ -37,7 +37,7 @@ pub const DESCRIPTION: &str =
 pub const PERMISSIONS: &[evohime_permissions::Permission] = &[];
 pub const TIMEOUT: Duration = Duration::from_secs(2);
 
-fn text_input(name: &str, input: &Value) -> Result<&str, ToolError> {
+fn text_input<'a>(name: &str, input: &'a Value) -> Result<&'a str, ToolError> {
     let text = input.get("text").and_then(Value::as_str).ok_or_else(|| ToolError::InvalidInput {
         tool: name.into(),
         message: "text is required".into(),

@@ -22,13 +22,15 @@ describe('ModuleUpdateService', () => {
 
     await service.prepareComponents(['listener-runtime'])
 
+    const windows = process.platform === 'win32'
     expect(spawnMock).toHaveBeenCalledWith(
-      '"C:\\Program Files\\EvoHime\\evohime-updater.exe"',
-      ['--apply', '--install-dir', '"C:\\Program Files\\EvoHime"'],
+      windows ? '"C:\\Program Files\\EvoHime\\evohime-updater.exe"' : 'C:\\Program Files\\EvoHime\\evohime-updater.exe',
+      windows ? ['--apply', '--install-dir', '"C:\\Program Files\\EvoHime"'] : ['--apply', '--install-dir', 'C:\\Program Files\\EvoHime'],
       expect.objectContaining({
         detached: true,
         windowsHide: true,
-        shell: true
+        shell: windows,
+        stdio: 'ignore'
       })
     )
   })
