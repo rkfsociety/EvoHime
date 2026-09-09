@@ -14,6 +14,16 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
     let integer = || serde_json::json!({"type":"integer","minimum":1});
     let object = |properties: Value, required: &[&str]| serde_json::json!({"type":"object","properties":properties,"required":required,"additionalProperties":false});
     match tool_id {
+        "utility.base64.encode" | "utility.base64.decode" | "utility.hash.sha256" | "utility.hash.sha512" | "utility.json.format" | "utility.json.minify" => object(
+            serde_json::json!({"text":string("Bounded UTF-8 input")}),
+            &["text"],
+        ),
+        "utility.uuid.v4" => object(serde_json::json!({}), &[]),
+        "utility.token.generate" => object(serde_json::json!({"bytes":{"type":"integer","minimum":1,"maximum":128}}), &[]),
+        "utility.text.case_convert" => object(
+            serde_json::json!({"text":string("Bounded UTF-8 input"),"mode":{"type":"string","enum":["lower","upper","snake","kebab","camel"]}}),
+            &["text"],
+        ),
         "filesystem.read" => object(
             serde_json::json!({"path":string("Workspace-relative file path")}),
             &["path"],

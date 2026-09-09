@@ -625,8 +625,8 @@ mod tests {
                 approval_required: false,
             },
             tools: ToolsProbe {
-                registered_tools: 23,
-                expected_tools: 23,
+                registered_tools: 32,
+                expected_tools: 32,
                 unavailable_tools: Vec::new(),
             },
             scheduler: SchedulerProbe {

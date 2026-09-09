@@ -1156,6 +1156,26 @@ workflow/module-router mapping, plan-link inspection and `git diff --check`.
 No CI run is claimed for the unpushed commit; after push the relevant module
 workflows are expected to provide the actual gates.
 
+## Plan 133 — Built-in Deterministic Developer Utilities v1 (2026-09-09)
+
+Implementation: Core-owned `developer_utilities` provider in
+`evohime-tool-runtime`, 9 stable tool IDs, typed manifest schemas, bounded
+256 KiB input / 512 KiB output, deterministic Base64/hash/JSON/text operations
+and explicit OS-CSPRNG UUID/token semantics. Existing ToolRegistry dispatch,
+permission, receipt, cancellation, timeout and adaptive catalog contracts are
+unchanged; no new storage, scheduler, shell, filesystem or network authority
+was introduced.
+
+Module routing: `crates/tool-runtime/**` is covered by `.github/workflows/core.yml`;
+`release-versions/core.txt` advances `0.0.000041 -> 0.0.000042`. Other module
+version files are unchanged. The local commit is not pushed, so the module
+router and Core workflow have `UNAVAILABLE` live evidence for this exact commit.
+
+Verification: local tests, builds, linters, packaging, smoke/E2E and runtime
+were not run by explicit instruction. Static source/manifest/registry/workflow/
+documentation review and `git diff --check` are the only local evidence; CI
+after a future push remains the runtime gate.
+
 ## Plan 131 — Unified Context Namespace v1 (2026-09-09)
 
 Implementation: Core-owned bounded node/projection/view/retrieval/trace

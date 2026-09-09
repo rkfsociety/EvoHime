@@ -26,7 +26,7 @@ restart подтверждаются отдельно. Автоматическ�
 ## Исполняемая очередь
 
 Незавершённые планы выполняются по графу зависимостей и по этапам `0 → 4`.
-Текущий активный каталог — планы `133–143` и `145–167`; блокирующие и
+Текущий активный каталог — планы `134–143` и `145–167`; блокирующие и
 опциональные зависимости указаны в overview каждого плана и сведены в
 [`plans/README.md`](plans/README.md). Закрытые MVP-планы `127–130` не входят в
 очередь повторно.
@@ -100,6 +100,15 @@ developer-only Background Execution panel. Контракт расширяет �
 recovery восстанавливает durable wakeups, fenced transitions и immutable
 attempt outcomes. Локальные tests/builds/linters/smoke/E2E не запускались по
 явному ограничению задачи; свежий CI остаётся unavailable до push.
+
+## План 133: Built-in Deterministic Developer Utilities (реализован 2026-09-09)
+
+План закрыт через обычный `ToolRegistry`: добавлены 9 bounded stateless
+utility tools с typed manifest schemas и safe handling pure/random semantics.
+Отдельные SQLite/runtime/IPC authorities не добавлялись; существующие Core
+permission, receipt, cancellation, timeout, provenance и adaptive catalog
+границы остаются владельцами. Core module version повышена только для
+изменённого `tool-runtime`; UI/shell и другие модули не менялись.
 
 ## План 144: модульные релизы (реализован)
 

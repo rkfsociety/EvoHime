@@ -1,5 +1,6 @@
 pub mod action;
 pub mod app_catalog;
+pub mod developer_utilities;
 pub mod execution_policy_profiles;
 pub mod manifest;
 pub mod network_capability;

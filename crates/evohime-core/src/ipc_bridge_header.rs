@@ -36,7 +36,7 @@ const PROTOCOL_MAJOR: u32 = 1;
 /// Number of tools `ToolRegistry::bootstrap()` is expected to register.
 /// Used only as a Doctor health signal (fewer than expected => Warn), never
 /// to gate functionality.
-const EXPECTED_TOOL_COUNT: u32 = 23;
+const EXPECTED_TOOL_COUNT: u32 = 32;
 /// Minor version of the authenticated desktop IPC protocol.
 const PROTOCOL_MINOR: u32 = 0;
 /// Maximum number of checkpoint events replayed in one IPC response.

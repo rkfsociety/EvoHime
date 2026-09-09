@@ -1083,11 +1083,13 @@ dependencies = [
 name = "evohime-tool-runtime"
 version = "0.1.0"
 dependencies = [
- "evohime-permissions",
+ "base64",
+	"evohime-permissions",
  "futures-util",
  "hex",
  "jsonschema",
- "reqwest",
+	"reqwest",
+	"rand 0.8.7",
  "scraper",
  "serde",
  "serde_json",

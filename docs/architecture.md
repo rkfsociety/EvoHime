@@ -2717,3 +2717,23 @@ projection. Electron `Background Execution` находится только в �
 queues, waits и attempts, но не владеет storage или verdict. Существующие
 `WorkflowRuntime`, Agent, Goal, Human Work Queue и Durable Remote Task Bridge
 остаются единственными effect owners.
+
+## Built-in Deterministic Developer Utilities v1 (план 133, реализован 2026-09-09)
+
+`evohime-tool-runtime::developer_utilities` содержит curated stateless provider
+для bounded локальных преобразований: Base64 encode/decode, SHA-256/SHA-512,
+JSON format/minify, UUID v4, OS-CSPRNG token и case conversion. Каждый utility
+имеет отдельный стабильный tool ID, typed manifest schema, версию, implementation
+revision, `local_computation` capability metadata и пределы 256 KiB input /
+512 KiB output. Pure операции дают одинаковый результат для одинакового input;
+UUID/token явно маркированы `secure_random`, а random value не является
+telemetry payload.
+
+Provider зарегистрирован в обычном `ToolRegistry` и вызывается тем же Core
+dispatch/permission/approval/receipt/event/recovery путём, что и остальные
+инструменты. Он не создаёт scheduler, Workbench, SQLite authority, lease,
+filesystem/network/shell capability или отдельный IPC dispatcher. Ошибка
+декодирования, JSON parse, unsupported option, oversized input/output и
+неизвестный tool ID завершаются non-success. Renderer и workflow используют
+тот же Core-owned manifest/result contract; raw secret material не пишется в
+utility metadata.

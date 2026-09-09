@@ -297,7 +297,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Следующий незавершённый порядок
 
-Незавершённый каталог состоит из планов `133–143` и `145–167`. Планы `102`,
+Незавершённый каталог состоит из планов `134–143` и `145–167`. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а
@@ -313,6 +313,21 @@ developer-only redacted panel. Existing automation,
 workflow, agent, goal, human-work и remote-task owners не дублируются.
 Локальные тесты, сборки, линтеры и smoke/E2E по прямому запрету Романа не
 запускались; CI для нового commit станет доступен только после push.
+
+## Plan 133 — Built-in Deterministic Developer Utilities (закрыт 2026-09-09)
+
+Core ToolRegistry получил 9 отдельных stateless utility IDs с typed bounded
+manifest schemas: Base64, SHA-256/SHA-512, JSON format/minify, UUID v4,
+secure token и text case conversion. Реализация находится в
+`crates/tool-runtime/src/developer_utilities.rs`; она не читает workspace, не
+использует shell/network/model и не создаёт отдельное storage. Common registry
+dispatch сохраняет permission, receipt, cancellation, timeout, event и
+adaptive catalog boundaries; deterministic and oversized/invalid-input
+contracts покрыты исходными unit tests.
+
+Поскольку checkout зафиксирован без push, live CI для commit недоступен.
+Локальные tests/builds/linters/smoke/E2E не запускались по ограничению Романа;
+выполнены только разрешённые статический анализ и `git diff --check`.
 
 ## Plan 131 — Unified Context Namespace (закрыт 2026-09-09)
 
