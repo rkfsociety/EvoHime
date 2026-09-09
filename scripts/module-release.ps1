@@ -36,7 +36,12 @@ $moduleRestart = @{
     'listener-runtime' = 'listener'
     'updater' = 'updater'
 }
-$dependencies = if ($moduleDependencies.ContainsKey($Module)) { $moduleDependencies[$Module] } else { @() }
+$dependencies = [System.Collections.Generic.List[string]]::new()
+if ($moduleDependencies.ContainsKey($Module)) {
+    foreach ($dependency in @($moduleDependencies[$Module])) {
+        if ($null -ne $dependency) { [void]$dependencies.Add([string]$dependency) }
+    }
+}
 $restart = if ($moduleRestart.ContainsKey($Module)) { $moduleRestart[$Module] } else { 'module' }
 $modulePaths = @{
     'shell-host' = @('desktop/evohime-electron/src/main', 'desktop/evohime-electron/src/preload')
@@ -51,8 +56,13 @@ $modulePaths = @{
     'verifier' = @('crates/evohime-receipts')
     'updater' = @('crates/evohime-update-agent')
 }
-$changes = if ($modulePaths.ContainsKey($Module)) { @(git log -5 --pretty=format:'- %s' -- $modulePaths[$Module] 2>$null) } else { @() }
-if ($changes.Count -eq 0) { $changes = @('- Обновлён состав поставки модуля и его проверенный бинарный артефакт.') }
+$changes = [System.Collections.Generic.List[string]]::new()
+if ($modulePaths.ContainsKey($Module)) {
+    foreach ($change in @(git log -5 --pretty=format:'- %s' -- $modulePaths[$Module] 2>$null)) {
+        if ($null -ne $change) { [void]$changes.Add([string]$change) }
+    }
+}
+if ($changes.Count -eq 0) { [void]$changes.Add('- Обновлён состав поставки модуля и его проверенный бинарный артефакт.') }
 $summaryText = if ($Summary) { $Summary } else {
     switch ($Module) {
         'shell-host' { 'Оболочка Electron: окно приложения, IPC-адаптеры, preload и запуск пользовательского интерфейса.'; break }
@@ -77,10 +87,10 @@ $manifest = [ordered]@{
     size = $size
     sha256 = $hash
     release_tag = $tag
-    dependencies = $dependencies
+    dependencies = $dependencies.ToArray()
     restart = $restart
     summary = $summaryText
-    changes = $changes
+    changes = $changes.ToArray()
 }
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
 

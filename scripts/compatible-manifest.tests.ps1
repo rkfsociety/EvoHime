@@ -8,6 +8,9 @@ foreach ($marker in @(
     'release_tag = $release.tag_name',
     'minimum_version = $updaterVersion',
     'sha256 = ([string]$moduleManifest.sha256).ToLowerInvariant()',
+    'Normalize-StringArray',
+    "dependencies = [string[]]@(Normalize-StringArray",
+    "changes = [string[]]@(Normalize-StringArray",
     'gh release upload $tag'
 )) {
     if ($script -notmatch [regex]::Escape($marker)) { throw "Compatible manifest contract is missing: $marker" }

@@ -43,6 +43,18 @@ function Read-AssetJson($asset) {
     return Invoke-RestMethod -Uri $asset.url -Headers $headers
 }
 
+function Normalize-StringArray($value, [string]$field, [string]$module) {
+    $result = [System.Collections.Generic.List[string]]::new()
+    foreach ($item in @($value)) {
+        if ($null -eq $item) { continue }
+        if ($item -isnot [string]) {
+            throw "Некорректное поле $field в manifest модуля ${module}: ожидался массив строк."
+        }
+        [void]$result.Add([string]$item)
+    }
+    return $result.ToArray()
+}
+
 $components = foreach ($module in $moduleIds) {
     $release = Get-ModuleRelease $module
     $manifestAssetName = if ($module -eq 'listener-runtime') { 'listener-runtime.json' } else { "$module.manifest.json" }
@@ -60,11 +72,11 @@ $components = foreach ($module in $moduleIds) {
             artifact = $null
             size = 0
             sha256 = ''
-            dependencies = @()
+            dependencies = [string[]]@()
             restart = 'listener'
             protocol = 'listener-runtime-v1'
             summary = 'Библиотеки распознавания речи и модели для listener.'
-            changes = @('Обновлён проверенный комплект библиотек и моделей.')
+            changes = [string[]]@('Обновлён проверенный комплект библиотек и моделей.')
         }
     } else {
         $artifactAsset = Get-Asset $release ([string]$moduleManifest.artifact)
@@ -76,11 +88,11 @@ $components = foreach ($module in $moduleIds) {
             artifact = [string]$moduleManifest.artifact
             size = [int64]$moduleManifest.size
             sha256 = ([string]$moduleManifest.sha256).ToLowerInvariant()
-            dependencies = @($moduleManifest.dependencies)
+            dependencies = [string[]]@(Normalize-StringArray $moduleManifest.dependencies 'dependencies' $module)
             restart = [string]($moduleManifest.restart ?? 'module')
             protocol = 'desktop-ipc-v1'
             summary = [string]($moduleManifest.summary ?? "Модуль $module.")
-            changes = @($moduleManifest.changes)
+            changes = [string[]]@(Normalize-StringArray $moduleManifest.changes 'changes' $module)
         }
     }
 }

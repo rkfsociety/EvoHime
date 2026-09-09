@@ -64,11 +64,12 @@ jobs:
             $prefix = "module-$module-v"
             $versions = foreach ($tag in $releaseTags) {
               if ($tag -is [string] -and $tag.StartsWith($prefix)) {
-                $candidate = Parse-Version $tag.Substring($prefix.Length)
-                if ($null -ne $candidate) { $candidate }
+                $text = $tag.Substring($prefix.Length)
+                $candidate = Parse-Version $text
+                if ($null -ne $candidate) { [PSCustomObject]@{ Text = $text; Value = $candidate } }
               }
             }
-            return @($versions | Sort-Object -Descending | Select-Object -First 1)
+            return @($versions | Sort-Object Value -Descending | Select-Object -First 1)
           }
           foreach ($module in $modules) {
             $versionPath = Join-Path $env:GITHUB_WORKSPACE "release-versions/$module.txt"
@@ -77,11 +78,11 @@ jobs:
             $current = Parse-Version $currentText
             if ($null -eq $current) { throw "Некорректная версия $module`: $currentText" }
             $latest = Latest-Version $module
-            $selected = $manualSet.Contains($module) -or ($manual.Count -eq 0 -and ($latest.Count -eq 0 -or $current -gt $latest[0]))
+            $selected = $manualSet.Contains($module) -or ($manual.Count -eq 0 -and ($latest.Count -eq 0 -or $current -gt $latest[0].Value -or $currentText -ne $latest[0].Text))
             $value = $selected.ToString().ToLowerInvariant()
             "$module=$value" >> $env:GITHUB_OUTPUT
             if ($selected) {
-              $latestText = if ($latest.Count) { $latest[0].ToString() } else { 'нет релиза' }
+              $latestText = if ($latest.Count) { $latest[0].Text } else { 'нет релиза' }
               Write-Host "$module`: $currentText -> $latestText, workflow будет запущен"
             } else {
               Write-Host "$module`: $currentText уже опубликован, workflow пропускается"
@@ -110,10 +111,11 @@ jobs:
           }
           if (-not $releaseAbsent -and (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
             $published = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-            $installerLatest = Parse-Version ([string]$published.installerVersion)
+            $publishedInstallerText = ([string]$published.installerVersion).Trim()
+            $installerLatest = Parse-Version $publishedInstallerText
             if ($null -eq $installerLatest) { throw 'Опубликованный installer manifest содержит некорректную версию.' }
           }
-          $installerSelected = $manualSet.Contains('installer') -or ($manual.Count -eq 0 -and ($null -eq $installerLatest -or $installerCurrent -gt $installerLatest))
+          $installerSelected = $manualSet.Contains('installer') -or ($manual.Count -eq 0 -and ($null -eq $installerLatest -or $installerCurrent -gt $installerLatest -or $installerText -ne $publishedInstallerText))
           "installer=$($installerSelected.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           if ($installerSelected) { Write-Host "installer: $installerText -> $($installerLatest ?? 'нет релиза'), workflow будет запущен" }
           else { Write-Host "installer: $installerText уже опубликован, workflow пропускается" }
