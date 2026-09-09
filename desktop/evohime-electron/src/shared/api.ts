@@ -411,6 +411,7 @@ export interface CoreEvent {
   readonly persistentAgentOrganizationRegistry?: PersistentAgentOrganizationRegistryProjection | null
   readonly executionEnvironmentProfile?: ExecutionEnvironmentProfileProjection | null
   readonly contextNamespace?: ContextNamespaceProjection | null
+  readonly backgroundExecution?: BackgroundExecutionProjection | null
   readonly agentGitChangeSets?: AgentGitChangeSetsProjection | null
   readonly architectEditorPipeline?: ArchitectEditorPipelineProjection | null
   readonly eventVisualizerRegistry?: EventVisualizerRegistryProjection | null
@@ -510,6 +511,7 @@ export interface PersistentAgentOrganizationRegistryProjection {
 }
 export interface ExecutionEnvironmentProfileProjection { readonly schemaVersion: number; readonly requestId: string; readonly profileId: string; readonly operation: string; readonly revision: number; readonly status: string; readonly errorCode: string; readonly projection: unknown }
 export interface ContextNamespaceProjection { readonly schemaVersion: number; readonly requestId: string; readonly operation: string; readonly revision: number; readonly status: string; readonly errorCode: string; readonly projection: unknown }
+export interface BackgroundExecutionProjection { readonly schemaVersion: number; readonly requestId: string; readonly runId: string; readonly operation: string; readonly revision: number; readonly status: string; readonly errorCode: string; readonly projection: unknown }
 
 export interface AgentGitChangeSetsProjection {
   readonly schemaVersion: number
@@ -1221,6 +1223,7 @@ export const RENDERER_COMMANDS = [
   'core.persistentAgentOrganizationRegistry',
   'core.executionEnvironmentProfile',
   'core.contextNamespace',
+  'core.backgroundExecution',
   'core.agentGitChangeSets',
   'core.architectEditorPipeline',
   'core.eventVisualizerRegistry',
@@ -1558,6 +1561,7 @@ export interface CommandPayloads {
   'core.persistentAgentOrganizationRegistry': { operation: 'list' | 'get' | 'history' | 'create' | 'revise' | 'activate' | 'pause' | 'suspend' | 'resume' | 'retire' | 'reporting_set' | 'goal_bind' | 'goal_unbind' | 'assignment_create' | 'assignment_cancel' | 'resolve' | 'availability' | 'activity' | 'recover'; agentId?: string; ownerScope: string; payload?: string; expectedRevision?: number; idempotencyKey?: string }
   'core.executionEnvironmentProfile': { operation: 'list' | 'get' | 'create' | 'revise' | 'preflight' | 'activate' | 'rollback' | 'current' | 'history'; profileId?: string; ownerScope: string; payload?: string; expectedRevision?: number; idempotencyKey?: string }
   'core.contextNamespace': { operation: 'register_node' | 'register_projection' | 'save_view' | 'record_trace' | 'list_children' | 'get_abstract' | 'get_overview' | 'resolve_detail' | 'search_within' | 'find_descendants' | 'explain_selection' | 'retrieve'; namespaceId: string; payload?: string; expectedRevision?: number; idempotencyKey?: string }
+  'core.backgroundExecution': { operation: 'create_run' | 'get_run' | 'list_runs' | 'cancel_run' | 'resume_run' | 'wait' | 'create_schedule' | 'revise_schedule' | 'set_schedule_enabled' | 'list_schedules' | 'list_queues' | 'upsert_queue' | 'list_attempts' | 'wake_due' | 'dispatch_once'; runId?: string; ownerScope: string; payload?: string; expectedRevision?: number; idempotencyKey?: string }
   'core.agentGitChangeSets': { operation: 'observe' | 'candidate' | 'get_candidate' | 'reconcile' | 'commit' | 'undo' | 'keep'; changeSetId: string; workspaceRoot: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.architectEditorPipeline': { operation: 'create' | 'get' | 'accept_intent'; pipelineId: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.eventVisualizerRegistry': { operation: 'list' | 'register' | 'resolve'; visualizerId?: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
@@ -2078,6 +2082,7 @@ export interface CommandResults {
   'core.persistentAgentOrganizationRegistry': { accepted: boolean }
   'core.executionEnvironmentProfile': { accepted: boolean }
   'core.contextNamespace': { accepted: boolean }
+  'core.backgroundExecution': { accepted: boolean }
   'core.knowledgeSourceRegistry': { accepted: boolean }
   'core.agentGitChangeSets': { accepted: boolean }
   'core.architectEditorPipeline': { accepted: boolean }

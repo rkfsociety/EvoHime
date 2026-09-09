@@ -10,9 +10,10 @@ output, transcripts, absolute paths и PII запрещены.
 ## Статус выпуска
 
 Этот файл разделяет локальную проверку и историческое GitHub evidence. Перед
-ревизией кодовый checkout был на `4f7eea76`, а `origin/main` — на
-`31076e04410da7fd31d77f74c57eac55af22b63e`; локальные изменения не
-публиковались. Для них текущий GitHub release status не утверждается.
+закрытием плана 132 базовый checkout был на `cc91346d0b546149e2268ca40ae947426a9d9c7f`,
+а `origin/main` — на `93e5babf9a090f22f36f609333203dd68ed72c8b`; итоговый
+task-only commit не публиковался. Для него текущий GitHub release status не
+утверждается.
 Исторические run ID ниже сохранены как evidence на момент их запуска и не
 являются живым статусом.
 
@@ -1122,6 +1123,38 @@ Added bounded intent/review contract and schema 101 metadata. Plan Artifact and
 Architecture Snapshot ownership remains separate; missing evidence is
 Unknown/NeedsReview. `cargo fmt --all` and `git diff --check` passed; local
 tests/builds and CI monitoring were skipped by instruction.
+
+## Plan 132 — Durable Background Execution Plane v1 (2026-09-09)
+
+Implementation: Core-owned `background-execution/v1` over the existing
+`automation/v1` authority, additive SQLite schema v103, bounded run snapshots,
+queues with upsert/overflow admission, deterministic OneShot/Interval/Cron
+fire polling, typed waits/wakeups and immutable dispatch attempts. Startup recovery
+reconciles active attempts to `unknown_after_restart`; due wakeups use the
+stored run generation and remain pending when a fenced transition cannot be
+applied. Missing Workflow/Agent/Goal/remote/human adapter is an explicit
+`runtime_adapter_unavailable` blocked outcome, never a successful effect.
+
+IPC/UI: authenticated additive command 262/event 107 with generated Rust and
+TypeScript bindings, bounded owner scope/revision/idempotency fields and a
+redacted Background Execution panel under the collapsed developer interface.
+Existing automation scheduler, lease/fencing, workflow and governance owners
+remain authoritative. Module markers `core`, `shell-host` and `ui-bundle`
+advance from `0.0.000040` to `0.0.000041`; other module versions are unchanged.
+
+Итерационное ревью плана сначала выявило абстрактные места в queue control,
+schedule fire/recovery и wait-condition wakeup. Они закрыты конкретными
+`upsert_queue`, bounded overflow admission, deterministic schedule cursor/fire,
+overlap handling и polling state/human conditions; дублирование существующих
+automation/workflow/lease/event owners отклонено как противоречащее источнику
+истины проекта.
+
+Verification evidence: local tests, builds, linters, packaging, smoke/E2E and
+runtime were not run because Roman explicitly prohibited local project checks.
+Performed static checks are limited to source/proto/generated-contract review,
+workflow/module-router mapping, plan-link inspection and `git diff --check`.
+No CI run is claimed for the unpushed commit; after push the relevant module
+workflows are expected to provide the actual gates.
 
 ## Plan 131 — Unified Context Namespace v1 (2026-09-09)
 

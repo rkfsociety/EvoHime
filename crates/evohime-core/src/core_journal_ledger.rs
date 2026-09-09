@@ -72,6 +72,7 @@ impl EventJournal {
             CoreEvent::PersistentAgentOrganizationRegistry { agent_id, .. } => agent_id,
             CoreEvent::ExecutionEnvironmentProfile { profile_id, .. } => profile_id,
             CoreEvent::ContextNamespace { namespace_id, .. } => namespace_id,
+            CoreEvent::DurableBackgroundExecution { run_id, .. } => run_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -157,6 +158,7 @@ impl EventJournal {
             }
             CoreEvent::ExecutionEnvironmentProfile { .. } => "execution_environment_profile.result",
             CoreEvent::ContextNamespace { .. } => "context_namespace.result",
+            CoreEvent::DurableBackgroundExecution { .. } => "background_execution.result",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {

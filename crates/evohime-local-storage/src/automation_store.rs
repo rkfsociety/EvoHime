@@ -118,6 +118,9 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
         ("preset_revision", "INTEGER"),
         ("preset_content_hash", "TEXT"),
         ("workspace_path", "TEXT NOT NULL DEFAULT ''"),
+        ("background_spec_json", "TEXT"),
+        ("background_missed_fire_policy", "TEXT"),
+        ("background_overlap_policy", "TEXT"),
     ] {
         let exists: bool = connection.query_row(
             "SELECT COUNT(*) > 0 FROM pragma_table_info('automation_schedules') WHERE name=?1",
@@ -402,7 +405,7 @@ pub fn list_enabled_schedules(
     connection: &Connection,
 ) -> rusqlite::Result<Vec<AutomationScheduleRecord>> {
     let mut statement = connection.prepare(
-        "SELECT schedule_id, definition_id, revision, owner_scope, hour, minute, timezone_minutes, missed_grace_ms, enabled, last_slot, preset_id, preset_revision, preset_content_hash, workspace_path FROM automation_schedules WHERE enabled=1 ORDER BY schedule_id",
+        "SELECT schedule_id, definition_id, revision, owner_scope, hour, minute, timezone_minutes, missed_grace_ms, enabled, last_slot, preset_id, preset_revision, preset_content_hash, workspace_path FROM automation_schedules WHERE enabled=1 AND background_spec_json IS NULL ORDER BY schedule_id",
     )?;
     let rows = statement.query_map([], |row| {
         Ok(AutomationScheduleRecord {

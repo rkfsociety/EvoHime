@@ -126,6 +126,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .recover_analysis_kernels()
         .await
         .map_err(|e| format!("analysis-kernel recovery failed: {e}"))?;
+    journal
+        .recover_durable_background_execution(evohime_core::task_memory::now_millis() as i64)
+        .await
+        .map_err(|e| format!("durable background execution recovery failed: {e}"))?;
     let _model_provenance_retention_task =
         evohime_core::spawn_model_provenance_retention(journal.clone());
     let heartbeat_task = spawn_heartbeat(data_dir.join("core-heartbeat"));
@@ -256,6 +260,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .attach_routing_approvals(routing_approvals)
         .await;
     proactivity.attach_coordinator(coordinator.clone()).await;
+    let background_journal = journal.clone();
     let bridge = evohime_core::IpcBridge::with_coordinator_and_approvals(
         journal,
         coordinator,
@@ -307,6 +312,17 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     });
+    let durable_background_task = tokio::spawn(async move {
+        loop {
+            if let Err(error) = background_journal
+                .poll_durable_background_execution(evohime_core::task_memory::now_millis() as i64)
+                .await
+            {
+                tracing::warn!(%error, "durable background execution poll failed");
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    });
     let listener_bridge = std::sync::Arc::clone(&bridge);
     let listener_context = config.context().clone();
     let listener_logger = std::sync::Arc::clone(&logger);
@@ -338,6 +354,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     result.map_err(|error| format!("core failed: {error}"))?;
     heartbeat_task.abort();
     automation_scheduler_task.abort();
+    durable_background_task.abort();
     approval_gc_task.abort();
     receipt_retention_task.abort();
     ambient_retention_task.abort();
@@ -936,6 +953,7 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::PersistentAgentOrganizationRegistry { agent_id, operation, revision, .. } => console_line!("persistent_agent_organization_registry.result {agent_id}: {operation} revision={revision}"),
         evohime_core::CoreEvent::ExecutionEnvironmentProfile { profile_id, operation, revision, .. } => console_line!("execution_environment_profile.result {profile_id}: {operation} revision={revision}"),
         evohime_core::CoreEvent::ContextNamespace { operation, revision, .. } => console_line!("context_namespace.result {operation} revision={revision}"),
+        evohime_core::CoreEvent::DurableBackgroundExecution { run_id, operation, revision, .. } => console_line!("background_execution.result {run_id}: {operation} revision={revision}"),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             console_line!("review.history_cleared {marker_id}")
         }

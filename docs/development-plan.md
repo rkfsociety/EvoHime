@@ -26,7 +26,7 @@ restart подтверждаются отдельно. Автоматическ�
 ## Исполняемая очередь
 
 Незавершённые планы выполняются по графу зависимостей и по этапам `0 → 4`.
-Текущий активный каталог — планы `131–143` и `145–167`; блокирующие и
+Текущий активный каталог — планы `133–143` и `145–167`; блокирующие и
 опциональные зависимости указаны в overview каждого плана и сведены в
 [`plans/README.md`](plans/README.md). Закрытые MVP-планы `127–130` не входят в
 очередь повторно.
@@ -44,7 +44,8 @@ restart подтверждаются отдельно. Автоматическ�
 | 126 | design intent review lane | реализован 2026-09-09 |
 | 127–130 | remote control, local inference, model cascade, task leases | MVP-контуры реализованы 2026-09-09 |
 | 131 | unified context namespace | реализован 2026-09-09 |
-| 132–143 | durable execution, utilities, resource guard, review, analysis, loadouts, skills, capability, security, service graph, optimizer, notebook | активная очередь по графу |
+| 132 | durable background execution plane | реализован 2026-09-09 |
+| 133–143 | utilities, resource guard, review, analysis, loadouts, skills, capability, security, service graph, optimizer, notebook | активная очередь по графу |
 | 144 | модульный manifest и выборочное обновление компонентов | реализовано 2026-09-04 |
 | 145–167 | publication, voice, offline consolidation, review, model compare, policy, suggestions, experiments, computer use, execution board, grounding, temporal memory, IDE, checkpoints, diagrams, compatibility, motion, recipes, voice output, command center | активная очередь по графу |
 
@@ -89,6 +90,16 @@ restart-safe metadata persistence. В соответствии с текущим
 Романа локальные тесты, сборки, линтеры и smoke-тесты не выполнялись; контракт
 перенесён в `architecture.md`, подтверждённое состояние и evidence — в
 канонические документы; комплект временных stage-файлов удалён.
+
+## План 132: Durable Background Execution Plane (реализован 2026-09-09)
+
+План закрыт после итерационного ревью и реализации Core/storage/runtime,
+schema v103, authenticated IPC 262/107, generated Electron bindings и
+developer-only Background Execution panel. Контракт расширяет существующий
+`automation/v1`, а не создаёт второй scheduler/queue/lease/event authority;
+recovery восстанавливает durable wakeups, fenced transitions и immutable
+attempt outcomes. Локальные tests/builds/linters/smoke/E2E не запускались по
+явному ограничению задачи; свежий CI остаётся unavailable до push.
 
 ## План 144: модульные релизы (реализован)
 

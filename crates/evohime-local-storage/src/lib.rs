@@ -45,6 +45,7 @@ pub mod declarative_runtime_components_store;
 pub mod dependency_aware_task_graph_store;
 pub mod domains;
 pub mod durable_remote_task_bridge_store;
+pub mod durable_background_execution_store;
 pub(crate) mod event_trigger_runtime_store;
 pub mod event_visualizer_registry_store;
 pub mod execution_backend_registry_store;
@@ -112,7 +113,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 102;
+pub const SCHEMA_VERSION: u32 = 103;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -624,6 +625,7 @@ impl LocalDatabase {
         workflow_store::install_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         automation_store::install_schema(&connection)?;
+        durable_background_execution_store::install_schema(&connection)?;
         toolkit_store::install_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         // Схема 30 (план 08-2): typed execution ledger поверх events —
@@ -2875,6 +2877,7 @@ impl LocalDatabase {
         migrations::v100::apply(&transaction, current)?;
         migrations::v101::apply(&transaction, current)?;
         migrations::v102::apply(&transaction, current)?;
+        migrations::v103::apply(&transaction, current)?;
         transaction.commit()?;
         Ok(())
     }

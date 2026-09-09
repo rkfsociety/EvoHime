@@ -66,7 +66,7 @@ Worktree record. Core проверяет наличие и незавершён�
 worktree и совпадение его base HEAD до durable записи change set; отдельной
 Git-authority для этих consumers нет.
 
-Storage schema — v94. Authenticated IPC command 233/event 78 и generated
+На момент реализации плана 102 storage schema была v94. Authenticated IPC command 233/event 78 и generated
 Electron bindings передают только bounded redacted metadata; renderer не
 получает workspace authority, секреты или raw Git payload. Локально после
 реализации обновлены и прошли protocol check, TypeScript typecheck и
@@ -103,9 +103,10 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 
 ## Граница текущего checkout и CI
 
-Перед этой документационной ревизией проверены refs: кодовый checkout был на
-`4f7eea76620a7cbd1a6b88131454fac7af0289c9`, а `origin/main` — на
-`31076e04410da7fd31d77f74c57eac55af22b63e`. Локальные коммиты не публиковались,
+Перед закрытием плана 132 проверены refs: базовый checkout был на
+`cc91346d0b546149e2268ca40ae947426a9d9c7f`, а `origin/main` — на
+`93e5babf9a090f22f36f609333203dd68ed72c8b`; checkout был на `main` и ahead на
+пять локальных коммитов. Итоговый task-only commit плана 132 создаётся без push,
 поэтому GitHub workflow для них не утверждается до push и отдельной проверки
 результата CI. Исторические workflow и release-gates сохранены в
 [`release-evidence.md`](release-evidence.md) с их исходными commit и run ID.
@@ -169,6 +170,13 @@ cookies не читаются и не сохраняются EvoHime. Панел
 элементами, отображает owner (`user` или `workspace`), UTC-время, revision и
 последний слот. Приостановленные записи явно помечаются как `paused`.
 
+`BackgroundExecutionPanel` находится только в свёрнутом `Интерфейс
+разработчика` и получает через authenticated command 262/event 107 redacted
+проекцию detached runs, schedules, queues, waits и immutable attempts. Core
+принимает `background-execution/v1`, хранит snapshots и wakeups в schema v103,
+выполняет restart reconciliation и не считает отсутствующий effect adapter
+успешным: результатом остаётся `runtime_adapter_unavailable`.
+
 `OperationsPanel` объединяет пользовательский self-repair, память и pending
 items, child-задачи, Pulse, инструменты, локальный индекс workspace, refinement
 и ambient proposals. Ошибки недоступных optional adapters остаются typed
@@ -224,7 +232,7 @@ runtime переиспользует canonical hash, ограничивает г
 
 ## Подтверждённые проверки checkout
 
-Последний свежий локальный прогон относится к коммиту `4f7eea76`:
+Исторический локальный прогон до плана 132 относится к коммиту `4f7eea76`:
 
 | Проверка | Результат |
 | --- | --- |
@@ -235,9 +243,10 @@ runtime переиспользует canonical hash, ограничивает г
 | `cargo fmt --all -- --check` | PASS |
 | `git diff --check` | PASS |
 
-В этой документационной ревизии protocol/typecheck, полный Electron regression,
-package/installer и GitHub acceptance заново не запускались. Их исторические
-результаты не считаются свежей проверкой текущего checkout.
+По плану 132 локальные tests/builds/linters/package/smoke/E2E и runtime не
+запускались по прямому запрету Романа. Выполнены только разрешённые статические
+сверки; исторические результаты выше не являются свежим evidence текущего
+плана. GitHub acceptance для нового commit недоступен до push.
 
 Authenticated-core/real-Core/source-update E2E и полный Windows acceptance не
 входили в этот локальный прогон.
@@ -288,11 +297,22 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Следующий незавершённый порядок
 
-Незавершённый каталог состоит из планов `132–143` и `145–167`. Планы `102`,
+Незавершённый каталог состоит из планов `133–143` и `145–167`. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а
 не по старому линейному списку.
+
+## Plan 132 — Durable Background Execution Plane (закрыт 2026-09-09)
+
+Реализованы Core contract `background-execution/v1`, additive schema v103,
+bounded queues/waits/wakeups/attempt history, restart reconciliation,
+generation-fenced wake transitions, authenticated IPC 262/107, generated
+Electron bindings, deterministic OneShot/Interval/Cron fire polling и
+developer-only redacted panel. Existing automation,
+workflow, agent, goal, human-work и remote-task owners не дублируются.
+Локальные тесты, сборки, линтеры и smoke/E2E по прямому запрету Романа не
+запускались; CI для нового commit станет доступен только после push.
 
 ## Plan 131 — Unified Context Namespace (закрыт 2026-09-09)
 

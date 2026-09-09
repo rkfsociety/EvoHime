@@ -16,7 +16,7 @@
 ## Закрытые направления
 
 Временные plan-файлы закрытых направлений удалены после переноса их контракта
-и evidence в канонические документы. К закрытым относятся планы `01–131` и
+и evidence в канонические документы. К закрытым относятся планы `01–132` и
 `144`; планы `127–130` закрыты как MVP-контуры с явно сохранёнными
 `unavailable` deployment/adapter gates. Их отсутствие из каталога не означает
 отсутствие контракта: он находится в `architecture.md` и `current-state.md`.
@@ -29,7 +29,6 @@
 
 | План | Тема | Состояние |
 | --- | --- | --- |
-| [132](132-0-durable-background-execution-plane.md) | Durable background execution plane | незавершён |
 | [133](133-0-built-in-deterministic-developer-utilities.md) | Built-in deterministic developer utilities | незавершён |
 | [134](134-0-host-resource-telemetry-pressure-guard.md) | Host resource telemetry pressure guard | незавершён |
 | [135](135-0-code-review-lane.md) | Code review lane | незавершён |
@@ -65,7 +64,7 @@
 | [166](166-0-optional-voice-output-adapter.md) | Optional Voice Output Adapter | незавершён |
 | [167](167-0-command-center.md) | Command Center | незавершён |
 
-Номера `131–143` и `145–167` являются текущими идентификаторами активной
+Номера `133–143` и `145–167` являются текущими идентификаторами активной
 очереди. Пропуск `144` намеренный: это закрытый план модульного обновления.
 Новая работа получает следующий свободный номер только после проверки
 дубликатов и зависимостей.

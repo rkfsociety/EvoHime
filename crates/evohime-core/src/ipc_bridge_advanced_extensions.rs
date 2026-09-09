@@ -708,6 +708,35 @@ impl IpcBridge {
         Ok(())
     }
 
+    pub(crate) async fn write_durable_background_execution_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        request_id: &str,
+        run_id: &str,
+        operation: &str,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value = serde_json::from_slice(&payload).unwrap_or_default();
+        let result = generated::BackgroundExecutionEvent {
+            schema_version: crate::durable_background_execution::SCHEMA_VERSION,
+            request_id: request_id.to_owned(),
+            run_id: run_id.to_owned(),
+            operation: operation.to_owned(),
+            revision: value.get("revision").and_then(serde_json::Value::as_u64).unwrap_or_default(),
+            status: value.get("status").and_then(serde_json::Value::as_str).unwrap_or("unknown").to_owned(),
+            error_code: value.get("error_code").and_then(serde_json::Value::as_str).unwrap_or_default().to_owned(),
+            projection_json: payload.clone(),
+            truncated: payload.len() > 64 * 1024,
+        };
+        transport::write_frame(writer, &generated::EventEnvelope {
+            protocol: Some(protocol()), sequence_id: 0, task_id: String::new(),
+            event_type: "background_execution.result".into(), payload,
+            core_instance_id: self.core_instance_id.clone(), session_epoch: self.session_epoch,
+            event: Some(generated::event_envelope::Event::BackgroundExecution(result)),
+        }.encode_to_vec()).await?;
+        Ok(())
+    }
+
     pub(crate) async fn write_invocation_preset_response<W: AsyncWrite + Unpin>(
         &self,
         writer: &mut W,

@@ -632,6 +632,18 @@ function dispatch(
       if (operation === null || namespaceId === null || body === null || expectedRevision === null || idempotencyKey === null || namespaceId.length > 128 || body.length > 128 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Context Namespace.')
       return accepted(client.send({contextNamespace:{schemaVersion:1,requestId:randomUUID(),operation,namespaceId,payload:Buffer.from(body,'utf8'),expectedRevision,idempotencyKey}}))
     }
+    case 'core.backgroundExecution': {
+      const value = asRecord(payload)
+      const operations = ['create_run','get_run','list_runs','cancel_run','resume_run','wait','create_schedule','revise_schedule','set_schedule_enabled','list_schedules','list_queues','upsert_queue','list_attempts','wake_due','dispatch_once']
+      const operation = operations.includes(String(value['operation'])) ? String(value['operation']) : null
+      const runId = value['runId'] === undefined ? '' : asBoundedString(value['runId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const body = value['payload'] === undefined ? '' : asBoundedString(value['payload'])
+      const expectedRevision = value['expectedRevision'] === undefined ? 0 : asNonNegativeInteger(value['expectedRevision'])
+      const idempotencyKey = value['idempotencyKey'] === undefined ? randomUUID() : asBoundedString(value['idempotencyKey'])
+      if (operation === null || runId === null || ownerScope === null || body === null || expectedRevision === null || idempotencyKey === null || runId.length > 128 || ownerScope.length > 256 || body.length > 64 * 1024 || idempotencyKey.length > 128) return failure('invalid-payload', 'Некорректная операция Durable Background Execution.')
+      return accepted(client.send({backgroundExecution:{schemaVersion:1,requestId:randomUUID(),ownerScope,operation,runId,payload:Buffer.from(body,'utf8'),expectedRevision,idempotencyKey}}))
+    }
     case 'core.agentGitChangeSets': {
       const value = asRecord(payload)
       const operations = ['observe', 'candidate', 'get_candidate', 'reconcile', 'commit', 'undo', 'keep']

@@ -2681,3 +2681,39 @@ backup/transaction semantics. Authenticated additive IPC использует co
 261/event 106; replay/resync и correlation остаются общим IPC transport
 контрактом. Electron получает только redacted projection в read-only панели
 `Context Namespace` внутри свёрнутого `Интерфейс разработчика`.
+
+## Durable Background Execution Plane v1 (план 132, реализован 2026-09-09)
+
+`background-execution/v1` расширяет существующий Core-owned `automation/v1` и
+не создаёт второй источник истины для runs, schedules, leases или событий.
+`automation_store` остаётся владельцем definitions/runs/events и получает
+аддитивную schema v103; bounded metadata плоскости хранится в
+`automation_queues`, `automation_waits`, `automation_wakeups` и
+`automation_attempts`, а run snapshot — в дополнительных колонках
+`automation_runs`. Definition, environment, execution/approval policy,
+queue/concurrency refs и idempotency identity фиксируются до запуска; raw
+prompt, provider output, credentials и executable paths не сохраняются.
+
+Контракт типизирует lifecycle `Accepted`/`Scheduled`/`Queued`/`Dispatching`/
+`Running`/`Waiting`/`RetryScheduled`/`Blocked` и terminal states, absolute и
+duration/run-state/human waits, `OneShotAt`/`Interval`/`Cron`, timezone,
+missed-fire/overlap/overflow/priority policies, bounded queue limits и
+canonical snapshot hash. Wakeups восстанавливаются из SQLite после restart;
+transition использует фактическую generation и не теряет wakeup при конфликте.
+Crash в dispatch/running переводит immutable attempt в explicit
+`reconcile_required`/`unknown_after_restart`; отсутствующий runtime adapter
+возвращает `runtime_adapter_unavailable` и не выдаётся за успешный эффект.
+Фоновый poll рассчитывает deterministic fire slots для `OneShotAt`/`Interval`/
+`Cron`, применяет bounded missed-fire policy, сохраняет idempotent schedule
+fire в тот же `automation_runs` и выставляет cursor CAS-операцией. Операция
+`upsert_queue` публикует queue limits, priority и overflow policy; при
+переполнении новые admissions отклоняются или возвращают typed backpressure,
+а coalescing не превращается в повторный эффект.
+
+Authenticated additive IPC использует command tag 262 и event tag 107 с
+schema/request/owner scope, expected revision, idempotency и bounded redacted
+projection. Electron `Background Execution` находится только в свёрнутом
+`Интерфейс разработчика`; renderer запрашивает Core-owned runs, schedules,
+queues, waits и attempts, но не владеет storage или verdict. Существующие
+`WorkflowRuntime`, Agent, Goal, Human Work Queue и Durable Remote Task Bridge
+остаются единственными effect owners.

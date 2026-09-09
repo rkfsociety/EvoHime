@@ -738,6 +738,15 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    DurableBackgroundExecution {
+        operation: String,
+        run_id: String,
+        owner_scope: String,
+        payload: Vec<u8>,
+        expected_revision: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     /// Reads one memory record including its body. `sensitive`, forgotten and
     /// empty records come back redacted: `ListMemory` never carries a body,
     /// and this is the only path that can.
@@ -1436,6 +1445,12 @@ pub enum CoreEvent {
     },
     ContextNamespace {
         namespace_id: String,
+        operation: String,
+        revision: u64,
+        projection_json: String,
+    },
+    DurableBackgroundExecution {
+        run_id: String,
         operation: String,
         revision: u64,
         projection_json: String,
