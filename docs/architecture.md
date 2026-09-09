@@ -2846,3 +2846,17 @@ Electron renderer остаётся projection-only; secrets, prompts, logs, exec
 identities и authority через этот контракт не проходят. Invalid, stale,
 unknown и unsupported lifecycle transitions fail closed; effect ownership
 остаётся у существующих Core policy, approval, workflow и runtime owners.
+
+## Agent Program Optimizer v1 (план 142)
+
+`agent_program_optimizer.rs` хранит bounded metadata-only программу с
+immutable revision/hash, lifecycle, objective hash и шагами без prompt/body.
+Core проверяет уникальность шагов, размеры и canonical SHA-256; schema v111
+хранит revisioned program metadata, idempotency и durable run pin в
+транзакционной migration. `optimize` выдаёт deterministic score/verdict и не
+исполняет шаги, не меняет workflow и не создаёт второй scheduler или gateway.
+
+Authenticated additive IPC command 270/event 115 проецирует только status,
+revision, score, counts, hash prefix и typed failures. Renderer не получает
+authority, secrets, raw prompts/outputs или executable identities; stale,
+unknown, conflict и unsupported lifecycle transitions fail closed.

@@ -509,6 +509,7 @@ impl TaskCoordinator {
             c @ CoreCommand::KernelCapabilityFacade { .. } => { workflow_subsystems::handle(state, c).await }
             c @ CoreCommand::AuthorizedSecurityAssessment { .. } => { workflow_subsystems::handle(state, c).await }
             c @ CoreCommand::RuntimeServiceGraph { .. } => { workflow_subsystems::handle(state, c).await }
+            c @ CoreCommand::AgentProgramOptimizer { .. } => { workflow_subsystems::handle(state, c).await }
             c @ CoreCommand::WorkflowOptimizationLab { .. } => {
                 workflow_subsystems::handle(state, c).await
             }

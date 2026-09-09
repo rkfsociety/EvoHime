@@ -1339,6 +1339,14 @@ transitions, authenticated IPC command 268/event 113 and redacted Electron
 projection. No local tests, builds, linters, smoke/E2E or push were run by the
 plan closure task; allowed evidence is static diff/link validation and
 read-only CI/workflow/module-router inspection.
+
+## Plan 142 — Agent Program Optimizer v1 (2026-09-09)
+
+Implemented bounded Core contract, schema v111 migration, deterministic
+metadata-only optimization verdict, idempotent storage/run pin, authenticated
+IPC command 270/event 115 and redacted Electron projection. Local tests,
+builds, linters, smoke/E2E and runtime were not run; exact-commit CI is
+`UNAVAILABLE` until a later push.
 ## Plan 141 — Runtime Service Graph v1 (2026-09-09)
 
 Implemented Core contract, schema v110 migration, bounded validation,

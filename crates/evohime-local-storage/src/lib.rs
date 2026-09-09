@@ -10,6 +10,7 @@ use rusqlite::{Connection, OptionalExtension, Statement};
 use serde::{Deserialize, Serialize};
 
 pub mod agent_git_change_sets_store;
+pub mod agent_program_optimizer_store;
 pub(crate) mod agent_middleware_pipeline_store;
 pub mod agent_role_profiles_store;
 pub mod ambient_store;
@@ -120,7 +121,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 110;
+pub const SCHEMA_VERSION: u32 = 111;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -2892,6 +2893,7 @@ impl LocalDatabase {
         migrations::v108::apply(&transaction, current)?;
         migrations::v109::apply(&transaction, current)?;
         migrations::v110::apply(&transaction, current)?;
+        migrations::v111::apply(&transaction, current)?;
         transaction.commit()?;
         Ok(())
     }

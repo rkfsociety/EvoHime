@@ -297,7 +297,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Следующий незавершённый порядок
 
-Незавершённый каталог состоит из планов `142–143` и `145–167`. Планы `102`,
+Незавершённый каталог состоит из плана `143` и `145–167`. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а
@@ -489,3 +489,12 @@ canonical hash. Schema v110 хранит только metadata и idempotency ke
 внешний service и renderer authority не добавлены. Локальные tests, builds,
 linters, smoke/E2E по запрету Романа не запускались; live CI для локального
 commit недоступен до push.
+
+## Plan 142 — Agent Program Optimizer (закрыт 2026-09-09)
+
+Добавлен Core-owned bounded optimizer contract с immutable revision/hash,
+deterministic metadata-only score и durable run pin. Schema v111 хранит только
+program metadata, idempotency и pin; optimizer не исполняет шаги и не создаёт
+новый scheduler/gateway. Authenticated IPC command 270/event 115 и Electron
+panel дают redacted projection. Локальные tests, builds, linters, smoke/E2E
+не запускались; CI для локального commit недоступен до push.
