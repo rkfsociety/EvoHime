@@ -243,6 +243,7 @@ pub enum CoreCommand {
     GitRemotePublicationProtocol { operation:String, protocol_id:String, payload:Vec<u8>, expected_revision:u64, idempotency_key:String, reply:oneshot::Sender<Result<Vec<u8>,String>> },
     VoiceInputDictation { operation:String, profile_id:String, payload:Vec<u8>, expected_revision:u64, idempotency_key:String, reply:oneshot::Sender<Result<Vec<u8>,String>> },
     OfflineExperienceConsolidation { operation:String, cycle_id:String, payload:Vec<u8>, expected_revision:u64, idempotency_key:String, reply:oneshot::Sender<Result<Vec<u8>,String>> },
+    DeterministicReviewExecutionPlan { operation:String, plan_id:String, payload:Vec<u8>, expected_revision:u64, idempotency_key:String, reply:oneshot::Sender<Result<Vec<u8>,String>> },
     WorkflowOptimizationLab {
         operation: String,
         run_id: String,
@@ -1283,6 +1284,7 @@ pub enum CoreEvent {
     GitRemotePublicationProtocol { protocol_id:String, operation:String, revision:u64, projection_json:String },
     VoiceInputDictation { profile_id:String, operation:String, revision:u64, projection_json:String },
     OfflineExperienceConsolidation { cycle_id:String, operation:String, revision:u64, projection_json:String },
+    DeterministicReviewExecutionPlan { plan_id:String, operation:String, revision:u64, projection_json:String },
     WorkflowOptimizationLab {
         run_id: String,
         operation: String,

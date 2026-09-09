@@ -2912,3 +2912,9 @@ Authenticated additive IPC command 274/event 119 проецирует status, co
 hash prefix и effect boundary. Raw experience, prompts, transcripts, secrets
 и external outputs не проходят через storage или renderer; invalid/unknown
 состояния fail closed.
+### Deterministic Review Execution Plan v1 (план 148)
+
+Core владеет bounded versioned review plan с canonical SHA-256, lifecycle,
+actor/scope/evidence refs и безопасным verdict `unknown_without_evidence`.
+SQLite schema v116 хранит revision-aware metadata и immutable run boundary;
+IPC tags 275/120 добавлены аддитивно и проецируют только redacted metadata.

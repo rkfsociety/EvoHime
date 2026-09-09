@@ -914,6 +914,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::OfflineExperienceConsolidation { cycle_id, operation, revision, .. } => console_line!(
             "offline_experience_consolidation.result {cycle_id}: {operation} revision={revision}"
         ),
+        evohime_core::CoreEvent::DeterministicReviewExecutionPlan { plan_id, operation, revision, .. } => console_line!(
+            "deterministic_review_execution_plan.result {plan_id}: {operation} revision={revision}"
+        ),
         evohime_core::CoreEvent::WorkflowOptimizationLab { run_id, operation, revision, .. } => console_line!(
             "workflow_optimization_lab.result {run_id}: {operation} revision={revision}"
         ),

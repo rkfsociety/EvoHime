@@ -33,6 +33,7 @@ pub mod project_knowledge_notebook;
 pub mod git_remote_publication_protocol;
 pub mod voice_input_dictation;
 pub mod offline_experience_consolidation;
+pub mod deterministic_review_execution_plan;
 pub(crate) mod reasoning_operator_library;
 pub mod remote_client_control_plane;
 pub mod runtime_service_graph;

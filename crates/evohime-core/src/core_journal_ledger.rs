@@ -124,6 +124,7 @@ impl EventJournal {
             CoreEvent::GitRemotePublicationProtocol { .. } => "git_remote_publication_protocol.result",
             CoreEvent::VoiceInputDictation { .. } => "voice_input_dictation.result",
             CoreEvent::OfflineExperienceConsolidation { .. } => "offline_experience_consolidation.result",
+            CoreEvent::DeterministicReviewExecutionPlan { .. } => "deterministic_review_execution_plan.result",
             CoreEvent::WorkflowOptimizationLab { .. } => "workflow_optimization_lab.result",
             CoreEvent::CoreTopicSubscriptionEventBus { .. } => {
                 "core_topic_subscription_event_bus.result"

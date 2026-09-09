@@ -1,0 +1,1 @@
+use rusqlite::Transaction;pub(crate)fn apply(tx:&Transaction<'_>,current:u32)->rusqlite::Result<()>{if current<116{crate::deterministic_review_execution_plan_store::install_schema(tx)?;tx.execute_batch("PRAGMA user_version = 116;")?;}Ok(())}

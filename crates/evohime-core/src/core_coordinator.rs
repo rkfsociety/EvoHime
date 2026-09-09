@@ -514,6 +514,7 @@ impl TaskCoordinator {
             c @ CoreCommand::GitRemotePublicationProtocol { .. } => { workflow_subsystems::handle(state, c).await }
             c @ CoreCommand::VoiceInputDictation { .. } => { workflow_subsystems::handle(state, c).await }
             c @ CoreCommand::OfflineExperienceConsolidation { .. } => { workflow_subsystems::handle(state, c).await }
+            c @ CoreCommand::DeterministicReviewExecutionPlan { .. } => { workflow_subsystems::handle(state, c).await }
             c @ CoreCommand::WorkflowOptimizationLab { .. } => {
                 workflow_subsystems::handle(state, c).await
             }

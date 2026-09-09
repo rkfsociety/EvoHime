@@ -1382,3 +1382,7 @@ Implemented bounded cycle contract, schema v115, idempotent metadata storage,
 offline metadata-only verdict, authenticated IPC 274/119 and redacted Electron
 projection. Local tests/builds/linters/smoke/E2E/runtime were not run;
 exact-commit CI is `UNAVAILABLE` until push.
+## Plan 148 — Deterministic Review Execution Plan
+
+Source modules: `core`, `shell-host`, `ui-bundle`; CI evidence unavailable
+before the explicitly forbidden push. Local tests/builds/linters were not run.
