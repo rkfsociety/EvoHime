@@ -521,7 +521,6 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: installer
-      RELEASE_TITLE: installer
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
@@ -546,16 +545,18 @@ jobs:
             sha256 = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
           }
           $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'installer-output\EvoHime-Setup.json') -Encoding utf8NoBOM
-          $notes = 'installer/release-notes.md'
+          $releaseTitle = "installer $installerVersion"
           gh release view $env:RELEASE_TAG 2>$null | Out-Null
           if ($LASTEXITCODE -ne 0) {
             # Релиз создаётся один раз — только если его вообще нет.
-            gh release create $env:RELEASE_TAG --title $env:RELEASE_TITLE --notes-file $notes
+            gh release create $env:RELEASE_TAG --title $releaseTitle --notes-file 'installer/release-notes.md'
             if ($LASTEXITCODE -ne 0) { throw 'Не удалось создать релиз установщика.' }
           }
           else {
-            gh release edit $env:RELEASE_TAG --title $env:RELEASE_TITLE --notes-file $notes
-            if ($LASTEXITCODE -ne 0) { throw 'Не удалось обновить описание релиза.' }
+            # При обновлении меняется только название; существующее описание
+            # релиза остаётся без изменений.
+            gh release edit $env:RELEASE_TAG --title $releaseTitle
+            if ($LASTEXITCODE -ne 0) { throw 'Не удалось обновить название релиза.' }
           }
           gh release upload $env:RELEASE_TAG installer-output\EvoHime-Setup.exe --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Не удалось загрузить установщик.' }
