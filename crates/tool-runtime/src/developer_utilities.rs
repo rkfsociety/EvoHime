@@ -72,16 +72,24 @@ fn result(name: &str, value: Value, output: String, kind: &str) -> Result<ToolRe
             message: "output_too_large".into(),
         });
     }
-    Ok(ToolResult {
-        output,
-        structured: json!({
-            "utility_id": name,
-            "utility_version": VERSION,
-            "implementation_revision": "developer-utilities-v1",
-            "execution_kind": kind,
-            "value": value,
-        }),
-    })
+    let mut structured = json!({
+        "utility_id": name,
+        "utility_version": VERSION,
+        "implementation_revision": "developer-utilities-v1",
+        "execution_kind": kind,
+    });
+    if let Value::Object(fields) = value {
+        structured
+            .as_object_mut()
+            .expect("utility metadata is an object")
+            .extend(fields);
+    } else {
+        structured
+            .as_object_mut()
+            .expect("utility metadata is an object")
+            .insert("value".into(), value);
+    }
+    Ok(ToolResult { output, structured })
 }
 
 pub async fn execute(

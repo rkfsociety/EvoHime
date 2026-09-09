@@ -1300,7 +1300,7 @@ mod tests {
     fn bootstrap_registers_filesystem_read() {
         let registry = ToolRegistry::bootstrap();
         let tools = registry.list();
-        assert_eq!(tools.len(), 57);
+        assert_eq!(tools.len(), 66);
         for name in [
             "agent.run",
             "app.list",
