@@ -167,6 +167,49 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
         CoreCommand::AuthorizedSecurityAssessment { operation, assessment_id, payload, expected_revision, idempotency_key, reply } => {
             let event_id=assessment_id.clone(); let event_op=operation.clone(); let result=async{let journal=state.lock().await.journal.clone().ok_or_else(||"storage journal is not configured".to_string())?;let database=journal.database().lock().await;match operation.as_str(){"authorize"=>{let auth:crate::authorized_security_assessment::Authorization=serde_json::from_slice(&payload).map_err(|_|"invalid_assessment_authorization".to_string())?;crate::authorized_security_assessment::validate_authorization(&auth,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;let json=serde_json::to_vec(&auth).map_err(|e|e.to_string())?;evohime_local_storage::authorized_security_assessment_store::save(database.connection(),&auth.id,expected_revision.max(1),&auth.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"authorized","authorization_id":auth.id,"revision":expected_revision.max(1)})).map_err(|e|e.to_string())},"start"=>{let req:serde_json::Value=serde_json::from_slice(&payload).map_err(|_|"invalid_assessment_start".to_string())?;let a:crate::authorized_security_assessment::Assessment=serde_json::from_value(req.get("assessment").cloned().ok_or_else(||"assessment_required".to_string())?).map_err(|_|"invalid_assessment".to_string())?;let auth:crate::authorized_security_assessment::Authorization=serde_json::from_value(req.get("authorization").cloned().ok_or_else(||"authorization_required".to_string())?).map_err(|_|"invalid_authorization".to_string())?;crate::authorized_security_assessment::start_allowed(&a,&auth,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?;serde_json::to_vec(&serde_json::json!({"status":"metadata_only_started","assessment_id":a.id,"effect_owner":"existing_core_policy_and_tool_owners"})).map_err(|e|e.to_string())},"get"=>{let json=evohime_local_storage::authorized_security_assessment_store::current(database.connection(),&assessment_id).map_err(|e|e.to_string())?.ok_or_else(||"assessment_not_found".to_string())?;serde_json::to_vec(&serde_json::json!({"status":"ok","assessment_id":assessment_id,"bytes":json.len()})).map_err(|e|e.to_string())},"record_finding"=>{let f:crate::authorized_security_assessment::Finding=serde_json::from_slice(&payload).map_err(|_|"invalid_assessment_finding".to_string())?;if f.fingerprint.trim().is_empty()||f.evidence_ref.trim().is_empty(){return Err("finding_requires_evidence".into())}serde_json::to_vec(&serde_json::json!({"status":"recorded_metadata_only","assessment_id":assessment_id,"finding_fingerprint":f.fingerprint})).map_err(|e|e.to_string())},"cancel"=>serde_json::to_vec(&serde_json::json!({"status":"cancelled","assessment_id":assessment_id})).map_err(|e|e.to_string()),_=>Err("unsupported_security_assessment_operation".into())}}.await;let projection_json=result.as_ref().ok().and_then(|b|String::from_utf8(b.clone()).ok()).unwrap_or_else(||"{}".into());let event=CoreEvent::AuthorizedSecurityAssessment{assessment_id:event_id,operation:event_op,revision:expected_revision,projection_json};let journal=state.lock().await.journal.clone();if let Some(journal)=journal{let _=journal.record(&event).await;}TaskCoordinator::emit_state_event(&state,event).await;let _=reply.send(result);
         }
+        CoreCommand::RuntimeServiceGraph { operation, graph_id, payload, expected_revision, idempotency_key, reply } => {
+            let event_id = graph_id.clone();
+            let event_operation = operation.clone();
+            let result = async {
+                let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                let database = journal.database().lock().await;
+                match operation.as_str() {
+                    "save" => {
+                        let graph: crate::runtime_service_graph::RuntimeServiceGraph = serde_json::from_slice(&payload).map_err(|_| "invalid_runtime_service_graph".to_string())?;
+                        crate::runtime_service_graph::validate(&graph).map_err(|e| e.to_string())?;
+                        if graph.id != graph_id { return Err("graph_id_mismatch".into()); }
+                        let json = serde_json::to_vec(&graph).map_err(|e| e.to_string())?;
+                        evohime_local_storage::runtime_service_graph_store::save(database.connection(), &graph.id, graph.revision, &graph.content_hash, &json, &idempotency_key, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                        serde_json::to_vec(&serde_json::json!({"status":"stored","graph_id":graph.id,"revision":graph.revision,"content_hash_prefix":&graph.content_hash[..8]})).map_err(|e| e.to_string())
+                    }
+                    "get" => {
+                        let json = evohime_local_storage::runtime_service_graph_store::current(database.connection(), &graph_id).map_err(|e| e.to_string())?.ok_or_else(|| "runtime_service_graph_not_found".to_string())?;
+                        let graph: crate::runtime_service_graph::RuntimeServiceGraph = serde_json::from_slice(&json).map_err(|_| "corrupt_runtime_service_graph".to_string())?;
+                        crate::runtime_service_graph::validate(&graph).map_err(|e| e.to_string())?;
+                        serde_json::to_vec(&serde_json::json!({"status":"ok","graph_id":graph.id,"revision":graph.revision,"lifecycle":graph.lifecycle,"node_count":graph.nodes.len(),"edge_count":graph.edges.len(),"content_hash_prefix":&graph.content_hash[..8]})).map_err(|e| e.to_string())
+                    }
+                    "pin" => {
+                        let request: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_runtime_service_graph_pin".to_string())?;
+                        let run_id = request.get("run_id").and_then(serde_json::Value::as_str).ok_or_else(|| "run_id_required".to_string())?;
+                        let json = evohime_local_storage::runtime_service_graph_store::current(database.connection(), &graph_id).map_err(|e| e.to_string())?.ok_or_else(|| "runtime_service_graph_not_found".to_string())?;
+                        let graph: crate::runtime_service_graph::RuntimeServiceGraph = serde_json::from_slice(&json).map_err(|_| "corrupt_runtime_service_graph".to_string())?;
+                        let pinned = crate::runtime_service_graph::pin(&graph, run_id).map_err(|e| e.to_string())?;
+                        evohime_local_storage::runtime_service_graph_store::pin(database.connection(), &pinned.run_id, &pinned.graph_id, pinned.revision, &pinned.content_hash, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                        serde_json::to_vec(&serde_json::json!({"status":"pinned","graph_id":pinned.graph_id,"revision":pinned.revision,"run_id":pinned.run_id,"effect_owner":"existing_core_runtime"})).map_err(|e| e.to_string())
+                    }
+                    "activate" | "supersede" => {
+                        Err("lifecycle_transition_requires_new_immutable_revision".into())
+                    }
+                    _ => Err("unsupported_runtime_service_graph_operation".into()),
+                }
+            }.await;
+            let projection_json = result.as_ref().ok().and_then(|bytes| String::from_utf8(bytes.clone()).ok()).unwrap_or_else(|| "{}".into());
+            let event = CoreEvent::RuntimeServiceGraph { graph_id: event_id, operation: event_operation, revision: expected_revision, projection_json };
+            let journal = state.lock().await.journal.clone();
+            if let Some(journal) = journal { let _ = journal.record(&event).await; }
+            TaskCoordinator::emit_state_event(&state, event).await;
+            let _ = reply.send(result);
+        }
         CoreCommand::WorkflowOptimizationLab {
             operation,
             run_id,

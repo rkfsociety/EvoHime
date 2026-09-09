@@ -297,7 +297,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Следующий незавершённый порядок
 
-Незавершённый каталог состоит из планов `135–143` и `145–167`. Планы `102`,
+Незавершённый каталог состоит из планов `142–143` и `145–167`. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а
@@ -479,3 +479,13 @@ denied, revoked, stale и unknown состояния дают non-success. Ре�
 metadata-only и не является scanner/executor: эффекты остаются у существующих
 policy, approval, provenance и tool owners. Authenticated IPC command 268 и
 event 113 проецируют в Electron только redacted metadata.
+## Plan 141 — Runtime Service Graph (закрыт 2026-09-09)
+
+Добавлен Core-owned bounded graph contract с lifecycle, immutable revision и
+canonical hash. Schema v110 хранит только metadata и idempotency key;
+`save/get/pin` проходят через Core, а pin закрепляет active revision без
+исполнения node. Authenticated IPC command 269/event 114 и Electron panel
+показывают только redacted projection; второй scheduler, permission system,
+внешний service и renderer authority не добавлены. Локальные tests, builds,
+linters, smoke/E2E по запрету Романа не запускались; live CI для локального
+commit недоступен до push.

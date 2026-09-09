@@ -30,6 +30,7 @@ pub(crate) mod privacy_and_telemetry_governance;
 pub mod project_instruction_stack;
 pub(crate) mod reasoning_operator_library;
 pub mod remote_client_control_plane;
+pub mod runtime_service_graph;
 pub(crate) mod safe_ui_extension_framework;
 pub mod schema_driven_agent_configuration;
 pub mod sensitive_data_guardrails;

@@ -1919,6 +1919,7 @@ message CommandEnvelope {
     SkillSourceLifecycleCommand skill_source_lifecycle = 266;
     KernelCapabilityFacadeCommand kernel_capability_facade = 267;
     AuthorizedSecurityAssessmentCommand authorized_security_assessment = 268;
+    RuntimeServiceGraphCommand runtime_service_graph = 269;
   }
 }
 
@@ -1951,6 +1952,8 @@ message KernelCapabilityFacadeCommand { uint32 schema_version=1; string request_
 message KernelCapabilityFacadeEvent { uint32 schema_version=1; string request_id=2; string operation=3; string status=4; uint64 revision=5; bytes projection_json=6; string error_code=7; bool truncated=8; }
 message AuthorizedSecurityAssessmentCommand { uint32 schema_version=1; string request_id=2; string operation=3; string assessment_id=4; bytes payload=5; uint64 expected_revision=6; string idempotency_key=7; }
 message AuthorizedSecurityAssessmentEvent { uint32 schema_version=1; string request_id=2; string operation=3; string status=4; uint64 revision=5; bytes projection_json=6; string error_code=7; bool truncated=8; }
+message RuntimeServiceGraphCommand { uint32 schema_version=1; string request_id=2; string operation=3; string graph_id=4; bytes payload=5; uint64 expected_revision=6; string idempotency_key=7; }
+message RuntimeServiceGraphEvent { uint32 schema_version=1; string request_id=2; string operation=3; string status=4; uint64 revision=5; bytes projection_json=6; string error_code=7; bool truncated=8; }
 
 // Plan 30: package bytes are bounded JSON and are processed only by Core.
 message PreviewWorkflowPackage {
@@ -2112,6 +2115,7 @@ message EventEnvelope {
     SkillSourceLifecycleEvent skill_source_lifecycle = 111;
     KernelCapabilityFacadeEvent kernel_capability_facade = 112;
     AuthorizedSecurityAssessmentEvent authorized_security_assessment = 113;
+    RuntimeServiceGraphEvent runtime_service_graph = 114;
   }
 }
 

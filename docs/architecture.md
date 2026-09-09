@@ -2829,3 +2829,20 @@ authenticated replay-safe metadata projection; renderer не получает se
 raw prompts, logs или authority. Это adapter/lane, а не новый scanner,
 executor, scheduler или permission system: фактический эффект остаётся у
 существующих Core owners.
+
+## Runtime Service Graph v1 (план 141)
+
+`runtime_service_graph.rs` владеет только bounded описанием связей runtime:
+immutable revision/hash, lifecycle, scope, nodes и edges. Core валидирует
+уникальность узлов, границы и canonical SHA-256; SQLite schema v110 хранит
+только revisioned metadata и idempotency key в транзакционной migration с
+обычным backup boundary. `pin` проверяет active graph и закрепляет revision
+для run, но не исполняет node и не создаёт scheduler, permission system или
+внешний service.
+
+Authenticated additive IPC command 269/event 114 даёт replay-safe metadata
+projection: статус, revision, hash prefix, counts, lifecycle и typed errors.
+Electron renderer остаётся projection-only; secrets, prompts, logs, executable
+identities и authority через этот контракт не проходят. Invalid, stale,
+unknown и unsupported lifecycle transitions fail closed; effect ownership
+остаётся у существующих Core policy, approval, workflow и runtime owners.

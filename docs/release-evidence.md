@@ -1339,3 +1339,10 @@ transitions, authenticated IPC command 268/event 113 and redacted Electron
 projection. No local tests, builds, linters, smoke/E2E or push were run by the
 plan closure task; allowed evidence is static diff/link validation and
 read-only CI/workflow/module-router inspection.
+## Plan 141 — Runtime Service Graph v1 (2026-09-09)
+
+Implemented Core contract, schema v110 migration, bounded validation,
+revisioned metadata storage, active-revision pinning, authenticated IPC command
+269/event 114 and redacted Electron projection. Local tests, builds, linters,
+smoke/E2E and runtime were prohibited and not run; the local commit is not
+published, so exact-commit CI evidence is `UNAVAILABLE` until a later push.

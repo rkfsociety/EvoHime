@@ -7,7 +7,7 @@
 состояние — в [`current-state.md`](current-state.md), а детализация очереди — в
 [`plans/README.md`](plans/README.md).
 
-Текущая активная очередь implementation contracts — планы `131–143` и
+Текущая активная очередь implementation contracts — планы `142–143` и
 `145–167`; закрытые контуры `127–130` и `144` здесь не повторяются.
 
 ## Текущий продукт

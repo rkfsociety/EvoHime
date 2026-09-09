@@ -118,6 +118,7 @@ impl EventJournal {
             CoreEvent::SkillSourceLifecycle { .. } => "skill_source_lifecycle.result",
             CoreEvent::KernelCapabilityFacade { .. } => "kernel_capability_facade.result",
             CoreEvent::AuthorizedSecurityAssessment { .. } => "authorized_security_assessment.result",
+            CoreEvent::RuntimeServiceGraph { .. } => "runtime_service_graph.result",
             CoreEvent::WorkflowOptimizationLab { .. } => "workflow_optimization_lab.result",
             CoreEvent::CoreTopicSubscriptionEventBus { .. } => {
                 "core_topic_subscription_event_bus.result"

@@ -237,6 +237,7 @@ pub enum CoreCommand {
     SkillSourceLifecycle { operation:String, installation_id:String, payload:Vec<u8>, expected_revision:u64, idempotency_key:String, reply:oneshot::Sender<Result<Vec<u8>,String>> },
     KernelCapabilityFacade { operation:String, record_id:String, payload:Vec<u8>, expected_revision:u64, idempotency_key:String, reply:oneshot::Sender<Result<Vec<u8>,String>> },
     AuthorizedSecurityAssessment { operation:String, assessment_id:String, payload:Vec<u8>, expected_revision:u64, idempotency_key:String, reply:oneshot::Sender<Result<Vec<u8>,String>> },
+    RuntimeServiceGraph { operation:String, graph_id:String, payload:Vec<u8>, expected_revision:u64, idempotency_key:String, reply:oneshot::Sender<Result<Vec<u8>,String>> },
     WorkflowOptimizationLab {
         operation: String,
         run_id: String,
@@ -1271,6 +1272,7 @@ pub enum CoreEvent {
     SkillSourceLifecycle { installation_id:String, operation:String, revision:u64, projection_json:String },
     KernelCapabilityFacade { record_id:String, operation:String, revision:u64, projection_json:String },
     AuthorizedSecurityAssessment { assessment_id:String, operation:String, revision:u64, projection_json:String },
+    RuntimeServiceGraph { graph_id:String, operation:String, revision:u64, projection_json:String },
     WorkflowOptimizationLab {
         run_id: String,
         operation: String,
