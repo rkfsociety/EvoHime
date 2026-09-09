@@ -7,6 +7,9 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 pub const MAX_METADATA_BYTES: usize = 32 * 1024;
 
+pub type EvidenceRow = (String, Vec<u8>, String, String);
+pub type ArtifactRow = (Vec<u8>, Vec<u8>, String, String);
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ResearchRevisionRecord {
     pub revision_id: String,
@@ -288,7 +291,7 @@ impl GroundedResearchStore {
     pub fn get_evidence(
         connection: &Connection,
         evidence_id: &str,
-    ) -> rusqlite::Result<Option<(String, Vec<u8>, String, String)>> {
+    ) -> rusqlite::Result<Option<EvidenceRow>> {
         connection
             .query_row(
                 "SELECT revision_id, locator_json, content_hash, trust
@@ -299,6 +302,7 @@ impl GroundedResearchStore {
             .optional()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn insert_session(
         connection: &Connection,
         session_id: &str,
@@ -387,6 +391,7 @@ impl GroundedResearchStore {
             .map_err(|_| "sqlite")
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn insert_artifact(
         connection: &Connection,
         artifact_id: &str,
@@ -446,7 +451,7 @@ impl GroundedResearchStore {
         connection: &Connection,
         artifact_id: &str,
         revision: i64,
-    ) -> rusqlite::Result<Option<(Vec<u8>, Vec<u8>, String, String)>> {
+    ) -> rusqlite::Result<Option<ArtifactRow>> {
         connection
             .query_row(
                 "SELECT claims_json, citations_json, content_hash, coverage

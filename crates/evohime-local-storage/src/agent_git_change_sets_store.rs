@@ -80,6 +80,10 @@ pub fn put_candidate(
     Ok(())
 }
 
+// These paired writes are the public transactional boundary for two records;
+// keeping the column-wise arguments explicit makes the CAS and candidate
+// payloads auditable at the call site.
+#[allow(clippy::too_many_arguments)]
 pub fn update_change_set_and_put_candidate(
     connection: &Connection,
     change_set_id: &str,
@@ -117,6 +121,9 @@ pub fn update_change_set_and_put_candidate(
     Ok(true)
 }
 
+// See the paired insert above: the update variant intentionally preserves the
+// same explicit transaction contract.
+#[allow(clippy::too_many_arguments)]
 pub fn update_change_set_and_update_candidate(
     connection: &Connection,
     change_set_id: &str,

@@ -1,5 +1,6 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
+#[allow(clippy::too_many_arguments)]
 pub fn put(
     connection: &Connection,
     evidence_id: &str,

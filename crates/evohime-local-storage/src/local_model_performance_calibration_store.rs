@@ -4,6 +4,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 pub const MAX_JSON_BYTES: usize = 64 * 1024;
 
+pub type SessionRow = (i64, Vec<u8>, String, Vec<u8>, bool);
+
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS local_model_calibration_sessions (
@@ -23,6 +25,7 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn put_session(
     connection: &Connection,
     session_id: &str,
@@ -61,7 +64,7 @@ pub fn put_session(
 pub fn get_session(
     connection: &Connection,
     session_id: &str,
-) -> rusqlite::Result<Option<(i64, Vec<u8>, String, Vec<u8>, bool)>> {
+) -> rusqlite::Result<Option<SessionRow>> {
     connection
         .query_row(
             "SELECT revision,identity_json,state,samples_json,cancellation_requested
@@ -80,6 +83,7 @@ pub fn get_session(
         .optional()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn put_profile(
     connection: &Connection,
     profile_id: &str,

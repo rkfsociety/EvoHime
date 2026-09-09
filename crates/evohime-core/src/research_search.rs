@@ -159,6 +159,7 @@ pub struct BoundedResearchSessionOutcome {
 /// adapters.  The caller must persist the session and artifact through the
 /// Core journal; this function never writes external state and never treats a
 /// failed or cancelled run as complete.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_bounded_research_session(
     request_id: &str,
     query: &str,

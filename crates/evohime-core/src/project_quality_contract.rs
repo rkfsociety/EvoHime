@@ -91,10 +91,8 @@ pub fn evaluate(
             item.lane_id == constraint.lane_id
                 && item.status == crate::verification_evidence_ledger::VerificationStatus::Passed
         });
-        if match_evidence.is_none() {
-            if constraint.required {
-                missing.push(constraint.id.clone());
-            }
+        if match_evidence.is_none() && constraint.required {
+            missing.push(constraint.id.clone());
         }
     }
     let verdict = if !failed.is_empty() {

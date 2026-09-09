@@ -504,15 +504,16 @@ pub async fn observe(
 }
 
 pub fn validate_integration_references(set: &AgentGitChangeSet) -> Result<(), ChangeSetError> {
-    for reference in [&set.incremental_change_run_id, &set.task_worktree_id] {
-        if let Some(reference) = reference {
-            if reference.is_empty()
-                || reference.len() > MAX_REFERENCE_BYTES
-                || reference.contains('\0')
-                || reference.chars().any(|character| character.is_control())
-            {
-                return Err(ChangeSetError::InvalidPath);
-            }
+    for reference in [&set.incremental_change_run_id, &set.task_worktree_id]
+        .into_iter()
+        .flatten()
+    {
+        if reference.is_empty()
+            || reference.len() > MAX_REFERENCE_BYTES
+            || reference.contains('\0')
+            || reference.chars().any(|character| character.is_control())
+        {
+            return Err(ChangeSetError::InvalidPath);
         }
     }
     Ok(())

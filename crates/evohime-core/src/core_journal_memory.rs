@@ -110,6 +110,7 @@ impl EventJournal {
         .map_err(|error| error.to_string())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn save_grounded_research_session(
         &self,
         session_id: &str,

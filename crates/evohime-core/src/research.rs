@@ -377,6 +377,7 @@ pub struct ResearchSourceRevision {
 impl ResearchSourceRevision {
     /// Creates the immutable identity for an acquired snapshot.  Volatile
     /// fetch timestamps are deliberately excluded from `content_hash`.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_snapshot(
         revision_id: impl Into<String>,
         source_id: impl Into<String>,
