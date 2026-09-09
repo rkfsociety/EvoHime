@@ -462,3 +462,11 @@ requiredness, usage mode и fail-closed health. SQLite schema v106 хранит
 metadata-only profile revisions с idempotency; source stores, ACL и Context
 Namespace остаются владельцами содержания и разрешений. IPC 265/110 и
 Electron дают только projection, без raw memory/knowledge/skill payloads.
+
+## Plan 139 — Kernel Capability Facade (закрыт 2026-09-09)
+
+Добавлен Core snapshot-bound facade для typed capability descriptors, calls и
+handles: exact snapshot/capability/version проверяются Core, недоступная
+capability возвращает `Unavailable`. Existing Tool/Workflow/Child/Context/
+Analysis Kernel и policy owners не дублируются. Schema v108 хранит только
+bounded facade metadata; IPC 267/112 и Electron остаются projection-only.

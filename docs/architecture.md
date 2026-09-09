@@ -2807,3 +2807,13 @@ divergence. Skill Registry, trust scan и workspace mutation остаются
 `check_update` запрещает silent overwrite локально изменённых/vendored копий.
 Managed staging и активация проходят explicit policy boundary, active runs
 остаются pinned. IPC 266/111 и Electron дают metadata-only projection.
+
+## Kernel Capability Facade v1 (план 139)
+
+`kernel_capability_facade` хранит bounded snapshot-bound capability entries,
+programmatic call identity и durable handle metadata. Snapshot — projection
+разрешений, не grant store: every call revalidates exact snapshot, capability
+version и availability against existing Core policy/approval/tool/workflow/
+child/context owners. Migration v108 хранит только metadata; facade не
+исполняет shell/network/code и не создаёт второй registry. IPC 267/112 и
+Electron показывают redacted status/provenance.

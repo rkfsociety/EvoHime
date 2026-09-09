@@ -1205,6 +1205,7 @@ export const RENDERER_COMMANDS = [
   'core.staticAnalysisPacks',
   'core.contextLoadouts',
   'core.skillSourceLifecycle',
+  'core.kernelCapabilityFacade',
   'core.workflowOptimizationLab',
   'core.coreTopicSubscriptionEventBus',
   'core.dependencyAwareTaskGraph',
@@ -1547,6 +1548,7 @@ export interface CommandPayloads {
   'core.staticAnalysisPacks': { operation: 'register' | 'inspect' | 'evaluate'; packId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.contextLoadouts': { operation: 'save' | 'get' | 'resolve'; profileId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.skillSourceLifecycle': { operation: 'save' | 'get' | 'check_update'; installationId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
+  'core.kernelCapabilityFacade': { operation: 'save_snapshot' | 'get' | 'call'; recordId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.workflowOptimizationLab': { operation: 'evaluate' | 'save_run' | 'get_run' | 'validate_candidate' | 'promote'; runId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.coreTopicSubscriptionEventBus': { operation: 'publish' | 'subscribe' | 'ack' | 'nack'; capability: string; payload: string; idempotencyKey: string }
   'core.dependencyAwareTaskGraph': { operation: 'create' | 'get' | 'validate' | 'apply_patch'; graphId: string; payload: string; expectedRevision?: number; grants?: readonly string[] }
@@ -2073,6 +2075,7 @@ export interface CommandResults {
   'core.staticAnalysisPacks': { accepted: boolean }
   'core.contextLoadouts': { accepted: boolean }
   'core.skillSourceLifecycle': { accepted: boolean }
+  'core.kernelCapabilityFacade': { accepted: boolean }
   'core.workflowOptimizationLab': { accepted: boolean }
   'core.coreTopicSubscriptionEventBus': { accepted: boolean }
   'core.dependencyAwareTaskGraph': { accepted: boolean }

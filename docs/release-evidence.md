@@ -1107,6 +1107,18 @@ Verification evidence: static source audit and `git diff --check` only. Local
 tests, builds, linters, smoke/E2E and other project checks were not run per
 task instruction; CI was not monitored and push was not performed.
 
+## Plan 139 — Kernel Capability Facade v1 (2026-09-09)
+
+Implementation: snapshot-bound capability descriptors/calls, exact
+version/availability revalidation, durable metadata handles, migration v108,
+authenticated IPC 267/112 and metadata-only Electron projection. Facade does
+not grant permissions or execute effects; existing Core owners remain the only
+effect authorities.
+
+Verification evidence: static source audit and `git diff --check` only. Local
+tests, builds, linters, smoke/E2E and other project checks were not run per
+task instruction; CI was not monitored and push was not performed.
+
 ## Plan 138 — Skill Source & Update Lifecycle v1 (2026-09-09)
 
 Implementation: bounded source/install provenance, exact revision and content
