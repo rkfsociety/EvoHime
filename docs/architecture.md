@@ -2785,3 +2785,15 @@ Commands `register`, `inspect` и `evaluate` проходят Core coordinator/j
 authenticated IPC command 264/event 109 и metadata-only Electron projection.
 Code Diagnostics, Verification Evidence Ledger и Code Review Lane сохраняют
 свои authorities.
+
+## Agent Context Loadouts v1 (план 137)
+
+`context_loadouts` — Core-owned versioned assignment layer поверх Memory Views,
+Knowledge, Skills, Project Guidance, Repository Map, Artifacts и Experience
+owners. Profile entries фиксируют source kind/ref, revision policy,
+requiredness, priority и usage mode; loadout не создаёт знания, ACL или новый
+retrieval backend. Migration v106 хранит immutable profile revisions с
+idempotency. Resolve сохраняет exact snapshot identity и fail-closed health:
+missing required entries блокируют, rejected entries деградируют.
+Authenticated IPC command 265/event 110 и Electron дают metadata-only
+projection; active run остаётся pinned к snapshot.

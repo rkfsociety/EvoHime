@@ -144,6 +144,20 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let journal = state.lock().await.journal.clone(); if let Some(journal) = journal { let _ = journal.record(&event).await; }
             TaskCoordinator::emit_state_event(&state, event).await; let _ = reply.send(result);
         }
+        CoreCommand::ContextLoadouts { operation, profile_id, payload, expected_revision, idempotency_key, reply } => {
+            let event_profile_id = profile_id.clone(); let event_operation = operation.clone();
+            let result = async {
+                let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                let database = journal.database().lock().await;
+                match operation.as_str() {
+                    "save" => { let profile: crate::context_loadouts::Profile = serde_json::from_slice(&payload).map_err(|_| "invalid_context_loadout".to_string())?; crate::context_loadouts::validate_profile(&profile).map_err(|e| e.to_string())?; let json=serde_json::to_vec(&profile).map_err(|e|e.to_string())?; evohime_local_storage::context_loadout_store::save(database.connection(),&profile.id,profile.revision,&profile.content_hash,&json,&idempotency_key,crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"stored","profile_id":profile.id,"revision":profile.revision})).map_err(|e|e.to_string()) }
+                    "get" => { let json=evohime_local_storage::context_loadout_store::current(database.connection(),&profile_id).map_err(|e|e.to_string())?.ok_or_else(||"loadout_not_found".to_string())?; let p:crate::context_loadouts::Profile=serde_json::from_slice(&json).map_err(|_|"corrupt_context_loadout".to_string())?; crate::context_loadouts::validate_profile(&p).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"ok","profile_id":p.id,"revision":p.revision,"entry_count":p.entries.len(),"state":p.status})).map_err(|e|e.to_string()) }
+                    "resolve" => { let snapshot:crate::context_loadouts::Snapshot=serde_json::from_slice(&payload).map_err(|_|"invalid_loadout_snapshot".to_string())?; let health=crate::context_loadouts::evaluate(&snapshot); serde_json::to_vec(&serde_json::json!({"status":"resolved","profile_id":profile_id,"revision":expected_revision,"health":health,"resolved_count":snapshot.resolved_refs.len(),"source_authority":"delegated"})).map_err(|e|e.to_string()) }
+                    _ => Err("unsupported_context_loadout_operation".into())
+                }
+            }.await;
+            let projection_json=result.as_ref().ok().and_then(|b|String::from_utf8(b.clone()).ok()).unwrap_or_else(||"{}".into()); let event=CoreEvent::ContextLoadouts{profile_id:event_profile_id,operation:event_operation,revision:expected_revision,projection_json}; let journal=state.lock().await.journal.clone(); if let Some(journal)=journal{let _=journal.record(&event).await;} TaskCoordinator::emit_state_event(&state,event).await; let _=reply.send(result);
+        }
         CoreCommand::WorkflowOptimizationLab {
             operation,
             run_id,

@@ -1203,6 +1203,7 @@ export const RENDERER_COMMANDS = [
   'core.codeDiagnosticsFeedbackLoop',
   'core.codeReviewLane',
   'core.staticAnalysisPacks',
+  'core.contextLoadouts',
   'core.workflowOptimizationLab',
   'core.coreTopicSubscriptionEventBus',
   'core.dependencyAwareTaskGraph',
@@ -1543,6 +1544,7 @@ export interface CommandPayloads {
   'core.codeDiagnosticsFeedbackLoop': { operation: 'register_provider' | 'snapshot' | 'delta' | 'gate'; workspaceRootId: string; payload: string; baselineSnapshotId?: string; expectedRevision?: number; idempotencyKey: string }
   'core.codeReviewLane': { operation: 'save' | 'get' | 'reconcile' | 'interrupt'; reviewId: string; targetId?: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.staticAnalysisPacks': { operation: 'register' | 'inspect' | 'evaluate'; packId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
+  'core.contextLoadouts': { operation: 'save' | 'get' | 'resolve'; profileId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.workflowOptimizationLab': { operation: 'evaluate' | 'save_run' | 'get_run' | 'validate_candidate' | 'promote'; runId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.coreTopicSubscriptionEventBus': { operation: 'publish' | 'subscribe' | 'ack' | 'nack'; capability: string; payload: string; idempotencyKey: string }
   'core.dependencyAwareTaskGraph': { operation: 'create' | 'get' | 'validate' | 'apply_patch'; graphId: string; payload: string; expectedRevision?: number; grants?: readonly string[] }
@@ -2067,6 +2069,7 @@ export interface CommandResults {
   'core.codeDiagnosticsFeedbackLoop': { accepted: boolean }
   'core.codeReviewLane': { accepted: boolean }
   'core.staticAnalysisPacks': { accepted: boolean }
+  'core.contextLoadouts': { accepted: boolean }
   'core.workflowOptimizationLab': { accepted: boolean }
   'core.coreTopicSubscriptionEventBus': { accepted: boolean }
   'core.dependencyAwareTaskGraph': { accepted: boolean }

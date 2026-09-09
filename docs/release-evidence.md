@@ -1095,6 +1095,18 @@ tests, builds, linters, smoke/E2E and other project checks were not run per
 task instruction; CI was not monitored and push was not performed. Installed
 client was not touched.
 
+## Plan 137 — Agent Context Loadouts v1 (2026-09-09)
+
+Implementation: Core-owned profile/entry/binding/snapshot metadata, exact and
+latest revision policies, requiredness/usage modes, fail-closed health,
+transactional SQLite migration v106, authenticated IPC 265/110 and
+metadata-only Electron projection. Existing Memory, Knowledge, Skill, ACL and
+Context Namespace authorities remain unchanged.
+
+Verification evidence: static source audit and `git diff --check` only. Local
+tests, builds, linters, smoke/E2E and other project checks were not run per
+task instruction; CI was not monitored and push was not performed.
+
 ## Plan 127 — Remote Client Control Plane MVP (2026-09-09)
 
 Implementation: добавлен workspace crate `evohime-remote` с bounded protocol

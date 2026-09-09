@@ -504,6 +504,7 @@ impl TaskCoordinator {
             c @ CoreCommand::StaticAnalysisPacks { .. } => {
                 workflow_subsystems::handle(state, c).await
             }
+            c @ CoreCommand::ContextLoadouts { .. } => { workflow_subsystems::handle(state, c).await }
             c @ CoreCommand::WorkflowOptimizationLab { .. } => {
                 workflow_subsystems::handle(state, c).await
             }

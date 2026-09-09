@@ -444,3 +444,12 @@ bounded JSON revisions и idempotency metadata. Analyzer execution не
 partial coverage не считается clean, а Code Diagnostics, Verification Ledger и
 Code Review Lane сохраняют свои authorities. IPC 264/109 и Electron дают
 только redacted metadata projection.
+
+## Plan 137 — Agent Context Loadouts (закрыт 2026-09-09)
+
+Добавлен versioned Core profile/binding/snapshot contract для разрешённых
+context assets с bounded entries, exact/latest revision policies,
+requiredness, usage mode и fail-closed health. SQLite schema v106 хранит
+metadata-only profile revisions с idempotency; source stores, ACL и Context
+Namespace остаются владельцами содержания и разрешений. IPC 265/110 и
+Electron дают только projection, без raw memory/knowledge/skill payloads.
