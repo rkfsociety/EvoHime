@@ -126,6 +126,24 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
+        CoreCommand::StaticAnalysisPacks { operation, pack_id, payload, expected_revision, idempotency_key, reply } => {
+            let event_pack_id = pack_id.clone(); let event_operation = operation.clone();
+            let result = async {
+                let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                let database = journal.database().lock().await;
+                let store = evohime_local_storage::static_analysis_pack_store::load_current(database.connection());
+                match operation.as_str() {
+                    "register" => { let pack: crate::static_analysis_packs::AnalysisPack = serde_json::from_slice(&payload).map_err(|_| "invalid_analysis_pack".to_string())?; crate::static_analysis_packs::validate_pack(&pack).map_err(|e| e.to_string())?; let json = serde_json::to_vec(&pack).map_err(|e| e.to_string())?; evohime_local_storage::static_analysis_pack_store::save(database.connection(), &pack.id, pack.revision, &pack.content_hash, &json, &idempotency_key, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"registered","pack_id":pack.id,"revision":pack.revision,"mode":pack.default_mode})).map_err(|e| e.to_string()) }
+                    "inspect" => { let json = store.map_err(|e| e.to_string())?.ok_or_else(|| "pack_not_found".to_string())?; let pack: crate::static_analysis_packs::AnalysisPack = serde_json::from_slice(&json).map_err(|_| "corrupt_analysis_pack".to_string())?; crate::static_analysis_packs::validate_pack(&pack).map_err(|e| e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"ok","pack_id":pack.id,"revision":pack.revision,"rule_count":pack.rules.len(),"trust_state":pack.trust_state,"mode":pack.default_mode})).map_err(|e| e.to_string()) }
+                    "evaluate" => { let request: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| "invalid_analysis_request".to_string())?; let coverage: crate::static_analysis_packs::AnalysisCoverage = serde_json::from_value(request.get("coverage").cloned().ok_or_else(|| "coverage_required".to_string())?).map_err(|_| "invalid_coverage".to_string())?; crate::static_analysis_packs::validate_coverage(&coverage).map_err(|e| e.to_string())?; let findings: Vec<crate::static_analysis_packs::AnalysisFinding> = serde_json::from_value(request.get("findings").cloned().unwrap_or_else(|| serde_json::json!([]))).map_err(|_| "invalid_findings".to_string())?; for finding in &findings { crate::static_analysis_packs::validate_finding(finding).map_err(|e| e.to_string())?; } let mode: crate::static_analysis_packs::RolloutMode = serde_json::from_value(request.get("mode").cloned().unwrap_or_else(|| serde_json::json!("audit"))).map_err(|_| "invalid_mode".to_string())?; let outcome = crate::static_analysis_packs::safe_outcome(mode, coverage.state, &findings); serde_json::to_vec(&serde_json::json!({"status":outcome,"pack_id":pack_id,"revision":expected_revision,"finding_count":findings.len(),"coverage":coverage.state,"adapter":"metadata_only"})).map_err(|e| e.to_string()) }
+                    _ => Err("unsupported_static_analysis_operation".into()),
+                }
+            }.await;
+            let projection_json = result.as_ref().ok().and_then(|b| String::from_utf8(b.clone()).ok()).unwrap_or_else(|| "{}".into());
+            let event = CoreEvent::StaticAnalysisPacks { pack_id: event_pack_id, operation: event_operation, revision: expected_revision, projection_json };
+            let journal = state.lock().await.journal.clone(); if let Some(journal) = journal { let _ = journal.record(&event).await; }
+            TaskCoordinator::emit_state_event(&state, event).await; let _ = reply.send(result);
+        }
         CoreCommand::WorkflowOptimizationLab {
             operation,
             run_id,

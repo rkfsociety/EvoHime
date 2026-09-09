@@ -2769,3 +2769,19 @@ review дают `ReviewIncomplete`; stale re-review находится по fing
 Authenticated additive IPC command 263 и generated Electron bindings
 проецируют только bounded metadata. Renderer не вычисляет verdict и не
 получает Core/storage authority.
+
+## Evidence-Preserving Static Analysis Packs v1 (план 136)
+
+`static_analysis_packs` хранит Core-owned bounded metadata для versioned
+pack/rule registry, trust state, rollout mode, analyzer identity, coverage,
+findings и immutable baseline/adoption/delta reports. Migration v105 сохраняет
+только bounded JSON/revision rows с idempotency; untrusted pack не получает
+execution authority и не может включить `Enforce`.
+
+Analyzer execution остаётся registered adapter capability. Только `Complete`
+является полным coverage state; partial/unsupported/failed/unknown дают
+`incomplete`, а deterministic high-severity new findings дают `blocked`.
+Commands `register`, `inspect` и `evaluate` проходят Core coordinator/journal,
+authenticated IPC command 264/event 109 и metadata-only Electron projection.
+Code Diagnostics, Verification Evidence Ledger и Code Review Lane сохраняют
+свои authorities.

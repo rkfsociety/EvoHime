@@ -433,3 +433,14 @@ diagnostic lines выбирают fallback, а renderer не получает re
 Core владеет diff-bound target identity для workspace changesets, agent git changesets, task worktrees, commit ranges и remote PR metadata. Контракт хранит immutable target/content hashes, bounded changed paths, typed findings, coverage и fail-closed verdict. Storage v104 сохраняет только bounded metadata в транзакционных revision rows, проверяет idempotency/optimistic revision и не принимает secrets, prompts или raw logs.
 
 Команды `save`, `get`, `reconcile` и `interrupt` проходят Core coordinator и journal/replay path; interrupted/partial/unknown coverage не становится `Clean`, re-review сопоставляет findings по fingerprint и помечает отсутствующие open findings stale. Authenticated IPC command 263 и Electron generated bindings дают metadata-only projection; renderer не владеет storage, target identity, verdict или policy.
+
+## Plan 136 — Evidence-Preserving Static Analysis Packs (закрыт 2026-09-09)
+
+Добавлен Core-owned bounded registry pack/rule metadata с trust state,
+evidence class, rollout modes, analyzer identity, coverage, findings,
+immutable baseline/adoption/delta contract. SQLite schema v105 хранит только
+bounded JSON revisions и idempotency metadata. Analyzer execution не
+подменяется metadata record: untrusted packs не enforce-ятся, unsupported или
+partial coverage не считается clean, а Code Diagnostics, Verification Ledger и
+Code Review Lane сохраняют свои authorities. IPC 264/109 и Electron дают
+только redacted metadata projection.

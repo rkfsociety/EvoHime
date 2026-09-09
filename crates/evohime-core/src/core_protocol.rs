@@ -229,6 +229,10 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    StaticAnalysisPacks {
+        operation: String, pack_id: String, payload: Vec<u8>, expected_revision: u64,
+        idempotency_key: String, reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     WorkflowOptimizationLab {
         operation: String,
         run_id: String,
@@ -1258,6 +1262,7 @@ pub enum CoreEvent {
         revision: u64,
         projection_json: String,
     },
+    StaticAnalysisPacks { pack_id: String, operation: String, revision: u64, projection_json: String },
     WorkflowOptimizationLab {
         run_id: String,
         operation: String,

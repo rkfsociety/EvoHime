@@ -484,6 +484,12 @@ function dispatch(
       if (operation === null || reviewId === null || targetId === null || reviewPayload === null || idempotencyKey === null || expectedRevision === null || reviewId.length > 256 || reviewPayload.length > 512 * 1024) return failure('invalid-payload', 'Некорректная операция Code Review Lane.')
       return accepted(client.send({ codeReviewLane: { schemaVersion: 1, requestId: randomUUID(), operation, reviewId, targetId, payload: Buffer.from(reviewPayload, 'utf8'), expectedRevision, idempotencyKey } }))
     }
+    case 'core.staticAnalysisPacks': {
+      const value = asRecord(payload); const operation = ['register', 'inspect', 'evaluate'].includes(String(value['operation'])) ? String(value['operation']) : null
+      const packId = asBoundedString(value['packId']); const packPayload = asBoundedString(value['payload']); const idempotencyKey = asBoundedString(value['idempotencyKey']); const expectedRevision = value['expectedRevision'] === undefined ? 0 : asNonNegativeInteger(value['expectedRevision'])
+      if (operation === null || packId === null || packPayload === null || idempotencyKey === null || expectedRevision === null || packId.length > 256 || packPayload.length > 512 * 1024) return failure('invalid-payload', 'Некорректная операция Static Analysis Packs.')
+      return accepted(client.send({ staticAnalysisPacks: { schemaVersion: 1, requestId: randomUUID(), operation, packId, payload: Buffer.from(packPayload, 'utf8'), expectedRevision, idempotencyKey } }))
+    }
     case 'core.workflowOptimizationLab': {
       const value=asRecord(payload); const operation=['evaluate','save_run','get_run','validate_candidate','promote'].includes(String(value['operation']))?String(value['operation']):null; const runId=asBoundedString(value['runId']); const optimizationPayload=asBoundedString(value['payload']); const idempotencyKey=asBoundedString(value['idempotencyKey']); const expectedRevision=value['expectedRevision']===undefined?0:asNonNegativeInteger(value['expectedRevision']);
       if(operation===null||runId===null||optimizationPayload===null||idempotencyKey===null||expectedRevision===null||runId.length>128||optimizationPayload.length>128*1024)return failure('invalid-payload','Некорректная операция Workflow Optimization Lab.')

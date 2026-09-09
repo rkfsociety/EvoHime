@@ -1081,6 +1081,20 @@ tests, builds, linters, smoke/E2E and other project checks were intentionally
 not run per task instruction; CI was not monitored and push was not performed.
 Installed client was not touched.
 
+## Plan 136 — Evidence-Preserving Static Analysis Packs v1 (2026-09-09)
+
+Implementation: bounded pack/rule registry with trust and evidence classes,
+rollout modes, analyzer identity, coverage, findings, immutable baseline and
+adoption/delta metadata; SQLite migration v105, idempotent revisions,
+authenticated IPC 264/109 and metadata-only Electron projection. Analyzer
+execution remains an explicit adapter capability; partial or unsupported scope
+is never reported as clean and untrusted packs cannot enforce.
+
+Verification evidence: static source audit and `git diff --check` only. Local
+tests, builds, linters, smoke/E2E and other project checks were not run per
+task instruction; CI was not monitored and push was not performed. Installed
+client was not touched.
+
 ## Plan 127 — Remote Client Control Plane MVP (2026-09-09)
 
 Implementation: добавлен workspace crate `evohime-remote` с bounded protocol

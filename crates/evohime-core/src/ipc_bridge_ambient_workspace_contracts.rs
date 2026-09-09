@@ -188,6 +188,11 @@ impl IpcBridge {
                 let result = self.dispatch_code_review_lane(request).await?;
                 self.write_response(writer, &format!("code_review_lane.{operation}"), result).await?;
             }
+            Some(generated::command_envelope::Command::StaticAnalysisPacks(request)) => {
+                let operation = if request.operation.is_empty() { "inspect".to_owned() } else { request.operation.clone() };
+                let result = self.dispatch_static_analysis_packs(request).await?;
+                self.write_response(writer, &format!("static_analysis_packs.{operation}"), result).await?;
+            }
             Some(generated::command_envelope::Command::WorkflowOptimizationLab(request)) => {
                 let operation = if request.operation.is_empty() {
                     "get_run".to_owned()

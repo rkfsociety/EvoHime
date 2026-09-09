@@ -501,6 +501,9 @@ impl TaskCoordinator {
             c @ CoreCommand::CodeReviewLane { .. } => {
                 workflow_subsystems::handle(state, c).await
             }
+            c @ CoreCommand::StaticAnalysisPacks { .. } => {
+                workflow_subsystems::handle(state, c).await
+            }
             c @ CoreCommand::WorkflowOptimizationLab { .. } => {
                 workflow_subsystems::handle(state, c).await
             }
