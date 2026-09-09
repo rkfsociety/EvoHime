@@ -107,15 +107,9 @@ impl Frame {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SequenceGuard {
     next: u64,
-}
-
-impl Default for SequenceGuard {
-    fn default() -> Self {
-        Self { next: 0 }
-    }
 }
 
 impl SequenceGuard {

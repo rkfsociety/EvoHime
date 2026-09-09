@@ -178,8 +178,6 @@ pub enum ApprovalState {
 struct ApprovalRecord {
     request: ApprovalRequest,
     state: ApprovalState,
-    #[allow(dead_code)]
-    created_at: Instant,
 }
 
 /// Context for a scoped permission check.
@@ -623,7 +621,6 @@ impl PermissionEngine {
             ApprovalRecord {
                 request: request.clone(),
                 state: ApprovalState::Pending,
-                created_at: Instant::now(),
             },
         );
         self.push_audit(ApprovalAuditEntry {
