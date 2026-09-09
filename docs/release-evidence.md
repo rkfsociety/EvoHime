@@ -1,16 +1,20 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-09-08.
+Обновлено: 2026-09-09.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
 typed outcomes, bounded metrics и recovery state; credentials, raw provider
 output, transcripts, absolute paths и PII запрещены.
 
-## Текущий статус выпуска
+## Статус выпуска
 
-Статус: `TECHNICAL_GATES_PASS / RELEASE_GREEN` для последнего успешного
-push-workflow; ручной полный workflow на текущем коммите ещё выполняется.
+Этот файл разделяет локальную проверку и историческое GitHub evidence. Перед
+ревизией кодовый checkout был на `4f7eea76`, а `origin/main` — на
+`31076e04410da7fd31d77f74c57eac55af22b63e`; локальные изменения не
+публиковались. Для них текущий GitHub release status не утверждается.
+Исторические run ID ниже сохранены как evidence на момент их запуска и не
+являются живым статусом.
 
 Поставка разделена на versioned module releases с тегами
 `module-<module>-v<semver>` и один
@@ -36,36 +40,39 @@ shell-tree с rollback. Полный Windows workflow передаёт native и
 версии нулевыми, сначала обновляет себя при необходимости, затем применяет
 зафиксированный комплект.
 
-## Evidence текущего GitHub workflow — 2026-09-07
+## Исторический снимок GitHub workflow — 2026-09-07
 
 | Событие | Результат |
 | --- | --- |
 | Коммит | `27757e19031f686ac6b31189af28b9f43ff4e115` |
 | Router workflow | PASS — [run 34118502159](https://github.com/rkfsociety/EvoHime/actions/runs/34118502159); без изменений модулей не dispatch’ит модульные workflow |
 | Updater workflow | PASS — [run 34117650390](https://github.com/rkfsociety/EvoHime/actions/runs/34117650390) |
-| Полный ручной workflow | Выполняется — [run 34034590713](https://github.com/rkfsociety/EvoHime/actions/runs/34034590713) |
+| Полный ручной workflow | Статус зафиксирован на момент снимка — [run 34034590713](https://github.com/rkfsociety/EvoHime/actions/runs/34034590713) |
 | Постоянный installer | [release `installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer), опубликован 2026-08-14 |
 | Module releases | отдельные релизы для shell-host, ui-bundle, core, supervisor, cli, analysis-worker, listener, listener-runtime, transaction, verifier и updater |
 | Installer | [release `installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer), только `EvoHime-Setup.exe` и `EvoHime-Setup.json` |
 
-Локальная проверка этого обновления ограничена документационным тестом и
-`git diff --check`. Полный Rust/Electron/package/installer acceptance-прогон
-выполняется только в GitHub Actions.
+Эта таблица не описывает текущий незапушенный checkout. Полный
+Rust/Electron/package/installer acceptance-прогон выполняется только в
+GitHub Actions.
 
-## Свежая проверка текущего checkout
+## Свежая локальная проверка текущего checkout
 
-Перед обновлением документации выполнены:
+Перед обновлением документации выполнены на коммите `4f7eea76`:
 
 | Проверка | Результат |
 | --- | --- |
-| `scripts/documentation.tests.ps1` | PASS, 168 tracked text files |
-| `npm run check:protocol` | PASS |
-| `npm run typecheck` | PASS |
-| `npm test` | 120 файлов passed, 3 skipped; 548 тестов passed, 8 skipped |
+| `pwsh -NoProfile -File scripts/documentation.tests.ps1` | PASS, 231 tracked text files |
+| `cargo test -p evohime-core --lib --quiet` | PASS, 844/844 |
+| `cargo test -p evohime-local-storage --lib --quiet` | PASS, 293/293 |
+| `cargo test -p evohime-remote` | PASS, 2/2 |
+| `cargo fmt --all -- --check` | PASS |
+| `git diff --check` | PASS |
 
-Пропущенные `authenticated-core.e2e`, `real-core.e2e` и `source-update.e2e`
-требуют собранного Core или явного флага. Этот прогон подтверждает текущий
-checkout, но не заменяет полный Windows package/installer acceptance.
+Protocol/typecheck, полный Electron regression, package/installer и
+`authenticated-core.e2e`/`real-core.e2e`/`source-update.e2e` в этом прогоне не
+запускались. Локальные результаты не заменяют полный Windows
+package/installer acceptance.
 
 ## Историческое evidence завершённых планов
 
@@ -122,11 +129,11 @@ contract/migration/corruption tests, typed pipe projection and GoalPanel tests.
 No credentials, raw provider output, prompts, hidden reasoning, absolute paths
 or PII enter the Goal projection/release evidence.
 
-Свежая проверка запускается `scripts/final-release-audit.tests.ps1` и включает
-Rust Core/storage/IPC tests, rustfmt, automation boundary, backup/restore и
-redaction gates, Electron protocol и typecheck. Полный локальный прогон 26
-августа 2026 года также подтвердил строгий `cargo clippy`, Electron `npm test`
-(457 passed, 2 skipped), production build и bundle checks. Compatibility,
+Для повторяемого полного gate используется `scripts/final-release-audit.tests.ps1`:
+он включает Rust Core/storage/IPC tests, rustfmt, automation boundary,
+backup/restore и redaction gates, Electron protocol и typecheck. Результат
+конкретного запуска фиксируется отдельной записью release evidence; старые
+результаты ниже не являются текущим общим счётчиком тестов. Compatibility,
 native-package, installer и upgrade/rollback gates проходят в Windows CI.
 Documentation gate проверяет все tracked text-файлы, относительные Markdown-ссылки
 и запрет устаревших удалённых audit-документов.

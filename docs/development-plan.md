@@ -26,10 +26,10 @@ restart подтверждаются отдельно. Автоматическ�
 ## Исполняемая очередь
 
 Незавершённые планы выполняются по графу зависимостей и по этапам `0 → 4`.
-Рекомендуемый порядок планов:
-
-`139 → 141 → 134 → 130 → 132 → 131 → 137 → 128 → 129 → 133 → 135 →
-136 → 140 → 143 → 138 → 127 → 142`.
+Текущий активный каталог — планы `131–143` и `145–167`; блокирующие и
+опциональные зависимости указаны в overview каждого плана и сведены в
+[`plans/README.md`](plans/README.md). Закрытые MVP-планы `127–130` не входят в
+очередь повторно.
 
 | Диапазон | Содержание | Статус |
 | --- | --- | --- |
@@ -42,13 +42,12 @@ restart подтверждаются отдельно. Автоматическ�
 | 124 | project quality contract | реализован 2026-09-09 |
 | 125 | free provider reliability routing | реализован 2026-09-09 |
 | 126 | design intent review lane | реализован 2026-09-09 |
-| 127–129 | remote control, local inference, model cascade | 127–129 реализованы MVP |
-| 130–135 | task leases, context namespace, durable background execution, deterministic utilities, resource guard, code review | 130 реализован MVP; очередь 131–135 |
-| 136–140 | static-analysis packs, context loadouts, skill updates, capability facade, authorized security assessment | очередь по графу |
-| 141–143 | service graph, program optimizer, project knowledge notebook | очередь по графу |
-| 144 | модульный manifest и выборочное обновление компонентов | реализовано |
+| 127–130 | remote control, local inference, model cascade, task leases | MVP-контуры реализованы 2026-09-09 |
+| 131–143 | context namespace, durable execution, utilities, resource guard, review, analysis, loadouts, skills, capability, security, service graph, optimizer, notebook | активная очередь по графу |
+| 144 | модульный manifest и выборочное обновление компонентов | реализовано 2026-09-04 |
+| 145–167 | publication, voice, offline consolidation, review, model compare, policy, suggestions, experiments, computer use, execution board, grounding, temporal memory, IDE, checkpoints, diagrams, compatibility, motion, recipes, voice output, command center | активная очередь по графу |
 
-Планы 01–118 закрыты и удалены из временного каталога после переноса
+Планы 01–130 и 144 закрыты и удалены из временного каталога после переноса
 контрактов и evidence в канонические документы. Нельзя считать план закрытым
 по одному stage-файлу или по наличию кода: закрытие требует реализации,
 recovery, IPC/UI при наличии, focused tests, release evidence и обновления

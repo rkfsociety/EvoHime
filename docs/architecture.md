@@ -1,6 +1,6 @@
 # EvoHime — Windows desktop architecture
 
-Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-09-07.
+Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-09-09.
 Фактическое состояние реализации см. в [`current-state.md`](current-state.md).
 
 EvoHime — локальное Windows-приложение.
@@ -309,8 +309,9 @@ Rollback, redacted evidence, privacy/egress и license inventory собраны 
 [`release-evidence.md`](release-evidence.md); отдельный gate проверяет их вместе
 с backup/restore fixtures.
 Финальный audit и rollback evidence описаны в `docs/release-evidence.md`;
-проверка запускается `scripts/final-release-audit.tests.ps1` и
-подтверждает технический PASS и release GREEN по закрытым решениям register.
+проверка запускается `scripts/final-release-audit.tests.ps1`. Результат
+конкретного запуска фиксируется только в release evidence и не переносится в
+текущий статус без свежего CI-прогона.
 
 Repeatable and scheduled work uses the separate Core-owned `automation/v1`
 contract in `crates/evohime-core/src/automation.rs`; it does not replace the

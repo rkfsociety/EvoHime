@@ -1,6 +1,6 @@
 # EvoHime — реестр решений
 
-Обновлено: 2026-09-08.
+Обновлено: 2026-09-09.
 
 Канонический реестр решений текущего desktop-цикла. Здесь нет секретов,
 provider credentials или обещаний, не подтверждённых кодом. `accepted` означает,
@@ -38,12 +38,10 @@ provider credentials или обещаний, не подтверждённых 
 
 ## Dependency graph
 
-Закрытые планы 01–117 не являются текущей очередью и представлены только
-перенесёнными контрактами. Основная незавершённая последовательность:
-
-`118 → 119 → 120 → 121 → 122 → 123 → 124 → 125 → 126 → 127 → 128 → 129 →
-130 → 131 → 132 → 133 → 134 → 135 → 136 → 137 → 138 → 139 → 140 → 141 →
-142 → 143 → 144`.
+Закрытые планы `01–130` и `144` не являются текущей очередью и представлены
+только перенесёнными контрактами. Незавершённый каталог — планы `131–143` и
+`145–167`; порядок выбирается по blocking dependencies в их overview, а не по
+простому числовому списку.
 
 Планы с optional adapters подключаются через fail-closed boundaries и не должны
 становиться обязательной зависимостью базового Windows-пакета. Любая блокирующая
@@ -53,8 +51,6 @@ provider credentials или обещаний, не подтверждённых 
 
 | ID | Вопрос | Когда закрывать |
 | --- | --- | --- |
-| O-RELEASE-01 | Какой минимальный component graph и compatibility policy нужен для selective update | `architecture.md`, `release-evidence.md` |
-| O-RELEASE-02 | Как разделить package/recovery evidence без ослабления current full-installer rollback | `architecture.md`, `release-evidence.md` |
 | O-COMPAT-01 | Нужен ли отдельный informative ARM64/Insider release job | При изменении release scope |
 
 ## Resource and contract budgets

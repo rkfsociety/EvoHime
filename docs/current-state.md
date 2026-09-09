@@ -101,13 +101,14 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 клиент не вносятся изменения: диагностика и проверки выполняются в исходниках,
 временных каталогах или CI.
 
-## Актуальное состояние CI и релизов
+## Граница текущего checkout и CI
 
-Последний синхронизированный checkout — коммит
-`d9742a0fd9de9b8ed4ed90f0d6eb117be73d3949`. Push-workflow для него завершился
-успешно: [run 34030005220](https://github.com/rkfsociety/EvoHime/actions/runs/34030005220).
-Полный ручной workflow с публикацией listener runtime запущен через GitHub
-Actions: [run 34034590713](https://github.com/rkfsociety/EvoHime/actions/runs/34034590713).
+Перед этой документационной ревизией проверены refs: кодовый checkout был на
+`4f7eea76620a7cbd1a6b88131454fac7af0289c9`, а `origin/main` — на
+`31076e04410da7fd31d77f74c57eac55af22b63e`. Локальные коммиты не публиковались,
+поэтому GitHub workflow для них не утверждается до push и отдельной проверки
+результата CI. Исторические workflow и release-gates сохранены в
+[`release-evidence.md`](release-evidence.md) с их исходными commit и run ID.
 
 Постоянные каналы поставки разделены по назначению: [`installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer) — первая установка, [`listener`](https://github.com/rkfsociety/EvoHime/releases/tag/listener) — отдельный модульный release listener runtime.
 Локально выполняются только быстрые проверки; полный acceptance-прогон Rust,
@@ -221,43 +222,25 @@ diagnostics обязательны для опасных операций. По�
 runtime переиспользует canonical hash, ограничивает глубину графа 64 узлами и
 публикует bounded dispatch metrics.
 
-Свежие узкие проверки этого изменения:
-
-| Проверка | Результат |
-| --- | --- |
-| `cargo test -p evohime-context-budget --lib` | PASS, 142/142 |
-| `cargo test -p evohime-core --lib doctor::tests` | PASS, 11/11 |
-| `cargo test -p evohime-local-storage --lib latest_schema` | PASS |
-| `cargo check -p evohime-core --benches` | PASS |
-| `cargo bench -p evohime-core --bench runtime_paths -- --warm-up-time 0.1 --measurement-time 0.2 --sample-size 10` | PASS |
-
-Полный workspace test и полный набор Electron-тестов для этой задачи не
-запускались; перечисленные результаты относятся только к затронутым модулям.
-
 ## Подтверждённые проверки checkout
 
-Последний свежий прогон перед обновлением документации:
+Последний свежий локальный прогон относится к коммиту `4f7eea76`:
 
 | Проверка | Результат |
 | --- | --- |
-| `scripts/documentation.tests.ps1` | PASS, 168 tracked text files |
-| `npm run check:protocol` | PASS |
-| `npm run typecheck` | PASS |
-| `npm test` | PASS, 121 files passed / 3 skipped; 549 tests passed / 8 skipped |
-| `cargo test -p evohime-core persistent_agent_registry --lib` | PASS, 6/6 |
-| `cargo test -p evohime-local-storage schema_90_migrates_guided_calibration_and_persistent_agent_registry_atomically --lib` | PASS, 1/1 |
-| `npm run test -- --run tests/persistent-agent-organization-registry.test.tsx` | PASS, 1/1 |
-| `cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc` | PASS, Core 815/815; local-storage 283/283; desktop-ipc 36/36; doctests 0 |
+| `pwsh -NoProfile -File scripts/documentation.tests.ps1` | PASS, 231 tracked text files |
+| `cargo test -p evohime-core --lib --quiet` | PASS, 844/844 |
+| `cargo test -p evohime-local-storage --lib --quiet` | PASS, 293/293 |
+| `cargo test -p evohime-remote` | PASS, 2/2 |
 | `cargo fmt --all -- --check` | PASS |
-| `cargo clippy --locked --workspace --all-targets -- -D warnings` | PASS |
-| `cargo check --locked -p evohime-supervisor -p evohime-updater` | PASS |
-| `npm run build` / `npm run check:bundle` | PASS |
-| `npm run package` / `scripts/native-package.tests.ps1` | PASS |
-| `scripts/runtime-stall-guard.tests.ps1` | PASS |
+| `git diff --check` | PASS |
 
-Пропущены только authenticated-core/real-Core/source-update E2E, которым в этом checkout не
-предоставлен собранный runtime или включающий их флаг. Это не означает, что
-релизный acceptance-прогон выполнен заново.
+В этой документационной ревизии protocol/typecheck, полный Electron regression,
+package/installer и GitHub acceptance заново не запускались. Их исторические
+результаты не считаются свежей проверкой текущего checkout.
+
+Authenticated-core/real-Core/source-update E2E и полный Windows acceptance не
+входили в этот локальный прогон.
 
 В текущем checkout реализован план 144:
 native package генерирует `evohime.components.json` для первоначальной поставки;
@@ -305,9 +288,11 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Следующий незавершённый порядок
 
-Планы 127–143 остаются незавершённой очередью. Планы 102, 119, 120, 121, 122, 123, 124, 125, 126 и 144 реализованы и закрыты;
-его подтверждённый контракт находится в `architecture.md`, а evidence — в
-`release-evidence.md`.
+Незавершённый каталог состоит из планов `131–143` и `145–167`. Планы `102`,
+`118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
+в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
+выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а
+не по старому линейному списку.
 Полный каталог, блокирующие и опциональные зависимости находятся в
 [`plans/README.md`](plans/README.md), исполняемый порядок — в
 [`development-plan.md`](development-plan.md).
