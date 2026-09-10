@@ -115,13 +115,7 @@ pub fn list_directory(
         .into_iter()
         .flatten()
         .collect();
-    entries.sort_by(|left, right| {
-        right.directory.cmp(&left.directory).then_with(|| {
-            left.name
-                .to_ascii_lowercase()
-                .cmp(&right.name.to_ascii_lowercase())
-        })
-    });
+    entries.sort_by_cached_key(|entry| (!entry.directory, entry.name.to_ascii_lowercase()));
     let truncated = entries.len() > max_entries;
     entries.truncate(max_entries);
 
