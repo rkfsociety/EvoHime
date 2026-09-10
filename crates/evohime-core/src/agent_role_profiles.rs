@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 pub const CONTRACT_VERSION: u32 = 1;
 pub const MAX_ID_BYTES: usize = 96;
@@ -181,19 +181,13 @@ pub fn effective_grants(
     {
         return Err(RoleProfileError::Invalid("grants"));
     }
-    let allowed: BTreeSet<&str> = parent
-        .iter()
-        .map(String::as_str)
-        .collect::<BTreeSet<_>>()
-        .intersection(&policy.iter().map(String::as_str).collect())
-        .copied()
-        .collect::<BTreeSet<_>>()
-        .intersection(&registry.iter().map(String::as_str).collect())
-        .copied()
-        .collect();
     let result: Vec<String> = requested
         .iter()
-        .filter(|grant| allowed.contains(grant.as_str()))
+        .filter(|grant| {
+            parent.iter().any(|value| value == *grant)
+                && policy.iter().any(|value| value == *grant)
+                && registry.iter().any(|value| value == *grant)
+        })
         .cloned()
         .collect();
     if result.len() != requested.len() {
