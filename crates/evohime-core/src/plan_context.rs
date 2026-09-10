@@ -53,7 +53,9 @@ pub async fn read_linked_plans(
         return Vec::new();
     }
 
-    let mut seen: Vec<std::path::PathBuf> = roots.iter().map(|(_, path)| path.clone()).collect();
+    use std::collections::BTreeSet;
+    let mut seen: BTreeSet<std::path::PathBuf> =
+        roots.iter().map(|(_, path)| path.clone()).collect();
     let mut documents: Vec<ContextDocument> = Vec::new();
     let mut total = 0usize;
     let mut frontier: Vec<(std::path::PathBuf, String)> = roots
@@ -72,10 +74,9 @@ pub async fn read_linked_plans(
                 let Ok(canonical) = tokio::fs::canonicalize(&candidate).await else {
                     continue;
                 };
-                if !canonical.starts_with(directory) || seen.contains(&canonical) {
+                if !canonical.starts_with(directory) || !seen.insert(canonical.clone()) {
                     continue;
                 }
-                seen.push(canonical.clone());
                 let Ok(text) = tokio::fs::read_to_string(&canonical).await else {
                     continue;
                 };
