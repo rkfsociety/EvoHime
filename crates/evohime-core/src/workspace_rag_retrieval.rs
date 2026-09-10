@@ -598,6 +598,10 @@ fn lexical_retrieval(
     if terms.is_empty() {
         return Ok(Vec::new());
     }
+    let normalized_terms = terms
+        .iter()
+        .map(|term| term.to_lowercase())
+        .collect::<Vec<_>>();
     let match_expression = terms
         .iter()
         .map(|term| format!("\"{}\"", term.replace('"', "\"\"")))
@@ -707,13 +711,12 @@ fn lexical_retrieval(
             Ok(_) => (None, None, false),
             Err(_) => (None, None, true),
         };
+        let indexed_lower = indexed_content.to_lowercase();
         let term_frequencies = terms
             .iter()
-            .map(|term| {
-                let count = indexed_content
-                    .to_lowercase()
-                    .matches(&term.to_lowercase())
-                    .count();
+            .zip(&normalized_terms)
+            .map(|(term, normalized_term)| {
+                let count = indexed_lower.matches(normalized_term).count();
                 (term.clone(), count)
             })
             .collect::<BTreeMap<_, _>>();
