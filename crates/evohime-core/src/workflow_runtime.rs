@@ -1583,6 +1583,13 @@ pub fn ready_nodes(
     states: &BTreeMap<String, WorkflowNodeRecord>,
 ) -> Vec<String> {
     let mut ready = Vec::new();
+    let mut incoming_by_node = BTreeMap::<&str, Vec<&crate::workflow::WorkflowEdge>>::new();
+    for edge in &graph.edges {
+        incoming_by_node
+            .entry(edge.to_node.as_str())
+            .or_default()
+            .push(edge);
+    }
     for node in &graph.nodes {
         let Some(record) = states.get(&node.id) else {
             continue;
@@ -1595,14 +1602,16 @@ pub fn ready_nodes(
         ) {
             continue;
         }
-        let mut has_incoming = false;
+        let Some(incoming) = incoming_by_node.get(node.id.as_str()) else {
+            ready.push(node.id.clone());
+            continue;
+        };
         let mut has_data = false;
         let mut data_edges = 0usize;
         let mut satisfied_data = 0usize;
         let mut has_failure = false;
         let mut all_failures_ready = true;
-        for edge in graph.edges.iter().filter(|edge| edge.to_node == node.id) {
-            has_incoming = true;
+        for edge in incoming {
             let state = states.get(&edge.from_node).map(|record| record.state);
             match edge.channel {
                 EdgeChannel::Data => {
@@ -1618,11 +1627,6 @@ pub fn ready_nodes(
                 }
             }
         }
-        if !has_incoming {
-            ready.push(node.id.clone());
-            continue;
-        }
-
         // Failure-ветвь становится готовой ровно тогда, когда её источник
         // действительно отказал, и только если источник объявил ветвление.
         if has_failure && all_failures_ready {
