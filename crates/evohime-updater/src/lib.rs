@@ -21,6 +21,8 @@ pub fn configure_hidden_process(command: &mut Command) {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
+    #[cfg(not(windows))]
+    let _ = command;
 }
 
 #[derive(Debug, Serialize, Deserialize)]
