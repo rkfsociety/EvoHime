@@ -325,11 +325,8 @@ impl MemoryDomain {
             .filter(|record| !record.is_expired_at(request.now_ms))
             .filter(|record| record.scope.matches_filter(request.scope.as_ref()))
             .filter_map(|record| {
-                let haystack = tokenize(&format!("{} {}", record.title, record.content)).ok()?;
-                let score = haystack
-                    .iter()
-                    .filter_map(|candidate| query_frequencies.get(candidate.as_str()))
-                    .sum::<u32>();
+                let score = score_text(&record.title, &query_frequencies)
+                    + score_text(&record.content, &query_frequencies);
                 (score > 0).then(|| MemorySearchHit {
                     record: record.clone(),
                     score,
@@ -404,6 +401,16 @@ fn tokenize(value: &str) -> Result<Vec<String>, MemoryError> {
     } else {
         Ok(tokens)
     }
+}
+
+fn score_text(value: &str, query_frequencies: &HashMap<String, u32>) -> u32 {
+    value
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .map(str::to_lowercase)
+        .filter_map(|token| query_frequencies.get(&token))
+        .copied()
+        .sum()
 }
 
 fn redact_text(input: &str) -> Result<String, MemoryError> {
