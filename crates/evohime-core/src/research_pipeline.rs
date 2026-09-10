@@ -127,11 +127,11 @@ impl ResearchPolicy {
             return Err(PipelineError::NetworkDenied);
         }
         validate_domain(domain)?;
-        let domain = domain.to_ascii_lowercase();
-        if !self.allowed_domains.iter().any(|allowed| {
-            let allowed = allowed.to_ascii_lowercase();
-            domain == allowed || domain.ends_with(&format!(".{allowed}"))
-        }) {
+        if !self
+            .allowed_domains
+            .iter()
+            .any(|allowed| domain_matches(domain, allowed))
+        {
             return Err(PipelineError::DomainDenied);
         }
         if bytes == 0 || bytes > self.max_bytes {
@@ -214,9 +214,7 @@ pub fn validate_citations(domain: &str, citations: &[Citation]) -> Result<(), Pi
     }
     for citation in citations {
         let citation_domain = url_domain(&citation.url).ok_or(PipelineError::InvalidCitation)?;
-        if citation_domain != domain.to_ascii_lowercase()
-            && !citation_domain.ends_with(&format!(".{domain}"))
-        {
+        if !domain_matches(&citation_domain, domain) {
             return Err(PipelineError::CitationSourceMismatch);
         }
         if !is_hash(&citation.source_hash) || !is_hash(&citation.excerpt_hash) {
@@ -277,6 +275,20 @@ fn validate_domain(domain: &str) -> Result<(), PipelineError> {
     Ok(())
 }
 
+fn domain_matches(domain: &str, allowed: &str) -> bool {
+    if domain.eq_ignore_ascii_case(allowed) {
+        return true;
+    }
+    let Some(suffix) = domain.get(domain.len().saturating_sub(allowed.len())..) else {
+        return false;
+    };
+    domain
+        .as_bytes()
+        .get(domain.len().saturating_sub(allowed.len() + 1))
+        == Some(&b'.')
+        && suffix.eq_ignore_ascii_case(allowed)
+}
+
 fn url_domain(url: &str) -> Option<String> {
     let rest = url
         .strip_prefix("https://")
@@ -311,8 +323,13 @@ mod tests {
     fn permits_only_bounded_allowlisted_requests() {
         let policy = policy();
         assert!(policy.permits("docs.example.com", 512, 400, 50).is_ok());
+        assert!(policy.permits("Docs.Example.COM", 512, 400, 50).is_ok());
         assert_eq!(
             policy.permits("evil.example.net", 1, 1, 1),
+            Err(PipelineError::DomainDenied)
+        );
+        assert_eq!(
+            policy.permits("notexample.com", 1, 1, 1),
             Err(PipelineError::DomainDenied)
         );
         assert_eq!(
