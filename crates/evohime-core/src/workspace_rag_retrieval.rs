@@ -8,11 +8,12 @@ pub fn stable_id(workspace_key: &str, generation: i64, value: &str, kind: &str) 
 }
 
 pub fn bounded_error(path: &str, error: &str) -> String {
-    let code = if error.to_lowercase().contains("permission") {
+    let lower = error.to_lowercase();
+    let code = if lower.contains("permission") {
         "permission_denied"
-    } else if error.to_lowercase().contains("not found") {
+    } else if lower.contains("not found") {
         "file_not_found"
-    } else if error.to_lowercase().contains("timeout") {
+    } else if lower.contains("timeout") {
         "timeout"
     } else {
         "io_error"
