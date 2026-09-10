@@ -646,11 +646,7 @@ fn bounded_terms(query: &str) -> Vec<String> {
 }
 
 fn sha256_hex(bytes: impl AsRef<[u8]>) -> String {
-    digest(&SHA256, bytes.as_ref())
-        .as_ref()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    hex::encode(digest(&SHA256, bytes.as_ref()))
 }
 
 fn now_ms() -> i64 {
