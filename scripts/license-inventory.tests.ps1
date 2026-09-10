@@ -31,8 +31,12 @@ function Get-NormalizedFileHash([string] $path) {
 }
 $cargoHash = Get-NormalizedFileHash $cargoLock
 $npmHash = Get-NormalizedFileHash $npmLock
-if ($manifest.generated_from.cargo_lock_sha256 -ne $cargoHash) { throw 'Cargo.lock changed without license manifest refresh.' }
-if ($manifest.generated_from.npm_lock_sha256 -ne $npmHash) { throw 'package-lock.json changed without license manifest refresh.' }
+if ($manifest.generated_from.cargo_lock_sha256 -ne $cargoHash) {
+    throw "Cargo.lock changed without license manifest refresh. expected=$($manifest.generated_from.cargo_lock_sha256) actual=$cargoHash"
+}
+if ($manifest.generated_from.npm_lock_sha256 -ne $npmHash) {
+    throw "package-lock.json changed without license manifest refresh. expected=$($manifest.generated_from.npm_lock_sha256) actual=$npmHash"
+}
 
 Push-Location $repo
 try {
