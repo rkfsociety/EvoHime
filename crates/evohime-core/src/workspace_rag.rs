@@ -739,17 +739,14 @@ fn simple_ignore_match(pattern: &str, path: &str) -> bool {
         return path.ends_with(&format!(".{suffix}"));
     }
     if pattern.contains('*') {
-        let parts = pattern
-            .split('*')
-            .filter(|part| !part.is_empty())
-            .collect::<Vec<_>>();
         let mut offset = 0;
-        return parts.into_iter().all(|part| {
-            path[offset..].find(part).is_some_and(|found| {
-                offset += found + part.len();
-                true
-            })
-        });
+        for part in pattern.split('*').filter(|part| !part.is_empty()) {
+            let Some(found) = path[offset..].find(part) else {
+                return false;
+            };
+            offset += found + part.len();
+        }
+        return true;
     }
     path == pattern
         || path.starts_with(&format!("{pattern}/"))
