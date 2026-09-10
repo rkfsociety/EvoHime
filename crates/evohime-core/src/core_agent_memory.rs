@@ -729,13 +729,17 @@ impl ToolAgent {
             .list_ambient_utterances(episode_id, 500)
             .await
             .ok()?;
-        let text = records
-            .iter()
-            .filter(|record| !record.redacted)
-            .map(|record| record.text.trim())
-            .filter(|text| !text.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let mut text = String::new();
+        for record in records.iter().filter(|record| !record.redacted) {
+            let utterance = record.text.trim();
+            if utterance.is_empty() {
+                continue;
+            }
+            if !text.is_empty() {
+                text.push('\n');
+            }
+            text.push_str(utterance);
+        }
         if text.trim().is_empty() {
             return None;
         }
