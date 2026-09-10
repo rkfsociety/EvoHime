@@ -318,8 +318,7 @@ impl MemoryDomain {
             .filter(|record| !record.is_expired_at(request.now_ms))
             .filter(|record| record.scope.matches_filter(request.scope.as_ref()))
             .filter_map(|record| {
-                let haystack =
-                    lexical_tokens(&format!("{} {}", record.title, record.content)).ok()?;
+                let haystack = tokenize(&format!("{} {}", record.title, record.content)).ok()?;
                 let score = query
                     .iter()
                     .map(|term| {
@@ -389,6 +388,10 @@ fn lexical_tokens(value: &str) -> Result<Vec<String>, MemoryError> {
     if value.chars().count() > MAX_QUERY_CHARS {
         return Err(MemoryError::QueryTooLong);
     }
+    tokenize(value)
+}
+
+fn tokenize(value: &str) -> Result<Vec<String>, MemoryError> {
     let tokens: Vec<_> = value
         .split(|character: char| !character.is_alphanumeric())
         .filter(|token| !token.is_empty())
@@ -505,6 +508,31 @@ mod tests {
             ["m-1", "m-2"]
         );
         assert_eq!(hits[0].score, 3);
+    }
+
+    #[test]
+    fn lexical_search_indexes_content_beyond_query_limit() {
+        let mut domain = MemoryDomain::new();
+        let long_content = format!("{} deployment-marker", "context ".repeat(MAX_QUERY_CHARS));
+        domain
+            .create(create("m-long", "Deployment note", &long_content, 2_000))
+            .unwrap();
+
+        let hits = domain
+            .search(SearchMemory {
+                query: "deployment-marker".to_owned(),
+                scope: Some(scope()),
+                now_ms: 2_001,
+                limit: 10,
+            })
+            .unwrap();
+
+        assert_eq!(
+            hits.iter()
+                .map(|hit| hit.record.id.as_str())
+                .collect::<Vec<_>>(),
+            ["m-long"]
+        );
     }
 
     #[test]
