@@ -45,7 +45,6 @@ import { ArtifactHandoffRegistryPanel } from './ArtifactHandoffRegistryPanel'
 import { TeamSopProtocolsPanel } from './TeamSopProtocolsPanel'
 import { CausalCollaborationBusPanel } from './CausalCollaborationBusPanel'
 import { HumanWorkItemsPanel } from './HumanWorkItemsPanel'
-import { PlanArtifactPanel } from './PlanArtifactPanel'
 import { WorkspaceStateCheckpointsPanel } from './WorkspaceStateCheckpointsPanel'
 import { RevisionSafeWorkspaceFilesPanel } from './RevisionSafeWorkspaceFilesPanel'
 import { TaskWorktreeIsolationPanel } from './TaskWorktreeIsolationPanel'
@@ -138,7 +137,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'execution-environment-profiles' | 'context-namespace' | 'background-execution' | 'tool-simulation' | 'agent-role-profiles' | 'persistent-agent-organization-registry' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'plan-artifacts' | 'workspace-checkpoints' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'memory-views-recall' | 'model-edit-protocol-registry' | 'remote-conversation-channels' | 'prompt-cache-planner' | 'declarative-runtime-components' | 'guided-calibration-sessions' | 'extension-conformance-kit' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'dependency-aware-task-graph' | 'core-topic-subscription-event-bus' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'research-workspace' | 'durable-remote-task-bridge' | 'message-intervention-policies' | 'batch-invocation-runtime' | 'policy-aware-tool-result-cache' | 'code-anchored-intent-markers' | 'model-purpose-routing' | 'local-model-runtime-manager' | 'local-model-performance-calibration' | 'content-aware-context-compression' | 'architecture-snapshot' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
+type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'execution-environment-profiles' | 'context-namespace' | 'background-execution' | 'tool-simulation' | 'agent-role-profiles' | 'persistent-agent-organization-registry' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'workspace-checkpoints' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'memory-views-recall' | 'model-edit-protocol-registry' | 'remote-conversation-channels' | 'prompt-cache-planner' | 'declarative-runtime-components' | 'guided-calibration-sessions' | 'extension-conformance-kit' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'dependency-aware-task-graph' | 'core-topic-subscription-event-bus' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'research-workspace' | 'durable-remote-task-bridge' | 'message-intervention-policies' | 'batch-invocation-runtime' | 'policy-aware-tool-result-cache' | 'code-anchored-intent-markers' | 'model-purpose-routing' | 'local-model-runtime-manager' | 'local-model-performance-calibration' | 'content-aware-context-compression' | 'architecture-snapshot' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -171,7 +170,6 @@ const DEVELOPER_GROUPS: readonly DeveloperViewGroup[] = [
     label: 'Рабочий процесс',
     views: [
   { id: 'background-execution', label: 'Background Execution', icon: '◷' },
-  { id: 'plan-artifacts', label: 'Plan Artifacts', icon: '◇' },
   { id: 'workspace-checkpoints', label: 'Workspace Checkpoints', icon: '▣' },
   { id: 'revision-safe-files', label: 'Revision-safe Files', icon: '◈' },
   { id: 'task-worktree-isolation', label: 'Task Worktrees', icon: '⑂' },
@@ -625,7 +623,6 @@ export function App(): React.JSX.Element {
               {view === 'team-sop' ? <TeamSopProtocolsPanel /> : null}
               {view === 'causal-collaboration' ? <CausalCollaborationBusPanel /> : null}
               {view === 'human-work-items' ? <HumanWorkItemsPanel /> : null}
-              {view === 'plan-artifacts' ? <PlanArtifactPanel connection={connection} events={events} /> : null}
               {view === 'workspace-checkpoints' ? <WorkspaceStateCheckpointsPanel connection={connection} events={events} workspace={workspace} /> : null}
               {view === 'revision-safe-files' ? <RevisionSafeWorkspaceFilesPanel connection={connection} events={events} /> : null}
               {view === 'task-worktree-isolation' ? <TaskWorktreeIsolationPanel connection={connection} events={events} /> : null}

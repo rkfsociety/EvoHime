@@ -1294,10 +1294,14 @@ capability и approval проверкой. После restart неизвестн
 повторяется вслепую. Legacy `TaskPlanSpec`, plan context и plan review — только
 read-only inputs.
 
-Authenticated desktop IPC расширен additive command tags 206–208 и event tag
-55; Electron получает bounded projection и отправляет только явные create/read/
-transition/execute actions. Raw prompts, model output, secrets, absolute paths и
-executable identities в Plan Artifact boundary запрещены.
+Plan Artifact остаётся внутренним Core/agent/model контрактом. Core владеет его
+валидацией, версионированием и переходами состояний; модель может только
+предложить ограниченное содержимое через агентский runtime. Electron не
+предоставляет ручную вкладку, идентификаторный lookup или renderer-команды
+create/read/transition/execute. Наружу публикуются только bounded
+task/progress projections, необходимые обычному пользователю. Raw prompts,
+model output, secrets, absolute paths и executable identities в Plan Artifact
+boundary запрещены.
 
 ## Incremental Change Protocol v1 (план 59)
 

@@ -334,17 +334,6 @@ export interface ContinuationActionResult {
   readonly errorCode: string
 }
 
-export interface PlanArtifactProjection {
-  readonly schemaVersion: number
-  readonly id: string
-  readonly revision: number
-  readonly version: number
-  readonly status: string
-  readonly contentHash: string
-  readonly steps: readonly { readonly id: string; readonly description: string; readonly risk: string }[]
-  readonly acceptanceCriteria: readonly { readonly id: string; readonly description: string; readonly evidenceKind: string; readonly required: boolean }[]
-}
-
 export interface WorkspaceStateCheckpointProjection {
   readonly schemaVersion: number
   readonly operation: string
@@ -386,7 +375,6 @@ export interface CoreEvent {
   readonly goalAction?: GoalActionResult | null
   readonly continuation?: ContinuationProjection | null
   readonly continuationAction?: ContinuationActionResult | null
-  readonly planArtifact?: PlanArtifactProjection | null
   readonly workspaceStateCheckpoint?: WorkspaceStateCheckpointProjection | null
   readonly refinement?: RefinementProjection | null
   readonly refinementList?: { readonly candidates: readonly RefinementProjection[]; readonly truncated: boolean; readonly errorCode: string } | null
@@ -1178,9 +1166,6 @@ export const RENDERER_COMMANDS = [
   'core.getConversationWorkbench',
   'core.getTaskCheckpoint',
   'core.resolveTaskCheckpoint',
-  'core.planArtifactCreate',
-  'core.planArtifactRead',
-  'core.planArtifactAction',
   'core.workspaceStateCheckpoint',
   'core.incrementalChangeProtocol',
   'core.revisionSafeWorkspaceFiles',
@@ -1528,9 +1513,6 @@ export interface CommandPayloads {
     action: 'acknowledge_recovery' | 'request_resume'
     idempotencyKey: string
   }
-  'core.planArtifactCreate': { artifactJson: string; idempotencyKey: string }
-  'core.planArtifactRead': { artifactId: string }
-  'core.planArtifactAction': { operation: 'transition' | 'execute'; artifactId: string; expectedVersion: number; status?: string; policySnapshotHash?: string; taskId?: string; workflowRunId?: string; correlationId: string; idempotencyKey: string }
   'core.workspaceStateCheckpoint': { operation: 'list' | 'create' | 'compare' | 'restore' | 'restore_task' | 'restore_both'; projectId: string; taskId?: string; checkpointId?: string; expectedVersion?: number; idempotencyKey: string }
   'core.incrementalChangeProtocol': { operation: 'create' | 'apply' | 'cancel' | 'unknown'; runId: string; payload?: string; expectedVersion?: number; observedFingerprint?: string; idempotencyKey: string }
   'core.revisionSafeWorkspaceFiles': { operation: 'read'; projectId: string; logicalPath: string; content?: string; expectedHash?: string; idempotencyKey: string }
@@ -2062,9 +2044,6 @@ export interface CommandResults {
   'core.getConversationWorkbench': { accepted: boolean }
   'core.getTaskCheckpoint': { accepted: boolean }
   'core.resolveTaskCheckpoint': { accepted: boolean }
-  'core.planArtifactCreate': { accepted: boolean }
-  'core.planArtifactRead': { accepted: boolean }
-  'core.planArtifactAction': { accepted: boolean }
   'core.workspaceStateCheckpoint': { accepted: boolean }
   'core.incrementalChangeProtocol': { accepted: boolean }
   'core.revisionSafeWorkspaceFiles': { accepted: boolean }
