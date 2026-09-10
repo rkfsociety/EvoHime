@@ -273,7 +273,8 @@ fn parse_rule(
     if bytes.len() > MAX_SINGLE_RULE_BYTES {
         return Err(InstructionError::RuleTooLarge);
     }
-    let text = String::from_utf8(bytes.clone()).map_err(|_| InstructionError::InvalidText)?;
+    let source_revision = source_revision(&bytes);
+    let text = String::from_utf8(bytes).map_err(|_| InstructionError::InvalidText)?;
     let (metadata, content) = parse_frontmatter(&text)?;
     let fallback = path.file_stem().and_then(|v| v.to_str()).unwrap_or("rule");
     let id = metadata.get("id").cloned().unwrap_or_else(|| {
@@ -338,7 +339,7 @@ fn parse_rule(
         id,
         source_kind,
         source_ref,
-        source_revision: source_revision(&bytes),
+        source_revision,
         scope,
         paths,
         exclude_paths,
