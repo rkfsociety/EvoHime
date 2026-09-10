@@ -663,19 +663,38 @@ fn file_modified_ms(metadata: &fs::Metadata) -> i64 {
 }
 
 fn language_for(path: &Path) -> Option<(&'static str, &'static str)> {
-    let name = path.file_name()?.to_string_lossy().to_lowercase();
-    if name.starts_with("readme") || name.ends_with(".md") || name.ends_with(".markdown") {
+    let name = path.file_name()?.to_string_lossy();
+    if name
+        .get(.."readme".len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("readme"))
+    {
         return Some(("markdown", "text/markdown"));
     }
-    match path.extension()?.to_string_lossy().to_lowercase().as_str() {
-        "rs" => Some(("rust", "text/x-rust")),
-        "ts" | "tsx" => Some(("typescript", "text/typescript")),
-        "js" | "jsx" | "mjs" | "cjs" => Some(("javascript", "text/javascript")),
-        "json" => Some(("json", "application/json")),
-        "toml" => Some(("toml", "application/toml")),
-        "yaml" | "yml" => Some(("yaml", "application/yaml")),
-        "txt" | "log" | "csv" => Some(("text", "text/plain")),
-        _ => None,
+    let extension = path.extension()?.to_string_lossy();
+    if extension.eq_ignore_ascii_case("md") || extension.eq_ignore_ascii_case("markdown") {
+        Some(("markdown", "text/markdown"))
+    } else if extension.eq_ignore_ascii_case("rs") {
+        Some(("rust", "text/x-rust"))
+    } else if extension.eq_ignore_ascii_case("ts") || extension.eq_ignore_ascii_case("tsx") {
+        Some(("typescript", "text/typescript"))
+    } else if ["js", "jsx", "mjs", "cjs"]
+        .iter()
+        .any(|candidate| extension.eq_ignore_ascii_case(candidate))
+    {
+        Some(("javascript", "text/javascript"))
+    } else if extension.eq_ignore_ascii_case("json") {
+        Some(("json", "application/json"))
+    } else if extension.eq_ignore_ascii_case("toml") {
+        Some(("toml", "application/toml"))
+    } else if extension.eq_ignore_ascii_case("yaml") || extension.eq_ignore_ascii_case("yml") {
+        Some(("yaml", "application/yaml"))
+    } else if ["txt", "log", "csv"]
+        .iter()
+        .any(|candidate| extension.eq_ignore_ascii_case(candidate))
+    {
+        Some(("text", "text/plain"))
+    } else {
+        None
     }
 }
 
