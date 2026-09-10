@@ -345,6 +345,7 @@ pub fn search(
     {
         return Err(WorkspaceSetError::InvalidSearch);
     }
+    let normalized_query = scope.query.to_ascii_lowercase();
     let roots: Vec<_> = if scope.root_ids.is_empty() {
         set.roots.iter().filter(|root| root.enabled).collect()
     } else {
@@ -393,7 +394,7 @@ pub fn search(
                 }
                 let name_match = logical
                     .to_ascii_lowercase()
-                    .contains(&scope.query.to_ascii_lowercase());
+                    .contains(&normalized_query);
                 let content_match = if !name_match && metadata.len() <= 64 * 1024 {
                     fs::read(&candidate)
                         .ok()
