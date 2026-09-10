@@ -335,6 +335,11 @@ pub fn validate_candidate(candidate: &GitCommitCandidate) -> Result<(), ChangeSe
             return Err(ChangeSetError::InvalidPath);
         }
     }
+    let included_path_set: BTreeSet<&str> = candidate
+        .included_paths
+        .iter()
+        .map(String::as_str)
+        .collect();
     let mut included_hash_paths = BTreeSet::new();
     for included in &candidate.included_hashes {
         let (path, hash) = included
@@ -343,7 +348,7 @@ pub fn validate_candidate(candidate: &GitCommitCandidate) -> Result<(), ChangeSe
         validate_path(path)?;
         validate_hash(hash)?;
         if is_sensitive_path(path)
-            || !candidate.included_paths.iter().any(|p| p == path)
+            || !included_path_set.contains(path)
             || !included_hash_paths.insert(path)
         {
             return Err(ChangeSetError::InvalidPath);
@@ -399,10 +404,11 @@ pub fn build_candidate(
         .iter()
         .map(|(path, hash)| format!("{path}={hash}"))
         .collect::<Vec<_>>();
+    let included_path_set: BTreeSet<&str> = included_paths.iter().map(String::as_str).collect();
     let excluded_paths = set
         .paths
         .iter()
-        .filter(|p| !included_paths.iter().any(|path| path == &p.path))
+        .filter(|p| !included_path_set.contains(p.path.as_str()))
         .map(|p| p.path.clone())
         .collect::<Vec<_>>();
     let diff_hash = sha256(
