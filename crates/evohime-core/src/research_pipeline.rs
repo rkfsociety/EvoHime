@@ -214,7 +214,7 @@ pub fn validate_citations(domain: &str, citations: &[Citation]) -> Result<(), Pi
     }
     for citation in citations {
         let citation_domain = url_domain(&citation.url).ok_or(PipelineError::InvalidCitation)?;
-        if !domain_matches(&citation_domain, domain) {
+        if !domain_matches(citation_domain, domain) {
             return Err(PipelineError::CitationSourceMismatch);
         }
         if !is_hash(&citation.source_hash) || !is_hash(&citation.excerpt_hash) {
@@ -289,7 +289,7 @@ fn domain_matches(domain: &str, allowed: &str) -> bool {
         && suffix.eq_ignore_ascii_case(allowed)
 }
 
-fn url_domain(url: &str) -> Option<String> {
+fn url_domain(url: &str) -> Option<&str> {
     let rest = url
         .strip_prefix("https://")
         .or_else(|| url.strip_prefix("http://"))?;
@@ -298,7 +298,7 @@ fn url_domain(url: &str) -> Option<String> {
         return None;
     }
     validate_domain(host).ok()?;
-    Some(host.to_ascii_lowercase())
+    Some(host)
 }
 
 fn is_hash(value: &str) -> bool {
@@ -380,7 +380,7 @@ mod tests {
     fn citations_require_matching_https_source_and_hashes() {
         let hash = "a".repeat(64);
         let citation = Citation {
-            url: "https://docs.example.com/page".into(),
+            url: "https://Docs.Example.COM/page".into(),
             source_hash: hash.clone(),
             excerpt_hash: hash,
         };
