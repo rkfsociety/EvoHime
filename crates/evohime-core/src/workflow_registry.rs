@@ -710,11 +710,18 @@ impl WorkflowRegistry {
     ) -> Result<WorkflowGraph, Vec<BindingError>> {
         let mut errors = Vec::new();
         let mut nodes: Vec<WorkflowNode> = Vec::new();
+        let subgraph_ids: BTreeSet<&str> = graph
+            .nodes
+            .iter()
+            .filter(|node| matches!(node.node_type, NodeType::Subgraph { .. }))
+            .map(|node| node.id.as_str())
+            .collect();
         let mut edges: Vec<WorkflowEdge> = graph
             .edges
             .iter()
             .filter(|edge| {
-                !is_subgraph(graph, &edge.from_node) && !is_subgraph(graph, &edge.to_node)
+                !subgraph_ids.contains(edge.from_node.as_str())
+                    && !subgraph_ids.contains(edge.to_node.as_str())
             })
             .cloned()
             .collect();
@@ -825,13 +832,6 @@ impl WorkflowRegistry {
             budget: graph.budget,
         })
     }
-}
-
-fn is_subgraph(graph: &WorkflowGraph, node_id: &str) -> bool {
-    graph
-        .node(node_id)
-        .map(|node| matches!(node.node_type, NodeType::Subgraph { .. }))
-        .unwrap_or(false)
 }
 
 fn env_host_allowlist() -> Option<BTreeSet<String>> {
