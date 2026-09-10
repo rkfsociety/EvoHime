@@ -1402,6 +1402,13 @@ impl WorkflowRuntime {
         let graph: WorkflowGraph = serde_json::from_str(&run.graph_json)
             .map_err(|error| RuntimeError::InvalidGraph(error.to_string()))?;
         let nodes = self.journal.workflow_run_nodes(run_id).await?;
+        let mut dependency_index = BTreeMap::<&str, BTreeSet<String>>::new();
+        for edge in &graph.edges {
+            dependency_index
+                .entry(edge.to_node.as_str())
+                .or_default()
+                .insert(edge.from_node.clone());
+        }
         let projection = WorkflowRunProjection {
             run_id: run.run_id.clone(),
             task_id: run.task_id.clone(),
@@ -1428,7 +1435,10 @@ impl WorkflowRuntime {
                     error_code: record.error_code.clone(),
                     message: bounded_text(&record.error_message),
                     approval_id: record.approval_id.clone(),
-                    dependencies: dependencies(&graph, &record.node_id),
+                    dependencies: dependency_index
+                        .get(record.node_id.as_str())
+                        .map(|dependencies| dependencies.iter().cloned().collect())
+                        .unwrap_or_default(),
                 })
                 .collect(),
         };
@@ -1452,16 +1462,6 @@ fn node_role(node: &WorkflowNode) -> String {
         NodeType::Tool { tool } => tool.tool_name.clone(),
         other => other.action_kind().to_string(),
     }
-}
-
-fn dependencies(graph: &WorkflowGraph, node_id: &str) -> Vec<String> {
-    let mut result: BTreeSet<String> = BTreeSet::new();
-    for edge in &graph.edges {
-        if edge.to_node == node_id {
-            result.insert(edge.from_node.clone());
-        }
-    }
-    result.into_iter().collect()
 }
 
 /// Граф из одного узла: используется для повторной проверки capability прямо
