@@ -5,6 +5,7 @@
 //! детерминированный; vector/RAG и сетевое обогащение не входят в контракт.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 
 pub const MAX_MEMORY_ID_CHARS: usize = 128;
@@ -311,6 +312,12 @@ impl MemoryDomain {
     pub fn search(&self, request: SearchMemory) -> Result<Vec<MemorySearchHit>, MemoryError> {
         validate_limit(request.limit)?;
         let query = lexical_tokens(&request.query)?;
+        let query_frequencies = query
+            .into_iter()
+            .fold(HashMap::new(), |mut frequencies, term| {
+                *frequencies.entry(term).or_insert(0_u32) += 1;
+                frequencies
+            });
         let mut hits: Vec<_> = self
             .records
             .iter()
@@ -319,14 +326,9 @@ impl MemoryDomain {
             .filter(|record| record.scope.matches_filter(request.scope.as_ref()))
             .filter_map(|record| {
                 let haystack = tokenize(&format!("{} {}", record.title, record.content)).ok()?;
-                let score = query
+                let score = haystack
                     .iter()
-                    .map(|term| {
-                        haystack
-                            .iter()
-                            .filter(|candidate| *candidate == term)
-                            .count() as u32
-                    })
+                    .filter_map(|candidate| query_frequencies.get(candidate.as_str()))
                     .sum::<u32>();
                 (score > 0).then(|| MemorySearchHit {
                     record: record.clone(),
