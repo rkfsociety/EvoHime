@@ -736,7 +736,9 @@ fn simple_ignore_match(pattern: &str, path: &str) -> bool {
             .any(|part| part == pattern.trim_end_matches('/'));
     }
     if let Some(suffix) = pattern.strip_prefix("*.") {
-        return path.ends_with(&format!(".{suffix}"));
+        return path
+            .strip_suffix(suffix)
+            .is_some_and(|prefix| prefix.ends_with('.'));
     }
     if pattern.contains('*') {
         let mut offset = 0;
@@ -749,8 +751,12 @@ fn simple_ignore_match(pattern: &str, path: &str) -> bool {
         return true;
     }
     path == pattern
-        || path.starts_with(&format!("{pattern}/"))
-        || path.ends_with(&format!("/{pattern}"))
+        || path
+            .strip_prefix(pattern)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+        || path
+            .strip_suffix(pattern)
+            .is_some_and(|prefix| prefix.ends_with('/'))
 }
 
 fn load_ragignore(root: &Path) -> Vec<String> {
