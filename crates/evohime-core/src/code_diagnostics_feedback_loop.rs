@@ -1,6 +1,7 @@
 //! Core-owned, revision-bound diagnostics snapshots and deterministic deltas (plan 70).
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 
 pub const SCHEMA_VERSION: u32 = 1;
 pub const MAX_ID_BYTES: usize = 128;
@@ -135,26 +136,28 @@ pub fn delta(baseline: &Snapshot, current: &Snapshot) -> Result<Delta, Error> {
     if baseline.workspace_fingerprint != current.workspace_fingerprint {
         return Err(Error::Stale);
     }
+    let baseline_fingerprints: HashSet<&str> = baseline
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.fingerprint.as_str())
+        .collect();
+    let current_fingerprints: HashSet<&str> = current
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.fingerprint.as_str())
+        .collect();
     let mut introduced = Vec::new();
     let mut resolved = Vec::new();
     let mut persisting = Vec::new();
     for d in &current.diagnostics {
-        if baseline
-            .diagnostics
-            .iter()
-            .any(|x| x.fingerprint == d.fingerprint)
-        {
+        if baseline_fingerprints.contains(d.fingerprint.as_str()) {
             persisting.push(d.clone())
         } else {
             introduced.push(d.clone())
         }
     }
     for d in &baseline.diagnostics {
-        if !current
-            .diagnostics
-            .iter()
-            .any(|x| x.fingerprint == d.fingerprint)
-        {
+        if !current_fingerprints.contains(d.fingerprint.as_str()) {
             resolved.push(d.clone())
         }
     }
