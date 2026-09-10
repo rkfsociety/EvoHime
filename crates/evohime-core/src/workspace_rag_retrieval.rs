@@ -813,19 +813,15 @@ fn decode_source_range(
                     "unaligned UTF-16 byte range".into(),
                 ));
             }
-            let units = slice
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|pair| {
-                    if little_endian {
-                        u16::from_le_bytes(*pair)
-                    } else {
-                        u16::from_be_bytes(*pair)
-                    }
-                })
-                .collect::<Vec<_>>();
-            String::from_utf16(&units)
+            let units = slice.as_chunks::<2>().0.iter().map(|pair| {
+                if little_endian {
+                    u16::from_le_bytes(*pair)
+                } else {
+                    u16::from_be_bytes(*pair)
+                }
+            });
+            char::decode_utf16(units)
+                .collect::<Result<String, _>>()
                 .map_err(|_| RagError::InvalidWorkspace("invalid UTF-16 source range".into()))
         };
         let start = byte_start.max(2);
