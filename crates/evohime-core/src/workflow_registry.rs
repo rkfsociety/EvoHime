@@ -764,10 +764,15 @@ impl WorkflowRegistry {
             }
             // Внешние рёбра переносятся на границы подграфа: вход — на его
             // entry node, выход — на узлы без исходящих рёбер.
+            let inner_sources: BTreeSet<&str> = inner
+                .edges
+                .iter()
+                .map(|edge| edge.from_node.as_str())
+                .collect();
             let sinks: Vec<String> = inner
                 .nodes
                 .iter()
-                .filter(|item| !inner.edges.iter().any(|edge| edge.from_node == item.id))
+                .filter(|item| !inner_sources.contains(item.id.as_str()))
                 .map(|item| format!("{prefix}{}", item.id))
                 .collect();
             for edge in &graph.edges {
