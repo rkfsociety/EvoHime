@@ -178,18 +178,16 @@ fn valid_path(path: &str) -> bool {
         && Path::new(path).is_absolute()
 }
 
-fn path_matches(pattern: &str, path: &str) -> bool {
-    let pattern = pattern.replace('\\', "/").to_ascii_lowercase();
-    let path = path.replace('\\', "/").to_ascii_lowercase();
+fn normalize_search_path(value: &str) -> String {
+    value.replace('\\', "/").to_ascii_lowercase()
+}
+
+fn path_matches_normalized(pattern: &str, path: &str) -> bool {
     if pattern == "**" || pattern == "*" {
         return true;
     }
-    let pieces: Vec<_> = pattern
-        .split('*')
-        .filter(|piece| !piece.is_empty())
-        .collect();
     let mut cursor = 0usize;
-    for piece in pieces {
+    for piece in pattern.split('*').filter(|piece| !piece.is_empty()) {
         let Some(index) = path[cursor..].find(piece) else {
             return false;
         };
@@ -346,6 +344,11 @@ pub fn search(
         return Err(WorkspaceSetError::InvalidSearch);
     }
     let normalized_query = scope.query.to_ascii_lowercase();
+    let normalized_patterns: Vec<String> = scope
+        .path_patterns
+        .iter()
+        .map(|pattern| normalize_search_path(pattern))
+        .collect();
     let roots: Vec<_> = if scope.root_ids.is_empty() {
         set.roots.iter().filter(|root| root.enabled).collect()
     } else {
@@ -384,17 +387,15 @@ pub fn search(
                     .map_err(|_| WorkspaceSetError::ResourcePathEscape)?
                     .to_string_lossy()
                     .replace('\\', "/");
-                if !scope.path_patterns.is_empty()
-                    && !scope
-                        .path_patterns
+                let normalized_logical = normalize_search_path(&logical);
+                if !normalized_patterns.is_empty()
+                    && !normalized_patterns
                         .iter()
-                        .any(|pattern| path_matches(pattern, &logical))
+                        .any(|pattern| path_matches_normalized(pattern, &normalized_logical))
                 {
                     continue;
                 }
-                let name_match = logical
-                    .to_ascii_lowercase()
-                    .contains(&normalized_query);
+                let name_match = normalized_logical.contains(&normalized_query);
                 let content_match = if !name_match && metadata.len() <= 64 * 1024 {
                     fs::read(&candidate)
                         .ok()
