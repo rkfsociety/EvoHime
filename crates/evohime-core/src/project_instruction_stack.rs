@@ -468,7 +468,7 @@ pub fn compile_snapshot(
         created_at_ms: now_ms,
         content_hash: String::new(),
     };
-    snapshot.content_hash = content_hash(&snapshot.clone())?;
+    snapshot.content_hash = content_hash(&snapshot)?;
     Ok(snapshot)
 }
 
