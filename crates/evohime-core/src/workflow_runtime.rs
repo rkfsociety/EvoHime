@@ -1402,6 +1402,10 @@ impl WorkflowRuntime {
         let graph: WorkflowGraph = serde_json::from_str(&run.graph_json)
             .map_err(|error| RuntimeError::InvalidGraph(error.to_string()))?;
         let nodes = self.journal.workflow_run_nodes(run_id).await?;
+        let mut node_index = BTreeMap::<&str, &WorkflowNode>::new();
+        for node in &graph.nodes {
+            node_index.entry(node.id.as_str()).or_insert(node);
+        }
         let mut dependency_index = BTreeMap::<&str, BTreeSet<String>>::new();
         for edge in &graph.edges {
             dependency_index
@@ -1426,9 +1430,9 @@ impl WorkflowRuntime {
                 .map(|record| WorkflowNodeProjection {
                     node_id: record.node_id.clone(),
                     action_kind: record.action_kind.clone(),
-                    role: graph
-                        .node(&record.node_id)
-                        .map(node_role)
+                    role: node_index
+                        .get(record.node_id.as_str())
+                        .map(|node| node_role(node))
                         .unwrap_or_default(),
                     state: record.state.as_str().to_string(),
                     attempts: record.attempts,
