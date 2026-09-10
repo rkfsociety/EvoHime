@@ -562,20 +562,20 @@ pub async fn make_candidate(
         .cloned()
         .collect::<BTreeSet<_>>();
     let mut paths = Vec::new();
-    for path in baseline_paths {
+    for path in &baseline_paths {
         let hash = snapshot
             .paths
-            .get(&path)
+            .get(path)
             .map(|state| state.hash.clone())
             .unwrap_or_else(|| sha256(b"<deleted-after-baseline>"));
         paths.push(AttributedPath {
-            path,
+            path: path.clone(),
             attribution: PathAttribution::PreExistingUser,
             hash,
         });
     }
     for (path, state) in &snapshot.paths {
-        if paths.iter().any(|item: &AttributedPath| item.path == *path) {
+        if baseline_paths.contains(path) {
             continue;
         }
         let attribution = if is_sensitive_path(path) {
