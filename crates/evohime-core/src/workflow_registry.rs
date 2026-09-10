@@ -716,6 +716,22 @@ impl WorkflowRegistry {
             .filter(|node| matches!(node.node_type, NodeType::Subgraph { .. }))
             .map(|node| node.id.as_str())
             .collect();
+        let mut boundary_inputs = BTreeMap::<&str, Vec<&WorkflowEdge>>::new();
+        let mut boundary_outputs = BTreeMap::<&str, Vec<&WorkflowEdge>>::new();
+        for edge in &graph.edges {
+            if subgraph_ids.contains(edge.to_node.as_str()) {
+                boundary_inputs
+                    .entry(edge.to_node.as_str())
+                    .or_default()
+                    .push(edge);
+            }
+            if subgraph_ids.contains(edge.from_node.as_str()) {
+                boundary_outputs
+                    .entry(edge.from_node.as_str())
+                    .or_default()
+                    .push(edge);
+            }
+        }
         let mut edges: Vec<WorkflowEdge> = graph
             .edges
             .iter()
@@ -782,15 +798,17 @@ impl WorkflowRegistry {
                 .filter(|item| !inner_sources.contains(item.id.as_str()))
                 .map(|item| format!("{prefix}{}", item.id))
                 .collect();
-            for edge in &graph.edges {
-                if edge.to_node == node.id {
-                    let mut rewritten = edge.clone();
+            if let Some(boundary_edges) = boundary_inputs.get(node.id.as_str()) {
+                for edge in boundary_edges {
+                    let mut rewritten = (*edge).clone();
                     rewritten.to_node = inner_entry.clone();
                     edges.push(rewritten);
                 }
-                if edge.from_node == node.id {
+            }
+            if let Some(boundary_edges) = boundary_outputs.get(node.id.as_str()) {
+                for edge in boundary_edges {
                     for sink in &sinks {
-                        let mut rewritten = edge.clone();
+                        let mut rewritten = (*edge).clone();
                         rewritten.from_node = sink.clone();
                         edges.push(rewritten);
                     }
