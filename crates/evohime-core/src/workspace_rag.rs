@@ -981,18 +981,22 @@ fn decode_text(bytes: &[u8]) -> (String, &'static str, &'static str) {
             .as_chunks::<2>()
             .0
             .iter()
-            .map(|pair| u16::from_le_bytes(*pair))
-            .collect::<Vec<_>>();
-        return (String::from_utf16_lossy(&words), "utf-16le", "valid");
+            .map(|pair| u16::from_le_bytes(*pair));
+        let text = char::decode_utf16(words)
+            .map(|result| result.unwrap_or(char::REPLACEMENT_CHARACTER))
+            .collect();
+        return (text, "utf-16le", "valid");
     }
     if bytes.starts_with(&[0xfe, 0xff]) {
         let words = bytes[2..]
             .as_chunks::<2>()
             .0
             .iter()
-            .map(|pair| u16::from_be_bytes(*pair))
-            .collect::<Vec<_>>();
-        return (String::from_utf16_lossy(&words), "utf-16be", "valid");
+            .map(|pair| u16::from_be_bytes(*pair));
+        let text = char::decode_utf16(words)
+            .map(|result| result.unwrap_or(char::REPLACEMENT_CHARACTER))
+            .collect();
+        return (text, "utf-16be", "valid");
     }
     match String::from_utf8(bytes.to_vec()) {
         Ok(text) => (text, "utf-8", "valid"),
