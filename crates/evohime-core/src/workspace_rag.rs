@@ -752,7 +752,7 @@ fn collect_files(root: &Path, config: &IndexConfig) -> Result<(Vec<PathBuf>, usi
     let ragignore = load_ragignore(root);
     while let Some(directory) = pending.pop() {
         let mut entries = fs::read_dir(&directory)?.collect::<Result<Vec<_>, _>>()?;
-        entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_lowercase());
+        entries.sort_by_cached_key(|entry| entry.file_name().to_string_lossy().to_lowercase());
         for entry in entries {
             let file_type = entry.file_type()?;
             let path = entry.path();
@@ -780,7 +780,7 @@ fn collect_files(root: &Path, config: &IndexConfig) -> Result<(Vec<PathBuf>, usi
             }
         }
     }
-    files.sort_by_key(|path| path.to_string_lossy().replace('\\', "/").to_lowercase());
+    files.sort_by_cached_key(|path| path.to_string_lossy().replace('\\', "/").to_lowercase());
     Ok((files, excluded))
 }
 
