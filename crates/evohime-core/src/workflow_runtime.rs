@@ -1510,51 +1510,40 @@ fn blocking_dependency(
     node: &WorkflowNode,
     states: &BTreeMap<String, WorkflowNodeRecord>,
 ) -> Option<String> {
-    let incoming: Vec<_> = graph
-        .edges
-        .iter()
-        .filter(|edge| edge.to_node == node.id)
-        .collect();
-    if incoming.is_empty() {
-        return None;
-    }
-    let data_edges: Vec<_> = incoming
-        .iter()
-        .filter(|edge| edge.channel == EdgeChannel::Data)
-        .collect();
-    let failure_edges: Vec<_> = incoming
-        .iter()
-        .filter(|edge| edge.channel == EdgeChannel::Failure)
-        .collect();
-
-    // Failure-ветвь жива, пока её источник не завершился успехом.
-    let failure_alive = failure_edges.iter().any(|edge| {
-        states
-            .get(&edge.from_node)
-            .map(|record| {
-                !record.state.is_terminal() || matches!(record.state, failed if is_failure(failed))
-            })
-            .unwrap_or(false)
-    });
-    if failure_alive {
-        return None;
-    }
-
+    let mut has_incoming = false;
+    let mut failure_alive = false;
+    let mut data_edges = 0usize;
     let mut satisfied = 0usize;
     let mut lost: Option<String> = None;
-    for edge in &data_edges {
-        match states.get(&edge.from_node).map(|record| record.state) {
-            Some(state) if is_success(state) => satisfied += 1,
-            Some(state) if state.is_terminal() => {
-                lost.get_or_insert_with(|| edge.from_node.clone());
+    for edge in graph.edges.iter().filter(|edge| edge.to_node == node.id) {
+        has_incoming = true;
+        let state = states.get(&edge.from_node).map(|record| record.state);
+        match edge.channel {
+            EdgeChannel::Failure => {
+                // Failure-ветвь жива, пока её источник не завершился успехом.
+                failure_alive |= state
+                    .map(|state| !state.is_terminal() || is_failure(state))
+                    .unwrap_or(false);
             }
-            _ => return None,
+            EdgeChannel::Data => {
+                data_edges += 1;
+                match state {
+                    Some(state) if is_success(state) => satisfied += 1,
+                    Some(state) if state.is_terminal() => {
+                        lost.get_or_insert_with(|| edge.from_node.clone());
+                    }
+                    _ => return None,
+                }
+            }
         }
+    }
+    if !has_incoming || failure_alive {
+        return None;
     }
     match node.join {
         JoinMode::All => lost,
         JoinMode::Any => {
-            if satisfied == 0 && !data_edges.is_empty() {
+            if satisfied == 0 && data_edges > 0 {
                 lost
             } else {
                 None
