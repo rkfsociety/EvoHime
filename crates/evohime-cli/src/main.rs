@@ -1,4 +1,6 @@
-use evohime_cli::{emit, parse_args, redact_payload, CliEvent, Command, ExitCode};
+#[cfg(windows)]
+use evohime_cli::{emit, redact_payload, CliEvent, Command};
+use evohime_cli::{parse_args, ExitCode};
 
 #[cfg(windows)]
 mod windows_client {

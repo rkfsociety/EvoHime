@@ -16,9 +16,13 @@
 //! Без переменных остаётся детерминированный путь на `FixtureEngine`: он
 //! проверяет тот же контракт движка, не требуя ни файлов, ни микрофона.
 
-use evohime_listener::{EngineError, EngineUnavailable, FixtureEngine, SpeechEngine};
+#[cfg(windows)]
+use evohime_listener::EngineUnavailable;
+use evohime_listener::{EngineError, FixtureEngine, SpeechEngine};
 
+#[cfg(windows)]
 const ENABLE: &str = "EVOHIME_LISTENER_ENGINE_E2E";
+#[cfg(windows)]
 const FIXTURE: &str = "EVOHIME_LISTENER_ENGINE_FIXTURE";
 
 #[test]

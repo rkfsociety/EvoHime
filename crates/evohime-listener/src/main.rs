@@ -1,11 +1,15 @@
+#[cfg(windows)]
 use evohime_listener::{
     backoff, data_dir, engine::EngineUnavailable, tools_dir, EngineNotice, ListenerRuntime,
     NullEngine, SpeechEngine,
 };
+#[cfg(windows)]
 use evohime_listener_contract::{
     AmbientLimits, AmbientPolicy, ListeningReason, ListeningState, QuietHours,
 };
+#[cfg(windows)]
 use evohime_listener_ipc::{envelope, generated, read_frame, write_frame};
+#[cfg(windows)]
 use tokio::time::sleep;
 
 /// Кадр 16 кГц моно, который получает VAD.
@@ -327,6 +331,7 @@ fn apply_policy_update(runtime: &mut ListenerRuntime, policy: generated::PolicyU
     runtime.device_id = policy.device_id;
 }
 
+#[cfg(any(windows, test))]
 fn device_selection_changed(current: &str, requested: &str) -> bool {
     current != requested
 }
@@ -580,6 +585,7 @@ fn now_ms() -> u64 {
         .unwrap_or_default()
 }
 
+#[cfg(windows)]
 fn log_error(error: &str) {
     let path = data_dir().join("logs").join("listener.jsonl");
     let _ = std::fs::create_dir_all(path.parent().unwrap());

@@ -64,6 +64,7 @@ pub fn require(role: FileRole, path: &Path) -> Result<(), EngineUnavailable> {
 /// Подстрока, по которой распознаётся издатель. Точное имя субъекта меняется
 /// от сертификата к сертификату (`Microsoft Corporation`, `Microsoft
 /// Windows`), поэтому сравнивается общая часть.
+#[cfg(windows)]
 const MICROSOFT_SUBJECT: &str = "microsoft";
 
 /// Читает состояние подписи файла.
