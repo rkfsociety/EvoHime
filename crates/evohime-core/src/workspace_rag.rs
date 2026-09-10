@@ -619,7 +619,14 @@ pub fn normalize_identifier(value: &str, language: &str) -> String {
     if normalized.ends_with("()") {
         normalized.truncate(normalized.len() - 2);
     }
-    normalized = normalized.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut compact = String::with_capacity(normalized.len());
+    for (index, part) in normalized.split_whitespace().enumerate() {
+        if index > 0 {
+            compact.push(' ');
+        }
+        compact.push_str(part);
+    }
+    normalized = compact;
     match language {
         "java" | "csharp" | "python" | "javascript" | "typescript" => normalized,
         _ => normalized,
