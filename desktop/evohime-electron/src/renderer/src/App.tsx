@@ -29,90 +29,11 @@ import { TracePanel } from './TracePanel'
 import { RecoveryBanner } from './RecoveryBanner'
 import { ContinuationPanel } from './ContinuationPanel'
 import { AnalysisKernelPanel } from './AnalysisKernelPanel'
-import { WorkflowPackagePanel } from './WorkflowPackagePanel'
 import { VisualWorkflowBuilderPanel } from './VisualWorkflowBuilderPanel'
 import { ConversationalWorkflowComposerPanel } from './ConversationalWorkflowComposerPanel'
-import { AgentBenchmarkMatrixPanel } from './AgentBenchmarkMatrixPanel'
-import { AgentMiddlewarePipelinePanel } from './AgentMiddlewarePipelinePanel'
-import { StructuredResponseContractPanel } from './StructuredResponseContractPanel'
-import { SensitiveDataGuardrailsPanel } from './SensitiveDataGuardrailsPanel'
-import { ExecutionPolicyProfilesPanel } from './ExecutionPolicyProfilesPanel'
-import { ModelResiliencePolicyPanel } from './ModelResiliencePolicyPanel'
-import { ExecutionBackendRegistryPanel } from './ExecutionBackendRegistryPanel'
-import { ToolSimulationRuntimePanel } from './ToolSimulationRuntimePanel'
-import { AgentRoleProfilesPanel } from './AgentRoleProfilesPanel'
-import { ArtifactHandoffRegistryPanel } from './ArtifactHandoffRegistryPanel'
-import { TeamSopProtocolsPanel } from './TeamSopProtocolsPanel'
-import { CausalCollaborationBusPanel } from './CausalCollaborationBusPanel'
 import { HumanWorkItemsPanel } from './HumanWorkItemsPanel'
-import { WorkspaceStateCheckpointsPanel } from './WorkspaceStateCheckpointsPanel'
-import { RevisionSafeWorkspaceFilesPanel } from './RevisionSafeWorkspaceFilesPanel'
-import { TaskWorktreeIsolationPanel } from './TaskWorktreeIsolationPanel'
-import { TeamResourceBudgetPanel } from './TeamResourceBudgetPanel'
-import { ComposableTerminationConditionsPanel } from './ComposableTerminationConditionsPanel'
-import { WorkspaceBootstrapManifestPanel } from './WorkspaceBootstrapManifestPanel'
-import { TeamCoordinationPoliciesPanel } from './TeamCoordinationPoliciesPanel'
-import { TypedAgentHandoffContractPanel } from './TypedAgentHandoffContractPanel'
-import { SchemaDrivenAgentConfigurationPanel } from './SchemaDrivenAgentConfigurationPanel'
-import { ExperienceReplayLibraryPanel } from './ExperienceReplayLibraryPanel'
-import { RuntimeInterventionPipelinePanel } from './RuntimeInterventionPipelinePanel'
-import { CodeDiagnosticsFeedbackLoopPanel } from './CodeDiagnosticsFeedbackLoopPanel'
-import { CodeReviewLanePanel } from './CodeReviewLanePanel'
-import { StaticAnalysisPacksPanel } from './StaticAnalysisPacksPanel'
-import { ContextLoadoutsPanel } from './ContextLoadoutsPanel'
-import { SkillSourceLifecyclePanel } from './SkillSourceLifecyclePanel'
-import { KernelCapabilityFacadePanel } from './KernelCapabilityFacadePanel'
-import { AuthorizedSecurityAssessmentPanel } from './AuthorizedSecurityAssessmentPanel'
-import { RuntimeServiceGraphPanel } from './RuntimeServiceGraphPanel'
-import { AgentProgramOptimizerPanel } from './AgentProgramOptimizerPanel'
-import { ProjectKnowledgeNotebookPanel } from './ProjectKnowledgeNotebookPanel'
-import { GitRemotePublicationProtocolPanel } from './GitRemotePublicationProtocolPanel'
-import { VoiceInputDictationPanel } from './VoiceInputDictationPanel'
-import { OfflineExperienceConsolidationPanel } from './OfflineExperienceConsolidationPanel'
-import { WorkflowOptimizationLabPanel } from './WorkflowOptimizationLabPanel'
-import { CoreTopicSubscriptionEventBusPanel } from './CoreTopicSubscriptionEventBusPanel'
-import { DependencyAwareTaskGraphPanel } from './DependencyAwareTaskGraphPanel'
-import { DeclarativeAgentComponentRegistryPanel } from './DeclarativeAgentComponentRegistryPanel'
-import { TypedContextReferencesPanel } from './TypedContextReferencesPanel'
-import { SafeUiExtensionFrameworkPanel } from './SafeUiExtensionFrameworkPanel'
-import { CapabilityWorkbenchPanel } from './CapabilityWorkbenchPanel'
-import { TeamCoordinatorPanel } from './TeamCoordinatorPanel'
-import { ProjectInstructionStackPanel } from './ProjectInstructionStackPanel'
-import { WorkspaceSetsPanel } from './WorkspaceSetsPanel'
-import { KnowledgeSourceRegistryProjectRolePanel } from './KnowledgeSourceRegistryProjectRolePanel'
-import { ResearchWorkspacePanel } from './ResearchWorkspacePanel'
-import { DurableRemoteTaskBridgePanel } from './DurableRemoteTaskBridgePanel'
-import { MessageInterventionPoliciesPanel } from './MessageInterventionPoliciesPanel'
-import { BatchInvocationRuntimePanel } from './BatchInvocationRuntimePanel'
-import { AgentGitChangeSetsPanel } from './AgentGitChangeSetsPanel'
-import { ArchitectEditorModelPipelinePanel } from './ArchitectEditorModelPipelinePanel'
-import { EventVisualizerRegistryPanel } from './EventVisualizerRegistryPanel'
-import { CustomizationInventoryPanel } from './CustomizationInventoryPanel'
-import { StandingApprovalProfilesPanel } from './StandingApprovalProfilesPanel'
-import { ApprovalPolicyProfilesPanel } from './ApprovalPolicyProfilesPanel'
-import { CheckpointForkingPanel } from './CheckpointForkingPanel'
-import { PrivacyTelemetryGovernancePanel } from './PrivacyTelemetryGovernancePanel'
-import { ConversationBridgeAdaptersPanel } from './ConversationBridgeAdaptersPanel'
-import { MemoryViewsAndAdaptiveRecallPanel } from './MemoryViewsAndAdaptiveRecallPanel'
-import { ModelEditProtocolRegistryPanel } from './ModelEditProtocolRegistryPanel'
-import { RemoteConversationChannelsPanel } from './RemoteConversationChannelsPanel'
-import { PromptCachePlannerPanel } from './PromptCachePlannerPanel'
-import { PolicyAwareToolResultCachePanel } from './PolicyAwareToolResultCachePanel'
-import { CodeAnchoredIntentMarkersPanel } from './CodeAnchoredIntentMarkersPanel'
-import { ModelPurposeRoutingPanel } from './ModelPurposeRoutingPanel'
-import { LocalModelRuntimeManagerPanel } from './LocalModelRuntimeManagerPanel'
-import { LocalModelPerformanceCalibrationPanel } from './LocalModelPerformanceCalibrationPanel'
-import { ContentAwareContextCompressionPanel } from './ContentAwareContextCompressionPanel'
-import { ArchitectureSnapshotPanel } from './ArchitectureSnapshotPanel'
-import { DeclarativeRuntimeComponentsPanel } from './DeclarativeRuntimeComponentsPanel'
-import { GuidedCalibrationSessionsPanel } from './GuidedCalibrationSessionsPanel'
-import { ExtensionConformanceKitPanel } from './ExtensionConformanceKitPanel'
 import { WorkbenchPanel } from './WorkbenchPanel'
 import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
-import { PersistentAgentOrganizationRegistryPanel } from './PersistentAgentOrganizationRegistryPanel'
-import { ExecutionEnvironmentProfilesPanel } from './ExecutionEnvironmentProfilesPanel'
-import { ContextNamespacePanel } from './ContextNamespacePanel'
-import { BackgroundExecutionPanel } from './BackgroundExecutionPanel'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -137,17 +58,12 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'packages' | 'continuations' | 'kernels' | 'listening' | 'benchmarks' | 'middleware' | 'structured-response' | 'sensitive-data' | 'execution-policy' | 'model-resilience' | 'execution-backends' | 'execution-environment-profiles' | 'context-namespace' | 'background-execution' | 'tool-simulation' | 'agent-role-profiles' | 'persistent-agent-organization-registry' | 'artifact-handoff-registry' | 'team-sop' | 'causal-collaboration' | 'human-work-items' | 'workspace-checkpoints' | 'revision-safe-files' | 'task-worktree-isolation' | 'team-resource-budget' | 'composable-termination-conditions' | 'workspace-bootstrap-manifest' | 'team-coordination-policies' | 'memory-views-recall' | 'model-edit-protocol-registry' | 'remote-conversation-channels' | 'prompt-cache-planner' | 'declarative-runtime-components' | 'guided-calibration-sessions' | 'extension-conformance-kit' | 'typed-agent-handoff-contract' | 'schema-driven-agent-configuration' | 'experience-replay-library' | 'runtime-intervention-pipeline' | 'code-diagnostics-feedback-loop' | 'workflow-optimization-lab' | 'dependency-aware-task-graph' | 'core-topic-subscription-event-bus' | 'declarative-agent-component-registry' | 'typed-context-references' | 'safe-ui-extension-framework' | 'capability-workbench' | 'team-coordinator' | 'project-instruction-stack' | 'workspace-sets' | 'knowledge-source-registry' | 'research-workspace' | 'durable-remote-task-bridge' | 'message-intervention-policies' | 'batch-invocation-runtime' | 'policy-aware-tool-result-cache' | 'code-anchored-intent-markers' | 'model-purpose-routing' | 'local-model-runtime-manager' | 'local-model-performance-calibration' | 'content-aware-context-compression' | 'architecture-snapshot' | 'agent-git-change-sets' | 'architect-editor-pipeline' | 'event-visualizer-registry' | 'customization-inventory' | 'standing-approval-profiles' | 'approval-policy-profiles' | 'checkpoint-forking' | 'privacy-telemetry' | 'conversation-bridge'
+type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'continuations' | 'kernels' | 'listening' | 'human-work-items'
 
 interface ViewDescriptor {
   readonly id: ViewId
   readonly label: string
   readonly icon: string
-}
-
-interface DeveloperViewGroup {
-  readonly label: string
-  readonly views: readonly ViewDescriptor[]
 }
 
 /**
@@ -165,104 +81,7 @@ const USER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'human-work-items', label: 'Задачи для человека', icon: '☑' },
 ]
 
-const DEVELOPER_GROUPS: readonly DeveloperViewGroup[] = [
-  {
-    label: 'Рабочий процесс',
-    views: [
-  { id: 'background-execution', label: 'Background Execution', icon: '◷' },
-  { id: 'workspace-checkpoints', label: 'Workspace Checkpoints', icon: '▣' },
-  { id: 'revision-safe-files', label: 'Revision-safe Files', icon: '◈' },
-  { id: 'task-worktree-isolation', label: 'Task Worktrees', icon: '⑂' },
-  { id: 'team-resource-budget', label: 'Team Budget', icon: '₿' },
-  { id: 'composable-termination-conditions', label: 'Termination', icon: '⏹' },
-  { id: 'workspace-bootstrap-manifest', label: 'Bootstrap Manifest', icon: '⌂' },
-  { id: 'team-coordination-policies', label: 'Team Coordination', icon: '⇄' },
-    ]
-  },
-  {
-    label: 'Модели и контекст',
-    views: [
-  { id: 'context-namespace', label: 'Context Namespace', icon: '⌘' },
-  { id: 'memory-views-recall', label: 'Memory Views', icon: '⌕' },
-  { id: 'model-edit-protocol-registry', label: 'Model Edit Protocols', icon: '✎' },
-  { id: 'remote-conversation-channels', label: 'Remote Channels', icon: '⇄' },
-  { id: 'prompt-cache-planner', label: 'Prompt Cache', icon: '▤' },
-  { id: 'content-aware-context-compression', label: 'Context Compression', icon: '◌' },
-  { id: 'policy-aware-tool-result-cache', label: 'Tool Result Cache', icon: '▤' },
-  { id: 'code-anchored-intent-markers', label: 'Code Intent Markers', icon: '▤' },
-  { id: 'model-purpose-routing', label: 'Model Purpose Routing', icon: '◇' },
-  { id: 'local-model-runtime-manager', label: 'Local Model Runtime', icon: '◉' },
-  { id: 'local-model-performance-calibration', label: 'Local Model Performance', icon: '◌' },
-  { id: 'architecture-snapshot', label: 'Architecture Snapshot', icon: '⌘' },
-    ]
-  },
-  {
-    label: 'Компоненты и расширения',
-    views: [
-  { id: 'declarative-runtime-components', label: 'Runtime Components', icon: '◈' },
-  { id: 'guided-calibration-sessions', label: 'Guided Calibration', icon: '◌' },
-  { id: 'extension-conformance-kit', label: 'Extension Conformance', icon: '✓' },
-  { id: 'typed-agent-handoff-contract', label: 'Typed Handoff', icon: '⇢' },
-  { id: 'schema-driven-agent-configuration', label: 'Schema Configuration', icon: '⚙' },
-  { id: 'experience-replay-library', label: 'Experience Replay', icon: '↺' },
-  { id: 'runtime-intervention-pipeline', label: 'Runtime Intervention', icon: '⚠' },
-  { id: 'code-diagnostics-feedback-loop', label: 'Code Diagnostics', icon: '⌁' },
-  { id: 'workflow-optimization-lab', label: 'Workflow Lab', icon: '◌' },
-  { id: 'core-topic-subscription-event-bus', label: 'Topic Bus', icon: '⇆' },
-  { id: 'dependency-aware-task-graph', label: 'Task Graph', icon: '◇' },
-  { id: 'declarative-agent-component-registry', label: 'Components', icon: '▦' },
-  { id: 'typed-context-references', label: 'Context Refs', icon: '@' },
-  { id: 'safe-ui-extension-framework', label: 'UI Extensions', icon: '⊞' },
-  { id: 'capability-workbench', label: 'Capability Workbench', icon: '⚒' },
-    ]
-  },
-  {
-    label: 'Команды и интеграции',
-    views: [
-  { id: 'team-coordinator', label: 'Team Coordinator', icon: '◈' },
-  { id: 'project-instruction-stack', label: 'Project Instructions', icon: '☷' },
-  { id: 'workspace-sets', label: 'Workspace Sets', icon: '▦' },
-  { id: 'knowledge-source-registry', label: 'Knowledge Sources', icon: '⌘' },
-  { id: 'research-workspace', label: 'Research Workspace', icon: '⌘' },
-  { id: 'durable-remote-task-bridge', label: 'Remote Tasks', icon: '↗' },
-  { id: 'message-intervention-policies', label: 'Message Interventions', icon: '⊘' },
-  { id: 'batch-invocation-runtime', label: 'Batch Invocations', icon: '▤' },
-  { id: 'agent-git-change-sets', label: 'Agent Git Changes', icon: '⑂' },
-  { id: 'architect-editor-pipeline', label: 'Architect / Editor', icon: '⇢' },
-    ]
-  },
-  {
-    label: 'Политики и диагностика',
-    views: [
-  { id: 'event-visualizer-registry', label: 'Event Visualizers', icon: '▦' },
-  { id: 'customization-inventory', label: 'Customization', icon: '◈' },
-  { id: 'standing-approval-profiles', label: 'Standing Approvals', icon: '✓' },
-  { id: 'approval-policy-profiles', label: 'Approval Policy', icon: '◉' },
-  { id: 'checkpoint-forking', label: 'Checkpoint Fork', icon: '⑂' },
-  { id: 'privacy-telemetry', label: 'Privacy & Telemetry', icon: '◌' },
-  { id: 'conversation-bridge', label: 'Conversation Bridge', icon: '↔' },
-  { id: 'packages', label: 'Workflow Package', icon: '⇄' },
-  { id: 'benchmarks', label: 'Бенчмарки', icon: '▦' },
-  { id: 'middleware', label: 'Middleware', icon: '◇' },
-  { id: 'structured-response', label: 'Structured response', icon: '▤' },
-  { id: 'sensitive-data', label: 'Защита данных', icon: '⌁' },
-  { id: 'execution-policy', label: 'Профили выполнения', icon: '▣' },
-  { id: 'model-resilience', label: 'Надёжность модели', icon: '↯' },
-  { id: 'execution-backends', label: 'Среды выполнения', icon: '⌘' },
-  { id: 'execution-environment-profiles', label: 'Профили сред', icon: '◫' },
-  { id: 'tool-simulation', label: 'Симуляция инструментов', icon: '◇' },
-  { id: 'agent-role-profiles', label: 'Профили ролей', icon: '◎' },
-  { id: 'persistent-agent-organization-registry', label: 'Организация агентов', icon: '♙' },
-  { id: 'artifact-handoff-registry', label: 'Артефакты и передачи', icon: '◇' },
-  { id: 'team-sop', label: 'Team SOP', icon: '∷' },
-  { id: 'causal-collaboration', label: 'Collaboration Bus', icon: '⇆' },
-    ]
-  }
-]
-
-const DEVELOPER_VIEWS: readonly ViewDescriptor[] = DEVELOPER_GROUPS.flatMap((group) => group.views)
-
-const VIEWS: readonly ViewDescriptor[] = [{ id: 'scheduled', label: 'Запланировано', icon: '◷' }, ...USER_VIEWS, ...DEVELOPER_VIEWS]
+const VIEWS: readonly ViewDescriptor[] = [{ id: 'scheduled', label: 'Запланировано', icon: '◷' }, ...USER_VIEWS]
 
 /** Not a nav row: reached through the gear next to the account. */
 const SETTINGS_LABEL = 'Настройки'
@@ -283,7 +102,6 @@ export function App(): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('provider')
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
-  const [developerMenuOpen, setDeveloperMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   // Дополнительные панели не должны конкурировать с чатом при первом запуске.
   // Пользователь открывает их явно из верхней панели.
@@ -465,44 +283,6 @@ export function App(): React.JSX.Element {
                   }}
                 />
               ))}
-              <div className="account__developer-trigger">
-                <button
-                  type="button"
-                  className="account__menu-item"
-                  role="menuitem"
-                  aria-expanded={developerMenuOpen}
-                  aria-haspopup="menu"
-                  onClick={() => setDeveloperMenuOpen((value) => !value)}
-                >
-                  <span aria-hidden="true">⌘</span>
-                  Интерфейс разработчика
-                  <span className="account__menu-chevron" aria-hidden="true">
-                    {developerMenuOpen ? '›' : '‹'}
-                  </span>
-                </button>
-                {developerMenuOpen ? (
-                  <div className="account__developer-menu" role="menu" aria-label="Интерфейс разработчика">
-                    <div className="account__developer-heading">Интерфейс разработчика</div>
-                    {DEVELOPER_GROUPS.map((group) => (
-                      <section className="account__developer-group" key={group.label} aria-label={group.label}>
-                        <h3>{group.label}</h3>
-                        {group.views.map((item) => (
-                          <NavItem
-                            key={item.id}
-                            view={item}
-                            active={item.id === view}
-                            onSelect={(id) => {
-                              setView(id)
-                              setAccountMenuOpen(false)
-                              setDeveloperMenuOpen(false)
-                            }}
-                          />
-                        ))}
-                      </section>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
               <button
                 type="button"
                 className="account__menu-item"
@@ -595,8 +375,6 @@ export function App(): React.JSX.Element {
               {view === 'reviews' ? <PlanReviewPanel connection={connection} events={events} /> : null}
               {view === 'operations' ? <OperationsPanel connection={connection} events={events} repair={repair} /> : null}
               {view === 'scheduled' ? <ScheduledPanel connection={connection} events={events} workspace={workspace} /> : null}
-              {view === 'context-namespace' ? <ContextNamespacePanel connection={connection} events={events} /> : null}
-              {view === 'background-execution' ? <BackgroundExecutionPanel connection={connection} events={events} /> : null}
               {view === 'workflows' ? (
                 <>
                   <WorkflowPanel connection={connection} events={events} workspace={workspace} />
@@ -604,75 +382,10 @@ export function App(): React.JSX.Element {
                   <VisualWorkflowBuilderPanel connection={connection} events={events} workspace={workspace} />
                 </>
               ) : null}
-              {view === 'packages' ? <WorkflowPackagePanel /> : null}
               {view === 'continuations' ? <ContinuationPanel connection={connection} events={events} /> : null}
               {view === 'kernels' ? <AnalysisKernelPanel connection={connection} events={events} /> : null}
               {view === 'listening' ? <ListeningPanel connection={connection} events={events} /> : null}
-              {view === 'benchmarks' ? <AgentBenchmarkMatrixPanel /> : null}
-              {view === 'middleware' ? <AgentMiddlewarePipelinePanel /> : null}
-              {view === 'structured-response' ? <StructuredResponseContractPanel /> : null}
-              {view === 'sensitive-data' ? <SensitiveDataGuardrailsPanel /> : null}
-              {view === 'execution-policy' ? <ExecutionPolicyProfilesPanel /> : null}
-              {view === 'model-resilience' ? <ModelResiliencePolicyPanel /> : null}
-              {view === 'execution-backends' ? <ExecutionBackendRegistryPanel /> : null}
-              {view === 'execution-environment-profiles' ? <ExecutionEnvironmentProfilesPanel connection={connection} /> : null}
-              {view === 'tool-simulation' ? <ToolSimulationRuntimePanel /> : null}
-              {view === 'agent-role-profiles' ? <AgentRoleProfilesPanel /> : null}
-              {view === 'persistent-agent-organization-registry' ? <PersistentAgentOrganizationRegistryPanel connection={connection} /> : null}
-              {view === 'artifact-handoff-registry' ? <ArtifactHandoffRegistryPanel /> : null}
-              {view === 'team-sop' ? <TeamSopProtocolsPanel /> : null}
-              {view === 'causal-collaboration' ? <CausalCollaborationBusPanel /> : null}
               {view === 'human-work-items' ? <HumanWorkItemsPanel /> : null}
-              {view === 'workspace-checkpoints' ? <WorkspaceStateCheckpointsPanel connection={connection} events={events} workspace={workspace} /> : null}
-              {view === 'revision-safe-files' ? <RevisionSafeWorkspaceFilesPanel connection={connection} events={events} /> : null}
-              {view === 'task-worktree-isolation' ? <TaskWorktreeIsolationPanel connection={connection} events={events} /> : null}
-              {view === 'team-resource-budget' ? <TeamResourceBudgetPanel connection={connection} events={events} /> : null}
-              {view === 'composable-termination-conditions' ? <ComposableTerminationConditionsPanel connection={connection} events={events} /> : null}
-              {view === 'workspace-bootstrap-manifest' ? <WorkspaceBootstrapManifestPanel connection={connection} events={events} /> : null}
-              {view === 'team-coordination-policies' ? <TeamCoordinationPoliciesPanel connection={connection} events={events} /> : null}
-              {view === 'memory-views-recall' ? <MemoryViewsAndAdaptiveRecallPanel connection={connection} events={events} /> : null}
-              {view === 'model-edit-protocol-registry' ? <ModelEditProtocolRegistryPanel connection={connection} events={events} /> : null}
-              {view === 'remote-conversation-channels' ? <RemoteConversationChannelsPanel connection={connection} events={events} /> : null}
-              {view === 'prompt-cache-planner' ? <PromptCachePlannerPanel connection={connection} events={events} /> : null}
-              {view === 'content-aware-context-compression' ? <ContentAwareContextCompressionPanel /> : null}
-              {view === 'policy-aware-tool-result-cache' ? <PolicyAwareToolResultCachePanel connection={connection} /> : null}
-              {view === 'code-anchored-intent-markers' ? <CodeAnchoredIntentMarkersPanel connection={connection} /> : null}
-              {view === 'model-purpose-routing' ? <ModelPurposeRoutingPanel connection={connection} /> : null}
-              {view === 'local-model-runtime-manager' ? <LocalModelRuntimeManagerPanel connection={connection} /> : null}
-              {view === 'local-model-performance-calibration' ? <LocalModelPerformanceCalibrationPanel connection={connection} /> : null}
-              {view === 'architecture-snapshot' ? <ArchitectureSnapshotPanel connection={connection} workspace={workspace} /> : null}
-              {view === 'declarative-runtime-components' ? <DeclarativeRuntimeComponentsPanel connection={connection} events={events} /> : null}
-              {view === 'guided-calibration-sessions' ? <GuidedCalibrationSessionsPanel connection={connection} events={events} /> : null}
-              {view === 'extension-conformance-kit' ? <ExtensionConformanceKitPanel connection={connection} events={events} /> : null}
-              {view === 'typed-agent-handoff-contract' ? <TypedAgentHandoffContractPanel connection={connection} events={events} /> : null}
-              {view === 'schema-driven-agent-configuration' ? <SchemaDrivenAgentConfigurationPanel connection={connection} events={events} /> : null}
-              {view === 'experience-replay-library' ? <ExperienceReplayLibraryPanel connection={connection} events={events} /> : null}
-              {view === 'runtime-intervention-pipeline' ? <RuntimeInterventionPipelinePanel connection={connection} events={events} /> : null}
-              {view === 'code-diagnostics-feedback-loop' ? <><CodeDiagnosticsFeedbackLoopPanel connection={connection} /><CodeReviewLanePanel connection={connection} /><StaticAnalysisPacksPanel connection={connection} /><ContextLoadoutsPanel connection={connection} /><SkillSourceLifecyclePanel connection={connection} /><KernelCapabilityFacadePanel connection={connection} /><AuthorizedSecurityAssessmentPanel connection={connection} /><RuntimeServiceGraphPanel connection={connection} /><AgentProgramOptimizerPanel connection={connection} /><ProjectKnowledgeNotebookPanel connection={connection} /><GitRemotePublicationProtocolPanel connection={connection} /><VoiceInputDictationPanel connection={connection} /><OfflineExperienceConsolidationPanel connection={connection} /></> : null}
-              {view === 'workflow-optimization-lab' ? <WorkflowOptimizationLabPanel connection={connection} /> : null}
-              {view === 'core-topic-subscription-event-bus' ? <CoreTopicSubscriptionEventBusPanel connection={connection} /> : null}
-              {view === 'dependency-aware-task-graph' ? <DependencyAwareTaskGraphPanel connection={connection} /> : null}
-              {view === 'declarative-agent-component-registry' ? <DeclarativeAgentComponentRegistryPanel connection={connection} /> : null}
-              {view === 'typed-context-references' ? <TypedContextReferencesPanel connection={connection} /> : null}
-              {view === 'safe-ui-extension-framework' ? <SafeUiExtensionFrameworkPanel connection={connection} /> : null}
-              {view === 'capability-workbench' ? <CapabilityWorkbenchPanel connection={connection} /> : null}
-              {view === 'team-coordinator' ? <TeamCoordinatorPanel connection={connection} /> : null}
-              {view === 'project-instruction-stack' ? <ProjectInstructionStackPanel connection={connection} /> : null}
-              {view === 'workspace-sets' ? <WorkspaceSetsPanel connection={connection} /> : null}
-              {view === 'knowledge-source-registry' ? <KnowledgeSourceRegistryProjectRolePanel connection={connection} /> : null}
-              {view === 'research-workspace' ? <ResearchWorkspacePanel connection={connection} /> : null}
-              {view === 'durable-remote-task-bridge' ? <DurableRemoteTaskBridgePanel connection={connection} /> : null}
-              {view === 'message-intervention-policies' ? <MessageInterventionPoliciesPanel connection={connection} /> : null}
-              {view === 'batch-invocation-runtime' ? <BatchInvocationRuntimePanel connection={connection} /> : null}
-              {view === 'agent-git-change-sets' ? <AgentGitChangeSetsPanel connection={connection} /> : null}
-              {view === 'architect-editor-pipeline' ? <ArchitectEditorModelPipelinePanel connection={connection} /> : null}
-              {view === 'event-visualizer-registry' ? <EventVisualizerRegistryPanel connection={connection} /> : null}
-              {view === 'customization-inventory' ? <CustomizationInventoryPanel connection={connection} /> : null}
-              {view === 'standing-approval-profiles' ? <StandingApprovalProfilesPanel connection={connection} /> : null}
-              {view === 'approval-policy-profiles' ? <ApprovalPolicyProfilesPanel connection={connection} /> : null}
-              {view === 'checkpoint-forking' ? <CheckpointForkingPanel connection={connection} /> : null}
-              {view === 'privacy-telemetry' ? <PrivacyTelemetryGovernancePanel connection={connection} /> : null}
-              {view === 'conversation-bridge' ? <ConversationBridgeAdaptersPanel connection={connection} /> : null}
             </div>
           )}
         </div>

@@ -132,11 +132,11 @@ Core pipe работает fail-closed: отсутствие authenticated conte
 - `Составные задачи`, `Продолжения`, `Анализ`, `Слух`, `Задачи для человека`;
 - `Запланировано` — список локальных automation schedules.
 
-Технические панели, включая runtime-контракты, execution backends, безопасность,
-диагностику и `Организацию агентов`, находятся в свёрнутом разделе `Интерфейс разработчика`. В
-верхней панели доступны `Рабочая панель`, `Открыть браузер`, `Трейс` и индикатор
-состояния. `UpdateGate` не показывает рабочую оболочку до завершения startup
-проверки обновления.
+Внутренние runtime-контракты, execution backends, безопасность, диагностика и
+организация агентов не представлены отдельными вкладками: это Core/agent/model
+поверхность, которой управляет ядро. В верхней панели доступны только контекстные
+`Рабочая панель`, `Открыть браузер`, `Трейс` и индикатор состояния. `UpdateGate` не
+показывает рабочую оболочку до завершения startup-проверки обновления.
 
 ## Провайдеры и модели
 
@@ -170,9 +170,10 @@ cookies не читаются и не сохраняются EvoHime. Панел
 элементами, отображает owner (`user` или `workspace`), UTC-время, revision и
 последний слот. Приостановленные записи явно помечаются как `paused`.
 
-`BackgroundExecutionPanel` находится только в свёрнутом `Интерфейс
-разработчика` и получает через authenticated command 262/event 107 redacted
-проекцию detached runs, schedules, queues, waits и immutable attempts. Core
+Функциональность background execution не представлена отдельной вкладкой и
+остаётся Core-owned контрактом: authenticated command 262/event 107 передаёт
+redacted проекцию detached runs, schedules, queues, waits и immutable attempts.
+Core
 принимает `background-execution/v1`, хранит snapshots и wakeups в schema v103,
 выполняет restart reconciliation и не считает отсутствующий effect adapter
 успешным: результатом остаётся `runtime_adapter_unavailable`.
@@ -309,7 +310,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 bounded queues/waits/wakeups/attempt history, restart reconciliation,
 generation-fenced wake transitions, authenticated IPC 262/107, generated
 Electron bindings, deterministic OneShot/Interval/Cron fire polling и
-developer-only redacted panel. Existing automation,
+Core-owned redacted projection без отдельной вкладки renderer. Существующие automation,
 workflow, agent, goal, human-work и remote-task owners не дублируются.
 Локальные тесты, сборки, линтеры и smoke/E2E по прямому запрету Романа не
 запускались; CI для нового commit станет доступен только после push.
@@ -351,8 +352,8 @@ stale, corrupt, unauthorized и budget-exhausted paths fail closed. Retrieval
 stable ordering, а trace сохраняет только typed selection metadata.
 
 Authenticated IPC — command 261/event 106. Electron Context Namespace Explorer
-находится в свёрнутом `Интерфейс разработчика`, доступен только для чтения и
-получает redacted Core projection. `ContextDetailResolver` остаётся versioned
+не представлен отдельной вкладкой; Core сохраняет read-only redacted projection.
+`ContextDetailResolver` остаётся versioned
 adapter boundary: в текущем checkout detail явно имеет
 `projection_generation_failed/detail_resolver_unavailable`; успешный raw
 detail не создаётся. Установленный клиент не запускался и не изменялся.

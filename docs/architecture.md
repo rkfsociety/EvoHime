@@ -116,11 +116,10 @@ sidebar `#181b23`, поверхности `#191c25`, hover/active `#252b39`, г�
 «Запланировано» и «Плагины». Пользовательские разделы «Обзор», «Ревью планов»,
 «Память и Pulse», «Составные задачи», «Продолжения», «Анализ», «Слух» и
 «Задачи для человека», «Запланировано», а также «Настройки» открываются из
-основной навигации или выпадающего меню пользователя. Технические разделы (Workflow Package, бенчмарки,
-middleware, structured response, политики защиты и выполнения, среды,
-симуляция инструментов, профили ролей, Team SOP и Collaboration Bus) не
-показываются в пользовательском списке: они доступны только внутри свёрнутого
-раздела «Интерфейс разработчика».
+основной навигации или выпадающего меню пользователя. Внутренние Core/agent/model
+контракты, диагностика и служебные проекции не являются вкладками: ими управляет
+ядро, агент и модель. В контекстной области чата остаются только рабочая панель,
+браузер и трейс, а настройки открываются отдельным пользовательским действием.
 
 Меню закрывается по Escape, клику вне меню и после выбора раздела. Проект
 выбирается существующей поверхностью `ProjectSidebar`, а чат остаётся
@@ -2480,8 +2479,8 @@ Authenticated additive IPC использует command 259/event 104, protocol 
 1, bounded JSON, correlation/request id, owner scope, expected revision и
 idempotency key. Shell принудительно передаёт actor `user`; Core принимает
 только `user`/`core` и повторно проверяет actor, scope, revision, graph и
-references. Renderer получает только typed redacted projection в свёрнутой
-панели `Интерфейс разработчика`. При старте Core assignments с потерянным
+references. Renderer не предоставляет отдельную вкладку для этой служебной
+проекции. При старте Core assignments с потерянным
 source переводятся в `unknown_after_restart`; неизвестное состояние не
 объявляется успешным и retired history не удаляется.
 
@@ -2683,8 +2682,8 @@ SQLite schema v102 аддитивно устанавливает nodes, projecti
 idempotency metadata с monotonic revision fences, bounded JSON и migration
 backup/transaction semantics. Authenticated additive IPC использует command
 261/event 106; replay/resync и correlation остаются общим IPC transport
-контрактом. Electron получает только redacted projection в read-only панели
-`Context Namespace` внутри свёрнутого `Интерфейс разработчика`.
+контрактом. Electron получает только redacted projection для внутренних
+Core/agent/model сценариев; отдельной вкладки `Context Namespace` нет.
 
 ## Durable Background Execution Plane v1 (план 132, реализован 2026-09-09)
 
@@ -2716,8 +2715,8 @@ fire в тот же `automation_runs` и выставляет cursor CAS-опе�
 
 Authenticated additive IPC использует command tag 262 и event tag 107 с
 schema/request/owner scope, expected revision, idempotency и bounded redacted
-projection. Electron `Background Execution` находится только в свёрнутом
-`Интерфейс разработчика`; renderer запрашивает Core-owned runs, schedules,
+projection. Electron не предоставляет отдельную вкладку `Background Execution`;
+renderer запрашивает Core-owned runs, schedules,
 queues, waits и attempts, но не владеет storage или verdict. Существующие
 `WorkflowRuntime`, Agent, Goal, Human Work Queue и Durable Remote Task Bridge
 остаются единственными effect owners.
