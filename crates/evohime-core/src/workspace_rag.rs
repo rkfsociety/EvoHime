@@ -853,7 +853,20 @@ fn contains_secret_content(text: &str) -> bool {
         let token = token.trim_matches(|character: char| {
             !character.is_ascii_alphanumeric() && !"._-:/@".contains(character)
         });
-        let jwt_parts = token.split('.').collect::<Vec<_>>();
+        let mut jwt_parts = token.split('.');
+        let looks_like_jwt = matches!(
+            (
+                jwt_parts.next(),
+                jwt_parts.next(),
+                jwt_parts.next(),
+                jwt_parts.next()
+            ),
+            (Some(first), Some(second), Some(third), None)
+                if first.starts_with("eyj")
+                    && first.len() >= 8
+                    && second.len() >= 8
+                    && third.len() >= 8
+        );
         (token.starts_with("ghp_") && token.len() >= 36)
             || (token.starts_with("github_pat_") && token.len() >= 30)
             || (token.starts_with("sk-") && token.len() >= 24)
@@ -862,9 +875,7 @@ fn contains_secret_content(text: &str) -> bool {
                 && token
                     .chars()
                     .all(|character| character.is_ascii_alphanumeric()))
-            || (jwt_parts.len() == 3
-                && jwt_parts[0].starts_with("eyj")
-                && jwt_parts.iter().all(|part| part.len() >= 8))
+            || looks_like_jwt
             || (token.contains("://")
                 && token.contains('@')
                 && token.split_once("://").is_some_and(|(_, authority)| {
