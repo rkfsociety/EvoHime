@@ -603,11 +603,21 @@ fn lexical_retrieval(
         .iter()
         .map(|term| term.to_lowercase())
         .collect::<Vec<_>>();
-    let match_expression = terms
-        .iter()
-        .map(|term| format!("\"{}\"", term.replace('"', "\"\"")))
-        .collect::<Vec<_>>()
-        .join(" OR ");
+    let mut match_expression = String::new();
+    for (index, term) in terms.iter().enumerate() {
+        if index > 0 {
+            match_expression.push_str(" OR ");
+        }
+        match_expression.push('"');
+        for character in term.chars() {
+            if character == '"' {
+                match_expression.push_str("\"\"");
+            } else {
+                match_expression.push(character);
+            }
+        }
+        match_expression.push('"');
+    }
     let path_filter = plan.filters.path.as_deref().unwrap_or("");
     let language_filter = plan.filters.language.as_deref().unwrap_or("");
     let column_query = match plan.strategy {
