@@ -29,7 +29,38 @@ function Get-NormalizedFileHash([string] $path) {
     try { return ([BitConverter]::ToString($sha256.ComputeHash($bytes))).Replace('-', '') }
     finally { $sha256.Dispose() }
 }
-$cargoHash = Get-NormalizedFileHash $cargoLock
+
+function Get-GitFileHash([string] $revision, [string] $path) {
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = 'git'
+    [void] $startInfo.ArgumentList.Add('cat-file')
+    [void] $startInfo.ArgumentList.Add('blob')
+    [void] $startInfo.ArgumentList.Add("$revision`:$path")
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.UseShellExecute = $false
+    $startInfo.StandardOutputEncoding = [Text.Encoding]::UTF8
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    try {
+        if (-not $process.Start()) { throw "Unable to start git for $path" }
+        $text = $process.StandardOutput.ReadToEnd()
+        $errorText = $process.StandardError.ReadToEnd()
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) {
+            throw "Unable to read $path from $revision`: $errorText"
+        }
+        $sha256 = [Security.Cryptography.SHA256]::Create()
+        try {
+            return ([BitConverter]::ToString($sha256.ComputeHash([Text.Encoding]::UTF8.GetBytes($text)))).Replace('-', '')
+        } finally { $sha256.Dispose() }
+    } finally { $process.Dispose() }
+}
+
+# Cargo commands on Windows may rewrite the working lockfile while preserving
+# the committed dependency graph. License evidence must follow that graph, not
+# a tool-generated working-tree representation.
+$cargoHash = Get-GitFileHash 'HEAD' 'Cargo.lock'
 $npmHash = Get-NormalizedFileHash $npmLock
 if ($manifest.generated_from.cargo_lock_sha256 -ne $cargoHash) {
     throw "Cargo.lock changed without license manifest refresh. expected=$($manifest.generated_from.cargo_lock_sha256) actual=$cargoHash"
