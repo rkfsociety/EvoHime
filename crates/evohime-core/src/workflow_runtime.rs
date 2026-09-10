@@ -1595,47 +1595,47 @@ pub fn ready_nodes(
         ) {
             continue;
         }
-        let incoming: Vec<_> = graph
-            .edges
-            .iter()
-            .filter(|edge| edge.to_node == node.id)
-            .collect();
-        if incoming.is_empty() {
+        let mut has_incoming = false;
+        let mut has_data = false;
+        let mut data_edges = 0usize;
+        let mut satisfied_data = 0usize;
+        let mut has_failure = false;
+        let mut all_failures_ready = true;
+        for edge in graph.edges.iter().filter(|edge| edge.to_node == node.id) {
+            has_incoming = true;
+            let state = states.get(&edge.from_node).map(|record| record.state);
+            match edge.channel {
+                EdgeChannel::Data => {
+                    has_data = true;
+                    data_edges += 1;
+                    if state.is_some_and(is_success) {
+                        satisfied_data += 1;
+                    }
+                }
+                EdgeChannel::Failure => {
+                    has_failure = true;
+                    all_failures_ready &= state.is_some_and(is_failure);
+                }
+            }
+        }
+        if !has_incoming {
             ready.push(node.id.clone());
             continue;
         }
-        let data_ready = incoming
-            .iter()
-            .filter(|edge| edge.channel == EdgeChannel::Data)
-            .map(|edge| states.get(&edge.from_node).map(|record| record.state))
-            .collect::<Vec<_>>();
-        let failure_ready = incoming
-            .iter()
-            .filter(|edge| edge.channel == EdgeChannel::Failure)
-            .map(|edge| states.get(&edge.from_node).map(|record| record.state))
-            .collect::<Vec<_>>();
 
         // Failure-ветвь становится готовой ровно тогда, когда её источник
         // действительно отказал, и только если источник объявил ветвление.
-        if !failure_ready.is_empty()
-            && failure_ready
-                .iter()
-                .all(|state| state.map(is_failure).unwrap_or(false))
-        {
+        if has_failure && all_failures_ready {
             ready.push(node.id.clone());
             continue;
         }
-        if data_ready.is_empty() {
+        if !has_data {
             continue;
         }
-        let satisfied = data_ready
-            .iter()
-            .filter(|state| state.map(is_success).unwrap_or(false))
-            .count();
-        let all = satisfied == data_ready.len();
+        let all = satisfied_data == data_edges;
         let enough = match node.join {
             JoinMode::All => all,
-            JoinMode::Any => satisfied > 0,
+            JoinMode::Any => satisfied_data > 0,
         };
         if enough {
             ready.push(node.id.clone());
