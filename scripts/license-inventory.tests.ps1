@@ -14,8 +14,17 @@ foreach ($path in @($manifestPath, $cargoLock, $npmLock)) {
 
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 function Get-NormalizedFileHash([string] $path) {
-    $content = [IO.File]::ReadAllText($path) -replace "`r`n", "`n"
-    $bytes = [Text.Encoding]::UTF8.GetBytes($content)
+    $source = [IO.File]::ReadAllBytes($path)
+    $normalized = [IO.MemoryStream]::new()
+    try {
+        for ($index = 0; $index -lt $source.Length; $index++) {
+            if ($source[$index] -eq 13 -and $index + 1 -lt $source.Length -and $source[$index + 1] -eq 10) {
+                continue
+            }
+            $normalized.WriteByte($source[$index])
+        }
+        $bytes = $normalized.ToArray()
+    } finally { $normalized.Dispose() }
     $sha256 = [Security.Cryptography.SHA256]::Create()
     try { return ([BitConverter]::ToString($sha256.ComputeHash($bytes))).Replace('-', '') }
     finally { $sha256.Dispose() }
