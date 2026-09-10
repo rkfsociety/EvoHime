@@ -701,11 +701,6 @@ fn is_secret_path(path: &str, ragignore: &[String]) -> bool {
 }
 
 fn simple_ignore_match(pattern: &str, path: &str) -> bool {
-    let pattern = pattern
-        .trim()
-        .trim_start_matches('/')
-        .replace('\\', "/")
-        .to_lowercase();
     if pattern.is_empty() || pattern.starts_with('#') {
         return false;
     }
@@ -741,8 +736,17 @@ fn load_ragignore(root: &Path) -> Vec<String> {
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .map(str::to_string)
+        .map(normalize_ignore_pattern)
+        .filter(|pattern| !pattern.is_empty() && !pattern.starts_with('#'))
         .collect()
+}
+
+fn normalize_ignore_pattern(pattern: &str) -> String {
+    pattern
+        .trim()
+        .trim_start_matches('/')
+        .replace('\\', "/")
+        .to_lowercase()
 }
 
 fn collect_files(root: &Path, config: &IndexConfig) -> Result<(Vec<PathBuf>, usize), RagError> {
