@@ -14,6 +14,7 @@ import { ProviderForm } from '../src/renderer/src/ProviderForm'
 
 const calls: { command: string; payload: unknown }[] = []
 let saveOutcome: CommandOutcome<'provider.save'>
+let selectOutcome: CommandOutcome<'provider.select'>
 
 function ok<C extends RendererCommand>(value: unknown): CommandOutcome<C> {
   return { ok: true, value } as CommandOutcome<C>
@@ -31,6 +32,16 @@ beforeEach(() => {
     },
     restarted: true
   })
+  selectOutcome = ok({
+    summary: {
+      provider: 'ollama',
+      model: '',
+      baseUrl: 'http://127.0.0.1:11434/v1',
+      tier: 'free',
+      configured: true
+    },
+    restarted: true
+  })
   const api: EvoHimeApiV1 = {
     apiVersion: 1,
     invoke: (async (command: RendererCommand, payload: unknown) => {
@@ -41,9 +52,16 @@ beforeEach(() => {
           model: 'deepseek:free',
           baseUrl: '',
           tier: 'free',
-          configured: false
+          configured: false,
+          profiles: {
+            literouter: { model: 'deepseek:free', baseUrl: '', tier: 'free', configured: false },
+            openai_compatible: { model: '', baseUrl: '', tier: 'free', configured: false },
+            openai_responses: { model: '', baseUrl: '', tier: 'free', configured: false },
+            ollama: { model: '', baseUrl: 'http://127.0.0.1:11434/v1', tier: 'free', configured: true }
+          }
         })
       }
+      if (command === 'provider.select') return selectOutcome
       return saveOutcome
     }) as EvoHimeApiV1['invoke'],
     subscribe: () => () => {},
@@ -64,7 +82,7 @@ describe('provider form', () => {
     // A secret must never be a readable input.
     expect(field.type).toBe('password')
     await userEvent.type(field, 'sk-secret-value')
-    await userEvent.click(screen.getByRole('button', { name: 'Сохранить и перезапустить' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить ключ и применить' }))
 
     const save = calls.find((call) => call.command === 'provider.save')
     expect(save?.payload).toEqual({
@@ -87,12 +105,24 @@ describe('provider form', () => {
     expect(screen.queryByLabelText('Движок coding-задач')).toBeNull()
   })
 
+  it('automatically selects, persists and applies a configured provider', async () => {
+    render(<ProviderForm />)
+
+    const provider = await screen.findByLabelText('Провайдер')
+    await userEvent.selectOptions(provider, 'ollama')
+
+    await waitFor(() => expect(calls).toContainEqual({ command: 'provider.select', payload: { provider: 'ollama' } }))
+    expect(calls.some((call) => call.command === 'provider.save')).toBe(false)
+    expect(await screen.findByText(/Провайдер выбран и сохранён/)).toBeTruthy()
+    expect(screen.getByText('Локальный провайдер')).toBeTruthy()
+  })
+
   it('surfaces a rejected write instead of reporting success', async () => {
     saveOutcome = { ok: false, code: 'invalid-payload', message: 'Адрес должен быть https.' }
     render(<ProviderForm />)
 
     await userEvent.type(await screen.findByLabelText('Ключ API'), 'sk-value')
-    await userEvent.click(screen.getByRole('button', { name: 'Сохранить и перезапустить' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить ключ и применить' }))
 
     expect(await screen.findByRole('alert')).toBeTruthy()
     expect(screen.getByText('Адрес должен быть https.')).toBeTruthy()
@@ -107,7 +137,7 @@ describe('provider form', () => {
     render(<ProviderForm />)
 
     await userEvent.type(await screen.findByLabelText('Ключ API'), 'sk-value')
-    await userEvent.click(screen.getByRole('button', { name: 'Сохранить и перезапустить' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить ключ и применить' }))
 
     expect(await screen.findByText(/Core не перезапустился/)).toBeTruthy()
   })

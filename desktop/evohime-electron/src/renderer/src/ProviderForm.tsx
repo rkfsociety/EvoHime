@@ -36,7 +36,7 @@ const TIERS: readonly { readonly id: ModelTier; readonly label: string; readonly
 type Status =
   | { readonly kind: 'idle' }
   | { readonly kind: 'saving' }
-  | { readonly kind: 'saved'; readonly restarted: boolean }
+  | { readonly kind: 'saved'; readonly restarted: boolean; readonly action: 'provider' | 'settings' }
   | { readonly kind: 'failed'; readonly message: string }
 
 export interface ProviderFormProps {
@@ -63,15 +63,25 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     setBaseUrl(value.baseUrl ?? (value.provider === 'ollama' ? OLLAMA_DEFAULT_BASE_URL : ''))
   }, [])
 
-  const selectProvider = useCallback((nextProvider: ProviderKind) => {
+  const selectProvider = useCallback(async (nextProvider: ProviderKind) => {
+    if (!api || nextProvider === provider) return
     setProvider(nextProvider)
     setApiKey('')
     const profile = summary?.profiles?.[nextProvider]
     setModel(profile?.model ?? '')
     setTier(profile?.tier ?? 'free')
     setBaseUrl(profile?.baseUrl ?? (nextProvider === 'ollama' ? OLLAMA_DEFAULT_BASE_URL : ''))
-    setStatus({ kind: 'idle' })
-  }, [summary])
+    setStatus({ kind: 'saving' })
+
+    const outcome = await api.invoke('provider.select', { provider: nextProvider })
+    if (!outcome.ok) {
+      setStatus({ kind: 'failed', message: outcome.message })
+      return
+    }
+    apply(outcome.value.summary)
+    setApiKey('')
+    setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'provider' })
+  }, [api, apply, provider, summary])
 
   useEffect(() => {
     if (!api) return
@@ -97,7 +107,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     }
     apply(outcome.value.summary)
     setApiKey('')
-    setStatus({ kind: 'saved', restarted: outcome.value.restarted })
+    setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'settings' })
   }, [api, apiKey, apply, baseUrl, model, provider, tier])
 
   const clearKey = useCallback(async () => {
@@ -110,7 +120,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     }
     apply(outcome.value.summary)
     setApiKey('')
-    setStatus({ kind: 'saved', restarted: outcome.value.restarted })
+    setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'settings' })
   }, [api, apply, provider])
 
   const busy = status.kind === 'saving'
@@ -142,7 +152,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
           <select
             id="provider-kind"
             value={provider}
-            onChange={(event) => selectProvider(event.target.value as ProviderKind)}
+            onChange={(event) => void selectProvider(event.target.value as ProviderKind)}
             disabled={busy}
           >
             {PROVIDER_KINDS.map((kind) => (
@@ -205,7 +215,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
 
       <div className="provider-form__actions">
         <button type="button" onClick={() => void save()} disabled={!canSave}>
-          Сохранить и перезапустить
+          {provider === 'ollama' ? 'Сохранить параметры и применить' : 'Сохранить ключ и применить'}
         </button>
         {configured && provider !== 'ollama' ? (
           <button type="button" onClick={() => void clearKey()} disabled={busy}>
@@ -217,8 +227,12 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       {status.kind === 'saved' ? (
         <p className={status.restarted ? 'provider-form__ok' : 'shell__reason'}>
           {status.restarted
-            ? 'Сохранено, Core перезапущен — подключение восстановится за пару секунд.'
-            : 'Сохранено, но Core не перезапустился. Перезапусти приложение вручную.'}
+            ? status.action === 'provider'
+              ? 'Провайдер выбран и сохранён, Core перезапущен — подключение восстановится за пару секунд.'
+              : 'Сохранено, Core перезапущен — подключение восстановится за пару секунд.'
+            : status.action === 'provider'
+              ? 'Провайдер сохранён, но Core не перезапустился. Перезапусти приложение вручную.'
+              : 'Сохранено, но Core не перезапустился. Перезапусти приложение вручную.'}
         </p>
       ) : null}
       {status.kind === 'failed' ? (
