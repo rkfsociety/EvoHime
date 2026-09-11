@@ -97,7 +97,7 @@ export function OllamaModelDownloadPanel({ connection, events, baseUrl }: Ollama
       <div className="ollama-models__heading">
         <div>
           <h3>Модели для Ollama</h3>
-          <p className="shell__empty">Список рассчитан по потокам CPU, ОЗУ и свободному месту этого устройства.</p>
+          <p className="shell__empty">Показаны только модели, которые помещаются в CPU, ОЗУ, VRAM и свободное место этого устройства.</p>
         </div>
         {catalog.device ? <span className="ollama-models__device">{formatDevice(catalog.device)}</span> : null}
       </div>
@@ -124,7 +124,7 @@ export function OllamaModelDownloadPanel({ connection, events, baseUrl }: Ollama
           })}
         </div>
       ) : (
-        <p className="shell__empty">Рекомендации пока не получены.</p>
+        <p className="shell__empty">Нет моделей, которые безопасно помещаются на этом устройстве.</p>
       )}
       {message ? <p className="ollama-models__message" role="status">{message}</p> : null}
     </section>

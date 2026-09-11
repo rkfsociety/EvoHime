@@ -265,7 +265,7 @@ pub fn recommend_models(
     CURATED_MODELS
         .iter()
         .take(MAX_RECOMMENDATIONS)
-        .map(|model| {
+        .filter_map(|model| {
             let safe_vram = device
                 .accelerator_bytes
                 .map(|bytes| bytes.saturating_mul(80) / 100);
@@ -275,23 +275,24 @@ pub fn recommend_models(
                 .is_some_and(|required| safe_vram.is_some_and(|available| available >= required));
             let enough_disk = device.disk_free_bytes >= model.size_bytes.saturating_mul(11) / 10;
             let enough_cpu = device.cpu_threads >= model.min_cpu_threads;
-            let fits_device = (enough_ram || enough_vram) && enough_disk && enough_cpu;
-            let reason = if fits_device {
-                if enough_vram && !enough_ram {
-                    "подходит по VRAM, Ollama сможет разгрузить модель на GPU".into()
-                } else if enough_vram {
-                    "подходит; доступна разгрузка на GPU".into()
-                } else {
-                    "подходит для текущего устройства".into()
-                }
-            } else if !enough_disk {
-                "недостаточно свободного места".into()
-            } else if !enough_ram && !enough_vram {
-                "недостаточно ОЗУ и VRAM".into()
+            // With a detected accelerator, require both memory domains to fit.
+            // This keeps the download list limited to models that can start
+            // with the advertised GPU path instead of silently falling back
+            // to a much slower CPU-only run.
+            let fits_device = if device.accelerator_bytes.is_some() {
+                enough_ram && enough_vram && enough_disk && enough_cpu
             } else {
-                "нужно больше потоков CPU".into()
+                enough_ram && enough_disk && enough_cpu
             };
-            OllamaModelRecommendation {
+            if !fits_device {
+                return None;
+            }
+            let reason = if device.accelerator_bytes.is_some() {
+                "подходит; хватает безопасного запаса ОЗУ и VRAM для запуска с GPU".into()
+            } else {
+                "подходит для текущего устройства".into()
+            };
+            Some(OllamaModelRecommendation {
                 id: model.id.into(),
                 description: model.description.into(),
                 size_bytes: model.size_bytes,
@@ -300,7 +301,7 @@ pub fn recommend_models(
                 fits_device,
                 installed: installed.contains(model.id),
                 reason,
-            }
+            })
         })
         .collect()
 }
@@ -400,9 +401,7 @@ mod tests {
         assert!(small
             .iter()
             .any(|item| item.id == "qwen3:0.6b" && item.fits_device));
-        assert!(small
-            .iter()
-            .any(|item| item.id == "qwen3:8b" && !item.fits_device));
+        assert!(!small.iter().any(|item| item.id == "qwen3:8b"));
 
         let installed = vec![crate::ModelCatalogEntry {
             id: "qwen3:1.7b".into(),
@@ -419,7 +418,7 @@ mod tests {
     fn recommendations_use_vram_as_a_gpu_fit_signal() {
         let gpu = OllamaDeviceProfile {
             cpu_threads: 8,
-            ram_bytes: 2 * GIB,
+            ram_bytes: 16 * GIB,
             disk_free_bytes: 100 * GIB,
             accelerator_bytes: Some(8 * GIB),
         };
@@ -431,6 +430,23 @@ mod tests {
         assert!(qwen.fits_device);
         assert_eq!(qwen.required_vram_bytes, Some(6 * GIB));
         assert!(qwen.reason.contains("GPU"));
+    }
+
+    #[test]
+    fn recommendations_require_ram_and_vram_when_gpu_is_detected() {
+        let device = OllamaDeviceProfile {
+            cpu_threads: 8,
+            ram_bytes: 32 * GIB,
+            disk_free_bytes: 200 * GIB,
+            accelerator_bytes: Some(4 * GIB),
+        };
+        let recommendations = recommend_models(&device, &[]);
+
+        assert!(!recommendations.iter().any(|item| item.id == "qwen3:14b"));
+        assert!(!recommendations.iter().any(|item| item.id == "qwen3:8b"));
+        assert!(!recommendations.iter().any(|item| item.id == "qwen3:4b"));
+        assert!(recommendations.iter().any(|item| item.id == "llama3.2:3b"));
+        assert!(recommendations.iter().all(|item| item.fits_device));
     }
 
     #[test]
