@@ -2460,6 +2460,8 @@ select:focus {
 .ollama-models__progress > div { display: flex; justify-content: space-between; gap: 12px; }
 .ollama-models__progress span { color: var(--fg-muted); font-size: 11px; }
 .ollama-models__progress progress { width: 100%; accent-color: var(--accent); }
+.ollama-models__installed { display: grid; gap: 7px; margin-top: 12px; }
+.ollama-models__installed-badge { color: var(--fg-muted); font-size: 11px; white-space: nowrap; }
 .ollama-models__item {
   display: flex;
   align-items: center;

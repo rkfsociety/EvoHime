@@ -21,7 +21,7 @@ it('показывает размер модели и прогресса в пр
         installed: false,
         reason: 'подходит'
       }],
-      installed: []
+      installed: ['qwen2.5:3b']
     }
   }))
   const progress = {
@@ -48,4 +48,6 @@ it('показывает размер модели и прогресса в пр
 
   expect(screen.getByText(/24% · 124 МБ из 498 МБ/)).toBeTruthy()
   expect(screen.getByText(/498 МБ · подходит/)).toBeTruthy()
+  expect(screen.getByText('qwen2.5:3b')).toBeTruthy()
+  expect(screen.getByText('установлена в Ollama · доступна в композиторе')).toBeTruthy()
 })

@@ -101,13 +101,14 @@ export function OllamaModelDownloadPanel({ connection, events, baseUrl }: Ollama
 
   const recommendations = catalog.recommendations ?? []
   const installed = new Set(catalog.installed ?? [])
+  const installedOnly = [...installed].filter((model) => !recommendations.some((recommendation) => recommendation.id === model))
 
   return (
     <section className="ollama-models" aria-label="Модели Ollama">
       <div className="ollama-models__heading">
         <div>
           <h3>Модели для Ollama</h3>
-          <p className="shell__empty">Показаны только модели, которые помещаются в CPU, ОЗУ, VRAM и свободное место этого устройства.</p>
+          <p className="shell__empty">Показаны модели для скачивания, которые помещаются в CPU, ОЗУ, VRAM и свободное место, а также все уже установленные модели.</p>
         </div>
         {catalog.device ? <span className="ollama-models__device">{formatDevice(catalog.device)}</span> : null}
       </div>
@@ -149,9 +150,26 @@ export function OllamaModelDownloadPanel({ connection, events, baseUrl }: Ollama
             )
           })}
         </div>
-      ) : (
+      ) : null}
+      {installedOnly.length > 0 ? (
+        <div className="ollama-models__installed" aria-label="Установленные модели Ollama">
+          <strong>Установленные модели</strong>
+          <div className="ollama-models__list">
+            {installedOnly.map((model) => (
+              <div className="ollama-models__item" key={model}>
+                <div>
+                  <strong>{model}</strong>
+                  <span>установлена в Ollama · доступна в композиторе</span>
+                </div>
+                <span className="ollama-models__installed-badge">Установлена</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {recommendations.length === 0 && installedOnly.length === 0 ? (
         <p className="shell__empty">Нет моделей, которые безопасно помещаются на этом устройстве.</p>
-      )}
+      ) : null}
       {message ? <p className="ollama-models__message" role="status">{message}</p> : null}
     </section>
   )
