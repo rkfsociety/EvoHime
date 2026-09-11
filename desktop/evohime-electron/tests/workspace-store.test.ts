@@ -84,6 +84,20 @@ describe('workspace store', () => {
     expect(store.getPermissionMode('C:\\work\\unknown')).toBe('ask')
   })
 
+  it('keeps the permission mode when a remembered workspace is selected again', () => {
+    const { store } = newStore()
+    store.select('C:\\work\\repo')
+    store.setPermissionMode('C:\\work\\repo', 'full')
+
+    store.select('C:\\WORK\\REPO')
+
+    expect(store.getPermissionMode('C:\\work\\repo')).toBe('full')
+    expect(store.read().recent[0]).toMatchObject({
+      path: 'C:\\WORK\\REPO',
+      permissionMode: 'full'
+    })
+  })
+
   it('forgets a workspace and clears the selection when it was selected', () => {
     const { store } = newStore()
     store.select('C:\\work\\a')

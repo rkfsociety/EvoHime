@@ -87,13 +87,20 @@ export class WorkspaceStore {
       return this.read()
     }
     const current = this.read()
+    const previous = current.recent.find((entry) => samePath(entry.path, normalized))
     const others = current.recent.filter((entry) => !samePath(entry.path, normalized))
     const next: WorkspaceState = {
       selected: normalized,
-      recent: [{ path: normalized, lastUsedMs: this.now() }, ...others].slice(
-        0,
-        MAX_RECENT_WORKSPACES
-      )
+      recent: [
+        {
+          path: normalized,
+          lastUsedMs: this.now(),
+          ...(previous?.permissionMode === undefined
+            ? {}
+            : { permissionMode: previous.permissionMode })
+        },
+        ...others
+      ].slice(0, MAX_RECENT_WORKSPACES)
     }
     this.write(next)
     return next

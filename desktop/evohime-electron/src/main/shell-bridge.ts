@@ -210,6 +210,12 @@ function dispatch(
         return failure('invalid-payload', 'Некорректные параметры задачи.')
       }
       log('info', 'shell.command_forwarded', { command })
+      if (workspacePath.length > 0) {
+        // The picker is optimistic and its initial sync is asynchronous. Make
+        // the persisted workspace mode authoritative at the task boundary so
+        // a visible "Полный доступ" can never race with a stale Core mode.
+        applyWorkspacePermissionMode(client, workspaces.permissionMode(workspacePath))
+      }
       const startTask = { taskId, prompt, workspacePath, preferredRouteHint: preferredRouteHint ?? '', executionKind }
       return accepted(client.send({ startTask: conversationId.length > 0
         ? { ...startTask, conversationId, clientMessageId }

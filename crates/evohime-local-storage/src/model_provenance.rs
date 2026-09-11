@@ -148,7 +148,7 @@ pub fn install_schema(connection: &Connection) -> Result<()> {
     connection.execute_batch(
         "PRAGMA foreign_keys=ON;
          CREATE TABLE IF NOT EXISTS model_provenance_meta (id INTEGER PRIMARY KEY CHECK(id=1), schema_version INTEGER NOT NULL);
-         INSERT OR IGNORE INTO model_provenance_meta(id, schema_version) VALUES (1, 2);
+         INSERT OR IGNORE INTO model_provenance_meta(id, schema_version) VALUES (1, 3);
          CREATE TABLE IF NOT EXISTS model_requests (
            request_id TEXT PRIMARY KEY,
            logical_request_id TEXT NOT NULL,
@@ -177,7 +177,7 @@ pub fn install_schema(connection: &Connection) -> Result<()> {
          );
          CREATE TABLE IF NOT EXISTS model_request_sources (
            request_id TEXT NOT NULL REFERENCES model_requests(request_id), ordinal INTEGER NOT NULL,
-           source_ref_id TEXT NOT NULL UNIQUE, source_kind TEXT NOT NULL, source_id TEXT NOT NULL,
+           source_ref_id TEXT NOT NULL, source_kind TEXT NOT NULL, source_id TEXT NOT NULL,
            source_version TEXT, source_hash TEXT, PRIMARY KEY(request_id, ordinal)
          );
          CREATE TABLE IF NOT EXISTS model_request_blocks (
@@ -250,6 +250,49 @@ pub fn install_schema(connection: &Connection) -> Result<()> {
         "ALTER TABLE context_ledger_receipts ADD COLUMN receipt_type TEXT",
         [],
     );
+    let source_sql: Option<String> = connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='model_request_sources'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if source_sql.is_some_and(|sql| {
+        sql.to_ascii_lowercase()
+            .contains("source_ref_id text not null unique")
+    }) {
+        let tx = connection.unchecked_transaction()?;
+        tx.execute_batch(
+            "DROP INDEX IF EXISTS idx_model_sources_kind_id;
+             ALTER TABLE context_shadow_source_refs RENAME TO context_shadow_source_refs_legacy;
+             ALTER TABLE model_request_sources RENAME TO model_request_sources_legacy;
+             CREATE TABLE model_request_sources (
+               request_id TEXT NOT NULL REFERENCES model_requests(request_id), ordinal INTEGER NOT NULL,
+               source_ref_id TEXT NOT NULL, source_kind TEXT NOT NULL, source_id TEXT NOT NULL,
+               source_version TEXT, source_hash TEXT, PRIMARY KEY(request_id, ordinal)
+             );
+             INSERT INTO model_request_sources(request_id,ordinal,source_ref_id,source_kind,source_id,source_version,source_hash)
+               SELECT request_id,ordinal,source_ref_id,source_kind,source_id,source_version,source_hash
+               FROM model_request_sources_legacy;
+             CREATE TABLE context_shadow_source_refs (
+               shadow_id TEXT NOT NULL REFERENCES context_shadowed_originals(shadow_id), request_id TEXT NOT NULL, source_ref_ordinal INTEGER NOT NULL, source_ordinal INTEGER NOT NULL,
+               PRIMARY KEY(shadow_id, source_ref_ordinal), FOREIGN KEY(request_id, source_ordinal) REFERENCES model_request_sources(request_id, ordinal)
+             );
+             INSERT INTO context_shadow_source_refs(shadow_id,request_id,source_ref_ordinal,source_ordinal)
+               SELECT shadow_id,request_id,source_ref_ordinal,source_ordinal
+               FROM context_shadow_source_refs_legacy;
+             DROP TABLE context_shadow_source_refs_legacy;
+             DROP TABLE model_request_sources_legacy;
+             CREATE INDEX idx_model_sources_kind_id ON model_request_sources(source_kind, source_id, source_version, request_id);
+             UPDATE model_provenance_meta SET schema_version=3 WHERE id=1;",
+        )?;
+        tx.commit()?;
+    } else {
+        connection.execute(
+            "UPDATE model_provenance_meta SET schema_version=MAX(schema_version, 3) WHERE id=1",
+            [],
+        )?;
+    }
     let response_sql: Option<String> = connection
         .query_row(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='model_responses'",
@@ -1334,6 +1377,111 @@ mod tests {
             .commit_envelope(&request, CommitMode::FullForDispatch)
             .expect("model provenance depth limit must allow source references");
     }
+
+    #[test]
+    fn repeated_source_refs_are_scoped_to_each_request() {
+        let db = db();
+        db.execute(
+            "INSERT INTO context_ledger VALUES('l',?1)",
+            ["a".repeat(64)],
+        )
+        .unwrap();
+        let mut first = envelope();
+        first.logical_request_id = "logical-first".into();
+        first.context_projection.entries[0]
+            .source_refs
+            .push(SourceRef {
+                source_ref_id: "instruction:workspace".into(),
+                source_kind: "project_instruction".into(),
+                source_id: "workspace".into(),
+                source_version: Some("v1".into()),
+                classification: "internal".into(),
+            });
+        first.context_projection.context_projection_hash =
+            first.context_projection.compute_hash().unwrap();
+        let mut second = first.clone();
+        second.request_id = Uuid::now_v7().to_string();
+        second.logical_request_id = "logical-second".into();
+
+        let repo = ModelProvenanceRepository::new(&db);
+        repo.commit_envelope(&first, CommitMode::FullForDispatch)
+            .unwrap();
+        repo.commit_envelope(&second, CommitMode::FullForDispatch)
+            .expect("the same stable source reference may be reused by another request");
+
+        assert_eq!(
+            db.query_row(
+                "SELECT COUNT(*) FROM model_request_sources WHERE source_ref_id='instruction:workspace'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            2
+        );
+    }
+
+    #[test]
+    fn migrates_legacy_global_source_ref_uniqueness() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(
+            "PRAGMA foreign_keys=OFF;
+             CREATE TABLE model_provenance_meta(id INTEGER PRIMARY KEY CHECK(id=1), schema_version INTEGER NOT NULL);
+             INSERT INTO model_provenance_meta VALUES(1,2);
+             CREATE TABLE model_requests (
+               request_id TEXT PRIMARY KEY, logical_request_id TEXT NOT NULL, attempt INTEGER NOT NULL CHECK(attempt > 0),
+               parent_request_id TEXT, previous_request_hash TEXT, request_kind TEXT NOT NULL, ledger_id TEXT NOT NULL,
+               provider TEXT NOT NULL, model TEXT NOT NULL, envelope_version INTEGER NOT NULL,
+               payload_mode TEXT NOT NULL CHECK(payload_mode IN ('full','hash_only')), envelope_hash TEXT,
+               envelope_blob BLOB NOT NULL, context_projection_hash TEXT NOT NULL, route_snapshot_hash TEXT NOT NULL,
+               policy_snapshot_hash TEXT NOT NULL, route_policy_hash_shared INTEGER NOT NULL CHECK(route_policy_hash_shared IN (0,1)),
+               status TEXT NOT NULL CHECK(status IN ('active','completed','failed','interrupted','unknown_outcome','redacted','retention_pruned')),
+               dispatch_at INTEGER, completed_at INTEGER, UNIQUE(logical_request_id, attempt),
+               CHECK((payload_mode='full' AND envelope_hash IS NOT NULL) OR (payload_mode='hash_only' AND envelope_hash IS NULL)),
+               CHECK((attempt=1 AND parent_request_id IS NULL AND previous_request_hash IS NULL) OR (attempt>1 AND parent_request_id IS NOT NULL AND previous_request_hash IS NOT NULL))
+             );
+             INSERT INTO model_requests(request_id,logical_request_id,attempt,request_kind,ledger_id,provider,model,envelope_version,payload_mode,envelope_hash,envelope_blob,context_projection_hash,route_snapshot_hash,policy_snapshot_hash,route_policy_hash_shared,status)
+               VALUES('legacy-request','legacy-logical',1,'agent','legacy-ledger','mock','m',1,'full','hash',X'00','a','b','c',0,'active');
+             CREATE TABLE model_request_sources (
+               request_id TEXT NOT NULL REFERENCES model_requests(request_id), ordinal INTEGER NOT NULL,
+               source_ref_id TEXT NOT NULL UNIQUE, source_kind TEXT NOT NULL, source_id TEXT NOT NULL,
+               source_version TEXT, source_hash TEXT, PRIMARY KEY(request_id, ordinal)
+             );
+             INSERT INTO model_request_sources VALUES('legacy-request',0,'instruction:workspace','project_instruction','workspace','v1',NULL);",
+        )
+        .unwrap();
+
+        install_schema(&db).unwrap();
+
+        assert_eq!(
+            db.query_row(
+                "SELECT schema_version FROM model_provenance_meta WHERE id=1",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            3
+        );
+        assert_eq!(
+            db.query_row(
+                "SELECT source_ref_id FROM model_request_sources WHERE request_id='legacy-request'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap(),
+            "instruction:workspace"
+        );
+        let source_sql: String = db
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='model_request_sources'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!source_sql
+            .to_ascii_lowercase()
+            .contains("source_ref_id text not null unique"));
+    }
+
     #[test]
     fn failed_lineage_does_not_leave_rows() {
         let db = db();

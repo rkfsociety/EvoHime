@@ -80,6 +80,11 @@ export class WorkspaceService {
     return this.decorate()
   }
 
+  /** Returns the persisted mode for a task's workspace before it is queued. */
+  permissionMode(path: string): PermissionMode {
+    return this.store.getPermissionMode(path)
+  }
+
   private decorate(): WorkspaceSelection {
     const state = this.store.read()
     const options: WorkspaceOption[] = state.recent.map((entry) => ({

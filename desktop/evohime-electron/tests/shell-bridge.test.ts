@@ -159,6 +159,7 @@ const chats = {
 }
 
 let selectedWorkspace: string | null = null
+let workspacePermissionMode: 'ask' | 'read_only' | 'full' = 'ask'
 
 /** Stands in for the workspace service; its own behaviour is tested separately. */
 const workspaces = {
@@ -166,7 +167,8 @@ const workspaces = {
   pick: async () => ({ cancelled: true, selection: { selected: null, options: [] } }),
   select: () => 'unknown-workspace' as const,
   forget: () => ({ selected: null, options: [] }),
-  setPermissionMode: () => ({ selected: selectedWorkspace, options: [] })
+  setPermissionMode: () => ({ selected: selectedWorkspace, options: [] }),
+  permissionMode: () => workspacePermissionMode
 }
 
 /** The updater is owned by the main process; the bridge only relays to it. */
@@ -236,6 +238,7 @@ beforeEach(() => {
   clipboardWrites.length = 0
   openedUrls.length = 0
   enqueueResult = 'queued'
+  workspacePermissionMode = 'ask'
   providerSummary = { provider: 'literouter', model: '', baseUrl: '', tier: 'free', configured: false, profiles: emptyProviderProfiles() }
   providerWrites.length = 0
   restarts.length = 0
@@ -328,6 +331,7 @@ describe('renderer command surface', () => {
   })
 
   it('forwards an allow-listed command', () => {
+    workspacePermissionMode = 'full'
     const outcome = invoke('core.startTask', {
       taskId: 'task-1',
       prompt: 'сделай',
@@ -335,6 +339,7 @@ describe('renderer command surface', () => {
     })
     expect(outcome).toEqual({ ok: true, value: { accepted: true } })
     expect(sent).toEqual([
+      { permissionMode: { mode: 'full' } },
       { startTask: { taskId: 'task-1', prompt: 'сделай', workspacePath: 'C:\\work', preferredRouteHint: '', executionKind: 'dialogue' } }
     ])
   })
@@ -356,6 +361,7 @@ describe('renderer command surface', () => {
         executionKind: 'dialogue'
       }
     })
+    expect(sent).not.toContainEqual({ permissionMode: { mode: 'full' } })
   })
 
   it('forwards stable conversation ids and bounded cursor subscriptions', () => {
