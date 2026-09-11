@@ -43,6 +43,9 @@ jobs:
       - name: Регрессия совместимого release manifest
         shell: pwsh
         run: ./scripts/compatible-manifest.tests.ps1
+      - name: Регрессия описания installer release
+        shell: pwsh
+        run: ./scripts/installer-release.tests.ps1
       - name: Определение затронутых компонентов и зависимостей
         id: filter
         shell: pwsh
@@ -553,10 +556,10 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Не удалось создать релиз установщика.' }
           }
           else {
-            # При обновлении меняется только название; существующее описание
-            # релиза остаётся без изменений.
-            gh release edit $env:RELEASE_TAG --title $releaseTitle
-            if ($LASTEXITCODE -ne 0) { throw 'Не удалось обновить название релиза.' }
+            # При каждом обновлении синхронизируем title и каноническое
+            # описание релиза из installer/release-notes.md.
+            gh release edit $env:RELEASE_TAG --title $releaseTitle --notes-file 'installer/release-notes.md'
+            if ($LASTEXITCODE -ne 0) { throw 'Не удалось обновить релиз установщика.' }
           }
           gh release upload $env:RELEASE_TAG installer-output\EvoHime-Setup.exe --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Не удалось загрузить установщик.' }

@@ -1,6 +1,9 @@
-Здесь всегда лежат актуальные `EvoHime-Setup.exe` и его проверочный `EvoHime-Setup.json`. Это единственный релиз проекта — новые не создаются, файлы в нём перезаписываются после зелёной сборки `main`.
+Здесь всегда лежат актуальные `EvoHime-Setup.exe` и его проверочный
+`EvoHime-Setup.json`. Это постоянный fixed release с тегом `installer`:
+новые installer-релизы не создаются, а его assets перезаписываются после
+успешной публикационной проверки.
 
-**Канал обновления:** постоянный релиз `installer` · **актуально на:** 2026-09-08
+**Канал поставки:** постоянный релиз `installer`.
 
 **Постоянная ссылка на установщик:**
 https://github.com/rkfsociety/EvoHime/releases/latest/download/EvoHime-Setup.exe
@@ -32,11 +35,12 @@ https://github.com/rkfsociety/EvoHime/releases/latest/download/EvoHime-Setup.exe
 - для обычного обновления инструменты сборки не нужны; локальная пересборка остаётся только для режима разработки;
 - требуется доступ к GitHub Release проекта.
 
-## Проверки публикации
+## Публикация и проверки
 
-Перед обновлением этого релиза Windows CI проверяет Rust и supervisor, Electron
-protocol/typecheck/tests/bundle, deterministic evaluation и security gate,
-IPC, package startup, fault recovery, install/upgrade и
+Workflow Windows обновляет и заголовок, и это описание при каждом успешном
+обновлении fixed release. Перед публикацией Windows CI проверяет Rust и
+supervisor, Electron protocol/typecheck/tests/bundle, deterministic evaluation
+и security gate, IPC, package startup, fault recovery, install/upgrade и
 rollback. Source-update E2E запускается отдельно с явным флагом и не требуется
 для обычной первой установки.
 
