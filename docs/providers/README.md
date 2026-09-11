@@ -7,9 +7,10 @@
 | OpenAI Responses (`openai_responses`) | ✅ Active | [openai-and-codex.md](openai-and-codex.md) |
 | Mock (`mock`) | ✅ Только для тестов | — |
 | Anthropic | Planned | — |
-| Ollama | Planned | — |
+| Ollama (`ollama`) | ✅ Active (локально) | [ollama.md](ollama.md) |
 
-**Правило:** первый и текущий провайдер в EvoHime — **LiteRouter** (OpenAI-compatible API).
+**Правило:** первый и текущий облачный провайдер в EvoHime — **LiteRouter**;
+Ollama работает как локальный провайдер без API-ключа.
 
 **Примечание:** Core уже поддерживает несколько маршрутов модели и выбор на уровне задачи. Любой маршрут может указывать на OpenAI-compatible endpoint с отдельным ключом, базовым URL и моделью.
 

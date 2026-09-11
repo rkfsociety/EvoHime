@@ -89,7 +89,7 @@ export function SettingsModal({ workspace, connection, events, initialTab = 'pro
                     Codex CLI
                   </button>
                 </div>
-                {providerSurface === 'api' ? <ProviderForm /> : <CodexPanel />}
+                {providerSurface === 'api' ? <ProviderForm connection={connection} events={events} /> : <CodexPanel />}
               </section>
             ) : null}
             {tab === 'workspace' ? <WorkspaceSettings workspace={workspace} /> : null}

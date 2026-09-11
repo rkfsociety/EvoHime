@@ -113,7 +113,8 @@ function emptyProviderProfiles(): ProviderSummary['profiles'] {
   return {
     literouter: { model: '', baseUrl: '', tier: 'free', configured: false },
     openai_compatible: { model: '', baseUrl: '', tier: 'free', configured: false },
-    openai_responses: { model: '', baseUrl: '', tier: 'free', configured: false }
+    openai_responses: { model: '', baseUrl: '', tier: 'free', configured: false },
+    ollama: { model: '', baseUrl: 'http://127.0.0.1:11434/v1', tier: 'free', configured: true }
   }
 }
 const providerWrites: ProviderUpdate[] = []
@@ -130,7 +131,7 @@ const providers = {
       baseUrl: update.baseUrl,
       tier: update.tier,
       configured: update.apiKey.length > 0 || providerSummary.configured,
-      profiles: { ...providerSummary.profiles, [update.provider]: { model: update.model, baseUrl: update.baseUrl, tier: update.tier, configured: update.apiKey.length > 0 || providerSummary.profiles[update.provider].configured } }
+      profiles: { ...providerSummary.profiles, [update.provider]: { model: update.model, baseUrl: update.baseUrl, tier: update.tier, configured: update.apiKey.length > 0 || providerSummary.profiles[update.provider]?.configured === true } }
     }
     return providerSummary
   },

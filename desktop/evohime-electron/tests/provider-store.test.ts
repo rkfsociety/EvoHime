@@ -82,6 +82,24 @@ describe('provider store', () => {
     expect(store.environment()['LITEROUTER_API_KEY']).toBeUndefined()
   })
 
+  it('configures Ollama without a secret and exports only its local endpoint', () => {
+    const store = new ProviderStore(storePath(), reversibleCipher(false))
+    const summary = store.save({
+      provider: 'ollama',
+      apiKey: '',
+      model: 'qwen3:4b',
+      baseUrl: 'http://127.0.0.1:11434/v1',
+      tier: 'free'
+    })
+
+    expect(summary).toMatchObject({ provider: 'ollama', configured: true, model: 'qwen3:4b' })
+    expect(store.environment()).toEqual({
+      MODEL_PROVIDER: 'ollama',
+      OLLAMA_BASE_URL: 'http://127.0.0.1:11434/v1',
+      OLLAMA_MODEL: 'qwen3:4b'
+    })
+  })
+
   it('keeps the stored key when the update carries an empty one', () => {
     const store = new ProviderStore(storePath(), reversibleCipher())
     store.save({ provider: 'literouter', apiKey: 'sk-first', model: 'a', baseUrl: '', tier: 'free' })

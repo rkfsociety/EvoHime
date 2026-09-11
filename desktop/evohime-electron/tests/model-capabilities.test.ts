@@ -12,6 +12,11 @@ describe('model capabilities', () => {
     expect(capabilityForModel('openai_compatible', 'future-model')).toMatchObject({ agent: false, text: true })
   })
 
+  it('allows installed Ollama models for agent and text work', () => {
+    expect(capabilityForModel('ollama', 'qwen3:4b')).toMatchObject({ agent: true, text: true })
+    expect(sortModelsForUse('ollama', ['qwen3:4b'], 'agent')).toEqual(['qwen3:4b'])
+  })
+
   it('sorts verified agent models ahead of unknown and rejected models', () => {
     expect(sortModelsForUse('literouter', [
       'mythomax-l2-13b:free',

@@ -32,6 +32,10 @@ export function capabilityForModel(provider: ChatProviderMode, model: string): M
     return { agent: false, text: true, rank: 50, reason: 'возможности инструментов ещё не подтверждены' }
   }
 
+  if (provider === 'ollama') {
+    return { agent: true, text: true, rank: 80, reason: 'локальная модель Ollama используется без передачи данных наружу' }
+  }
+
   return { agent: false, text: true, rank: 50, reason: 'провайдер ещё не объявил capabilities' }
 }
 

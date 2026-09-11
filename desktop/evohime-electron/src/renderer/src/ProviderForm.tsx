@@ -2,12 +2,15 @@ import { useCallback, useEffect, useState } from 'react'
 
 import {
   PROVIDER_KINDS,
+  OLLAMA_DEFAULT_BASE_URL,
   type ModelTier,
   type ProviderKind,
   type ProviderSummary
 } from '@shared/api'
 
 import { useShellApi } from './shell-api'
+import type { ConnectionState, CoreEvent } from '@shared/api'
+import { OllamaModelDownloadPanel } from './OllamaModelDownloadPanel'
 
 /**
  * Credentials surface.
@@ -21,7 +24,8 @@ import { useShellApi } from './shell-api'
 const PROVIDER_LABELS: Record<ProviderKind, string> = {
   literouter: 'LiteRouter',
   openai_compatible: 'OpenAI API (Chat Completions)',
-  openai_responses: 'OpenAI Responses API'
+  openai_responses: 'OpenAI Responses API',
+  ollama: 'Ollama (локально)'
 }
 
 const TIERS: readonly { readonly id: ModelTier; readonly label: string; readonly hint: string }[] = [
@@ -35,7 +39,12 @@ type Status =
   | { readonly kind: 'saved'; readonly restarted: boolean }
   | { readonly kind: 'failed'; readonly message: string }
 
-export function ProviderForm(): React.JSX.Element {
+export interface ProviderFormProps {
+  readonly connection?: ConnectionState
+  readonly events?: readonly CoreEvent[]
+}
+
+export function ProviderForm({ connection = 'starting', events = [] }: ProviderFormProps): React.JSX.Element {
   const api = useShellApi()
   const [summary, setSummary] = useState<ProviderSummary | null>(null)
   const [provider, setProvider] = useState<ProviderKind>('literouter')
@@ -51,7 +60,7 @@ export function ProviderForm(): React.JSX.Element {
     setProvider(PROVIDER_KINDS.includes(value.provider) ? value.provider : 'literouter')
     setModel(value.model ?? '')
     setTier(value.tier === 'paid' ? 'paid' : 'free')
-    setBaseUrl(value.baseUrl ?? '')
+    setBaseUrl(value.baseUrl ?? (value.provider === 'ollama' ? OLLAMA_DEFAULT_BASE_URL : ''))
   }, [])
 
   const selectProvider = useCallback((nextProvider: ProviderKind) => {
@@ -60,7 +69,7 @@ export function ProviderForm(): React.JSX.Element {
     const profile = summary?.profiles?.[nextProvider]
     setModel(profile?.model ?? '')
     setTier(profile?.tier ?? 'free')
-    setBaseUrl(profile?.baseUrl ?? '')
+    setBaseUrl(profile?.baseUrl ?? (nextProvider === 'ollama' ? OLLAMA_DEFAULT_BASE_URL : ''))
     setStatus({ kind: 'idle' })
   }, [summary])
 
@@ -107,7 +116,7 @@ export function ProviderForm(): React.JSX.Element {
   const busy = status.kind === 'saving'
   const selectedProfile = summary?.profiles?.[provider]
   const configured = selectedProfile?.configured === true || (selectedProfile === undefined && summary?.provider === provider && summary.configured)
-  const canSave = !busy && (apiKey.trim().length > 0 || configured)
+  const canSave = !busy && (provider === 'ollama' || apiKey.trim().length > 0 || configured)
 
   return (
     <section className="shell__panel provider-form" aria-label="Ключ провайдера">
@@ -115,13 +124,15 @@ export function ProviderForm(): React.JSX.Element {
         <div>
           <h2>Доступ к моделям</h2>
           <p className="shell__empty">
-            Ключ шифруется средствами Windows и хранится локально. Модель выбирается в чате.
+            {provider === 'ollama'
+              ? 'Ollama работает локально. Ключ не нужен, модель можно скачать ниже.'
+              : 'Ключ шифруется средствами Windows и хранится локально. Модель выбирается в чате.'}
           </p>
         </div>
         <span
           className={`settings-panel__state settings-panel__state--${configured ? 'ready' : 'offline'}`}
         >
-          {configured ? 'Ключ сохранён' : 'Ключ не задан'}
+          {provider === 'ollama' ? 'Локальный провайдер' : configured ? 'Ключ сохранён' : 'Ключ не задан'}
         </span>
       </div>
 
@@ -140,19 +151,21 @@ export function ProviderForm(): React.JSX.Element {
           </select>
         </label>
 
-        <label className="provider-form__key" htmlFor="provider-key">
-          Ключ API
-          <input
-            id="provider-key"
-            type="password"
-            value={apiKey}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => setApiKey(event.target.value)}
-            placeholder={configured ? 'сохранён — введи новый, чтобы заменить' : 'sk-…'}
-            disabled={busy}
-          />
-        </label>
+        {provider !== 'ollama' ? (
+          <label className="provider-form__key" htmlFor="provider-key">
+            Ключ API
+            <input
+              id="provider-key"
+              type="password"
+              value={apiKey}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => setApiKey(event.target.value)}
+              placeholder={configured ? 'сохранён — введи новый, чтобы заменить' : 'sk-…'}
+              disabled={busy}
+            />
+          </label>
+        ) : null}
 
         <label htmlFor="provider-url">
           Адрес API
@@ -168,7 +181,11 @@ export function ProviderForm(): React.JSX.Element {
         </label>
       </div>
 
-      <fieldset className="provider-form__tier">
+      {provider === 'ollama' ? (
+        <OllamaModelDownloadPanel connection={connection} events={events} baseUrl={baseUrl} />
+      ) : null}
+
+      {provider !== 'ollama' ? <fieldset className="provider-form__tier">
         <legend>Какие модели показывать</legend>
         {TIERS.map((item) => (
           <label key={item.id}>
@@ -184,13 +201,13 @@ export function ProviderForm(): React.JSX.Element {
             <span className="provider-form__hint">{item.hint}</span>
           </label>
         ))}
-      </fieldset>
+      </fieldset> : null}
 
       <div className="provider-form__actions">
         <button type="button" onClick={() => void save()} disabled={!canSave}>
           Сохранить и перезапустить
         </button>
-        {configured ? (
+        {configured && provider !== 'ollama' ? (
           <button type="button" onClick={() => void clearKey()} disabled={busy}>
             Удалить ключ
           </button>

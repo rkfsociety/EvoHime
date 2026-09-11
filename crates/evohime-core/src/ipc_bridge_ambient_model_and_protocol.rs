@@ -289,36 +289,83 @@ impl IpcBridge {
                     .and_then(|config| config.routes.get(&config.default_route))
                     .map(|route| route.provider.as_str().to_string())
                     .unwrap_or_else(|| "unknown".into());
-                let result = self
+                let route = self
                     .gateway_config
                     .as_ref()
-                    .and_then(|config| config.routes.get(&config.default_route))
-                    .map(|route| async move {
-                        evohime_model_gateway::fetch_model_catalog(route)
-                            .await
-                            .map(|entries| {
-                                entries
-                                    .into_iter()
-                                    .filter(|entry| {
-                                        if mode == "free" {
-                                            entry.id.ends_with(":free")
-                                        } else {
-                                            !entry.id.ends_with(":free")
-                                        }
-                                    })
-                                    .collect::<Vec<_>>()
-                            })
-                    });
-                let (entries, error) = match result {
-                    Some(request) => request.await,
-                    None => Err(evohime_model_gateway::providers::ProviderError::Config(
-                        "provider is not configured".into(),
-                    )),
-                }
-                .map_or_else(
-                    |error| (Vec::new(), Some(error.to_string())),
-                    |entries| (entries, None),
-                );
+                    .and_then(|config| config.routes.get(&config.default_route));
+                let (entries, error, ollama) = match route {
+                    Some(route)
+                        if route.provider
+                            == evohime_model_gateway::providers::ProviderKind::Ollama =>
+                    {
+                        let hardware = crate::local_model_runtime_manager::discover_hardware()
+                            .map_err(|error| error.to_string());
+                        match hardware {
+                            Ok(hardware) => {
+                                let device =
+                                    evohime_model_gateway::providers::ollama::OllamaDeviceProfile {
+                                        cpu_threads: hardware.cpu_threads,
+                                        ram_bytes: hardware.ram_bytes,
+                                        disk_free_bytes: hardware.disk_free_bytes,
+                                        accelerator_bytes: hardware.accelerator_bytes,
+                                    };
+                                match evohime_model_gateway::providers::ollama::fetch_catalog(
+                                    &route.literouter,
+                                    device.clone(),
+                                )
+                                .await
+                                {
+                                    Ok(catalog) => {
+                                        let entries = catalog.installed.clone();
+                                        let projection = serde_json::json!({
+                                            "device": catalog.device,
+                                            "recommendations": catalog.recommendations,
+                                            "installed": entries.iter().map(|entry| entry.id.clone()).collect::<Vec<_>>(),
+                                            "error": null,
+                                        });
+                                        (entries, None, Some(projection))
+                                    }
+                                    Err(error) => {
+                                        let recommendations =
+                                            evohime_model_gateway::providers::ollama::recommend_models(
+                                                &device,
+                                                &[],
+                                            );
+                                        (
+                                            Vec::new(),
+                                            Some(error.to_string()),
+                                            Some(serde_json::json!({
+                                                "device": device,
+                                                "recommendations": recommendations,
+                                                "installed": [],
+                                                "error": error.to_string(),
+                                            })),
+                                        )
+                                    }
+                                }
+                            }
+                            Err(error) => (Vec::new(), Some(error), None),
+                        }
+                    }
+                    Some(route) => match evohime_model_gateway::fetch_model_catalog(route).await {
+                        Ok(entries) => (
+                            entries
+                                .into_iter()
+                                .filter(|entry| {
+                                    if mode == "free" {
+                                        entry.id.ends_with(":free")
+                                    } else {
+                                        !entry.id.ends_with(":free")
+                                    }
+                                })
+                                .collect::<Vec<_>>(),
+                            None,
+                            None,
+                        ),
+                        Err(error) => (Vec::new(), Some(error.to_string()), None),
+                    },
+                    None => (Vec::new(), Some("provider is not configured".into()), None),
+                };
                 // Лимиты переживают сессию: планировщик контекста и ревью
                 // должны знать окно модели ещё до первого обновления каталога,
                 // а неудачный запрос не должен стирать то, что уже известно.
@@ -343,7 +390,8 @@ impl IpcBridge {
                     "mode": mode,
                     "models": models,
                     "limits": limits,
-                    "error": error,
+                    "error": if provider == "ollama" { None } else { error },
+                    "ollama": ollama,
                 });
                 let event = generated::EventEnvelope {
                     protocol: Some(protocol()),

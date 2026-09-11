@@ -1,6 +1,6 @@
 # model-gateway
 
-LLM provider abstraction. **Current default route: LiteRouter.**
+LLM provider abstraction. **Current cloud default route: LiteRouter.**
 
 ## Configuration
 
@@ -10,6 +10,14 @@ MODEL_PROVIDER=literouter
 LITEROUTER_API_KEY=lr_...
 LITEROUTER_BASE_URL=https://api.literouter.com/v1
 LITEROUTER_MODEL=deepseek:free
+```
+
+Для локальной Ollama ключ не нужен:
+
+```env
+MODEL_PROVIDER=ollama
+OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
+OLLAMA_MODEL=qwen3:4b
 ```
 
 ## API
@@ -26,6 +34,8 @@ LITEROUTER_MODEL=deepseek:free
 - [x] Provider trait + `TokenStream`
 - [x] LiteRouter HTTP client + SSE parsing
 - [x] Separate OpenAI-compatible provider identity and `OPENAI_*` environment configuration
+- [x] Ollama OpenAI-compatible chat provider, native installed-model catalog and bounded pull operation
+- [x] Device-aware Ollama recommendations using CPU, RAM, free disk and GPU VRAM
 - [x] `MockProvider` for tests
 - [x] Route-based gateway and task-scoped model selection
 - [x] Integration with `agent-runtime`
@@ -33,3 +43,4 @@ LITEROUTER_MODEL=deepseek:free
 ## Docs
 
 - [docs/providers/literouter.md](../../docs/providers/literouter.md)
+- [docs/providers/ollama.md](../../docs/providers/ollama.md)

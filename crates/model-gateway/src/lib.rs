@@ -18,8 +18,9 @@ pub use crate::provider_contract::{
 };
 use crate::providers::{
     literouter::LiteRouterProvider, local::LocalProvider, mock::MockProvider,
-    openai_compatible::OpenAICompatibleProvider, openai_responses::OpenAIResponsesProvider,
-    ChatMessage, ModelProvider, ProviderError, ProviderKind, TokenStream,
+    ollama::OllamaProvider, openai_compatible::OpenAICompatibleProvider,
+    openai_responses::OpenAIResponsesProvider, ChatMessage, ModelProvider, ProviderError,
+    ProviderKind, TokenStream,
 };
 pub use crate::retry::RetryPolicy;
 pub use crate::routing_catalog::{CatalogError, CatalogStore, EvaluationCatalog, EvaluationRecord};
@@ -179,6 +180,9 @@ pub struct ModelCatalogEntry {
 pub async fn fetch_model_catalog(
     route: &ModelRouteConfig,
 ) -> Result<Vec<ModelCatalogEntry>, ProviderError> {
+    if route.provider == ProviderKind::Ollama {
+        return providers::ollama::fetch_installed_models(&route.literouter).await;
+    }
     if route.provider == ProviderKind::Mock {
         return Ok(if route.literouter.model.is_empty() {
             Vec::new()
@@ -820,6 +824,7 @@ fn build_provider(route: &ModelRouteConfig) -> Result<Arc<dyn ModelProvider>, Pr
         ProviderKind::OpenAIResponses => Ok(Arc::new(OpenAIResponsesProvider::new(
             route.literouter.clone(),
         )?)),
+        ProviderKind::Ollama => Ok(Arc::new(OllamaProvider::new(route.literouter.clone())?)),
         ProviderKind::Local => {
             LocalProvider::validate_loopback(&route.literouter.base_url)?;
             Ok(Arc::new(LocalProvider::new(route.literouter.clone())?))

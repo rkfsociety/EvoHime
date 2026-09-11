@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-09-09.
+Обновлено: 2026-09-11.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -140,8 +140,9 @@ Core pipe работает fail-closed: отсутствие authenticated conte
 
 ## Провайдеры и модели
 
-Поддерживаются профили LiteRouter, OpenAI-compatible и OpenAI Responses API;
-`mock` используется только в тестах. Anthropic и Ollama остаются planned.
+Поддерживаются профили LiteRouter, OpenAI-compatible, OpenAI Responses API и
+Ollama; `mock` используется только в тестах. Ollama не требует ключа и
+ограничен loopback endpoint.
 Профили и зашифрованные ключи хранятся в
 `%LOCALAPPDATA%\EvoHime\shell\provider.json`; ключ доступен Core только через
 окружение supervisor.
@@ -158,6 +159,11 @@ Core pipe работает fail-closed: отсутствие authenticated conte
 Каталог моделей для API и Codex получается динамически. Токены ChatGPT и
 cookies не читаются и не сохраняются EvoHime. Панель чата показывает выбранный
 режим, профиль и модель; автоматического переключения на другой backend нет.
+
+Для Ollama каталог разделён на установленные модели и рекомендации для
+скачивания. Рекомендации Core строятся по snapshot устройства: CPU, ОЗУ,
+свободному месту и VRAM/GPU. Скачивание выполняется через Core и native Ollama
+`/api/pull`; renderer не обращается к Ollama напрямую.
 
 ## Задачи и расписания
 

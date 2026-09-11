@@ -70,6 +70,7 @@ fn provider_kind_parse() {
         ProviderKind::parse("openai"),
         Some(ProviderKind::OpenAICompatible)
     );
+    assert_eq!(ProviderKind::parse("ollama"), Some(ProviderKind::Ollama));
     assert_eq!(ProviderKind::parse("mock"), Some(ProviderKind::Mock));
     assert_eq!(ProviderKind::parse("unknown"), None);
 }

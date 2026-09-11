@@ -6,7 +6,8 @@ import {
   type ModelTier,
   type ProviderKind,
   type ProviderProfileSummary,
-  type ProviderSummary
+  type ProviderSummary,
+  OLLAMA_DEFAULT_BASE_URL
 } from '@shared/api'
 
 /**
@@ -139,14 +140,14 @@ export class ProviderStore {
       model: active.model,
       baseUrl: active.baseUrl,
       tier: active.tier,
-      configured: active.secret.length > 0,
+      configured: configuredProfile(document.provider, active),
       profiles: Object.fromEntries(PROVIDER_KINDS.map((kind) => {
         const profile = profileFor(document, kind)
         return [kind, {
           model: profile.model,
           baseUrl: profile.baseUrl,
           tier: profile.tier,
-          configured: profile.secret.length > 0
+          configured: configuredProfile(kind, profile)
         } satisfies ProviderProfileSummary]
       })) as Readonly<Record<ProviderKind, ProviderProfileSummary>>
     }
@@ -218,6 +219,11 @@ export class ProviderStore {
     const key = this.decryptSecret(profile.secret)
     const environment: Record<string, string> = { MODEL_PROVIDER: document.provider }
     if (document.codexModel) environment['CODEX_MODEL'] = document.codexModel
+    if (document.provider === 'ollama') {
+      environment['OLLAMA_BASE_URL'] = profile.baseUrl || OLLAMA_DEFAULT_BASE_URL
+      if (profile.model) environment['OLLAMA_MODEL'] = profile.model
+      return environment
+    }
     if (document.provider === 'openai_compatible' || document.provider === 'openai_responses') {
       if (key) environment['OPENAI_API_KEY'] = key
       if (profile.baseUrl) environment['OPENAI_BASE_URL'] = profile.baseUrl
@@ -307,7 +313,14 @@ export class ProviderStore {
 }
 
 function profileFor(document: StoredDocument, provider: ProviderKind): StoredProfile {
+  if (provider === 'ollama') {
+    return document.profiles[provider] ?? { model: '', baseUrl: OLLAMA_DEFAULT_BASE_URL, tier: 'free', secret: '' }
+  }
   return document.profiles[provider] ?? { model: '', baseUrl: '', tier: 'free', secret: '' }
+}
+
+function configuredProfile(provider: ProviderKind, profile: StoredProfile): boolean {
+  return provider === 'ollama' || profile.secret.length > 0
 }
 
 function normalizeStoredSecret(value: unknown): string {

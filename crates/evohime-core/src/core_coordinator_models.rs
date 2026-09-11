@@ -114,6 +114,26 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     };
                     let value = serde_json::to_value(&request).map_err(|_| "invalid_local_model_manager_payload".to_string())?;
                     match operation.as_str() {
+                        "ollama_pull" => {
+                            let model = request
+                                .model_id
+                                .as_deref()
+                                .filter(|value| !value.is_empty())
+                                .ok_or_else(|| "model_id_required".to_string())?;
+                            let base_url = request
+                                .base_url
+                                .as_deref()
+                                .unwrap_or(evohime_model_gateway::providers::ollama::DEFAULT_BASE_URL);
+                            evohime_model_gateway::providers::ollama::pull_model(base_url, model)
+                                .await
+                                .map_err(|error| error.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({
+                                "status": "pulled",
+                                "model": model,
+                                "redacted": true
+                            }))
+                            .map_err(|_| "serialization_failed".to_string())
+                        }
                         "calibration_admit" => {
                             let session: crate::local_model_runtime_manager::LocalModelRuntimeSession = serde_json::from_value(value.get("session").cloned().ok_or_else(|| "session_required".to_string())?).map_err(|_| "invalid_session".to_string())?;
                             let model: crate::local_model_runtime_manager::LocalModelDescriptor = serde_json::from_value(value.get("model").cloned().ok_or_else(|| "model_required".to_string())?).map_err(|_| "invalid_model".to_string())?;
@@ -245,11 +265,15 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         _ => Err("unsupported_local_model_manager_operation".into()),
                     }
                 }.await;
-            let projection_json = result
-                .as_ref()
-                .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
-                .unwrap_or_else(|| "{}".into());
+            let projection_json = match result.as_ref() {
+                Ok(bytes) => String::from_utf8(bytes.clone()).unwrap_or_else(|_| "{}".into()),
+                Err(error) => serde_json::json!({
+                    "status": "failed",
+                    "error": error,
+                    "redacted": true
+                })
+                .to_string(),
+            };
             let version = serde_json::from_str::<serde_json::Value>(&projection_json)
                 .ok()
                 .and_then(|v| v.get("version").and_then(serde_json::Value::as_u64))

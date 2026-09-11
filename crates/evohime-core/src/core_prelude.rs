@@ -110,6 +110,8 @@ pub(crate) struct LocalModelRuntimeRequest {
     pub(crate) runtime: Option<crate::local_model_runtime_manager::LocalInferenceRuntime>,
     #[serde(default)]
     pub(crate) artifact: Option<crate::local_model_runtime_manager::LocalArtifactRecord>,
+    #[serde(default)]
+    pub(crate) base_url: Option<String>,
 }
 
 /// Типизированный запрос проверки approval policy.

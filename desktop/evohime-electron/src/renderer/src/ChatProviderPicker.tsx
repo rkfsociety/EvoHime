@@ -10,6 +10,7 @@ const LABELS: Record<ChatProviderMode, string> = {
   literouter: 'LiteRouter',
   openai_compatible: 'OpenAI API',
   openai_responses: 'OpenAI Responses',
+  ollama: 'Ollama',
   codex_cli: 'Codex CLI'
 }
 
@@ -38,7 +39,7 @@ export function ChatProviderPicker({ connection, value, onChange, disabled = fal
   }, [api])
 
   const options = useMemo(() => {
-    const apiOptions = PROVIDER_KINDS.filter((provider) => summary?.profiles[provider].configured)
+    const apiOptions = PROVIDER_KINDS.filter((provider) => summary?.profiles?.[provider]?.configured === true)
     return [
       ...apiOptions.map((provider) => ({ value: provider as ChatProviderMode, label: LABELS[provider] })),
       ...(codex?.available ? [{ value: 'codex_cli' as const, label: LABELS.codex_cli }] : [])

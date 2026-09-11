@@ -635,7 +635,8 @@ export interface RepairStatus {
 }
 
 /** Model providers the shell can configure. */
-export const PROVIDER_KINDS = ['literouter', 'openai_compatible', 'openai_responses'] as const
+export const PROVIDER_KINDS = ['literouter', 'openai_compatible', 'openai_responses', 'ollama'] as const
+export const OLLAMA_DEFAULT_BASE_URL = 'http://127.0.0.1:11434/v1'
 
 export type ProviderKind = (typeof PROVIDER_KINDS)[number]
 
@@ -1562,7 +1563,7 @@ export interface CommandPayloads {
   'core.policyAwareToolResultCache': { operation: 'inspect' | 'put' | 'get' | 'invalidate'; cacheKey: string; payload: string; expectedVersion?: number; idempotencyKey?: string }
   'core.codeAnchoredIntentMarkers': { operation: 'scan' | 'propose'; filePath: string; revision: string; payload: string; idempotencyKey?: string }
   'core.modelPurposeRouting': { operation: 'get' | 'put'; payload?: string; expectedVersion?: number; idempotencyKey?: string }
-  'core.localModelRuntimeManager': { operation: 'inspect' | 'hardware' | 'fit' | 'download_artifact' | 'save_policy' | 'get_policy' | 'start' | 'stop' | 'probe' | 'verify_artifact' | 'promote_artifact' | 'transition' | 'profile' | 'register_model' | 'register_runtime' | 'register_artifact' | 'register_session' | 'recover' | 'calibration_inspect' | 'calibration_admit'; payload?: string; expectedVersion?: number; idempotencyKey?: string }
+  'core.localModelRuntimeManager': { operation: 'inspect' | 'hardware' | 'fit' | 'download_artifact' | 'save_policy' | 'get_policy' | 'start' | 'stop' | 'probe' | 'verify_artifact' | 'promote_artifact' | 'transition' | 'profile' | 'register_model' | 'register_runtime' | 'register_artifact' | 'register_session' | 'recover' | 'calibration_inspect' | 'calibration_admit' | 'ollama_pull'; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.architectureSnapshot': { operation: 'current' | 'refresh' | 'rebuild' | 'inspect' | 'get' | 'evidence' | 'open_evidence' | 'upstream' | 'downstream' | 'route' | 'compare' | 'review'; snapshotId?: string; workspaceRoot: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.persistentAgentOrganizationRegistry': { operation: 'list' | 'get' | 'history' | 'create' | 'revise' | 'activate' | 'pause' | 'suspend' | 'resume' | 'retire' | 'reporting_set' | 'goal_bind' | 'goal_unbind' | 'assignment_create' | 'assignment_cancel' | 'resolve' | 'availability' | 'activity' | 'recover'; agentId?: string; ownerScope: string; payload?: string; expectedRevision?: number; idempotencyKey?: string }
   'core.executionEnvironmentProfile': { operation: 'list' | 'get' | 'create' | 'revise' | 'preflight' | 'activate' | 'rollback' | 'current' | 'history'; profileId?: string; ownerScope: string; payload?: string; expectedRevision?: number; idempotencyKey?: string }

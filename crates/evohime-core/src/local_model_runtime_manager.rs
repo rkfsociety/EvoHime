@@ -58,13 +58,48 @@ pub fn discover_hardware() -> Result<LocalHardwareProfile, ManagerError> {
         revision: 1,
         cpu_threads,
         ram_bytes: memory.ullTotalPhys,
-        accelerator_bytes: None,
+        accelerator_bytes: discover_accelerator_bytes(),
         disk_free_bytes: available,
         runtime_candidates,
         fingerprint,
     };
     profile.validate()?;
     Ok(profile)
+}
+
+#[cfg(windows)]
+fn discover_accelerator_bytes() -> Option<u64> {
+    use std::mem::zeroed;
+    use windows::Win32::Graphics::Dxgi::{
+        CreateDXGIFactory1, IDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE,
+    };
+
+    unsafe {
+        let factory: IDXGIFactory1 = CreateDXGIFactory1().ok()?;
+        let mut index = 0u32;
+        let mut largest = 0u64;
+        while let Ok(adapter) = factory.EnumAdapters1(index) {
+            let mut description = zeroed();
+            if adapter.GetDesc1(&mut description).is_ok()
+                && description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 == 0
+            {
+                largest = largest.max(description.DedicatedVideoMemory as u64);
+                if description.DedicatedVideoMemory == 0 {
+                    largest = largest.max((description.SharedSystemMemory / 2) as u64);
+                }
+            }
+            index = index.saturating_add(1);
+            if index >= 32 {
+                break;
+            }
+        }
+        (largest > 0).then_some(largest)
+    }
+}
+
+#[cfg(not(windows))]
+fn discover_accelerator_bytes() -> Option<u64> {
+    None
 }
 
 #[cfg(not(windows))]

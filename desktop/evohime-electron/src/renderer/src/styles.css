@@ -2433,6 +2433,38 @@ select:focus {
   gap: 8px;
 }
 
+.ollama-models {
+  margin: 4px 0 18px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+}
+.ollama-models__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ollama-models__heading h3 { margin: 0; font-size: 14px; }
+.ollama-models__device { color: var(--fg-muted); font-family: var(--mono); font-size: 11px; text-align: right; }
+.ollama-models__list { display: grid; gap: 7px; margin-top: 12px; }
+.ollama-models__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.ollama-models__item--limited { opacity: .62; }
+.ollama-models__item > div { display: grid; gap: 3px; min-width: 0; }
+.ollama-models__item strong { font-family: var(--mono); font-size: 12px; }
+.ollama-models__item span { color: var(--fg-muted); font-size: 11px; }
+.ollama-models__item button { flex: 0 0 auto; }
+.ollama-models__message { margin: 10px 0 0; color: var(--fg-muted); font-size: 12px; }
+
 .provider-form__ok {
   margin: 12px 0 0;
   color: var(--success);

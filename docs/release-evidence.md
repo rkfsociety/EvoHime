@@ -1348,6 +1348,14 @@ IPC command 270/event 115 and redacted Electron projection. Local tests,
 builds, linters, smoke/E2E and runtime were not run; exact-commit CI is
 `UNAVAILABLE` until a later push.
 
+## Ollama provider and device-aware model catalog (2026-09-11)
+
+Fresh local evidence for the current checkout includes `cargo test
+-p evohime-model-gateway`, `cargo check -p evohime-core`, and the Electron
+`npm run typecheck`/focused tests after adding the Ollama provider, Core-owned
+catalog/pull path, and Windows DXGI VRAM discovery. GitHub Actions evidence is
+not claimed before push; the installed client was not changed.
+
 ## Plan 143 — Project Knowledge Notebook v1 (2026-09-09)
 
 Implemented bounded Core notebook contract, schema v112 migration, metadata-only

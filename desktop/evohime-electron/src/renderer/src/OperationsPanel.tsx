@@ -16,6 +16,7 @@ const REPAIR_PROVIDER_LABELS: Record<ChatProviderMode, string> = {
   literouter: 'LiteRouter',
   openai_compatible: 'OpenAI API',
   openai_responses: 'OpenAI Responses',
+  ollama: 'Ollama',
   codex_cli: 'Codex CLI'
 }
 
@@ -28,7 +29,7 @@ function boundedDiagnostic(value: string): string {
 
 function initialRepairProvider(): ChatProviderMode {
   const stored = window.localStorage.getItem('evohime.chat-provider-mode')
-  return stored === 'codex_cli' || stored === 'openai_compatible' || stored === 'openai_responses' || stored === 'literouter'
+  return stored === 'codex_cli' || stored === 'openai_compatible' || stored === 'openai_responses' || stored === 'literouter' || stored === 'ollama'
     ? stored
     : 'literouter'
 }

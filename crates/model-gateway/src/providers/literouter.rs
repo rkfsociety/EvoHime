@@ -45,6 +45,17 @@ impl LiteRouterProvider {
             ));
         }
 
+        Self::build(config, retry)
+    }
+
+    pub(crate) fn without_auth(
+        config: LiteRouterConfig,
+        retry: RetryPolicy,
+    ) -> Result<Self, ProviderError> {
+        Self::build(config, retry)
+    }
+
+    fn build(config: LiteRouterConfig, retry: RetryPolicy) -> Result<Self, ProviderError> {
         let client = Client::builder()
             .connect_timeout(Duration::from_secs(15))
             .timeout(Duration::from_secs(60))
@@ -136,13 +147,11 @@ impl LiteRouterProvider {
             // Count every provider attempt, including retries, against the
             // free-tier budget and spread requests across the hour.
             self.wait_for_request_slot(model).await;
-            let send_result = self
-                .client
-                .post(self.config.chat_completions_url())
-                .bearer_auth(&self.config.api_key)
-                .json(&body)
-                .send()
-                .await;
+            let mut request = self.client.post(self.config.chat_completions_url());
+            if !self.config.api_key.is_empty() {
+                request = request.bearer_auth(&self.config.api_key);
+            }
+            let send_result = request.json(&body).send().await;
 
             match send_result {
                 Ok(response) if response.status().is_success() => return Ok(response),

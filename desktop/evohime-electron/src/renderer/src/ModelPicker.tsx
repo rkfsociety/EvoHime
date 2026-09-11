@@ -82,7 +82,13 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
       ? parsed['models'].filter((model): model is string => typeof model === 'string' && model.trim().length > 0)
       : []
     setModels(sortModelsForUse(provider, catalogModels, use))
-    setError(typeof parsed['error'] === 'string' ? parsed['error'] : null)
+    const ollama = typeof parsed['ollama'] === 'object' && parsed['ollama'] !== null
+      ? parsed['ollama'] as Record<string, unknown>
+      : null
+    const catalogError = provider === 'ollama' && typeof ollama?.['error'] === 'string'
+      ? ollama['error']
+      : parsed['error']
+    setError(typeof catalogError === 'string' ? catalogError : null)
   }, [catalog, provider, use])
 
   useEffect(() => {
@@ -128,7 +134,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     // where the user is, instead of leaving an empty dropdown.
     return (
       <span className="model-picker model-picker--error" role="status">
-        Модели недоступны — проверь ключ в настройках
+        {provider === 'ollama' ? 'Модели недоступны — запусти Ollama' : 'Модели недоступны — проверь ключ в настройках'}
       </span>
     )
   }

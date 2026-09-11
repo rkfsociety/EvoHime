@@ -6,6 +6,7 @@ use std::pin::Pin;
 pub mod literouter;
 pub mod local;
 pub mod mock;
+pub mod ollama;
 pub mod openai_compatible;
 pub mod openai_responses;
 
@@ -18,6 +19,7 @@ pub enum ProviderKind {
     LiteRouter,
     OpenAICompatible,
     OpenAIResponses,
+    Ollama,
     Local,
     #[serde(skip)]
     Mock,
@@ -29,6 +31,7 @@ impl ProviderKind {
             "literouter" | "lite_router" | "lite-router" => Some(Self::LiteRouter),
             "openai_compatible" | "openai-compatible" | "openai" => Some(Self::OpenAICompatible),
             "openai_responses" | "openai-responses" | "responses" => Some(Self::OpenAIResponses),
+            "ollama" => Some(Self::Ollama),
             "local" | "local_slm" | "local-slm" => Some(Self::Local),
             "mock" => Some(Self::Mock),
             _ => None,
@@ -40,6 +43,7 @@ impl ProviderKind {
             Self::LiteRouter => "literouter",
             Self::OpenAICompatible => "openai_compatible",
             Self::OpenAIResponses => "openai_responses",
+            Self::Ollama => "ollama",
             Self::Local => "local",
             Self::Mock => "mock",
         }
