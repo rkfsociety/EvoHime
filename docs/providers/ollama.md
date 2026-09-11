@@ -17,8 +17,10 @@ EvoHime поддерживает Ollama как локальный провайд
 
 Скачивание выполняется только через Core-команду `ollama_pull`, с bounded
 идентификатором модели и тем же loopback-ограничением. Прогресс native
-`POST /api/pull` не передаётся в renderer как произвольный поток: UI получает
-только redacted итог операции и затем обновляет каталог.
+`POST /api/pull` проходит через Core и публикуется в renderer как bounded
+projection: этап, готовый и общий объём и процент, если Ollama их сообщает.
+Произвольный native-поток, digest и другие необязательные поля в UI не
+передаются; после завершения Core публикует итог операции и обновляет каталог.
 
 Источники API: [Ollama API](https://docs.ollama.com/api), [список локальных
 моделей](https://docs.ollama.com/api/tags), [загрузка модели](https://docs.ollama.com/api/pull)

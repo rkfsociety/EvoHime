@@ -186,6 +186,17 @@ struct PullProgress {
     status: String,
     #[serde(default)]
     error: Option<String>,
+    #[serde(default)]
+    total: Option<u64>,
+    #[serde(default)]
+    completed: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OllamaPullProgress {
+    pub status: String,
+    pub total_bytes: Option<u64>,
+    pub completed_bytes: Option<u64>,
 }
 
 pub fn validate_loopback(base_url: &str) -> Result<(), ProviderError> {
@@ -320,6 +331,17 @@ pub async fn fetch_catalog(
 }
 
 pub async fn pull_model(base_url: &str, model: &str) -> Result<(), ProviderError> {
+    pull_model_with_progress(base_url, model, |_| {}).await
+}
+
+pub async fn pull_model_with_progress<F>(
+    base_url: &str,
+    model: &str,
+    mut on_progress: F,
+) -> Result<(), ProviderError>
+where
+    F: FnMut(OllamaPullProgress),
+{
     validate_model_id(model)?;
     let base_url = native_base_url(base_url)?;
     let client = reqwest::Client::builder()
@@ -358,6 +380,7 @@ pub async fn pull_model(base_url: &str, model: &str) -> Result<(), ProviderError
             if progress.status.eq_ignore_ascii_case("error") {
                 return Err(ProviderError::Api("Ollama pull failed".into()));
             }
+            on_progress(to_pull_progress(progress));
         }
     }
     if !buffer.trim().is_empty() {
@@ -366,8 +389,22 @@ pub async fn pull_model(base_url: &str, model: &str) -> Result<(), ProviderError
         if let Some(error) = progress.error {
             return Err(ProviderError::Api(error));
         }
+        on_progress(to_pull_progress(progress));
     }
     Ok(())
+}
+
+fn to_pull_progress(progress: PullProgress) -> OllamaPullProgress {
+    OllamaPullProgress {
+        status: progress
+            .status
+            .chars()
+            .filter(|character| !character.is_control())
+            .take(128)
+            .collect(),
+        total_bytes: progress.total,
+        completed_bytes: progress.completed,
+    }
 }
 
 fn validate_model_id(model: &str) -> Result<(), ProviderError> {
@@ -385,6 +422,7 @@ fn validate_model_id(model: &str) -> Result<(), ProviderError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
 
     fn device(ram_gib: u64) -> OllamaDeviceProfile {
         OllamaDeviceProfile {
@@ -454,5 +492,28 @@ mod tests {
         assert!(validate_loopback("http://10.0.0.2:11434/v1").is_err());
         assert!(validate_loopback(DEFAULT_BASE_URL).is_ok());
         assert!(validate_model_id("two words").is_err());
+    }
+
+    #[tokio::test]
+    async fn pull_reports_bounded_progress_without_digest() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                "{\"status\":\"pulling manifest\"}\n{\"status\":\"pulling layer\",\"digest\":\"secret-like-digest\",\"total\":1000,\"completed\":250}\n{\"status\":\"success\"}\n",
+            ))
+            .mount(&server)
+            .await;
+
+        let mut progress = Vec::new();
+        pull_model_with_progress(&format!("{}/v1", server.uri()), "qwen3:1.7b", |update| {
+            progress.push(update)
+        })
+        .await
+        .expect("pull succeeds");
+
+        assert_eq!(progress[1].status, "pulling layer");
+        assert_eq!(progress[1].total_bytes, Some(1000));
+        assert_eq!(progress[1].completed_bytes, Some(250));
+        assert!(!progress[1].status.contains("secret-like-digest"));
     }
 }

@@ -124,9 +124,46 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 .base_url
                                 .as_deref()
                                 .unwrap_or(evohime_model_gateway::providers::ollama::DEFAULT_BASE_URL);
-                            evohime_model_gateway::providers::ollama::pull_model(base_url, model)
-                                .await
-                                .map_err(|error| error.to_string())?;
+                            let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
+                            let pull = evohime_model_gateway::providers::ollama::pull_model_with_progress(
+                                base_url,
+                                model,
+                                move |progress| {
+                                    let _ = progress_tx.send(progress);
+                                },
+                            );
+                            tokio::pin!(pull);
+                            let pull_result = loop {
+                                tokio::select! {
+                                    result = &mut pull => break result,
+                                    Some(progress) = progress_rx.recv() => {
+                                        let completed = progress.completed_bytes;
+                                        let total = progress.total_bytes;
+                                        let percent = ollama_pull_percent(completed, total);
+                                        let phase = if percent.is_some() {
+                                            "downloading"
+                                        } else {
+                                            "preparing"
+                                        };
+                                        let projection = serde_json::json!({
+                                            "status": phase,
+                                            "model": model,
+                                            "stage": progress.status,
+                                            "completed_bytes": completed,
+                                            "total_bytes": total,
+                                            "percent": percent,
+                                            "redacted": true
+                                        });
+                                        let event = CoreEvent::LocalModelRuntimeManager {
+                                            operation: "ollama_pull".into(),
+                                            version: expected_version,
+                                            projection_json: projection.to_string(),
+                                        };
+                                        TaskCoordinator::emit_state_event(&state, event).await;
+                                    }
+                                }
+                            };
+                            pull_result.map_err(|error| error.to_string())?;
                             serde_json::to_vec(&serde_json::json!({
                                 "status": "pulled",
                                 "model": model,
@@ -290,5 +327,27 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let _ = reply.send(result);
         }
         _ => unreachable!("command routed to the wrong coordinator domain"),
+    }
+}
+
+fn ollama_pull_percent(completed: Option<u64>, total: Option<u64>) -> Option<u64> {
+    match (completed, total) {
+        (Some(completed), Some(total)) if total > 0 => {
+            Some(completed.saturating_mul(100).min(total.saturating_mul(100)) / total)
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ollama_pull_percent;
+
+    #[test]
+    fn ollama_pull_percent_is_bounded_and_requires_total() {
+        assert_eq!(ollama_pull_percent(Some(250), Some(1000)), Some(25));
+        assert_eq!(ollama_pull_percent(Some(1200), Some(1000)), Some(100));
+        assert_eq!(ollama_pull_percent(Some(250), None), None);
+        assert_eq!(ollama_pull_percent(Some(250), Some(0)), None);
     }
 }

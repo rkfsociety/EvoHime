@@ -2456,6 +2456,10 @@ select:focus {
 .ollama-models__heading h3 { margin: 0; font-size: 14px; }
 .ollama-models__device { color: var(--fg-muted); font-family: var(--mono); font-size: 11px; text-align: right; }
 .ollama-models__list { display: grid; gap: 7px; margin-top: 12px; }
+.ollama-models__progress { display: grid; gap: 6px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-muted); }
+.ollama-models__progress > div { display: flex; justify-content: space-between; gap: 12px; }
+.ollama-models__progress span { color: var(--fg-muted); font-size: 11px; }
+.ollama-models__progress progress { width: 100%; accent-color: var(--accent); }
 .ollama-models__item {
   display: flex;
   align-items: center;

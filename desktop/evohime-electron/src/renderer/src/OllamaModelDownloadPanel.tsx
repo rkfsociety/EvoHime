@@ -25,6 +25,15 @@ interface Recommendation {
   readonly reason: string
 }
 
+interface PullProgress {
+  readonly status: 'preparing' | 'downloading'
+  readonly model: string
+  readonly stage: string
+  readonly completedBytes: number | null
+  readonly totalBytes: number | null
+  readonly percent: number | null
+}
+
 interface CatalogPayload {
   readonly device?: DeviceProfile
   readonly recommendations?: readonly Recommendation[]
@@ -52,6 +61,7 @@ export function OllamaModelDownloadPanel({ connection, events, baseUrl }: Ollama
     [events]
   )
   const managerProjection = managerEvent?.localModelRuntimeManager?.projection
+  const pullProgress = readPullProgress(managerProjection)
 
   useEffect(() => {
     if (!api || !CONNECTED_STATES.includes(connection)) return
@@ -65,7 +75,7 @@ export function OllamaModelDownloadPanel({ connection, events, baseUrl }: Ollama
       setPending(null)
       setMessage(`Модель ${typeof projection.model === 'string' ? projection.model : ''} скачана.`)
       if (api && CONNECTED_STATES.includes(connection)) void api.invoke('core.listModelCatalog', { mode: 'free' })
-    } else if (pending !== null && managerProjection && Object.keys(managerProjection).length === 0) {
+    } else if (pending !== null && Object.keys(managerProjection).length === 0) {
       setPending(null)
       setMessage('Не удалось скачать модель. Проверь, что Ollama запущена.')
     }
@@ -102,6 +112,22 @@ export function OllamaModelDownloadPanel({ connection, events, baseUrl }: Ollama
         {catalog.device ? <span className="ollama-models__device">{formatDevice(catalog.device)}</span> : null}
       </div>
       {catalog.error ? <p className="shell__reason" role="status">{catalog.error} Запусти Ollama и обнови настройки.</p> : null}
+      {pullProgress ? (
+        <div className="ollama-models__progress" role="status" aria-live="polite">
+          <div>
+            <strong>Скачивание {pullProgress.model}</strong>
+            <span>{pullProgress.stage || (pullProgress.status === 'downloading' ? 'Загрузка' : 'Подготовка')}</span>
+          </div>
+          {pullProgress.percent !== null ? (
+            <>
+              <progress max={100} value={pullProgress.percent} aria-label={`Скачивание ${pullProgress.model}`} />
+              <span>{pullProgress.percent}% · {formatOptionalBytes(pullProgress.completedBytes)} из {formatOptionalBytes(pullProgress.totalBytes)}</span>
+            </>
+          ) : (
+            <span>Подготовка модели…</span>
+          )}
+        </div>
+      ) : null}
       {recommendations.length > 0 ? (
         <div className="ollama-models__list">
           {recommendations.map((model) => {
@@ -141,6 +167,29 @@ function parseCatalog(payload: string | undefined): CatalogPayload {
   }
 }
 
+function readPullProgress(value: unknown): PullProgress | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const status = record.status
+  const model = record.model
+  if ((status !== 'preparing' && status !== 'downloading') || typeof model !== 'string' || !model) return null
+  const completedBytes = asNonNegativeNumber(record.completed_bytes)
+  const totalBytes = asNonNegativeNumber(record.total_bytes)
+  const rawPercent = asNonNegativeNumber(record.percent)
+  return {
+    status,
+    model,
+    stage: typeof record.stage === 'string' ? record.stage : '',
+    completedBytes,
+    totalBytes,
+    percent: rawPercent === null ? null : Math.min(100, Math.round(rawPercent))
+  }
+}
+
+function asNonNegativeNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
+}
+
 function formatDevice(device: DeviceProfile): string {
   const vram = device.accelerator_bytes && device.accelerator_bytes > 0
     ? ` · ${formatBytes(device.accelerator_bytes)} VRAM`
@@ -158,4 +207,8 @@ function formatBytes(value: number): string {
     unit += 1
   }
   return `${amount >= 10 || unit === 0 ? Math.round(amount) : amount.toFixed(1)} ${units[unit]}`
+}
+
+function formatOptionalBytes(value: number | null): string {
+  return value === null ? 'размер уточняется' : formatBytes(value)
 }
