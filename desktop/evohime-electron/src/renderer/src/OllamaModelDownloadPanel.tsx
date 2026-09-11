@@ -199,7 +199,7 @@ function formatDevice(device: DeviceProfile): string {
 
 function formatBytes(value: number): string {
   if (!Number.isFinite(value) || value < 0) return '—'
-  const units = ['Б', 'МБ', 'ГБ', 'ТБ']
+  const units = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ']
   let amount = value
   let unit = 0
   while (amount >= 1024 && unit < units.length - 1) {
