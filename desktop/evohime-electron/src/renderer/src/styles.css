@@ -379,15 +379,17 @@ body {
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 32px;
+  padding: clamp(16px, 3vw, 32px);
   background: rgb(0 0 0 / 58%);
 }
 
 .settings-modal__window {
   display: flex;
   flex-direction: column;
-  width: min(900px, 100%);
-  height: min(646px, calc(100% - 64px));
+  width: min(1180px, 78vw);
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: 1.55;
   overflow: hidden;
   background: var(--bg);
   border: 1px solid var(--border-strong);
@@ -604,6 +606,11 @@ body {
 
 @media (max-width: 700px) {
   .settings-modal { padding: 12px; }
+  .settings-modal__window {
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+  }
   .settings-modal__body { flex-direction: column; }
   .settings-tabs {
     flex: 0 0 auto;
