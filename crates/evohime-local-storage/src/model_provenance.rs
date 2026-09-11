@@ -2,9 +2,9 @@
 
 use evohime_model_provenance::{
     validate_no_credentials, ModelRequestEnvelopeV1, ModelRequestReceiptV1, ProvenanceError,
-    RequestStatus, MAX_REQUEST_ENVELOPE_BYTES, PROVENANCE_RETENTION_DAYS,
+    RequestStatus, MAX_PROVENANCE_DEPTH, MAX_REQUEST_ENVELOPE_BYTES, PROVENANCE_RETENTION_DAYS,
 };
-use evohime_receipts::canonicalize_json;
+use evohime_receipts::canonicalize_json_with_limits;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -1017,8 +1017,12 @@ fn storage_envelope_bytes(envelope: &ModelRequestEnvelopeV1) -> Result<Vec<u8>> 
                 .collect(),
         ),
     );
-    canonicalize_json(&serde_json::to_vec(&value)?)
-        .map_err(|error| ModelProvenanceError::CommitFailed(error.to_string()))
+    canonicalize_json_with_limits(
+        &serde_json::to_vec(&value)?,
+        MAX_REQUEST_ENVELOPE_BYTES,
+        MAX_PROVENANCE_DEPTH,
+    )
+    .map_err(|error| ModelProvenanceError::CommitFailed(error.to_string()))
 }
 
 fn commit_tx(
@@ -1216,7 +1220,8 @@ fn now_ms() -> Option<i64> {
 mod tests {
     use super::*;
     use evohime_model_provenance::{
-        ContextProjection, ModelMessage, ModelParameters, ProjectionEntry, RequestKind, ToolSchema,
+        ContextProjection, ModelMessage, ModelParameters, ProjectionEntry, RequestKind, SourceRef,
+        ToolSchema,
     };
 
     fn db() -> Connection {
@@ -1302,6 +1307,32 @@ mod tests {
                 .unwrap(),
             3
         );
+    }
+
+    #[test]
+    fn full_commit_accepts_nested_provenance_source_refs() {
+        let db = db();
+        db.execute(
+            "INSERT INTO context_ledger VALUES('l',?1)",
+            ["a".repeat(64)],
+        )
+        .unwrap();
+        let mut request = envelope();
+        request.context_projection.entries[0]
+            .source_refs
+            .push(SourceRef {
+                source_ref_id: "source-ref".into(),
+                source_kind: "workspace_file".into(),
+                source_id: "README.md".into(),
+                source_version: Some("workspace-v1".into()),
+                classification: "internal".into(),
+            });
+        request.context_projection.context_projection_hash =
+            request.context_projection.compute_hash().unwrap();
+
+        ModelProvenanceRepository::new(&db)
+            .commit_envelope(&request, CommitMode::FullForDispatch)
+            .expect("model provenance depth limit must allow source references");
     }
     #[test]
     fn failed_lineage_does_not_leave_rows() {
