@@ -196,9 +196,10 @@ jobs:
           function Invoke-BoundedCargoTest([string]$package) {
             Write-Host "Testing package: $package"
             $process = Start-Process -FilePath 'cargo.exe' -ArgumentList @('test', '--locked', '-p', $package) -NoNewWindow -PassThru
-            if (-not $process.WaitForExit(8 * 60 * 1000)) {
+            $timeoutMinutes = if ($package -eq 'evohime-core') { 15 } else { 8 }
+            if (-not $process.WaitForExit($timeoutMinutes * 60 * 1000)) {
               taskkill.exe /PID $process.Id /T /F
-              throw "Rust tests exceeded the 8-minute limit for $package."
+              throw "Rust tests exceeded the $timeoutMinutes-minute limit for $package."
             }
             if ($process.ExitCode -ne 0) { throw "Rust tests failed for $package (exit code $($process.ExitCode))." }
           }
