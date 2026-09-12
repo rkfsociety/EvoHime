@@ -1038,8 +1038,9 @@ fn apply_updates_inner(
         command.args(["--ui-version", update.available.as_str()]);
     }
     progress("Применение модулей", 0);
-    let status = command.status().map_err(|error| error.to_string())?;
-    let _ = fs::remove_file(&worker_copy);
+    let status = command.status();
+    cleanup_worker_copy(&worker_copy);
+    let status = status.map_err(|error| error.to_string())?;
     if !status.success() {
         return Err(format!(
             "updater: transaction worker завершился с кодом {}",
@@ -1072,6 +1073,10 @@ fn cleanup_completed_staging(staging: &Path, keep_for_bootstrap: bool) {
     if !keep_for_bootstrap {
         let _ = fs::remove_dir_all(staging);
     }
+}
+
+fn cleanup_worker_copy(worker_copy: &Path) {
+    let _ = fs::remove_file(worker_copy);
 }
 
 fn apply_listener_runtime_if_needed(
@@ -1681,7 +1686,7 @@ fn fail(error: impl std::fmt::Display) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        cleanup_failed_staging, copy_reader_bounded, is_github_api_url,
+        cleanup_failed_staging, cleanup_worker_copy, copy_reader_bounded, is_github_api_url,
         is_github_release_asset_url, is_trusted_github_url, merge_installed_manifest_to,
         normalize_github_token, parse_json_body, read_installed_module_manifest,
         read_update_config, resolve_github_token_with, stream_file_hash, updater_bootstrap_script,
@@ -1936,6 +1941,24 @@ mod tests {
         super::cleanup_completed_staging(&staging, true);
         assert!(staging.exists());
         fs::remove_dir_all(root).expect("remove temporary staging directory");
+    }
+
+    #[test]
+    fn worker_copy_cleanup_is_idempotent() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-worker-cleanup-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("create worker state directory");
+        let worker = root.join("transaction-worker.exe");
+        fs::write(&worker, b"worker").expect("write worker copy");
+        cleanup_worker_copy(&worker);
+        cleanup_worker_copy(&worker);
+        assert!(!worker.exists());
+        fs::remove_dir_all(root).expect("remove temporary worker directory");
     }
 
     #[test]
