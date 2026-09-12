@@ -27,6 +27,27 @@ mod tests {
         ));
     }
 
+    #[tokio::test]
+    async fn codex_cli_stream_keeps_output_bounded_before_process_exit() {
+        let (events, mut received) = tokio::sync::mpsc::channel(1024);
+        let events = EventSink::new(events);
+        let drain_task = tokio::spawn(async move { while received.recv().await.is_some() {} });
+        let (mut writer, reader) = tokio::io::duplex(64);
+        let payload = vec![b'x'; super::CODEX_MAX_OUTPUT_BYTES + 1024];
+        let writer_task = tokio::spawn(async move {
+            tokio::io::AsyncWriteExt::write_all(&mut writer, &payload)
+                .await
+                .unwrap();
+            tokio::io::AsyncWriteExt::shutdown(&mut writer)
+                .await
+                .unwrap();
+        });
+        let output = super::stream_codex_output(reader, events, "task-1".into(), false).await;
+        writer_task.await.unwrap();
+        assert_eq!(output.len(), super::CODEX_MAX_OUTPUT_BYTES + 1);
+        drain_task.abort();
+    }
+
     #[test]
     fn selected_model_overrides_empty_gateway_model_for_provenance() {
         assert_eq!(

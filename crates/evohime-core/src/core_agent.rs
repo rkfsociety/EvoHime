@@ -1,5 +1,8 @@
 use super::*;
 
+pub(crate) const CODEX_MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
+const CODEX_MAX_LINE_BUFFER_BYTES: usize = 256 * 1024;
+
 #[derive(Debug, thiserror::Error)]
 pub enum AgentRunError {
     #[error("model request failed: {0}")]
@@ -359,8 +362,6 @@ pub(crate) async fn run_codex_cli(
     events: EventSink,
 ) -> Result<String, AgentRunError> {
     const MAX_PROMPT_BYTES: usize = 128 * 1024;
-    const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
-
     if prompt.len() > MAX_PROMPT_BYTES {
         return Err(AgentRunError::Internal(
             "codex_cli: prompt exceeds 128 KiB".into(),
@@ -460,7 +461,7 @@ pub(crate) async fn run_codex_cli(
     };
     let mut combined = stdout_task.await.unwrap_or_default();
     combined.extend_from_slice(&stderr_task.await.unwrap_or_default());
-    if combined.len() > MAX_OUTPUT_BYTES {
+    if combined.len() > CODEX_MAX_OUTPUT_BYTES {
         return Err(AgentRunError::Internal(
             "codex_cli: output limit exceeded".into(),
         ));
@@ -493,7 +494,10 @@ where
         if read == 0 {
             break;
         }
-        output.extend_from_slice(&chunk[..read]);
+        if output.len() <= CODEX_MAX_OUTPUT_BYTES {
+            let remaining = CODEX_MAX_OUTPUT_BYTES + 1 - output.len();
+            output.extend_from_slice(&chunk[..read.min(remaining)]);
+        }
         let _ = events
             .send(CoreEvent::ToolOutput {
                 task_id: task_id.clone(),
@@ -503,6 +507,9 @@ where
             .await;
         if parse_agent_messages {
             line_buffer.push_str(&String::from_utf8_lossy(&chunk[..read]));
+            if line_buffer.len() > CODEX_MAX_LINE_BUFFER_BYTES {
+                line_buffer.clear();
+            }
             emit_codex_events(&mut line_buffer, &events, &task_id).await;
         }
     }
