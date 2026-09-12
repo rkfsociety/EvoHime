@@ -948,6 +948,7 @@ fn apply_updates(
             merge_installed_manifest_to(install_dir, &component_updates, &manifest_next)?;
             schedule_updater_replacement(install_dir, data_dir, &staging, &manifest_next, update)?;
         }
+        cleanup_completed_staging(&staging, updater_update.is_some());
         write_status(data_dir, "ready", "Обновления модулей применены.", &[]);
         return Ok(());
     }
@@ -1033,8 +1034,15 @@ fn apply_updates(
         &install_dir.join("evohime.components.json"),
     )?;
     apply_listener_runtime_if_needed(&client, runtime_update, data_dir, progress)?;
+    cleanup_completed_staging(&staging, updater_update.is_some());
     write_status(data_dir, "ready", "Обновления модулей применены.", &[]);
     Ok(())
+}
+
+fn cleanup_completed_staging(staging: &Path, keep_for_bootstrap: bool) {
+    if !keep_for_bootstrap {
+        let _ = fs::remove_dir_all(staging);
+    }
 }
 
 fn apply_listener_runtime_if_needed(
@@ -1868,6 +1876,26 @@ mod tests {
         assert!(result.is_err());
         assert!(!staging.exists());
         fs::remove_dir_all(root).expect("remove temporary runtime directory");
+    }
+
+    #[test]
+    fn successful_update_cleans_staging_unless_bootstrap_needs_it() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-staging-cleanup-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        let staging = root.join("update-staging");
+        fs::create_dir_all(&staging).expect("create staging");
+        super::cleanup_completed_staging(&staging, false);
+        assert!(!staging.exists());
+
+        fs::create_dir_all(&staging).expect("recreate staging");
+        super::cleanup_completed_staging(&staging, true);
+        assert!(staging.exists());
+        fs::remove_dir_all(root).expect("remove temporary staging directory");
     }
 
     #[test]
