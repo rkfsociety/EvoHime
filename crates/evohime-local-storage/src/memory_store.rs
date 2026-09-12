@@ -1147,10 +1147,10 @@ impl MemoryStoreSql {
         validate_required("now", now, MAX_TIMESTAMP_BYTES)?;
         let mut statement = connection.prepare(
             "SELECT id, statement FROM memory_session_notes
-             WHERE session_id = ?1 AND expires_at > ?2 ORDER BY created_at ASC, id ASC",
+             WHERE session_id = ?1 AND expires_at > ?2 ORDER BY created_at ASC, id ASC LIMIT ?3",
         )?;
         let notes = statement
-            .query_map(params![session_id, now], |row| {
+            .query_map(params![session_id, now, MAX_METADATA_ROWS as i64], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -1862,6 +1862,34 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM memory_entries", [], |row| row.get(0))
             .unwrap();
         assert_eq!(persistent, 0);
+    }
+
+    #[test]
+    fn session_note_listing_is_bounded() {
+        let connection = Connection::open_in_memory().expect("sqlite opens");
+        schema(&connection);
+        for index in 0..(MAX_METADATA_ROWS + 1) {
+            MemoryStoreSql::insert_session_note(
+                &connection,
+                InsertSessionNoteInput {
+                    id: &format!("note-{index:03}"),
+                    session_id: "session-1",
+                    scope: MemoryScope::Session,
+                    scope_id: "project-1",
+                    kind: "context",
+                    statement: "temporary note",
+                    created_at: "2026-08-14T00:00:00Z",
+                    expires_at: "2026-09-15T00:00:00Z",
+                },
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            MemoryStoreSql::list_session_notes(&connection, "session-1", "2026-08-14T12:00:00Z")
+                .unwrap()
+                .len(),
+            MAX_METADATA_ROWS
+        );
     }
 
     #[test]
