@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -240,16 +241,7 @@ pub fn apply_selected_staged(
             "selected component set is empty or too large",
         ));
     }
-    for path in selected {
-        if !UpdateTransaction::SELECTABLE_COMPONENTS.contains(&path.as_str())
-            || !staging.join(path).is_file()
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!("unknown or missing selected component: {path}"),
-            ));
-        }
-    }
+    validate_selected_components(staging, selected)?;
     let transaction = UpdateTransaction::prepare_selected(install_dir, state_dir, selected)?;
     let result = selected
         .iter()
@@ -305,16 +297,7 @@ pub fn apply_component_set_staged(options: ComponentSetApply<'_>) -> io::Result<
         marker_paths.push("shell-host.zip".to_owned());
     }
     validate_component_marker_for(staging, Some(&marker_paths))?;
-    for path in native_selected {
-        if !UpdateTransaction::SELECTABLE_COMPONENTS.contains(&path.as_str())
-            || !staging.join(path).is_file()
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!("unknown or missing selected component: {path}"),
-            ));
-        }
-    }
+    validate_selected_components(staging, native_selected)?;
     if let Some(version) = ui_version {
         if !is_safe_version(version) || !staging.join("ui-bundle").join("index.html").is_file() {
             return Err(io::Error::new(
@@ -524,6 +507,27 @@ fn clear_health_file(path: Option<&Path>) -> io::Result<()> {
 
 fn validate_component_marker(staging: &Path) -> io::Result<()> {
     validate_component_marker_for(staging, None)
+}
+
+fn validate_selected_components(staging: &Path, selected: &[String]) -> io::Result<()> {
+    let mut seen = HashSet::with_capacity(selected.len());
+    for path in selected {
+        if !seen.insert(path.as_str()) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("duplicate selected component: {path}"),
+            ));
+        }
+        if !UpdateTransaction::SELECTABLE_COMPONENTS.contains(&path.as_str())
+            || !staging.join(path).is_file()
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("unknown or missing selected component: {path}"),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn validate_component_marker_for(staging: &Path, selected: Option<&[String]>) -> io::Result<()> {
@@ -1343,6 +1347,10 @@ mod tests {
         let state = root.join("state");
         write_components(&install, "old");
         write_components(&staging, "new");
+        let duplicate = vec!["EvoHime.exe".to_owned(), "EvoHime.exe".to_owned()];
+        let error = super::apply_selected_staged(&staging, &install, &state, &duplicate)
+            .expect_err("duplicate selection must be rejected");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
         super::apply_selected_staged(&staging, &install, &state, &["EvoHime.exe".to_owned()])
             .unwrap();
         assert_eq!(
