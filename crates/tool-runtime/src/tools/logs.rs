@@ -2,13 +2,18 @@ use crate::{ToolContext, ToolError, ToolResult};
 use evohime_permissions::Permission;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::VecDeque;
 use std::time::Duration;
 use tokio::fs;
+use tokio::io::AsyncReadExt;
 
 pub const TAIL_NAME: &str = "logs.tail";
 pub const TAIL_DESCRIPTION: &str = "Read last N lines from a log file";
 pub const TAIL_PERMISSIONS: &[Permission] = &[Permission::FilesystemRead];
 pub const TAIL_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_TAIL_LINES: usize = 1_000;
+const MAX_TAIL_LINE_BYTES: usize = 64 * 1024;
+const MAX_TAIL_OUTPUT_BYTES: usize = 1024 * 1024;
 
 pub const GREP_NAME: &str = "logs.grep";
 pub const GREP_DESCRIPTION: &str = "Search log files for a pattern";
@@ -38,28 +43,69 @@ pub async fn tail(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
 
     let file_path = ctx.sandbox()?.resolve_existing(&opts.path)?;
 
-    let content = fs::read_to_string(&file_path)
+    let mut file = fs::File::open(&file_path)
         .await
         .map_err(|e| ToolError::Execution(format!("failed to read log file: {e}")))?;
-
-    let lines: Vec<&str> = content.lines().collect();
-    let start = if lines.len() > opts.lines {
-        lines.len() - opts.lines
-    } else {
-        0
-    };
-
-    let tail_content = lines[start..].join("\n");
+    let requested_lines = opts.lines.min(MAX_TAIL_LINES);
+    let mut read_buffer = [0_u8; 16 * 1024];
+    let mut current_line = Vec::new();
+    let mut tail = VecDeque::new();
+    let mut tail_bytes = 0;
+    let mut total_lines: usize = 0;
+    loop {
+        let read = file
+            .read(&mut read_buffer)
+            .await
+            .map_err(|e| ToolError::Execution(format!("failed to read log file: {e}")))?;
+        if read == 0 {
+            break;
+        }
+        for byte in &read_buffer[..read] {
+            if *byte == b'\n' {
+                total_lines = total_lines.saturating_add(1);
+                append_tail_line(&mut tail, &mut tail_bytes, &current_line, requested_lines);
+                current_line.clear();
+            } else if current_line.len() < MAX_TAIL_LINE_BYTES {
+                current_line.push(*byte);
+            }
+        }
+    }
+    if !current_line.is_empty() {
+        total_lines = total_lines.saturating_add(1);
+        append_tail_line(&mut tail, &mut tail_bytes, &current_line, requested_lines);
+    }
+    let lines_shown = tail.len();
+    let tail_content = tail.into_iter().collect::<Vec<_>>().join("\n");
 
     Ok(ToolResult {
         output: tail_content.clone(),
         structured: json!({
             "action": "tail",
             "path": opts.path,
-            "lines_shown": lines.len() - start,
-            "total_lines": lines.len()
+            "lines_shown": lines_shown,
+            "total_lines": total_lines
         }),
     })
+}
+
+fn append_tail_line(
+    tail: &mut VecDeque<String>,
+    tail_bytes: &mut usize,
+    line: &[u8],
+    requested_lines: usize,
+) {
+    if requested_lines == 0 {
+        return;
+    }
+    let value = String::from_utf8_lossy(line).into_owned();
+    *tail_bytes = tail_bytes.saturating_add(value.len().saturating_add(1));
+    tail.push_back(value);
+    while tail.len() > requested_lines || *tail_bytes > MAX_TAIL_OUTPUT_BYTES {
+        let Some(removed) = tail.pop_front() else {
+            break;
+        };
+        *tail_bytes = tail_bytes.saturating_sub(removed.len().saturating_add(1));
+    }
 }
 
 // ============================================================================
@@ -264,6 +310,25 @@ mod tests {
         assert!(result.output.contains("Line 99"));
         let line_count = result.output.lines().count();
         assert!(line_count <= 10);
+    }
+
+    #[tokio::test]
+    async fn tail_does_not_load_the_whole_log_into_memory() {
+        let dir = tempdir().expect("tempdir");
+        let log_file = dir.path().join("large.log");
+        std_fs::write(&log_file, vec![b'x'; MAX_TAIL_OUTPUT_BYTES * 2]).expect("write");
+
+        let ctx = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+        let result = tail(&ctx, json!({"path": "large.log", "lines": 50}))
+            .await
+            .expect("tail");
+        assert!(result.output.len() <= MAX_TAIL_OUTPUT_BYTES);
+        assert_eq!(result.structured["total_lines"], 1);
     }
 
     #[tokio::test]
