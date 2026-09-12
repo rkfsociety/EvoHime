@@ -5,6 +5,7 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 pub const STORE_SCHEMA_VERSION: u32 = 1;
+const MAX_LIST_ROWS: u32 = 256;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RegistryRow {
@@ -103,18 +104,21 @@ pub fn list(
         "SELECT artifact_id,project_id,revision,state,content_locator,content_hash,metadata_json,created_at_ms
          FROM project_artifact_revisions WHERE project_id=?1 ORDER BY created_at_ms DESC LIMIT ?2",
     )?;
-    let rows = statement.query_map(params![project_id, limit as i64], |row| {
-        Ok(RegistryRow {
-            artifact_id: row.get(0)?,
-            project_id: row.get(1)?,
-            revision: row.get::<_, i64>(2)? as u64,
-            state: row.get(3)?,
-            content_locator: row.get(4)?,
-            content_hash: row.get(5)?,
-            metadata_json: row.get(6)?,
-            created_at_ms: row.get(7)?,
-        })
-    })?;
+    let rows = statement.query_map(
+        params![project_id, limit.min(MAX_LIST_ROWS) as i64],
+        |row| {
+            Ok(RegistryRow {
+                artifact_id: row.get(0)?,
+                project_id: row.get(1)?,
+                revision: row.get::<_, i64>(2)? as u64,
+                state: row.get(3)?,
+                content_locator: row.get(4)?,
+                content_hash: row.get(5)?,
+                metadata_json: row.get(6)?,
+                created_at_ms: row.get(7)?,
+            })
+        },
+    )?;
     rows.collect()
 }
 
@@ -261,5 +265,31 @@ mod tests {
             .unwrap();
         assert_eq!(state, "accepted");
         assert_eq!(decision, "accepted");
+    }
+
+    #[test]
+    fn artifact_listing_is_bounded() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        let tx = connection.transaction().unwrap();
+        install_schema(&tx).unwrap();
+        tx.commit().unwrap();
+        for revision in 0..300_u64 {
+            insert_revision_atomic(
+                &connection,
+                &RegistryRow {
+                    artifact_id: format!("artifact-{revision:03}"),
+                    project_id: "project".into(),
+                    revision: 1,
+                    state: "published".into(),
+                    content_locator: format!("artifact://{revision}"),
+                    content_hash: format!("hash-{revision}"),
+                    metadata_json: b"{}".to_vec(),
+                    created_at_ms: revision as i64,
+                },
+                &[],
+            )
+            .unwrap();
+        }
+        assert_eq!(list(&connection, "project", u32::MAX).unwrap().len(), 256);
     }
 }
