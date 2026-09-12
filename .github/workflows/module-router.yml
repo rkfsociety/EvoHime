@@ -122,6 +122,9 @@ jobs:
       - name: Регрессия recovery updater
         shell: pwsh
         run: ./scripts/repair-updater.tests.ps1
+      - name: Регрессия module router
+        shell: pwsh
+        run: ./scripts/module-router.tests.ps1
 
   dispatch:
     name: Запустить отдельные workflow модулей
