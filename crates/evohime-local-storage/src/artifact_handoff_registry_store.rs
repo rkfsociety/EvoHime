@@ -189,19 +189,21 @@ pub fn insert_handoff(
 }
 
 pub fn accept_handoff(
-    connection: &Connection,
+    connection: &mut Connection,
     id: &str,
     decision: &str,
     reason: &str,
     now_ms: i64,
 ) -> rusqlite::Result<bool> {
-    let changed = connection.execute(
+    let transaction = connection.transaction()?;
+    let changed = transaction.execute(
         "UPDATE artifact_handoffs SET state=?2 WHERE handoff_id=?1 AND state='pending'",
         params![id, decision],
     )?;
     if changed == 1 {
-        connection.execute("INSERT OR REPLACE INTO artifact_acceptances (handoff_id,decision,reason,decided_at_ms) VALUES (?1,?2,?3,?4)", params![id, decision, reason, now_ms])?;
+        transaction.execute("INSERT INTO artifact_acceptances (handoff_id,decision,reason,decided_at_ms) VALUES (?1,?2,?3,?4) ON CONFLICT(handoff_id) DO UPDATE SET decision=excluded.decision,reason=excluded.reason,decided_at_ms=excluded.decided_at_ms", params![id, decision, reason, now_ms])?;
     }
+    transaction.commit()?;
     Ok(changed == 1)
 }
 
@@ -233,5 +235,31 @@ mod tests {
         tx.commit().unwrap();
         assert!(record_command(&connection, "k", "c", "publish", "h", b"{}", 1).unwrap());
         assert!(!record_command(&connection, "k", "c", "publish", "h", b"{}", 2).unwrap());
+    }
+
+    #[test]
+    fn handoff_acceptance_and_state_commit_together() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        let tx = connection.transaction().unwrap();
+        install_schema(&tx).unwrap();
+        tx.commit().unwrap();
+        insert_handoff(&connection, "h", "artifact", 1, "producer", "consumer", 1).unwrap();
+        assert!(accept_handoff(&mut connection, "h", "accepted", "ok", 2).unwrap());
+        let state: String = connection
+            .query_row(
+                "SELECT state FROM artifact_handoffs WHERE handoff_id='h'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let decision: String = connection
+            .query_row(
+                "SELECT decision FROM artifact_acceptances WHERE handoff_id='h'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(state, "accepted");
+        assert_eq!(decision, "accepted");
     }
 }
