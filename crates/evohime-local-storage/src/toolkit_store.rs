@@ -100,7 +100,7 @@ pub fn discover(connection: &Connection, record: &ToolkitRecord) -> rusqlite::Re
             std::io::Error::new(std::io::ErrorKind::InvalidInput, "version limit exceeded").into(),
         ));
     }
-    connection.execute("INSERT INTO toolkit_versions(toolkit_id,version,manifest_hash,source,package_hash,license,status,compatible_core,manifest_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(toolkit_id,version) DO UPDATE SET manifest_hash=excluded.manifest_hash, source=excluded.source, package_hash=excluded.package_hash, license=excluded.license, compatible_core=excluded.compatible_core, manifest_json=excluded.manifest_json, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')", params![record.toolkit_id,record.version,record.manifest_hash,record.source,record.package_hash,record.license,record.status,record.compatible_core,record.manifest_json])?;
+    connection.execute("INSERT INTO toolkit_versions(toolkit_id,version,manifest_hash,source,package_hash,license,status,compatible_core,manifest_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(toolkit_id,version) DO NOTHING", params![record.toolkit_id,record.version,record.manifest_hash,record.source,record.package_hash,record.license,record.status,record.compatible_core,record.manifest_json])?;
     Ok(())
 }
 
@@ -313,5 +313,23 @@ mod tests {
             "enable"
         )
         .is_err());
+    }
+
+    #[test]
+    fn rediscovery_does_not_replace_same_version_metadata() {
+        let connection = Connection::open_in_memory().unwrap();
+        install_schema(&connection).unwrap();
+        discover(&connection, &record("1.0.0")).unwrap();
+        let replacement = ToolkitRecord {
+            manifest_hash: "sha256:tampered".into(),
+            package_hash: Some("sha256:tampered".into()),
+            manifest_json: br#"{"tampered":true}"#.to_vec(),
+            ..record("1.0.0")
+        };
+        discover(&connection, &replacement).unwrap();
+        let stored = list(&connection, 10).unwrap();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].manifest_hash, "sha256:1.0.0");
+        assert_eq!(stored[0].manifest_json, record("1.0.0").manifest_json);
     }
 }
