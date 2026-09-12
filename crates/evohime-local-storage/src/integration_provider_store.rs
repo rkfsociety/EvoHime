@@ -52,8 +52,12 @@ pub fn dependency_report(
     connection: &Connection,
     credential_id: &str,
 ) -> Result<Vec<(String, String)>, rusqlite::Error> {
-    let mut statement = connection.prepare("SELECT owner_kind, owner_id FROM integration_provider_bindings WHERE binding_json LIKE '%' || ?1 || '%' ORDER BY owner_kind, owner_id")?;
-    let rows = statement.query_map(params![credential_id], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    let escaped_id = credential_id
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    let mut statement = connection.prepare("SELECT owner_kind, owner_id FROM integration_provider_bindings WHERE binding_json LIKE '%' || ?1 || '%' ESCAPE '\\' ORDER BY owner_kind, owner_id")?;
+    let rows = statement.query_map(params![escaped_id], |row| Ok((row.get(0)?, row.get(1)?)))?;
     rows.collect()
 }
 
@@ -112,5 +116,47 @@ mod tests {
             .unwrap()
             .expect("manifest exists");
         assert_eq!(value["revision"], 1);
+    }
+
+    #[test]
+    fn dependency_report_treats_like_wildcards_as_literal_identifier_data() {
+        let connection = Connection::open_in_memory().unwrap();
+        install_schema(&connection).unwrap();
+        connection
+            .execute(
+                "INSERT INTO integration_provider_bindings
+                 (binding_id,owner_kind,owner_id,binding_json,status,version,updated_at_ms)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                params![
+                    "binding-1",
+                    "task",
+                    "task-1",
+                    r#"{"credential_id":"cred%prod"}"#,
+                    "active",
+                    1_i64,
+                    1_i64
+                ],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO integration_provider_bindings
+                 (binding_id,owner_kind,owner_id,binding_json,status,version,updated_at_ms)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                params![
+                    "binding-2",
+                    "task",
+                    "task-2",
+                    r#"{"credential_id":"credXprod"}"#,
+                    "active",
+                    1_i64,
+                    1_i64
+                ],
+            )
+            .unwrap();
+        assert_eq!(
+            dependency_report(&connection, "cred%prod").unwrap(),
+            vec![("task".to_owned(), "task-1".to_owned())]
+        );
     }
 }
