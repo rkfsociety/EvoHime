@@ -15,7 +15,7 @@ pub fn put(
             std::io::Error::new(std::io::ErrorKind::InvalidInput, "descriptor too large"),
         )));
     }
-    c.execute("INSERT INTO event_visualizer_registry(id,version,content_hash,descriptor_json,updated_at_ms) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(id) DO UPDATE SET version=excluded.version,content_hash=excluded.content_hash,descriptor_json=excluded.descriptor_json,updated_at_ms=excluded.updated_at_ms WHERE excluded.version >= event_visualizer_registry.version",params![id,version,hash,json,now])?;
+    c.execute("INSERT INTO event_visualizer_registry(id,version,content_hash,descriptor_json,updated_at_ms) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(id) DO UPDATE SET version=excluded.version,content_hash=excluded.content_hash,descriptor_json=excluded.descriptor_json,updated_at_ms=excluded.updated_at_ms WHERE excluded.version > event_visualizer_registry.version",params![id,version,hash,json,now])?;
     Ok(())
 }
 pub fn list(c: &Connection) -> rusqlite::Result<Vec<Vec<u8>>> {
@@ -49,5 +49,33 @@ mod tests {
         put(&c, "x", 2, "new", br#"{"version":2}"#, 2).unwrap();
         put(&c, "x", 1, "old", br#"{"version":1}"#, 3).unwrap();
         assert_eq!(get(&c, "x").unwrap(), Some(br#"{"version":2}"#.to_vec()));
+    }
+
+    #[test]
+    fn duplicate_version_cannot_replace_descriptor() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        put(
+            &c,
+            "x",
+            2,
+            "original",
+            br#"{"version":2,"source":"original"}"#,
+            2,
+        )
+        .unwrap();
+        put(
+            &c,
+            "x",
+            2,
+            "replacement",
+            br#"{"version":2,"source":"replacement"}"#,
+            3,
+        )
+        .unwrap();
+        assert_eq!(
+            get(&c, "x").unwrap(),
+            Some(br#"{"version":2,"source":"original"}"#.to_vec())
+        );
     }
 }
