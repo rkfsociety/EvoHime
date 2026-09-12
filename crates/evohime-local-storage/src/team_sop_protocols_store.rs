@@ -2,6 +2,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 const MAX_PROTOCOLS: i64 = 256;
 const MAX_PROTOCOL_BYTES: usize = 64 * 1024;
+const MAX_SESSION_SNAPSHOT_BYTES: usize = 64 * 1024;
 pub fn install_schema(c: &Connection) -> Result<(), rusqlite::Error> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS team_sop_protocols (id TEXT PRIMARY KEY NOT NULL, version INTEGER NOT NULL, content_hash TEXT NOT NULL, protocol_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS team_sop_protocol_revisions (protocol_id TEXT NOT NULL, version INTEGER NOT NULL, content_hash TEXT NOT NULL, protocol_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(protocol_id, version)); CREATE TABLE IF NOT EXISTS team_sop_sessions (id TEXT PRIMARY KEY NOT NULL, protocol_id TEXT NOT NULL, protocol_version INTEGER NOT NULL, content_hash TEXT NOT NULL, snapshot_json BLOB NOT NULL, status TEXT NOT NULL, current_phase TEXT NOT NULL, version INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS team_sop_transitions (session_id TEXT NOT NULL, version INTEGER NOT NULL, event_type TEXT NOT NULL, metadata_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(session_id, version));")
 }
@@ -59,6 +60,9 @@ pub struct SaveSessionInput<'a> {
 }
 
 pub fn save_session(c: &Connection, input: SaveSessionInput<'_>) -> Result<bool, rusqlite::Error> {
+    if input.snapshot.len() > MAX_SESSION_SNAPSHOT_BYTES {
+        return Ok(false);
+    }
     Ok(c.execute("INSERT INTO team_sop_sessions VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET status=excluded.status,current_phase=excluded.current_phase,version=excluded.version,updated_at_ms=excluded.updated_at_ms WHERE excluded.version > team_sop_sessions.version",params![input.id,input.protocol_id,input.protocol_version as i64,input.hash,input.snapshot,input.status,input.phase,input.version as i64,input.now_ms])? == 1)
 }
 pub fn load_all_json(c: &Connection) -> Result<Vec<Vec<u8>>, rusqlite::Error> {
@@ -106,6 +110,33 @@ mod tests {
         )
         .unwrap());
         assert!(load_all_json(&c).unwrap().is_empty());
+    }
+
+    #[test]
+    fn oversized_session_snapshot_is_rejected_before_storage() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        assert!(!save_session(
+            &c,
+            SaveSessionInput {
+                id: "session",
+                protocol_id: "protocol",
+                protocol_version: 1,
+                hash: "hash",
+                snapshot: &vec![b'x'; MAX_SESSION_SNAPSHOT_BYTES + 1],
+                status: "running",
+                phase: "execute",
+                version: 1,
+                now_ms: 1,
+            }
+        )
+        .unwrap());
+        assert!(
+            c.query_row("SELECT COUNT(*) FROM team_sop_sessions", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap()
+                == 0
+        );
     }
 
     #[test]
