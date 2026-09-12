@@ -833,8 +833,27 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn executes_a_safe_filesystem_tool_and_returns_to_the_model() {
+    // ToolAgent's bounded orchestration future has a large state machine. Give
+    // this integration-shaped unit test an explicit stack so the test harness
+    // cannot abort before the runtime's own bounded loop is exercised.
+    #[test]
+    fn executes_a_safe_filesystem_tool_and_returns_to_the_model() {
+        std::thread::Builder::new()
+            .name("evohime-tool-agent-test".into())
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("test runtime builds")
+                    .block_on(executes_a_safe_filesystem_tool_and_returns_to_the_model_inner());
+            })
+            .expect("test thread starts")
+            .join()
+            .expect("test thread completes");
+    }
+
+    async fn executes_a_safe_filesystem_tool_and_returns_to_the_model_inner() {
         let workspace =
             std::env::temp_dir().join(format!("evohime-core-tool-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&workspace);
