@@ -92,7 +92,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             inventory::validate(&item).map_err(|e| e.to_string())?;
                             if !item_id.is_empty() && item.id != item_id { return Err("item_id_mismatch".into()); }
                             let data = serde_json::to_vec(&item).map_err(|_| "serialization_failed".to_string())?;
-                            store::put(database.connection(), &item.id, &format!("{:?}", item.kind), item.version, &data, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())?;
+                            if !store::put(database.connection(), &item.id, &format!("{:?}", item.kind), item.version, &data, crate::task_memory::now_millis() as i64).map_err(|_| "storage_failed".to_string())? { return Err("stale_item_version".into()); }
                             serde_json::to_vec(&serde_json::json!({"schema_version":1,"item_id":item.id,"version":item.version,"status":"registered","redacted":true})).map_err(|_| "serialization_failed".to_string())
                         }
                         "remove" => {
