@@ -164,6 +164,7 @@ const MODULE_IDS: &[&str] = &[
     "verifier",
 ];
 const MAX_JSON_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_LOCAL_JSON_BYTES: usize = 256 * 1024;
 
 #[derive(serde::Deserialize)]
 struct Release {
@@ -488,7 +489,7 @@ fn remote_updates(data_dir: &Path, install_dir: &Path) -> Result<Vec<UpdateCandi
 /// installed by older packages remain updateable; JSON itself does not permit
 /// that marker before its first token.
 fn read_update_config(path: &Path) -> Result<serde_json::Value, String> {
-    let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    let text = read_bounded_text(path)?;
     serde_json::from_str(text.strip_prefix('\u{feff}').unwrap_or(&text))
         .map_err(|error| format!("updater: update.json содержит некорректный JSON: {error}"))
 }
@@ -671,10 +672,8 @@ fn read_installed_module_manifest(install_dir: &Path) -> Result<InstalledManifes
             components: Vec::new(),
         });
     }
-    serde_json::from_str::<InstalledManifest>(
-        &fs::read_to_string(path).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| format!("updater: component manifest повреждён: {error}"))
+    serde_json::from_str::<InstalledManifest>(&read_bounded_text(&path)?)
+        .map_err(|error| format!("updater: component manifest повреждён: {error}"))
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -702,10 +701,8 @@ fn read_runtime_version(data_dir: &Path) -> Result<Option<ModuleRecord>, String>
     if !path.is_file() {
         return Ok(None);
     }
-    let manifest = serde_json::from_str::<RuntimeReleaseManifest>(
-        &fs::read_to_string(path).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| format!("updater: manifest listener-runtime повреждён: {error}"))?;
+    let manifest = serde_json::from_str::<RuntimeReleaseManifest>(&read_bounded_text(&path)?)
+        .map_err(|error| format!("updater: manifest listener-runtime повреждён: {error}"))?;
     validate_runtime_manifest(&manifest)?;
     Ok(Some(ModuleRecord {
         id: "listener-runtime".to_owned(),
@@ -1226,7 +1223,7 @@ fn merge_installed_manifest_to(
 ) -> Result<(), String> {
     let path = install_dir.join("evohime.components.json");
     let mut root = serde_json::from_str::<serde_json::Value>(
-        &fs::read_to_string(&path).unwrap_or_else(|_| "{\"components\":[]}".into()),
+        &read_bounded_text(&path).unwrap_or_else(|_| "{\"components\":[]}".into()),
     )
     .map_err(|error| error.to_string())?;
     let components = root
@@ -1375,9 +1372,30 @@ fn write_status(data_dir: &Path, phase: &'static str, message: &str, updates: &[
 }
 
 fn read<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, String> {
-    fs::read_to_string(path)
-        .map_err(|error| error.to_string())
+    read_bounded_text(Path::new(path))
         .and_then(|text| serde_json::from_str(&text).map_err(|error| error.to_string()))
+}
+
+fn read_bounded_text(path: &Path) -> Result<String, String> {
+    let metadata = fs::metadata(path).map_err(|error| error.to_string())?;
+    if !metadata.is_file() || metadata.len() > MAX_LOCAL_JSON_BYTES as u64 {
+        return Err(format!(
+            "local JSON exceeds the read limit of {} bytes",
+            MAX_LOCAL_JSON_BYTES
+        ));
+    }
+    let file = fs::File::open(path).map_err(|error| error.to_string())?;
+    let mut bytes = Vec::with_capacity(MAX_LOCAL_JSON_BYTES.min(16 * 1024));
+    file.take((MAX_LOCAL_JSON_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    if bytes.len() > MAX_LOCAL_JSON_BYTES {
+        return Err(format!(
+            "local JSON exceeds the read limit of {} bytes",
+            MAX_LOCAL_JSON_BYTES
+        ));
+    }
+    String::from_utf8(bytes).map_err(|error| error.to_string())
 }
 fn fail(error: impl std::fmt::Display) -> ExitCode {
     eprintln!("updater: {error}");
@@ -1547,6 +1565,24 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert_eq!(config["enabled"], true);
+    }
+
+    #[test]
+    fn update_config_rejects_an_oversized_local_json_file() {
+        let path = std::env::temp_dir().join(format!(
+            "evohime-update-config-large-{}.json",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        fs::write(&path, vec![b' '; super::MAX_LOCAL_JSON_BYTES + 1])
+            .expect("write oversized update config");
+
+        let error = read_update_config(&path).expect_err("oversized config must be rejected");
+        let _ = fs::remove_file(&path);
+
+        assert!(error.contains("read limit"));
     }
 
     #[test]
