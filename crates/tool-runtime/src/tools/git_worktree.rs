@@ -1,3 +1,4 @@
+use crate::tools::git::run_bounded_git;
 use crate::{ToolContext, ToolError, ToolResult};
 use evohime_permissions::Permission;
 use serde::Deserialize;
@@ -59,15 +60,16 @@ pub async fn create(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
     tokio::fs::create_dir_all(root.parent().expect("worktree parent"))
         .await
         .map_err(|e| ToolError::Execution(e.to_string()))?;
-    let output = Command::new("git")
+    let mut command = Command::new("git");
+    command
         .arg("-C")
         .arg(&ctx.workspace_root)
         .arg("worktree")
         .arg("add")
         .arg("--detach")
         .arg(&root)
-        .arg(&input.base_commit)
-        .output()
+        .arg(&input.base_commit);
+    let output = run_bounded_git(&mut command)
         .await
         .map_err(|e| ToolError::Execution(format!("git worktree unavailable: {e}")))?;
     if !output.status.success() {
@@ -106,12 +108,13 @@ pub async fn remove(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
         .join(".evohime")
         .join("worktrees")
         .join(&input.worktree_id);
-    let status = Command::new("git")
+    let mut status_command = Command::new("git");
+    status_command
         .arg("-C")
         .arg(&root)
         .arg("status")
-        .arg("--porcelain")
-        .output()
+        .arg("--porcelain");
+    let status = run_bounded_git(&mut status_command)
         .await
         .map_err(|e| ToolError::Execution(e.to_string()))?;
     if !status.status.success() {
@@ -124,13 +127,14 @@ pub async fn remove(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
             "unintegrated changes prevent cleanup".into(),
         ));
     }
-    let output = Command::new("git")
+    let mut command = Command::new("git");
+    command
         .arg("-C")
         .arg(&ctx.workspace_root)
         .arg("worktree")
         .arg("remove")
-        .arg(&root)
-        .output()
+        .arg(&root);
+    let output = run_bounded_git(&mut command)
         .await
         .map_err(|e| ToolError::Execution(e.to_string()))?;
     if !output.status.success() {
@@ -170,28 +174,31 @@ pub async fn preflight(ctx: &ToolContext, input: Value) -> Result<ToolResult, To
         .join(".evohime")
         .join("worktrees")
         .join(&input.worktree_id);
-    let head = Command::new("git")
+    let mut head_command = Command::new("git");
+    head_command
         .arg("-C")
         .arg(&root)
         .arg("rev-parse")
-        .arg("HEAD")
-        .output()
+        .arg("HEAD");
+    let head = run_bounded_git(&mut head_command)
         .await
         .map_err(|e| ToolError::Execution(e.to_string()))?;
-    let base = Command::new("git")
+    let mut base_command = Command::new("git");
+    base_command
         .arg("-C")
         .arg(&root)
         .arg("rev-parse")
-        .arg(&input.base_commit)
-        .output()
+        .arg(&input.base_commit);
+    let base = run_bounded_git(&mut base_command)
         .await
         .map_err(|e| ToolError::Execution(e.to_string()))?;
-    let status = Command::new("git")
+    let mut status_command = Command::new("git");
+    status_command
         .arg("-C")
         .arg(&root)
         .arg("status")
-        .arg("--porcelain")
-        .output()
+        .arg("--porcelain");
+    let status = run_bounded_git(&mut status_command)
         .await
         .map_err(|e| ToolError::Execution(e.to_string()))?;
     if !head.status.success() || !base.status.success() || !status.status.success() {

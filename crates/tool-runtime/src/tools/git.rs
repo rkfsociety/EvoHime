@@ -469,13 +469,14 @@ async fn run_git(ctx: &ToolContext, args: &[&str]) -> Result<ToolResult, ToolErr
     })
 }
 
-struct BoundedGitOutput {
-    status: std::process::ExitStatus,
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
+pub(crate) struct BoundedGitOutput {
+    pub(crate) status: std::process::ExitStatus,
+    pub(crate) stdout: Vec<u8>,
+    pub(crate) stderr: Vec<u8>,
 }
 
-async fn run_bounded_git(command: &mut Command) -> std::io::Result<BoundedGitOutput> {
+pub(crate) async fn run_bounded_git(command: &mut Command) -> std::io::Result<BoundedGitOutput> {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = command.spawn()?;
     let stdout = child
         .stdout
