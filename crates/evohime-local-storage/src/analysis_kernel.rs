@@ -18,6 +18,7 @@ pub const ANALYSIS_KERNEL_MAX_INLINE_BYTES: usize = 16 * 1024;
 pub const ANALYSIS_KERNEL_MAX_OBJECTS: usize = 1024;
 pub const ANALYSIS_KERNEL_MAX_OBJECT_BYTES: u64 = 256 * 1024 * 1024;
 pub const ANALYSIS_KERNEL_MAX_IDEMPOTENCY_RESULT_BYTES: usize = 16 * 1024;
+pub const ANALYSIS_KERNEL_MAX_RUNNING_SESSIONS: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -405,10 +406,12 @@ impl<'a> AnalysisKernelStore<'a> {
 
     pub fn list_running_sessions(&self) -> Result<Vec<AnalysisKernelSessionV1>, StorageError> {
         let mut statement = self.connection.prepare(
-            "SELECT id FROM analysis_kernel_sessions WHERE status='running' ORDER BY id",
+            "SELECT id FROM analysis_kernel_sessions WHERE status='running' ORDER BY id LIMIT ?1",
         )?;
         let ids = statement
-            .query_map([], |row| row.get::<_, String>(0))?
+            .query_map([ANALYSIS_KERNEL_MAX_RUNNING_SESSIONS as i64], |row| {
+                row.get::<_, String>(0)
+            })?
             .collect::<Result<Vec<_>, _>>()?;
         ids.into_iter()
             .map(|id| {
@@ -695,5 +698,23 @@ mod tests {
         );
         drop(db);
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn running_session_recovery_is_bounded() {
+        let connection = Connection::open_in_memory().unwrap();
+        install_schema(&connection).unwrap();
+        let store = AnalysisKernelStore::new(&connection);
+        for index in 0..300 {
+            let mut value = session();
+            value.id = format!("kernel-{index:03}");
+            value.task_id = format!("task-{index:03}");
+            value.status = KernelStatus::Running;
+            store.create_session(&value).unwrap();
+        }
+        assert_eq!(
+            store.list_running_sessions().unwrap().len(),
+            ANALYSIS_KERNEL_MAX_RUNNING_SESSIONS
+        );
     }
 }
