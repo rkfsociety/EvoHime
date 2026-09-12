@@ -13,7 +13,7 @@ pub const PERMISSIONS: &[Permission] = &[Permission::BrowserAccess];
 pub const TIMEOUT: Duration = Duration::from_secs(20);
 const DEFAULT_MAX_CHARS: usize = 8_000;
 const MAX_MAX_CHARS: usize = 20_000;
-const MAX_RESPONSE_BYTES: usize = 256 * 1024;
+pub(crate) const MAX_RESPONSE_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, Deserialize)]
 struct Input {
@@ -96,7 +96,7 @@ pub async fn fetch(ctx: &ToolContext, value: serde_json::Value) -> Result<ToolRe
     })
 }
 
-async fn read_bounded_body(response: reqwest::Response) -> Result<String, ToolError> {
+pub(crate) async fn read_bounded_body(response: reqwest::Response) -> Result<String, ToolError> {
     if response
         .content_length()
         .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)

@@ -168,16 +168,17 @@ async fn fetch_page(url: Url, timeout: Duration) -> Result<Page, ToolError> {
         .await
         .map_err(|error| ToolError::Execution(format!("browser request failed: {error}")))?;
 
+    ssrf::assert_safe_peer(response.remote_addr()).map_err(|message| ToolError::InvalidInput {
+        tool: "browser".to_string(),
+        message: format!("ssrf blocked connection peer: {message}"),
+    })?;
     let status = response.status();
     let final_url = response.url().clone();
     ssrf::assert_safe_http_url(&final_url).map_err(|message| ToolError::InvalidInput {
         tool: "browser".to_string(),
         message: format!("ssrf blocked final url: {message}"),
     })?;
-    let body = response
-        .text()
-        .await
-        .map_err(|error| ToolError::Execution(format!("failed to read response: {error}")))?;
+    let body = crate::tools::http::read_bounded_body(response).await?;
 
     if !status.is_success() {
         return Err(ToolError::Execution(format!(
@@ -446,6 +447,27 @@ mod tests {
         .expect_err("url rejected");
 
         assert!(matches!(error, ToolError::InvalidInput { .. }));
+    }
+
+    #[tokio::test]
+    async fn rejects_oversized_response_body() {
+        let _guard = allow_private_targets_for_mock_server();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/large"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![
+                b'x';
+                crate::tools::http::MAX_RESPONSE_BYTES
+                    + 1
+            ]))
+            .mount(&server)
+            .await;
+        let (_dir, ctx) = ctx();
+
+        let error = open(&ctx, json!({"url": format!("{}/large", server.uri())}))
+            .await
+            .expect_err("oversized browser response must be rejected");
+        assert!(error.to_string().contains("exceeds 262144 bytes"));
     }
 
     #[test]
