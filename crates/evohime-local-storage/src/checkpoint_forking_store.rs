@@ -1,4 +1,5 @@
 use rusqlite::{params, Connection};
+const MAX_LINEAGES: i64 = 256;
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS checkpoint_fork_lineages (fork_run_id TEXT PRIMARY KEY, source_checkpoint_id TEXT NOT NULL, parent_run_id TEXT NOT NULL, lineage_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL);")
 }
@@ -22,9 +23,10 @@ pub fn put(
     Ok(())
 }
 pub fn list(c: &Connection) -> rusqlite::Result<Vec<Vec<u8>>> {
-    let mut s =
-        c.prepare("SELECT lineage_json FROM checkpoint_fork_lineages ORDER BY fork_run_id")?;
-    let rows = s.query_map([], |r| r.get(0))?.collect();
+    let mut s = c.prepare(
+        "SELECT lineage_json FROM checkpoint_fork_lineages ORDER BY fork_run_id LIMIT ?1",
+    )?;
+    let rows = s.query_map([MAX_LINEAGES], |r| r.get(0))?.collect();
     rows
 }
 
@@ -55,5 +57,23 @@ mod tests {
         )
         .unwrap();
         assert_eq!(list(&c).unwrap(), vec![br#"{"source":1}"#.to_vec()]);
+    }
+
+    #[test]
+    fn listing_is_bounded() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        for index in 0..300 {
+            put(
+                &c,
+                &format!("fork-{index:03}"),
+                "checkpoint",
+                "parent",
+                b"{}",
+                index,
+            )
+            .unwrap();
+        }
+        assert_eq!(list(&c).unwrap().len(), MAX_LINEAGES as usize);
     }
 }
