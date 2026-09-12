@@ -583,7 +583,11 @@ fn wait_for_health_with_limit(path: &Path, limit: Duration) -> io::Result<()> {
     loop {
         if path.is_file() {
             let content = fs::read_to_string(path).unwrap_or_default();
-            if content.contains("\"healthy\":true") {
+            let healthy = serde_json::from_str::<serde_json::Value>(&content)
+                .ok()
+                .and_then(|value| value.get("healthy").and_then(serde_json::Value::as_bool))
+                .unwrap_or(false);
+            if healthy {
                 return Ok(());
             }
         }
@@ -1028,7 +1032,7 @@ mod tests {
         let root = temp_dir("health");
         fs::create_dir_all(&root).unwrap();
         let marker = root.join("health.json");
-        fs::write(&marker, r#"{"healthy":true,"pid":42}"#).unwrap();
+        fs::write(&marker, r#"{ "pid": 42, "healthy": true }"#).unwrap();
         wait_for_health_with_limit(&marker, std::time::Duration::from_millis(1)).unwrap();
         fs::write(&marker, r#"{"healthy":false}"#).unwrap();
         let error = wait_for_health_with_limit(&marker, std::time::Duration::ZERO).unwrap_err();
