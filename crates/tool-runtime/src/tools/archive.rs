@@ -58,10 +58,11 @@ pub async fn create(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
             let source_name = source.file_name().unwrap().to_string_lossy().into_owned();
             args.push(&source_name);
 
-            let output = Command::new("tar")
+            let mut command = Command::new("tar");
+            command
                 .args(&args)
-                .current_dir(source.parent().unwrap_or_else(|| std::path::Path::new(".")))
-                .output()
+                .current_dir(source.parent().unwrap_or_else(|| std::path::Path::new(".")));
+            let output = run_bounded_command(&mut command)
                 .await
                 .map_err(|e| ToolError::Execution(format!("tar failed: {e}")))?;
 
@@ -89,10 +90,9 @@ pub async fn create(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
             let source_str = source.to_string_lossy().into_owned();
             let args = vec!["-r", &dest_str, &source_str];
 
-            let output = Command::new("zip")
-                .args(&args)
-                .current_dir(&ctx.workspace_root)
-                .output()
+            let mut command = Command::new("zip");
+            command.args(&args).current_dir(&ctx.workspace_root);
+            let output = run_bounded_command(&mut command)
                 .await
                 .map_err(|e| ToolError::Execution(format!("zip failed: {e}")))?;
 
@@ -424,11 +424,11 @@ async fn run_bounded_command(command: &mut Command) -> io::Result<BoundedCommand
     let stdout = child
         .stdout
         .take()
-        .ok_or_else(|| io::Error::other("archive list stdout unavailable"))?;
+        .ok_or_else(|| io::Error::other("archive command stdout unavailable"))?;
     let stderr = child
         .stderr
         .take()
-        .ok_or_else(|| io::Error::other("archive list stderr unavailable"))?;
+        .ok_or_else(|| io::Error::other("archive command stderr unavailable"))?;
     let mut stdout_reader = tokio::io::BufReader::new(stdout);
     let mut stderr_reader = tokio::io::BufReader::new(stderr);
     let stdout = read_bounded(&mut stdout_reader, MAX_LIST_STDOUT_BYTES);
