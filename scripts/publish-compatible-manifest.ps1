@@ -79,6 +79,10 @@ $components = foreach ($module in $moduleIds) {
             changes = [string[]]@('Обновлён проверенный комплект библиотек и моделей.')
         }
     } else {
+        $dependencies = [string[]]@(Normalize-StringArray $moduleManifest.dependencies 'dependencies' $module)
+        if ($null -eq $dependencies) { $dependencies = [string[]]::new() }
+        $changes = [string[]]@(Normalize-StringArray $moduleManifest.changes 'changes' $module)
+        if ($null -eq $changes) { $changes = [string[]]::new() }
         $artifactAsset = Get-Asset $release ([string]$moduleManifest.artifact)
         [ordered]@{
             id = $module
@@ -88,11 +92,11 @@ $components = foreach ($module in $moduleIds) {
             artifact = [string]$moduleManifest.artifact
             size = [int64]$moduleManifest.size
             sha256 = ([string]$moduleManifest.sha256).ToLowerInvariant()
-            dependencies = [string[]]@(Normalize-StringArray $moduleManifest.dependencies 'dependencies' $module)
+            dependencies = $dependencies
             restart = [string]($moduleManifest.restart ?? 'module')
             protocol = 'desktop-ipc-v1'
             summary = [string]($moduleManifest.summary ?? "Модуль $module.")
-            changes = [string[]]@(Normalize-StringArray $moduleManifest.changes 'changes' $module)
+            changes = $changes
         }
     }
 }
