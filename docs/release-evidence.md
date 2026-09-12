@@ -1,6 +1,6 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-09-12.
+Обновлено: 2026-09-13.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
@@ -1365,6 +1365,16 @@ streamed to a temporary file with a bounded size and Windows executable header
 check, then launched without a shell; the temporary file is removed after the
 installer exits. GitHub Actions evidence is not claimed before push, and the
 installed EvoHime client was not changed.
+
+## Ollama installer blocked-client fallback (2026-09-13)
+
+Для текущего checkout `4f46d79c` выполнены Electron node/web typechecks и
+focused `ollama-runtime` suite: 5/5 тестов passed. Добавлен regression-тест,
+который моделирует `net::ERR_BLOCKED_BY_CLIENT`: Electron transport получает
+ошибку, Node transport повторяет официальный download, после чего сохраняются
+проверки redirect allowlist, bounded размера, `MZ` header и запуск installer
+без shell. GitHub Actions evidence не заявляется до push; установленный клиент
+не запускался и не изменялся.
 
 ## Plan 143 — Project Knowledge Notebook v1 (2026-09-09)
 

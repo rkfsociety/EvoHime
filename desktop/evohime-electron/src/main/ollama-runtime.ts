@@ -27,6 +27,8 @@ type FetchLike = typeof globalThis.fetch
 
 export interface OllamaRuntimeDeps {
   readonly fetch?: FetchLike
+  /** Optional transport fallback for Electron client-side blocking. */
+  readonly fallbackFetch?: FetchLike
   readonly environment?: NodeJS.ProcessEnv
   readonly emit: (status: OllamaRuntimeStatus) => void
   readonly log: (level: 'info' | 'warn' | 'error', event: string, fields: Record<string, unknown>) => void
@@ -135,11 +137,22 @@ export class OllamaRuntimeService {
 
   private async downloadInstaller(target: string): Promise<void> {
     const request = this.deps.fetch ?? globalThis.fetch
-    const response = await request(OLLAMA_INSTALLER_URL, {
+    const options = {
       redirect: 'follow',
       headers: { accept: 'application/octet-stream', 'user-agent': 'EvoHime' },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-    })
+    } as const
+    let response: Response
+    try {
+      response = await request(OLLAMA_INSTALLER_URL, options)
+    } catch (error) {
+      const fallback = this.deps.fallbackFetch
+      if (!fallback || !isElectronClientBlockedError(error)) throw error
+      this.deps.log('warn', 'shell.ollama_download_fallback', {
+        reason: describeOllamaError(error)
+      })
+      response = await fallback(OLLAMA_INSTALLER_URL, options)
+    }
     if (!response.ok || !response.body) throw new Error(`сервер Ollama ответил ${response.status}`)
     if (!isAllowedInstallerUrl(response.url || OLLAMA_INSTALLER_URL)) {
       throw new Error('загрузка перенаправлена на неподдерживаемый адрес')
@@ -248,4 +261,9 @@ function describeOllamaError(error: unknown): string {
   if (message !== 'fetch failed') return message || 'неизвестная ошибка'
   const cause = error.cause
   return cause instanceof Error && cause.message.trim() ? `сетевая ошибка: ${cause.message.trim()}` : 'сетевая ошибка'
+}
+
+function isElectronClientBlockedError(error: unknown): boolean {
+  const message = error instanceof Error ? `${error.message} ${String(error.cause ?? '')}` : String(error)
+  return message.toLowerCase().includes('err_blocked_by_client')
 }

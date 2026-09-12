@@ -55,6 +55,39 @@ describe('Ollama runtime service', () => {
     expect(emitted).toContain('installing')
   })
 
+  it('falls back when the Electron transport blocks the executable download', async () => {
+    let installed = false
+    const primaryFetch = vi.fn(async (input: string | URL) => {
+      if (String(input) === OLLAMA_INSTALLER_URL) throw new Error('net::ERR_BLOCKED_BY_CLIENT')
+      return installed
+        ? new Response(JSON.stringify({ version: '0.34.0' }), { status: 200 })
+        : new Response('', { status: 503 })
+    })
+    const fallbackFetch = vi.fn(async (input: string | URL) => {
+      expect(String(input)).toBe(OLLAMA_INSTALLER_URL)
+      return new Response(new Uint8Array([77, 90, 3, 4]), { status: 200 })
+    })
+    const launchInstaller = vi.fn(async () => {
+      installed = true
+      return 0
+    })
+    const service = new OllamaRuntimeService({
+      fetch: primaryFetch as never,
+      fallbackFetch: fallbackFetch as never,
+      emit: () => {},
+      log: () => {},
+      exists: async () => installed,
+      launchInstaller,
+      wait: async () => {}
+    })
+
+    const status = await service.install()
+
+    expect(status.state).toBe('ready')
+    expect(fallbackFetch).toHaveBeenCalledTimes(1)
+    expect(launchInstaller).toHaveBeenCalledTimes(1)
+  })
+
   it('does not launch an empty download and exposes the failure', async () => {
     const launchInstaller = vi.fn(async () => 0)
     const service = new OllamaRuntimeService({

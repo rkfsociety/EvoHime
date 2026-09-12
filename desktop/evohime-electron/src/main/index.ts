@@ -460,6 +460,10 @@ function createOllamaRuntimeService(): OllamaRuntimeService {
   return new OllamaRuntimeService({
     // Electron's network stack honours the Windows proxy/certificate store.
     fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+    // A Chromium client/filter can reject executable downloads before an HTTP
+    // response exists. Node's transport provides a narrow fallback for that
+    // specific error while the URL/redirect allowlist remains in the service.
+    fallbackFetch: globalThis.fetch,
     emit: (status) => broadcast({ kind: 'ollama-runtime', status }),
     log
   })
