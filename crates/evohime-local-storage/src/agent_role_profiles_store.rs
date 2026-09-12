@@ -3,6 +3,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 const MAX_LIST_ROWS: usize = 32;
+const MAX_PROFILE_BYTES: usize = 64 * 1024;
 
 pub fn install_schema(connection: &Connection) -> Result<(), rusqlite::Error> {
     connection.execute_batch("CREATE TABLE IF NOT EXISTS agent_role_profiles (id TEXT PRIMARY KEY NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, profile_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS agent_role_profile_revisions (profile_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, profile_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(profile_id, revision));")
@@ -16,6 +17,9 @@ pub fn save_revision(
     profile_json: &[u8],
     now_ms: i64,
 ) -> Result<bool, rusqlite::Error> {
+    if profile_json.len() > MAX_PROFILE_BYTES {
+        return Ok(false);
+    }
     let tx = connection.unchecked_transaction()?;
     let current: Option<u64> = tx
         .query_row(
@@ -70,6 +74,24 @@ mod tests {
             load_json(&connection, "role", 1).expect("revision loads"),
             Some(b"first".to_vec())
         );
+    }
+
+    #[test]
+    fn oversized_profile_is_rejected_before_storage() {
+        let connection = Connection::open_in_memory().expect("sqlite opens");
+        install_schema(&connection).expect("schema installs");
+        assert!(!save_revision(
+            &connection,
+            "role",
+            1,
+            "hash",
+            &vec![b'x'; MAX_PROFILE_BYTES + 1],
+            1,
+        )
+        .expect("oversized profile is handled"));
+        assert!(load_json(&connection, "role", 1)
+            .expect("revision loads")
+            .is_none());
     }
 
     #[test]
