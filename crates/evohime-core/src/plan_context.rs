@@ -77,10 +77,11 @@ pub async fn read_linked_plans(
                 if !canonical.starts_with(directory) || !seen.insert(canonical.clone()) {
                     continue;
                 }
-                let Ok(text) = tokio::fs::read_to_string(&canonical).await else {
+                let remaining = MAX_CONTEXT_BYTES.saturating_sub(total);
+                let Some(text) = read_bounded_text(&canonical, remaining).await else {
                     continue;
                 };
-                if text.trim().is_empty() || total + text.len() > MAX_CONTEXT_BYTES {
+                if text.trim().is_empty() {
                     continue;
                 }
                 total += text.len();
@@ -101,6 +102,28 @@ pub async fn read_linked_plans(
         frontier = next;
     }
     documents
+}
+
+async fn read_bounded_text(path: &std::path::Path, limit: usize) -> Option<String> {
+    use tokio::io::AsyncReadExt;
+
+    if limit == 0 || tokio::fs::metadata(path).await.ok()?.len() > limit as u64 {
+        return None;
+    }
+    let mut file = tokio::fs::File::open(path).await.ok()?;
+    let mut bytes = Vec::with_capacity(limit.min(16 * 1024));
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        let read = file.read(&mut chunk).await.ok()?;
+        if read == 0 {
+            break;
+        }
+        if bytes.len() > limit.saturating_sub(read) {
+            return None;
+        }
+        bytes.extend_from_slice(&chunk[..read]);
+    }
+    String::from_utf8(bytes).ok()
 }
 
 #[cfg(test)]
@@ -167,6 +190,27 @@ mod tests {
         )
         .await;
 
+        assert!(documents.is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn skips_oversized_linked_plan_before_buffering_it() {
+        let root = workspace("oversized");
+        let plans = root.join("plans");
+        std::fs::write(plans.join("04-7.md"), "Ссылка: [большой](04-0.md).").expect("plan");
+        std::fs::write(
+            plans.join("04-0.md"),
+            vec![b'x'; crate::plan_review::MAX_CONTEXT_BYTES + 1],
+        )
+        .expect("large plan");
+        let source = std::fs::read_to_string(plans.join("04-7.md")).expect("source");
+
+        let documents = read_linked_plans(
+            &[plans.join("04-7.md").to_string_lossy().to_string()],
+            &source,
+        )
+        .await;
         assert!(documents.is_empty());
         let _ = std::fs::remove_dir_all(&root);
     }
