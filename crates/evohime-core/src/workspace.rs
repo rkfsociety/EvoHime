@@ -1,6 +1,7 @@
 use serde::Serialize;
 use std::{
     fs,
+    io::Read,
     path::{Path, PathBuf},
 };
 
@@ -145,15 +146,28 @@ pub fn read_text_file(
             "workspace path is not a file",
         ));
     }
-    let content = fs::read(&path)?;
-    if content.len() > max_bytes {
+    let content = read_bounded_bytes(&path, max_bytes)?;
+    String::from_utf8(content)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.utf8_error()))
+}
+
+fn read_bounded_bytes(path: &Path, limit: usize) -> std::io::Result<Vec<u8>> {
+    if fs::metadata(path)?.len() > limit as u64 {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "workspace file exceeds the read limit",
         ));
     }
-    String::from_utf8(content)
-        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.utf8_error()))
+    let file = fs::File::open(path)?;
+    let mut content = Vec::with_capacity(limit.min(16 * 1024));
+    file.take((limit + 1) as u64).read_to_end(&mut content)?;
+    if content.len() > limit {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "workspace file exceeds the read limit",
+        ));
+    }
+    Ok(content)
 }
 
 fn resolve_inside(root: &Path, relative_path: &str) -> std::io::Result<PathBuf> {
@@ -506,6 +520,17 @@ mod tests {
         assert!(read_text_file(&root, "note.txt", MAX_READ_BYTES + 1).is_err());
         assert!(read_text_file(&root, "binary.dat", 100).is_err());
         assert!(read_text_file(&root, "../note.txt", 100).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_physically_oversized_file_before_full_read() {
+        let root = temp_root("read-physical-bound");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("large.txt"), vec![b'x'; MAX_READ_BYTES + 1]).unwrap();
+
+        assert!(read_text_file(&root, "large.txt", MAX_READ_BYTES).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 }
