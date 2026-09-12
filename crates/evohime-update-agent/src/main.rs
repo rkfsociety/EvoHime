@@ -1429,8 +1429,10 @@ fn write_status(data_dir: &Path, phase: &'static str, message: &str, updates: &[
 }
 
 fn read<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, String> {
-    read_bounded_text(Path::new(path))
-        .and_then(|text| serde_json::from_str(&text).map_err(|error| error.to_string()))
+    read_bounded_text(Path::new(path)).and_then(|text| {
+        serde_json::from_str(text.strip_prefix('\u{feff}').unwrap_or(&text))
+            .map_err(|error| error.to_string())
+    })
 }
 
 fn read_bounded_text(path: &Path) -> Result<String, String> {
@@ -1501,6 +1503,28 @@ mod tests {
         ];
         assert!(super::argument_value(&args, "--manifest").is_none());
         assert!(super::argument_value(&args, "--available").is_none());
+    }
+
+    #[test]
+    fn legacy_manifest_reader_accepts_a_utf8_bom() {
+        let path = std::env::temp_dir().join(format!(
+            "evohime-available-manifest-{}.json",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        fs::write(
+            &path,
+            b"\xef\xbb\xbf[{\"id\":\"core\",\"version\":\"1.0.0\"}]",
+        )
+        .expect("write BOM-prefixed manifest");
+
+        let available: Vec<super::ModuleRecord> =
+            super::read(path.to_str().expect("temporary path is UTF-8"))
+                .expect("BOM-prefixed manifest must parse");
+        let _ = fs::remove_file(path);
+        assert_eq!(available[0].id, "core");
     }
 
     #[test]
