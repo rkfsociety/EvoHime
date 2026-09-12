@@ -447,6 +447,12 @@ pub fn apply_ui_bundle_staged_with_restart(
             "UI bundle is incomplete",
         ));
     }
+    let active = install_root.join("ui-active.json");
+    let previous_pointer = if active.is_file() {
+        Some(read_bounded_file(&active, MAX_UI_POINTER_BYTES)?)
+    } else {
+        None
+    };
     let bundles = install_root.join("ui-bundles");
     fs::create_dir_all(&bundles)?;
     let temporary = bundles.join(format!(".{version}.staging-{}", std::process::id()));
@@ -469,7 +475,6 @@ pub fn apply_ui_bundle_staged_with_restart(
         ));
     }
     fs::rename(temporary, &target)?;
-    let active = install_root.join("ui-active.json");
     let active_tmp = active.with_extension("json.tmp");
     let pointer =
         serde_json::to_vec(&serde_json::json!({"version": version})).map_err(io::Error::other)?;
@@ -485,11 +490,27 @@ pub fn apply_ui_bundle_staged_with_restart(
         configure_hidden_process(&mut command);
         if let Err(error) = command.current_dir(install_root).spawn() {
             let _ = fs::remove_dir_all(&target);
+            restore_ui_pointer(&active, previous_pointer.as_deref())?;
             return Err(error);
         }
     }
-    wait_for_health(health_file)?;
+    if let Err(error) = wait_for_health(health_file) {
+        let _ = fs::remove_dir_all(&target);
+        restore_ui_pointer(&active, previous_pointer.as_deref())?;
+        return Err(error);
+    }
     Ok(())
+}
+
+fn restore_ui_pointer(active: &Path, previous: Option<&[u8]>) -> io::Result<()> {
+    match previous {
+        Some(bytes) => fs::write(active, bytes),
+        None => match fs::remove_file(active) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        },
+    }
 }
 
 fn is_safe_version(version: &str) -> bool {
@@ -1721,6 +1742,35 @@ mod tests {
             fs::read_to_string(install.join("ui-bundles/1.2.3/index.html")).unwrap(),
             "new"
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ui_bundle_apply_restores_pointer_when_relaunch_fails() {
+        let root = temp_dir("ui-rollback");
+        let staging = root.join("staging");
+        let install = root.join("install");
+        fs::create_dir_all(staging.join("ui-bundle")).unwrap();
+        fs::write(staging.join("ui-bundle/index.html"), "new").unwrap();
+        fs::create_dir_all(install.join("ui-bundles/old")).unwrap();
+        fs::write(install.join("ui-bundles/old/index.html"), "old").unwrap();
+        fs::write(install.join("ui-active.json"), r#"{"version":"old"}"#).unwrap();
+
+        let error = super::apply_ui_bundle_staged_with_restart(
+            &staging,
+            &install,
+            "1.2.3",
+            None,
+            Some(&root.join("missing-shell.exe")),
+            None,
+        )
+        .expect_err("failed relaunch must roll back the UI pointer");
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        assert_eq!(
+            fs::read_to_string(install.join("ui-active.json")).unwrap(),
+            r#"{"version":"old"}"#
+        );
+        assert!(!install.join("ui-bundles/1.2.3").exists());
         fs::remove_dir_all(root).unwrap();
     }
 }
