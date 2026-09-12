@@ -612,7 +612,12 @@ fn read_bounded_file(path: &Path, limit: usize) -> io::Result<Vec<u8>> {
 fn validate_recovered_state(state: &TransactionState, state_dir: &Path) -> io::Result<()> {
     validate_absolute(&state.install_dir, "transaction install directory")?;
     validate_absolute(&state.backup_dir, "transaction backup directory")?;
-    if state.backup_dir.parent() != Some(state_dir) {
+    let valid_backup_name = state
+        .backup_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with("backup-"));
+    if state.backup_dir.parent() != Some(state_dir) || !valid_backup_name {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "transaction backup directory is outside the state directory",
@@ -1601,7 +1606,7 @@ mod tests {
         let external_backup = root.join("external-backup");
         fs::create_dir_all(&external_backup).unwrap();
         fs::write(external_backup.join("sentinel"), "keep").unwrap();
-        let state = super::TransactionState {
+        let mut state = super::TransactionState {
             operation_id: "tx-test".into(),
             install_dir: root.join("install"),
             backup_dir: external_backup.clone(),
@@ -1621,6 +1626,20 @@ mod tests {
             .expect_err("external backup paths must be rejected");
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
         assert!(external_backup.join("sentinel").is_file());
+
+        let local_backup = state_dir.join("not-a-backup");
+        fs::create_dir_all(&local_backup).unwrap();
+        fs::write(local_backup.join("sentinel"), "keep").unwrap();
+        state.backup_dir = local_backup.clone();
+        fs::write(
+            state_dir.join("transaction.json"),
+            serde_json::to_vec(&state).unwrap(),
+        )
+        .unwrap();
+        let error = UpdateTransaction::recover(&state_dir)
+            .expect_err("unexpected backup names must be rejected");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(local_backup.join("sentinel").is_file());
         fs::remove_dir_all(root).unwrap();
     }
 
