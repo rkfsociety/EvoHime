@@ -179,8 +179,9 @@ pwsh -File .\scripts\documentation.tests.ps1
 граф их обратных зависимостей. Для этого набора выполняются format, Clippy,
 тесты и `cargo build`; Electron отдельно проверяется и собирается только при
 изменении Electron shell или desktop IPC proto. Полный Rust/Electron/native
-package, installer и Windows acceptance gates запускаются только вручную через
-`workflow_dispatch`. Полный локальный прогон запрещён рабочим процессом
+package, installer и Windows acceptance gates запускаются через центральный
+`module-router` (он dispatch’ит `workflow_dispatch`) либо вручную; installer
+также поддерживает reusable `workflow_call`. Полный локальный прогон запрещён рабочим процессом
 проекта; локально выполняются только документационные, protocol/typecheck и
 узкие проверки изменённых модулей. Описание workflow
 находится в [`.github/workflows/`](../.github/workflows/).

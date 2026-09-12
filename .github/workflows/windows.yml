@@ -1,9 +1,10 @@
 name: installer workflow
 
-# Полный native-пакет и installer выпускаются только вручную. Push-маршрутизацию
-# модулей выполняет module-router.yml.
+# Полный native-пакет и installer запускаются через dispatch от module-router.yml
+# либо вручную. Reusable-вызов оставлен для общего workflow-контракта модулей.
 on:
   pull_request:
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -51,7 +52,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch' -or '${{ github.event_name }}' -eq 'workflow_call') {
             $files = @('ALL')
           } else {
             $before = '${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}'
@@ -132,7 +133,7 @@ jobs:
     needs: changes
     if: >-
       always()
-      && github.event_name != 'workflow_dispatch'
+      && github.event_name == 'pull_request'
       && needs.changes.outputs.rust == 'true'
     runs-on: windows-latest
     env:
@@ -170,7 +171,7 @@ jobs:
     needs: [changes, documentation]
     if: >-
       always()
-      && github.event_name == 'workflow_dispatch'
+      && (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call')
       && needs.changes.outputs.native == 'true'
       && (needs.documentation.result == 'success' || needs.documentation.result == 'skipped')
     runs-on: windows-latest
@@ -241,7 +242,7 @@ jobs:
     needs: changes
     if: >-
       always()
-      && github.event_name != 'workflow_dispatch'
+      && github.event_name == 'pull_request'
       && needs.changes.outputs.electron == 'true'
     runs-on: windows-latest
     defaults:
@@ -274,7 +275,7 @@ jobs:
     needs: [changes, documentation, rust-heavy]
     if: >-
       always()
-      && github.event_name == 'workflow_dispatch'
+      && (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call')
       && needs.changes.outputs.native == 'true'
       && needs.rust-heavy.result == 'success'
       && (needs.documentation.result == 'success' || needs.documentation.result == 'skipped')
@@ -337,7 +338,7 @@ jobs:
     # его остановить: needs.* даёт skipped, поэтому условие пишется явно.
     if: >-
       !cancelled()
-      && github.event_name == 'workflow_dispatch'
+      && (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call')
       && !contains(needs.*.result, 'failure')
       && needs.changes.outputs.native == 'true'
     runs-on: windows-latest
@@ -516,7 +517,8 @@ jobs:
     needs: build-native
     if: >-
       !cancelled()
-      && github.event_name == 'workflow_dispatch'
+      && (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call')
+      && github.ref == 'refs/heads/main'
       && needs.build-native.result == 'success'
     runs-on: windows-latest
     permissions:

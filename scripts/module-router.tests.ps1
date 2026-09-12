@@ -28,8 +28,15 @@ $nativeWorkflow = Get-Content -LiteralPath (Join-Path $root '.github\workflows\w
 if ($nativeWorkflow -notmatch 'actions/download-artifact@v8' -or $nativeWorkflow -notmatch 'build-windows-native\.ps1 -SkipBuild') { throw 'Native workflow still rebuilds instead of consuming checked artifacts.' }
 $installer = Get-Content -LiteralPath (Join-Path $root '.github\workflows\windows.yml') -Raw
 if ($installer -match '(?m)^\s{2}push:') { throw 'installer workflow still has a direct push trigger.' }
+if ($installer -notmatch '(?m)^\s{2}workflow_call:\s*$') { throw 'installer workflow is not reusable like the other module workflows.' }
+if ($installer -notmatch "github\.event_name == 'workflow_dispatch'") { throw 'installer publish job is not enabled for routed runs.' }
+if ($installer -notmatch "github\.event_name == 'workflow_call'") { throw 'installer publish job is not enabled for reusable runs.' }
+if ($installer -notmatch 'github\.ref == .refs/heads/main') { throw 'installer publish job is not restricted to main.' }
 if ($installer -notmatch [regex]::Escape('group: evohime-installer')) { throw 'installer workflow does not use a fixed concurrency group.' }
 if ($installer -notmatch '(?m)^\s+cancel-in-progress:\s*true\s*$') { throw 'installer workflow does not cancel the previous run.' }
+if ($installer -notmatch 'release-versions\\installer\.txt') { throw 'installer workflow does not consume the canonical installer version.' }
+if ($installer -notmatch 'gh release upload \$env:RELEASE_TAG installer-output\\EvoHime-Setup\.exe') { throw 'installer workflow does not publish the setup asset.' }
+if ($installer -notmatch 'gh release upload \$env:RELEASE_TAG installer-output\\EvoHime-Setup\.json') { throw 'installer workflow does not publish the setup manifest.' }
 foreach ($module in @('shell-host','ui-bundle','core','supervisor','cli','analysis-worker','listener','listener-runtime','transaction','verifier','updater')) {
     $expected = $module + ': ${{ steps.select.outputs.' + $module + ' }}'
     if ($router -notmatch [regex]::Escape($expected)) { throw "Router output is missing: $module" }
