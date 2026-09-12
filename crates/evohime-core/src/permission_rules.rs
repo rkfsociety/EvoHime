@@ -1,5 +1,8 @@
 use evohime_permissions::{PermissionEngine, PolicyRule, PolicyRuleSet};
+use std::io::Read;
 use std::path::Path;
+
+const MAX_RULES_BYTES: usize = 256 * 1024;
 
 /// Загружает rules из permissions.json файла в data_dir.
 ///
@@ -18,7 +21,7 @@ pub fn load_rules_from(path: &Path) -> Result<PolicyRuleSet, String> {
     }
 
     // Прочитаем файл
-    let content = match std::fs::read_to_string(&rules_path) {
+    let content = match read_bounded_text(&rules_path) {
         Ok(content) => content,
         Err(error) => {
             return Err(format!("failed to read permissions.json: {error}"));
@@ -46,6 +49,28 @@ pub fn load_rules_from(path: &Path) -> Result<PolicyRuleSet, String> {
 
     // Валидный набор правил
     Ok(PolicyRuleSet::new(rules))
+}
+
+fn read_bounded_text(path: &Path) -> std::io::Result<String> {
+    let metadata = std::fs::metadata(path)?;
+    if metadata.len() > MAX_RULES_BYTES as u64 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "permissions.json exceeds the read limit",
+        ));
+    }
+    let file = std::fs::File::open(path)?;
+    let mut bytes = Vec::with_capacity(MAX_RULES_BYTES.min(16 * 1024));
+    file.take((MAX_RULES_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > MAX_RULES_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "permissions.json exceeds the read limit",
+        ));
+    }
+    String::from_utf8(bytes)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
 }
 
 /// Применяет загруженные rules к PermissionEngine при старте.
@@ -152,6 +177,22 @@ mod tests {
         assert_eq!(result.rules().len(), 2);
         assert_eq!(result.rules()[0].pattern, "cargo *");
         assert_eq!(result.rules()[1].pattern, "rm *");
+        cleanup_temp_dir(&temp_dir);
+    }
+
+    #[test]
+    fn oversized_rules_file_is_rejected_before_json_parse() {
+        let temp_dir = create_temp_dir();
+        fs::write(
+            temp_dir.join("permissions.json"),
+            vec![b' '; MAX_RULES_BYTES + 1],
+        )
+        .unwrap();
+
+        let result = load_rules_from(&temp_dir);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("read limit"));
         cleanup_temp_dir(&temp_dir);
     }
 
