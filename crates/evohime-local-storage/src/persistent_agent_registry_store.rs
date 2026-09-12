@@ -294,7 +294,8 @@ pub fn save_assignment(
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT(id) DO UPDATE SET revision=excluded.revision, agent_id=excluded.agent_id,
            status=excluded.status, source_kind=excluded.source_kind, source_ref=excluded.source_ref,
-           assignment_json=excluded.assignment_json, updated_at_ms=excluded.updated_at_ms",
+           assignment_json=excluded.assignment_json, updated_at_ms=excluded.updated_at_ms
+         WHERE excluded.revision >= persistent_agent_assignments.revision",
         params![
             input.id,
             input.revision as i64,
@@ -426,5 +427,37 @@ mod tests {
             .unwrap();
         assert_eq!(previous.0, "h");
         assert_eq!(previous.1, br#"{"ok":true}"#.to_vec());
+    }
+
+    #[test]
+    fn stale_assignment_cannot_replace_newer_revision() {
+        let connection = Connection::open_in_memory().unwrap();
+        install_schema(&connection).unwrap();
+        let current = SaveAssignmentInput {
+            id: "assignment-1",
+            revision: 2,
+            agent_id: "agent-1",
+            status: "active",
+            source_kind: "goal",
+            source_ref: "goal-1",
+            assignment_json: br#"{"revision":2}"#,
+            now_ms: 2,
+        };
+        assert!(save_assignment(&connection, current).unwrap());
+        assert!(!save_assignment(
+            &connection,
+            SaveAssignmentInput {
+                revision: 1,
+                status: "pending",
+                assignment_json: br#"{"revision":1}"#,
+                now_ms: 3,
+                ..current
+            }
+        )
+        .unwrap());
+        assert_eq!(
+            load_assignment(&connection, "assignment-1").unwrap(),
+            Some(br#"{"revision":2}"#.to_vec())
+        );
     }
 }
