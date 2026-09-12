@@ -103,7 +103,7 @@ pub fn publish_version(
     execution_hash: &str,
     created_at_ms: i64,
 ) -> rusqlite::Result<()> {
-    connection.execute("INSERT INTO visual_workflow_versions(graph_id,version,owner_scope,definition_json,execution_hash,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6)", rusqlite::params![graph_id,version,owner_scope,definition_json,execution_hash,created_at_ms])?;
+    connection.execute("INSERT INTO visual_workflow_versions(graph_id,version,owner_scope,definition_json,execution_hash,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(graph_id,version,owner_scope) DO NOTHING", rusqlite::params![graph_id,version,owner_scope,definition_json,execution_hash,created_at_ms])?;
     Ok(())
 }
 
@@ -144,7 +144,7 @@ pub fn publish_from_handoff(
         .and_then(serde_json::Value::as_u64)
         .ok_or(rusqlite::Error::InvalidQuery)?;
     let provenance: Option<Vec<u8>> = tx.query_row("SELECT composer_provenance_json FROM visual_workflow_drafts WHERE draft_id=?1 AND owner_scope=?2", (draft_id, owner_scope), |value| value.get(0))?;
-    tx.execute("INSERT INTO visual_workflow_versions(graph_id,version,owner_scope,definition_json,execution_hash,composer_provenance_json,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6,?7)", rusqlite::params![graph_id,version,owner_scope,row.1,row.2,provenance,created_at_ms])?;
+    tx.execute("INSERT INTO visual_workflow_versions(graph_id,version,owner_scope,definition_json,execution_hash,composer_provenance_json,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(graph_id,version,owner_scope) DO NOTHING", rusqlite::params![graph_id,version,owner_scope,row.1,row.2,provenance,created_at_ms])?;
     tx.commit()?;
     Ok(Ok(row))
 }
