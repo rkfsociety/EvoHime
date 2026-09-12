@@ -379,8 +379,26 @@ async fn expired_approval_publishes_ledger_decision_and_refuses_the_retry() {
 /// `ledger.tool_receipt` (Succeeded) under the same `action_id` — and
 /// that receipt event's `receipt_hash` must resolve to an actual signed
 /// row in `receipt_records`, not just a plausible-looking string.
-#[tokio::test]
-async fn approved_terminal_execute_links_ledger_receipt_to_signed_receipts_v1() {
+#[test]
+fn approved_terminal_execute_links_ledger_receipt_to_signed_receipts_v1() {
+    std::thread::Builder::new()
+        .name("evohime-ipc-terminal-linkage-test".into())
+        .stack_size(32 * 1024 * 1024)
+        .spawn(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("test runtime builds")
+                .block_on(
+                    approved_terminal_execute_links_ledger_receipt_to_signed_receipts_v1_inner(),
+                );
+        })
+        .expect("test thread starts")
+        .join()
+        .expect("test thread completes");
+}
+
+async fn approved_terminal_execute_links_ledger_receipt_to_signed_receipts_v1_inner() {
     let root = std::env::temp_dir().join(format!(
         "evohime-ipc-terminal-linkage-root-{}",
         std::process::id()
