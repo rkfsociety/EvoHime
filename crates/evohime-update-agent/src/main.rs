@@ -165,6 +165,9 @@ const MODULE_IDS: &[&str] = &[
 ];
 const MAX_JSON_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_LOCAL_JSON_BYTES: usize = 256 * 1024;
+const MAX_COMPATIBLE_SUMMARY_BYTES: usize = 16 * 1024;
+const MAX_COMPATIBLE_CHANGES: usize = 64;
+const MAX_COMPATIBLE_CHANGE_BYTES: usize = 8 * 1024;
 
 #[derive(serde::Deserialize)]
 struct Release {
@@ -259,6 +262,19 @@ fn validate_compatible_manifest(manifest: &CompatibleManifest) -> Result<(), Str
         if !MODULE_IDS.contains(&component.id.as_str()) || !ids.insert(component.id.as_str()) {
             return Err(format!(
                 "updater: некорректный компонент совместимого комплекта: {}",
+                component.id
+            ));
+        }
+        if component.summary.len() > MAX_COMPATIBLE_SUMMARY_BYTES
+            || component.changes.len() > MAX_COMPATIBLE_CHANGES
+            || component
+                .changes
+                .iter()
+                .any(|change| change.len() > MAX_COMPATIBLE_CHANGE_BYTES)
+            || component.dependencies.len() > MODULE_IDS.len()
+        {
+            return Err(format!(
+                "updater: метаданные совместимого компонента превышают лимит: {}",
                 component.id
             ));
         }
@@ -1539,6 +1555,13 @@ mod tests {
             });
         }
         assert!(validate_compatible_manifest(&manifest).is_ok());
+
+        manifest.components[0].summary = "x".repeat(super::MAX_COMPATIBLE_SUMMARY_BYTES + 1);
+        assert!(validate_compatible_manifest(&manifest).is_err());
+        manifest.components[0].summary.clear();
+        manifest.components[0].changes = vec!["x".repeat(super::MAX_COMPATIBLE_CHANGE_BYTES + 1)];
+        assert!(validate_compatible_manifest(&manifest).is_err());
+        manifest.components[0].changes.clear();
 
         let mut invalid = manifest;
         invalid.components[1].release_tag = "module-supervisor-v1.0.0".into();
