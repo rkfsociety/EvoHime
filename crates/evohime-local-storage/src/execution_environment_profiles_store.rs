@@ -108,7 +108,10 @@ pub fn save_profile_revision(
     if current.is_some_and(|value| value >= input.revision) {
         return Ok(false);
     }
-    tx.execute("INSERT INTO execution_environment_profile_revisions(profile_id,revision,content_hash,profile_json,actor,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6)", params![input.id, input.revision as i64, input.hash, input.json, input.actor, input.now_ms])?;
+    let inserted = tx.execute("INSERT INTO execution_environment_profile_revisions(profile_id,revision,content_hash,profile_json,actor,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(profile_id,revision) DO NOTHING", params![input.id, input.revision as i64, input.hash, input.json, input.actor, input.now_ms])?;
+    if inserted == 0 {
+        return Ok(false);
+    }
     tx.execute("INSERT INTO execution_environment_profiles(id,revision,scope,state,content_hash,profile_json,updated_at_ms) VALUES(?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,scope=excluded.scope,state=excluded.state,content_hash=excluded.content_hash,profile_json=excluded.profile_json,updated_at_ms=excluded.updated_at_ms", params![input.id, input.revision as i64, input.scope, input.state, input.hash, input.json, input.now_ms])?;
     tx.commit()?;
     Ok(true)
@@ -275,6 +278,51 @@ mod tests {
         assert_eq!(
             load_current(&db, "application:a").unwrap(),
             Some(br#"{}"#.to_vec())
+        );
+    }
+
+    #[test]
+    fn existing_history_without_current_profile_is_not_rewritten_or_rejected() {
+        let db = Connection::open_in_memory().unwrap();
+        install_schema(&db).unwrap();
+        db.execute(
+            "INSERT INTO execution_environment_profile_revisions
+             (profile_id, revision, content_hash, profile_json, actor, created_at_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                "p",
+                3_i64,
+                "original",
+                br#"{"original":true}"#,
+                "old-core",
+                10_i64
+            ],
+        )
+        .unwrap();
+
+        assert!(!save_profile_revision(
+            &db,
+            SaveProfileRevisionInput {
+                id: "p",
+                revision: 3,
+                scope: "application:a",
+                state: "ready",
+                hash: "replacement",
+                json: br#"{"original":false}"#,
+                actor: "new-core",
+                now_ms: 20,
+            },
+        )
+        .unwrap());
+        assert_eq!(
+            db.query_row(
+                "SELECT content_hash, profile_json FROM execution_environment_profile_revisions
+                 WHERE profile_id = ?1 AND revision = ?2",
+                params!["p", 3_i64],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+            )
+            .unwrap(),
+            ("original".to_owned(), br#"{"original":true}"#.to_vec())
         );
     }
 
