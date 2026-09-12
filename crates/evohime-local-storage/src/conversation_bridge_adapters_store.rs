@@ -14,7 +14,8 @@ pub fn claim_idempotency(c: &Connection, key: &str, operation: &str) -> rusqlite
 }
 
 pub fn put_bridge(c: &Connection, id: &str, json: &[u8], revision: u64) -> rusqlite::Result<()> {
-    let bridge: serde_json::Value = serde_json::from_slice(json).unwrap_or_default();
+    let bridge: serde_json::Value = serde_json::from_slice(json)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
     c.execute(
         "INSERT OR REPLACE INTO conversation_bridges VALUES(?1,?2,?3,?4,?5,?6,?7)",
         params![
@@ -77,7 +78,8 @@ pub fn put_binding(
     thread_id: &str,
     revision: u64,
 ) -> rusqlite::Result<bool> {
-    let binding: serde_json::Value = serde_json::from_slice(json).unwrap_or_default();
+    let binding: serde_json::Value = serde_json::from_slice(json)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
     Ok(c.execute(
         "INSERT OR IGNORE INTO conversation_thread_bindings VALUES(?1,?2,?3,?4,?5,?6)",
         params![
@@ -159,5 +161,16 @@ mod tests {
         assert!(!put_inbound(&c, "m", "bind", b"{}", 1).unwrap());
         clear_bridge(&c, "b").unwrap();
         assert!(list_inbound(&c).unwrap().is_empty());
+    }
+
+    #[test]
+    fn rejects_invalid_bridge_and_binding_json() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+
+        assert!(put_bridge(&c, "b", b"{invalid", 1).is_err());
+        assert!(put_binding(&c, b"{invalid", "bind", "b", "thread", 1).is_err());
+        assert!(get_bridge(&c, "b").unwrap().is_none());
+        assert!(get_binding(&c, "bind").unwrap().is_none());
     }
 }
