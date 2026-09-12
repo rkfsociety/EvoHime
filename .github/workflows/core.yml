@@ -27,6 +27,8 @@ jobs:
     name: Core — tests, lint and build
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      RUST_MIN_STACK: 33554432
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
