@@ -2,6 +2,8 @@ use crate::{ToolContext, ToolError, ToolResult};
 use evohime_permissions::Permission;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::io::{self, Read};
+use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 use tokio::process::Command;
 
@@ -154,39 +156,18 @@ pub async fn extract(ctx: &ToolContext, input: Value) -> Result<ToolResult, Tool
     // Detect format from file extension
     let is_zip = archive.to_string_lossy().ends_with(".zip");
 
-    if is_zip {
-        let output = Command::new("unzip")
-            .arg("-q")
-            .arg(&archive)
-            .arg("-d")
-            .arg(&dest)
-            .output()
-            .await
-            .map_err(|e| ToolError::Execution(format!("unzip failed: {e}")))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(ToolError::Execution(format!("unzip failed: {}", stderr)));
+    let archive_for_worker = archive.clone();
+    let dest_for_worker = dest.clone();
+    tokio::task::spawn_blocking(move || {
+        if is_zip {
+            extract_zip(&archive_for_worker, &dest_for_worker)
+        } else {
+            extract_tar(&archive_for_worker, &dest_for_worker)
         }
-    } else {
-        let output = Command::new("tar")
-            .arg("-x")
-            .arg("-f")
-            .arg(&archive)
-            .arg("-C")
-            .arg(&dest)
-            .output()
-            .await
-            .map_err(|e| ToolError::Execution(format!("tar extract failed: {e}")))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(ToolError::Execution(format!(
-                "tar extract failed: {}",
-                stderr
-            )));
-        }
-    }
+    })
+    .await
+    .map_err(|e| ToolError::Execution(format!("archive extraction worker failed: {e}")))?
+    .map_err(|e| ToolError::Execution(format!("archive extraction failed: {e}")))?;
 
     Ok(ToolResult {
         output: format!("Archive extracted to {}", dest.display()),
@@ -197,6 +178,142 @@ pub async fn extract(ctx: &ToolContext, input: Value) -> Result<ToolResult, Tool
             "success": true
         }),
     })
+}
+
+fn safe_archive_path(raw: &Path) -> io::Result<PathBuf> {
+    let mut safe = PathBuf::new();
+    for component in raw.components() {
+        match component {
+            Component::Normal(part) => safe.push(part),
+            Component::CurDir => {}
+            Component::RootDir | Component::Prefix(_) | Component::ParentDir => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "archive entry escapes destination",
+                ));
+            }
+        }
+    }
+    if safe.as_os_str().is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "archive entry has an empty path",
+        ));
+    }
+    Ok(safe)
+}
+
+fn ensure_safe_parent(destination: &Path, target: &Path) -> io::Result<()> {
+    if std::fs::symlink_metadata(destination)?
+        .file_type()
+        .is_symlink()
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "archive destination is a symbolic link",
+        ));
+    }
+    let parent = target.parent().unwrap_or(destination);
+    std::fs::create_dir_all(parent)?;
+    let mut current = destination.to_path_buf();
+    for component in parent
+        .strip_prefix(destination)
+        .unwrap_or(parent)
+        .components()
+    {
+        if let Component::Normal(part) = component {
+            current.push(part);
+            let metadata = std::fs::symlink_metadata(&current)?;
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "archive entry traverses a symbolic link or non-directory",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn extract_tar(archive_path: &Path, destination: &Path) -> io::Result<()> {
+    let file = std::fs::File::open(archive_path)?;
+    let reader: Box<dyn Read> = if archive_path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("gz"))
+    {
+        Box::new(flate2::read::GzDecoder::new(file))
+    } else {
+        Box::new(file)
+    };
+    let mut archive = tar::Archive::new(reader);
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let path = safe_archive_path(&entry.path()?)?;
+        let entry_type = entry.header().entry_type();
+        if entry_type.is_symlink() || entry_type.is_hard_link() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "symbolic and hard links are not allowed in archives",
+            ));
+        }
+        let target = destination.join(path);
+        ensure_safe_parent(destination, &target)?;
+        if entry_type.is_dir() {
+            std::fs::create_dir_all(&target)?;
+        } else if entry_type.is_file() {
+            if std::fs::symlink_metadata(&target)
+                .map(|metadata| metadata.file_type().is_symlink())
+                .unwrap_or(false)
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "archive entry would overwrite a symbolic link",
+                ));
+            }
+            entry.unpack(&target)?;
+        } else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "unsupported archive entry type",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn extract_zip(archive_path: &Path, destination: &Path) -> io::Result<()> {
+    let file = std::fs::File::open(archive_path)?;
+    let mut archive = zip::ZipArchive::new(file).map_err(io::Error::other)?;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).map_err(io::Error::other)?;
+        if entry.is_symlink() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "symbolic links are not allowed in archives",
+            ));
+        }
+        let raw_name = entry.name().replace('\\', "/");
+        let path = safe_archive_path(Path::new(&raw_name))?;
+        let target = destination.join(path);
+        if entry.is_dir() {
+            ensure_safe_parent(destination, &target.join("placeholder"))?;
+            std::fs::create_dir_all(&target)?;
+        } else {
+            ensure_safe_parent(destination, &target)?;
+            if std::fs::symlink_metadata(&target)
+                .map(|metadata| metadata.file_type().is_symlink())
+                .unwrap_or(false)
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "archive entry would overwrite a symbolic link",
+                ));
+            }
+            let mut output = std::fs::File::create(&target)?;
+            io::copy(&mut entry, &mut output)?;
+        }
+    }
+    Ok(())
 }
 
 // ============================================================================
@@ -284,5 +401,60 @@ mod tests {
 
         assert!(result.is_ok(), "archive create failed");
         assert!(dir.path().join(archive_path).exists());
+    }
+
+    #[tokio::test]
+    async fn archive_extract_rejects_zip_traversal() {
+        let dir = tempdir().expect("tempdir");
+        let archive_path = dir.path().join("unsafe.zip");
+        let file = std_fs::File::create(&archive_path).expect("archive");
+        let mut writer = zip::ZipWriter::new(file);
+        writer
+            .start_file("../escaped.txt", zip::write::SimpleFileOptions::default())
+            .expect("entry");
+        std::io::Write::write_all(&mut writer, b"must not extract").expect("content");
+        writer.finish().expect("finish");
+
+        let ctx = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+        let error = extract(&ctx, json!({"archive": "unsafe.zip", "destination": "out"}))
+            .await
+            .expect_err("unsafe archive must be rejected");
+        assert!(error.to_string().contains("escapes destination"));
+        assert!(!dir.path().join("escaped.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn archive_extract_rejects_tar_traversal() {
+        let dir = tempdir().expect("tempdir");
+        let archive_path = dir.path().join("unsafe.tar");
+        let file = std_fs::File::create(&archive_path).expect("archive");
+        let mut builder = tar::Builder::new(file);
+        let mut header = tar::Header::new_gnu();
+        let content = b"must not extract";
+        header.set_path("placeholder.txt").expect("path");
+        header.as_mut_bytes()[..16].copy_from_slice(b"../escaped.txt\0\0");
+        header.set_size(content.len() as u64);
+        header.set_cksum();
+        builder
+            .append(&header, std::io::Cursor::new(content))
+            .expect("entry");
+        builder.finish().expect("finish");
+
+        let ctx = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+        let error = extract(&ctx, json!({"archive": "unsafe.tar", "destination": "out"}))
+            .await
+            .expect_err("unsafe archive must be rejected");
+        assert!(error.to_string().contains("escapes destination"));
+        assert!(!dir.path().join("escaped.txt").exists());
     }
 }
