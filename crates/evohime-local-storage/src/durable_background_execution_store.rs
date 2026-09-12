@@ -270,12 +270,14 @@ pub fn put_wait(c: &mut Connection, record: &WaitRecord, now_ms: i64) -> rusqlit
         return Ok(false);
     }
     let tx = c.transaction()?;
-    tx.execute("INSERT INTO automation_waits(run_id,revision,condition_json,wake_at_ms,state,updated_at_ms) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(run_id) DO UPDATE SET revision=excluded.revision,condition_json=excluded.condition_json,wake_at_ms=excluded.wake_at_ms,state=excluded.state,updated_at_ms=excluded.updated_at_ms WHERE excluded.revision >= automation_waits.revision", params![record.run_id, record.revision as i64, &record.condition_json, record.wake_at_ms, record.state, now_ms])?;
-    if let Some(wake) = record.wake_at_ms {
-        tx.execute("INSERT OR REPLACE INTO automation_wakeups(wake_key,run_id,wake_at_ms,kind,active,created_at_ms) VALUES(?1,?2,?3,'wait',1,?4)", params![format!("wait:{}:{}", record.run_id, record.revision), record.run_id, wake, now_ms])?;
+    let changed = tx.execute("INSERT INTO automation_waits(run_id,revision,condition_json,wake_at_ms,state,updated_at_ms) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(run_id) DO UPDATE SET revision=excluded.revision,condition_json=excluded.condition_json,wake_at_ms=excluded.wake_at_ms,state=excluded.state,updated_at_ms=excluded.updated_at_ms WHERE excluded.revision >= automation_waits.revision", params![record.run_id, record.revision as i64, &record.condition_json, record.wake_at_ms, record.state, now_ms])?;
+    if changed == 1 {
+        if let Some(wake) = record.wake_at_ms {
+            tx.execute("INSERT INTO automation_wakeups(wake_key,run_id,wake_at_ms,kind,active,created_at_ms) VALUES(?1,?2,?3,'wait',1,?4) ON CONFLICT(wake_key) DO UPDATE SET run_id=excluded.run_id,wake_at_ms=excluded.wake_at_ms,kind=excluded.kind,active=excluded.active,created_at_ms=excluded.created_at_ms", params![format!("wait:{}:{}", record.run_id, record.revision), record.run_id, wake, now_ms])?;
+        }
     }
     tx.commit()?;
-    Ok(true)
+    Ok(changed == 1)
 }
 
 pub fn due_wakeups(
@@ -482,6 +484,19 @@ mod tests {
                 state: "waiting".into()
             },
             1
+        )
+        .unwrap());
+        assert_eq!(due_wakeups(&c, 10, 10).unwrap().len(), 1);
+        assert!(!put_wait(
+            &mut c,
+            &WaitRecord {
+                run_id: "r".into(),
+                revision: 0,
+                condition_json: br#"{"stale":true}"#.to_vec(),
+                wake_at_ms: Some(1),
+                state: "waiting".into()
+            },
+            2
         )
         .unwrap());
         assert_eq!(due_wakeups(&c, 10, 10).unwrap().len(), 1);
