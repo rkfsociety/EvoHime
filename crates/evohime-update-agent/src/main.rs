@@ -235,6 +235,9 @@ fn read_compatible_manifest(
         .iter()
         .find(|asset| asset.name == "evohime.compatible.json")
         .ok_or_else(|| "updater: манифест совместимого комплекта отсутствует".to_owned())?;
+    if !is_github_release_asset_url(&asset.browser_download_url) {
+        return Err("updater: URL compatible manifest не является GitHub release asset".into());
+    }
     get_json(
         client,
         &asset.browser_download_url,
@@ -453,6 +456,12 @@ fn remote_updates(data_dir: &Path, install_dir: &Path) -> Result<Vec<UpdateCandi
                 .ok_or_else(|| format!("updater: artifact отсутствует для {}", component.id))?;
             (artifact, download_url)
         };
+        if !is_github_release_asset_url(&download_url) {
+            return Err(format!(
+                "updater: URL release asset недопустим для {}",
+                component.id
+            ));
+        }
         available.push(ModuleRecord {
             id: component.id.clone(),
             version: component.version.clone(),
@@ -544,6 +553,22 @@ fn is_github_api_url(value: &str) -> bool {
         .parse::<reqwest::Url>()
         .map(|url| url.scheme() == "https" && url.host_str() == Some("api.github.com"))
         .unwrap_or(false)
+}
+
+fn is_github_release_asset_url(value: &str) -> bool {
+    let Ok(url) = value.parse::<reqwest::Url>() else {
+        return false;
+    };
+    let Some(segments) = url.path_segments() else {
+        return false;
+    };
+    let segments = segments.collect::<Vec<_>>();
+    url.scheme() == "https"
+        && url.host_str() == Some("github.com")
+        && segments.len() >= 4
+        && segments
+            .windows(2)
+            .any(|pair| pair == ["releases", "download"])
 }
 
 fn resolve_github_token(config: &serde_json::Value) -> Option<String> {
@@ -1421,10 +1446,11 @@ fn fail(error: impl std::fmt::Display) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_github_api_url, normalize_github_token, parse_json_body, read_update_config,
-        resolve_github_token_with, updater_bootstrap_script, updater_first_if_required,
-        updater_http_client, validate_compatible_manifest, CompatibleComponent, CompatibleManifest,
-        UpdateCandidate, UpdaterBootstrapPaths, UpdaterRequirement,
+        is_github_api_url, is_github_release_asset_url, normalize_github_token, parse_json_body,
+        read_update_config, resolve_github_token_with, updater_bootstrap_script,
+        updater_first_if_required, updater_http_client, validate_compatible_manifest,
+        CompatibleComponent, CompatibleManifest, UpdateCandidate, UpdaterBootstrapPaths,
+        UpdaterRequirement,
     };
     use std::{
         fs,
@@ -1732,6 +1758,22 @@ mod tests {
             .headers()
             .get(reqwest::header::AUTHORIZATION)
             .is_none());
+    }
+
+    #[test]
+    fn release_asset_urls_are_limited_to_github_download_paths() {
+        assert!(is_github_release_asset_url(
+            "https://github.com/example/project/releases/download/v1/file.zip"
+        ));
+        assert!(!is_github_release_asset_url(
+            "https://example.com/example/project/releases/download/v1/file.zip"
+        ));
+        assert!(!is_github_release_asset_url(
+            "https://github.com/example/project/archive/v1/file.zip"
+        ));
+        assert!(!is_github_release_asset_url(
+            "http://github.com/example/project/releases/download/v1/file.zip"
+        ));
     }
 
     #[test]
