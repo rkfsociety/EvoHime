@@ -3,6 +3,7 @@ use evohime_permissions::Permission;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{fs, io::ErrorKind, path::Path, process::Stdio, time::Duration};
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use unicode_normalization::UnicodeNormalization;
 
@@ -38,6 +39,8 @@ const HARD_SKIP_FILE_NAMES: &[&str] = &[
     "token.json",
     "auth.json",
 ];
+const MAX_RG_STDOUT_BYTES: usize = 4 * 1024 * 1024;
+const MAX_RG_STDERR_BYTES: usize = 64 * 1024;
 
 #[derive(Deserialize)]
 struct Input {
@@ -158,13 +161,16 @@ async fn ripgrep_search(
     ] {
         command.args(["--glob", pattern]);
     }
-    let output = match command.output().await {
+    let output = match run_bounded_rg(&mut command).await {
         Ok(output) => output,
         Err(error) if error.kind() == ErrorKind::NotFound => return Err(RgFailure::Missing),
         Err(error) => {
             return Err(RgFailure::Failed(format!("ripgrep failed: {error}")));
         }
     };
+    if output.stdout.len() > MAX_RG_STDOUT_BYTES {
+        return Err(RgFailure::Failed("ripgrep output exceeds 4 MiB".into()));
+    }
     if !output.status.success() && output.status.code() != Some(1) {
         return Err(RgFailure::Failed(
             String::from_utf8_lossy(&output.stderr).to_string(),
@@ -195,6 +201,53 @@ async fn ripgrep_search(
         }
     }
     Ok(matches)
+}
+
+struct BoundedRgOutput {
+    status: std::process::ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+async fn run_bounded_rg(command: &mut Command) -> std::io::Result<BoundedRgOutput> {
+    let mut child = command.spawn()?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| std::io::Error::other("ripgrep stdout unavailable"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| std::io::Error::other("ripgrep stderr unavailable"))?;
+    let mut stdout_reader = tokio::io::BufReader::new(stdout);
+    let mut stderr_reader = tokio::io::BufReader::new(stderr);
+    let stdout = read_bounded(&mut stdout_reader, MAX_RG_STDOUT_BYTES);
+    let stderr = read_bounded(&mut stderr_reader, MAX_RG_STDERR_BYTES);
+    let status = child.wait();
+    let (stdout, stderr, status) = tokio::join!(stdout, stderr, status);
+    Ok(BoundedRgOutput {
+        status: status?,
+        stdout: stdout?,
+        stderr: stderr?,
+    })
+}
+
+async fn read_bounded<R: tokio::io::AsyncRead + Unpin>(
+    reader: &mut R,
+    limit: usize,
+) -> std::io::Result<Vec<u8>> {
+    let mut output = Vec::with_capacity(limit.min(16 * 1024));
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        let read = reader.read(&mut chunk).await?;
+        if read == 0 {
+            break;
+        }
+        if output.len() <= limit {
+            output.extend_from_slice(&chunk[..read.min(limit + 1 - output.len())]);
+        }
+    }
+    Ok(output)
 }
 
 fn fallback_search(
@@ -504,6 +557,25 @@ mod tests {
         assert!(is_hard_excluded(Path::new("credentials.json")));
         assert!(is_hard_excluded(Path::new("token.txt:secret")));
         assert!(!is_hard_excluded(Path::new("src/tokenizer.rs")));
+    }
+
+    #[tokio::test]
+    async fn ripgrep_reader_keeps_output_bounded() {
+        let (mut writer, mut reader) = tokio::io::duplex(64);
+        let payload = vec![b'x'; MAX_RG_STDOUT_BYTES + 1_024];
+        let writer_task = tokio::spawn(async move {
+            tokio::io::AsyncWriteExt::write_all(&mut writer, &payload)
+                .await
+                .unwrap();
+            tokio::io::AsyncWriteExt::shutdown(&mut writer)
+                .await
+                .unwrap();
+        });
+        let output = read_bounded(&mut reader, MAX_RG_STDOUT_BYTES)
+            .await
+            .unwrap();
+        writer_task.await.unwrap();
+        assert_eq!(output.len(), MAX_RG_STDOUT_BYTES + 1);
     }
 
     #[test]
