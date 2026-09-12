@@ -795,6 +795,8 @@ fn validate_runtime_manifest(manifest: &RuntimeReleaseManifest) -> Result<(), St
         if entry.name.is_empty()
             || entry.name.len() > 260
             || !names.insert(entry.name.as_str())
+            || entry.name == "."
+            || entry.name.ends_with('/')
             || entry.name.contains('\\')
             || entry.name.contains(':')
             || entry.name.contains("..")
@@ -2238,6 +2240,8 @@ mod tests {
         safe_manifest.models[0].name = "models/other.bin".into();
         assert!(validate_runtime_manifest(&safe_manifest).is_ok());
         safe_manifest.files[0].name = "models/base.bin:stream".into();
+        assert!(validate_runtime_manifest(&safe_manifest).is_err());
+        safe_manifest.files[0].name = "models/".into();
         assert!(validate_runtime_manifest(&safe_manifest).is_err());
     }
 
