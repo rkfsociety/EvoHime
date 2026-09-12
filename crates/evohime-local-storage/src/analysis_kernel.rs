@@ -447,7 +447,7 @@ impl<'a> AnalysisKernelStore<'a> {
     pub fn put_object(&self, object: &KernelObjectRefV1) -> Result<(), StorageError> {
         object.validate()?;
         self.connection.execute(
-            "INSERT INTO analysis_kernel_objects
+            "INSERT OR IGNORE INTO analysis_kernel_objects
              (id,kernel_id,logical_name,type_hint,size,sensitivity,persistence,content_hash,
               artifact_locator,provenance,created_at_ms,invalidated_at_ms)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
@@ -749,5 +749,34 @@ mod tests {
             store.list_objects("kernel-1").unwrap().len(),
             ANALYSIS_KERNEL_MAX_OBJECTS
         );
+    }
+
+    #[test]
+    fn duplicate_object_replay_keeps_original_metadata() {
+        let connection = Connection::open_in_memory().unwrap();
+        install_schema(&connection).unwrap();
+        let store = AnalysisKernelStore::new(&connection);
+        store.create_session(&session()).unwrap();
+        let object = KernelObjectRefV1 {
+            id: "object-1".into(),
+            kernel_id: "kernel-1".into(),
+            logical_name: "rows".into(),
+            type_hint: "json".into(),
+            size: 10,
+            sensitivity: KernelSensitivity::Public,
+            persistence: KernelObjectPersistence::Checkpointed,
+            content_hash: Some("a".repeat(64)),
+            artifact_locator: Some("artifact://first".into()),
+            provenance: "core:test".into(),
+            created_at_ms: 1,
+            invalidated_at_ms: None,
+        };
+        store.put_object(&object).unwrap();
+        let replacement = KernelObjectRefV1 {
+            artifact_locator: Some("artifact://replacement".into()),
+            ..object.clone()
+        };
+        store.put_object(&replacement).unwrap();
+        assert_eq!(store.list_objects("kernel-1").unwrap(), vec![object]);
     }
 }
