@@ -67,7 +67,7 @@ pub fn record_event<T: Serialize>(
             "event payload exceeds 32 KiB".into(),
         ));
     }
-    connection.execute("INSERT INTO event_trigger_events(event_id,trigger_id,envelope_json,outcome,correlation_id,accepted_at_ms,expires_at_ms) VALUES(?1,?2,?3,?4,?5,?6,?7)", params![meta.event_id, meta.trigger_id, json, meta.outcome, meta.correlation_id, meta.accepted_at_ms, meta.expires_at_ms])?;
+    connection.execute("INSERT OR IGNORE INTO event_trigger_events(event_id,trigger_id,envelope_json,outcome,correlation_id,accepted_at_ms,expires_at_ms) VALUES(?1,?2,?3,?4,?5,?6,?7)", params![meta.event_id, meta.trigger_id, json, meta.outcome, meta.correlation_id, meta.accepted_at_ms, meta.expires_at_ms])?;
     Ok(())
 }
 
@@ -111,6 +111,28 @@ mod tests {
                 correlation_id: "c",
                 accepted_at_ms: 1,
                 expires_at_ms: 2,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            c.query_row(
+                "SELECT outcome FROM event_trigger_events WHERE event_id='e'",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap(),
+            "pending"
+        );
+        record_event(
+            &c,
+            &serde_json::json!({"safe": false}),
+            &EventRecordMeta {
+                event_id: "e",
+                trigger_id: "t",
+                outcome: "failed",
+                correlation_id: "replacement",
+                accepted_at_ms: 2,
+                expires_at_ms: 3,
             },
         )
         .unwrap();
