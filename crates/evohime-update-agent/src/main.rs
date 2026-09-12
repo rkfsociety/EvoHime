@@ -1274,7 +1274,13 @@ fn normalize_archive_path(path: &Path) -> Option<PathBuf> {
     for component in path.components() {
         match component {
             std::path::Component::CurDir => {}
-            std::path::Component::Normal(part) => normalized.push(part),
+            std::path::Component::Normal(part) => {
+                let part = part.to_string_lossy();
+                if part.contains('\\') || part.contains(':') {
+                    return None;
+                }
+                normalized.push(part.as_ref());
+            }
             _ => return None,
         }
     }
@@ -1816,6 +1822,12 @@ mod tests {
             .expect_err("duplicate archive paths must be rejected");
         assert!(error.contains("повторяющийся путь"));
         fs::remove_dir_all(root).expect("remove temporary archive directory");
+    }
+
+    #[test]
+    fn archive_paths_reject_windows_only_separators_and_streams() {
+        assert!(super::normalize_archive_path(Path::new(r"assets\\app.js")).is_none());
+        assert!(super::normalize_archive_path(Path::new("assets/app.js:stream")).is_none());
     }
 
     #[test]
