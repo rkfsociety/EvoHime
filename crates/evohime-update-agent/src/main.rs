@@ -1331,12 +1331,16 @@ fn merge_installed_manifest_to(
         }
     }
     let temporary = destination.with_extension("json.tmp");
-    fs::write(
-        &temporary,
-        serde_json::to_vec_pretty(&root).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| error.to_string())?;
-    fs::rename(temporary, destination).map_err(|error| error.to_string())
+    let bytes = serde_json::to_vec_pretty(&root).map_err(|error| error.to_string())?;
+    if let Err(error) = fs::write(&temporary, bytes) {
+        let _ = fs::remove_file(&temporary);
+        return Err(error.to_string());
+    }
+    if let Err(error) = fs::rename(&temporary, destination) {
+        let _ = fs::remove_file(&temporary);
+        return Err(error.to_string());
+    }
+    Ok(())
 }
 
 fn stream_file_hash(path: &Path) -> Result<(u64, String), String> {
@@ -1622,6 +1626,29 @@ mod tests {
         assert_eq!(size, 10);
         assert_eq!(hash, format!("{:x}", sha2::Sha256::digest(b"shell-host")));
         fs::remove_file(path).expect("remove shell host");
+    }
+
+    #[test]
+    fn manifest_merge_removes_temporary_file_after_rename_failure() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-merge-cleanup-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("create temporary install directory");
+        fs::write(
+            root.join("evohime.components.json"),
+            br#"{"components":[]}"#,
+        )
+        .expect("write manifest");
+        let destination = root.join("blocked.json");
+        fs::create_dir(&destination).expect("create blocking destination");
+
+        assert!(merge_installed_manifest_to(&root, &[], &destination).is_err());
+        assert!(!root.join("blocked.json.tmp").exists());
+        fs::remove_dir_all(root).expect("remove temporary install directory");
     }
 
     #[test]
