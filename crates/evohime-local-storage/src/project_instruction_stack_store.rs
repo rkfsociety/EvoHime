@@ -1,6 +1,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 pub const STORE_SCHEMA_VERSION: u32 = 1;
+const MAX_LIST_ROWS: usize = 256;
 
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
@@ -47,7 +48,7 @@ pub fn list_rules(connection: &Connection, limit: usize) -> rusqlite::Result<Vec
     let mut statement = connection
         .prepare("SELECT rule_json FROM project_instruction_rules ORDER BY rule_id LIMIT ?1")?;
     let rows = statement
-        .query_map([limit as i64], |row| row.get(0))?
+        .query_map([limit.min(MAX_LIST_ROWS) as i64], |row| row.get(0))?
         .collect();
     rows
 }
@@ -132,5 +133,28 @@ mod tests {
             get_snapshot(&connection, "s").unwrap(),
             Some(b"snapshot".to_vec())
         );
+    }
+
+    #[test]
+    fn rule_listing_is_bounded() {
+        let connection = Connection::open_in_memory().unwrap();
+        install_schema(&connection).unwrap();
+        for index in 0..300 {
+            let rule_id = format!("rule-{index:03}");
+            put_rule(
+                &connection,
+                PutRuleInput {
+                    rule_id: &rule_id,
+                    revision: 1,
+                    source_kind: "workspace",
+                    source_ref: "generated",
+                    content_hash: "hash",
+                    rule_json: b"{}",
+                    now_ms: index,
+                },
+            )
+            .unwrap();
+        }
+        assert_eq!(list_rules(&connection, usize::MAX).unwrap().len(), 256);
     }
 }
