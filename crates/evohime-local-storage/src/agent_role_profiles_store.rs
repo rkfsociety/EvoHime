@@ -2,6 +2,8 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+const MAX_LIST_ROWS: usize = 32;
+
 pub fn install_schema(connection: &Connection) -> Result<(), rusqlite::Error> {
     connection.execute_batch("CREATE TABLE IF NOT EXISTS agent_role_profiles (id TEXT PRIMARY KEY NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, profile_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS agent_role_profile_revisions (profile_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, profile_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(profile_id, revision));")
 }
@@ -44,8 +46,10 @@ pub fn load_json(
 
 pub fn load_all_json(connection: &Connection) -> Result<Vec<Vec<u8>>, rusqlite::Error> {
     let mut statement =
-        connection.prepare("SELECT profile_json FROM agent_role_profiles ORDER BY id")?;
-    let rows = statement.query_map([], |row| row.get(0))?.collect();
+        connection.prepare("SELECT profile_json FROM agent_role_profiles ORDER BY id LIMIT ?1")?;
+    let rows = statement
+        .query_map([MAX_LIST_ROWS as i64], |row| row.get(0))?
+        .collect();
     rows
 }
 
@@ -66,5 +70,16 @@ mod tests {
             load_json(&connection, "role", 1).expect("revision loads"),
             Some(b"first".to_vec())
         );
+    }
+
+    #[test]
+    fn loading_profiles_is_bounded_by_the_core_contract() {
+        let connection = Connection::open_in_memory().expect("sqlite opens");
+        install_schema(&connection).expect("schema installs");
+        for revision in 1..=40_u64 {
+            let id = format!("role-{revision:02}");
+            save_revision(&connection, &id, revision, "hash", b"{}", 1).expect("profile saves");
+        }
+        assert_eq!(load_all_json(&connection).expect("profiles load").len(), 32);
     }
 }

@@ -1,5 +1,7 @@
 //! Durable JSON records and append-only transition metadata for Human Work Items.
 use rusqlite::{params, Connection, OptionalExtension};
+
+const MAX_LIST_ROWS: usize = 256;
 pub fn install_schema(c: &Connection) -> Result<(), rusqlite::Error> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS human_work_items (id TEXT PRIMARY KEY NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL, item_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS human_work_item_events (item_id TEXT NOT NULL, revision INTEGER NOT NULL, event_type TEXT NOT NULL, metadata_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(item_id, revision));")
 }
@@ -36,8 +38,8 @@ pub fn save(
     Ok(true)
 }
 pub fn load_all_json(c: &Connection) -> Result<Vec<Vec<u8>>, rusqlite::Error> {
-    let mut s = c.prepare("SELECT item_json FROM human_work_items ORDER BY id")?;
-    let rows = s.query_map([], |r| r.get(0))?.collect();
+    let mut s = c.prepare("SELECT item_json FROM human_work_items ORDER BY id LIMIT ?1")?;
+    let rows = s.query_map([MAX_LIST_ROWS as i64], |r| r.get(0))?.collect();
     rows
 }
 #[cfg(test)]
@@ -82,5 +84,25 @@ mod tests {
             )
             .unwrap();
         assert_eq!(event, ("original".into(), br#"{"source":"old"}"#.to_vec()));
+    }
+
+    #[test]
+    fn loading_work_items_is_bounded_by_the_core_contract() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        for revision in 1..=300_u64 {
+            let id = format!("item-{revision:03}");
+            save(
+                &c,
+                &id,
+                revision,
+                "waiting_for_human",
+                b"{}",
+                "create",
+                revision as i64,
+            )
+            .unwrap();
+        }
+        assert_eq!(load_all_json(&c).unwrap().len(), 256);
     }
 }
