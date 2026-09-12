@@ -102,8 +102,8 @@ pub fn save_state(
         if previous_key == idempotency_key && previous == json {
             return Ok(true);
         }
-        c.execute("UPDATE team_coordination_states SET policy_revision=?1,state_json=?2,version=version+1,idempotency_key=?3,updated_at_ms=?4 WHERE team_id=?5 AND version=?6", params![policy_revision as i64, json, idempotency_key, now_ms, team_id, expected_version as i64])?;
-        return Ok(true);
+        let updated = c.execute("UPDATE team_coordination_states SET policy_revision=?1,state_json=?2,version=version+1,idempotency_key=?3,updated_at_ms=?4 WHERE team_id=?5 AND version=?6", params![policy_revision as i64, json, idempotency_key, now_ms, team_id, expected_version as i64])?;
+        return Ok(updated == 1);
     }
     if expected_version != 0 {
         return Ok(false);
