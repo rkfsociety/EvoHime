@@ -609,6 +609,43 @@ fn read_bounded_file(path: &Path, limit: usize) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
+fn validate_recovered_state(state: &TransactionState, state_dir: &Path) -> io::Result<()> {
+    validate_absolute(&state.install_dir, "transaction install directory")?;
+    validate_absolute(&state.backup_dir, "transaction backup directory")?;
+    if state.backup_dir.parent() != Some(state_dir) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "transaction backup directory is outside the state directory",
+        ));
+    }
+    let mut components = HashSet::with_capacity(state.components.len());
+    for component in &state.components {
+        if !UpdateTransaction::COMPONENTS.contains(&component.as_str())
+            || !components.insert(component.as_str())
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("invalid transaction component: {component}"),
+            ));
+        }
+    }
+    if let Some(target) = &state.ui_target {
+        let bundles = state.install_dir.join("ui-bundles");
+        let valid_target = target.parent() == Some(bundles.as_path())
+            && target
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(is_safe_version);
+        if !valid_target {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "transaction UI target is outside the UI bundles directory",
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn wait_for_health(path: Option<&Path>) -> io::Result<()> {
     let Some(path) = path else { return Ok(()) };
     wait_for_health_with_limit(path, WAIT_FOR_HEALTH)
@@ -869,6 +906,7 @@ impl UpdateTransaction {
             MAX_TRANSACTION_STATE_BYTES,
         )?)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        validate_recovered_state(&state, state_dir)?;
         let transaction = Self {
             operation_id: if state.operation_id.is_empty() {
                 "legacy".to_owned()
@@ -1552,6 +1590,37 @@ mod tests {
             (super::MAX_UI_POINTER_BYTES + 1) as u64
         );
         assert!(!state.join("transaction.json").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_recovery_state_with_external_backup_path() {
+        let root = temp_dir("external-backup");
+        let state_dir = root.join("state");
+        fs::create_dir_all(&state_dir).unwrap();
+        let external_backup = root.join("external-backup");
+        fs::create_dir_all(&external_backup).unwrap();
+        fs::write(external_backup.join("sentinel"), "keep").unwrap();
+        let state = super::TransactionState {
+            operation_id: "tx-test".into(),
+            install_dir: root.join("install"),
+            backup_dir: external_backup.clone(),
+            phase: super::TransactionPhase::Installing,
+            scope: super::TransactionScope::Tree,
+            components: Vec::new(),
+            ui_target: None,
+            ui_previous_pointer: None,
+        };
+        fs::write(
+            state_dir.join("transaction.json"),
+            serde_json::to_vec(&state).unwrap(),
+        )
+        .unwrap();
+
+        let error = UpdateTransaction::recover(&state_dir)
+            .expect_err("external backup paths must be rejected");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(external_backup.join("sentinel").is_file());
         fs::remove_dir_all(root).unwrap();
     }
 
