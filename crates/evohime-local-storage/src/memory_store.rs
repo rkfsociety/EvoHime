@@ -16,6 +16,7 @@ pub const MAX_TIMESTAMP_BYTES: usize = 64;
 pub const MAX_QUERY_BYTES: usize = 512;
 pub const MAX_TTL_SECONDS: u64 = 366 * 24 * 60 * 60;
 pub const MAX_EVIDENCE_REFS: usize = 64;
+pub const MAX_METADATA_ROWS: usize = 500;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1095,12 +1096,13 @@ impl MemoryStoreSql {
         validate_required("scope_id", scope_id, MAX_SCOPE_ID_BYTES)?;
         let mut statement = connection.prepare(
             "SELECT alias, entity_id FROM memory_aliases
-             WHERE scope_kind = ?1 AND scope_id = ?2 ORDER BY alias ASC",
+             WHERE scope_kind = ?1 AND scope_id = ?2 ORDER BY alias ASC LIMIT ?3",
         )?;
         let aliases = statement
-            .query_map(params![scope.as_str(), scope_id], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })?
+            .query_map(
+                params![scope.as_str(), scope_id, MAX_METADATA_ROWS as i64],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(aliases)
     }
@@ -1791,6 +1793,30 @@ mod tests {
         assert_eq!(
             MemoryStoreSql::list_aliases(&connection, MemoryScope::Project, "project-1").unwrap(),
             vec![("ui язык".to_owned(), "entity:ui-language".to_owned())]
+        );
+    }
+
+    #[test]
+    fn alias_listing_is_bounded() {
+        let connection = Connection::open_in_memory().expect("sqlite opens");
+        schema(&connection);
+        for index in 0..(MAX_METADATA_ROWS + 1) {
+            MemoryStoreSql::register_alias(
+                &connection,
+                MemoryScope::Project,
+                "project-1",
+                &format!("alias-{index:03}"),
+                &format!("entity-{index:03}"),
+                "user",
+                "2026-08-14T00:00:00Z",
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            MemoryStoreSql::list_aliases(&connection, MemoryScope::Project, "project-1")
+                .unwrap()
+                .len(),
+            MAX_METADATA_ROWS
         );
     }
 
