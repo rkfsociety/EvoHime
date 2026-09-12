@@ -11,9 +11,9 @@ permissions:
   contents: read
 
 concurrency:
-  # The previous group was held by a runner-lost zombie run. Version the group
-  # so a recovery push cannot remain pending behind that stale reservation.
-  group: evohime-installer-v2-${{ github.ref }}
+  # Previous groups were held by runner-lost zombie runs. Version the group so
+  # a recovery push cannot remain pending behind a stale reservation.
+  group: evohime-installer-v3-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
