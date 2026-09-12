@@ -188,7 +188,7 @@ pub fn insert_handoff(
     consumer: &str,
     now_ms: i64,
 ) -> rusqlite::Result<()> {
-    connection.execute("INSERT INTO artifact_handoffs (handoff_id,artifact_id,artifact_revision,producer_identity,consumer_identity,state,created_at_ms) VALUES (?1,?2,?3,?4,?5,'pending',?6)", params![id, artifact_id, revision as i64, producer, consumer, now_ms])?;
+    connection.execute("INSERT OR IGNORE INTO artifact_handoffs (handoff_id,artifact_id,artifact_revision,producer_identity,consumer_identity,state,created_at_ms) VALUES (?1,?2,?3,?4,?5,'pending',?6)", params![id, artifact_id, revision as i64, producer, consumer, now_ms])?;
     Ok(())
 }
 
@@ -265,6 +265,60 @@ mod tests {
             .unwrap();
         assert_eq!(state, "accepted");
         assert_eq!(decision, "accepted");
+    }
+
+    #[test]
+    fn duplicate_handoff_replay_keeps_original_metadata() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        let tx = connection.transaction().unwrap();
+        install_schema(&tx).unwrap();
+        tx.commit().unwrap();
+        insert_handoff(
+            &connection,
+            "h",
+            "artifact-a",
+            1,
+            "producer-a",
+            "consumer-a",
+            1,
+        )
+        .unwrap();
+        insert_handoff(
+            &connection,
+            "h",
+            "artifact-b",
+            2,
+            "producer-b",
+            "consumer-b",
+            2,
+        )
+        .unwrap();
+        let row: (String, i64, String, String, String) = connection
+            .query_row(
+                "SELECT artifact_id, artifact_revision, producer_identity, consumer_identity, state
+                 FROM artifact_handoffs WHERE handoff_id='h'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            row,
+            (
+                "artifact-a".into(),
+                1,
+                "producer-a".into(),
+                "consumer-a".into(),
+                "pending".into()
+            )
+        );
     }
 
     #[test]
