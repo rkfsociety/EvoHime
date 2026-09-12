@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use tokio::fs;
+use tokio::io::AsyncReadExt;
 
 pub const MAX_FILE_BYTES: usize = 4 * 1024 * 1024;
 
@@ -178,10 +179,7 @@ fn make_ref(namespace: Namespace, path: String, bytes: &[u8]) -> FileRef {
 
 pub async fn read(ctx: &ToolContext, logical: &str) -> Result<(FileRef, String), RevisionError> {
     let (namespace, path, resolved) = resolve(ctx, logical, false)?;
-    let bytes = fs::read(resolved).await?;
-    if bytes.len() > MAX_FILE_BYTES {
-        return Err(RevisionError::TooLarge);
-    }
+    let bytes = read_bounded(&resolved).await?;
     let text = String::from_utf8(bytes.clone()).map_err(|_| RevisionError::InvalidPath)?;
     Ok((make_ref(namespace, path, &bytes), text))
 }
@@ -201,7 +199,7 @@ pub async fn write(
         if namespace == Namespace::Uploads {
             return Err(RevisionError::Immutable);
         }
-        let current = fs::read(&resolved).await?;
+        let current = read_bounded(&resolved).await?;
         let observed = hex::encode(Sha256::digest(&current));
         let expected = expected_hash.ok_or(RevisionError::MissingPrecondition)?;
         if expected != observed {
@@ -248,7 +246,7 @@ pub async fn delete(
         }
         fs::remove_dir_all(&resolved).await?;
     } else {
-        let current = fs::read(&resolved).await?;
+        let current = read_bounded(&resolved).await?;
         let observed = hex::encode(Sha256::digest(&current));
         let expected = expected_hash.ok_or(RevisionError::MissingPrecondition)?;
         if expected != observed {
@@ -271,7 +269,7 @@ pub async fn move_file(
     let (source_namespace, source_path, source) = resolve(ctx, from, false)?;
     let (destination_namespace, destination_path, destination) = resolve(ctx, to, true)?;
     if source.is_file() {
-        let current = fs::read(&source).await?;
+        let current = read_bounded(&source).await?;
         let observed = hex::encode(Sha256::digest(&current));
         let expected = expected_hash.ok_or(RevisionError::MissingPrecondition)?;
         if expected != observed {
@@ -294,6 +292,26 @@ pub async fn move_file(
         destination_namespace,
         destination_path,
     ))
+}
+
+async fn read_bounded(path: &Path) -> Result<Vec<u8>, RevisionError> {
+    if fs::metadata(path).await?.len() > MAX_FILE_BYTES as u64 {
+        return Err(RevisionError::TooLarge);
+    }
+    let mut file = fs::File::open(path).await?;
+    let mut bytes = Vec::with_capacity(MAX_FILE_BYTES.min(16 * 1024));
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        let read = file.read(&mut chunk).await?;
+        if read == 0 {
+            break;
+        }
+        if bytes.len() > MAX_FILE_BYTES.saturating_sub(read) {
+            return Err(RevisionError::TooLarge);
+        }
+        bytes.extend_from_slice(&chunk[..read]);
+    }
+    Ok(bytes)
 }
 
 pub fn permission(error: RevisionError, tool: &str, permission: Permission) -> ToolError {
@@ -374,6 +392,18 @@ mod tests {
         assert!(matches!(
             read(&ctx, &dir.path().join("secret.txt").display().to_string()).await,
             Err(RevisionError::InvalidPath)
+        ));
+    }
+
+    #[tokio::test]
+    async fn read_rejects_oversized_file_before_buffering_it() {
+        let dir = tempdir().unwrap();
+        let ctx = context(dir.path());
+        std::fs::write(dir.path().join("large.bin"), vec![b'x'; MAX_FILE_BYTES + 1]).unwrap();
+
+        assert!(matches!(
+            read(&ctx, "workspace/large.bin").await,
+            Err(RevisionError::TooLarge)
         ));
     }
 
