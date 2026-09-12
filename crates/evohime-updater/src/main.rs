@@ -272,6 +272,7 @@ fn required(args: &[String], name: &str) -> Result<PathBuf, String> {
 fn optional(args: &[String], name: &str) -> Option<String> {
     args.windows(2)
         .find(|pair| pair[0] == name)
+        .filter(|pair| !pair[1].starts_with("--"))
         .map(|pair| pair[1].clone())
 }
 
@@ -290,7 +291,7 @@ fn report_error(error: impl std::fmt::Display) -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_mode_args;
+    use super::{parse_component_set_args, validate_mode_args};
 
     fn args(values: &[&str]) -> Vec<String> {
         std::iter::once("evohime-updater")
@@ -312,5 +313,17 @@ mod tests {
         assert!(validate_mode_args(&args(&["--check"])).is_ok());
         assert!(validate_mode_args(&args(&["--apply"])).is_ok());
         assert!(validate_mode_args(&args(&["--manifest", "installed.json"])).is_ok());
+    }
+
+    #[test]
+    fn rejects_a_flag_used_as_an_option_value() {
+        let invocation = args(&[
+            "--worker",
+            "--apply-components",
+            "--staging",
+            "--install-dir",
+            "C:\\EvoHime",
+        ]);
+        assert!(parse_component_set_args(&invocation).is_err());
     }
 }
