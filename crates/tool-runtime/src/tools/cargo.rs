@@ -2,8 +2,12 @@ use crate::{ToolContext, ToolError, ToolResult};
 use evohime_permissions::Permission;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::process::{ExitStatus, Stdio};
 use std::time::Duration;
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
+
+const MAX_CARGO_OUTPUT_BYTES: usize = 1024 * 1024;
 
 // ============================================================================
 // cargo.build: Build Rust project
@@ -45,14 +49,13 @@ pub async fn build(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolEr
         cmd.arg("--features").arg(features);
     }
 
-    let output = cmd
-        .current_dir(&ctx.workspace_root)
-        .output()
+    cmd.current_dir(&ctx.workspace_root);
+    let output = run_bounded_command(&mut cmd)
         .await
         .map_err(|e| ToolError::Execution(format!("cargo build failed: {e}")))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout = bounded_text(&output.stdout);
+    let stderr = bounded_text(&output.stderr);
 
     if !output.status.success() {
         return Err(ToolError::Execution(format!(
@@ -117,14 +120,13 @@ pub async fn test(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
         cmd.arg(test);
     }
 
-    let output = cmd
-        .current_dir(&ctx.workspace_root)
-        .output()
+    cmd.current_dir(&ctx.workspace_root);
+    let output = run_bounded_command(&mut cmd)
         .await
         .map_err(|e| ToolError::Execution(format!("cargo test failed: {e}")))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout = bounded_text(&output.stdout);
+    let stderr = bounded_text(&output.stderr);
 
     let success = output.status.success();
 
@@ -171,13 +173,12 @@ pub async fn fmt(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErro
         cmd.arg("--check");
     }
 
-    let output = cmd
-        .current_dir(&ctx.workspace_root)
-        .output()
+    cmd.current_dir(&ctx.workspace_root);
+    let output = run_bounded_command(&mut cmd)
         .await
         .map_err(|e| ToolError::Execution(format!("cargo fmt failed: {e}")))?;
 
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let stderr = bounded_text(&output.stderr);
 
     if !output.status.success() && opts.check {
         return Err(ToolError::Execution(format!(
@@ -237,14 +238,13 @@ pub async fn clippy(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
     cmd.arg("--");
     cmd.arg("-D").arg("warnings");
 
-    let output = cmd
-        .current_dir(&ctx.workspace_root)
-        .output()
+    cmd.current_dir(&ctx.workspace_root);
+    let output = run_bounded_command(&mut cmd)
         .await
         .map_err(|e| ToolError::Execution(format!("cargo clippy failed: {e}")))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout = bounded_text(&output.stdout);
+    let stderr = bounded_text(&output.stderr);
 
     if !output.status.success() {
         return Err(ToolError::Execution(format!(
@@ -290,14 +290,13 @@ pub async fn check(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolEr
         cmd.arg("-p").arg(pkg);
     }
 
-    let output = cmd
-        .current_dir(&ctx.workspace_root)
-        .output()
+    cmd.current_dir(&ctx.workspace_root);
+    let output = run_bounded_command(&mut cmd)
         .await
         .map_err(|e| ToolError::Execution(format!("cargo check failed: {e}")))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout = bounded_text(&output.stdout);
+    let stderr = bounded_text(&output.stderr);
 
     if !output.status.success() {
         return Err(ToolError::Execution(format!(
@@ -313,6 +312,55 @@ pub async fn check(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolEr
             "success": true
         }),
     })
+}
+
+struct BoundedCommandOutput {
+    status: ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+async fn run_bounded_command(command: &mut Command) -> std::io::Result<BoundedCommandOutput> {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn()?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| std::io::Error::other("cargo stdout unavailable"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| std::io::Error::other("cargo stderr unavailable"))?;
+    let mut stdout_reader = tokio::io::BufReader::new(stdout);
+    let mut stderr_reader = tokio::io::BufReader::new(stderr);
+    let stdout = read_bounded(&mut stdout_reader);
+    let stderr = read_bounded(&mut stderr_reader);
+    let status = child.wait();
+    let (stdout, stderr, status) = tokio::join!(stdout, stderr, status);
+    Ok(BoundedCommandOutput {
+        status: status?,
+        stdout: stdout?,
+        stderr: stderr?,
+    })
+}
+
+async fn read_bounded<R: tokio::io::AsyncRead + Unpin>(reader: &mut R) -> std::io::Result<Vec<u8>> {
+    let mut output = Vec::with_capacity(MAX_CARGO_OUTPUT_BYTES.min(16 * 1024));
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        let read = reader.read(&mut chunk).await?;
+        if read == 0 {
+            break;
+        }
+        if output.len() <= MAX_CARGO_OUTPUT_BYTES {
+            output.extend_from_slice(&chunk[..read.min(MAX_CARGO_OUTPUT_BYTES + 1 - output.len())]);
+        }
+    }
+    Ok(output)
+}
+
+fn bounded_text(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(&bytes[..bytes.len().min(MAX_CARGO_OUTPUT_BYTES)]).to_string()
 }
 
 #[cfg(test)]
@@ -333,5 +381,23 @@ mod tests {
         let result = check(&ctx, json!({})).await;
         // Just check it doesn't panic
         let _ = result;
+    }
+
+    #[tokio::test]
+    async fn cargo_reader_keeps_output_bounded() {
+        let (mut writer, mut reader) = tokio::io::duplex(64);
+        let payload = vec![b'x'; MAX_CARGO_OUTPUT_BYTES + 1_024];
+        let writer_task = tokio::spawn(async move {
+            tokio::io::AsyncWriteExt::write_all(&mut writer, &payload)
+                .await
+                .unwrap();
+            tokio::io::AsyncWriteExt::shutdown(&mut writer)
+                .await
+                .unwrap();
+        });
+        let output = read_bounded(&mut reader).await.unwrap();
+        writer_task.await.unwrap();
+        assert_eq!(output.len(), MAX_CARGO_OUTPUT_BYTES + 1);
+        assert_eq!(bounded_text(&output).len(), MAX_CARGO_OUTPUT_BYTES);
     }
 }
