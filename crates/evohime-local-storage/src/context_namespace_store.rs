@@ -20,7 +20,7 @@ pub fn put_node(
     json: &[u8],
     now: i64,
 ) -> rusqlite::Result<bool> {
-    if !bounded(json) || revision > i64::MAX as u64 {
+    if !bounded(json) || revision == 0 || revision > i64::MAX as u64 {
         return Ok(false);
     }
     Ok(c.execute("INSERT INTO context_namespace_nodes(node_id,revision,node_json,updated_at_ms) VALUES (?1,?2,?3,?4) ON CONFLICT(node_id) DO UPDATE SET revision=excluded.revision,node_json=excluded.node_json,updated_at_ms=excluded.updated_at_ms WHERE excluded.revision > context_namespace_nodes.revision", params![node_id, revision as i64, json, now])? == 1)
@@ -62,7 +62,7 @@ pub fn put_projection(
     json: &[u8],
     now: i64,
 ) -> rusqlite::Result<bool> {
-    if !bounded(json) || revision > i64::MAX as u64 {
+    if !bounded(json) || revision == 0 || revision > i64::MAX as u64 {
         return Ok(false);
     }
     Ok(c.execute("INSERT INTO context_namespace_projections(node_id,level,source_revision,projection_json,updated_at_ms) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(node_id,level) DO UPDATE SET source_revision=excluded.source_revision,projection_json=excluded.projection_json,updated_at_ms=excluded.updated_at_ms WHERE excluded.source_revision > context_namespace_projections.source_revision", params![node_id, level, revision as i64, json, now])? == 1)
@@ -83,7 +83,7 @@ pub fn put_view(
     json: &[u8],
     now: i64,
 ) -> rusqlite::Result<bool> {
-    if !bounded(json) || revision > i64::MAX as u64 {
+    if !bounded(json) || revision == 0 || revision > i64::MAX as u64 {
         return Ok(false);
     }
     Ok(c.execute("INSERT INTO context_namespace_views(view_id,revision,view_json,updated_at_ms) VALUES(?1,?2,?3,?4) ON CONFLICT(view_id) DO UPDATE SET revision=excluded.revision,view_json=excluded.view_json,updated_at_ms=excluded.updated_at_ms WHERE excluded.revision > context_namespace_views.revision", params![id, revision as i64, json, now])? == 1)
@@ -150,6 +150,9 @@ mod tests {
         assert!(
             !put_projection(&c, "n", "abstract", 1, &vec![b'x'; MAX_RECORD_BYTES + 1], 2).unwrap()
         );
+        assert!(!put_node(&c, "zero", 0, b"{}", 3).unwrap());
+        assert!(!put_projection(&c, "zero", "abstract", 0, b"{}", 3).unwrap());
+        assert!(!put_view(&c, "zero", 0, b"{}", 3).unwrap());
     }
     #[test]
     fn idempotency_is_durable_and_conflicts_are_left_to_core() {
