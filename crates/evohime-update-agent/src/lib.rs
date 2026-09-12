@@ -160,6 +160,33 @@ pub fn select_outdated(
             return Err(format!("invalid dependencies for {}", item.id));
         }
     }
+    for item in available {
+        for dependency in &item.dependencies {
+            if !available_ids.contains(dependency.as_str()) {
+                return Err(format!("dependency {dependency} is not published"));
+            }
+        }
+    }
+    let mut unresolved = available_ids.clone();
+    while !unresolved.is_empty() {
+        let resolved = available
+            .iter()
+            .filter(|item| {
+                unresolved.contains(item.id.as_str())
+                    && item
+                        .dependencies
+                        .iter()
+                        .all(|dependency| !unresolved.contains(dependency.as_str()))
+            })
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>();
+        if resolved.is_empty() {
+            return Err("cycle in available module dependencies".into());
+        }
+        for id in resolved {
+            unresolved.remove(id);
+        }
+    }
     let current = installed
         .components
         .iter()
@@ -342,6 +369,26 @@ mod tests {
         let error = select_outdated(&InstalledManifest { components: vec![] }, &available)
             .expect_err("duplicate dependencies must be rejected");
         assert!(error.contains("invalid dependencies"));
+    }
+
+    #[test]
+    fn rejects_cycles_in_available_dependencies() {
+        let available = vec![
+            ModuleRecord {
+                id: "core".into(),
+                version: "1.0.0".into(),
+                dependencies: vec!["supervisor".into()],
+            },
+            ModuleRecord {
+                id: "supervisor".into(),
+                version: "1.0.0".into(),
+                dependencies: vec!["core".into()],
+            },
+        ];
+
+        let error = select_outdated(&InstalledManifest { components: vec![] }, &available)
+            .expect_err("dependency cycles must be rejected");
+        assert!(error.contains("cycle in available module dependencies"));
     }
 
     #[test]
