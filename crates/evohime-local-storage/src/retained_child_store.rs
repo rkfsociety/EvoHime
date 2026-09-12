@@ -185,11 +185,26 @@ impl RetainedChildStore {
         connection: &Connection,
         input: InsertMailboxInput<'_, T>,
     ) -> Result<bool, RetainedStoreError> {
-        let pending:i64=connection.query_row("SELECT COUNT(*) FROM child_mailbox WHERE parent_id=?1 AND receiver_id=?2 AND delivery IN ('pending','dispatched')",params![input.parent_id,input.child_id],|r|r.get(0))?;
-        if pending >= MAX_PENDING_PER_CHILD {
+        let n = connection.execute(
+            "INSERT OR IGNORE INTO child_mailbox(message_id,parent_id,receiver_id,idempotency_key,delivery,parent_sequence,entry_json,created_at_ms) SELECT ?1,?2,?3,?4,'pending',?5,?6,?7 WHERE (SELECT COUNT(*) FROM child_mailbox WHERE parent_id=?2 AND receiver_id=?3 AND delivery IN ('pending','dispatched')) < ?8",
+            params![
+                input.message_id,
+                input.parent_id,
+                input.child_id,
+                input.idempotency_key,
+                input.parent_sequence as i64,
+                json(input.entry)?,
+                input.now_ms as i64,
+                MAX_PENDING_PER_CHILD,
+            ],
+        )?;
+        if n == 0 && connection.query_row(
+            "SELECT COUNT(*) FROM child_mailbox WHERE parent_id=?1 AND receiver_id=?2 AND delivery IN ('pending','dispatched')",
+            params![input.parent_id, input.child_id],
+            |row| row.get::<_, i64>(0),
+        )? >= MAX_PENDING_PER_CHILD {
             return Err(RetainedStoreError::LimitExceeded);
         }
-        let n=connection.execute("INSERT OR IGNORE INTO child_mailbox(message_id,parent_id,receiver_id,idempotency_key,delivery,parent_sequence,entry_json,created_at_ms) VALUES(?1,?2,?3,?4,'pending',?5,?6,?7)",params![input.message_id,input.parent_id,input.child_id,input.idempotency_key,input.parent_sequence as i64,json(input.entry)?,input.now_ms as i64])?;
         Ok(n == 1)
     }
     pub fn enqueue_follow_up<R: Serialize, E: Serialize, F: FnOnce(u64) -> E>(
@@ -359,5 +374,43 @@ mod tests {
             Some(2)
         )
         .unwrap());
+    }
+
+    #[test]
+    fn mailbox_limit_is_enforced_by_the_insert_statement() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        for index in 0..MAX_PENDING_PER_CHILD {
+            let key = format!("key-{index}");
+            let message = format!("message-{index}");
+            assert!(RetainedChildStore::insert_mailbox(
+                &c,
+                InsertMailboxInput {
+                    parent_id: "p",
+                    child_id: "c",
+                    idempotency_key: &key,
+                    message_id: &message,
+                    parent_sequence: index as u64,
+                    entry: &R { v: index as u8 },
+                    now_ms: index as u64,
+                },
+            )
+            .unwrap());
+        }
+        assert!(matches!(
+            RetainedChildStore::insert_mailbox(
+                &c,
+                InsertMailboxInput {
+                    parent_id: "p",
+                    child_id: "c",
+                    idempotency_key: "key-over-limit",
+                    message_id: "message-over-limit",
+                    parent_sequence: MAX_PENDING_PER_CHILD as u64,
+                    entry: &R { v: 0 },
+                    now_ms: MAX_PENDING_PER_CHILD as u64,
+                },
+            ),
+            Err(RetainedStoreError::LimitExceeded)
+        ));
     }
 }
