@@ -58,6 +58,10 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
         .send()
         .await
         .map_err(|error| ToolError::Execution(format!("mcp request failed: {error}")))?;
+    ssrf::assert_safe_peer(response.remote_addr()).map_err(|message| ToolError::InvalidInput {
+        tool: NAME.to_string(),
+        message: format!("ssrf blocked connection peer: {message}"),
+    })?;
 
     let status = response.status();
     let final_url = response.url().clone();
@@ -65,10 +69,7 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
         tool: NAME.to_string(),
         message: format!("ssrf blocked final url: {message}"),
     })?;
-    let text = response
-        .text()
-        .await
-        .map_err(|error| ToolError::Execution(format!("failed to read response: {error}")))?;
+    let text = crate::tools::http::read_bounded_body(response).await?;
 
     if !status.is_success() {
         return Err(ToolError::Execution(format!(
@@ -260,6 +261,34 @@ mod tests {
             error.to_string().contains("allowlist"),
             "unexpected: {error}"
         );
+    }
+
+    #[tokio::test]
+    async fn rejects_oversized_response_body() {
+        let _private = crate::ssrf::lock_private_override(Some(true));
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/rpc"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![
+                b'x';
+                crate::tools::http::MAX_RESPONSE_BYTES
+                    + 1
+            ]))
+            .mount(&server)
+            .await;
+
+        let (_dir, ctx) = ctx();
+        let error = execute(
+            &ctx,
+            json!({
+                "url": format!("{}/rpc", server.uri()),
+                "method": "tools/list",
+                "params": {}
+            }),
+        )
+        .await
+        .expect_err("oversized mcp response must be rejected");
+        assert!(error.to_string().contains("exceeds 262144 bytes"));
     }
 
     #[test]
