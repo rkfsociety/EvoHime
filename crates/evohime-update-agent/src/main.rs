@@ -1132,6 +1132,7 @@ fn extract_ui_bundle_inner(archive_path: &Path, destination: &Path) -> Result<()
         fs::remove_dir_all(destination).map_err(|error| error.to_string())?;
     }
     fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+    let mut extracted_paths = std::collections::HashSet::new();
     let mut extracted_bytes = 0u64;
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).map_err(|error| error.to_string())?;
@@ -1140,7 +1141,11 @@ fn extract_ui_bundle_inner(archive_path: &Path, destination: &Path) -> Result<()
         }
         let relative = entry
             .enclosed_name()
+            .and_then(|path| normalize_archive_path(&path))
             .ok_or_else(|| "updater: UI archive содержит небезопасный путь".to_owned())?;
+        if !extracted_paths.insert(relative.to_owned()) {
+            return Err("updater: UI archive содержит повторяющийся путь".to_owned());
+        }
         let target = destination.join(relative);
         if entry.is_dir() {
             fs::create_dir_all(&target).map_err(|error| error.to_string())?;
@@ -1188,6 +1193,7 @@ fn extract_shell_host_inner(archive_path: &Path, destination: &Path) -> Result<(
         fs::remove_dir_all(destination).map_err(|error| error.to_string())?;
     }
     fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+    let mut extracted_paths = std::collections::HashSet::new();
     let mut extracted_bytes = 0u64;
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).map_err(|error| error.to_string())?;
@@ -1196,7 +1202,11 @@ fn extract_shell_host_inner(archive_path: &Path, destination: &Path) -> Result<(
         }
         let relative = entry
             .enclosed_name()
+            .and_then(|path| normalize_archive_path(&path))
             .ok_or_else(|| "updater: shell-host archive содержит небезопасный путь".to_owned())?;
+        if !extracted_paths.insert(relative.to_owned()) {
+            return Err("updater: shell-host archive содержит повторяющийся путь".to_owned());
+        }
         let target = destination.join(relative);
         if entry.is_dir() {
             fs::create_dir_all(&target).map_err(|error| error.to_string())?;
@@ -1257,6 +1267,18 @@ fn copy_reader_bounded<R: Read, W: Write>(
             .write_all(&buffer[..count])
             .map_err(|error| error.to_string())?;
     }
+}
+
+fn normalize_archive_path(path: &Path) -> Option<PathBuf> {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::Normal(part) => normalized.push(part),
+            _ => return None,
+        }
+    }
+    (!normalized.as_os_str().is_empty()).then_some(normalized)
 }
 
 fn apply_listener_runtime(
@@ -1595,6 +1617,7 @@ mod tests {
     use sha2::Digest;
     use std::{
         fs,
+        io::Write,
         path::Path,
         time::{SystemTime, UNIX_EPOCH},
     };
@@ -1762,6 +1785,36 @@ mod tests {
         let error = super::extract_ui_bundle(&archive_path, &root.join("destination"))
             .expect_err("archives with too many entries must be rejected");
         assert!(error.contains("слишком много записей"));
+        fs::remove_dir_all(root).expect("remove temporary archive directory");
+    }
+
+    #[test]
+    fn duplicate_archive_paths_are_rejected() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-archive-duplicate-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("create temporary archive directory");
+        let archive_path = root.join("duplicate.zip");
+        let file = fs::File::create(&archive_path).expect("create archive");
+        let mut archive = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        archive
+            .start_file("index.html", options)
+            .expect("start first entry");
+        archive.write_all(b"first").expect("write first entry");
+        archive
+            .start_file("./index.html", options)
+            .expect("start duplicate entry");
+        archive.write_all(b"second").expect("write duplicate entry");
+        archive.finish().expect("finish archive");
+
+        let error = super::extract_ui_bundle(&archive_path, &root.join("destination"))
+            .expect_err("duplicate archive paths must be rejected");
+        assert!(error.contains("повторяющийся путь"));
         fs::remove_dir_all(root).expect("remove temporary archive directory");
     }
 
