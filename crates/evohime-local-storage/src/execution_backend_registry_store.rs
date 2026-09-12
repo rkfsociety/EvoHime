@@ -1,6 +1,7 @@
 use crate::StorageError;
 use rusqlite::{params, Connection, OptionalExtension};
 const MAX_BACKENDS: i64 = 256;
+const MAX_CAPABILITIES_BYTES: usize = 64 * 1024;
 
 pub fn install_schema(connection: &Connection) -> Result<(), StorageError> {
     connection.execute_batch("CREATE TABLE IF NOT EXISTS execution_backends (id TEXT PRIMARY KEY, kind TEXT NOT NULL, endpoint TEXT, auth_ref TEXT, enabled INTEGER NOT NULL, capabilities_json TEXT NOT NULL, version INTEGER NOT NULL, health TEXT NOT NULL, health_failure TEXT, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS execution_backend_events (id INTEGER PRIMARY KEY AUTOINCREMENT, backend_id TEXT NOT NULL, operation TEXT NOT NULL, version INTEGER NOT NULL, outcome TEXT NOT NULL, idempotency_key TEXT NOT NULL, created_at_ms INTEGER NOT NULL, UNIQUE(backend_id, operation, idempotency_key)); CREATE TABLE IF NOT EXISTS execution_backend_registry_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);")?;
@@ -20,6 +21,9 @@ pub struct UpsertInput<'a> {
 }
 
 pub fn upsert(connection: &Connection, input: UpsertInput<'_>) -> Result<bool, StorageError> {
+    if input.capabilities_json.len() > MAX_CAPABILITIES_BYTES {
+        return Ok(false);
+    }
     Ok(connection.execute("INSERT INTO execution_backends(id,kind,endpoint,auth_ref,enabled,capabilities_json,version,health,updated_at_ms) VALUES (?1,?2,?3,?4,1,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind,endpoint=excluded.endpoint,auth_ref=excluded.auth_ref,capabilities_json=excluded.capabilities_json,version=excluded.version,health=excluded.health,updated_at_ms=excluded.updated_at_ms WHERE excluded.version > execution_backends.version", params![input.id,input.kind,input.endpoint,input.auth_ref,input.capabilities_json,input.version as i64,input.health,input.now_ms])? == 1)
 }
 
@@ -155,5 +159,26 @@ mod tests {
             .unwrap());
         }
         assert_eq!(list(&c).unwrap().len(), MAX_BACKENDS as usize);
+    }
+
+    #[test]
+    fn oversized_capabilities_are_rejected_before_storage() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        assert!(!upsert(
+            &c,
+            UpsertInput {
+                id: "local.core",
+                kind: "local",
+                endpoint: None,
+                auth_ref: None,
+                capabilities_json: &"x".repeat(MAX_CAPABILITIES_BYTES + 1),
+                version: 1,
+                health: "healthy",
+                now_ms: 1,
+            }
+        )
+        .unwrap());
+        assert!(list(&c).unwrap().is_empty());
     }
 }
