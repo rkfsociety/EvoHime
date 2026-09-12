@@ -1,6 +1,8 @@
 //! Durable Knowledge Source Registry metadata.
 use rusqlite::{params, Connection, OptionalExtension};
 
+const MAX_LIST_ROWS: usize = 256;
+
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS knowledge_sources (source_id TEXT PRIMARY KEY NOT NULL, version INTEGER NOT NULL, content_hash TEXT NOT NULL, source_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS knowledge_bindings (binding_id TEXT PRIMARY KEY NOT NULL, source_id TEXT NOT NULL, binding_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS knowledge_manifests (source_id TEXT PRIMARY KEY NOT NULL, manifest_json BLOB NOT NULL, content_hash TEXT NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS knowledge_chunks (chunk_id TEXT PRIMARY KEY NOT NULL, source_id TEXT NOT NULL, source_revision INTEGER NOT NULL, ordinal INTEGER NOT NULL, locator TEXT NOT NULL, chunk_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS knowledge_collections (collection_id TEXT PRIMARY KEY NOT NULL, version INTEGER NOT NULL, content_hash TEXT NOT NULL, collection_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
@@ -88,7 +90,9 @@ pub fn list_chunks(
         "SELECT chunk_json FROM knowledge_chunks WHERE source_id=?1 ORDER BY ordinal LIMIT ?2",
     )?;
     let rows = statement
-        .query_map(params![source_id, limit as i64], |row| row.get(0))?
+        .query_map(params![source_id, limit.min(MAX_LIST_ROWS) as i64], |row| {
+            row.get(0)
+        })?
         .collect();
     rows
 }
@@ -100,7 +104,9 @@ pub fn list_bindings(
 ) -> rusqlite::Result<Vec<Vec<u8>>> {
     let mut statement = c.prepare("SELECT binding_json FROM knowledge_bindings WHERE source_id=?1 ORDER BY binding_id LIMIT ?2")?;
     let rows = statement
-        .query_map(params![source_id, limit as i64], |row| row.get(0))?
+        .query_map(params![source_id, limit.min(MAX_LIST_ROWS) as i64], |row| {
+            row.get(0)
+        })?
         .collect();
     rows
 }
@@ -124,5 +130,36 @@ mod tests {
         assert!(put_collection(&c, "c", 2, "h2", b"two", 2).unwrap());
         assert!(!put_collection(&c, "c", 1, "h1", b"one", 3).unwrap());
         assert_eq!(get_collection(&c, "c").unwrap(), Some(b"two".to_vec()));
+    }
+
+    #[test]
+    fn knowledge_lists_are_bounded_even_when_callers_request_more() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        for ordinal in 0..300_u32 {
+            put_chunk(
+                &c,
+                PutChunkInput {
+                    id: &format!("chunk-{ordinal:03}"),
+                    source_id: "source",
+                    revision: 1,
+                    ordinal,
+                    locator: "memory://chunk",
+                    json: b"{}",
+                    now_ms: i64::from(ordinal),
+                },
+            )
+            .unwrap();
+            put_binding(
+                &c,
+                &format!("binding-{ordinal:03}"),
+                "source",
+                b"{}",
+                i64::from(ordinal),
+            )
+            .unwrap();
+        }
+        assert_eq!(list_chunks(&c, "source", usize::MAX).unwrap().len(), 256);
+        assert_eq!(list_bindings(&c, "source", usize::MAX).unwrap().len(), 256);
     }
 }
