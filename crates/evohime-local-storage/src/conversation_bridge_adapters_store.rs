@@ -63,7 +63,7 @@ pub fn get_bridge(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>>
                 "principal_id": row.get::<_, String>(2)?,
                 "pairing_hash": row.get::<_, String>(3)?,
                 "state": state,
-                "revision": row.get::<_, i64>(5)? as u64
+                "revision": revision_u64(row.get(5)?)?
             }))
             .expect("bridge metadata serializes"))
         },
@@ -82,7 +82,7 @@ pub fn get_binding(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>
             "external_thread_id": row.get::<_, String>(1)?,
             "conversation_id": row.get::<_, String>(2)?,
             "principal_id": row.get::<_, String>(3)?,
-            "revision": row.get::<_, i64>(4)? as u64
+            "revision": revision_u64(row.get(4)?)?
         })).expect("binding metadata serializes")),
     )
     .optional()
@@ -170,13 +170,14 @@ pub fn clear_bridge(c: &Connection, bridge_id: &str) -> rusqlite::Result<()> {
 }
 
 pub fn bridge_revision(c: &Connection, bridge_id: &str) -> rusqlite::Result<Option<u64>> {
-    c.query_row(
-        "SELECT revision FROM conversation_bridges WHERE bridge_id=?1",
-        params![bridge_id],
-        |r| r.get::<_, i64>(0),
-    )
-    .optional()
-    .map(|v| v.map(|x| x as u64))
+    let revision = c
+        .query_row(
+            "SELECT revision FROM conversation_bridges WHERE bridge_id=?1",
+            params![bridge_id],
+            |r| r.get::<_, i64>(0),
+        )
+        .optional()?;
+    revision.map(revision_u64).transpose()
 }
 
 fn required_string<'a>(value: &'a serde_json::Value, field: &str) -> rusqlite::Result<&'a str> {
@@ -192,6 +193,15 @@ fn required_string<'a>(value: &'a serde_json::Value, field: &str) -> rusqlite::R
 fn revision_i64(revision: u64) -> rusqlite::Result<i64> {
     i64::try_from(revision)
         .map_err(|_| rusqlite::Error::InvalidParameterName("revision exceeds SQLite range".into()))
+}
+
+fn revision_u64(revision: i64) -> rusqlite::Result<u64> {
+    u64::try_from(revision).map_err(|_| {
+        rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "negative bridge revision",
+        )))
+    })
 }
 
 #[cfg(test)]
@@ -261,5 +271,21 @@ mod tests {
         let stored: serde_json::Value =
             serde_json::from_slice(&get_bridge(&c, "b").unwrap().unwrap()).unwrap();
         assert_eq!(stored["revision"], 2);
+    }
+
+    #[test]
+    fn rejects_negative_persisted_revision() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        let bridge = br#"{"provider":"telegram","conversation_id":"c","principal_id":"p","pairing_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","state":"paired"}"#;
+        put_bridge(&c, "b", bridge, 1).unwrap();
+        c.execute(
+            "UPDATE conversation_bridges SET revision=-1 WHERE bridge_id='b'",
+            [],
+        )
+        .unwrap();
+
+        assert!(get_bridge(&c, "b").is_err());
+        assert!(bridge_revision(&c, "b").is_err());
     }
 }
