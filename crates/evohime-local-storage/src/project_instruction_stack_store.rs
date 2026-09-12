@@ -61,7 +61,7 @@ pub fn put_snapshot(
     snapshot_json: &[u8],
     now_ms: i64,
 ) -> rusqlite::Result<()> {
-    connection.execute("INSERT INTO project_instruction_snapshots(snapshot_id,workspace_root,content_hash,snapshot_json,created_at_ms) VALUES (?1,?2,?3,?4,?5)", params![snapshot_id, workspace_root, content_hash, snapshot_json, now_ms])?;
+    connection.execute("INSERT INTO project_instruction_snapshots(snapshot_id,workspace_root,content_hash,snapshot_json,created_at_ms) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(snapshot_id) DO NOTHING", params![snapshot_id, workspace_root, content_hash, snapshot_json, now_ms])?;
     Ok(())
 }
 
@@ -156,5 +156,25 @@ mod tests {
             .unwrap();
         }
         assert_eq!(list_rules(&connection, usize::MAX).unwrap().len(), 256);
+    }
+
+    #[test]
+    fn instruction_snapshot_replay_keeps_the_first_snapshot() {
+        let connection = Connection::open_in_memory().unwrap();
+        install_schema(&connection).unwrap();
+        put_snapshot(&connection, "snapshot", "root", "hash-1", b"first", 1).unwrap();
+        put_snapshot(
+            &connection,
+            "snapshot",
+            "other-root",
+            "hash-2",
+            b"replacement",
+            2,
+        )
+        .unwrap();
+        assert_eq!(
+            get_snapshot(&connection, "snapshot").unwrap(),
+            Some(b"first".to_vec())
+        );
     }
 }
