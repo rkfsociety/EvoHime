@@ -318,9 +318,9 @@ pub fn upsert_schedule(
     connection: &Connection,
     record: &AutomationScheduleRecord,
     now_ms: i64,
-) -> rusqlite::Result<()> {
-    connection.execute(
-        "INSERT INTO automation_schedules (schedule_id, definition_id, revision, owner_scope, hour, minute, timezone_minutes, missed_grace_ms, enabled, last_slot, updated_at_ms, preset_id, preset_revision, preset_content_hash, workspace_path) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15) ON CONFLICT(schedule_id) DO UPDATE SET definition_id=excluded.definition_id, revision=excluded.revision, owner_scope=excluded.owner_scope, hour=excluded.hour, minute=excluded.minute, timezone_minutes=excluded.timezone_minutes, missed_grace_ms=excluded.missed_grace_ms, enabled=excluded.enabled, preset_id=excluded.preset_id, preset_revision=excluded.preset_revision, preset_content_hash=excluded.preset_content_hash, workspace_path=excluded.workspace_path, updated_at_ms=excluded.updated_at_ms",
+) -> rusqlite::Result<bool> {
+    let changed = connection.execute(
+        "INSERT INTO automation_schedules (schedule_id, definition_id, revision, owner_scope, hour, minute, timezone_minutes, missed_grace_ms, enabled, last_slot, updated_at_ms, preset_id, preset_revision, preset_content_hash, workspace_path) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15) ON CONFLICT(schedule_id) DO UPDATE SET definition_id=excluded.definition_id, revision=excluded.revision, owner_scope=excluded.owner_scope, hour=excluded.hour, minute=excluded.minute, timezone_minutes=excluded.timezone_minutes, missed_grace_ms=excluded.missed_grace_ms, enabled=excluded.enabled, preset_id=excluded.preset_id, preset_revision=excluded.preset_revision, preset_content_hash=excluded.preset_content_hash, workspace_path=excluded.workspace_path, updated_at_ms=excluded.updated_at_ms WHERE excluded.revision >= automation_schedules.revision",
         params![
             record.schedule_id,
             record.definition_id,
@@ -339,7 +339,7 @@ pub fn upsert_schedule(
             record.workspace_path,
         ],
     )?;
-    Ok(())
+    Ok(changed == 1)
 }
 
 pub fn get_schedule(
@@ -778,6 +778,17 @@ mod tests {
             get_schedule(&c, "s").unwrap().unwrap().last_slot.as_deref(),
             Some("slot-2")
         );
+        assert!(!upsert_schedule(
+            &c,
+            &AutomationScheduleRecord {
+                revision: 0,
+                hour: 1,
+                ..schedule
+            },
+            5
+        )
+        .unwrap());
+        assert_eq!(get_schedule(&c, "s").unwrap().unwrap().hour, 12);
     }
 
     #[test]

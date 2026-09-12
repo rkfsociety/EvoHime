@@ -261,8 +261,8 @@ impl IpcBridge {
                     &record,
                     now_ms(),
                 ) {
-                    Ok(()) => serde_json::json!({
-                        "saved": true,
+                    Ok(saved) => serde_json::json!({
+                        "saved": saved,
                         "schedule_id": record.schedule_id,
                         "error_code": "",
                     }),
