@@ -1738,13 +1738,14 @@ impl LocalDatabase {
             "reconciled_blocked"
         };
         let transaction = self.connection.unchecked_transaction()?;
-        transaction.execute(
-            "INSERT OR REPLACE INTO agent_run_reconciliations(
+        let inserted = transaction.execute(
+            "INSERT INTO agent_run_reconciliations(
                 effect_id, state, verifier, evidence_json
-             ) VALUES (?1, ?2, ?3, ?4)",
+             ) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(effect_id) DO NOTHING",
             rusqlite::params![effect_id, state, verifier, evidence_json],
-        )?;
-        if success {
+        )? == 1;
+        if inserted && success {
             transaction.execute(
                 "UPDATE agent_run_effects SET state = 'completed_success',
                  result_hash = ?1 WHERE effect_id = ?2 AND state = 'unknown'",
@@ -1783,11 +1784,13 @@ impl LocalDatabase {
             "reconciled_blocked"
         };
         let transaction = self.connection.unchecked_transaction()?;
-        transaction.execute(
-            "INSERT OR REPLACE INTO run_reconciliations(effect_id, state, verifier, evidence_json) VALUES (?1, ?2, ?3, ?4)",
+        let inserted = transaction.execute(
+            "INSERT INTO run_reconciliations(effect_id, state, verifier, evidence_json)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(effect_id) DO NOTHING",
             rusqlite::params![effect_id, state, verifier, evidence_json],
-        )?;
-        if success {
+        )? == 1;
+        if inserted && success {
             transaction.execute("UPDATE run_effects SET state = 'completed_success', result_hash = ?1 WHERE effect_id = ?2 AND state = 'unknown'", rusqlite::params![verifier, effect_id])?;
         }
         transaction.commit()?;
@@ -4319,6 +4322,15 @@ mod tests {
             )
             .expect("effect reconciles");
         assert_eq!(reconciliation.state, "reconciled_success");
+        let retry = database
+            .reconcile_run_effect(
+                "effect-lease",
+                false,
+                "different-verifier",
+                br#"{"changed":true}"#,
+            )
+            .expect("duplicate reconciliation is idempotent");
+        assert_eq!(retry, reconciliation);
         assert_eq!(
             database
                 .get_run_effect("effect-lease")
