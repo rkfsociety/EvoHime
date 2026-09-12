@@ -19,6 +19,10 @@ pub const GREP_NAME: &str = "logs.grep";
 pub const GREP_DESCRIPTION: &str = "Search log files for a pattern";
 pub const GREP_PERMISSIONS: &[Permission] = &[Permission::FilesystemRead];
 pub const GREP_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_GREP_FILE_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_GREP_MATCHES: usize = 1_000;
+const MAX_GREP_LINE_CHARS: usize = 16 * 1024;
+const MAX_GREP_OUTPUT_BYTES: usize = 1024 * 1024;
 
 // ============================================================================
 // logs.tail: Read last N lines
@@ -140,6 +144,14 @@ pub async fn grep(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
     let mut matches = Vec::new();
 
     if search_path.is_file() {
+        let metadata = fs::metadata(&search_path)
+            .await
+            .map_err(|e| ToolError::Execution(format!("failed to stat file: {e}")))?;
+        if metadata.len() > MAX_GREP_FILE_BYTES {
+            return Err(ToolError::Execution(
+                "log file exceeds 4 MiB grep limit".into(),
+            ));
+        }
         let content = fs::read_to_string(&search_path)
             .await
             .map_err(|e| ToolError::Execution(format!("failed to read file: {e}")))?;
@@ -163,15 +175,29 @@ pub async fn grep(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
         .map_err(|e| ToolError::Execution(format!("directory search failed: {e}")))?;
     }
 
+    let truncated = matches.len() >= MAX_GREP_MATCHES;
     let result_text = if matches.is_empty() {
         "No matches found".to_string()
     } else {
-        matches
-            .iter()
-            .take(1000)
-            .map(|m| m.as_str())
-            .collect::<Vec<_>>()
-            .join("\n")
+        let mut output = String::new();
+        for (index, entry) in matches.iter().take(MAX_GREP_MATCHES).enumerate() {
+            if index > 0 {
+                if output.len() >= MAX_GREP_OUTPUT_BYTES {
+                    break;
+                }
+                output.push('\n');
+            }
+            if output.len() >= MAX_GREP_OUTPUT_BYTES {
+                break;
+            }
+            for character in entry.chars() {
+                if character.len_utf8() > MAX_GREP_OUTPUT_BYTES.saturating_sub(output.len()) {
+                    break;
+                }
+                output.push(character);
+            }
+        }
+        output
     };
 
     Ok(ToolResult {
@@ -180,6 +206,7 @@ pub async fn grep(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
             "action": "grep",
             "pattern": opts.pattern,
             "matches_count": matches.len(),
+            "truncated": truncated,
             "case_insensitive": opts.case_insensitive,
             "invert_match": opts.invert_match
         }),
@@ -210,11 +237,16 @@ fn search_file(
             };
 
             if should_include {
-                Some(format!("{}: {}", line_num + 1, line))
+                Some(format!(
+                    "{}: {}",
+                    line_num + 1,
+                    line.chars().take(MAX_GREP_LINE_CHARS).collect::<String>()
+                ))
             } else {
                 None
             }
         })
+        .take(MAX_GREP_MATCHES)
         .collect()
 }
 
@@ -230,7 +262,10 @@ async fn search_directory(
     while let Some(current_dir) = pending.pop() {
         let mut entries = fs::read_dir(current_dir).await?;
 
-        while let Some(entry) = entries.next_entry().await? {
+        while matches.len() < MAX_GREP_MATCHES {
+            let Some(entry) = entries.next_entry().await? else {
+                break;
+            };
             let path = entry.path();
 
             if path.is_file() {
@@ -254,11 +289,17 @@ async fn search_directory(
                             | "go"
                             | "java"
                     ) {
-                        if let Ok(content) = fs::read_to_string(&path).await {
-                            let file_matches =
-                                search_file(&content, pattern, case_insensitive, invert_match);
-                            for m in file_matches {
-                                matches.push(format!("{}:{}", path.display(), m));
+                        let size = fs::metadata(&path).await.map(|metadata| metadata.len());
+                        if size.is_ok_and(|size| size <= MAX_GREP_FILE_BYTES) {
+                            if let Ok(content) = fs::read_to_string(&path).await {
+                                let file_matches =
+                                    search_file(&content, pattern, case_insensitive, invert_match);
+                                for m in file_matches {
+                                    if matches.len() >= MAX_GREP_MATCHES {
+                                        break;
+                                    }
+                                    matches.push(format!("{}:{}", path.display(), m));
+                                }
                             }
                         }
                     }
@@ -355,5 +396,23 @@ mod tests {
         assert!(result.output.contains("error"));
         let matches: serde_json::Value = result.structured;
         assert_eq!(matches["matches_count"], 2);
+    }
+
+    #[tokio::test]
+    async fn grep_rejects_oversized_direct_file() {
+        let dir = tempdir().expect("tempdir");
+        let log_file = dir.path().join("oversized.log");
+        std_fs::write(&log_file, vec![b'x'; MAX_GREP_FILE_BYTES as usize + 1]).expect("write");
+        let ctx = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+
+        let error = grep(&ctx, json!({"pattern": "x", "path": "oversized.log"}))
+            .await
+            .expect_err("oversized grep input must be rejected");
+        assert!(error.to_string().contains("exceeds 4 MiB"));
     }
 }
