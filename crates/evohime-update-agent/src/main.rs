@@ -580,9 +580,7 @@ fn is_github_api_url(value: &str) -> bool {
 
 fn is_trusted_github_url(url: &reqwest::Url) -> bool {
     let trusted_host = url.host_str().is_some_and(|host| {
-        host == "api.github.com"
-            || host == "github.com"
-            || host.ends_with(".githubusercontent.com")
+        host == "api.github.com" || host == "github.com" || host.ends_with(".githubusercontent.com")
     });
     let query_is_allowed = url.query().is_none()
         || url
