@@ -11,10 +11,10 @@ foreach ($marker in @(
     'minimum_version = $updaterVersion',
     'sha256 = ([string]$moduleManifest.sha256).ToLowerInvariant()',
     'Normalize-StringArray',
-    'if ($null -eq $value) { return $result.ToArray() }',
+    'if ($null -eq $value) { return ,$result }',
     'null-элемент недопустим',
-    "dependencies = [string[]]@(Normalize-StringArray",
-    "changes = [string[]]@(Normalize-StringArray",
+    "(Normalize-StringArray $moduleManifest.dependencies 'dependencies' $module).ToArray()",
+    "(Normalize-StringArray $moduleManifest.changes 'changes' $module).ToArray()",
     'gh release upload $tag'
 )) {
     if ($script -notmatch [regex]::Escape($marker)) { throw "Compatible manifest contract is missing: $marker" }

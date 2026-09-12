@@ -49,7 +49,10 @@ function Read-AssetJson($asset) {
 
 function Normalize-StringArray($value, [string]$field, [string]$module) {
     $result = [System.Collections.Generic.List[string]]::new()
-    if ($null -eq $value) { return $result.ToArray() }
+    # Не даём PowerShell развернуть пустой результат функции в $null.
+    # Коллекция возвращается одним pipeline-объектом, а в JSON превращается
+    # в настоящий [] даже при отсутствии исходного поля.
+    if ($null -eq $value) { return ,$result }
     foreach ($item in @($value)) {
         if ($null -eq $item) {
             throw "Некорректное поле $field в manifest модуля ${module}: null-элемент недопустим."
@@ -59,7 +62,7 @@ function Normalize-StringArray($value, [string]$field, [string]$module) {
         }
         [void]$result.Add([string]$item)
     }
-    return $result.ToArray()
+    return ,$result
 }
 
 $components = foreach ($module in $moduleIds) {
@@ -86,10 +89,8 @@ $components = foreach ($module in $moduleIds) {
             changes = [string[]]@('Обновлён проверенный комплект библиотек и моделей.')
         }
     } else {
-        $dependencies = [string[]]@(Normalize-StringArray $moduleManifest.dependencies 'dependencies' $module)
-        if ($null -eq $dependencies) { $dependencies = [string[]]::new() }
-        $changes = [string[]]@(Normalize-StringArray $moduleManifest.changes 'changes' $module)
-        if ($null -eq $changes) { $changes = [string[]]::new() }
+        $dependencies = (Normalize-StringArray $moduleManifest.dependencies 'dependencies' $module).ToArray()
+        $changes = (Normalize-StringArray $moduleManifest.changes 'changes' $module).ToArray()
         $artifactAsset = Get-Asset $release ([string]$moduleManifest.artifact)
         [ordered]@{
             id = $module
