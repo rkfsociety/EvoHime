@@ -3,7 +3,6 @@ use evohime_permissions::Permission;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::Duration;
-use tokio::fs;
 
 pub const NAME: &str = "filesystem.patch";
 pub const DESCRIPTION: &str = "Apply a unified diff to one workspace file";
@@ -49,16 +48,21 @@ pub(crate) fn validate_input(value: &Value) -> Result<(), ToolError> {
 
 pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, ToolError> {
     let input = parse_input(value)?;
-    let path = ctx.sandbox()?.resolve_existing(&input.path)?;
-    let original = fs::read_to_string(&path)
+    let (_, original) = crate::revision_safe_workspace_files::read(ctx, &input.path)
         .await
-        .map_err(|e| match e.kind() {
-            std::io::ErrorKind::NotFound => ToolError::NotFound {
-                tool: NAME.to_string(),
-                path: input.path.clone(),
-                hint: String::new(),
-            },
-            _ => ToolError::Execution(format!("read failed: {e}")),
+        .map_err(|error| {
+            if matches!(error, crate::revision_safe_workspace_files::RevisionError::Io(ref io) if io.kind() == std::io::ErrorKind::NotFound) {
+                return ToolError::NotFound {
+                    tool: NAME.to_string(),
+                    path: input.path.clone(),
+                    hint: String::new(),
+                };
+            }
+            crate::revision_safe_workspace_files::permission(
+                error,
+                NAME,
+                Permission::FilesystemWrite,
+            )
         })?;
     let mut lines: Vec<String> = original.lines().map(str::to_string).collect();
     if original.ends_with('\n') {
