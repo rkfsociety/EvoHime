@@ -142,6 +142,9 @@ pub async fn copy(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
         .map_err(|e| {
         crate::revision_safe_workspace_files::permission(e, COPY_NAME, Permission::FilesystemWrite)
     })?;
+    crate::revision_safe_workspace_files::reject_symlink(&dest).map_err(|e| {
+        crate::revision_safe_workspace_files::permission(e, COPY_NAME, Permission::FilesystemWrite)
+    })?;
 
     if source.is_file() {
         crate::revision_safe_workspace_files::assert_precondition(

@@ -151,6 +151,15 @@ pub fn resolve_logical(
     resolve(ctx, logical, write)
 }
 
+pub(crate) fn reject_symlink(path: &Path) -> Result<(), RevisionError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(RevisionError::Escape),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(RevisionError::Io(error)),
+    }
+}
+
 fn make_ref(namespace: Namespace, path: String, bytes: &[u8]) -> FileRef {
     let digest = Sha256::digest(bytes);
     let mut revision_bytes = [0_u8; 8];
@@ -184,6 +193,7 @@ pub async fn write(
         return Err(RevisionError::TooLarge);
     }
     let (namespace, path, resolved) = resolve(ctx, logical, true)?;
+    reject_symlink(&resolved)?;
     if fs::try_exists(&resolved).await? {
         if namespace == Namespace::Uploads {
             return Err(RevisionError::Immutable);
@@ -362,5 +372,22 @@ mod tests {
             read(&ctx, &dir.path().join("secret.txt").display().to_string()).await,
             Err(RevisionError::InvalidPath)
         ));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn write_rejects_final_symlink_even_when_target_is_outside_workspace() {
+        let workspace = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        let target = outside.path().join("target.txt");
+        std::fs::write(&target, b"original").unwrap();
+        std::os::unix::fs::symlink(&target, workspace.path().join("link.txt")).unwrap();
+        let ctx = context(workspace.path());
+
+        assert!(matches!(
+            write(&ctx, "workspace/link.txt", b"changed", None).await,
+            Err(RevisionError::Escape)
+        ));
+        assert_eq!(std::fs::read(&target).unwrap(), b"original");
     }
 }
