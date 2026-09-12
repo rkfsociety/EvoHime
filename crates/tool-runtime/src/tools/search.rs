@@ -41,6 +41,8 @@ const HARD_SKIP_FILE_NAMES: &[&str] = &[
 ];
 const MAX_RG_STDOUT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_RG_STDERR_BYTES: usize = 64 * 1024;
+const MAX_FALLBACK_FILE_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_FALLBACK_LINE_CHARS: usize = 16 * 1024;
 
 #[derive(Deserialize)]
 struct Input {
@@ -310,6 +312,9 @@ fn scan_file(
     if remaining == 0 || is_hard_excluded(path) {
         return None;
     }
+    if fs::metadata(path).ok()?.len() > MAX_FALLBACK_FILE_BYTES {
+        return None;
+    }
     let bytes = fs::read(path).ok()?;
     if bytes.contains(&0) {
         return None;
@@ -326,7 +331,7 @@ fn scan_file(
             out.push(json!({
                 "path": rel,
                 "line": index + 1,
-                "text": line
+                "text": line.chars().take(MAX_FALLBACK_LINE_CHARS).collect::<String>()
             }));
             if out.len() >= remaining {
                 break;
@@ -539,6 +544,15 @@ mod tests {
         assert_eq!(matches.len(), 1);
         assert!(matches[0]["path"].as_str().unwrap().ends_with("b.md"));
         assert_eq!(matches[0]["line"], 1);
+    }
+
+    #[test]
+    fn fallback_search_skips_oversized_files_before_reading() {
+        let dir = tempdir().expect("tempdir");
+        let file = dir.path().join("large.txt");
+        std::fs::write(&file, vec![b'n'; MAX_FALLBACK_FILE_BYTES as usize + 1]).expect("write");
+
+        assert!(scan_file(dir.path(), &file, "n", 10).is_none());
     }
 
     #[test]
