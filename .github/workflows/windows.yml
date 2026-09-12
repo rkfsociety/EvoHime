@@ -50,6 +50,9 @@ jobs:
       - name: Регрессия описания installer release
         shell: pwsh
         run: ./scripts/installer-release.tests.ps1
+      - name: Регрессия recovery updater
+        shell: pwsh
+        run: ./scripts/repair-updater.tests.ps1
       - name: Определение затронутых компонентов и зависимостей
         id: filter
         shell: pwsh

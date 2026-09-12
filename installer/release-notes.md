@@ -29,6 +29,21 @@ https://github.com/rkfsociety/EvoHime/releases/latest/download/EvoHime-Setup.exe
 - перед self-repair пользователь выбирает provider и model; эта пара сохраняется
   в repair-run и используется на всех его этапах.
 
+## Восстановление старого updater без переустановки
+
+Если уже установленная версия показывает `GitHub вернул HTTP 302 Found` на
+проверке compatible manifest, её updater слишком старый, чтобы обновить себя:
+он останавливается до первого скачивания нового updater. В этом единственном
+bootstrap-случае скачайте `scripts/repair-updater.ps1` из `main` и запустите его
+через PowerShell 7 с параметром `-InstallDirectory`, если каталог отличается от
+стандартного. Скрипт заменяет только `evohime-updater.exe`, проверяет размер,
+SHA-256 и Windows executable header, оставляет резервную копию старого файла и
+не запускает installer.
+
+После этой одноразовой операции ярлык снова работает штатно: новый updater
+сам проходит GitHub signed redirect и может первым обновить себя. Полная
+переустановка для последующих мелких исправлений не требуется.
+
 ## Требования
 
 - Windows 10 2004+ или Windows 11, x64;

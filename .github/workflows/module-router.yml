@@ -119,6 +119,9 @@ jobs:
           "installer=$($installerSelected.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           if ($installerSelected) { Write-Host "installer: $installerText -> $($installerLatest ?? 'нет релиза'), workflow будет запущен" }
           else { Write-Host "installer: $installerText уже опубликован, workflow пропускается" }
+      - name: Регрессия recovery updater
+        shell: pwsh
+        run: ./scripts/repair-updater.tests.ps1
 
   dispatch:
     name: Запустить отдельные workflow модулей
