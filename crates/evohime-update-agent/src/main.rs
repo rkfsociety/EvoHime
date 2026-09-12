@@ -163,6 +163,7 @@ const MODULE_IDS: &[&str] = &[
     "updater",
     "verifier",
 ];
+const MAX_JSON_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(serde::Deserialize)]
 struct Release {
@@ -633,9 +634,19 @@ fn get_json_once<T: DeserializeOwned>(
         .send()
         .map_err(|error| format!("updater: {purpose}: сетевой запрос не удался: {error}"))?;
     let status = response.status();
-    let body = response
-        .text()
+    let mut body = Vec::with_capacity(MAX_JSON_RESPONSE_BYTES.min(16 * 1024));
+    response
+        .take((MAX_JSON_RESPONSE_BYTES + 1) as u64)
+        .read_to_end(&mut body)
         .map_err(|error| format!("updater: {purpose}: не удалось прочитать ответ: {error}"))?;
+    if body.len() > MAX_JSON_RESPONSE_BYTES {
+        return Err(format!(
+            "updater: {purpose}: ответ превышает лимит {} байт",
+            MAX_JSON_RESPONSE_BYTES
+        ));
+    }
+    let body = String::from_utf8(body)
+        .map_err(|error| format!("updater: {purpose}: ответ не является UTF-8: {error}"))?;
     if !status.is_success() {
         return Err(format!("updater: {purpose}: GitHub вернул HTTP {status}"));
     }
