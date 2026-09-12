@@ -122,6 +122,21 @@ pub fn select_outdated(
     installed: &InstalledManifest,
     available: &[ModuleRecord],
 ) -> Result<UpdatePlan, String> {
+    if installed.components.len() > MAX_AVAILABLE_MODULES {
+        return Err("installed module list is too large".into());
+    }
+    let mut installed_ids = std::collections::HashSet::with_capacity(installed.components.len());
+    for item in &installed.components {
+        if item.id.is_empty() || item.id.len() > 64 || !installed_ids.insert(item.id.as_str()) {
+            return Err(format!(
+                "duplicate or invalid installed module id: {}",
+                item.id
+            ));
+        }
+        if !is_valid_semver(&item.version) {
+            return Err(format!("invalid installed version for {}", item.id));
+        }
+    }
     if available.len() > MAX_AVAILABLE_MODULES {
         return Err("available module list is too large".into());
     }
@@ -327,6 +342,26 @@ mod tests {
         let error = select_outdated(&InstalledManifest { components: vec![] }, &available)
             .expect_err("duplicate dependencies must be rejected");
         assert!(error.contains("invalid dependencies"));
+    }
+
+    #[test]
+    fn rejects_invalid_installed_versions_before_comparison() {
+        let installed = InstalledManifest {
+            components: vec![ModuleRecord {
+                id: "core".into(),
+                version: "broken".into(),
+                dependencies: vec![],
+            }],
+        };
+        let available = vec![ModuleRecord {
+            id: "core".into(),
+            version: "1.0.0".into(),
+            dependencies: vec![],
+        }];
+
+        let error = select_outdated(&installed, &available)
+            .expect_err("invalid installed versions must fail closed");
+        assert!(error.contains("invalid installed version"));
     }
 
     #[test]
