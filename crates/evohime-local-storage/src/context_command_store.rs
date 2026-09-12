@@ -195,21 +195,12 @@ impl<'a> ContextCommandStore<'a> {
 
     /// Забирает незакрытый запрос `summarize now`, помечая его применённым.
     pub fn take_pending_summarize(&self, task_id: &str, now: i64) -> Result<bool, StorageError> {
-        let pending: i64 = self.connection.query_row(
-            "SELECT COUNT(*) FROM context_command_audit
-             WHERE task_id = ?1 AND command = 'summarize_now' AND outcome = 'pending'",
-            [task_id],
-            |row| row.get(0),
-        )?;
-        if pending == 0 {
-            return Ok(false);
-        }
-        self.connection.execute(
+        let updated = self.connection.execute(
             "UPDATE context_command_audit SET outcome = 'applied', created_at = ?2
              WHERE task_id = ?1 AND command = 'summarize_now' AND outcome = 'pending'",
             rusqlite::params![task_id, now],
         )?;
-        Ok(true)
+        Ok(updated > 0)
     }
 
     /// Очистка состояния команд задачи — часть `clear task scratchpad`.
@@ -326,6 +317,7 @@ mod tests {
         let store = ContextCommandStore::new(database.connection());
         assert!(!store.take_pending_summarize("task", 900).expect("read"));
         store.request_summarize("task", 1_000).expect("request");
+        store.request_summarize("task", 1_050).expect("request");
         assert!(store.take_pending_summarize("task", 1_100).expect("take"));
         assert!(!store.take_pending_summarize("task", 1_200).expect("take"));
     }
