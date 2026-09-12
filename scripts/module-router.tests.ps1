@@ -43,6 +43,10 @@ foreach ($module in @('shell-host','ui-bundle','core','supervisor','cli','analys
 }
 if ($router -notmatch 'MANUAL_MODULES') { throw 'Router does not expose an explicit manual module override.' }
 $dispatchBlock = ($router -split '(?m)^  dispatch:', 2)[1]
+if ($dispatchBlock -notmatch 'Resolve-DispatchedRun') { throw 'Router does not resolve dispatched module run ids.' }
+if ($dispatchBlock -notmatch 'gh run view') { throw 'Router does not wait for dispatched module workflows.' }
+if ($dispatchBlock -notmatch 'conclusion -ne .success') { throw 'Router does not fail when a dispatched module workflow fails.' }
+if ($dispatchBlock -notmatch 'gh workflow run compatible-manifest\.yml') { throw 'Router does not publish the compatibility manifest after module workflows.' }
 foreach ($module in @('shell-host','ui-bundle','core','supervisor','cli','analysis-worker','listener','listener-runtime','transaction','verifier','updater')) {
     if ($dispatchBlock -notmatch [regex]::Escape("'$module'")) { throw "Dispatch map is missing: $module" }
 }

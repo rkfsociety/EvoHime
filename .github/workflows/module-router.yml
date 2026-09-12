@@ -137,6 +137,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           REF: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
         run: |
           $selected = @{
             'shell-host' = '${{ needs.changes.outputs.shell-host }}'
@@ -155,9 +156,52 @@ jobs:
           $workflowFiles = @{
             'shell-host' = 'shell-host.yml'; 'ui-bundle' = 'ui-bundle.yml'; 'core' = 'core.yml'; 'supervisor' = 'supervisor.yml'; 'cli' = 'cli.yml'; 'analysis-worker' = 'analysis-worker.yml'; 'listener' = 'listener-module.yml'; 'listener-runtime' = 'listener.yml'; 'transaction' = 'transaction.yml'; 'verifier' = 'verifier.yml'; 'updater' = 'update-agent.yml'; 'installer' = 'windows.yml'
           }
+          $dispatchStarted = [DateTime]::UtcNow
+          $dispatched = [System.Collections.Generic.List[object]]::new()
           foreach ($module in $selected.Keys) {
             if ($selected[$module] -ne 'true') { continue }
-            gh workflow run $workflowFiles[$module] --repo $env:REPOSITORY --ref $env:REF
+            $workflow = $workflowFiles[$module]
+            gh workflow run $workflow --repo $env:REPOSITORY --ref $env:REF
             if ($LASTEXITCODE -ne 0) { throw "Не удалось запустить workflow модуля $module." }
             Write-Host "Запущен отдельный workflow: $module"
+            [void]$dispatched.Add([PSCustomObject]@{ Module = $module; Workflow = $workflow })
           }
+
+          function Resolve-DispatchedRun([PSCustomObject]$item) {
+            for ($attempt = 1; $attempt -le 30; $attempt++) {
+              $json = gh api "repos/$env:REPOSITORY/actions/workflows/$($item.Workflow)/runs?event=workflow_dispatch&branch=$env:REF&per_page=20"
+              if ($LASTEXITCODE -ne 0) { throw "Не удалось найти запуск workflow $($item.Workflow)." }
+              $runs = @((($json | ConvertFrom-Json).workflow_runs) | Where-Object {
+                $_.head_sha -eq $env:SHA -and
+                [DateTime]::Parse($_.created_at).ToUniversalTime() -ge $dispatchStarted.AddSeconds(-10)
+              } | Sort-Object created_at -Descending)
+              if ($runs.Count -gt 0) {
+                return [PSCustomObject]@{
+                  Module = $item.Module
+                  Workflow = $item.Workflow
+                  RunId = [int64]$runs[0].id
+                }
+              }
+              Start-Sleep -Seconds 5
+            }
+            throw "Не удалось определить запуск workflow модуля $($item.Module) после dispatch."
+          }
+
+          $runs = @(foreach ($item in $dispatched) { Resolve-DispatchedRun $item })
+          foreach ($run in $runs) {
+            Write-Host "Ожидание workflow $($run.Module), run $($run.RunId)"
+            do {
+              $stateJson = gh run view $run.RunId --repo $env:REPOSITORY --json status,conclusion
+              if ($LASTEXITCODE -ne 0) { throw "Не удалось прочитать состояние workflow $($run.Module), run $($run.RunId)." }
+              $state = $stateJson | ConvertFrom-Json
+              if ($state.status -ne 'completed') { Start-Sleep -Seconds 15 }
+            } while ($state.status -ne 'completed')
+            if ($state.conclusion -ne 'success') {
+              throw "Workflow модуля $($run.Module), run $($run.RunId), завершился: $($state.conclusion)."
+            }
+            Write-Host "Workflow модуля $($run.Module) завершён успешно."
+          }
+
+          gh workflow run compatible-manifest.yml --repo $env:REPOSITORY --ref $env:REF
+          if ($LASTEXITCODE -ne 0) { throw 'Не удалось запустить публикацию compatibility-манифеста.' }
+          Write-Host 'Запущена финальная публикация compatibility-манифеста после проверки всех модулей.'
