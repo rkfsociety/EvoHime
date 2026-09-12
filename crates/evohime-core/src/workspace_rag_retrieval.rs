@@ -789,11 +789,17 @@ pub fn validate_source(
     byte_start: usize,
     byte_end: usize,
 ) -> Result<Vec<u8>, RagError> {
+    const MAX_REVALIDATION_SOURCE_BYTES: u64 = 16 * 1024 * 1024;
     let canonical = path.canonicalize()?;
     if !canonical.starts_with(root) {
         return Err(RagError::Sandbox("retrieval path escaped workspace".into()));
     }
-    let bytes = fs::read(&canonical)?;
+    if expected_size > MAX_REVALIDATION_SOURCE_BYTES {
+        return Err(RagError::InvalidWorkspace(
+            "source exceeds reread limit".into(),
+        ));
+    }
+    let bytes = read_bounded_source(&canonical)?;
     if bytes.len() as u64 != expected_size
         || sha256_hex(&bytes) != expected_hash
         || byte_start > byte_end
@@ -802,6 +808,17 @@ pub fn validate_source(
         return Err(RagError::InvalidWorkspace("stale source snapshot".into()));
     }
     Ok(bytes)
+}
+
+pub fn read_bounded_source(path: &Path) -> Result<Vec<u8>, RagError> {
+    const MAX_REVALIDATION_SOURCE_BYTES: u64 = 16 * 1024 * 1024;
+    let metadata = fs::metadata(path)?;
+    if !metadata.is_file() || metadata.len() > MAX_REVALIDATION_SOURCE_BYTES {
+        return Err(RagError::InvalidWorkspace(
+            "source exceeds reread limit".into(),
+        ));
+    }
+    Ok(fs::read(path)?)
 }
 
 fn decode_source_range(

@@ -1198,7 +1198,8 @@ pub(super) use index::active_generation;
 pub use index::{get_index_status, index_workspace};
 pub use retrieval::SearchWorkspaceInput;
 pub(super) use retrieval::{
-    bounded_error, estimate_tokens, previous_char_boundary, stable_id, validate_source,
+    bounded_error, estimate_tokens, previous_char_boundary, read_bounded_source, stable_id,
+    validate_source,
 };
 #[allow(unused_imports)]
 pub use retrieval::{

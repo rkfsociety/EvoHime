@@ -57,7 +57,7 @@ pub fn build_evidence_context(
             continue;
         }
         let current_path = canonical_root.join(&block.relative_path);
-        let initial = validate_source(
+        let source_bytes = match validate_source(
             &canonical_root,
             &current_path,
             &block.content_hash,
@@ -66,12 +66,14 @@ pub fn build_evidence_context(
                 .unwrap_or_default(),
             block.byte_start as usize,
             block.byte_end as usize,
-        );
-        if initial.is_err() {
-            rejected.push(format!("{}:sandbox_or_stale", block.chunk_id));
-            continue;
-        }
-        let snippet = with_parent_context(&current_path, block)?;
+        ) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                rejected.push(format!("{}:sandbox_or_stale", block.chunk_id));
+                continue;
+            }
+        };
+        let snippet = with_parent_context_bytes(&source_bytes, block);
         let snippet_tokens = estimate_tokens(&snippet);
         let remaining = token_budget.saturating_sub(used_tokens);
         if remaining < min_chunk_size_tokens || snippet_tokens > remaining {
@@ -118,8 +120,7 @@ pub fn build_evidence_context(
     })
 }
 
-fn with_parent_context(path: &Path, block: &RetrievedChunk) -> Result<String, RagError> {
-    let bytes = fs::read(path)?;
+fn with_parent_context_bytes(bytes: &[u8], block: &RetrievedChunk) -> String {
     let (text, _, _) = decode_text(&bytes);
     let lines = text.lines().collect::<Vec<_>>();
     let range = block.lines.unwrap_or([1, 1]);
@@ -136,7 +137,7 @@ fn with_parent_context(path: &Path, block: &RetrievedChunk) -> Result<String, Ra
         result.push_str(&format!("{}: {}\n", start + index + 1, line));
     }
     result.push_str("</source>");
-    Ok(result)
+    result
 }
 
 /// Final atomic re-read immediately before answer rendering. Updated text and
@@ -165,7 +166,7 @@ pub fn finalize_citations(
             continue;
         };
         let path = root.join(&block.relative_path);
-        let final_result = fs::read(&path).map_err(RagError::from).and_then(|bytes| {
+        let final_result = read_bounded_source(&path).and_then(|bytes| {
             let hash = sha256_hex(&bytes);
             if hash == block.content_hash {
                 Ok((
@@ -192,9 +193,9 @@ pub fn finalize_citations(
                 let refreshed = if citation.status == CitationStatus::Updated {
                     let mut refreshed = block.clone();
                     refreshed.lines = lines;
-                    with_parent_context(&path, &refreshed)?
+                    with_parent_context_bytes(&_bytes, &refreshed)
                 } else {
-                    with_parent_context(&path, block)?
+                    with_parent_context_bytes(&_bytes, block)
                 };
                 valid_context.push_str(&citation.compact());
                 valid_context.push('\n');
