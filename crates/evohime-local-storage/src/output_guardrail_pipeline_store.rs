@@ -16,7 +16,7 @@ pub fn put(
         )));
     }
     c.execute(
-        "INSERT INTO output_guardrail_pipelines(id,version,content_hash,pipeline_json,updated_at_ms) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(id) DO UPDATE SET version=excluded.version,content_hash=excluded.content_hash,pipeline_json=excluded.pipeline_json,updated_at_ms=excluded.updated_at_ms WHERE excluded.version >= output_guardrail_pipelines.version",
+        "INSERT INTO output_guardrail_pipelines(id,version,content_hash,pipeline_json,updated_at_ms) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(id) DO UPDATE SET version=excluded.version,content_hash=excluded.content_hash,pipeline_json=excluded.pipeline_json,updated_at_ms=excluded.updated_at_ms WHERE excluded.version > output_guardrail_pipelines.version",
         params![id, version, hash, json, now],
     )?;
     Ok(())
@@ -40,5 +40,41 @@ mod tests {
             )
             .unwrap();
         assert_eq!(stored, (2, br#"{"version":2}"#.to_vec()));
+    }
+
+    #[test]
+    fn duplicate_version_cannot_replace_pipeline() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        put(
+            &c,
+            "pipeline",
+            2,
+            "original",
+            br#"{"source":"original"}"#,
+            2,
+        )
+        .unwrap();
+        put(
+            &c,
+            "pipeline",
+            2,
+            "replacement",
+            br#"{"source":"replacement"}"#,
+            3,
+        )
+        .unwrap();
+        let stored: (String, Vec<u8>, i64) = c
+            .query_row(
+                "SELECT content_hash,pipeline_json,updated_at_ms
+                 FROM output_guardrail_pipelines WHERE id='pipeline'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            stored,
+            ("original".into(), br#"{"source":"original"}"#.to_vec(), 2)
+        );
     }
 }
