@@ -33,7 +33,7 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
 }
 
 pub fn upsert(connection: &Connection, record: &SkillTrustRecord) -> rusqlite::Result<()> {
-    connection.execute("INSERT INTO skill_trust_records(skill_id,content_hash,scanner_version,review_policy_version,decision,risk_class,findings_json,override_actor,revision) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(skill_id,content_hash,scanner_version,review_policy_version) DO UPDATE SET decision=excluded.decision,risk_class=excluded.risk_class,findings_json=excluded.findings_json,override_actor=excluded.override_actor,revision=excluded.revision,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')", params![record.skill_id,record.content_hash,record.scanner_version,record.review_policy_version,record.decision,record.risk_class,record.findings_json,record.override_actor,record.revision])?;
+    connection.execute("INSERT INTO skill_trust_records(skill_id,content_hash,scanner_version,review_policy_version,decision,risk_class,findings_json,override_actor,revision) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(skill_id,content_hash,scanner_version,review_policy_version) DO UPDATE SET decision=excluded.decision,risk_class=excluded.risk_class,findings_json=excluded.findings_json,override_actor=excluded.override_actor,revision=excluded.revision,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE excluded.revision > skill_trust_records.revision", params![record.skill_id,record.content_hash,record.scanner_version,record.review_policy_version,record.decision,record.risk_class,record.findings_json,record.override_actor,record.revision])?;
     Ok(())
 }
 
@@ -88,5 +88,45 @@ mod tests {
             .unwrap(),
             1
         );
+    }
+
+    #[test]
+    fn stale_or_duplicate_trust_revision_cannot_replace_decision() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        let base = SkillTrustRecord {
+            skill_id: "x".into(),
+            content_hash: "h".into(),
+            scanner_version: "v".into(),
+            review_policy_version: "p".into(),
+            decision: "trusted".into(),
+            risk_class: "low".into(),
+            findings_json: "[]".into(),
+            override_actor: None,
+            revision: 2,
+        };
+        upsert(&c, &base).unwrap();
+        upsert(
+            &c,
+            &SkillTrustRecord {
+                decision: "blocked".into(),
+                risk_class: "high".into(),
+                findings_json: "[\"stale\"]".into(),
+                revision: 1,
+                ..base.clone()
+            },
+        )
+        .unwrap();
+        upsert(
+            &c,
+            &SkillTrustRecord {
+                decision: "blocked".into(),
+                risk_class: "high".into(),
+                findings_json: "[\"duplicate\"]".into(),
+                ..base.clone()
+            },
+        )
+        .unwrap();
+        assert_eq!(get(&c, "x", "h", "v", "p").unwrap(), Some(base));
     }
 }
