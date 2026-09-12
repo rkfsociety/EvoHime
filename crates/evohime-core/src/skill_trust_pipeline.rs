@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{fs, path::Path};
+use std::{fs, io::Read, path::Path};
 
 pub const SCANNER_VERSION: &str = "skill-scanner-v1";
 pub const REVIEW_POLICY_VERSION: &str = "skill-review-policy-v1";
@@ -170,8 +170,7 @@ pub fn scan_package(
             });
             continue;
         }
-        let bytes = fs::read(package_dir.join(&relative))
-            .map_err(|e| SkillTrustError::Io(e.to_string()))?;
+        let bytes = read_bounded_file(&package_dir.join(&relative))?;
         if bytes.len() > crate::skill_registry::MAX_REFERENCE_BYTES {
             add(
                 &mut findings,
@@ -337,6 +336,15 @@ fn add(
         masked_fingerprint: fingerprint(bytes),
     });
 }
+
+fn read_bounded_file(path: &Path) -> Result<Vec<u8>, SkillTrustError> {
+    let file = fs::File::open(path).map_err(|e| SkillTrustError::Io(e.to_string()))?;
+    let mut bytes = Vec::with_capacity(crate::skill_registry::MAX_REFERENCE_BYTES + 1);
+    file.take((crate::skill_registry::MAX_REFERENCE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|e| SkillTrustError::Io(e.to_string()))?;
+    Ok(bytes)
+}
 fn add_path_finding(out: &mut Vec<String>, path: &Path) {
     out.push(format!("__symlink__:{}", path.to_string_lossy()));
 }
@@ -388,6 +396,22 @@ mod tests {
             override_actor: None,
         };
         assert_eq!(r.can_execute("b"), Err(SkillTrustError::HashMismatch));
+    }
+
+    #[test]
+    fn oversized_skill_file_is_scanned_with_a_bounded_prefix() {
+        let d = tempdir().unwrap();
+        fs::write(
+            d.path().join("SKILL.md"),
+            vec![b'x'; crate::skill_registry::MAX_REFERENCE_BYTES + 1],
+        )
+        .unwrap();
+
+        let record = scan_package("x", d.path(), "h").unwrap();
+
+        assert!(record.findings.iter().any(|finding| {
+            finding.code == "oversized_file" && finding.masked_fingerprint.starts_with("sha256:")
+        }));
     }
 
     #[test]
