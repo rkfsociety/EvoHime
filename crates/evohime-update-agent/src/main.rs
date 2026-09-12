@@ -540,6 +540,13 @@ fn updater_http_client(github_token: Option<String>) -> Result<UpdaterHttpClient
         .user_agent("EvoHime-Updater")
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if is_trusted_github_url(attempt.url()) && attempt.previous().len() < 5 {
+                attempt.follow()
+            } else {
+                attempt.stop()
+            }
+        }))
         .build()
         .map_err(|error| format!("updater: не удалось создать HTTP-клиент: {error}"))?;
     Ok(UpdaterHttpClient {
@@ -553,6 +560,15 @@ fn is_github_api_url(value: &str) -> bool {
         .parse::<reqwest::Url>()
         .map(|url| url.scheme() == "https" && url.host_str() == Some("api.github.com"))
         .unwrap_or(false)
+}
+
+fn is_trusted_github_url(url: &reqwest::Url) -> bool {
+    url.scheme() == "https"
+        && url.host_str().is_some_and(|host| {
+            host == "api.github.com"
+                || host == "github.com"
+                || host.ends_with(".githubusercontent.com")
+        })
 }
 
 fn is_github_release_asset_url(value: &str) -> bool {
@@ -1446,11 +1462,11 @@ fn fail(error: impl std::fmt::Display) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_github_api_url, is_github_release_asset_url, normalize_github_token, parse_json_body,
-        read_update_config, resolve_github_token_with, updater_bootstrap_script,
-        updater_first_if_required, updater_http_client, validate_compatible_manifest,
-        CompatibleComponent, CompatibleManifest, UpdateCandidate, UpdaterBootstrapPaths,
-        UpdaterRequirement,
+        is_github_api_url, is_github_release_asset_url, is_trusted_github_url,
+        normalize_github_token, parse_json_body, read_update_config, resolve_github_token_with,
+        updater_bootstrap_script, updater_first_if_required, updater_http_client,
+        validate_compatible_manifest, CompatibleComponent, CompatibleManifest, UpdateCandidate,
+        UpdaterBootstrapPaths, UpdaterRequirement,
     };
     use std::{
         fs,
@@ -1773,6 +1789,26 @@ mod tests {
         ));
         assert!(!is_github_release_asset_url(
             "http://github.com/example/project/releases/download/v1/file.zip"
+        ));
+    }
+
+    #[test]
+    fn redirects_are_limited_to_trusted_github_hosts() {
+        assert!(is_trusted_github_url(
+            &"https://api.github.com/repos/example/project"
+                .parse()
+                .unwrap()
+        ));
+        assert!(is_trusted_github_url(
+            &"https://release-assets.githubusercontent.com/file"
+                .parse()
+                .unwrap()
+        ));
+        assert!(!is_trusted_github_url(
+            &"https://github.com.evil.example/file".parse().unwrap()
+        ));
+        assert!(!is_trusted_github_url(
+            &"http://github.com/file".parse().unwrap()
         ));
     }
 
