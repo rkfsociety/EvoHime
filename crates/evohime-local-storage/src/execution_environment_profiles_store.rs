@@ -155,7 +155,7 @@ pub fn save_activation(
     }
     let tx = connection.unchecked_transaction()?;
     tx.execute("INSERT INTO execution_environment_activations(profile_id,revision,scope,status,snapshot_hash,activation_json,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6,?7)", params![input.profile_id, input.revision as i64, input.scope, input.status, input.snapshot_hash, input.activation_json, input.now_ms])?;
-    tx.execute("INSERT INTO execution_environment_current(scope,profile_id,revision,snapshot_json,updated_at_ms) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(scope) DO UPDATE SET profile_id=excluded.profile_id,revision=excluded.revision,snapshot_json=excluded.snapshot_json,updated_at_ms=excluded.updated_at_ms", params![input.scope, input.profile_id, input.revision as i64, input.snapshot_json, input.now_ms])?;
+    tx.execute("INSERT INTO execution_environment_current(scope,profile_id,revision,snapshot_json,updated_at_ms) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(scope) DO UPDATE SET profile_id=excluded.profile_id,revision=excluded.revision,snapshot_json=excluded.snapshot_json,updated_at_ms=excluded.updated_at_ms WHERE excluded.revision >= execution_environment_current.revision", params![input.scope, input.profile_id, input.revision as i64, input.snapshot_json, input.now_ms])?;
     tx.commit()?;
     Ok(true)
 }
@@ -302,6 +302,44 @@ mod tests {
         assert_eq!(
             load_run_snapshot(&db, "run-1").unwrap(),
             Some(snapshot.to_vec())
+        );
+    }
+
+    #[test]
+    fn activation_revision_fence_rejects_stale_current_snapshot() {
+        let db = Connection::open_in_memory().unwrap();
+        install_schema(&db).unwrap();
+        assert!(save_activation(
+            &db,
+            SaveActivationInput {
+                profile_id: "new",
+                revision: 2,
+                scope: "application:application",
+                status: "activated",
+                snapshot_hash: "new-hash",
+                activation_json: br#"{}"#,
+                snapshot_json: br#"{\"revision\":2}"#,
+                now_ms: 2
+            }
+        )
+        .unwrap());
+        assert!(save_activation(
+            &db,
+            SaveActivationInput {
+                profile_id: "old",
+                revision: 1,
+                scope: "application:application",
+                status: "rolled_back",
+                snapshot_hash: "old-hash",
+                activation_json: br#"{}"#,
+                snapshot_json: br#"{\"revision\":1}"#,
+                now_ms: 3
+            }
+        )
+        .unwrap());
+        assert_eq!(
+            load_current(&db, "application:application").unwrap(),
+            Some(br#"{\"revision\":2}"#.to_vec())
         );
     }
 
