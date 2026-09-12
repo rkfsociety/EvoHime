@@ -564,6 +564,11 @@ fn is_github_api_url(value: &str) -> bool {
 
 fn is_trusted_github_url(url: &reqwest::Url) -> bool {
     url.scheme() == "https"
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.port().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
         && url.host_str().is_some_and(|host| {
             host == "api.github.com"
                 || host == "github.com"
@@ -580,6 +585,11 @@ fn is_github_release_asset_url(value: &str) -> bool {
     };
     let segments = segments.collect::<Vec<_>>();
     url.scheme() == "https"
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.port().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
         && url.host_str() == Some("github.com")
         && segments.len() >= 4
         && segments
@@ -1814,6 +1824,12 @@ mod tests {
         assert!(!is_github_release_asset_url(
             "http://github.com/example/project/releases/download/v1/file.zip"
         ));
+        assert!(!is_github_release_asset_url(
+            "https://github.com:8443/example/project/releases/download/v1/file.zip"
+        ));
+        assert!(!is_github_release_asset_url(
+            "https://user@github.com/example/project/releases/download/v1/file.zip"
+        ));
     }
 
     #[test]
@@ -1833,6 +1849,11 @@ mod tests {
         ));
         assert!(!is_trusted_github_url(
             &"http://github.com/file".parse().unwrap()
+        ));
+        assert!(!is_trusted_github_url(
+            &"https://api.github.com/repos/example/project?redirect=evil"
+                .parse()
+                .unwrap()
         ));
     }
 
