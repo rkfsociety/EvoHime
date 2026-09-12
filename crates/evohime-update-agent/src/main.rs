@@ -1546,8 +1546,11 @@ fn schedule_updater_replacement(
     };
     let content = updater_bootstrap_script(std::process::id(), &paths);
     fs::write(&script, content).map_err(|error| error.to_string())?;
-    fs::write(&marker, format!("{}\n", update.available)).map_err(|error| error.to_string())?;
-    Command::new("cmd.exe")
+    if let Err(error) = fs::write(&marker, format!("{}\n", update.available)) {
+        cleanup_bootstrap_files(&script, &marker);
+        return Err(error.to_string());
+    }
+    if let Err(error) = Command::new("cmd.exe")
         .current_dir(&state_dir)
         .args([
             "/D",
@@ -1558,8 +1561,16 @@ fn schedule_updater_replacement(
                 .unwrap_or_default(),
         ])
         .spawn()
-        .map_err(|error| error.to_string())?;
+    {
+        cleanup_bootstrap_files(&script, &marker);
+        return Err(error.to_string());
+    }
     Ok(())
+}
+
+fn cleanup_bootstrap_files(script: &Path, marker: &Path) {
+    let _ = fs::remove_file(script);
+    let _ = fs::remove_file(marker);
 }
 
 struct UpdaterBootstrapPaths<'a> {
@@ -1910,6 +1921,27 @@ mod tests {
         super::cleanup_completed_staging(&staging, true);
         assert!(staging.exists());
         fs::remove_dir_all(root).expect("remove temporary staging directory");
+    }
+
+    #[test]
+    fn bootstrap_failure_cleanup_removes_script_and_marker() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-bootstrap-cleanup-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("create bootstrap state directory");
+        let script = root.join("updater-bootstrap.cmd");
+        let marker = root.join("updater-relaunch.pending");
+        fs::write(&script, b"script").expect("write script");
+        fs::write(&marker, b"pending").expect("write marker");
+
+        super::cleanup_bootstrap_files(&script, &marker);
+        assert!(!script.exists());
+        assert!(!marker.exists());
+        fs::remove_dir_all(root).expect("remove temporary bootstrap directory");
     }
 
     #[test]
