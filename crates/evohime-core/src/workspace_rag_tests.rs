@@ -291,6 +291,18 @@ fn secret_binary_and_ragignore_paths_never_enter_index() {
 }
 
 #[test]
+fn oversized_ragignore_is_not_fully_buffered() {
+    let fixture = Fixture::new("ragignore-bound");
+    fs::write(
+        fixture.root.join(".ragignore"),
+        vec![b'x'; MAX_RAGIGNORE_BYTES + 1],
+    )
+    .unwrap();
+
+    assert!(load_ragignore(&fixture.root).is_empty());
+}
+
+#[test]
 fn vector_publication_is_atomic_and_hybrid_has_bounded_rrf_explanation() {
     let mut fixture = Fixture::new("hybrid");
     fixture.write(

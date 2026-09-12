@@ -29,6 +29,7 @@ const LOCAL_EMBEDDING_MODEL: &str = "evohime-feature-hash";
 const LOCAL_EMBEDDING_VERSION: &str = "v1";
 const VECTOR_DIMENSION: usize = 64;
 const RRF_K: f64 = 60.0;
+const MAX_RAGIGNORE_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RagError {
@@ -756,8 +757,29 @@ fn simple_ignore_match(pattern: &str, path: &str) -> bool {
 }
 
 fn load_ragignore(root: &Path) -> Vec<String> {
-    fs::read_to_string(root.join(".ragignore"))
-        .unwrap_or_default()
+    let path = root.join(".ragignore");
+    let Ok(metadata) = fs::metadata(&path) else {
+        return Vec::new();
+    };
+    if !metadata.is_file() || metadata.len() > MAX_RAGIGNORE_BYTES as u64 {
+        return Vec::new();
+    }
+    let Ok(file) = fs::File::open(path) else {
+        return Vec::new();
+    };
+    let mut bytes = Vec::with_capacity(MAX_RAGIGNORE_BYTES.min(16 * 1024));
+    if file
+        .take((MAX_RAGIGNORE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .is_err()
+        || bytes.len() > MAX_RAGIGNORE_BYTES
+    {
+        return Vec::new();
+    }
+    let Ok(content) = String::from_utf8(bytes) else {
+        return Vec::new();
+    };
+    content
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
