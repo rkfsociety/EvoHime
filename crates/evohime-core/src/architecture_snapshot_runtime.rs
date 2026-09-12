@@ -4,7 +4,7 @@ use crate::architecture_snapshot::{
     Relationship, CONTRACT_VERSION, MAX_ITEMS,
 };
 use sha2::{Digest, Sha256};
-use std::path::Path;
+use std::{io::Read, path::Path};
 
 const MAX_FILE_BYTES: u64 = 256 * 1024;
 const ALLOWED_FILES: &[(&str, &str, &str)] = &[
@@ -35,13 +35,25 @@ fn hash_file(path: &Path) -> Result<(String, String), Error> {
     if !metadata.is_file() || metadata.len() > MAX_FILE_BYTES {
         return Err(Error::Workspace("file_not_allowed".into()));
     }
-    let bytes = std::fs::read(path).map_err(|e| Error::Workspace(e.to_string()))?;
+    let bytes = read_bounded_file(path)?;
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
     Ok((
         hex::encode(hasher.finalize()),
         format!("bytes:{}", bytes.len()),
     ))
+}
+
+fn read_bounded_file(path: &Path) -> Result<Vec<u8>, Error> {
+    let file = std::fs::File::open(path).map_err(|e| Error::Workspace(e.to_string()))?;
+    let mut bytes = Vec::with_capacity(MAX_FILE_BYTES as usize);
+    file.take(MAX_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| Error::Workspace(e.to_string()))?;
+    if bytes.len() as u64 > MAX_FILE_BYTES {
+        return Err(Error::Workspace("file_not_allowed".into()));
+    }
+    Ok(bytes)
 }
 
 fn evidence(root: &Path, relative: &str, kind: &str, revision: &str) -> Option<EvidenceRef> {
@@ -206,5 +218,17 @@ mod tests {
         assert!(authorize_root(root.path(), &[]).is_err());
         let other = tempfile::tempdir().unwrap();
         assert!(authorize_root(root.path(), &[other.path().display().to_string()]).is_err());
+    }
+
+    #[test]
+    fn oversized_allowlisted_file_is_rejected_without_full_read() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("Cargo.toml");
+        std::fs::write(&path, vec![b'x'; MAX_FILE_BYTES as usize + 1]).unwrap();
+
+        assert!(matches!(
+            read_bounded_file(&path),
+            Err(Error::Workspace(message)) if message == "file_not_allowed"
+        ));
     }
 }
