@@ -535,8 +535,11 @@ fn validate_component_marker_for(staging: &Path, selected: Option<&[String]>) ->
     if !marker.is_file() {
         return Ok(());
     }
-    let manifest = component_manifest::Manifest::parse(&fs::read(&marker)?)
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    let manifest = component_manifest::Manifest::parse(&read_bounded_file(
+        &marker,
+        MAX_COMPONENT_MARKER_BYTES,
+    )?)
+    .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     let mut validated = HashSet::new();
     for component in &manifest.components {
         if let Some(selected) = selected {
@@ -571,6 +574,29 @@ fn validate_component_marker_for(staging: &Path, selected: Option<&[String]>) ->
         }
     }
     Ok(())
+}
+
+const MAX_COMPONENT_MARKER_BYTES: usize = 256 * 1024;
+
+fn read_bounded_file(path: &Path, limit: usize) -> io::Result<Vec<u8>> {
+    let metadata = fs::metadata(path)?;
+    if metadata.len() > limit as u64 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("file exceeds limit of {limit} bytes: {}", path.display()),
+        ));
+    }
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    fs::File::open(path)?
+        .take((limit + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > limit {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("file exceeds limit of {limit} bytes: {}", path.display()),
+        ));
+    }
+    Ok(bytes)
 }
 
 fn wait_for_health(path: Option<&Path>) -> io::Result<()> {
@@ -1441,6 +1467,23 @@ mod tests {
         let selected = vec!["evohime-core.exe".to_owned()];
         let error = super::validate_component_marker_for(&staging, Some(&selected))
             .expect_err("selected component without marker entry must be rejected");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_oversized_component_marker_before_parsing() {
+        let root = temp_dir("oversized-marker");
+        let staging = root.join("staging");
+        fs::create_dir_all(&staging).unwrap();
+        fs::write(
+            staging.join("evohime.components.json"),
+            vec![b'x'; super::MAX_COMPONENT_MARKER_BYTES + 1],
+        )
+        .unwrap();
+
+        let error = super::validate_component_marker_for(&staging, None)
+            .expect_err("oversized marker must be rejected");
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
         fs::remove_dir_all(root).unwrap();
     }
