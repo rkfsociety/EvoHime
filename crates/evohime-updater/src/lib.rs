@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -980,8 +980,16 @@ impl UpdateTransaction {
         })
         .map_err(io::Error::other)?;
         let temporary = self.state_path.with_extension("json.tmp");
-        fs::write(&temporary, state)?;
-        fs::rename(temporary, &self.state_path)
+        let result = (|| {
+            let mut file = fs::File::create(&temporary)?;
+            file.write_all(&state)?;
+            file.sync_all()?;
+            fs::rename(&temporary, &self.state_path)
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(&temporary);
+        }
+        result
     }
 }
 
