@@ -1,3 +1,4 @@
+use crate::tools::git::run_bounded_git;
 use crate::{ToolContext, ToolError, ToolResult};
 use evohime_permissions::Permission;
 use serde::Deserialize;
@@ -31,16 +32,17 @@ pub async fn branch(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
 
     match opts.action.as_str() {
         "list" => {
-            let output = Command::new("git")
+            let mut command = Command::new("git");
+            command
                 .arg("branch")
                 .arg("-a")
                 .arg("--format=%(refname:short) %(objectname:short)")
-                .current_dir(&ctx.workspace_root)
-                .output()
+                .current_dir(&ctx.workspace_root);
+            let output = run_bounded_git(&mut command)
                 .await
                 .map_err(|e| ToolError::Execution(format!("git branch list failed: {e}")))?;
 
-            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
             Ok(ToolResult {
                 output: stdout.clone(),
                 structured: json!({
@@ -62,9 +64,8 @@ pub async fn branch(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
                 cmd.arg(&from);
             }
 
-            let output = cmd
-                .current_dir(&ctx.workspace_root)
-                .output()
+            cmd.current_dir(&ctx.workspace_root);
+            let output = run_bounded_git(&mut cmd)
                 .await
                 .map_err(|e| ToolError::Execution(format!("git branch create failed: {e}")))?;
 
@@ -87,11 +88,12 @@ pub async fn branch(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
                 message: "name is required for switch action".to_string(),
             })?;
 
-            let output = Command::new("git")
+            let mut command = Command::new("git");
+            command
                 .arg("switch")
                 .arg(&name)
-                .current_dir(&ctx.workspace_root)
-                .output()
+                .current_dir(&ctx.workspace_root);
+            let output = run_bounded_git(&mut command)
                 .await
                 .map_err(|e| ToolError::Execution(format!("git switch failed: {e}")))?;
 
@@ -114,12 +116,13 @@ pub async fn branch(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
                 message: "name is required for delete action".to_string(),
             })?;
 
-            let output = Command::new("git")
+            let mut command = Command::new("git");
+            command
                 .arg("branch")
                 .arg("-d")
                 .arg(&name)
-                .current_dir(&ctx.workspace_root)
-                .output()
+                .current_dir(&ctx.workspace_root);
+            let output = run_bounded_git(&mut command)
                 .await
                 .map_err(|e| ToolError::Execution(format!("git branch delete failed: {e}")))?;
 
@@ -183,13 +186,12 @@ pub async fn merge(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolEr
 
     cmd.arg(&opts.branch);
 
-    let output = cmd
-        .current_dir(&ctx.workspace_root)
-        .output()
+    cmd.current_dir(&ctx.workspace_root);
+    let output = run_bounded_git(&mut cmd)
         .await
         .map_err(|e| ToolError::Execution(format!("git merge failed: {e}")))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
