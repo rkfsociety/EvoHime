@@ -291,6 +291,7 @@ fn validate_compatible_manifest(manifest: &CompatibleManifest) -> Result<(), Str
             || component.manifest_asset.is_empty()
             || component.manifest_asset.contains('/')
             || component.manifest_asset.contains('\\')
+            || component.manifest_asset.contains(':')
             || component.manifest_asset.contains("..")
         {
             return Err(format!(
@@ -306,6 +307,7 @@ fn validate_compatible_manifest(manifest: &CompatibleManifest) -> Result<(), Str
             artifact.is_empty()
                 || artifact.contains('/')
                 || artifact.contains('\\')
+                || artifact.contains(':')
                 || artifact.contains("..")
         }) || component.size == 0
             || component.size > MAX_UPDATE_ARTIFACT_BYTES
@@ -2026,6 +2028,13 @@ mod tests {
             });
         }
         assert!(validate_compatible_manifest(&manifest).is_ok());
+
+        manifest.components[0].artifact = Some("core.exe:stream".into());
+        assert!(validate_compatible_manifest(&manifest).is_err());
+        manifest.components[0].artifact = Some("core.bin".into());
+        manifest.components[0].manifest_asset = "core.manifest.json:stream".into();
+        assert!(validate_compatible_manifest(&manifest).is_err());
+        manifest.components[0].manifest_asset = "core.manifest.json".into();
 
         manifest.components[0].summary = "x".repeat(super::MAX_COMPATIBLE_SUMMARY_BYTES + 1);
         assert!(validate_compatible_manifest(&manifest).is_err());
