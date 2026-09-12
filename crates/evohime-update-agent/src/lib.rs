@@ -126,8 +126,14 @@ pub fn validate_component_manifest(
             return Err(format!("invalid path for {}", component.id));
         }
         let path = install_dir.join(&component.path);
-        let metadata =
-            std::fs::metadata(&path).map_err(|error| format!("{}: {error}", component.id))?;
+        let metadata = std::fs::symlink_metadata(&path)
+            .map_err(|error| format!("{}: {error}", component.id))?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            return Err(format!(
+                "component is not a regular file for {}",
+                component.id
+            ));
+        }
         if metadata.len() != component.size {
             return Err(format!("size mismatch for {}", component.id));
         }
@@ -579,5 +585,31 @@ mod tests {
             }],
         };
         assert!(validate_component_manifest(&stream, directory.path()).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_component_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempfile::tempdir().unwrap();
+        let target = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(target.path(), b"core").unwrap();
+        symlink(target.path(), directory.path().join("core.exe")).unwrap();
+        let hash = sha2::Sha256::digest(b"core")
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let manifest = ComponentManifest {
+            components: vec![InstalledComponent {
+                id: "core".into(),
+                path: "core.exe".into(),
+                size: 4,
+                sha256: hash,
+            }],
+        };
+
+        let error = validate_component_manifest(&manifest, directory.path()).unwrap_err();
+        assert!(error.contains("regular file"));
     }
 }
