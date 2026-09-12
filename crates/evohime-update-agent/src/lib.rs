@@ -89,6 +89,7 @@ pub struct ComponentManifest {
 const MAX_AVAILABLE_MODULES: usize = 64;
 const MAX_MODULE_DEPENDENCIES: usize = 64;
 const MAX_COMPONENT_MANIFEST_FIELD_BYTES: usize = 260;
+const MAX_COMPONENT_ARTIFACT_BYTES: u64 = 512 * 1024 * 1024;
 
 /// Validate the immutable package manifest before starting any product process.
 /// A mismatch is fatal: running a partially replaced installation would make
@@ -115,6 +116,7 @@ pub fn validate_component_manifest(
             || component.path.starts_with('/')
             || Path::new(&component.path).is_absolute()
             || component.size == 0
+            || component.size > MAX_COMPONENT_ARTIFACT_BYTES
             || component.sha256.len() != 64
             || !component
                 .sha256
@@ -513,6 +515,22 @@ mod tests {
         };
         let error = validate_component_manifest(&manifest, directory.path()).unwrap_err();
         assert!(error.contains("size mismatch") || error.contains("sha256 mismatch"));
+    }
+
+    #[test]
+    fn rejects_oversized_component_before_opening_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let manifest = ComponentManifest {
+            components: vec![InstalledComponent {
+                id: "core".into(),
+                path: "core.exe".into(),
+                size: MAX_COMPONENT_ARTIFACT_BYTES + 1,
+                sha256: "00".repeat(32),
+            }],
+        };
+
+        let error = validate_component_manifest(&manifest, directory.path()).unwrap_err();
+        assert!(error.contains("invalid path"));
     }
 
     #[test]
