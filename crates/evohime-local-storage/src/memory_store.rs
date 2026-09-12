@@ -479,7 +479,8 @@ impl MemoryStoreSql {
         WHERE scope_kind = ?1 AND scope_id = ?2
           AND {RETRIEVABLE_PREDICATE}
           AND (expires_at IS NULL OR expires_at > ?3)
-          AND (lower(title) LIKE lower(?4) OR lower(content) LIKE lower(?4))
+          AND (lower(title) LIKE lower(?4) ESCAPE '\\'
+               OR lower(content) LIKE lower(?4) ESCAPE '\\')
         ORDER BY id ASC LIMIT ?5"
         )
     }
@@ -490,7 +491,8 @@ impl MemoryStoreSql {
         WHERE scope_kind = ?1 AND scope_id = ?2
           AND {RETRIEVABLE_PREDICATE} AND lesson_key IS NOT NULL
           AND (expires_at IS NULL OR expires_at > ?3)
-          AND (lower(title) LIKE lower(?4) OR lower(content) LIKE lower(?4))
+          AND (lower(title) LIKE lower(?4) ESCAPE '\\'
+               OR lower(content) LIKE lower(?4) ESCAPE '\\')
         ORDER BY confirmations DESC, created_at DESC, id ASC LIMIT ?5"
         )
     }
@@ -1389,6 +1391,33 @@ mod tests {
         assert_eq!(
             MemoryStoreSql::get_by_id(&connection, "a").unwrap(),
             Some(record("a", "Rust decision"))
+        );
+    }
+
+    #[test]
+    fn search_treats_like_wildcards_as_literal_query_data() {
+        let connection = Connection::open_in_memory().expect("sqlite opens");
+        schema(&connection);
+        MemoryStoreSql::insert(&connection, &record("literal", "budget is 100% fixed"))
+            .expect("insert literal");
+        MemoryStoreSql::insert(&connection, &record("wildcard", "budget is 100X fixed"))
+            .expect("insert wildcard candidate");
+
+        let found = MemoryStoreSql::search(
+            &connection,
+            MemoryScope::Project,
+            "project-1",
+            "100%",
+            "2026-09-01T00:00:00Z",
+            10,
+        )
+        .expect("search literal wildcard");
+        assert_eq!(
+            found
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            ["literal"]
         );
     }
 
