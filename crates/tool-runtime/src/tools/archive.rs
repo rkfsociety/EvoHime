@@ -4,7 +4,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
+use std::process::Stdio;
 use std::time::Duration;
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 // ============================================================================
@@ -359,6 +361,8 @@ pub const LIST_NAME: &str = "archive.list";
 pub const LIST_DESCRIPTION: &str = "List contents of an archive";
 pub const LIST_PERMISSIONS: &[Permission] = &[Permission::FilesystemRead];
 pub const LIST_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_LIST_STDOUT_BYTES: usize = 1024 * 1024;
+const MAX_LIST_STDERR_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Deserialize)]
 struct ListInput {
@@ -374,24 +378,29 @@ pub async fn list(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
     let archive = ctx.sandbox()?.resolve_existing(&opts.archive)?;
     let is_zip = archive.to_string_lossy().ends_with(".zip");
 
-    let output = if is_zip {
-        Command::new("unzip")
-            .arg("-l")
-            .arg(&archive)
-            .output()
-            .await
-            .map_err(|e| ToolError::Execution(format!("unzip list failed: {e}")))?
+    let mut command = if is_zip {
+        let mut command = Command::new("unzip");
+        command.arg("-l").arg(&archive);
+        command
     } else {
-        Command::new("tar")
-            .arg("-t")
-            .arg("-f")
-            .arg(&archive)
-            .output()
-            .await
-            .map_err(|e| ToolError::Execution(format!("tar list failed: {e}")))?
+        let mut command = Command::new("tar");
+        command.arg("-t").arg("-f").arg(&archive);
+        command
     };
+    let output = run_bounded_command(&mut command)
+        .await
+        .map_err(|e| ToolError::Execution(format!("archive list failed: {e}")))?;
+    if !output.status.success() {
+        return Err(ToolError::Execution(format!(
+            "archive list failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )));
+    }
+    if output.stdout.len() > MAX_LIST_STDOUT_BYTES {
+        return Err(ToolError::Execution("archive listing exceeds 1 MiB".into()));
+    }
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
 
     Ok(ToolResult {
         output: stdout.clone(),
@@ -401,6 +410,54 @@ pub async fn list(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
             "entries": stdout.lines().collect::<Vec<_>>()
         }),
     })
+}
+
+struct BoundedCommandOutput {
+    status: std::process::ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+async fn run_bounded_command(command: &mut Command) -> io::Result<BoundedCommandOutput> {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn()?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| io::Error::other("archive list stdout unavailable"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| io::Error::other("archive list stderr unavailable"))?;
+    let mut stdout_reader = tokio::io::BufReader::new(stdout);
+    let mut stderr_reader = tokio::io::BufReader::new(stderr);
+    let stdout = read_bounded(&mut stdout_reader, MAX_LIST_STDOUT_BYTES);
+    let stderr = read_bounded(&mut stderr_reader, MAX_LIST_STDERR_BYTES);
+    let status = child.wait();
+    let (stdout, stderr, status) = tokio::join!(stdout, stderr, status);
+    Ok(BoundedCommandOutput {
+        status: status?,
+        stdout: stdout?,
+        stderr: stderr?,
+    })
+}
+
+async fn read_bounded<R: tokio::io::AsyncRead + Unpin>(
+    reader: &mut R,
+    limit: usize,
+) -> io::Result<Vec<u8>> {
+    let mut output = Vec::with_capacity(limit.min(16 * 1024));
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        let read = reader.read(&mut chunk).await?;
+        if read == 0 {
+            break;
+        }
+        if output.len() <= limit {
+            output.extend_from_slice(&chunk[..read.min(limit + 1 - output.len())]);
+        }
+    }
+    Ok(output)
 }
 
 #[cfg(test)]
@@ -443,6 +500,25 @@ mod tests {
         let mut total = 0;
         assert!(reserve_extraction(&mut total, MAX_EXTRACTED_BYTES).is_ok());
         assert!(reserve_extraction(&mut total, 1).is_err());
+    }
+
+    #[tokio::test]
+    async fn archive_listing_reader_keeps_output_bounded() {
+        let (mut writer, mut reader) = tokio::io::duplex(64);
+        let payload = vec![b'x'; MAX_LIST_STDOUT_BYTES + 1_024];
+        let writer_task = tokio::spawn(async move {
+            tokio::io::AsyncWriteExt::write_all(&mut writer, &payload)
+                .await
+                .unwrap();
+            tokio::io::AsyncWriteExt::shutdown(&mut writer)
+                .await
+                .unwrap();
+        });
+        let output = read_bounded(&mut reader, MAX_LIST_STDOUT_BYTES)
+            .await
+            .unwrap();
+        writer_task.await.unwrap();
+        assert_eq!(output.len(), MAX_LIST_STDOUT_BYTES + 1);
     }
 
     #[tokio::test]
