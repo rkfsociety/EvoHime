@@ -1292,10 +1292,13 @@ fn merge_installed_manifest_to(
     destination: &Path,
 ) -> Result<(), String> {
     let path = install_dir.join("evohime.components.json");
-    let mut root = serde_json::from_str::<serde_json::Value>(
-        &read_bounded_text(&path).unwrap_or_else(|_| "{\"components\":[]}".into()),
-    )
-    .map_err(|error| error.to_string())?;
+    let existing = if path.exists() {
+        read_bounded_text(&path)?
+    } else {
+        "{\"components\":[]}".into()
+    };
+    let mut root =
+        serde_json::from_str::<serde_json::Value>(&existing).map_err(|error| error.to_string())?;
     let components = root
         .get_mut("components")
         .and_then(serde_json::Value::as_array_mut)
@@ -1480,11 +1483,12 @@ fn fail(error: impl std::fmt::Display) -> ExitCode {
 mod tests {
     use super::{
         is_github_api_url, is_github_release_asset_url, is_trusted_github_url,
-        normalize_github_token, parse_json_body, read_installed_module_manifest,
-        read_update_config, resolve_github_token_with, updater_bootstrap_script,
-        updater_first_if_required, updater_http_client, validate_compatible_manifest,
-        validate_runtime_manifest, CompatibleComponent, CompatibleManifest, RuntimeReleaseEntry,
-        RuntimeReleaseManifest, UpdateCandidate, UpdaterBootstrapPaths, UpdaterRequirement,
+        merge_installed_manifest_to, normalize_github_token, parse_json_body,
+        read_installed_module_manifest, read_update_config, resolve_github_token_with,
+        updater_bootstrap_script, updater_first_if_required, updater_http_client,
+        validate_compatible_manifest, validate_runtime_manifest, CompatibleComponent,
+        CompatibleManifest, RuntimeReleaseEntry, RuntimeReleaseManifest, UpdateCandidate,
+        UpdaterBootstrapPaths, UpdaterRequirement,
     };
     use std::{
         fs,
@@ -1563,6 +1567,27 @@ mod tests {
             .expect("BOM-prefixed installed manifest must parse");
         let _ = fs::remove_dir_all(root);
         assert_eq!(manifest.components[0].id, "core");
+    }
+
+    #[test]
+    fn manifest_merge_fails_closed_on_corrupt_existing_manifest() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-merge-manifest-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("create temporary install directory");
+        fs::write(root.join("evohime.components.json"), b"not-json")
+            .expect("write corrupt manifest");
+        let destination = root.join("evohime.components.json.next");
+
+        let error = merge_installed_manifest_to(&root, &[], &destination)
+            .expect_err("corrupt manifest must not be replaced with an empty one");
+        assert!(!error.is_empty());
+        assert!(!destination.exists());
+        fs::remove_dir_all(root).expect("remove temporary install directory");
     }
 
     #[test]
