@@ -50,7 +50,8 @@ pub fn save(
          VALUES (?1, ?2, ?3, ?4)
          ON CONFLICT(profile_id) DO UPDATE SET version=excluded.version,
          profile_hash=excluded.profile_hash, profile_json=excluded.profile_json,
-         updated_at=strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
+         updated_at=strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+         WHERE excluded.version > execution_policy_profiles.version",
         params![
             record.profile_id,
             record.version,
@@ -107,5 +108,42 @@ mod tests {
         save(&connection, &record).unwrap();
         assert_eq!(get(&connection, &record.profile_id).unwrap(), Some(record));
         assert!(get(&connection, "runtime-handle").unwrap().is_none());
+    }
+
+    #[test]
+    fn stale_policy_version_cannot_replace_current_policy() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE execution_policy_profiles(
+                 profile_id TEXT PRIMARY KEY, version INTEGER NOT NULL,
+                 profile_hash TEXT NOT NULL, profile_json BLOB NOT NULL,
+                 updated_at TEXT NOT NULL DEFAULT '' )",
+            )
+            .unwrap();
+        save(
+            &connection,
+            &ExecutionPolicyProfileRecord {
+                profile_id: "policy".into(),
+                version: 2,
+                profile_hash: "b".repeat(64),
+                profile_json: br#"{\"version\":2}"#.to_vec(),
+            },
+        )
+        .unwrap();
+        save(
+            &connection,
+            &ExecutionPolicyProfileRecord {
+                profile_id: "policy".into(),
+                version: 1,
+                profile_hash: "a".repeat(64),
+                profile_json: br#"{\"version\":1}"#.to_vec(),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            get(&connection, "policy").unwrap().unwrap().profile_json,
+            br#"{\"version\":2}"#.to_vec()
+        );
     }
 }
