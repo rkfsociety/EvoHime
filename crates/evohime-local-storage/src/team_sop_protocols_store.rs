@@ -49,9 +49,8 @@ pub struct SaveSessionInput<'a> {
     pub now_ms: i64,
 }
 
-pub fn save_session(c: &Connection, input: SaveSessionInput<'_>) -> Result<(), rusqlite::Error> {
-    c.execute("INSERT INTO team_sop_sessions VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET status=excluded.status,current_phase=excluded.current_phase,version=excluded.version,updated_at_ms=excluded.updated_at_ms",params![input.id,input.protocol_id,input.protocol_version as i64,input.hash,input.snapshot,input.status,input.phase,input.version as i64,input.now_ms])?;
-    Ok(())
+pub fn save_session(c: &Connection, input: SaveSessionInput<'_>) -> Result<bool, rusqlite::Error> {
+    Ok(c.execute("INSERT INTO team_sop_sessions VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET status=excluded.status,current_phase=excluded.current_phase,version=excluded.version,updated_at_ms=excluded.updated_at_ms WHERE excluded.version >= team_sop_sessions.version",params![input.id,input.protocol_id,input.protocol_version as i64,input.hash,input.snapshot,input.status,input.phase,input.version as i64,input.now_ms])? == 1)
 }
 pub fn load_all_json(c: &Connection) -> Result<Vec<Vec<u8>>, rusqlite::Error> {
     let mut s = c.prepare("SELECT protocol_json FROM team_sop_protocols ORDER BY id")?;
@@ -69,5 +68,42 @@ mod tests {
         assert!(save_protocol(&c, "coding", 1, "h", br#"{}"#, 1).unwrap());
         assert!(!save_protocol(&c, "coding", 1, "h", br#"{}"#, 2).unwrap());
         assert_eq!(load_all_json(&c).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn session_version_fence_rejects_stale_snapshots() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        let input = SaveSessionInput {
+            id: "session",
+            protocol_id: "coding",
+            protocol_version: 1,
+            hash: "h",
+            snapshot: br#"{}"#,
+            status: "running",
+            phase: "execute",
+            version: 2,
+            now_ms: 2,
+        };
+        assert!(save_session(&c, input).unwrap());
+        assert!(!save_session(
+            &c,
+            SaveSessionInput {
+                status: "stale",
+                phase: "old",
+                version: 1,
+                now_ms: 3,
+                ..input
+            }
+        )
+        .unwrap());
+        let stored: String = c
+            .query_row(
+                "SELECT status FROM team_sop_sessions WHERE id='session'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, "running");
     }
 }
