@@ -1,6 +1,7 @@
 use crate::ssrf;
 use crate::{ToolContext, ToolError, ToolResult};
 use evohime_permissions::Permission;
+use futures_util::StreamExt;
 use reqwest::{redirect::Policy, Client, Url};
 use serde::Deserialize;
 use serde_json::json;
@@ -12,6 +13,7 @@ pub const PERMISSIONS: &[Permission] = &[Permission::BrowserAccess];
 pub const TIMEOUT: Duration = Duration::from_secs(20);
 const DEFAULT_MAX_CHARS: usize = 8_000;
 const MAX_MAX_CHARS: usize = 20_000;
+const MAX_RESPONSE_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, Deserialize)]
 struct Input {
@@ -68,10 +70,7 @@ pub async fn fetch(ctx: &ToolContext, value: serde_json::Value) -> Result<ToolRe
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .map(str::to_string);
-    let body = response
-        .text()
-        .await
-        .map_err(|error| ToolError::Execution(format!("failed to read response: {error}")))?;
+    let body = read_bounded_body(response).await?;
     if !status.is_success() {
         return Err(ToolError::Execution(format!(
             "http endpoint returned {}: {}",
@@ -91,6 +90,32 @@ pub async fn fetch(ctx: &ToolContext, value: serde_json::Value) -> Result<ToolRe
             "truncated": body.chars().count() > max_chars,
         }),
     })
+}
+
+async fn read_bounded_body(response: reqwest::Response) -> Result<String, ToolError> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+    {
+        return Err(ToolError::Execution(format!(
+            "http response body exceeds {} bytes",
+            MAX_RESPONSE_BYTES
+        )));
+    }
+    let mut bytes = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk
+            .map_err(|error| ToolError::Execution(format!("failed to read response: {error}")))?;
+        if bytes.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
+            return Err(ToolError::Execution(format!(
+                "http response body exceeds {} bytes",
+                MAX_RESPONSE_BYTES
+            )));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 fn validate_url(value: &str) -> Result<Url, ToolError> {
@@ -165,5 +190,24 @@ mod tests {
             .expect_err("loopback blocked");
 
         assert!(matches!(error, ToolError::InvalidInput { .. }));
+    }
+
+    #[tokio::test]
+    async fn fetch_rejects_response_body_before_unbounded_allocation() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/large"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_bytes(vec![b'x'; MAX_RESPONSE_BYTES + 1]),
+            )
+            .mount(&server)
+            .await;
+        let (_dir, ctx) = ctx();
+        let _private = crate::ssrf::lock_private_override(Some(true));
+
+        let error = fetch(&ctx, json!({ "url": format!("{}/large", server.uri()) }))
+            .await
+            .expect_err("oversized response must be rejected");
+        assert!(error.to_string().contains("exceeds 262144 bytes"));
     }
 }
