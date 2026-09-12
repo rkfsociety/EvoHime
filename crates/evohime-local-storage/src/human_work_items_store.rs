@@ -2,6 +2,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 const MAX_LIST_ROWS: usize = 256;
+const MAX_ITEM_BYTES: usize = 64 * 1024;
 pub fn install_schema(c: &Connection) -> Result<(), rusqlite::Error> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS human_work_items (id TEXT PRIMARY KEY NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL, item_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS human_work_item_events (item_id TEXT NOT NULL, revision INTEGER NOT NULL, event_type TEXT NOT NULL, metadata_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(item_id, revision));")
 }
@@ -14,6 +15,9 @@ pub fn save(
     event: &str,
     now: i64,
 ) -> Result<bool, rusqlite::Error> {
+    if json.len() > MAX_ITEM_BYTES {
+        return Ok(false);
+    }
     let tx = c.unchecked_transaction()?;
     let current: Option<u64> = tx
         .query_row(
@@ -52,6 +56,23 @@ mod tests {
         assert!(save(&c, "a", 1, "waiting_for_human", br#"{}"#, "create", 1).unwrap());
         assert!(!save(&c, "a", 1, "waiting_for_human", br#"{}"#, "create", 2).unwrap());
         assert_eq!(load_all_json(&c).unwrap().len(), 1)
+    }
+
+    #[test]
+    fn oversized_item_is_rejected_before_storage() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        assert!(!save(
+            &c,
+            "item",
+            1,
+            "waiting_for_human",
+            &vec![b'x'; MAX_ITEM_BYTES + 1],
+            "create",
+            1,
+        )
+        .unwrap());
+        assert!(load_all_json(&c).unwrap().is_empty());
     }
 
     #[test]
