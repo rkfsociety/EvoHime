@@ -14,6 +14,7 @@ pub fn claim_idempotency(c: &Connection, key: &str, operation: &str) -> rusqlite
 }
 
 pub fn put_bridge(c: &Connection, id: &str, json: &[u8], revision: u64) -> rusqlite::Result<()> {
+    let revision = revision_i64(revision)?;
     let bridge: serde_json::Value = serde_json::from_slice(json)
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
     let provider = required_string(&bridge, "provider")?;
@@ -21,6 +22,18 @@ pub fn put_bridge(c: &Connection, id: &str, json: &[u8], revision: u64) -> rusql
     let principal_id = required_string(&bridge, "principal_id")?;
     let pairing_hash = required_string(&bridge, "pairing_hash")?;
     let state = required_string(&bridge, "state")?;
+    let current_revision: Option<i64> = c
+        .query_row(
+            "SELECT revision FROM conversation_bridges WHERE bridge_id=?1",
+            params![id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if current_revision.is_some_and(|current| current >= revision) {
+        return Err(rusqlite::Error::InvalidParameterName(
+            "bridge revision is stale".into(),
+        ));
+    }
     c.execute(
         "INSERT OR REPLACE INTO conversation_bridges VALUES(?1,?2,?3,?4,?5,?6,?7)",
         params![
@@ -83,6 +96,7 @@ pub fn put_binding(
     thread_id: &str,
     revision: u64,
 ) -> rusqlite::Result<bool> {
+    let revision = revision_i64(revision)?;
     let binding: serde_json::Value = serde_json::from_slice(json)
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
     let conversation_id = required_string(&binding, "conversation_id")?;
@@ -175,6 +189,11 @@ fn required_string<'a>(value: &'a serde_json::Value, field: &str) -> rusqlite::R
         })
 }
 
+fn revision_i64(revision: u64) -> rusqlite::Result<i64> {
+    i64::try_from(revision)
+        .map_err(|_| rusqlite::Error::InvalidParameterName("revision exceeds SQLite range".into()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,5 +246,20 @@ mod tests {
         assert!(put_binding(&c, mismatch, "bind-mismatch", "b", "thread", 1).is_err());
         let valid = br#"{"conversation_id":"c","principal_id":"p"}"#;
         assert!(put_binding(&c, valid, "bind-orphan", "missing", "thread", 1).is_err());
+    }
+
+    #[test]
+    fn rejects_stale_and_unrepresentable_bridge_revisions() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        let bridge = br#"{"provider":"telegram","conversation_id":"c","principal_id":"p","pairing_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","state":"paired"}"#;
+        put_bridge(&c, "b", bridge, 2).unwrap();
+
+        assert!(put_bridge(&c, "b", bridge, 2).is_err());
+        assert!(put_bridge(&c, "b", bridge, 1).is_err());
+        assert!(put_bridge(&c, "other", bridge, u64::MAX).is_err());
+        let stored: serde_json::Value =
+            serde_json::from_slice(&get_bridge(&c, "b").unwrap().unwrap()).unwrap();
+        assert_eq!(stored["revision"], 2);
     }
 }
