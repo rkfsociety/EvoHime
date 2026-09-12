@@ -16,7 +16,7 @@ pub fn put(
         )));
     }
     c.execute(
-        "INSERT OR REPLACE INTO checkpoint_fork_lineages VALUES(?1,?2,?3,?4,?5)",
+        "INSERT INTO checkpoint_fork_lineages(fork_run_id,source_checkpoint_id,parent_run_id,lineage_json,created_at_ms) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(fork_run_id) DO NOTHING",
         params![id, source, parent, j, now],
     )?;
     Ok(())
@@ -26,4 +26,34 @@ pub fn list(c: &Connection) -> rusqlite::Result<Vec<Vec<u8>>> {
         c.prepare("SELECT lineage_json FROM checkpoint_fork_lineages ORDER BY fork_run_id")?;
     let rows = s.query_map([], |r| r.get(0))?.collect();
     rows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fork_lineage_is_immutable_on_retry() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        put(
+            &c,
+            "fork",
+            "checkpoint-1",
+            "parent-1",
+            br#"{"source":1}"#,
+            1,
+        )
+        .unwrap();
+        put(
+            &c,
+            "fork",
+            "checkpoint-2",
+            "parent-2",
+            br#"{"source":2}"#,
+            2,
+        )
+        .unwrap();
+        assert_eq!(list(&c).unwrap(), vec![br#"{"source":1}"#.to_vec()]);
+    }
 }
