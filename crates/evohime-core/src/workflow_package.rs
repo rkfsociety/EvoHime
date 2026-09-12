@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
+    io::Read,
     path::{Path, PathBuf},
 };
 
@@ -465,7 +466,18 @@ pub fn validate_package_path(path: &Path) -> Result<PathBuf, WorkflowPackageErro
 
 pub fn read_package(path: &Path) -> Result<WorkflowPackage, WorkflowPackageError> {
     let path = validate_package_path(path)?;
-    let bytes = std::fs::read(path).map_err(|e| WorkflowPackageError::Io(e.to_string()))?;
+    let metadata = std::fs::metadata(&path).map_err(|e| WorkflowPackageError::Io(e.to_string()))?;
+    if !metadata.is_file() || metadata.len() > MAX_PACKAGE_BYTES as u64 {
+        return Err(WorkflowPackageError::TooLarge);
+    }
+    let file = std::fs::File::open(path).map_err(|e| WorkflowPackageError::Io(e.to_string()))?;
+    let mut bytes = Vec::with_capacity(MAX_PACKAGE_BYTES.min(16 * 1024));
+    file.take((MAX_PACKAGE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|e| WorkflowPackageError::Io(e.to_string()))?;
+    if bytes.len() > MAX_PACKAGE_BYTES {
+        return Err(WorkflowPackageError::TooLarge);
+    }
     parse_bounded(&bytes)
 }
 
@@ -636,5 +648,17 @@ mod tests {
             parse_bounded(&bytes).unwrap().content_hash,
             preview.package_hash
         );
+    }
+
+    #[test]
+    fn read_package_rejects_a_physically_oversized_file_before_parsing() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("large.evohime-workflow.json");
+        std::fs::write(&path, vec![b'x'; MAX_PACKAGE_BYTES + 1]).unwrap();
+
+        assert!(matches!(
+            read_package(&path),
+            Err(WorkflowPackageError::TooLarge)
+        ));
     }
 }
