@@ -164,9 +164,10 @@ pub fn save_reporting_history(
     now_ms: i64,
 ) -> Result<(), rusqlite::Error> {
     connection.execute(
-        "INSERT OR REPLACE INTO persistent_agent_reporting_history
+        "INSERT INTO persistent_agent_reporting_history
          (agent_id, revision, parent_agent_id, event_type, actor, created_at_ms)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(agent_id, revision) DO NOTHING",
         params![
             agent_id,
             revision as i64,
@@ -473,6 +474,27 @@ mod tests {
         assert_eq!(
             record_command_outcome(&connection, "key", "other", br#"{"ok":false}"#, 2).unwrap(),
             Some(("hash".into(), br#"{"ok":true}"#.to_vec()))
+        );
+    }
+
+    #[test]
+    fn reporting_history_is_immutable_on_retry() {
+        let connection = Connection::open_in_memory().unwrap();
+        install_schema(&connection).unwrap();
+        save_reporting_history(
+            &connection,
+            "agent",
+            2,
+            Some("parent"),
+            "created",
+            "user",
+            2,
+        )
+        .unwrap();
+        save_reporting_history(&connection, "agent", 2, None, "deleted", "retry", 3).unwrap();
+        assert_eq!(
+            load_reporting_history(&connection, "agent", 10).unwrap(),
+            vec![(2, Some("parent".into()), "created".into(), "user".into(), 2)]
         );
     }
 }
