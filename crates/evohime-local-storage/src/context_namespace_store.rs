@@ -134,7 +134,7 @@ pub fn save_idempotency(
     if !bounded(response) {
         return Err(rusqlite::Error::InvalidQuery);
     }
-    c.execute("INSERT INTO context_namespace_idempotency(scope,idempotency_key,command_hash,response_json,created_at_ms) VALUES(?1,?2,?3,?4,?5)", params![scope,key,command_hash,response,now])?;
+    c.execute("INSERT INTO context_namespace_idempotency(scope,idempotency_key,command_hash,response_json,created_at_ms) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(scope,idempotency_key) DO NOTHING", params![scope,key,command_hash,response,now])?;
     Ok(())
 }
 
@@ -159,6 +159,11 @@ mod tests {
         let c = Connection::open_in_memory().unwrap();
         install_schema(&c).unwrap();
         save_idempotency(&c, "scope", "key", "hash", b"{}", 1).unwrap();
+        assert_eq!(
+            load_idempotency(&c, "scope", "key").unwrap(),
+            Some(("hash".into(), b"{}".to_vec()))
+        );
+        save_idempotency(&c, "scope", "key", "different", br#"{"changed":true}"#, 2).unwrap();
         assert_eq!(
             load_idempotency(&c, "scope", "key").unwrap(),
             Some(("hash".into(), b"{}".to_vec()))
