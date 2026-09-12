@@ -845,6 +845,17 @@ fn apply_updates(
     progress: &dyn Fn(&str, u8),
 ) -> Result<(), String> {
     let staging = data_dir.join("update-staging");
+    let result = apply_updates_inner(install_dir, data_dir, updates, progress);
+    cleanup_failed_staging(&staging, result)
+}
+
+fn apply_updates_inner(
+    install_dir: &Path,
+    data_dir: &Path,
+    updates: &[UpdateCandidate],
+    progress: &dyn Fn(&str, u8),
+) -> Result<(), String> {
+    let staging = data_dir.join("update-staging");
     let state = data_dir.join("update-state");
     if staging.exists() {
         fs::remove_dir_all(&staging).map_err(|error| error.to_string())?;
