@@ -24,7 +24,7 @@ pub fn claim_idempotency(c: &Connection, key: &str, operation: &str) -> rusqlite
 }
 pub fn put_consent(c: &Connection, j: &[u8], revision: u64) -> rusqlite::Result<()> {
     c.execute(
-        "INSERT OR REPLACE INTO telemetry_consent VALUES(1,?1,?2)",
+        "INSERT INTO telemetry_consent(id,consent_json,revision) VALUES(1,?1,?2) ON CONFLICT(id) DO UPDATE SET consent_json=excluded.consent_json,revision=excluded.revision WHERE excluded.revision > telemetry_consent.revision",
         params![j, revision as i64],
     )?;
     Ok(())
@@ -91,5 +91,22 @@ mod tests {
         install_schema(&c).unwrap();
         assert!(claim_idempotency(&c, "k", "clear").unwrap());
         assert!(!claim_idempotency(&c, "k", "clear").unwrap());
+    }
+
+    #[test]
+    fn stale_consent_revision_cannot_rewind_governance() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        put_consent(&c, br#"{"revision":2}"#, 2).unwrap();
+        put_consent(&c, br#"{"revision":1}"#, 1).unwrap();
+        assert_eq!(
+            c.query_row(
+                "SELECT consent_json,revision FROM telemetry_consent WHERE id=1",
+                [],
+                |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .unwrap(),
+            (br#"{"revision":2}"#.to_vec(), 2)
+        );
     }
 }
