@@ -131,6 +131,8 @@ pub const EXTRACT_NAME: &str = "archive.extract";
 pub const EXTRACT_DESCRIPTION: &str = "Extract a tar.gz or zip archive";
 pub const EXTRACT_PERMISSIONS: &[Permission] = &[Permission::FilesystemWrite];
 pub const EXTRACT_TIMEOUT: Duration = Duration::from_secs(120);
+const MAX_EXTRACTED_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_ARCHIVE_ENTRIES: usize = 4_096;
 
 #[derive(Debug, Deserialize)]
 struct ExtractInput {
@@ -246,7 +248,14 @@ fn extract_tar(archive_path: &Path, destination: &Path) -> io::Result<()> {
         Box::new(file)
     };
     let mut archive = tar::Archive::new(reader);
-    for entry in archive.entries()? {
+    let mut total_bytes = 0_u64;
+    for (index, entry) in archive.entries()?.enumerate() {
+        if index >= MAX_ARCHIVE_ENTRIES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "archive contains too many entries",
+            ));
+        }
         let mut entry = entry?;
         let path = safe_archive_path(&entry.path()?)?;
         let entry_type = entry.header().entry_type();
@@ -256,6 +265,7 @@ fn extract_tar(archive_path: &Path, destination: &Path) -> io::Result<()> {
                 "symbolic and hard links are not allowed in archives",
             ));
         }
+        reserve_extraction(&mut total_bytes, entry.header().size()?)?;
         let target = destination.join(path);
         ensure_safe_parent(destination, &target)?;
         if entry_type.is_dir() {
@@ -284,6 +294,13 @@ fn extract_tar(archive_path: &Path, destination: &Path) -> io::Result<()> {
 fn extract_zip(archive_path: &Path, destination: &Path) -> io::Result<()> {
     let file = std::fs::File::open(archive_path)?;
     let mut archive = zip::ZipArchive::new(file).map_err(io::Error::other)?;
+    if archive.len() > MAX_ARCHIVE_ENTRIES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "archive contains too many entries",
+        ));
+    }
+    let mut total_bytes = 0_u64;
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).map_err(io::Error::other)?;
         if entry.is_symlink() {
@@ -292,6 +309,7 @@ fn extract_zip(archive_path: &Path, destination: &Path) -> io::Result<()> {
                 "symbolic links are not allowed in archives",
             ));
         }
+        reserve_extraction(&mut total_bytes, entry.size())?;
         let raw_name = entry.name().replace('\\', "/");
         let path = safe_archive_path(Path::new(&raw_name))?;
         let target = destination.join(path);
@@ -313,6 +331,23 @@ fn extract_zip(archive_path: &Path, destination: &Path) -> io::Result<()> {
             io::copy(&mut entry, &mut output)?;
         }
     }
+    Ok(())
+}
+
+fn reserve_extraction(total: &mut u64, bytes: u64) -> io::Result<()> {
+    let next = total.checked_add(bytes).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "archive extracted size overflow",
+        )
+    })?;
+    if next > MAX_EXTRACTED_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "archive extracted size exceeds 64 MiB",
+        ));
+    }
+    *total = next;
     Ok(())
 }
 
@@ -401,6 +436,13 @@ mod tests {
 
         assert!(result.is_ok(), "archive create failed");
         assert!(dir.path().join(archive_path).exists());
+    }
+
+    #[test]
+    fn archive_extraction_budget_is_bounded() {
+        let mut total = 0;
+        assert!(reserve_extraction(&mut total, MAX_EXTRACTED_BYTES).is_ok());
+        assert!(reserve_extraction(&mut total, 1).is_err());
     }
 
     #[tokio::test]
