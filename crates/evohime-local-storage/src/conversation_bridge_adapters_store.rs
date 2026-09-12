@@ -16,15 +16,20 @@ pub fn claim_idempotency(c: &Connection, key: &str, operation: &str) -> rusqlite
 pub fn put_bridge(c: &Connection, id: &str, json: &[u8], revision: u64) -> rusqlite::Result<()> {
     let bridge: serde_json::Value = serde_json::from_slice(json)
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    let provider = required_string(&bridge, "provider")?;
+    let conversation_id = required_string(&bridge, "conversation_id")?;
+    let principal_id = required_string(&bridge, "principal_id")?;
+    let pairing_hash = required_string(&bridge, "pairing_hash")?;
+    let state = required_string(&bridge, "state")?;
     c.execute(
         "INSERT OR REPLACE INTO conversation_bridges VALUES(?1,?2,?3,?4,?5,?6,?7)",
         params![
             id,
-            bridge["provider"].as_str().unwrap_or("generic"),
-            bridge["conversation_id"].as_str().unwrap_or(""),
-            bridge["principal_id"].as_str().unwrap_or(""),
-            bridge["pairing_hash"].as_str().unwrap_or(""),
-            bridge["state"].as_str().unwrap_or("paired"),
+            provider,
+            conversation_id,
+            principal_id,
+            pairing_hash,
+            state,
             revision as i64
         ],
     )?;
@@ -80,14 +85,16 @@ pub fn put_binding(
 ) -> rusqlite::Result<bool> {
     let binding: serde_json::Value = serde_json::from_slice(json)
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    let conversation_id = required_string(&binding, "conversation_id")?;
+    let principal_id = required_string(&binding, "principal_id")?;
     Ok(c.execute(
         "INSERT OR IGNORE INTO conversation_thread_bindings VALUES(?1,?2,?3,?4,?5,?6)",
         params![
             binding_id,
             bridge_id,
             thread_id,
-            binding["conversation_id"].as_str().unwrap_or(""),
-            binding["principal_id"].as_str().unwrap_or(""),
+            conversation_id,
+            principal_id,
             revision as i64
         ],
     )? == 1)
@@ -144,6 +151,16 @@ pub fn bridge_revision(c: &Connection, bridge_id: &str) -> rusqlite::Result<Opti
     .map(|v| v.map(|x| x as u64))
 }
 
+fn required_string<'a>(value: &'a serde_json::Value, field: &str) -> rusqlite::Result<&'a str> {
+    value
+        .get(field)
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            rusqlite::Error::InvalidParameterName(format!("missing bridge field: {field}"))
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,5 +189,14 @@ mod tests {
         assert!(put_binding(&c, b"{invalid", "bind", "b", "thread", 1).is_err());
         assert!(get_bridge(&c, "b").unwrap().is_none());
         assert!(get_binding(&c, "bind").unwrap().is_none());
+    }
+
+    #[test]
+    fn rejects_structurally_empty_bridge_and_binding_json() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+
+        assert!(put_bridge(&c, "b", br#"{}"#, 1).is_err());
+        assert!(put_binding(&c, br#"{}"#, "bind", "b", "thread", 1).is_err());
     }
 }
