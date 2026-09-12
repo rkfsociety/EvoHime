@@ -1125,6 +1125,9 @@ fn extract_ui_bundle(archive_path: &Path, destination: &Path) -> Result<(), Stri
 fn extract_ui_bundle_inner(archive_path: &Path, destination: &Path) -> Result<(), String> {
     let archive_file = fs::File::open(archive_path).map_err(|error| error.to_string())?;
     let mut archive = zip::ZipArchive::new(archive_file).map_err(|error| error.to_string())?;
+    if archive.len() > MAX_ARCHIVE_ENTRIES {
+        return Err("updater: UI archive содержит слишком много записей".to_owned());
+    }
     if destination.exists() {
         fs::remove_dir_all(destination).map_err(|error| error.to_string())?;
     }
@@ -1178,6 +1181,9 @@ fn extract_shell_host(archive_path: &Path, destination: &Path) -> Result<(), Str
 fn extract_shell_host_inner(archive_path: &Path, destination: &Path) -> Result<(), String> {
     let archive_file = fs::File::open(archive_path).map_err(|error| error.to_string())?;
     let mut archive = zip::ZipArchive::new(archive_file).map_err(|error| error.to_string())?;
+    if archive.len() > MAX_ARCHIVE_ENTRIES {
+        return Err("updater: shell-host archive содержит слишком много записей".to_owned());
+    }
     if destination.exists() {
         fs::remove_dir_all(destination).map_err(|error| error.to_string())?;
     }
@@ -1225,6 +1231,7 @@ fn extract_shell_host_inner(archive_path: &Path, destination: &Path) -> Result<(
 }
 
 const MAX_ARCHIVE_UNCOMPRESSED_BYTES: u64 = 1024 * 1024 * 1024;
+const MAX_ARCHIVE_ENTRIES: usize = 4096;
 
 fn copy_reader_bounded<R: Read, W: Write>(
     reader: &mut R,
@@ -1728,6 +1735,33 @@ mod tests {
             super::extract_ui_bundle(&root.join("broken.zip"), &root.join("destination")).is_err()
         );
         assert!(!root.join("destination").exists());
+        fs::remove_dir_all(root).expect("remove temporary archive directory");
+    }
+
+    #[test]
+    fn archive_entry_count_is_bounded() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-archive-entries-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("create temporary archive directory");
+        let archive_path = root.join("many-entries.zip");
+        let file = fs::File::create(&archive_path).expect("create archive");
+        let mut archive = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        for index in 0..=super::MAX_ARCHIVE_ENTRIES {
+            archive
+                .start_file(format!("entry-{index}"), options)
+                .expect("start archive entry");
+        }
+        archive.finish().expect("finish archive");
+
+        let error = super::extract_ui_bundle(&archive_path, &root.join("destination"))
+            .expect_err("archives with too many entries must be rejected");
+        assert!(error.contains("слишком много записей"));
         fs::remove_dir_all(root).expect("remove temporary archive directory");
     }
 
