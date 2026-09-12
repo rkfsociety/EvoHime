@@ -36,7 +36,22 @@ jobs:
       - name: Core format
         run: cargo fmt --all -- --check
       - name: Core tests
-        run: cargo test --locked -p evohime-core -p evohime-local-storage -p evohime-model-gateway -p evohime-permissions -p evohime-tool-runtime
+        shell: pwsh
+        run: |
+          $arguments = @(
+            'test', '--locked',
+            '-p', 'evohime-core',
+            '-p', 'evohime-local-storage',
+            '-p', 'evohime-model-gateway',
+            '-p', 'evohime-permissions',
+            '-p', 'evohime-tool-runtime'
+          )
+          $process = Start-Process -FilePath 'cargo.exe' -ArgumentList $arguments -NoNewWindow -PassThru
+          if (-not $process.WaitForExit(20 * 60 * 1000)) {
+            taskkill.exe /PID $process.Id /T /F
+            throw 'Core tests exceeded the 20-minute limit.'
+          }
+          if ($process.ExitCode -ne 0) { exit $process.ExitCode }
       - name: Core lint
         run: cargo clippy --locked -p evohime-core --all-targets -- -D warnings
       - name: Core build

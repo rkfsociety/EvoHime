@@ -185,7 +185,29 @@ jobs:
           toolchain: stable-x86_64-pc-windows-msvc
           components: rustfmt, clippy
       - name: Тесты основной Rust-инфраструктуры
-        run: cargo test --locked -p evohime-permissions -p evohime-tool-runtime -p evohime-model-gateway -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc -p evohime-updater -p evohime-receipts -p evohime-listener-contract -p evohime-listener-audio -p evohime-listener-ipc -p evohime-listener
+        shell: pwsh
+        run: |
+          $arguments = @(
+            'test', '--locked',
+            '-p', 'evohime-permissions',
+            '-p', 'evohime-tool-runtime',
+            '-p', 'evohime-model-gateway',
+            '-p', 'evohime-core',
+            '-p', 'evohime-local-storage',
+            '-p', 'evohime-desktop-ipc',
+            '-p', 'evohime-updater',
+            '-p', 'evohime-receipts',
+            '-p', 'evohime-listener-contract',
+            '-p', 'evohime-listener-audio',
+            '-p', 'evohime-listener-ipc',
+            '-p', 'evohime-listener'
+          )
+          $process = Start-Process -FilePath 'cargo.exe' -ArgumentList $arguments -NoNewWindow -PassThru
+          if (-not $process.WaitForExit(45 * 60 * 1000)) {
+            taskkill.exe /PID $process.Id /T /F
+            throw 'Rust tests exceeded the 45-minute limit.'
+          }
+          if ($process.ExitCode -ne 0) { exit $process.ExitCode }
       - name: Privacy gate фонового аудио
         shell: pwsh
         run: ./scripts/ambient-privacy.tests.ps1
