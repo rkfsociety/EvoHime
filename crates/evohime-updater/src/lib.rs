@@ -839,7 +839,10 @@ impl UpdateTransaction {
             let _ = fs::remove_dir_all(&transaction.backup_dir);
             return Err(error);
         }
-        transaction.write_state(TransactionPhase::Installing)?;
+        if let Err(error) = transaction.write_state(TransactionPhase::Installing) {
+            let _ = fs::remove_dir_all(&transaction.backup_dir);
+            return Err(error);
+        }
         Ok(transaction)
     }
 
@@ -1261,6 +1264,25 @@ mod tests {
 
         assert!(!transaction.backup_dir().exists());
         assert!(!transaction.state_path().exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_initial_state_write_removes_orphan_backup() {
+        let root = temp_dir("prepare-state-failure");
+        let install = root.join("install");
+        let state = root.join("state");
+        write_components(&install, "old");
+        fs::create_dir_all(&state).unwrap();
+        fs::create_dir(state.join("transaction.json.tmp")).unwrap();
+
+        assert!(UpdateTransaction::prepare(&install, &state).is_err());
+        let backups = fs::read_dir(&state)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with("backup-"))
+            .count();
+        assert_eq!(backups, 0);
         fs::remove_dir_all(root).unwrap();
     }
 
