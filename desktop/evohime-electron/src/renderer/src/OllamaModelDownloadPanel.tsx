@@ -5,6 +5,10 @@ import {
   type ConnectionState,
   type CoreEvent
 } from '@shared/api'
+import {
+  initialOllamaRuntimeStatus,
+  type OllamaRuntimeStatus
+} from '@shared/ollama-runtime'
 
 import { useShellApi } from './shell-api'
 
@@ -53,6 +57,19 @@ export function OllamaModelDownloadPanel({ connection, events, baseUrl }: Ollama
   const api = useShellApi()
   const [message, setMessage] = useState('')
   const [pending, setPending] = useState<string | null>(null)
+  const [runtime, setRuntime] = useState<OllamaRuntimeStatus>(() => initialOllamaRuntimeStatus())
+  const [runtimeBusy, setRuntimeBusy] = useState(false)
+
+  useEffect(() => {
+    if (!api) return
+    const unsubscribe = api.subscribe((event) => {
+      if (event.kind === 'ollama-runtime') setRuntime(event.status)
+    })
+    void api.invoke('ollama.checkRuntime', {}).then((outcome) => {
+      if (outcome.ok) setRuntime(outcome.value)
+    })
+    return unsubscribe
+  }, [api])
 
   const catalogEvent = useMemo(() => events.find((event) => event.eventType === 'model.catalog') ?? null, [events])
   const catalog = useMemo(() => parseCatalog(catalogEvent?.payload), [catalogEvent])
@@ -99,12 +116,65 @@ export function OllamaModelDownloadPanel({ connection, events, baseUrl }: Ollama
     }
   }
 
+  const installOllama = async (): Promise<void> => {
+    if (!api || runtimeBusy) return
+    setRuntimeBusy(true)
+    const outcome = await api.invoke('ollama.installRuntime', {})
+    if (outcome.ok) {
+      setRuntime(outcome.value)
+      if (outcome.value.state === 'ready' && CONNECTED_STATES.includes(connection)) {
+        void api.invoke('core.listModelCatalog', { mode: 'free' })
+      }
+    } else {
+      setRuntime({ ...runtime, state: 'failed', message: outcome.message })
+    }
+    setRuntimeBusy(false)
+  }
+
+  const checkOllama = async (): Promise<void> => {
+    if (!api || runtimeBusy) return
+    setRuntimeBusy(true)
+    const outcome = await api.invoke('ollama.checkRuntime', {})
+    if (outcome.ok) setRuntime(outcome.value)
+    setRuntimeBusy(false)
+  }
+
   const recommendations = catalog.recommendations ?? []
   const installed = new Set(catalog.installed ?? [])
   const installedOnly = [...installed].filter((model) => !recommendations.some((recommendation) => recommendation.id === model))
 
   return (
     <section className="ollama-models" aria-label="Модели Ollama">
+      <div className="ollama-runtime" aria-label="Среда Ollama">
+        <div className="ollama-models__heading">
+          <div>
+            <h3>Среда Ollama</h3>
+            <p className="shell__empty">Если Ollama не установлена, Ева скачает официальный установщик и запустит его.</p>
+          </div>
+          <span className={`ollama-runtime__state ollama-runtime__state--${runtime.state}`}>
+            {ollamaStateLabel(runtime)}
+          </span>
+        </div>
+        <p className="ollama-models__message" role="status">{runtime.message}</p>
+        {runtime.state === 'installing' ? (
+          <progress
+            className="ollama-runtime__progress"
+            value={runtime.totalBytes ? runtime.downloadedBytes : undefined}
+            max={runtime.totalBytes ?? undefined}
+            aria-label="Ход установки Ollama"
+          />
+        ) : null}
+        <div className="ollama-runtime__actions">
+          <button type="button" disabled={!api || runtimeBusy || runtime.state === 'installing'} onClick={() => void checkOllama()}>
+            Проверить
+          </button>
+          {(runtime.state === 'missing' || runtime.state === 'failed') ? (
+            <button type="button" disabled={!api || runtimeBusy} onClick={() => void installOllama()}>
+              {runtime.state === 'failed' ? 'Повторить установку' : 'Установить Ollama'}
+            </button>
+          ) : null}
+        </div>
+      </div>
       <div className="ollama-models__heading">
         <div>
           <h3>Модели для Ollama</h3>
@@ -173,6 +243,17 @@ export function OllamaModelDownloadPanel({ connection, events, baseUrl }: Ollama
       {message ? <p className="ollama-models__message" role="status">{message}</p> : null}
     </section>
   )
+}
+
+function ollamaStateLabel(status: OllamaRuntimeStatus): string {
+  switch (status.state) {
+    case 'ready': return status.version ? `готова · ${status.version}` : 'готова'
+    case 'installed': return 'установлена, не запущена'
+    case 'installing': return 'установка…'
+    case 'missing': return 'не установлена'
+    case 'failed': return 'ошибка'
+    default: return 'проверка…'
+  }
 }
 
 function parseCatalog(payload: string | undefined): CatalogPayload {

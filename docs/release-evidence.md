@@ -1,6 +1,6 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-09-09.
+Обновлено: 2026-09-12.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
@@ -1355,6 +1355,16 @@ Fresh local evidence for the current checkout includes `cargo test
 `npm run typecheck`/focused tests after adding the Ollama provider, Core-owned
 catalog/pull path, and Windows DXGI VRAM discovery. GitHub Actions evidence is
 not claimed before push; the installed client was not changed.
+
+## Ollama official runtime installer (2026-09-12)
+
+Fresh local evidence for the current checkout includes Electron node/web
+typechecks and focused provider, Ollama runtime, UI and shell-bridge tests:
+73/73 tests passed. The installer path is fixed to the official Ollama URL,
+streamed to a temporary file with a bounded size and Windows executable header
+check, then launched without a shell; the temporary file is removed after the
+installer exits. GitHub Actions evidence is not claimed before push, and the
+installed EvoHime client was not changed.
 
 ## Plan 143 — Project Knowledge Notebook v1 (2026-09-09)
 

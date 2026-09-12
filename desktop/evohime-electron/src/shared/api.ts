@@ -6,6 +6,7 @@
  */
 
 import type { ListenerRuntimeStatus } from './listener-runtime'
+import type { OllamaRuntimeStatus } from './ollama-runtime'
 import type { UpdateStatus } from './update'
 
 export const API_NAMESPACE = 'evohime'
@@ -578,6 +579,7 @@ export type ShellEvent =
   | { readonly kind: 'core-event'; readonly event: CoreEvent }
   | { readonly kind: 'update'; readonly status: UpdateStatus }
   | { readonly kind: 'listener-runtime'; readonly status: ListenerRuntimeStatus }
+  | { readonly kind: 'ollama-runtime'; readonly status: OllamaRuntimeStatus }
   | { readonly kind: 'repair'; readonly status: RepairStatus }
 
 export type RepairPhase =
@@ -1353,6 +1355,9 @@ export const RENDERER_COMMANDS = [
   'listener.getRuntimeStatus',
   'listener.checkRuntime',
   'listener.downloadRuntime',
+  'ollama.getRuntimeStatus',
+  'ollama.checkRuntime',
+  'ollama.installRuntime',
   'ambient.setListening',
   'ambient.getStatus',
   'ambient.listEpisodes',
@@ -1812,6 +1817,9 @@ export interface CommandPayloads {
   'listener.getRuntimeStatus': Record<string, never>
   'listener.checkRuntime': Record<string, never>
   'listener.downloadRuntime': Record<string, never>
+  'ollama.getRuntimeStatus': Record<string, never>
+  'ollama.checkRuntime': Record<string, never>
+  'ollama.installRuntime': Record<string, never>
   /**
    * `enabled=false` — выключено; `enabled=true, paused=true` — пауза;
    * `enabled=true, paused=false` — запуск или продолжение. Пустой `deviceId`
@@ -2243,6 +2251,10 @@ export interface CommandResults {
   'listener.checkRuntime': ListenerRuntimeStatus
   /** Долгая загрузка: статус приходит и событиями по мере прогресса. */
   'listener.downloadRuntime': ListenerRuntimeStatus
+  'ollama.getRuntimeStatus': OllamaRuntimeStatus
+  'ollama.checkRuntime': OllamaRuntimeStatus
+  /** Скачивает официальный installer и ждёт завершения его запуска. */
+  'ollama.installRuntime': OllamaRuntimeStatus
   /**
    * Ambient-команды отвечают отдельным Core-событием (`ambient.listening`,
    * `ambient.status`, `ambient.episodes`, `ambient.episode`,

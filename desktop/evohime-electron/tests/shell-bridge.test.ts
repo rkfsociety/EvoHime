@@ -8,6 +8,7 @@ import type {
 } from '../src/shared/api'
 import type { ProviderUpdate } from '../src/main/provider-store'
 import type { ListenerRuntimeStatus } from '../src/shared/listener-runtime'
+import type { OllamaRuntimeStatus } from '../src/shared/ollama-runtime'
 import {
   CLIPBOARD_CHANNEL,
   INVOKE_CHANNEL,
@@ -224,6 +225,30 @@ const listenerRuntime = {
   }
 }
 
+const ollamaRuntimeStatus: OllamaRuntimeStatus = {
+  state: 'missing',
+  version: null,
+  executablePath: null,
+  downloadedBytes: 0,
+  totalBytes: null,
+  message: 'Ollama не установлена.'
+}
+const ollamaCalls: string[] = []
+const ollamaRuntime = {
+  get status() {
+    ollamaCalls.push('status')
+    return ollamaRuntimeStatus
+  },
+  check: async () => {
+    ollamaCalls.push('check')
+    return ollamaRuntimeStatus
+  },
+  install: async () => {
+    ollamaCalls.push('install')
+    return ollamaRuntimeStatus
+  }
+}
+
 function invoke(command: string, payload?: unknown): unknown {
   const handler = handlers.get(INVOKE_CHANNEL)
   if (!handler) {
@@ -268,11 +293,13 @@ beforeEach(() => {
     },
     updates: updates as never,
     listenerRuntime: listenerRuntime as never,
+    ollamaRuntime: ollamaRuntime as never,
     ambientHotkey: () => ({ combination: 'Control+Alt+M', registered: true }),
     exportDiagnostics: async () => ({ cancelled: false, path: 'C:\\diagnostics.json' }),
     log: () => {}
   })
   listenerCalls.length = 0
+  ollamaCalls.length = 0
   listenerDownloadStatus = listenerRuntimeStatus
 })
 
@@ -294,6 +321,7 @@ describe('renderer command surface', () => {
       restartCore: async () => true,
       updates: updates as never,
       listenerRuntime: listenerRuntime as never,
+      ollamaRuntime: ollamaRuntime as never,
       ambientHotkey: () => ({ combination: 'Control+Alt+M', registered: true }),
       exportDiagnostics: async () => ({ cancelled: false, path: '' }),
       log: () => {}
@@ -1006,6 +1034,15 @@ describe('listener runtime bridge', () => {
 
     expect(outcome).toEqual({ ok: true, value: listenerDownloadStatus })
     expect(restarts).toEqual([true])
+  })
+})
+
+describe('ollama runtime bridge', () => {
+  it('keeps discovery and official installation owned by main', async () => {
+    expect(await invoke('ollama.getRuntimeStatus', {})).toEqual({ ok: true, value: ollamaRuntimeStatus })
+    expect(await invoke('ollama.checkRuntime', {})).toEqual({ ok: true, value: ollamaRuntimeStatus })
+    expect(await invoke('ollama.installRuntime', {})).toEqual({ ok: true, value: ollamaRuntimeStatus })
+    expect(ollamaCalls).toEqual(['status', 'check', 'install'])
   })
 })
 

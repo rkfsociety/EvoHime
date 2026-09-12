@@ -2462,6 +2462,12 @@ select:focus {
 .ollama-models__progress progress { width: 100%; accent-color: var(--accent); }
 .ollama-models__installed { display: grid; gap: 7px; margin-top: 12px; }
 .ollama-models__installed-badge { color: var(--fg-muted); font-size: 11px; white-space: nowrap; }
+.ollama-runtime { margin-bottom: 16px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-muted); }
+.ollama-runtime__state { color: var(--fg-muted); font-family: var(--mono); font-size: 11px; text-align: right; }
+.ollama-runtime__state--ready { color: var(--success, #4caf72); }
+.ollama-runtime__state--missing, .ollama-runtime__state--failed { color: var(--warning, #d59b43); }
+.ollama-runtime__progress { display: block; width: 100%; margin-top: 10px; accent-color: var(--accent); }
+.ollama-runtime__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .ollama-models__item {
   display: flex;
   align-items: center;

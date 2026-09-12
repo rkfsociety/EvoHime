@@ -24,6 +24,7 @@ import { BUILD_WORKER_FLAG, runBuildWorkerProcess } from './update/build-worker'
 import { loadUpdateConfig } from './update/config'
 import { resolveGithubToken } from './update/github-token'
 import { ListenerRuntimeService } from './update/listener-runtime'
+import { OllamaRuntimeService } from './ollama-runtime'
 import { ModuleUpdateService } from './update/module-update-service'
 import { UpdateService, type UpdateController } from './update/update-service'
 import { createOverlay, type OverlayController } from './overlay'
@@ -55,6 +56,7 @@ let supervisorLivenessTimer: NodeJS.Timeout | null = null
 let recoveryMode = false
 let updates: UpdateController | null = null
 let listenerRuntime: ListenerRuntimeService | null = null
+let ollamaRuntime: OllamaRuntimeService | null = null
 let codex: CodexService | null = null
 let repair: RepairService | null = null
 const recentCoreEvents: import('@shared/api').CoreEvent[] = []
@@ -190,6 +192,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
     })
     overlay = createOverlay()
     listenerRuntime = createListenerRuntimeService()
+    ollamaRuntime = createOllamaRuntimeService()
 
     // The picker dialog is owned by the main process and opens modal to the
     // shell window; the renderer only ever receives the chosen path.
@@ -206,6 +209,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
       restartCore,
       updates,
       listenerRuntime: listenerRuntime!,
+      ollamaRuntime: ollamaRuntime!,
       ambientHotkey: ambientHotkeyStatus,
       exportDiagnostics: async () => {
         const window = BrowserWindow.getFocusedWindow()
@@ -271,6 +275,9 @@ if (process.argv.includes('--evohime-browser-backend')) {
     // предлагал включить микрофон при неустановленном движке.
     void listenerRuntime.check().catch((error: unknown) => {
       log('warn', 'shell.listener_runtime_check_failed', { error })
+    })
+    void ollamaRuntime.check().catch((error: unknown) => {
+      log('warn', 'shell.ollama_runtime_check_failed', { error })
     })
   })
 
@@ -445,6 +452,15 @@ function createListenerRuntimeService(): ListenerRuntimeService {
         .then((found) => found?.token ?? null)
         .catch(() => null),
     emit: (status) => broadcast({ kind: 'listener-runtime', status }),
+    log
+  })
+}
+
+function createOllamaRuntimeService(): OllamaRuntimeService {
+  return new OllamaRuntimeService({
+    // Electron's network stack honours the Windows proxy/certificate store.
+    fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+    emit: (status) => broadcast({ kind: 'ollama-runtime', status }),
     log
   })
 }

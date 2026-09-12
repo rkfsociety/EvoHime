@@ -36,6 +36,7 @@ import {
 } from './provider-store'
 import { isAllowedExternalUrl } from './security-policy'
 import type { ListenerRuntimeService } from './update/listener-runtime'
+import type { OllamaRuntimeService } from './ollama-runtime'
 import type { UpdateController } from './update/update-service'
 import type { WorkspaceService } from './workspace-service'
 
@@ -73,6 +74,8 @@ export interface ShellBridgeOptions {
   readonly updates: UpdateController
   /** Owns the speech runtime download; the renderer only observes and asks. */
   readonly listenerRuntime: ListenerRuntimeService
+  /** Owns the official Ollama installer; renderer only observes and asks. */
+  readonly ollamaRuntime: OllamaRuntimeService
   /**
    * Доступен ли глобальный хоткей паузы. Знает только main: комбинацию мог
    * занять другой процесс, и тогда третья точка входа честно объявляется
@@ -125,7 +128,7 @@ function dispatch(
   command: RendererCommand,
   payload: unknown
 ): unknown {
-  const { client, workspaces, providers, codex, repair, chats, restartCore, updates, listenerRuntime, ambientHotkey, exportDiagnostics, log } =
+  const { client, workspaces, providers, codex, repair, chats, restartCore, updates, listenerRuntime, ollamaRuntime, ambientHotkey, exportDiagnostics, log } =
     options
   switch (command) {
     case 'shell.getState':
@@ -1828,6 +1831,15 @@ function dispatch(
         }
         return { ok: true, value }
       })
+
+    case 'ollama.getRuntimeStatus':
+      return { ok: true, value: ollamaRuntime.status }
+
+    case 'ollama.checkRuntime':
+      return ollamaRuntime.check().then((value) => ({ ok: true, value }))
+
+    case 'ollama.installRuntime':
+      return ollamaRuntime.install().then((value) => ({ ok: true, value }))
 
     // Постоянное слушание (план 04.5). Оболочка только пересылает: ядро
     // заново проверяет capability, политику и подтверждение удаления.
