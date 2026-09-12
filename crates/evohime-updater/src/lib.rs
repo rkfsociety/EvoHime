@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -581,15 +581,8 @@ fn wait_for_health(path: Option<&Path>) -> io::Result<()> {
 fn wait_for_health_with_limit(path: &Path, limit: Duration) -> io::Result<()> {
     let deadline = std::time::Instant::now() + limit;
     loop {
-        if path.is_file() {
-            let content = fs::read_to_string(path).unwrap_or_default();
-            let healthy = serde_json::from_str::<serde_json::Value>(&content)
-                .ok()
-                .and_then(|value| value.get("healthy").and_then(serde_json::Value::as_bool))
-                .unwrap_or(false);
-            if healthy {
-                return Ok(());
-            }
+        if health_marker_is_healthy(path) {
+            return Ok(());
         }
         if std::time::Instant::now() >= deadline {
             return Err(io::Error::new(
@@ -599,6 +592,30 @@ fn wait_for_health_with_limit(path: &Path, limit: Duration) -> io::Result<()> {
         }
         std::thread::sleep(RETRY_INTERVAL);
     }
+}
+
+const MAX_HEALTH_FILE_BYTES: usize = 4 * 1024;
+
+fn health_marker_is_healthy(path: &Path) -> bool {
+    let Ok(file) = fs::File::open(path) else {
+        return false;
+    };
+    let mut bytes = Vec::with_capacity(MAX_HEALTH_FILE_BYTES);
+    if file
+        .take((MAX_HEALTH_FILE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .is_err()
+        || bytes.len() > MAX_HEALTH_FILE_BYTES
+    {
+        return false;
+    }
+    let Ok(content) = String::from_utf8(bytes) else {
+        return false;
+    };
+    serde_json::from_str::<serde_json::Value>(&content)
+        .ok()
+        .and_then(|value| value.get("healthy").and_then(serde_json::Value::as_bool))
+        .unwrap_or(false)
 }
 
 /// Blocks until every installed component can be opened for writing.
@@ -1035,6 +1052,9 @@ mod tests {
         fs::write(&marker, r#"{ "pid": 42, "healthy": true }"#).unwrap();
         wait_for_health_with_limit(&marker, std::time::Duration::from_millis(1)).unwrap();
         fs::write(&marker, r#"{"healthy":false}"#).unwrap();
+        let error = wait_for_health_with_limit(&marker, std::time::Duration::ZERO).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        fs::write(&marker, vec![b'x'; super::MAX_HEALTH_FILE_BYTES + 1]).unwrap();
         let error = wait_for_health_with_limit(&marker, std::time::Duration::ZERO).unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
         fs::remove_dir_all(root).unwrap();
