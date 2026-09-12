@@ -537,6 +537,7 @@ fn validate_component_marker_for(staging: &Path, selected: Option<&[String]>) ->
     }
     let manifest = component_manifest::Manifest::parse(&fs::read(&marker)?)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    let mut validated = HashSet::new();
     for component in &manifest.components {
         if let Some(selected) = selected {
             if !selected.iter().any(|path| path == &component.path) {
@@ -556,6 +557,17 @@ fn validate_component_marker_for(staging: &Path, selected: Option<&[String]>) ->
                 io::ErrorKind::InvalidData,
                 format!("component artifact hash mismatch: {}", component.id),
             ));
+        }
+        validated.insert(component.path.as_str());
+    }
+    if let Some(selected) = selected {
+        for path in selected {
+            if !validated.contains(path.as_str()) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("selected component is missing from marker: {path}"),
+                ));
+            }
         }
     }
     Ok(())
@@ -988,9 +1000,10 @@ fn timestamp_nanos() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_component_set_staged, verify_installation, wait_for_health_with_limit,
-        ComponentSetApply, UpdateTransaction,
+        apply_component_set_staged, component_manifest, verify_installation,
+        wait_for_health_with_limit, ComponentSetApply, UpdateTransaction,
     };
+    use sha2::Digest;
     use std::fs;
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1361,6 +1374,50 @@ mod tests {
             fs::read_to_string(install.join("evohime-core.exe")).unwrap(),
             "old:evohime-core.exe"
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn selected_apply_requires_marker_entry_for_every_selected_component() {
+        let root = temp_dir("selected-marker");
+        let staging = root.join("staging");
+        fs::create_dir_all(&staging).unwrap();
+        let bytes = b"new:EvoHime.exe";
+        fs::write(staging.join("EvoHime.exe"), bytes).unwrap();
+        let digest = sha2::Sha256::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let marker = component_manifest::Manifest {
+            schema: component_manifest::SCHEMA.into(),
+            product: "EvoHime".into(),
+            release_id: "test".into(),
+            os: "windows".into(),
+            architecture: "x64".into(),
+            release_commit: "a".repeat(40),
+            components: vec![component_manifest::Component {
+                id: "shell-host".into(),
+                version: "1.0.0".into(),
+                artifact: "EvoHime.exe".into(),
+                path: "EvoHime.exe".into(),
+                size: bytes.len() as u64,
+                sha256: digest,
+                dependencies: vec![],
+                required: true,
+                protocol: "desktop-ipc-v1".into(),
+                restart: "shell".into(),
+            }],
+        };
+        fs::write(
+            staging.join("evohime.components.json"),
+            serde_json::to_vec(&marker).unwrap(),
+        )
+        .unwrap();
+
+        let selected = vec!["evohime-core.exe".to_owned()];
+        let error = super::validate_component_marker_for(&staging, Some(&selected))
+            .expect_err("selected component without marker entry must be rejected");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
         fs::remove_dir_all(root).unwrap();
     }
 
