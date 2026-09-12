@@ -1119,6 +1119,7 @@ fn extract_ui_bundle(archive_path: &Path, destination: &Path) -> Result<(), Stri
         fs::remove_dir_all(destination).map_err(|error| error.to_string())?;
     }
     fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+    let mut extracted_bytes = 0u64;
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).map_err(|error| error.to_string())?;
         if entry.is_symlink() {
@@ -1135,7 +1136,19 @@ fn extract_ui_bundle(archive_path: &Path, destination: &Path) -> Result<(), Stri
                 fs::create_dir_all(parent).map_err(|error| error.to_string())?;
             }
             let mut file = fs::File::create(&target).map_err(|error| error.to_string())?;
-            std::io::copy(&mut entry, &mut file).map_err(|error| error.to_string())?;
+            let remaining = MAX_ARCHIVE_UNCOMPRESSED_BYTES
+                .checked_sub(extracted_bytes)
+                .ok_or_else(|| "updater: UI archive превышает лимит распаковки".to_owned())?;
+            if entry.size() > remaining {
+                return Err("updater: UI archive превышает лимит распаковки".to_owned());
+            }
+            let written = copy_reader_bounded(&mut entry, &mut file, remaining)?;
+            if written != entry.size() {
+                return Err("updater: UI archive содержит усечённый файл".to_owned());
+            }
+            extracted_bytes = extracted_bytes
+                .checked_add(written)
+                .ok_or_else(|| "updater: размер распаковки переполнен".to_owned())?;
         }
     }
     if !destination.join("index.html").is_file() {
@@ -1151,6 +1164,7 @@ fn extract_shell_host(archive_path: &Path, destination: &Path) -> Result<(), Str
         fs::remove_dir_all(destination).map_err(|error| error.to_string())?;
     }
     fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+    let mut extracted_bytes = 0u64;
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).map_err(|error| error.to_string())?;
         if entry.is_symlink() {
@@ -1167,7 +1181,21 @@ fn extract_shell_host(archive_path: &Path, destination: &Path) -> Result<(), Str
                 fs::create_dir_all(parent).map_err(|error| error.to_string())?;
             }
             let mut file = fs::File::create(&target).map_err(|error| error.to_string())?;
-            std::io::copy(&mut entry, &mut file).map_err(|error| error.to_string())?;
+            let remaining = MAX_ARCHIVE_UNCOMPRESSED_BYTES
+                .checked_sub(extracted_bytes)
+                .ok_or_else(|| {
+                    "updater: shell-host archive превышает лимит распаковки".to_owned()
+                })?;
+            if entry.size() > remaining {
+                return Err("updater: shell-host archive превышает лимит распаковки".to_owned());
+            }
+            let written = copy_reader_bounded(&mut entry, &mut file, remaining)?;
+            if written != entry.size() {
+                return Err("updater: shell-host archive содержит усечённый файл".to_owned());
+            }
+            extracted_bytes = extracted_bytes
+                .checked_add(written)
+                .ok_or_else(|| "updater: размер распаковки переполнен".to_owned())?;
         }
     }
     if !destination.join("EvoHime.exe").is_file()
@@ -1176,6 +1204,34 @@ fn extract_shell_host(archive_path: &Path, destination: &Path) -> Result<(), Str
         return Err("updater: shell-host archive не содержит полный Electron package".to_owned());
     }
     Ok(())
+}
+
+const MAX_ARCHIVE_UNCOMPRESSED_BYTES: u64 = 1024 * 1024 * 1024;
+
+fn copy_reader_bounded<R: Read, W: Write>(
+    reader: &mut R,
+    writer: &mut W,
+    limit: u64,
+) -> Result<u64, String> {
+    let mut copied = 0u64;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let count = reader
+            .read(&mut buffer)
+            .map_err(|error| error.to_string())?;
+        if count == 0 {
+            return Ok(copied);
+        }
+        copied = copied
+            .checked_add(count as u64)
+            .ok_or_else(|| "updater: размер распаковки переполнен".to_owned())?;
+        if copied > limit {
+            return Err("updater: archive превышает лимит распаковки".to_owned());
+        }
+        writer
+            .write_all(&buffer[..count])
+            .map_err(|error| error.to_string())?;
+    }
 }
 
 fn apply_listener_runtime(
@@ -1503,7 +1559,7 @@ fn fail(error: impl std::fmt::Display) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_github_api_url, is_github_release_asset_url, is_trusted_github_url,
+        copy_reader_bounded, is_github_api_url, is_github_release_asset_url, is_trusted_github_url,
         merge_installed_manifest_to, normalize_github_token, parse_json_body,
         read_installed_module_manifest, read_update_config, resolve_github_token_with,
         stream_file_hash, updater_bootstrap_script, updater_first_if_required, updater_http_client,
@@ -1626,6 +1682,15 @@ mod tests {
         assert_eq!(size, 10);
         assert_eq!(hash, format!("{:x}", sha2::Sha256::digest(b"shell-host")));
         fs::remove_file(path).expect("remove shell host");
+    }
+
+    #[test]
+    fn bounded_archive_copy_rejects_expansion_over_limit() {
+        let mut output = Vec::new();
+        let error = copy_reader_bounded(&mut std::io::Cursor::new(b"1234"), &mut output, 3)
+            .expect_err("archive expansion must be bounded");
+        assert!(error.contains("лимит распаковки"));
+        assert!(output.len() <= 3);
     }
 
     #[test]
