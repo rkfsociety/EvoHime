@@ -1,6 +1,7 @@
 //! Durable metadata store for Team SOP definitions and immutable sessions.
 use rusqlite::{params, Connection, OptionalExtension};
 const MAX_PROTOCOLS: i64 = 256;
+const MAX_PROTOCOL_BYTES: usize = 64 * 1024;
 pub fn install_schema(c: &Connection) -> Result<(), rusqlite::Error> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS team_sop_protocols (id TEXT PRIMARY KEY NOT NULL, version INTEGER NOT NULL, content_hash TEXT NOT NULL, protocol_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS team_sop_protocol_revisions (protocol_id TEXT NOT NULL, version INTEGER NOT NULL, content_hash TEXT NOT NULL, protocol_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(protocol_id, version)); CREATE TABLE IF NOT EXISTS team_sop_sessions (id TEXT PRIMARY KEY NOT NULL, protocol_id TEXT NOT NULL, protocol_version INTEGER NOT NULL, content_hash TEXT NOT NULL, snapshot_json BLOB NOT NULL, status TEXT NOT NULL, current_phase TEXT NOT NULL, version INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS team_sop_transitions (session_id TEXT NOT NULL, version INTEGER NOT NULL, event_type TEXT NOT NULL, metadata_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(session_id, version));")
 }
@@ -12,6 +13,9 @@ pub fn save_protocol(
     json: &[u8],
     now: i64,
 ) -> Result<bool, rusqlite::Error> {
+    if json.len() > MAX_PROTOCOL_BYTES {
+        return Ok(false);
+    }
     let tx = c.unchecked_transaction()?;
     let cur: Option<u64> = tx
         .query_row(
@@ -86,6 +90,22 @@ mod tests {
             );
         }
         assert_eq!(load_all_json(&c).unwrap().len(), MAX_PROTOCOLS as usize);
+    }
+
+    #[test]
+    fn oversized_protocol_is_rejected_before_storage() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        assert!(!save_protocol(
+            &c,
+            "oversized",
+            1,
+            "hash",
+            &vec![b'x'; MAX_PROTOCOL_BYTES + 1],
+            1,
+        )
+        .unwrap());
+        assert!(load_all_json(&c).unwrap().is_empty());
     }
 
     #[test]
