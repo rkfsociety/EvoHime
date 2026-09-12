@@ -59,6 +59,10 @@ pub async fn fetch(ctx: &ToolContext, value: serde_json::Value) -> Result<ToolRe
         .send()
         .await
         .map_err(|error| ToolError::Execution(format!("http request failed: {error}")))?;
+    ssrf::assert_safe_peer(response.remote_addr()).map_err(|message| ToolError::InvalidInput {
+        tool: NAME.to_string(),
+        message: format!("ssrf blocked connection peer: {message}"),
+    })?;
     let status = response.status();
     let final_url = response.url().clone();
     ssrf::assert_safe_http_url(&final_url).map_err(|message| ToolError::InvalidInput {

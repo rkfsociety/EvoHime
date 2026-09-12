@@ -6,7 +6,7 @@
 
 use reqwest::Url;
 use std::cell::{Cell, RefCell};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, ToSocketAddrs};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 
 const BLOCKED_HOSTNAMES: &[&str] = &[
     "localhost",
@@ -155,6 +155,19 @@ pub fn assert_safe_http_url(url: &Url) -> Result<(), String> {
     Ok(())
 }
 
+/// Validate the address selected for the actual connection, not only the
+/// address observed by the preflight DNS lookup. This closes the common DNS
+/// rebinding window between URL validation and socket establishment.
+pub fn assert_safe_peer(peer: Option<SocketAddr>) -> Result<(), String> {
+    if allow_private_targets() {
+        return Ok(());
+    }
+    let Some(peer) = peer else {
+        return Err("http connection peer address is unavailable".into());
+    };
+    assert_safe_ip(peer.ip())
+}
+
 pub fn assert_safe_hostname(hostname: &str) -> Result<(), String> {
     let host = hostname.trim().trim_end_matches('.').to_ascii_lowercase();
     if host.is_empty() {
@@ -242,6 +255,13 @@ mod tests {
         let _guard = lock_private_override(Some(false));
         let url = Url::parse("https://8.8.8.8/").unwrap();
         assert!(assert_safe_http_url(&url).is_ok());
+    }
+
+    #[test]
+    fn rejects_private_actual_peer() {
+        let _guard = lock_private_override(Some(false));
+        assert!(assert_safe_peer(Some("127.0.0.1:80".parse().unwrap())).is_err());
+        assert!(assert_safe_peer(None).is_err());
     }
 
     #[test]
