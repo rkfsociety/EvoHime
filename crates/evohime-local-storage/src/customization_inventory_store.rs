@@ -1,4 +1,5 @@
 use rusqlite::{params, Connection};
+const MAX_INVENTORY_ITEMS: i64 = 256;
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS customization_inventory (id TEXT PRIMARY KEY, kind TEXT NOT NULL, version INTEGER NOT NULL, item_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
@@ -21,9 +22,10 @@ pub fn put(
     )? == 1)
 }
 pub fn list(c: &Connection) -> rusqlite::Result<Vec<Vec<u8>>> {
-    let mut s = c.prepare("SELECT item_json FROM customization_inventory ORDER BY kind,id")?;
+    let mut s =
+        c.prepare("SELECT item_json FROM customization_inventory ORDER BY kind,id LIMIT ?1")?;
     let rows = s
-        .query_map([], |r| r.get(0))?
+        .query_map([MAX_INVENTORY_ITEMS], |r| r.get(0))?
         .collect::<rusqlite::Result<Vec<Vec<u8>>>>()?;
     Ok(rows)
 }
@@ -39,5 +41,15 @@ mod tests {
         assert!(put(&c, "item", "model", 2, br#"{"version":2}"#, 2).unwrap());
         assert!(!put(&c, "item", "old", 1, br#"{"version":1}"#, 3).unwrap());
         assert_eq!(list(&c).unwrap(), vec![br#"{"version":2}"#.to_vec()]);
+    }
+
+    #[test]
+    fn list_is_bounded() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        for index in 0..300 {
+            assert!(put(&c, &format!("item-{index:03}"), "model", 1, b"{}", index).unwrap());
+        }
+        assert_eq!(list(&c).unwrap().len(), MAX_INVENTORY_ITEMS as usize);
     }
 }
