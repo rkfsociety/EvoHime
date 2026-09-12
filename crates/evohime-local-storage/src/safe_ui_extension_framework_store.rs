@@ -22,9 +22,11 @@ pub fn get(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     .optional()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn replace(
     c: &Connection,
     id: &str,
+    expected_revision: u64,
     revision: u64,
     state: &str,
     json: &[u8],
@@ -32,7 +34,22 @@ pub fn replace(
     now: i64,
 ) -> rusqlite::Result<bool> {
     Ok(c.execute(
-        "UPDATE safe_ui_extensions SET revision=?2,lifecycle=?3,extension_json=?4,manifest_hash=?5,updated_at_ms=?6 WHERE extension_id=?1",
-        params![id, revision, state, json, hash, now],
+        "UPDATE safe_ui_extensions SET revision=?2,lifecycle=?3,extension_json=?4,manifest_hash=?5,updated_at_ms=?6 WHERE extension_id=?1 AND revision=?7",
+        params![id, revision, state, json, hash, now, expected_revision],
     )? == 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn replacement_requires_expected_revision() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        assert!(put(&c, "ext", 1, "enabled", br#"{"revision":1}"#, "h1", 1).unwrap());
+        assert!(!replace(&c, "ext", 0, 2, "disabled", br#"{"revision":2}"#, "h2", 2).unwrap());
+        assert!(replace(&c, "ext", 1, 2, "disabled", br#"{"revision":2}"#, "h2", 3).unwrap());
+        assert_eq!(get(&c, "ext").unwrap(), Some(br#"{"revision":2}"#.to_vec()));
+    }
 }

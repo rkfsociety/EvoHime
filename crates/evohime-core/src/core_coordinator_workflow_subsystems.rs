@@ -809,7 +809,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             let target = if operation == "enable" { crate::safe_ui_extension_framework::Lifecycle::Enabled } else { crate::safe_ui_extension_framework::Lifecycle::Disabled };
                             crate::safe_ui_extension_framework::transition(&mut installed, target, expected_revision).map_err(|e| e.to_string())?;
                             let next = serde_json::to_vec(&installed).map_err(|e| e.to_string())?;
-                            if !store::replace(database.connection(), &extension_id, installed.revision, &format!("{:?}", installed.lifecycle), &next, &installed.manifest_hash, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())? { return Err("extension_not_found".into()); }
+                            if !store::replace(database.connection(), &extension_id, expected_revision, installed.revision, &format!("{:?}", installed.lifecycle), &next, &installed.manifest_hash, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())? { return Err("stale_extension_revision".into()); }
                             Ok(next)
                         }
                         "update" => {
@@ -822,7 +822,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             let mut updated = crate::safe_ui_extension_framework::install(manifest, &current.scope, &current.resolved_revision).map_err(|e| e.to_string())?;
                             updated.revision = current.revision + 1;
                             let next = serde_json::to_vec(&updated).map_err(|e| e.to_string())?;
-                            if !store::replace(database.connection(), &extension_id, updated.revision, &format!("{:?}", updated.lifecycle), &next, &updated.manifest_hash, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())? { return Err("extension_not_found".into()); }
+                            if !store::replace(database.connection(), &extension_id, current.revision, updated.revision, &format!("{:?}", updated.lifecycle), &next, &updated.manifest_hash, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())? { return Err("stale_extension_revision".into()); }
                             Ok(next)
                         }
                         _ => Err("unsupported_ui_extension_operation".into())
