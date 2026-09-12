@@ -9,7 +9,7 @@ pub fn put(c: &Connection, id: &str, v: u32, h: &str, j: &[u8], now: i64) -> rus
         )));
     }
     c.execute(
-        "INSERT INTO reasoning_operator_definitions(id,version,content_hash,definition_json,updated_at_ms) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(id) DO UPDATE SET version=excluded.version,content_hash=excluded.content_hash,definition_json=excluded.definition_json,updated_at_ms=excluded.updated_at_ms WHERE excluded.version >= reasoning_operator_definitions.version",
+        "INSERT INTO reasoning_operator_definitions(id,version,content_hash,definition_json,updated_at_ms) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(id) DO UPDATE SET version=excluded.version,content_hash=excluded.content_hash,definition_json=excluded.definition_json,updated_at_ms=excluded.updated_at_ms WHERE excluded.version > reasoning_operator_definitions.version",
         params![id, v, h, j, now],
     )?;
     Ok(())
@@ -32,5 +32,33 @@ mod tests {
         put(&c, "operator", 2, "new", br#"{"version":2}"#, 2).unwrap();
         put(&c, "operator", 1, "old", br#"{"version":1}"#, 3).unwrap();
         assert_eq!(list(&c).unwrap(), vec![br#"{"version":2}"#.to_vec()]);
+    }
+
+    #[test]
+    fn duplicate_version_cannot_replace_operator_definition() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        put(
+            &c,
+            "operator",
+            2,
+            "original",
+            br#"{"source":"original"}"#,
+            2,
+        )
+        .unwrap();
+        put(
+            &c,
+            "operator",
+            2,
+            "replacement",
+            br#"{"source":"replacement"}"#,
+            3,
+        )
+        .unwrap();
+        assert_eq!(
+            list(&c).unwrap(),
+            vec![br#"{"source":"original"}"#.to_vec()]
+        );
     }
 }
