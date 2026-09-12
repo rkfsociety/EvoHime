@@ -9,6 +9,8 @@ pub const NAME: &str = "filesystem.list";
 pub const DESCRIPTION: &str = "List files and directories in the workspace";
 pub const PERMISSIONS: &[Permission] = &[Permission::FilesystemRead];
 pub const TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_ENTRIES: usize = 4_096;
+const MAX_OUTPUT_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Deserialize)]
 struct Input {
@@ -44,12 +46,16 @@ pub async fn execute(ctx: &ToolContext, value: serde_json::Value) -> Result<Tool
             _ => ToolError::Execution(format!("list failed: {error}")),
         })?;
     let mut names = Vec::new();
+    let mut output_bytes = 0;
     while let Some(entry) = entries
         .next_entry()
         .await
         .map_err(|error| ToolError::Execution(format!("list failed: {error}")))?
     {
-        names.push(entry.file_name().to_string_lossy().to_string());
+        let name = entry.file_name().to_string_lossy().into_owned();
+        ensure_capacity(names.len(), output_bytes, name.len())?;
+        output_bytes += name.len() + 1;
+        names.push(name);
     }
     names.sort();
 
@@ -57,6 +63,28 @@ pub async fn execute(ctx: &ToolContext, value: serde_json::Value) -> Result<Tool
         output: names.join("\n"),
         structured: json!({ "path": input.path, "entries": names }),
     })
+}
+
+fn ensure_capacity(
+    entries: usize,
+    output_bytes: usize,
+    next_name_bytes: usize,
+) -> Result<(), ToolError> {
+    if entries >= MAX_ENTRIES {
+        return Err(ToolError::Execution(
+            "directory contains too many entries".into(),
+        ));
+    }
+    if output_bytes
+        .saturating_add(next_name_bytes)
+        .saturating_add(1)
+        > MAX_OUTPUT_BYTES
+    {
+        return Err(ToolError::Execution(
+            "directory listing exceeds 1 MiB".into(),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -83,5 +111,12 @@ mod tests {
 
         assert!(result.output.contains("file1.txt"));
         assert!(result.output.contains("file2.txt"));
+    }
+
+    #[test]
+    fn listing_capacity_is_bounded() {
+        assert!(ensure_capacity(MAX_ENTRIES - 1, 0, 4).is_ok());
+        assert!(ensure_capacity(MAX_ENTRIES, 0, 4).is_err());
+        assert!(ensure_capacity(0, MAX_OUTPUT_BYTES, 1).is_err());
     }
 }
