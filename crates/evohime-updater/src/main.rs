@@ -11,6 +11,10 @@ use std::process::{Command, ExitCode};
 /// `--apply-staging` installs a package the shell rebuilt from source.
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
+    if let Err(error) = validate_mode_args(&args) {
+        eprintln!("EvoHime updater usage error: {error}");
+        return ExitCode::from(2);
+    }
     if !args.iter().any(|arg| arg == "--worker") {
         return spawn_worker(&args[1..]);
     }
@@ -105,6 +109,24 @@ fn main() -> ExitCode {
             ExitCode::from(1)
         }
     }
+}
+
+fn validate_mode_args(args: &[String]) -> Result<(), String> {
+    let launch = args.iter().any(|arg| arg == "--launch");
+    let check = args.iter().any(|arg| arg == "--check");
+    let apply = args.iter().any(|arg| arg == "--apply");
+    let manifest = args.iter().any(|arg| arg == "--manifest");
+
+    if check && apply {
+        return Err("--check и --apply нельзя использовать одновременно".into());
+    }
+    if launch && (check || apply || manifest) {
+        return Err("--launch нельзя совмещать с другим режимом обновления".into());
+    }
+    if manifest && (check || apply) {
+        return Err("--manifest нельзя совмещать с --check или --apply".into());
+    }
+    Ok(())
 }
 
 struct ComponentSetArgs {
@@ -264,4 +286,31 @@ fn default_state_dir() -> PathBuf {
 fn report_error(error: impl std::fmt::Display) -> ExitCode {
     eprintln!("EvoHime updater failed to start: {error}");
     ExitCode::from(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_mode_args;
+
+    fn args(values: &[&str]) -> Vec<String> {
+        std::iter::once("evohime-updater")
+            .chain(values.iter().copied())
+            .map(str::to_owned)
+            .collect()
+    }
+
+    #[test]
+    fn rejects_conflicting_control_modes() {
+        assert!(validate_mode_args(&args(&["--check", "--apply"])).is_err());
+        assert!(validate_mode_args(&args(&["--launch", "--check"])).is_err());
+        assert!(validate_mode_args(&args(&["--manifest", "--apply"])).is_err());
+    }
+
+    #[test]
+    fn accepts_each_supported_mode_independently() {
+        assert!(validate_mode_args(&args(&["--launch"])).is_ok());
+        assert!(validate_mode_args(&args(&["--check"])).is_ok());
+        assert!(validate_mode_args(&args(&["--apply"])).is_ok());
+        assert!(validate_mode_args(&args(&["--manifest", "installed.json"])).is_ok());
+    }
 }
