@@ -87,6 +87,7 @@ pub struct ComponentManifest {
 
 const MAX_AVAILABLE_MODULES: usize = 64;
 const MAX_MODULE_DEPENDENCIES: usize = 64;
+const MAX_COMPONENT_MANIFEST_FIELD_BYTES: usize = 260;
 
 /// Validate the immutable package manifest before starting any product process.
 /// A mismatch is fatal: running a partially replaced installation would make
@@ -95,8 +96,30 @@ pub fn validate_component_manifest(
     manifest: &ComponentManifest,
     install_dir: &Path,
 ) -> Result<(), String> {
+    if manifest.components.is_empty() || manifest.components.len() > MAX_AVAILABLE_MODULES {
+        return Err("component manifest count is outside bounds".into());
+    }
+    let mut ids = std::collections::HashSet::with_capacity(manifest.components.len());
+    let mut paths = std::collections::HashSet::with_capacity(manifest.components.len());
     for component in &manifest.components {
-        if component.path.contains("..") || Path::new(&component.path).is_absolute() {
+        if component.id.is_empty()
+            || component.id.len() > 64
+            || !ids.insert(component.id.as_str())
+            || component.path.is_empty()
+            || component.path.len() > MAX_COMPONENT_MANIFEST_FIELD_BYTES
+            || !paths.insert(component.path.as_str())
+            || component.path.contains("..")
+            || component.path.contains('\\')
+            || component.path.contains(':')
+            || component.path.starts_with('/')
+            || Path::new(&component.path).is_absolute()
+            || component.size == 0
+            || component.sha256.len() != 64
+            || !component
+                .sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+        {
             return Err(format!("invalid path for {}", component.id));
         }
         let path = install_dir.join(&component.path);
@@ -463,5 +486,42 @@ mod tests {
         };
         let error = validate_component_manifest(&manifest, directory.path()).unwrap_err();
         assert!(error.contains("size mismatch") || error.contains("sha256 mismatch"));
+    }
+
+    #[test]
+    fn rejects_duplicate_component_paths_and_windows_streams() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("core.exe"), b"core").unwrap();
+        let hash = sha2::Sha256::digest(b"core")
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let duplicate = ComponentManifest {
+            components: vec![
+                InstalledComponent {
+                    id: "core".into(),
+                    path: "core.exe".into(),
+                    size: 4,
+                    sha256: hash.clone(),
+                },
+                InstalledComponent {
+                    id: "supervisor".into(),
+                    path: "core.exe".into(),
+                    size: 4,
+                    sha256: hash.clone(),
+                },
+            ],
+        };
+        assert!(validate_component_manifest(&duplicate, directory.path()).is_err());
+
+        let stream = ComponentManifest {
+            components: vec![InstalledComponent {
+                id: "core".into(),
+                path: "core.exe:secret".into(),
+                size: 4,
+                sha256: hash,
+            }],
+        };
+        assert!(validate_component_manifest(&stream, directory.path()).is_err());
     }
 }
