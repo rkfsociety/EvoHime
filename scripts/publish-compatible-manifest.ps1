@@ -120,6 +120,19 @@ $manifest = [ordered]@{
     updater = [ordered]@{ minimum_version = $updaterVersion; update_first = $true }
     components = @($components)
 }
+foreach ($component in @($manifest.components)) {
+    foreach ($field in @('dependencies', 'changes')) {
+        $value = $component[$field]
+        if ($null -eq $value -or $value -isnot [array]) {
+            throw "Сформированный compatible manifest содержит не-массив $field для модуля $($component.id)."
+        }
+        foreach ($item in @($value)) {
+            if ($null -eq $item -or $item -isnot [string]) {
+                throw "Сформированный compatible manifest содержит некорректный элемент $field для модуля $($component.id)."
+            }
+        }
+    }
+}
 $output = Join-Path $env:RUNNER_TEMP 'evohime.compatible.json'
 $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $output -Encoding utf8NoBOM
 

@@ -15,6 +15,7 @@ foreach ($marker in @(
     'null-элемент недопустим',
     "(Normalize-StringArray $moduleManifest.dependencies 'dependencies' $module).ToArray()",
     "(Normalize-StringArray $moduleManifest.changes 'changes' $module).ToArray()",
+    "Сформированный compatible manifest содержит не-массив",
     'gh release upload $tag'
 )) {
     if ($script -notmatch [regex]::Escape($marker)) { throw "Compatible manifest contract is missing: $marker" }
