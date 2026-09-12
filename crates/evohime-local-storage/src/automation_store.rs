@@ -643,7 +643,7 @@ pub fn save_snapshot(
     connection: &Connection,
     snapshot: SnapshotInsert<'_>,
 ) -> rusqlite::Result<()> {
-    connection.execute("INSERT INTO automation_snapshots (snapshot_id, run_id, definition_revision, generation, event_sequence, snapshot_json, checksum_sha256, created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)", params![snapshot.snapshot_id, snapshot.run_id, snapshot.definition_revision as i64, snapshot.generation as i64, snapshot.event_sequence as i64, snapshot.snapshot_json, snapshot.checksum_sha256, snapshot.now_ms])?;
+    connection.execute("INSERT OR IGNORE INTO automation_snapshots (snapshot_id, run_id, definition_revision, generation, event_sequence, snapshot_json, checksum_sha256, created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)", params![snapshot.snapshot_id, snapshot.run_id, snapshot.definition_revision as i64, snapshot.generation as i64, snapshot.event_sequence as i64, snapshot.snapshot_json, snapshot.checksum_sha256, snapshot.now_ms])?;
     Ok(())
 }
 
@@ -879,6 +879,34 @@ mod tests {
             },
         )
         .unwrap();
+        save_snapshot(
+            &c,
+            SnapshotInsert {
+                snapshot_json: "{\"replacement\":true}",
+                checksum_sha256: "replacement",
+                now_ms: 12,
+                ..SnapshotInsert {
+                    snapshot_id: "snapshot-1",
+                    run_id: "run-archive",
+                    definition_revision: 1,
+                    generation: 1,
+                    event_sequence: 0,
+                    snapshot_json: "{}",
+                    checksum_sha256: "checksum",
+                    now_ms: 11,
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            c.query_row(
+                "SELECT snapshot_json FROM automation_snapshots WHERE snapshot_id='snapshot-1'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            "{}"
+        );
         assert!(archive_run(&mut c, "archive-1", "run-archive", 20, 100).unwrap());
         assert!(get_run(&c, "run-archive").unwrap().is_none());
         assert!(restore_archive(&mut c, "archive-1", 30).unwrap());
