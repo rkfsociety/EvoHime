@@ -1435,6 +1435,36 @@ mod tests {
     }
 
     #[test]
+    fn compatible_manifest_accepts_nullable_string_arrays_from_github() {
+        let manifest: CompatibleManifest = parse_json_body(
+            r#"{
+                "schema":"evohime.compatible-set.v1",
+                "product":"EvoHime",
+                "os":"windows",
+                "architecture":"x64",
+                "updater":{"minimum_version":"1.0.0","update_first":true},
+                "components":[{
+                    "id":"listener-runtime",
+                    "version":"1.0.0",
+                    "release_tag":"module-listener-runtime-v1.0.0",
+                    "manifest_asset":"listener-runtime.json",
+                    "artifact":null,
+                    "size":0,
+                    "sha256":"",
+                    "dependencies":null,
+                    "restart":"listener",
+                    "changes":null
+                }]
+            }"#,
+            "манифест совместимого комплекта",
+        )
+        .expect("nullable arrays must be accepted");
+
+        assert!(manifest.components[0].dependencies.is_empty());
+        assert!(manifest.components[0].changes.is_empty());
+    }
+
+    #[test]
     fn compatible_manifest_binds_components_to_exact_release_tags() {
         let mut manifest = CompatibleManifest {
             schema: "evohime.compatible-set.v1".into(),
