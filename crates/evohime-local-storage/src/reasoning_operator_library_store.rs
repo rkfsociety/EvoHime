@@ -1,4 +1,5 @@
 use rusqlite::{params, Connection};
+const MAX_OPERATORS: i64 = 256;
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS reasoning_operator_definitions (id TEXT PRIMARY KEY, version INTEGER NOT NULL, content_hash TEXT NOT NULL, definition_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
@@ -15,9 +16,10 @@ pub fn put(c: &Connection, id: &str, v: u32, h: &str, j: &[u8], now: i64) -> rus
     Ok(())
 }
 pub fn list(c: &Connection) -> rusqlite::Result<Vec<Vec<u8>>> {
-    let mut s =
-        c.prepare("SELECT definition_json FROM reasoning_operator_definitions ORDER BY id")?;
-    let rows = s.query_map([], |r| r.get(0))?.collect();
+    let mut s = c.prepare(
+        "SELECT definition_json FROM reasoning_operator_definitions ORDER BY id LIMIT ?1",
+    )?;
+    let rows = s.query_map([MAX_OPERATORS], |r| r.get(0))?.collect();
     rows
 }
 
@@ -60,5 +62,15 @@ mod tests {
             list(&c).unwrap(),
             vec![br#"{"source":"original"}"#.to_vec()]
         );
+    }
+
+    #[test]
+    fn list_is_bounded() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        for index in 0..300 {
+            put(&c, &format!("operator-{index:03}"), 1, "hash", b"{}", index).unwrap();
+        }
+        assert_eq!(list(&c).unwrap().len(), MAX_OPERATORS as usize);
     }
 }
