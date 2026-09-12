@@ -127,6 +127,9 @@ fn resolve(
     if !canonical_parent.starts_with(&canonical_root) {
         return Err(RevisionError::Escape);
     }
+    if !write {
+        reject_symlink(&candidate)?;
+    }
     let resolved = if write {
         let suffix = parent
             .strip_prefix(existing_parent)
@@ -389,5 +392,21 @@ mod tests {
             Err(RevisionError::Escape)
         ));
         assert_eq!(std::fs::read(&target).unwrap(), b"original");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn read_rejects_final_symlink_inside_workspace() {
+        let workspace = tempdir().unwrap();
+        let target = workspace.path().join("target.txt");
+        std::fs::write(&target, b"content").unwrap();
+        std::os::unix::fs::symlink(&target, workspace.path().join("link.txt")).unwrap();
+        let ctx = context(workspace.path());
+
+        assert!(matches!(
+            read(&ctx, "workspace/link.txt").await,
+            Err(RevisionError::Escape)
+        ));
+        assert_eq!(std::fs::read(&target).unwrap(), b"content");
     }
 }
