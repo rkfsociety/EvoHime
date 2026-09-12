@@ -1113,6 +1113,14 @@ fn download_verified_file(
 }
 
 fn extract_ui_bundle(archive_path: &Path, destination: &Path) -> Result<(), String> {
+    let result = extract_ui_bundle_inner(archive_path, destination);
+    if result.is_err() {
+        let _ = fs::remove_dir_all(destination);
+    }
+    result
+}
+
+fn extract_ui_bundle_inner(archive_path: &Path, destination: &Path) -> Result<(), String> {
     let archive_file = fs::File::open(archive_path).map_err(|error| error.to_string())?;
     let mut archive = zip::ZipArchive::new(archive_file).map_err(|error| error.to_string())?;
     if destination.exists() {
@@ -1158,6 +1166,14 @@ fn extract_ui_bundle(archive_path: &Path, destination: &Path) -> Result<(), Stri
 }
 
 fn extract_shell_host(archive_path: &Path, destination: &Path) -> Result<(), String> {
+    let result = extract_shell_host_inner(archive_path, destination);
+    if result.is_err() {
+        let _ = fs::remove_dir_all(destination);
+    }
+    result
+}
+
+fn extract_shell_host_inner(archive_path: &Path, destination: &Path) -> Result<(), String> {
     let archive_file = fs::File::open(archive_path).map_err(|error| error.to_string())?;
     let mut archive = zip::ZipArchive::new(archive_file).map_err(|error| error.to_string())?;
     if destination.exists() {
@@ -1691,6 +1707,26 @@ mod tests {
             .expect_err("archive expansion must be bounded");
         assert!(error.contains("лимит распаковки"));
         assert!(output.len() <= 3);
+    }
+
+    #[test]
+    fn failed_archive_extraction_removes_partial_destination() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-archive-cleanup-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join("destination")).expect("create destination");
+        fs::write(root.join("destination/partial"), b"partial").expect("write partial file");
+        fs::write(root.join("broken.zip"), b"not a zip").expect("write broken archive");
+
+        assert!(
+            super::extract_ui_bundle(&root.join("broken.zip"), &root.join("destination")).is_err()
+        );
+        assert!(!root.join("destination").exists());
+        fs::remove_dir_all(root).expect("remove temporary archive directory");
     }
 
     #[test]
