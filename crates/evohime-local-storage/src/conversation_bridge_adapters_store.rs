@@ -22,20 +22,8 @@ pub fn put_bridge(c: &Connection, id: &str, json: &[u8], revision: u64) -> rusql
     let principal_id = required_string(&bridge, "principal_id")?;
     let pairing_hash = required_string(&bridge, "pairing_hash")?;
     let state = required_string(&bridge, "state")?;
-    let current_revision: Option<i64> = c
-        .query_row(
-            "SELECT revision FROM conversation_bridges WHERE bridge_id=?1",
-            params![id],
-            |row| row.get(0),
-        )
-        .optional()?;
-    if current_revision.is_some_and(|current| current >= revision) {
-        return Err(rusqlite::Error::InvalidParameterName(
-            "bridge revision is stale".into(),
-        ));
-    }
-    c.execute(
-        "INSERT OR REPLACE INTO conversation_bridges VALUES(?1,?2,?3,?4,?5,?6,?7)",
+    let updated = c.execute(
+        "INSERT INTO conversation_bridges(bridge_id,provider,conversation_id,principal_id,pairing_hash,state,revision) VALUES(?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(bridge_id) DO UPDATE SET provider=excluded.provider,conversation_id=excluded.conversation_id,principal_id=excluded.principal_id,pairing_hash=excluded.pairing_hash,state=excluded.state,revision=excluded.revision WHERE conversation_bridges.revision < excluded.revision",
         params![
             id,
             provider,
@@ -46,6 +34,11 @@ pub fn put_bridge(c: &Connection, id: &str, json: &[u8], revision: u64) -> rusql
             revision as i64
         ],
     )?;
+    if updated == 0 {
+        return Err(rusqlite::Error::InvalidParameterName(
+            "bridge revision is stale".into(),
+        ));
+    }
     Ok(())
 }
 
