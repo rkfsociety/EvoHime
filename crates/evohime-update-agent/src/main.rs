@@ -1306,16 +1306,12 @@ fn merge_installed_manifest_to(
     for update in applied {
         let (artifact, path, size, sha256) = if update.module == "shell-host" {
             let shell = install_dir.join("EvoHime.exe");
-            let bytes = fs::read(&shell).map_err(|error| error.to_string())?;
-            let digest = sha2::Sha256::digest(&bytes);
+            let (size, sha256) = stream_file_hash(&shell)?;
             (
                 "EvoHime.exe".to_owned(),
                 "EvoHime.exe".to_owned(),
-                bytes.len() as u64,
-                digest
-                    .iter()
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect::<String>(),
+                size,
+                sha256,
             )
         } else {
             (
@@ -1341,6 +1337,27 @@ fn merge_installed_manifest_to(
     )
     .map_err(|error| error.to_string())?;
     fs::rename(temporary, destination).map_err(|error| error.to_string())
+}
+
+fn stream_file_hash(path: &Path) -> Result<(u64, String), String> {
+    let mut file = fs::File::open(path).map_err(|error| error.to_string())?;
+    let mut digest = sha2::Sha256::new();
+    let mut size = 0u64;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).map_err(|error| error.to_string())?;
+        if read == 0 {
+            break;
+        }
+        size = size.saturating_add(read as u64);
+        digest.update(&buffer[..read]);
+    }
+    let sha256 = digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    Ok((size, sha256))
 }
 
 fn schedule_updater_replacement(
@@ -1485,11 +1502,12 @@ mod tests {
         is_github_api_url, is_github_release_asset_url, is_trusted_github_url,
         merge_installed_manifest_to, normalize_github_token, parse_json_body,
         read_installed_module_manifest, read_update_config, resolve_github_token_with,
-        updater_bootstrap_script, updater_first_if_required, updater_http_client,
+        stream_file_hash, updater_bootstrap_script, updater_first_if_required, updater_http_client,
         validate_compatible_manifest, validate_runtime_manifest, CompatibleComponent,
         CompatibleManifest, RuntimeReleaseEntry, RuntimeReleaseManifest, UpdateCandidate,
         UpdaterBootstrapPaths, UpdaterRequirement,
     };
+    use sha2::Digest;
     use std::{
         fs,
         path::Path,
@@ -1588,6 +1606,22 @@ mod tests {
         assert!(!error.is_empty());
         assert!(!destination.exists());
         fs::remove_dir_all(root).expect("remove temporary install directory");
+    }
+
+    #[test]
+    fn streams_shell_host_hash_and_reports_size() {
+        let path = std::env::temp_dir().join(format!(
+            "evohime-shell-hash-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        fs::write(&path, b"shell-host").expect("write shell host");
+        let (size, hash) = stream_file_hash(&path).expect("hash shell host");
+        assert_eq!(size, 10);
+        assert_eq!(hash, format!("{:x}", sha2::Sha256::digest(b"shell-host")));
+        fs::remove_file(path).expect("remove shell host");
     }
 
     #[test]
