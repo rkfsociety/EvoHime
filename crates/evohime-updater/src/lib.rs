@@ -325,12 +325,21 @@ pub fn apply_component_set_staged(options: ComponentSetApply<'_>) -> io::Result<
     wait_until_writable(install_dir, WAIT_FOR_UNLOCK)?;
     let _ = UpdateTransaction::recover(state_dir)?;
     clear_health_file(health_file)?;
+    let old_pointer = if ui_version.is_some() {
+        let active = install_dir.join("ui-active.json");
+        if active.is_file() {
+            Some(read_bounded_file(&active, MAX_UI_POINTER_BYTES)?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     let mut transaction = if shell_host {
         UpdateTransaction::prepare_tree(install_dir, state_dir)?
     } else {
         UpdateTransaction::prepare_selected(install_dir, state_dir, native_selected)?
     };
-    let old_pointer = ui_version.and_then(|_| fs::read(install_dir.join("ui-active.json")).ok());
     if let Some(version) = ui_version {
         transaction.record_ui(
             install_dir.join("ui-bundles").join(version),
@@ -577,6 +586,7 @@ fn validate_component_marker_for(staging: &Path, selected: Option<&[String]>) ->
 
 const MAX_COMPONENT_MARKER_BYTES: usize = 256 * 1024;
 const MAX_TRANSACTION_STATE_BYTES: usize = 64 * 1024;
+const MAX_UI_POINTER_BYTES: usize = 4 * 1024;
 
 fn read_bounded_file(path: &Path, limit: usize) -> io::Result<Vec<u8>> {
     let metadata = fs::metadata(path)?;
@@ -1504,6 +1514,44 @@ mod tests {
         let error = UpdateTransaction::recover(&root)
             .expect_err("oversized transaction state must be rejected");
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_oversized_ui_pointer_before_starting_transaction() {
+        let root = temp_dir("oversized-pointer");
+        let install = root.join("install");
+        let staging = root.join("staging");
+        let state = root.join("state");
+        write_components(&install, "old");
+        fs::create_dir_all(staging.join("ui-bundle")).unwrap();
+        fs::write(staging.join("evohime-core.exe"), "new").unwrap();
+        fs::write(staging.join("ui-bundle/index.html"), "new").unwrap();
+        fs::write(
+            install.join("ui-active.json"),
+            vec![b'x'; super::MAX_UI_POINTER_BYTES + 1],
+        )
+        .unwrap();
+
+        let selected = vec!["evohime-core.exe".to_owned()];
+        let error = super::apply_component_set_staged(super::ComponentSetApply {
+            staging: &staging,
+            install_dir: &install,
+            state_dir: &state,
+            native_selected: &selected,
+            ui_version: Some("1.0.0"),
+            shell_host: false,
+            wait_pid: None,
+            relaunch: None,
+            health_file: None,
+        })
+        .expect_err("oversized UI pointer must be rejected before transaction");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(
+            fs::metadata(install.join("ui-active.json")).unwrap().len(),
+            (super::MAX_UI_POINTER_BYTES + 1) as u64
+        );
+        assert!(!state.join("transaction.json").exists());
         fs::remove_dir_all(root).unwrap();
     }
 
