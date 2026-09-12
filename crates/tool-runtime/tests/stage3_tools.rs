@@ -4,8 +4,31 @@ use tempfile::tempdir;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-#[tokio::test]
-async fn write_creates_and_updates_nested_file() {
+fn run_async_test_with_large_stack<F>(test: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    std::thread::Builder::new()
+        .name("evohime-tool-runtime-integration-test".into())
+        .stack_size(32 * 1024 * 1024)
+        .spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("test runtime builds")
+                .block_on(test);
+        })
+        .expect("test thread starts")
+        .join()
+        .expect("test thread completes");
+}
+
+#[test]
+fn write_creates_and_updates_nested_file() {
+    run_async_test_with_large_stack(write_creates_and_updates_nested_file_inner());
+}
+
+async fn write_creates_and_updates_nested_file_inner() {
     let dir = tempdir().unwrap();
     let ctx = ToolContext {
         workspace_root: dir.path().to_path_buf(),
@@ -27,8 +50,12 @@ async fn write_creates_and_updates_nested_file() {
     assert_eq!(second.structured["change"], "updated");
 }
 
-#[tokio::test]
-async fn patch_rejects_context_mismatch_without_mutation() {
+#[test]
+fn patch_rejects_context_mismatch_without_mutation() {
+    run_async_test_with_large_stack(patch_rejects_context_mismatch_without_mutation_inner());
+}
+
+async fn patch_rejects_context_mismatch_without_mutation_inner() {
     let dir = tempdir().unwrap();
     std::fs::write(dir.path().join("a.txt"), "one\ntwo\n").unwrap();
     let ctx = ToolContext {
@@ -49,8 +76,12 @@ async fn patch_rejects_context_mismatch_without_mutation() {
     );
 }
 
-#[tokio::test]
-async fn registry_requires_approval_for_write() {
+#[test]
+fn registry_requires_approval_for_write() {
+    run_async_test_with_large_stack(registry_requires_approval_for_write_inner());
+}
+
+async fn registry_requires_approval_for_write_inner() {
     let dir = tempdir().unwrap();
     let result = ToolRegistry::bootstrap()
         .execute(
@@ -71,8 +102,12 @@ async fn registry_requires_approval_for_write() {
     ));
 }
 
-#[tokio::test]
-async fn shell_runs_direct_executable_and_rejects_wrapper() {
+#[test]
+fn shell_runs_direct_executable_and_rejects_wrapper() {
+    run_async_test_with_large_stack(shell_runs_direct_executable_and_rejects_wrapper_inner());
+}
+
+async fn shell_runs_direct_executable_and_rejects_wrapper_inner() {
     let dir = tempdir().unwrap();
     let ctx = ToolContext {
         workspace_root: dir.path().to_path_buf(),
@@ -98,8 +133,12 @@ async fn shell_runs_direct_executable_and_rejects_wrapper() {
     assert!(matches!(rejected, Err(ToolError::InvalidInput { .. })));
 }
 
-#[tokio::test]
-async fn shell_times_out_and_reports_timeout() {
+#[test]
+fn shell_times_out_and_reports_timeout() {
+    run_async_test_with_large_stack(shell_times_out_and_reports_timeout_inner());
+}
+
+async fn shell_times_out_and_reports_timeout_inner() {
     let dir = tempdir().unwrap();
     let ctx = ToolContext {
         workspace_root: dir.path().to_path_buf(),
@@ -121,8 +160,12 @@ async fn shell_times_out_and_reports_timeout() {
     assert!(matches!(result, Err(ToolError::TimedOut(_))));
 }
 
-#[tokio::test]
-async fn test_filesystem_read_only_behavior() {
+#[test]
+fn test_filesystem_read_only_behavior() {
+    run_async_test_with_large_stack(test_filesystem_read_only_behavior_inner());
+}
+
+async fn test_filesystem_read_only_behavior_inner() {
     let dir = tempdir().unwrap();
     std::fs::write(dir.path().join("test.txt"), "content").unwrap();
     let ctx = ToolContext {
@@ -154,8 +197,12 @@ async fn test_filesystem_read_only_behavior() {
     );
 }
 
-#[tokio::test]
-async fn patch_context_recovery_on_wrong_hunk_start() {
+#[test]
+fn patch_context_recovery_on_wrong_hunk_start() {
+    run_async_test_with_large_stack(patch_context_recovery_on_wrong_hunk_start_inner());
+}
+
+async fn patch_context_recovery_on_wrong_hunk_start_inner() {
     let dir = tempdir().unwrap();
     std::fs::write(dir.path().join("file.txt"), "line1\nline2\nline3\n").unwrap();
     let ctx = ToolContext {
