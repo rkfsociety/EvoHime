@@ -5,7 +5,10 @@
 //! сроки, файл политики и правила публикации, то есть всё, чего у
 //! side-effect-free контракта 04.1 и у migration-neutral стора быть не может.
 
-use std::path::{Path, PathBuf};
+use std::{
+    io::Read,
+    path::{Path, PathBuf},
+};
 
 use evohime_listener_contract::{
     AmbientErrorCode, AmbientLogEvent, AmbientPolicy, ExtractionState, ListeningReason,
@@ -48,6 +51,7 @@ pub const PURGE_INTERVAL_SECONDS: u64 = 60 * 60;
 /// удаления: иначе вычищать журнал пришлось бы сканом BLOB-payload, а так
 /// оно идёт по существующему индексу `idx_events_task_sequence`.
 pub const SESSION_TASK_ID: &str = "ambient-session";
+const MAX_POLICY_BYTES: usize = 64 * 1024;
 
 const DAY_MS: u64 = 24 * 60 * 60 * 1000;
 
@@ -115,8 +119,10 @@ pub fn paused_default_policy() -> AmbientPolicy {
 /// же дефолт, но с включённой паузой.
 pub fn load_policy(data_dir: &Path) -> AmbientPolicy {
     let path = policy_path(data_dir);
-    let Ok(bytes) = std::fs::read(&path) else {
-        return default_policy();
+    let bytes = match read_bounded_policy(&path) {
+        Ok(bytes) => bytes,
+        Err(_) if path.is_file() => return paused_default_policy(),
+        Err(_) => return default_policy(),
     };
     let Ok(policy) = serde_json::from_slice::<AmbientPolicy>(&bytes) else {
         return paused_default_policy();
@@ -125,6 +131,27 @@ pub fn load_policy(data_dir: &Path) -> AmbientPolicy {
         return paused_default_policy();
     }
     policy
+}
+
+fn read_bounded_policy(path: &Path) -> std::io::Result<Vec<u8>> {
+    let metadata = std::fs::metadata(path)?;
+    if !metadata.is_file() || metadata.len() > MAX_POLICY_BYTES as u64 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "ambient policy exceeds the read limit",
+        ));
+    }
+    let file = std::fs::File::open(path)?;
+    let mut bytes = Vec::with_capacity(MAX_POLICY_BYTES.min(16 * 1024));
+    file.take((MAX_POLICY_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > MAX_POLICY_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "ambient policy exceeds the read limit",
+        ));
+    }
+    Ok(bytes)
 }
 
 /// Пишет политику атомарно: временный файл, `sync_all`, owner-only ACL,
@@ -1573,6 +1600,18 @@ mod tests {
         )
         .expect("invalid policy writes");
         assert!(load_policy(directory.path()).paused);
+    }
+
+    #[test]
+    fn an_oversized_policy_fails_safe_without_full_read() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        std::fs::write(
+            policy_path(directory.path()),
+            vec![b'x'; MAX_POLICY_BYTES + 1],
+        )
+        .expect("oversized policy writes");
+
+        assert_eq!(load_policy(directory.path()), paused_default_policy());
     }
 
     #[test]
