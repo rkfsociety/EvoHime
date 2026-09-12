@@ -54,7 +54,7 @@ pub struct SaveSessionInput<'a> {
 }
 
 pub fn save_session(c: &Connection, input: SaveSessionInput<'_>) -> Result<bool, rusqlite::Error> {
-    Ok(c.execute("INSERT INTO team_sop_sessions VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET status=excluded.status,current_phase=excluded.current_phase,version=excluded.version,updated_at_ms=excluded.updated_at_ms WHERE excluded.version >= team_sop_sessions.version",params![input.id,input.protocol_id,input.protocol_version as i64,input.hash,input.snapshot,input.status,input.phase,input.version as i64,input.now_ms])? == 1)
+    Ok(c.execute("INSERT INTO team_sop_sessions VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET status=excluded.status,current_phase=excluded.current_phase,version=excluded.version,updated_at_ms=excluded.updated_at_ms WHERE excluded.version > team_sop_sessions.version",params![input.id,input.protocol_id,input.protocol_version as i64,input.hash,input.snapshot,input.status,input.phase,input.version as i64,input.now_ms])? == 1)
 }
 pub fn load_all_json(c: &Connection) -> Result<Vec<Vec<u8>>, rusqlite::Error> {
     let mut s = c.prepare("SELECT protocol_json FROM team_sop_protocols ORDER BY id")?;
@@ -149,5 +149,51 @@ mod tests {
             )
             .unwrap();
         assert_eq!(stored, "running");
+    }
+
+    #[test]
+    fn duplicate_session_version_cannot_replace_state() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        let input = SaveSessionInput {
+            id: "session",
+            protocol_id: "coding",
+            protocol_version: 1,
+            hash: "h",
+            snapshot: br#"{"source":"first"}"#,
+            status: "running",
+            phase: "execute",
+            version: 2,
+            now_ms: 2,
+        };
+        assert!(save_session(&c, input).unwrap());
+        assert!(!save_session(
+            &c,
+            SaveSessionInput {
+                snapshot: br#"{"source":"replacement"}"#,
+                status: "failed",
+                phase: "wrong",
+                now_ms: 3,
+                ..input
+            }
+        )
+        .unwrap());
+        let stored: (String, String, Vec<u8>, i64) = c
+            .query_row(
+                "SELECT status, current_phase, snapshot_json, updated_at_ms
+                 FROM team_sop_sessions WHERE id=?1",
+                ["session"],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            stored,
+            (
+                "running".into(),
+                "execute".into(),
+                br#"{"source":"first"}"#.to_vec(),
+                2
+            )
+        );
     }
 }
