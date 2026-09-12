@@ -1,2 +1,7 @@
 [alias]
 eval = "run --locked -p evohime-eval --"
+
+# Several Windows async integration tests build large futures. Keep Cargo-run
+# test threads aligned with the stack size used by the Windows CI workflows.
+[env]
+RUST_MIN_STACK = "33554432"

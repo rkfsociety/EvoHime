@@ -624,8 +624,24 @@ async fn approved_terminal_execute_links_ledger_receipt_to_signed_receipts_v1_in
     let _ = std::fs::remove_dir_all(data_root);
 }
 
-#[tokio::test]
-async fn reconciliation_command_executes_only_new_read_only_action() {
+#[test]
+fn reconciliation_command_executes_only_new_read_only_action() {
+    std::thread::Builder::new()
+        .name("evohime-ipc-reconciliation-test".into())
+        .stack_size(32 * 1024 * 1024)
+        .spawn(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("test runtime builds")
+                .block_on(reconciliation_command_executes_only_new_read_only_action_inner());
+        })
+        .expect("test thread starts")
+        .join()
+        .expect("test thread completes");
+}
+
+async fn reconciliation_command_executes_only_new_read_only_action_inner() {
     let root =
         std::env::temp_dir().join(format!("evohime-ipc-reconcile-root-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);

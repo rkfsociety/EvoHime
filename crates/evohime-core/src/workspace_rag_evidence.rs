@@ -121,7 +121,7 @@ pub fn build_evidence_context(
 }
 
 fn with_parent_context_bytes(bytes: &[u8], block: &RetrievedChunk) -> String {
-    let (text, _, _) = decode_text(&bytes);
+    let (text, _, _) = decode_text(bytes);
     let lines = text.lines().collect::<Vec<_>>();
     let range = block.lines.unwrap_or([1, 1]);
     let logical = block.symbol.is_some();

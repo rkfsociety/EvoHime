@@ -13,8 +13,8 @@ foreach ($marker in @(
     'Normalize-StringArray',
     'if ($null -eq $value) { return ,$result }',
     'null-элемент недопустим',
-    "(Normalize-StringArray $moduleManifest.dependencies 'dependencies' $module).ToArray()",
-    "(Normalize-StringArray $moduleManifest.changes 'changes' $module).ToArray()",
+    '$dependencies = (Normalize-StringArray $moduleManifest.dependencies ''dependencies'' $module).ToArray()',
+    '$changes = (Normalize-StringArray $moduleManifest.changes ''changes'' $module).ToArray()',
     "Сформированный compatible manifest содержит не-массив",
     'gh release upload $tag'
 )) {

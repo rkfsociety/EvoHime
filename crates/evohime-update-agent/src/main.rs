@@ -1315,6 +1315,9 @@ fn copy_reader_bounded<R: Read, W: Write>(
 }
 
 fn normalize_archive_path(path: &Path) -> Option<PathBuf> {
+    if path.to_string_lossy().contains('\\') {
+        return None;
+    }
     let mut normalized = PathBuf::new();
     for component in path.components() {
         match component {
