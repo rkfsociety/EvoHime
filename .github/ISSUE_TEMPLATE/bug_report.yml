@@ -1,0 +1,64 @@
+name: Bug report
+description: Сообщить о воспроизводимой проблеме в EvoHime.
+title: "[bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо за отчёт. Не включайте API-ключи, токены, персональные данные,
+        рабочие exploit и полные логи с секретами. Уязвимости отправляйте по
+        адресу из [SECURITY.md](https://github.com/rkfsociety/EvoHime/blob/main/SECURITY.md).
+  - type: textarea
+    id: summary
+    attributes:
+      label: Что произошло?
+      description: Кратко опишите проблему и её влияние.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Как воспроизвести?
+      description: Укажите минимальные шаги и безопасные входные данные.
+      placeholder: |
+        1. Откройте ...
+        2. Выберите ...
+        3. Нажмите ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемое поведение
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Фактическое поведение
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Версия EvoHime
+      placeholder: Например, installer или commit SHA
+  - type: input
+    id: environment
+    attributes:
+      label: Окружение
+      placeholder: Например, Windows 11 x64
+  - type: textarea
+    id: logs
+    attributes:
+      label: Безопасные логи и дополнительные сведения
+      description: Перед вставкой удалите секреты, токены, персональные данные и абсолютные пути.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Проверка перед отправкой
+      options:
+        - label: Я проверил, что в отчёте нет секретов и персональных данных.
+          required: true
+        - label: Я поискал существующие issue с той же проблемой.
+          required: true

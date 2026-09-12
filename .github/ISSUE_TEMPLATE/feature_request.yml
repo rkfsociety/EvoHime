@@ -1,0 +1,36 @@
+name: Feature request
+description: Предложить улучшение или новую возможность.
+title: "[feature] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую проблему решает предложение?
+      description: Опишите сценарий пользователя и текущее ограничение.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Предлагаемое решение
+      description: Опишите желаемое поведение и границы решения.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Рассмотренные альтернативы
+  - type: textarea
+    id: context
+    attributes:
+      label: Дополнительный контекст
+      description: Добавьте безопасные ссылки, макеты или примеры без секретов и персональных данных.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Проверка перед отправкой
+      options:
+        - label: Я поискал существующие issue с тем же предложением.
+          required: true
+        - label: Я не включил секреты и персональные данные.
+          required: true

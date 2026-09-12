@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Сообщить об уязвимости
+    url: https://github.com/rkfsociety/EvoHime/security/policy
+    about: Не публикуйте рабочие exploit и секреты в публичном issue.
