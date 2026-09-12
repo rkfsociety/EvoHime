@@ -36,7 +36,7 @@ pub fn put_manifest<T: Serialize>(
 ) -> Result<(), rusqlite::Error> {
     let json = serde_json::to_string(manifest)
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-    connection.execute("INSERT INTO integration_provider_manifests(provider_id,version,manifest_json,content_hash,updated_at_ms) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(provider_id,version) DO UPDATE SET manifest_json=excluded.manifest_json,content_hash=excluded.content_hash,updated_at_ms=excluded.updated_at_ms", params![provider_id, version, json, hash, now_ms])?;
+    connection.execute("INSERT INTO integration_provider_manifests(provider_id,version,manifest_json,content_hash,updated_at_ms) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(provider_id,version) DO NOTHING", params![provider_id, version, json, hash, now_ms])?;
     Ok(())
 }
 
@@ -84,5 +84,33 @@ mod tests {
             .collect::<Result<_, _>>()
             .unwrap();
         assert!(!columns.iter().any(|column| column.contains("secret")));
+    }
+
+    #[test]
+    fn published_manifest_version_is_immutable_and_idempotent() {
+        let connection = Connection::open_in_memory().unwrap();
+        install_schema(&connection).unwrap();
+        put_manifest(
+            &connection,
+            "fixture.echo",
+            1,
+            &serde_json::json!({"revision":1}),
+            "hash-1",
+            1,
+        )
+        .unwrap();
+        put_manifest(
+            &connection,
+            "fixture.echo",
+            1,
+            &serde_json::json!({"revision":2}),
+            "hash-2",
+            2,
+        )
+        .unwrap();
+        let value: serde_json::Value = get_manifest(&connection, "fixture.echo", 1)
+            .unwrap()
+            .expect("manifest exists");
+        assert_eq!(value["revision"], 1);
     }
 }
