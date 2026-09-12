@@ -554,8 +554,7 @@ fn validate_component_marker_for(staging: &Path, selected: Option<&[String]>) ->
                 format!("component artifact is missing: {}", component.path),
             ));
         }
-        let bytes = fs::read(&artifact)?;
-        if !manifest.artifact_matches(component, &bytes) {
+        if !manifest.artifact_matches_path(component, &artifact)? {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("component artifact hash mismatch: {}", component.id),

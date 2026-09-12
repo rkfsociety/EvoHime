@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
+use std::io::{self, Read};
 use std::path::Path;
 
 pub const SCHEMA: &str = "evohime.component-manifest.v1";
@@ -181,6 +182,31 @@ impl Manifest {
         let digest = Sha256::digest(bytes);
         hex::encode(digest) == component.sha256.to_ascii_lowercase()
     }
+
+    /// Verify an artifact without loading its complete contents into memory.
+    pub fn artifact_matches_path(&self, component: &Component, path: &Path) -> io::Result<bool> {
+        let file = std::fs::File::open(path)?;
+        artifact_matches_reader(component, file)
+    }
+}
+
+fn artifact_matches_reader<R: Read>(component: &Component, mut reader: R) -> io::Result<bool> {
+    let mut digest = Sha256::new();
+    let mut total = 0u64;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        total = total.saturating_add(read as u64);
+        if total > component.size {
+            return Ok(false);
+        }
+        digest.update(&buffer[..read]);
+    }
+    Ok(total == component.size
+        && hex::encode(digest.finalize()) == component.sha256.to_ascii_lowercase())
 }
 
 #[cfg(test)]
@@ -226,6 +252,15 @@ mod tests {
         let m = manifest();
         assert!(m.artifact_matches(&m.components[0], &[0]));
         assert!(!m.artifact_matches(&m.components[0], &[1]));
+    }
+
+    #[test]
+    fn verifies_artifact_from_reader_without_buffering_the_whole_file() {
+        let m = manifest();
+        assert!(artifact_matches_reader(&m.components[0], std::io::Cursor::new([0u8; 1])).unwrap());
+        assert!(
+            !artifact_matches_reader(&m.components[0], std::io::Cursor::new([0u8; 2])).unwrap()
+        );
     }
 
     #[test]
