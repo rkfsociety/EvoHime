@@ -320,11 +320,12 @@ async fn validate_configured_remote(ctx: &ToolContext, remote: &str) -> Result<(
     if remote.is_empty() || remote.starts_with('-') || remote.contains(['/', '\\']) {
         return Err(ToolError::Execution("git remote name is not safe".into()));
     }
-    let output = Command::new("git")
+    let mut command = Command::new("git");
+    command
         .arg("-C")
         .arg(&ctx.workspace_root)
-        .args(["remote", "get-url", remote])
-        .output()
+        .args(["remote", "get-url", remote]);
+    let output = run_bounded_git(&mut command)
         .await
         .map_err(|error| ToolError::Execution(format!("failed to inspect git remote: {error}")))?;
     if !output.status.success() {
