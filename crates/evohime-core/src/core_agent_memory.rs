@@ -1,5 +1,7 @@
 use super::*;
 
+const MAX_MEMORY_VALIDATION_FILE_BYTES: usize = 1024 * 1024;
+
 impl ToolAgent {
     pub(super) async fn persist_lesson(&self, task_id: &str, workspace_root: &std::path::Path) {
         let Some(journal) = &self.journal else {
@@ -790,7 +792,7 @@ impl ToolAgent {
                         let path = workspace_root.join(&candidate.evidence.file_path);
                         match timeout(
                             Duration::from_millis(target.timeout_ms()),
-                            tokio::fs::read(path),
+                            read_bounded_validation_file(&path),
                         )
                         .await
                         {
@@ -938,5 +940,45 @@ impl ToolAgent {
             }
         }
         None
+    }
+}
+
+async fn read_bounded_validation_file(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
+    use tokio::io::AsyncReadExt;
+
+    let metadata = tokio::fs::metadata(path).await?;
+    if !metadata.is_file() || metadata.len() > MAX_MEMORY_VALIDATION_FILE_BYTES as u64 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "memory validation file exceeds the read limit",
+        ));
+    }
+    let file = tokio::fs::File::open(path).await?;
+    let mut bytes = Vec::with_capacity(MAX_MEMORY_VALIDATION_FILE_BYTES.min(16 * 1024));
+    file.take((MAX_MEMORY_VALIDATION_FILE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .await?;
+    if bytes.len() > MAX_MEMORY_VALIDATION_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "memory validation file exceeds the read limit",
+        ));
+    }
+    Ok(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{read_bounded_validation_file, MAX_MEMORY_VALIDATION_FILE_BYTES};
+
+    #[tokio::test]
+    async fn validation_read_rejects_an_oversized_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("large.txt");
+        std::fs::write(&path, vec![b'x'; MAX_MEMORY_VALIDATION_FILE_BYTES + 1]).unwrap();
+
+        let error = read_bounded_validation_file(&path).await.unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
     }
 }
