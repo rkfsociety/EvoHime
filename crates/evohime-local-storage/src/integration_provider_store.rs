@@ -4,6 +4,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{de::DeserializeOwned, Serialize};
 
 pub const STORE_SCHEMA_VERSION: u32 = 1;
+const MAX_DEPENDENCY_REPORT_ROWS: i64 = 256;
 
 pub fn install_schema(connection: &Connection) -> Result<(), rusqlite::Error> {
     connection.execute_batch(
@@ -56,8 +57,10 @@ pub fn dependency_report(
         .replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_");
-    let mut statement = connection.prepare("SELECT owner_kind, owner_id FROM integration_provider_bindings WHERE binding_json LIKE '%' || ?1 || '%' ESCAPE '\\' ORDER BY owner_kind, owner_id")?;
-    let rows = statement.query_map(params![escaped_id], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    let mut statement = connection.prepare("SELECT owner_kind, owner_id FROM integration_provider_bindings WHERE binding_json LIKE '%' || ?1 || '%' ESCAPE '\\' ORDER BY owner_kind, owner_id LIMIT ?2")?;
+    let rows = statement.query_map(params![escaped_id, MAX_DEPENDENCY_REPORT_ROWS], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })?;
     rows.collect()
 }
 
@@ -157,6 +160,24 @@ mod tests {
         assert_eq!(
             dependency_report(&connection, "cred%prod").unwrap(),
             vec![("task".to_owned(), "task-1".to_owned())]
+        );
+        for index in 0..300 {
+            connection
+                .execute(
+                    "INSERT INTO integration_provider_bindings
+                     (binding_id,owner_kind,owner_id,binding_json,status,version,updated_at_ms)
+                     VALUES (?1,'task',?2,?3,'active',1,1)",
+                    params![
+                        format!("binding-extra-{index:03}"),
+                        format!("task-extra-{index:03}"),
+                        r#"{"credential_id":"cred%prod"}"#
+                    ],
+                )
+                .unwrap();
+        }
+        assert_eq!(
+            dependency_report(&connection, "cred%prod").unwrap().len(),
+            256
         );
     }
 }
