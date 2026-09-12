@@ -133,7 +133,7 @@ pub async fn copy(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
     })?;
 
     let (_, _, source) = crate::revision_safe_workspace_files::resolve_logical(
-        ctx, &opts.from, false,
+        ctx, &opts.from, true,
     )
     .map_err(|e| {
         crate::revision_safe_workspace_files::permission(e, COPY_NAME, Permission::FilesystemWrite)
@@ -143,6 +143,9 @@ pub async fn copy(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
         crate::revision_safe_workspace_files::permission(e, COPY_NAME, Permission::FilesystemWrite)
     })?;
     crate::revision_safe_workspace_files::reject_symlink(&dest).map_err(|e| {
+        crate::revision_safe_workspace_files::permission(e, COPY_NAME, Permission::FilesystemWrite)
+    })?;
+    crate::revision_safe_workspace_files::reject_symlink(&source).map_err(|e| {
         crate::revision_safe_workspace_files::permission(e, COPY_NAME, Permission::FilesystemWrite)
     })?;
 
@@ -204,8 +207,16 @@ async fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
             let dest_path = destination_dir.join(entry.file_name());
+            let metadata = fs::symlink_metadata(&path).await?;
 
-            if path.is_dir() {
+            if metadata.file_type().is_symlink() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "recursive copy does not follow symbolic links",
+                ));
+            }
+
+            if metadata.is_dir() {
                 pending.push((path, dest_path));
             } else {
                 fs::copy(path, dest_path).await?;
@@ -389,5 +400,33 @@ mod tests {
 
         assert!(result.output.contains("test.txt"));
         assert!(result.output.contains("file"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn recursive_copy_rejects_symbolic_links() {
+        let workspace = tempdir().expect("workspace");
+        let outside = tempdir().expect("outside");
+        let source = workspace.path().join("source");
+        let destination = workspace.path().join("destination");
+        std_fs::create_dir(&source).expect("source");
+        let secret = outside.path().join("secret.txt");
+        std_fs::write(&secret, "must not copy").expect("secret");
+        std::os::unix::fs::symlink(&secret, source.join("linked.txt")).expect("symlink");
+
+        let ctx = ToolContext {
+            workspace_root: workspace.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+        let error = copy(
+            &ctx,
+            json!({"from": "source", "to": "destination", "recursive": true}),
+        )
+        .await
+        .expect_err("recursive copy must reject symbolic links");
+        assert!(error.to_string().contains("symbolic links"));
+        assert!(!destination.join("linked.txt").exists());
     }
 }
