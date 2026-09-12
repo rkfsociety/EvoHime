@@ -24,7 +24,7 @@ pub fn put_definition<T: Serialize>(
             "trigger definition exceeds 64 KiB".into(),
         ));
     }
-    connection.execute("INSERT INTO event_trigger_definitions(trigger_id,owner_scope,definition_json,content_hash,version,updated_at_ms) VALUES(?1,?2,?3,?4,?5,?6)", params![trigger_id, owner_scope, json, hash, version as i64, now_ms])?;
+    connection.execute("INSERT INTO event_trigger_definitions(trigger_id,owner_scope,definition_json,content_hash,version,updated_at_ms) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(trigger_id,version) DO NOTHING", params![trigger_id, owner_scope, json, hash, version as i64, now_ms])?;
     Ok(())
 }
 
@@ -131,5 +131,35 @@ mod tests {
         install_schema(&c).unwrap();
         let oversized = "x".repeat(MAX_DEFINITION_BYTES);
         assert!(put_definition(&c, "t", "scope", &oversized, "hash", 1, 1).is_err());
+    }
+
+    #[test]
+    fn duplicate_definition_version_is_idempotent() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        put_definition(
+            &c,
+            "t",
+            "scope",
+            &serde_json::json!({"first": true}),
+            "first",
+            1,
+            1,
+        )
+        .unwrap();
+        put_definition(
+            &c,
+            "t",
+            "scope",
+            &serde_json::json!({"first": false}),
+            "second",
+            1,
+            2,
+        )
+        .unwrap();
+        assert_eq!(
+            get_definition::<serde_json::Value>(&c, "t").unwrap(),
+            Some(serde_json::json!({"first": true}))
+        );
     }
 }
