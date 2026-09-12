@@ -282,6 +282,18 @@ fn validate_compatible_manifest(manifest: &CompatibleManifest) -> Result<(), Str
                 component.id
             ));
         }
+        let mut dependencies =
+            std::collections::HashSet::with_capacity(component.dependencies.len());
+        if component
+            .dependencies
+            .iter()
+            .any(|dependency| dependency == &component.id || !dependencies.insert(dependency))
+        {
+            return Err(format!(
+                "updater: повторная или циклическая зависимость компонента: {}",
+                component.id
+            ));
+        }
         let prefix = format!("module-{}-v", component.id);
         if !component.release_tag.starts_with(&prefix)
             || !is_valid_semver(&component.release_tag[prefix.len()..])
@@ -2028,6 +2040,18 @@ mod tests {
             });
         }
         assert!(validate_compatible_manifest(&manifest).is_ok());
+
+        let dependency_index = manifest
+            .components
+            .iter()
+            .position(|component| component.id == "core")
+            .expect("core component");
+        manifest.components[dependency_index].dependencies =
+            vec!["updater".into(), "updater".into()];
+        assert!(validate_compatible_manifest(&manifest).is_err());
+        manifest.components[dependency_index].dependencies = vec!["core".into()];
+        assert!(validate_compatible_manifest(&manifest).is_err());
+        manifest.components[dependency_index].dependencies = vec!["updater".into()];
 
         manifest.components[0].artifact = Some("core.exe:stream".into());
         assert!(validate_compatible_manifest(&manifest).is_err());
