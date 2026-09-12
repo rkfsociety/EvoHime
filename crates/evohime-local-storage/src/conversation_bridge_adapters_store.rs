@@ -87,6 +87,21 @@ pub fn put_binding(
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
     let conversation_id = required_string(&binding, "conversation_id")?;
     let principal_id = required_string(&binding, "principal_id")?;
+    let bridge_identity: Option<(String, String)> = c
+        .query_row(
+            "SELECT conversation_id,principal_id FROM conversation_bridges WHERE bridge_id=?1",
+            params![bridge_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let Some((bridge_conversation_id, bridge_principal_id)) = bridge_identity else {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    };
+    if conversation_id != bridge_conversation_id || principal_id != bridge_principal_id {
+        return Err(rusqlite::Error::InvalidParameterName(
+            "binding identity does not match bridge".into(),
+        ));
+    }
     Ok(c.execute(
         "INSERT OR IGNORE INTO conversation_thread_bindings VALUES(?1,?2,?3,?4,?5,?6)",
         params![
@@ -199,5 +214,18 @@ mod tests {
 
         assert!(put_bridge(&c, "b", br#"{}"#, 1).is_err());
         assert!(put_binding(&c, br#"{}"#, "bind", "b", "thread", 1).is_err());
+    }
+
+    #[test]
+    fn rejects_orphan_and_cross_identity_bindings() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        let bridge = br#"{"provider":"telegram","conversation_id":"c","principal_id":"p","pairing_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","state":"paired"}"#;
+        put_bridge(&c, "b", bridge, 1).unwrap();
+
+        let mismatch = br#"{"conversation_id":"other","principal_id":"p"}"#;
+        assert!(put_binding(&c, mismatch, "bind-mismatch", "b", "thread", 1).is_err());
+        let valid = br#"{"conversation_id":"c","principal_id":"p"}"#;
+        assert!(put_binding(&c, valid, "bind-orphan", "missing", "thread", 1).is_err());
     }
 }
