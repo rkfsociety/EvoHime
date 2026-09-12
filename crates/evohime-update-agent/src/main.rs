@@ -168,6 +168,7 @@ const MAX_LOCAL_JSON_BYTES: usize = 256 * 1024;
 const MAX_COMPATIBLE_SUMMARY_BYTES: usize = 16 * 1024;
 const MAX_COMPATIBLE_CHANGES: usize = 64;
 const MAX_COMPATIBLE_CHANGE_BYTES: usize = 8 * 1024;
+const MAX_COMPATIBLE_DEPENDENCY_BYTES: usize = 64;
 
 #[derive(serde::Deserialize)]
 struct Release {
@@ -272,6 +273,10 @@ fn validate_compatible_manifest(manifest: &CompatibleManifest) -> Result<(), Str
                 .iter()
                 .any(|change| change.len() > MAX_COMPATIBLE_CHANGE_BYTES)
             || component.dependencies.len() > MODULE_IDS.len()
+            || component
+                .dependencies
+                .iter()
+                .any(|dependency| dependency.len() > MAX_COMPATIBLE_DEPENDENCY_BYTES)
         {
             return Err(format!(
                 "updater: метаданные совместимого компонента превышают лимит: {}",
@@ -1562,6 +1567,10 @@ mod tests {
         manifest.components[0].changes = vec!["x".repeat(super::MAX_COMPATIBLE_CHANGE_BYTES + 1)];
         assert!(validate_compatible_manifest(&manifest).is_err());
         manifest.components[0].changes.clear();
+        manifest.components[0].dependencies =
+            vec!["x".repeat(super::MAX_COMPATIBLE_DEPENDENCY_BYTES + 1)];
+        assert!(validate_compatible_manifest(&manifest).is_err());
+        manifest.components[0].dependencies.clear();
 
         let mut invalid = manifest;
         invalid.components[1].release_tag = "module-supervisor-v1.0.0".into();
