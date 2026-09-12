@@ -811,9 +811,10 @@ impl AmbientStoreSql {
     }
 
     pub fn list_mute_keys(connection: &Connection) -> Result<Vec<String>, AmbientStoreError> {
-        let mut statement =
-            connection.prepare("SELECT mute_key FROM ambient_proposal_mutes ORDER BY mute_key")?;
-        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        let mut statement = connection
+            .prepare("SELECT mute_key FROM ambient_proposal_mutes ORDER BY mute_key LIMIT ?1")?;
+        let rows =
+            statement.query_map([MAX_ROWS_PER_READ as i64], |row| row.get::<_, String>(0))?;
         let mut keys = Vec::new();
         for row in rows {
             keys.push(row?);
