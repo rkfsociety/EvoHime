@@ -788,8 +788,11 @@ fn validate_runtime_manifest(manifest: &RuntimeReleaseManifest) -> Result<(), St
         return Err("updater: некорректный manifest listener-runtime".to_owned());
     }
     let mut total = 0u64;
+    let mut names = std::collections::HashSet::new();
     for entry in manifest.files.iter().chain(manifest.models.iter()) {
         if entry.name.is_empty()
+            || entry.name.len() > 260
+            || !names.insert(entry.name.as_str())
             || entry.name.contains('\\')
             || entry.name.contains("..")
             || Path::new(&entry.name).is_absolute()
@@ -798,7 +801,7 @@ fn validate_runtime_manifest(manifest: &RuntimeReleaseManifest) -> Result<(), St
             || !entry.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
         {
             return Err(format!(
-                "updater: небезопасная запись runtime {}",
+                "updater: небезопасная или повторная запись runtime {}",
                 entry.name
             ));
         }
@@ -1477,7 +1480,8 @@ mod tests {
         is_github_api_url, is_github_release_asset_url, is_trusted_github_url,
         normalize_github_token, parse_json_body, read_update_config, resolve_github_token_with,
         updater_bootstrap_script, updater_first_if_required, updater_http_client,
-        validate_compatible_manifest, CompatibleComponent, CompatibleManifest, UpdateCandidate,
+        validate_compatible_manifest, validate_runtime_manifest, CompatibleComponent,
+        CompatibleManifest, RuntimeReleaseEntry, RuntimeReleaseManifest, UpdateCandidate,
         UpdaterBootstrapPaths, UpdaterRequirement,
     };
     use std::{
@@ -1855,6 +1859,26 @@ mod tests {
                 .parse()
                 .unwrap()
         ));
+    }
+
+    #[test]
+    fn runtime_manifest_rejects_duplicate_file_names() {
+        let entry = || RuntimeReleaseEntry {
+            name: "models/base.bin".into(),
+            size: 1,
+            sha256: "a".repeat(64),
+        };
+        let manifest = RuntimeReleaseManifest {
+            schema: 1,
+            module: "listener-runtime".into(),
+            version: "1.0.0".into(),
+            abi: serde_json::json!({}),
+            files: vec![entry()],
+            models: vec![entry()],
+        };
+        let error = validate_runtime_manifest(&manifest)
+            .expect_err("duplicate runtime file names must be rejected");
+        assert!(error.contains("повторная запись"));
     }
 
     #[test]
