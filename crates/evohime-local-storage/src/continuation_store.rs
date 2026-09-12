@@ -564,9 +564,10 @@ pub fn record_gate_result(
     record: &GateResultRecord,
 ) -> rusqlite::Result<()> {
     connection.execute(
-        "INSERT OR REPLACE INTO continuation_gate_results
+        "INSERT INTO continuation_gate_results
          (run_id,gate_id,attempt_index,status,evidence_ref,error_code,created_at_ms)
-         VALUES (?1,?2,?3,?4,?5,?6,?7)",
+         VALUES (?1,?2,?3,?4,?5,?6,?7)
+         ON CONFLICT(run_id,gate_id,attempt_index) DO NOTHING",
         params![
             record.run_id,
             record.gate_id,
@@ -706,5 +707,47 @@ mod tests {
         .unwrap();
         assert_eq!(first, duplicate);
         assert!(!stop_run(&connection, "r1", "running", "again", 4).unwrap());
+    }
+
+    #[test]
+    fn gate_result_is_immutable_for_same_attempt() {
+        let connection = Connection::open_in_memory().unwrap();
+        install_schema(&connection).unwrap();
+        save_policy(&connection, &policy()).unwrap();
+        create_run(&connection, &run()).unwrap();
+        record_gate_result(
+            &connection,
+            &GateResultRecord {
+                run_id: "r1".into(),
+                gate_id: "g1".into(),
+                attempt_index: 1,
+                status: "passed".into(),
+                evidence_ref: Some("evidence-1".into()),
+                error_code: None,
+                created_at_ms: 2,
+            },
+        )
+        .unwrap();
+        record_gate_result(
+            &connection,
+            &GateResultRecord {
+                status: "failed".into(),
+                evidence_ref: None,
+                error_code: Some("tampered".into()),
+                created_at_ms: 3,
+                run_id: "r1".into(),
+                gate_id: "g1".into(),
+                attempt_index: 1,
+            },
+        )
+        .unwrap();
+        let stored: (String, Option<String>) = connection
+            .query_row(
+                "SELECT status,evidence_ref FROM continuation_gate_results WHERE run_id='r1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(stored, ("passed".into(), Some("evidence-1".into())));
     }
 }
