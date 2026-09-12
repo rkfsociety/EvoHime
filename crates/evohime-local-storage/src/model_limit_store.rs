@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 const MAX_MODEL_BYTES: usize = 256;
 const MAX_PROVIDER_BYTES: usize = 64;
+const MAX_MODELS: i64 = 256;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelLimitRecord {
@@ -86,6 +87,7 @@ impl ModelLimitStoreSql {
         SELECT model, provider, context_tokens, max_output_tokens
         FROM model_context_limits
         ORDER BY model
+        LIMIT ?1
     "#;
 
     /// Записывает лимиты одной пачкой: каталог приходит целиком, и половина
@@ -124,7 +126,7 @@ impl ModelLimitStoreSql {
 
     pub fn list(connection: &Connection) -> Result<Vec<ModelLimitRecord>, ModelLimitStoreError> {
         let mut statement = connection.prepare(Self::SELECT_ALL)?;
-        let rows = statement.query_map([], map_record)?;
+        let rows = statement.query_map([MAX_MODELS], map_record)?;
         let mut records = Vec::new();
         for row in rows {
             records.push(row?);
@@ -205,6 +207,20 @@ mod tests {
         let stored = ModelLimitStoreSql::list(&connection).expect("read succeeds");
         assert_eq!(stored.len(), 1);
         assert_eq!(stored[0].context_tokens, Some(256_000));
+    }
+
+    #[test]
+    fn model_listing_is_bounded() {
+        let connection = Connection::open_in_memory().expect("memory database opens");
+        schema(&connection);
+        let records: Vec<_> = (0..300)
+            .map(|index| record(&format!("model-{index:03}"), Some(128_000)))
+            .collect();
+        ModelLimitStoreSql::upsert_all(&connection, &records).expect("limits are stored");
+        assert_eq!(
+            ModelLimitStoreSql::list(&connection).unwrap().len(),
+            MAX_MODELS as usize
+        );
     }
 
     #[test]
