@@ -39,6 +39,13 @@ pub fn enqueue<T: Serialize, U: Serialize, V: Serialize>(
         now,
     } = input;
     let tx = c.transaction()?;
+    if tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM collaboration_messages WHERE session_id=?1 AND idempotency_key=?2)",
+        params![session, key],
+        |row| row.get::<_, bool>(0),
+    )? {
+        return Ok(false);
+    }
     let n:i64=tx.query_row("SELECT COUNT(*) FROM collaboration_messages WHERE session_id=?1 AND delivery IN ('accepted','queued','delivered')",[session],|r|r.get(0))?;
     if n >= MAX_INBOX_PER_SESSION {
         return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(
@@ -113,5 +120,43 @@ mod tests {
         assert!(!transition(&c, "m", "queued", "consumed", 1).unwrap());
         assert!(transition(&c, "m", "delivered", "unknown", 2).unwrap());
         assert!(!transition(&c, "m", "unknown", "delivered", 3).unwrap());
+    }
+
+    #[test]
+    fn duplicate_enqueue_is_noop_even_when_inbox_is_full() {
+        let mut c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        for index in 0..MAX_INBOX_PER_SESSION {
+            let key = format!("key-{index}");
+            let message = format!("message-{index}");
+            assert!(enqueue(
+                &mut c,
+                EnqueueInput {
+                    session: "s",
+                    key: &key,
+                    message_id: &message,
+                    sender: &"parent",
+                    receiver: &"slot",
+                    envelope: &"envelope",
+                    sequence: index as u64,
+                    now: index,
+                },
+            )
+            .unwrap());
+        }
+        assert!(!enqueue(
+            &mut c,
+            EnqueueInput {
+                session: "s",
+                key: "key-0",
+                message_id: "message-retry",
+                sender: &"parent",
+                receiver: &"slot",
+                envelope: &"envelope",
+                sequence: MAX_INBOX_PER_SESSION as u64,
+                now: MAX_INBOX_PER_SESSION,
+            },
+        )
+        .unwrap());
     }
 }
