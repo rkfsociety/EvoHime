@@ -1480,11 +1480,11 @@ fn fail(error: impl std::fmt::Display) -> ExitCode {
 mod tests {
     use super::{
         is_github_api_url, is_github_release_asset_url, is_trusted_github_url,
-        normalize_github_token, parse_json_body, read_update_config, resolve_github_token_with,
-        updater_bootstrap_script, updater_first_if_required, updater_http_client,
-        validate_compatible_manifest, validate_runtime_manifest, CompatibleComponent,
-        CompatibleManifest, RuntimeReleaseEntry, RuntimeReleaseManifest, UpdateCandidate,
-        UpdaterBootstrapPaths, UpdaterRequirement,
+        normalize_github_token, parse_json_body, read_installed_module_manifest,
+        read_update_config, resolve_github_token_with, updater_bootstrap_script,
+        updater_first_if_required, updater_http_client, validate_compatible_manifest,
+        validate_runtime_manifest, CompatibleComponent, CompatibleManifest, RuntimeReleaseEntry,
+        RuntimeReleaseManifest, UpdateCandidate, UpdaterBootstrapPaths, UpdaterRequirement,
     };
     use std::{
         fs,
@@ -1541,6 +1541,28 @@ mod tests {
                 .expect("BOM-prefixed manifest must parse");
         let _ = fs::remove_file(path);
         assert_eq!(available[0].id, "core");
+    }
+
+    #[test]
+    fn installed_manifest_reader_accepts_a_utf8_bom() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-installed-manifest-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("create temporary install directory");
+        fs::write(
+            root.join("evohime.components.json"),
+            b"\xef\xbb\xbf{\"components\":[{\"id\":\"core\",\"version\":\"1.0.0\",\"dependencies\":null}]}",
+        )
+        .expect("write BOM-prefixed installed manifest");
+
+        let manifest = read_installed_module_manifest(&root)
+            .expect("BOM-prefixed installed manifest must parse");
+        let _ = fs::remove_dir_all(root);
+        assert_eq!(manifest.components[0].id, "core");
     }
 
     #[test]
