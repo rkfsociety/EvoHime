@@ -3,6 +3,7 @@ use evohime_permissions::Permission;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::VecDeque;
+use std::io;
 use std::time::Duration;
 use tokio::fs;
 use tokio::io::AsyncReadExt;
@@ -144,17 +145,9 @@ pub async fn grep(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
     let mut matches = Vec::new();
 
     if search_path.is_file() {
-        let metadata = fs::metadata(&search_path)
+        let content = read_bounded_text(&search_path, MAX_GREP_FILE_BYTES)
             .await
-            .map_err(|e| ToolError::Execution(format!("failed to stat file: {e}")))?;
-        if metadata.len() > MAX_GREP_FILE_BYTES {
-            return Err(ToolError::Execution(
-                "log file exceeds 4 MiB grep limit".into(),
-            ));
-        }
-        let content = fs::read_to_string(&search_path)
-            .await
-            .map_err(|e| ToolError::Execution(format!("failed to read file: {e}")))?;
+            .map_err(|error| ToolError::Execution(format!("failed to read file: {error}")))?;
 
         matches.extend(search_file(
             &content,
@@ -289,17 +282,14 @@ async fn search_directory(
                             | "go"
                             | "java"
                     ) {
-                        let size = fs::metadata(&path).await.map(|metadata| metadata.len());
-                        if size.is_ok_and(|size| size <= MAX_GREP_FILE_BYTES) {
-                            if let Ok(content) = fs::read_to_string(&path).await {
-                                let file_matches =
-                                    search_file(&content, pattern, case_insensitive, invert_match);
-                                for m in file_matches {
-                                    if matches.len() >= MAX_GREP_MATCHES {
-                                        break;
-                                    }
-                                    matches.push(format!("{}:{}", path.display(), m));
+                        if let Ok(content) = read_bounded_text(&path, MAX_GREP_FILE_BYTES).await {
+                            let file_matches =
+                                search_file(&content, pattern, case_insensitive, invert_match);
+                            for m in file_matches {
+                                if matches.len() >= MAX_GREP_MATCHES {
+                                    break;
                                 }
+                                matches.push(format!("{}:{}", path.display(), m));
                             }
                         }
                     }
@@ -316,6 +306,32 @@ async fn search_directory(
     }
 
     Ok(())
+}
+
+async fn read_bounded_text(path: &std::path::Path, limit: u64) -> io::Result<String> {
+    if fs::metadata(path).await?.len() > limit {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "log file exceeds 4 MiB grep limit",
+        ));
+    }
+    let mut file = fs::File::open(path).await?;
+    let mut bytes = Vec::with_capacity((limit as usize).min(16 * 1024));
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        let read = file.read(&mut chunk).await?;
+        if read == 0 {
+            break;
+        }
+        if bytes.len() as u64 > limit.saturating_sub(read as u64) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "log file exceeds 4 MiB grep limit",
+            ));
+        }
+        bytes.extend_from_slice(&chunk[..read]);
+    }
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 #[cfg(test)]
@@ -414,5 +430,26 @@ mod tests {
             .await
             .expect_err("oversized grep input must be rejected");
         assert!(error.to_string().contains("exceeds 4 MiB"));
+    }
+
+    #[tokio::test]
+    async fn grep_skips_oversized_directory_files() {
+        let dir = tempdir().expect("tempdir");
+        std_fs::write(
+            dir.path().join("oversized.log"),
+            vec![b'x'; MAX_GREP_FILE_BYTES as usize + 1],
+        )
+        .expect("write");
+        let ctx = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+
+        let result = grep(&ctx, json!({"pattern": "x"}))
+            .await
+            .expect("directory grep");
+        assert_eq!(result.output, "No matches found");
     }
 }
