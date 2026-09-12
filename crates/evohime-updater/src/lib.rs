@@ -1117,11 +1117,17 @@ fn restore_file(source: &Path, destination: &Path) -> io::Result<()> {
         ));
     }
     let temporary = destination.with_extension("rollback.tmp");
-    fs::copy(source, &temporary)?;
-    if destination.exists() {
-        fs::remove_file(destination)?;
+    let result = (|| {
+        fs::copy(source, &temporary)?;
+        if destination.exists() {
+            fs::remove_file(destination)?;
+        }
+        fs::rename(&temporary, destination)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
     }
-    fs::rename(temporary, destination)
+    result
 }
 
 fn validate_absolute(path: &Path, label: &str) -> io::Result<()> {
@@ -1144,7 +1150,7 @@ fn timestamp_nanos() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_component_set_staged, component_manifest, verify_installation,
+        apply_component_set_staged, component_manifest, restore_file, verify_installation,
         wait_for_health_with_limit, ComponentSetApply, UpdateTransaction,
     };
     use sha2::Digest;
@@ -1788,6 +1794,20 @@ mod tests {
             fs::read_to_string(install.join("ui-bundles/1.2.3/index.html")).unwrap(),
             "published"
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn restore_file_cleans_temporary_copy_when_destination_cannot_be_removed() {
+        let root = temp_dir("restore-cleanup");
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("source");
+        let destination = root.join("destination.txt");
+        fs::write(&source, "old").unwrap();
+        fs::create_dir(&destination).unwrap();
+
+        assert!(restore_file(&source, &destination).is_err());
+        assert!(!destination.with_extension("rollback.tmp").exists());
         fs::remove_dir_all(root).unwrap();
     }
 }
