@@ -244,12 +244,13 @@ pub async fn reset(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolEr
         });
     }
 
-    let output = Command::new("git")
+    let mut command = Command::new("git");
+    command
         .arg("reset")
         .arg(format!("--{}", opts.mode))
         .arg(&opts.commit)
-        .current_dir(&ctx.workspace_root)
-        .output()
+        .current_dir(&ctx.workspace_root);
+    let output = run_bounded_git(&mut command)
         .await
         .map_err(|e| ToolError::Execution(format!("git reset failed: {e}")))?;
 
@@ -303,9 +304,8 @@ pub async fn revert(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
         cmd.arg("-m").arg(msg);
     }
 
-    let output = cmd
-        .current_dir(&ctx.workspace_root)
-        .output()
+    cmd.current_dir(&ctx.workspace_root);
+    let output = run_bounded_git(&mut cmd)
         .await
         .map_err(|e| ToolError::Execution(format!("git revert failed: {e}")))?;
 
@@ -349,11 +349,12 @@ pub async fn cherry_pick(ctx: &ToolContext, input: Value) -> Result<ToolResult, 
             message: e.to_string(),
         })?;
 
-    let output = Command::new("git")
+    let mut command = Command::new("git");
+    command
         .arg("cherry-pick")
         .arg(&opts.commit)
-        .current_dir(&ctx.workspace_root)
-        .output()
+        .current_dir(&ctx.workspace_root);
+    let output = run_bounded_git(&mut command)
         .await
         .map_err(|e| ToolError::Execution(format!("git cherry-pick failed: {e}")))?;
 
@@ -407,9 +408,8 @@ pub async fn rebase(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
 
     cmd.arg(&opts.onto);
 
-    let output = cmd
-        .current_dir(&ctx.workspace_root)
-        .output()
+    cmd.current_dir(&ctx.workspace_root);
+    let output = run_bounded_git(&mut cmd)
         .await
         .map_err(|e| ToolError::Execution(format!("git rebase failed: {e}")))?;
 
@@ -614,13 +614,12 @@ async fn run_git_command(
     tool: &str,
     structured: Value,
 ) -> Result<ToolResult, ToolError> {
-    let output = command
-        .current_dir(&ctx.workspace_root)
-        .output()
+    command.current_dir(&ctx.workspace_root);
+    let output = run_bounded_git(&mut command)
         .await
         .map_err(|e| ToolError::Execution(format!("{tool} failed: {e}")))?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     if !output.status.success() {
         return Err(ToolError::Execution(format!(
             "{tool} failed: {stderr}{stdout}"
