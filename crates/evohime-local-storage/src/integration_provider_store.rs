@@ -5,6 +5,7 @@ use serde::{de::DeserializeOwned, Serialize};
 
 pub const STORE_SCHEMA_VERSION: u32 = 1;
 const MAX_DEPENDENCY_REPORT_ROWS: i64 = 256;
+const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 
 pub fn install_schema(connection: &Connection) -> Result<(), rusqlite::Error> {
     connection.execute_batch(
@@ -37,6 +38,11 @@ pub fn put_manifest<T: Serialize>(
 ) -> Result<(), rusqlite::Error> {
     let json = serde_json::to_string(manifest)
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    if json.len() > MAX_MANIFEST_BYTES {
+        return Err(rusqlite::Error::ToSqlConversionFailure(
+            "integration provider manifest exceeds 64 KiB".into(),
+        ));
+    }
     connection.execute("INSERT INTO integration_provider_manifests(provider_id,version,manifest_json,content_hash,updated_at_ms) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(provider_id,version) DO NOTHING", params![provider_id, version, json, hash, now_ms])?;
     Ok(())
 }
@@ -179,5 +185,13 @@ mod tests {
             dependency_report(&connection, "cred%prod").unwrap().len(),
             256
         );
+    }
+
+    #[test]
+    fn manifest_payload_is_bounded() {
+        let connection = Connection::open_in_memory().unwrap();
+        install_schema(&connection).unwrap();
+        let oversized = "x".repeat(MAX_MANIFEST_BYTES);
+        assert!(put_manifest(&connection, "fixture.echo", 1, &oversized, "hash", 1).is_err());
     }
 }
