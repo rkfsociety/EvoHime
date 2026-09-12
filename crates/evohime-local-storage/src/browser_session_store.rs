@@ -29,7 +29,7 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
 }
 
 pub fn upsert(connection: &Connection, record: &BrowserSessionMetadata) -> rusqlite::Result<()> {
-    connection.execute("INSERT INTO browser_session_metadata(session_id,conversation_id,run_id,state,revision,control_generation,control_owner,profile_policy,network_policy,policy_hash,updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11) ON CONFLICT(session_id) DO UPDATE SET state=excluded.state, revision=excluded.revision, control_generation=excluded.control_generation, control_owner=excluded.control_owner, updated_at_ms=excluded.updated_at_ms WHERE excluded.revision >= browser_session_metadata.revision", rusqlite::params![record.session_id, record.conversation_id, record.run_id, record.state, record.revision, record.control_generation, record.control_owner, record.profile_policy, record.network_policy, record.policy_hash, record.updated_at_ms])?;
+    connection.execute("INSERT INTO browser_session_metadata(session_id,conversation_id,run_id,state,revision,control_generation,control_owner,profile_policy,network_policy,policy_hash,updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11) ON CONFLICT(session_id) DO UPDATE SET state=excluded.state, revision=excluded.revision, control_generation=excluded.control_generation, control_owner=excluded.control_owner, updated_at_ms=excluded.updated_at_ms WHERE excluded.revision > browser_session_metadata.revision", rusqlite::params![record.session_id, record.conversation_id, record.run_id, record.state, record.revision, record.control_generation, record.control_owner, record.profile_policy, record.network_policy, record.policy_hash, record.updated_at_ms])?;
     Ok(())
 }
 
@@ -101,6 +101,34 @@ mod tests {
             ..current.clone()
         };
         upsert(&connection, &stale).unwrap();
+        assert_eq!(get(&connection, "session-1").unwrap(), Some(current));
+    }
+
+    #[test]
+    fn duplicate_revision_cannot_replace_session_state() {
+        let connection = Connection::open_in_memory().unwrap();
+        install_schema(&connection).unwrap();
+        let current = BrowserSessionMetadata {
+            session_id: "session-1".into(),
+            conversation_id: "conversation-1".into(),
+            run_id: Some("run-1".into()),
+            state: "running".into(),
+            revision: 4,
+            control_generation: 2,
+            control_owner: "agent".into(),
+            profile_policy: "ephemeral_clean".into(),
+            network_policy: "public_internet".into(),
+            policy_hash: "new".into(),
+            updated_at_ms: 4,
+        };
+        upsert(&connection, &current).unwrap();
+        let duplicate = BrowserSessionMetadata {
+            state: "failed".into(),
+            policy_hash: "replacement".into(),
+            updated_at_ms: 5,
+            ..current.clone()
+        };
+        upsert(&connection, &duplicate).unwrap();
         assert_eq!(get(&connection, "session-1").unwrap(), Some(current));
     }
 }
