@@ -1,5 +1,6 @@
 use crate::StorageError;
 use rusqlite::{params, Connection, OptionalExtension};
+const MAX_BACKENDS: i64 = 256;
 
 pub fn install_schema(connection: &Connection) -> Result<(), StorageError> {
     connection.execute_batch("CREATE TABLE IF NOT EXISTS execution_backends (id TEXT PRIMARY KEY, kind TEXT NOT NULL, endpoint TEXT, auth_ref TEXT, enabled INTEGER NOT NULL, capabilities_json TEXT NOT NULL, version INTEGER NOT NULL, health TEXT NOT NULL, health_failure TEXT, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS execution_backend_events (id INTEGER PRIMARY KEY AUTOINCREMENT, backend_id TEXT NOT NULL, operation TEXT NOT NULL, version INTEGER NOT NULL, outcome TEXT NOT NULL, idempotency_key TEXT NOT NULL, created_at_ms INTEGER NOT NULL, UNIQUE(backend_id, operation, idempotency_key)); CREATE TABLE IF NOT EXISTS execution_backend_registry_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);")?;
@@ -33,9 +34,9 @@ pub struct BackendRow {
 }
 
 pub fn list(connection: &Connection) -> Result<Vec<BackendRow>, StorageError> {
-    let mut stmt=connection.prepare("SELECT id,kind,endpoint,auth_ref,capabilities_json,version,health FROM execution_backends ORDER BY id")?;
+    let mut stmt=connection.prepare("SELECT id,kind,endpoint,auth_ref,capabilities_json,version,health FROM execution_backends ORDER BY id LIMIT ?1")?;
     let rows = stmt
-        .query_map([], |row| {
+        .query_map([MAX_BACKENDS], |row| {
             Ok(BackendRow {
                 id: row.get(0)?,
                 kind: row.get(1)?,
@@ -131,5 +132,28 @@ mod tests {
         let rows = list(&c).unwrap();
         assert_eq!(rows[0].version, 2);
         assert_eq!(rows[0].health, "healthy");
+    }
+
+    #[test]
+    fn listing_is_bounded() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        for index in 0..300 {
+            assert!(upsert(
+                &c,
+                UpsertInput {
+                    id: &format!("backend-{index:03}"),
+                    kind: "local",
+                    endpoint: None,
+                    auth_ref: None,
+                    capabilities_json: "[]",
+                    version: 1,
+                    health: "healthy",
+                    now_ms: index,
+                }
+            )
+            .unwrap());
+        }
+        assert_eq!(list(&c).unwrap().len(), MAX_BACKENDS as usize);
     }
 }
