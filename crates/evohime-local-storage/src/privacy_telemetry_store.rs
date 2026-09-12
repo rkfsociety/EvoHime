@@ -2,6 +2,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 const MAX_QUEUE: i64 = 512;
 const MAX_BYTES: i64 = 64 * 1024;
+const MAX_CONSENT_BYTES: usize = 64 * 1024;
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS telemetry_consent (id INTEGER PRIMARY KEY CHECK(id=1), consent_json BLOB NOT NULL, revision INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS telemetry_queue (event_id TEXT PRIMARY KEY, category TEXT NOT NULL, event_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS telemetry_idempotency (idempotency_key TEXT PRIMARY KEY, operation TEXT NOT NULL);")
 }
@@ -23,6 +24,11 @@ pub fn claim_idempotency(c: &Connection, key: &str, operation: &str) -> rusqlite
     )? == 1)
 }
 pub fn put_consent(c: &Connection, j: &[u8], revision: u64) -> rusqlite::Result<()> {
+    if j.len() > MAX_CONSENT_BYTES {
+        return Err(rusqlite::Error::ToSqlConversionFailure(
+            "telemetry consent exceeds 64 KiB".into(),
+        ));
+    }
     c.execute(
         "INSERT INTO telemetry_consent(id,consent_json,revision) VALUES(1,?1,?2) ON CONFLICT(id) DO UPDATE SET consent_json=excluded.consent_json,revision=excluded.revision WHERE excluded.revision > telemetry_consent.revision",
         params![j, revision as i64],
@@ -108,5 +114,13 @@ mod tests {
             .unwrap(),
             (br#"{"revision":2}"#.to_vec(), 2)
         );
+    }
+
+    #[test]
+    fn consent_payload_is_bounded() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        assert!(put_consent(&c, &vec![b'x'; MAX_CONSENT_BYTES + 1], 1).is_err());
+        assert!(consent_revision(&c).unwrap().is_none());
     }
 }
