@@ -24,10 +24,14 @@ pub fn save(
         return Ok(false);
     };
     tx.execute("INSERT INTO human_work_items VALUES(?1,?2,?3,?4,?5) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,state=excluded.state,item_json=excluded.item_json,updated_at_ms=excluded.updated_at_ms",params![id,revision as i64,state,json,now])?;
-    tx.execute(
-        "INSERT INTO human_work_item_events VALUES(?1,?2,?3,?4,?5)",
+    let inserted_event = tx.execute(
+        "INSERT INTO human_work_item_events VALUES(?1,?2,?3,?4,?5)
+         ON CONFLICT(item_id, revision) DO NOTHING",
         params![id, revision as i64, event, br#"{}"#, now],
     )?;
+    if inserted_event == 0 {
+        return Ok(false);
+    }
     tx.commit()?;
     Ok(true)
 }
@@ -46,5 +50,37 @@ mod tests {
         assert!(save(&c, "a", 1, "waiting_for_human", br#"{}"#, "create", 1).unwrap());
         assert!(!save(&c, "a", 1, "waiting_for_human", br#"{}"#, "create", 2).unwrap());
         assert_eq!(load_all_json(&c).unwrap().len(), 1)
+    }
+
+    #[test]
+    fn existing_event_without_current_item_is_not_rewritten() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        c.execute(
+            "INSERT INTO human_work_item_events
+             (item_id, revision, event_type, metadata_json, created_at_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params!["item", 2_i64, "original", br#"{"source":"old"}"#, 10_i64],
+        )
+        .unwrap();
+        assert!(!save(
+            &c,
+            "item",
+            2,
+            "waiting_for_human",
+            br#"{}"#,
+            "replacement",
+            20
+        )
+        .unwrap());
+        let event: (String, Vec<u8>) = c
+            .query_row(
+                "SELECT event_type, metadata_json FROM human_work_item_events
+                 WHERE item_id=?1 AND revision=?2",
+                params!["item", 2_i64],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(event, ("original".into(), br#"{"source":"old"}"#.to_vec()));
     }
 }
