@@ -104,11 +104,15 @@ pub fn save_agent_revision(
     if current.is_some_and(|value| value >= input.revision) {
         return Ok(false);
     }
-    tx.execute(
+    let inserted = tx.execute(
         "INSERT INTO persistent_agent_revisions(agent_id, revision, content_hash, agent_json, actor, created_at_ms)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(agent_id, revision) DO NOTHING",
         params![input.id, input.revision as i64, input.content_hash, input.agent_json, input.actor, input.now_ms],
     )?;
+    if inserted == 0 {
+        return Ok(false);
+    }
     tx.execute(
         "INSERT INTO persistent_agents(id, revision, status, content_hash, agent_json, updated_at_ms)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)
@@ -461,6 +465,49 @@ mod tests {
             load_assignment(&connection, "assignment-1").unwrap(),
             Some(br#"{"revision":2}"#.to_vec())
         );
+    }
+
+    #[test]
+    fn existing_agent_history_without_current_row_is_not_rewritten() {
+        let connection = Connection::open_in_memory().unwrap();
+        install_schema(&connection).unwrap();
+        connection
+            .execute(
+                "INSERT INTO persistent_agent_revisions
+                 (agent_id, revision, content_hash, agent_json, actor, created_at_ms)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    "agent",
+                    2_i64,
+                    "original",
+                    br#"{"source":"old"}"#,
+                    "old",
+                    10_i64
+                ],
+            )
+            .unwrap();
+        assert!(!save_agent_revision(
+            &connection,
+            SaveAgentRevisionInput {
+                id: "agent",
+                revision: 2,
+                status: "active",
+                content_hash: "replacement",
+                agent_json: br#"{"source":"new"}"#,
+                actor: "new",
+                now_ms: 20,
+            },
+        )
+        .unwrap());
+        let stored: (String, Vec<u8>) = connection
+            .query_row(
+                "SELECT content_hash, agent_json FROM persistent_agent_revisions
+                 WHERE agent_id=?1 AND revision=?2",
+                params!["agent", 2_i64],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(stored, ("original".into(), br#"{"source":"old"}"#.to_vec()));
     }
 
     #[test]
