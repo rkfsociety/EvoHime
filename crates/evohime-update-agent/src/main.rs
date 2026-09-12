@@ -579,17 +579,22 @@ fn is_github_api_url(value: &str) -> bool {
 }
 
 fn is_trusted_github_url(url: &reqwest::Url) -> bool {
+    let trusted_host = url.host_str().is_some_and(|host| {
+        host == "api.github.com"
+            || host == "github.com"
+            || host.ends_with(".githubusercontent.com")
+    });
+    let query_is_allowed = url.query().is_none()
+        || url
+            .host_str()
+            .is_some_and(|host| host.ends_with(".githubusercontent.com"));
     url.scheme() == "https"
         && url.username().is_empty()
         && url.password().is_none()
         && url.port().is_none()
-        && url.query().is_none()
         && url.fragment().is_none()
-        && url.host_str().is_some_and(|host| {
-            host == "api.github.com"
-                || host == "github.com"
-                || host.ends_with(".githubusercontent.com")
-        })
+        && query_is_allowed
+        && trusted_host
 }
 
 fn is_github_release_asset_url(value: &str) -> bool {
@@ -2366,6 +2371,11 @@ mod tests {
         ));
         assert!(is_trusted_github_url(
             &"https://release-assets.githubusercontent.com/file"
+                .parse()
+                .unwrap()
+        ));
+        assert!(is_trusted_github_url(
+            &"https://release-assets.githubusercontent.com/file?X-Amz-Signature=signed"
                 .parse()
                 .unwrap()
         ));
