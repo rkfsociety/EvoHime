@@ -23,19 +23,11 @@ fn main() -> ExitCode {
     if args.iter().any(|arg| arg == "--check" || arg == "--apply") {
         return control_update(&args);
     }
-    let Some(path) = args
-        .windows(2)
-        .find(|pair| pair[0] == "--manifest")
-        .map(|pair| &pair[1])
-    else {
+    let Some(path) = argument_value(&args, "--manifest") else {
         eprintln!("usage: evohime-updater --manifest <installed-manifest.json> --available <manifest.json>");
         return ExitCode::from(2);
     };
-    let Some(available_path) = args
-        .windows(2)
-        .find(|pair| pair[0] == "--available")
-        .map(|pair| &pair[1])
-    else {
+    let Some(available_path) = argument_value(&args, "--available") else {
         return ExitCode::from(2);
     };
     let installed = match read::<InstalledManifest>(path) {
@@ -56,10 +48,8 @@ fn main() -> ExitCode {
 }
 
 fn control_update(args: &[String]) -> ExitCode {
-    let Some(install_dir) = args
-        .windows(2)
-        .find(|pair| pair[0] == "--install-dir")
-        .map(|pair| PathBuf::from(&pair[1]))
+    let Some(install_dir) = argument_value(args, "--install-dir")
+        .map(PathBuf::from)
         .or_else(|| {
             env::current_exe()
                 .ok()
@@ -120,10 +110,8 @@ fn control_update(args: &[String]) -> ExitCode {
 /// separate Electron application; this Rust process only forwards the launch
 /// request and remains a headless worker.
 fn launch_shell(args: &[String]) -> ExitCode {
-    let install_dir = args
-        .windows(2)
-        .find(|pair| pair[0] == "--install-dir")
-        .map(|pair| PathBuf::from(&pair[1]))
+    let install_dir = argument_value(args, "--install-dir")
+        .map(PathBuf::from)
         .or_else(|| {
             env::current_exe()
                 .ok()
@@ -169,6 +157,13 @@ const MAX_COMPATIBLE_SUMMARY_BYTES: usize = 16 * 1024;
 const MAX_COMPATIBLE_CHANGES: usize = 64;
 const MAX_COMPATIBLE_CHANGE_BYTES: usize = 8 * 1024;
 const MAX_COMPATIBLE_DEPENDENCY_BYTES: usize = 64;
+
+fn argument_value<'a>(args: &'a [String], name: &str) -> Option<&'a String> {
+    args.windows(2)
+        .find(|pair| pair[0] == name)
+        .filter(|pair| !pair[1].starts_with("--"))
+        .map(|pair| &pair[1])
+}
 
 #[derive(serde::Deserialize)]
 struct Release {
@@ -1453,6 +1448,17 @@ mod tests {
         assert!(
             error.starts_with("updater: список GitHub Release: GitHub вернул некорректный JSON:")
         );
+    }
+
+    #[test]
+    fn ignores_a_flag_when_an_argument_value_is_missing() {
+        let args = vec![
+            "evohime-updater".into(),
+            "--manifest".into(),
+            "--available".into(),
+        ];
+        assert!(super::argument_value(&args, "--manifest").is_none());
+        assert!(super::argument_value(&args, "--available").is_none());
     }
 
     #[test]
