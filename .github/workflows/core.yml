@@ -38,20 +38,16 @@ jobs:
       - name: Core tests
         shell: pwsh
         run: |
-          $arguments = @(
-            'test', '--locked',
-            '-p', 'evohime-core',
-            '-p', 'evohime-local-storage',
-            '-p', 'evohime-model-gateway',
-            '-p', 'evohime-permissions',
-            '-p', 'evohime-tool-runtime'
-          )
-          $process = Start-Process -FilePath 'cargo.exe' -ArgumentList $arguments -NoNewWindow -PassThru
-          if (-not $process.WaitForExit(20 * 60 * 1000)) {
-            taskkill.exe /PID $process.Id /T /F
-            throw 'Core tests exceeded the 20-minute limit.'
+          function Invoke-BoundedCargoTest([string]$package) {
+            Write-Host "Testing package: $package"
+            $process = Start-Process -FilePath 'cargo.exe' -ArgumentList @('test', '--locked', '-p', $package) -NoNewWindow -PassThru
+            if (-not $process.WaitForExit(4 * 60 * 1000)) {
+              taskkill.exe /PID $process.Id /T /F
+              throw "Core tests exceeded the 4-minute limit for $package."
+            }
+            if ($process.ExitCode -ne 0) { throw "Core tests failed for $package (exit code $($process.ExitCode))." }
           }
-          if ($process.ExitCode -ne 0) { exit $process.ExitCode }
+          @('evohime-core', 'evohime-local-storage', 'evohime-model-gateway', 'evohime-permissions', 'evohime-tool-runtime') | ForEach-Object { Invoke-BoundedCargoTest $_ }
       - name: Core lint
         run: cargo clippy --locked -p evohime-core --all-targets -- -D warnings
       - name: Core build

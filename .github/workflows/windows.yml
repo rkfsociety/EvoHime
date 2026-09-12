@@ -190,27 +190,16 @@ jobs:
       - name: Тесты основной Rust-инфраструктуры
         shell: pwsh
         run: |
-          $arguments = @(
-            'test', '--locked',
-            '-p', 'evohime-permissions',
-            '-p', 'evohime-tool-runtime',
-            '-p', 'evohime-model-gateway',
-            '-p', 'evohime-core',
-            '-p', 'evohime-local-storage',
-            '-p', 'evohime-desktop-ipc',
-            '-p', 'evohime-updater',
-            '-p', 'evohime-receipts',
-            '-p', 'evohime-listener-contract',
-            '-p', 'evohime-listener-audio',
-            '-p', 'evohime-listener-ipc',
-            '-p', 'evohime-listener'
-          )
-          $process = Start-Process -FilePath 'cargo.exe' -ArgumentList $arguments -NoNewWindow -PassThru
-          if (-not $process.WaitForExit(45 * 60 * 1000)) {
-            taskkill.exe /PID $process.Id /T /F
-            throw 'Rust tests exceeded the 45-minute limit.'
+          function Invoke-BoundedCargoTest([string]$package) {
+            Write-Host "Testing package: $package"
+            $process = Start-Process -FilePath 'cargo.exe' -ArgumentList @('test', '--locked', '-p', $package) -NoNewWindow -PassThru
+            if (-not $process.WaitForExit(4 * 60 * 1000)) {
+              taskkill.exe /PID $process.Id /T /F
+              throw "Rust tests exceeded the 4-minute limit for $package."
+            }
+            if ($process.ExitCode -ne 0) { throw "Rust tests failed for $package (exit code $($process.ExitCode))." }
           }
-          if ($process.ExitCode -ne 0) { exit $process.ExitCode }
+          @('evohime-permissions', 'evohime-tool-runtime', 'evohime-model-gateway', 'evohime-core', 'evohime-local-storage', 'evohime-desktop-ipc', 'evohime-updater', 'evohime-receipts', 'evohime-listener-contract', 'evohime-listener-audio', 'evohime-listener-ipc', 'evohime-listener') | ForEach-Object { Invoke-BoundedCargoTest $_ }
       - name: Privacy gate фонового аудио
         shell: pwsh
         run: ./scripts/ambient-privacy.tests.ps1
