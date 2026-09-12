@@ -1,7 +1,7 @@
 Здесь всегда лежат актуальные `EvoHime-Setup.exe` и его проверочный
 `EvoHime-Setup.json`. Это постоянный fixed release с тегом `installer`:
-новые installer-релизы не создаются, а его assets перезаписываются после
-успешной публикационной проверки.
+после успешной публикационной проверки старый release и его assets удаляются,
+затем создаётся новый release с тем же тегом.
 
 **Канал поставки:** постоянный релиз `installer`.
 
@@ -14,8 +14,8 @@ https://github.com/rkfsociety/EvoHime/releases/latest/download/EvoHime-Setup.exe
 обновляющий компонент получает fixed `compatibility` manifest с конкретным
 совместимым набором module releases, проверяет их размер и SHA-256 и применяет
 только выбранные модули под транзакцией с backup и откатом. Если требуется новая
-версия updater, она устанавливается первой; старый installer остаётся пригодным
-как базовая версия.
+версия updater, она устанавливается первой; установленная базовая версия остаётся
+пригодной для восстановления.
 
 - обновление модулей идёт **только по fixed compatibility manifest**, собранному из успешно опубликованных module releases;
 - при запуске обычный интерфейс не открывается, пока проверка и найденное обновление не завершены; при ошибке проверки или обновления остаётся доступной прежняя установка;
@@ -37,8 +37,8 @@ https://github.com/rkfsociety/EvoHime/releases/latest/download/EvoHime-Setup.exe
 
 ## Публикация и проверки
 
-Workflow Windows обновляет и заголовок, и это описание при каждом успешном
-обновлении fixed release. Перед публикацией Windows CI проверяет Rust и
+Workflow Windows при каждом успешном запуске удаляет старый fixed release и
+создаёт новый с тем же тегом и каноническим описанием. Перед публикацией Windows CI проверяет Rust и
 supervisor, Electron protocol/typecheck/tests/bundle, deterministic evaluation
 и security gate, IPC, package startup, fault recovery, install/upgrade и
 rollback. Source-update E2E запускается отдельно с явным флагом и не требуется
