@@ -24,6 +24,7 @@ use crate::{IpcBridge, StructuredLogger};
 
 /// How long a client has to answer the nonce before the connection is closed.
 const HANDSHAKE_TIMEOUT_MS: u64 = 10_000;
+const OUTBOUND_FRAME_CAPACITY: usize = 128;
 
 pub struct PipeServerConfig {
     context: LaunchContext,
@@ -67,7 +68,7 @@ impl PipeServerConfig {
 
 /// Writer that hands frames to the single task owning the pipe's write half.
 /// Ordering is preserved, so a frame written in several calls stays contiguous.
-struct ChannelWriter(tokio::sync::mpsc::UnboundedSender<Vec<u8>>);
+struct ChannelWriter(tokio::sync::mpsc::Sender<Vec<u8>>);
 
 impl tokio::io::AsyncWrite for ChannelWriter {
     fn poll_write(
@@ -75,10 +76,16 @@ impl tokio::io::AsyncWrite for ChannelWriter {
         _context: &mut std::task::Context<'_>,
         buffer: &[u8],
     ) -> std::task::Poll<std::io::Result<usize>> {
-        match self.0.send(buffer.to_vec()) {
+        match self.0.try_send(buffer.to_vec()) {
             Ok(()) => std::task::Poll::Ready(Ok(buffer.len())),
-            Err(_) => {
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
                 std::task::Poll::Ready(Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe)))
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                std::task::Poll::Ready(Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "outbound IPC frame queue is full",
+                )))
             }
         }
     }
@@ -167,7 +174,7 @@ pub async fn run_windows_pipe(
         // through one channel so the command loop and the event pump never
         // interleave a half-written frame, and reading a command is never
         // cancelled mid-frame by an event arriving.
-        let (frames, mut outbound) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let (frames, mut outbound) = tokio::sync::mpsc::channel::<Vec<u8>>(OUTBOUND_FRAME_CAPACITY);
         let writer_task = tokio::spawn(async move {
             while let Some(bytes) = outbound.recv().await {
                 if tokio::io::AsyncWriteExt::write_all(&mut writer, &bytes)
@@ -374,5 +381,19 @@ mod tests {
         let mut context = LaunchContext::generate(String::new(), String::new(), 0).unwrap();
         context.pipe_name = "invalid".into();
         assert!(PipeServerConfig::new(context, Some(OsStr::new("1"))).is_err());
+    }
+
+    #[tokio::test]
+    async fn channel_writer_rejects_a_full_outbound_queue() {
+        let (sender, _receiver) = tokio::sync::mpsc::channel(1);
+        let mut writer = ChannelWriter(sender);
+        tokio::io::AsyncWriteExt::write_all(&mut writer, b"first")
+            .await
+            .unwrap();
+        let error = tokio::io::AsyncWriteExt::write_all(&mut writer, b"second")
+            .await
+            .expect_err("full queue must fail closed");
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+        assert!(error.to_string().contains("queue is full"));
     }
 }
