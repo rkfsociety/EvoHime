@@ -45,8 +45,11 @@ function Read-AssetJson($asset) {
 
 function Normalize-StringArray($value, [string]$field, [string]$module) {
     $result = [System.Collections.Generic.List[string]]::new()
+    if ($null -eq $value) { return $result.ToArray() }
     foreach ($item in @($value)) {
-        if ($null -eq $item) { continue }
+        if ($null -eq $item) {
+            throw "Некорректное поле $field в manifest модуля ${module}: null-элемент недопустим."
+        }
         if ($item -isnot [string]) {
             throw "Некорректное поле $field в manifest модуля ${module}: ожидался массив строк."
         }

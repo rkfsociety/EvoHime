@@ -9,6 +9,8 @@ foreach ($marker in @(
     'minimum_version = $updaterVersion',
     'sha256 = ([string]$moduleManifest.sha256).ToLowerInvariant()',
     'Normalize-StringArray',
+    'if ($null -eq $value) { return $result.ToArray() }',
+    'null-элемент недопустим',
     "dependencies = [string[]]@(Normalize-StringArray",
     "changes = [string[]]@(Normalize-StringArray",
     'gh release upload $tag'
