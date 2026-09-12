@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -583,10 +584,29 @@ pub fn discover_rules(
     files.sort_by(|a, b| a.2.cmp(&b.2));
     let mut rules = Vec::new();
     for (path, kind, reference) in files {
-        let bytes = fs::read(&path).map_err(|e| InstructionError::Io(e.to_string()))?;
+        let bytes = read_bounded_rule(&path)?;
         rules.push(parse_rule(&root, &path, kind, reference, bytes)?);
     }
     Ok(rules)
+}
+
+fn read_bounded_rule(path: &Path) -> Result<Vec<u8>, InstructionError> {
+    if fs::metadata(path)
+        .map_err(|error| InstructionError::Io(error.to_string()))?
+        .len()
+        > MAX_SINGLE_RULE_BYTES as u64
+    {
+        return Err(InstructionError::RuleTooLarge);
+    }
+    let file = fs::File::open(path).map_err(|error| InstructionError::Io(error.to_string()))?;
+    let mut bytes = Vec::with_capacity(MAX_SINGLE_RULE_BYTES.min(16 * 1024));
+    file.take((MAX_SINGLE_RULE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| InstructionError::Io(error.to_string()))?;
+    if bytes.len() > MAX_SINGLE_RULE_BYTES {
+        return Err(InstructionError::RuleTooLarge);
+    }
+    Ok(bytes)
 }
 
 pub fn global_rules_root_from_env() -> Option<PathBuf> {
@@ -603,6 +623,7 @@ pub fn discover_guidance(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
     #[test]
     fn path_activation_is_canonical_and_excludes_nested_match() {
         let rule = ProjectRule {
@@ -654,5 +675,20 @@ mod tests {
             compile_snapshot(Path::new("."), vec![rule.clone()], &[], &[], &policy, 1).unwrap();
         let right = compile_snapshot(Path::new("."), vec![rule], &[], &[], &policy, 1).unwrap();
         assert_eq!(left.content_hash, right.content_hash);
+    }
+
+    #[test]
+    fn discovery_rejects_oversized_rule_before_full_read() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("AGENTS.md"),
+            vec![b'x'; MAX_SINGLE_RULE_BYTES + 1],
+        )
+        .unwrap();
+
+        assert!(matches!(
+            discover_rules(dir.path(), None),
+            Err(InstructionError::RuleTooLarge)
+        ));
     }
 }
