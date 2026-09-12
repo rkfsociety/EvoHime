@@ -1,5 +1,7 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
+const MAX_JSON_BYTES: usize = 64 * 1024;
+
 pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute_batch("CREATE TABLE IF NOT EXISTS agent_program_optimizer (program_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(program_id, revision), UNIQUE(program_id, idempotency_key)); CREATE TABLE IF NOT EXISTS agent_program_optimizer_run (run_id TEXT PRIMARY KEY, program_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
@@ -12,6 +14,11 @@ pub fn save(
     key: &str,
     now: i64,
 ) -> rusqlite::Result<()> {
+    if json.len() > MAX_JSON_BYTES {
+        return Err(rusqlite::Error::InvalidParameterName(
+            "optimizer JSON too large".into(),
+        ));
+    }
     let existing: Option<(u64,String)> = c.query_row("SELECT revision,content_hash FROM agent_program_optimizer WHERE program_id=?1 AND idempotency_key=?2", params![id,key], |r| Ok((r.get(0)?,r.get(1)?))).optional()?;
     if let Some((r, h)) = existing {
         if r == revision && h == hash {
@@ -65,4 +72,28 @@ pub fn pin(
         params![run_id, id, revision, hash, now],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn oversized_optimizer_json_is_rejected_before_storage() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        let transaction = connection.transaction().unwrap();
+        install_schema(&transaction).unwrap();
+        transaction.commit().unwrap();
+        assert!(save(
+            &connection,
+            "program",
+            1,
+            "hash",
+            &vec![b'x'; MAX_JSON_BYTES + 1],
+            "key",
+            1,
+        )
+        .is_err());
+        assert!(current(&connection, "program").unwrap().is_none());
+    }
 }
