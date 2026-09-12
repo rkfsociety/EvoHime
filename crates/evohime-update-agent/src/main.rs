@@ -157,6 +157,7 @@ const MAX_COMPATIBLE_SUMMARY_BYTES: usize = 16 * 1024;
 const MAX_COMPATIBLE_CHANGES: usize = 64;
 const MAX_COMPATIBLE_CHANGE_BYTES: usize = 8 * 1024;
 const MAX_COMPATIBLE_DEPENDENCY_BYTES: usize = 64;
+const MAX_UPDATE_ARTIFACT_BYTES: u64 = 1024 * 1024 * 1024;
 
 fn argument_value<'a>(args: &'a [String], name: &str) -> Option<&'a String> {
     args.windows(2)
@@ -307,6 +308,7 @@ fn validate_compatible_manifest(manifest: &CompatibleManifest) -> Result<(), Str
                 || artifact.contains('\\')
                 || artifact.contains("..")
         }) || component.size == 0
+            || component.size > MAX_UPDATE_ARTIFACT_BYTES
             || component.sha256.len() != 64
             || !component
                 .sha256
@@ -1868,6 +1870,10 @@ mod tests {
             vec!["x".repeat(super::MAX_COMPATIBLE_DEPENDENCY_BYTES + 1)];
         assert!(validate_compatible_manifest(&manifest).is_err());
         manifest.components[0].dependencies.clear();
+
+        manifest.components[0].size = super::MAX_UPDATE_ARTIFACT_BYTES + 1;
+        assert!(validate_compatible_manifest(&manifest).is_err());
+        manifest.components[0].size = 10;
 
         let mut invalid = manifest;
         invalid.components[1].release_tag = "module-supervisor-v1.0.0".into();
