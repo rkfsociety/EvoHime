@@ -1,6 +1,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 pub const MAX_QUEUE: i64 = 256;
+const MAX_BRIDGE_JSON_BYTES: usize = 64 * 1024;
 
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS conversation_bridges (bridge_id TEXT PRIMARY KEY, provider TEXT NOT NULL, conversation_id TEXT NOT NULL, principal_id TEXT NOT NULL, pairing_hash TEXT NOT NULL, state TEXT NOT NULL, revision INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS conversation_thread_bindings (binding_id TEXT PRIMARY KEY, bridge_id TEXT NOT NULL, external_thread_id TEXT NOT NULL, conversation_id TEXT NOT NULL, principal_id TEXT NOT NULL, revision INTEGER NOT NULL, UNIQUE(bridge_id, external_thread_id)); CREATE TABLE IF NOT EXISTS conversation_bridge_inbound (message_id TEXT PRIMARY KEY, binding_id TEXT NOT NULL, message_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS conversation_bridge_idempotency (idempotency_key TEXT PRIMARY KEY, operation TEXT NOT NULL);")
@@ -14,6 +15,11 @@ pub fn claim_idempotency(c: &Connection, key: &str, operation: &str) -> rusqlite
 }
 
 pub fn put_bridge(c: &Connection, id: &str, json: &[u8], revision: u64) -> rusqlite::Result<()> {
+    if json.len() > MAX_BRIDGE_JSON_BYTES {
+        return Err(rusqlite::Error::InvalidParameterName(
+            "conversation bridge JSON too large".into(),
+        ));
+    }
     let revision = revision_i64(revision)?;
     let bridge: serde_json::Value = serde_json::from_slice(json)
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
@@ -272,5 +278,13 @@ mod tests {
 
         assert!(get_bridge(&c, "b").is_err());
         assert!(bridge_revision(&c, "b").is_err());
+    }
+
+    #[test]
+    fn oversized_bridge_json_is_rejected_before_parsing() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        assert!(put_bridge(&c, "bridge", &vec![b'x'; MAX_BRIDGE_JSON_BYTES + 1], 1).is_err());
+        assert!(get_bridge(&c, "bridge").unwrap().is_none());
     }
 }
