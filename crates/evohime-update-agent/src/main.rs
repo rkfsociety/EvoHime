@@ -1294,6 +1294,17 @@ fn apply_listener_runtime(
     data_dir: &Path,
     progress: &dyn Fn(&str, u8),
 ) -> Result<(), String> {
+    let staging = data_dir.join("update-staging").join("listener-runtime");
+    let result = apply_listener_runtime_inner(client, update, data_dir, progress);
+    cleanup_failed_staging(&staging, result)
+}
+
+fn apply_listener_runtime_inner(
+    client: &UpdaterHttpClient,
+    update: &UpdateCandidate,
+    data_dir: &Path,
+    progress: &dyn Fn(&str, u8),
+) -> Result<(), String> {
     let runtime: RuntimeReleaseManifest =
         get_json(client, &update.download_url, "manifest listener-runtime")?;
     validate_runtime_manifest(&runtime)?;
@@ -1376,6 +1387,13 @@ fn apply_listener_runtime(
     }
     progress("listener-runtime применён", 100);
     Ok(())
+}
+
+fn cleanup_failed_staging(staging: &Path, result: Result<(), String>) -> Result<(), String> {
+    if result.is_err() {
+        let _ = fs::remove_dir_all(staging);
+    }
+    result
 }
 
 fn safe_runtime_path(root: &Path, relative: &str) -> Result<PathBuf, String> {
@@ -1613,13 +1631,13 @@ fn fail(error: impl std::fmt::Display) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        copy_reader_bounded, is_github_api_url, is_github_release_asset_url, is_trusted_github_url,
-        merge_installed_manifest_to, normalize_github_token, parse_json_body,
-        read_installed_module_manifest, read_update_config, resolve_github_token_with,
-        stream_file_hash, updater_bootstrap_script, updater_first_if_required, updater_http_client,
-        validate_compatible_manifest, validate_runtime_manifest, CompatibleComponent,
-        CompatibleManifest, RuntimeReleaseEntry, RuntimeReleaseManifest, UpdateCandidate,
-        UpdaterBootstrapPaths, UpdaterRequirement,
+        cleanup_failed_staging, copy_reader_bounded, is_github_api_url,
+        is_github_release_asset_url, is_trusted_github_url, merge_installed_manifest_to,
+        normalize_github_token, parse_json_body, read_installed_module_manifest,
+        read_update_config, resolve_github_token_with, stream_file_hash, updater_bootstrap_script,
+        updater_first_if_required, updater_http_client, validate_compatible_manifest,
+        validate_runtime_manifest, CompatibleComponent, CompatibleManifest, RuntimeReleaseEntry,
+        RuntimeReleaseManifest, UpdateCandidate, UpdaterBootstrapPaths, UpdaterRequirement,
     };
     use sha2::Digest;
     use std::{
@@ -1829,6 +1847,25 @@ mod tests {
     fn archive_paths_reject_windows_only_separators_and_streams() {
         assert!(super::normalize_archive_path(Path::new(r"assets\\app.js")).is_none());
         assert!(super::normalize_archive_path(Path::new("assets/app.js:stream")).is_none());
+    }
+
+    #[test]
+    fn failed_listener_runtime_update_removes_staging() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-runtime-cleanup-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        let staging = root.join("update-staging/listener-runtime");
+        fs::create_dir_all(&staging).expect("create runtime staging");
+        fs::write(staging.join("partial.bin"), b"partial").expect("write partial runtime");
+
+        let result = cleanup_failed_staging(&staging, Err("download failed".to_owned()));
+        assert!(result.is_err());
+        assert!(!staging.exists());
+        fs::remove_dir_all(root).expect("remove temporary runtime directory");
     }
 
     #[test]
