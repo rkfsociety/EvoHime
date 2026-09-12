@@ -25,7 +25,10 @@ pub fn save_revision(
     if current.is_some_and(|value| value >= revision) {
         return Ok(false);
     }
-    tx.execute("INSERT INTO agent_role_profile_revisions(profile_id, revision, content_hash, profile_json, created_at_ms) VALUES (?1, ?2, ?3, ?4, ?5)", params![id, revision as i64, content_hash, profile_json, now_ms])?;
+    let inserted = tx.execute("INSERT INTO agent_role_profile_revisions(profile_id, revision, content_hash, profile_json, created_at_ms) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(profile_id, revision) DO NOTHING", params![id, revision as i64, content_hash, profile_json, now_ms])?;
+    if inserted == 0 {
+        return Ok(false);
+    }
     tx.execute("INSERT INTO agent_role_profiles(id, revision, content_hash, profile_json, updated_at_ms) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision, content_hash=excluded.content_hash, profile_json=excluded.profile_json, updated_at_ms=excluded.updated_at_ms", params![id, revision as i64, content_hash, profile_json, now_ms])?;
     tx.commit()?;
     Ok(true)
@@ -44,4 +47,24 @@ pub fn load_all_json(connection: &Connection) -> Result<Vec<Vec<u8>>, rusqlite::
         connection.prepare("SELECT profile_json FROM agent_role_profiles ORDER BY id")?;
     let rows = statement.query_map([], |row| row.get(0))?.collect();
     rows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn historical_revisions_are_immutable_and_idempotent() {
+        let connection = Connection::open_in_memory().expect("sqlite opens");
+        install_schema(&connection).expect("schema installs");
+        assert!(save_revision(&connection, "role", 1, "hash-1", b"first", 10).expect("first save"));
+        assert!(
+            !save_revision(&connection, "role", 1, "hash-2", b"second", 20)
+                .expect("duplicate save")
+        );
+        assert_eq!(
+            load_json(&connection, "role", 1).expect("revision loads"),
+            Some(b"first".to_vec())
+        );
+    }
 }
