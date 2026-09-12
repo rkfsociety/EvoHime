@@ -666,7 +666,11 @@ fn read_gh_cli_token() -> Option<String> {
                 let _ = child.wait();
                 return None;
             }
-            Err(_) => return None,
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
         }
     }
     let output = child.wait_with_output().ok()?;
