@@ -995,13 +995,25 @@ impl UpdateTransaction {
 
 /// Recursive copy that overwrites the destination and keeps extra files there.
 fn copy_tree(source: &Path, destination: &Path) -> io::Result<()> {
+    copy_tree_at_depth(source, destination, 0)
+}
+
+const MAX_COPY_TREE_DEPTH: usize = 64;
+
+fn copy_tree_at_depth(source: &Path, destination: &Path, depth: usize) -> io::Result<()> {
+    if depth > MAX_COPY_TREE_DEPTH {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "copy tree exceeds maximum directory depth",
+        ));
+    }
     fs::create_dir_all(destination)?;
     for entry in fs::read_dir(source)? {
         let entry = entry?;
         let target = destination.join(entry.file_name());
         let kind = entry.file_type()?;
         if kind.is_dir() {
-            copy_tree(&entry.path(), &target)?;
+            copy_tree_at_depth(&entry.path(), &target, depth + 1)?;
         } else if kind.is_file() {
             copy_file_resilient(&entry.path(), &target)?;
         }
@@ -1451,6 +1463,25 @@ mod tests {
 
         super::wait_until_writable(&root, std::time::Duration::from_millis(100)).unwrap();
 
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn copy_tree_rejects_excessive_directory_depth() {
+        let root = temp_dir("deep-tree");
+        let source = root.join("source");
+        let destination = root.join("destination");
+        fs::create_dir_all(&source).unwrap();
+        let mut nested = source.clone();
+        for index in 0..=super::MAX_COPY_TREE_DEPTH {
+            nested = nested.join(format!("level-{index}"));
+            fs::create_dir_all(&nested).unwrap();
+        }
+        fs::write(nested.join("payload"), "payload").unwrap();
+
+        let error = super::copy_tree(&source, &destination)
+            .expect_err("excessive tree depth must be rejected");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
         fs::remove_dir_all(root).unwrap();
     }
 
