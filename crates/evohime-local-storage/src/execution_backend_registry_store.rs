@@ -19,7 +19,7 @@ pub struct UpsertInput<'a> {
 }
 
 pub fn upsert(connection: &Connection, input: UpsertInput<'_>) -> Result<bool, StorageError> {
-    Ok(connection.execute("INSERT INTO execution_backends(id,kind,endpoint,auth_ref,enabled,capabilities_json,version,health,updated_at_ms) VALUES (?1,?2,?3,?4,1,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind,endpoint=excluded.endpoint,auth_ref=excluded.auth_ref,capabilities_json=excluded.capabilities_json,version=excluded.version,health=excluded.health,updated_at_ms=excluded.updated_at_ms WHERE excluded.version >= execution_backends.version", params![input.id,input.kind,input.endpoint,input.auth_ref,input.capabilities_json,input.version as i64,input.health,input.now_ms])? == 1)
+    Ok(connection.execute("INSERT INTO execution_backends(id,kind,endpoint,auth_ref,enabled,capabilities_json,version,health,updated_at_ms) VALUES (?1,?2,?3,?4,1,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind,endpoint=excluded.endpoint,auth_ref=excluded.auth_ref,capabilities_json=excluded.capabilities_json,version=excluded.version,health=excluded.health,updated_at_ms=excluded.updated_at_ms WHERE excluded.version > execution_backends.version", params![input.id,input.kind,input.endpoint,input.auth_ref,input.capabilities_json,input.version as i64,input.health,input.now_ms])? == 1)
 }
 
 pub struct BackendRow {
@@ -98,7 +98,7 @@ mod tests {
             now_ms: 1,
         };
         assert!(upsert(&c, input).unwrap());
-        assert!(upsert(&c, UpsertInput { now_ms: 2, ..input }).unwrap());
+        assert!(!upsert(&c, UpsertInput { now_ms: 2, ..input }).unwrap());
         assert_eq!(list(&c).unwrap().len(), 1);
     }
 
