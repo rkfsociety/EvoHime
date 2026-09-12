@@ -989,6 +989,17 @@ impl MemoryStoreSql {
         validate_required("reason_class", reason_class, MAX_ID_BYTES)?;
         validate_required("forgotten_at", forgotten_at, MAX_TIMESTAMP_BYTES)?;
         let transaction = connection.unchecked_transaction()?;
+        let tombstone_exists: Option<i64> = transaction
+            .query_row(
+                "SELECT 1 FROM memory_tombstones WHERE tombstone_id = ?1",
+                params![tombstone_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if tombstone_exists.is_some() {
+            transaction.commit()?;
+            return Ok(false);
+        }
         let existing: Option<(String, String, String, String, String)> = transaction
             .query_row(
                 "SELECT kind, scope_kind, scope_id, created_at, content
@@ -1012,7 +1023,7 @@ impl MemoryStoreSql {
         let digest = digest_hex(&content);
         transaction.execute(Self::FORGET, params![id])?;
         transaction.execute(
-            "INSERT OR REPLACE INTO memory_tombstones
+            "INSERT INTO memory_tombstones
              (tombstone_id, kind, scope_kind, scope_id, created_at, forgotten_at,
               reason_class, digest)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -1649,6 +1660,48 @@ mod tests {
             "2026-08-14T00:00:00Z"
         )
         .expect("second forget is a no-op"));
+    }
+
+    #[test]
+    fn reused_tombstone_id_cannot_forget_another_memory_or_rewrite_audit() {
+        let connection = Connection::open_in_memory().expect("sqlite opens");
+        schema(&connection);
+        MemoryStoreSql::insert(&connection, &record("m-1", "first detail")).expect("insert first");
+        MemoryStoreSql::insert(&connection, &record("m-2", "second detail"))
+            .expect("insert second");
+
+        assert!(MemoryStoreSql::forget_with_tombstone(
+            &connection,
+            "m-1",
+            "tomb-reused",
+            "user_request",
+            "2026-08-14T00:00:00Z"
+        )
+        .expect("first forget"));
+        assert!(!MemoryStoreSql::forget_with_tombstone(
+            &connection,
+            "m-2",
+            "tomb-reused",
+            "retention",
+            "2026-08-15T00:00:00Z"
+        )
+        .expect("reused tombstone is rejected"));
+
+        let second = MemoryStoreSql::get_by_id(&connection, "m-2")
+            .expect("second memory loads")
+            .expect("second memory exists");
+        assert_eq!(second.content, "second detail");
+        let (scope_id, forgotten_at, reason): (String, String, String) = connection
+            .query_row(
+                "SELECT scope_id, forgotten_at, reason_class
+                 FROM memory_tombstones WHERE tombstone_id = ?1",
+                params!["tomb-reused"],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("original tombstone remains");
+        assert_eq!(scope_id, "project-1");
+        assert_eq!(forgotten_at, "2026-08-14T00:00:00Z");
+        assert_eq!(reason, "user_request");
     }
 
     #[test]
