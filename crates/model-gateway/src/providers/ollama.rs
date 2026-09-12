@@ -11,6 +11,7 @@ use std::time::Duration;
 
 pub const DEFAULT_BASE_URL: &str = "http://127.0.0.1:11434/v1";
 pub const MAX_PULL_MODEL_CHARS: usize = 128;
+pub const MAX_PULL_EVENT_BYTES: usize = 64 * 1024;
 pub const MAX_RECOMMENDATIONS: usize = 32;
 
 #[derive(Debug)]
@@ -367,6 +368,11 @@ where
         let chunk = chunk.map_err(|error| ProviderError::Stream(error.to_string()))?;
         buffer.push_str(&String::from_utf8_lossy(&chunk));
         while let Some(position) = buffer.find('\n') {
+            if position > MAX_PULL_EVENT_BYTES {
+                return Err(ProviderError::Api(
+                    "Ollama pull event exceeds size limit".into(),
+                ));
+            }
             let line = buffer.drain(..=position).collect::<String>();
             let line = line.trim();
             if line.is_empty() {
@@ -382,8 +388,18 @@ where
             }
             on_progress(to_pull_progress(progress));
         }
+        if buffer.len() > MAX_PULL_EVENT_BYTES {
+            return Err(ProviderError::Api(
+                "Ollama pull event exceeds size limit".into(),
+            ));
+        }
     }
     if !buffer.trim().is_empty() {
+        if buffer.len() > MAX_PULL_EVENT_BYTES {
+            return Err(ProviderError::Api(
+                "Ollama pull event exceeds size limit".into(),
+            ));
+        }
         let progress = serde_json::from_str::<PullProgress>(buffer.trim())
             .map_err(|error| ProviderError::Api(error.to_string()))?;
         if let Some(error) = progress.error {
@@ -515,5 +531,22 @@ mod tests {
         assert_eq!(progress[1].total_bytes, Some(1000));
         assert_eq!(progress[1].completed_bytes, Some(250));
         assert!(!progress[1].status.contains("secret-like-digest"));
+    }
+
+    #[tokio::test]
+    async fn rejects_oversized_pull_events_before_parsing() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+                "{{\"status\":\"{}",
+                "x".repeat(MAX_PULL_EVENT_BYTES)
+            )))
+            .mount(&server)
+            .await;
+
+        let error = pull_model_with_progress(&format!("{}/v1", server.uri()), "qwen3:1.7b", |_| {})
+            .await
+            .expect_err("oversized event must be rejected");
+        assert!(error.to_string().contains("exceeds size limit"));
     }
 }
