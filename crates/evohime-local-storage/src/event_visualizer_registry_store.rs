@@ -1,4 +1,5 @@
 use rusqlite::{params, Connection, OptionalExtension};
+const MAX_REGISTRY_ENTRIES: i64 = 256;
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS event_visualizer_registry (id TEXT PRIMARY KEY, version INTEGER NOT NULL, content_hash TEXT NOT NULL, descriptor_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
@@ -19,8 +20,9 @@ pub fn put(
     Ok(())
 }
 pub fn list(c: &Connection) -> rusqlite::Result<Vec<Vec<u8>>> {
-    let mut s = c.prepare("SELECT descriptor_json FROM event_visualizer_registry ORDER BY id")?;
-    let rows = s.query_map([], |r| r.get(0))?;
+    let mut s =
+        c.prepare("SELECT descriptor_json FROM event_visualizer_registry ORDER BY id LIMIT ?1")?;
+    let rows = s.query_map([MAX_REGISTRY_ENTRIES], |r| r.get(0))?;
     rows.collect()
 }
 pub fn get(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
@@ -77,5 +79,15 @@ mod tests {
             get(&c, "x").unwrap(),
             Some(br#"{"version":2,"source":"original"}"#.to_vec())
         );
+    }
+
+    #[test]
+    fn list_is_bounded() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        for index in 0..300 {
+            put(&c, &format!("{index:03}"), 1, "hash", b"{}", index).unwrap();
+        }
+        assert_eq!(list(&c).unwrap().len(), MAX_REGISTRY_ENTRIES as usize);
     }
 }
