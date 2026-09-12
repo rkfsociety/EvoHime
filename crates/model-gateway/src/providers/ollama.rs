@@ -363,6 +363,7 @@ where
     }
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
+    let mut pull_succeeded = false;
     use futures_util::StreamExt;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|error| ProviderError::Stream(error.to_string()))?;
@@ -386,6 +387,7 @@ where
             if progress.status.eq_ignore_ascii_case("error") {
                 return Err(ProviderError::Api("Ollama pull failed".into()));
             }
+            pull_succeeded |= progress.status.eq_ignore_ascii_case("success");
             on_progress(to_pull_progress(progress));
         }
         if buffer.len() > MAX_PULL_EVENT_BYTES {
@@ -405,7 +407,16 @@ where
         if let Some(error) = progress.error {
             return Err(ProviderError::Api(error));
         }
+        if progress.status.eq_ignore_ascii_case("error") {
+            return Err(ProviderError::Api("Ollama pull failed".into()));
+        }
+        pull_succeeded |= progress.status.eq_ignore_ascii_case("success");
         on_progress(to_pull_progress(progress));
+    }
+    if !pull_succeeded {
+        return Err(ProviderError::Stream(
+            "Ollama pull ended without success event".into(),
+        ));
     }
     Ok(())
 }
@@ -548,5 +559,21 @@ mod tests {
             .await
             .expect_err("oversized event must be rejected");
         assert!(error.to_string().contains("exceeds size limit"));
+    }
+
+    #[tokio::test]
+    async fn rejects_truncated_pull_without_success_event() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                "{\"status\":\"pulling layer\",\"total\":1000,\"completed\":500}\n",
+            ))
+            .mount(&server)
+            .await;
+
+        let error = pull_model_with_progress(&format!("{}/v1", server.uri()), "qwen3:1.7b", |_| {})
+            .await
+            .expect_err("truncated pull must not be reported as success");
+        assert!(error.to_string().contains("without success event"));
     }
 }
