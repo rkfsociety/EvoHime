@@ -1296,6 +1296,25 @@ fn bounded_preview(value: &str) -> (String, bool) {
 mod tests {
     use super::*;
 
+    fn run_async_test_with_large_stack<F>(test: F)
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        std::thread::Builder::new()
+            .name("evohime-tool-runtime-test".into())
+            .stack_size(32 * 1024 * 1024)
+            .spawn(move || {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("test runtime builds")
+                    .block_on(test);
+            })
+            .expect("test thread starts")
+            .join()
+            .expect("test thread completes");
+    }
+
     #[test]
     fn bootstrap_registers_filesystem_read() {
         let registry = ToolRegistry::bootstrap();
@@ -1358,8 +1377,12 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn parallel_calls_complete_independently() {
+    #[test]
+    fn parallel_calls_complete_independently() {
+        run_async_test_with_large_stack(parallel_calls_complete_independently_inner());
+    }
+
+    async fn parallel_calls_complete_independently_inner() {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("a.txt"), "a").expect("write a");
         std::fs::write(dir.path().join("b.txt"), "b").expect("write b");
@@ -1390,8 +1413,12 @@ mod tests {
         assert!(results.iter().all(Result::is_ok));
     }
 
-    #[tokio::test]
-    async fn cancellation_stops_call() {
+    #[test]
+    fn cancellation_stops_call() {
+        run_async_test_with_large_stack(cancellation_stops_call_inner());
+    }
+
+    async fn cancellation_stops_call_inner() {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("a.txt"), "a").expect("write");
         let permissions = PermissionEngine::new();
@@ -1485,8 +1512,14 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn cancellation_stops_non_shell_tool_in_parallel_execution() {
+    #[test]
+    fn cancellation_stops_non_shell_tool_in_parallel_execution() {
+        run_async_test_with_large_stack(
+            cancellation_stops_non_shell_tool_in_parallel_execution_inner(),
+        );
+    }
+
+    async fn cancellation_stops_non_shell_tool_in_parallel_execution_inner() {
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -1541,8 +1574,12 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn registry_dispatches_browser_open_when_allowed() {
+    #[test]
+    fn registry_dispatches_browser_open_when_allowed() {
+        run_async_test_with_large_stack(registry_dispatches_browser_open_when_allowed_inner());
+    }
+
+    async fn registry_dispatches_browser_open_when_allowed_inner() {
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -1648,8 +1685,14 @@ mod tests {
             .is_some_and(|details| { details.len() <= MAX_APPROVAL_PREVIEW_DETAILS + 32 }));
     }
 
-    #[tokio::test]
-    async fn policy_denies_shell_subject_after_cd_prefix_is_resolved() {
+    #[test]
+    fn policy_denies_shell_subject_after_cd_prefix_is_resolved() {
+        run_async_test_with_large_stack(
+            policy_denies_shell_subject_after_cd_prefix_is_resolved_inner(),
+        );
+    }
+
+    async fn policy_denies_shell_subject_after_cd_prefix_is_resolved_inner() {
         let permissions = evohime_permissions::PermissionEngine::new();
         permissions
             .set_policy_rules(evohime_permissions::PolicyRuleSet::new(vec![
@@ -1682,8 +1725,12 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn policy_denies_canonical_path_despite_relative_alias() {
+    #[test]
+    fn policy_denies_canonical_path_despite_relative_alias() {
+        run_async_test_with_large_stack(policy_denies_canonical_path_despite_relative_alias_inner());
+    }
+
+    async fn policy_denies_canonical_path_despite_relative_alias_inner() {
         let permissions = evohime_permissions::PermissionEngine::new();
         let dir = tempfile::tempdir().expect("workspace");
         std::fs::create_dir(dir.path().join("secrets")).expect("secrets directory");
@@ -1726,8 +1773,12 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn policy_uses_a_separate_subject_for_git_push() {
+    #[test]
+    fn policy_uses_a_separate_subject_for_git_push() {
+        run_async_test_with_large_stack(policy_uses_a_separate_subject_for_git_push_inner());
+    }
+
+    async fn policy_uses_a_separate_subject_for_git_push_inner() {
         let permissions = evohime_permissions::PermissionEngine::new();
         permissions
             .set_policy_rules(evohime_permissions::PolicyRuleSet::new(vec![
@@ -1760,8 +1811,12 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn ask_mode_creates_scoped_approval() {
+    #[test]
+    fn ask_mode_creates_scoped_approval() {
+        run_async_test_with_large_stack(ask_mode_creates_scoped_approval_inner());
+    }
+
+    async fn ask_mode_creates_scoped_approval_inner() {
         let permissions = PermissionEngine::new();
         permissions
             .set_mode(
@@ -1794,8 +1849,12 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn approval_is_bound_to_exact_call_and_rechecks_deny() {
+    #[test]
+    fn approval_is_bound_to_exact_call_and_rechecks_deny() {
+        run_async_test_with_large_stack(approval_is_bound_to_exact_call_and_rechecks_deny_inner());
+    }
+
+    async fn approval_is_bound_to_exact_call_and_rechecks_deny_inner() {
         let permissions = PermissionEngine::new();
         permissions
             .set_mode(
@@ -1869,8 +1928,12 @@ mod tests {
         assert!(!dir.path().join("notes/todo.txt").exists());
     }
 
-    #[tokio::test]
-    async fn denied_approval_is_rejected_when_rechecked() {
+    #[test]
+    fn denied_approval_is_rejected_when_rechecked() {
+        run_async_test_with_large_stack(denied_approval_is_rejected_when_rechecked_inner());
+    }
+
+    async fn denied_approval_is_rejected_when_rechecked_inner() {
         let permissions = PermissionEngine::new();
         let input = serde_json::json!({ "path": "notes/todo.txt", "content": "x" });
         let request = permissions
@@ -1911,8 +1974,14 @@ mod tests {
         assert!(!dir.path().join("notes/todo.txt").exists());
     }
 
-    #[tokio::test]
-    async fn granted_approval_is_consumed_before_execution_and_cannot_replay() {
+    #[test]
+    fn granted_approval_is_consumed_before_execution_and_cannot_replay() {
+        run_async_test_with_large_stack(
+            granted_approval_is_consumed_before_execution_and_cannot_replay_inner(),
+        );
+    }
+
+    async fn granted_approval_is_consumed_before_execution_and_cannot_replay_inner() {
         let permissions = PermissionEngine::new();
         permissions
             .set_mode(
@@ -1981,8 +2050,12 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn post_approval_path_revalidates_patch_input() {
+    #[test]
+    fn post_approval_path_revalidates_patch_input() {
+        run_async_test_with_large_stack(post_approval_path_revalidates_patch_input_inner());
+    }
+
+    async fn post_approval_path_revalidates_patch_input_inner() {
         let permissions = PermissionEngine::new();
         let task_id = Uuid::new_v4();
         let malformed = serde_json::json!({ "path": "notes/todo.txt" });
@@ -2023,8 +2096,12 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn oversized_patch_is_rejected_before_approval() {
+    #[test]
+    fn oversized_patch_is_rejected_before_approval() {
+        run_async_test_with_large_stack(oversized_patch_is_rejected_before_approval_inner());
+    }
+
+    async fn oversized_patch_is_rejected_before_approval_inner() {
         let permissions = PermissionEngine::new();
         permissions
             .set_mode(
