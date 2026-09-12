@@ -4,6 +4,7 @@ use reqwest::Url;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{process::Stdio, time::Duration};
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 pub const STATUS_NAME: &str = "git.status";
@@ -432,8 +433,7 @@ async fn run_git(ctx: &ToolContext, args: &[&str]) -> Result<ToolResult, ToolErr
     }
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
 
-    let output = command
-        .output()
+    let output = run_bounded_git(&mut command)
         .await
         .map_err(|error| ToolError::Execution(format!("failed to run git: {error}")))?;
 
@@ -467,6 +467,52 @@ async fn run_git(ctx: &ToolContext, args: &[&str]) -> Result<ToolResult, ToolErr
             "status_code": output.status.code(),
         }),
     })
+}
+
+struct BoundedGitOutput {
+    status: std::process::ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+async fn run_bounded_git(command: &mut Command) -> std::io::Result<BoundedGitOutput> {
+    let mut child = command.spawn()?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| std::io::Error::other("git stdout unavailable"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| std::io::Error::other("git stderr unavailable"))?;
+    let mut stdout_reader = tokio::io::BufReader::new(stdout);
+    let mut stderr_reader = tokio::io::BufReader::new(stderr);
+    let stdout = read_bounded_git(&mut stdout_reader);
+    let stderr = read_bounded_git(&mut stderr_reader);
+    let status = child.wait();
+    let (stdout, stderr, status) = tokio::join!(stdout, stderr, status);
+    Ok(BoundedGitOutput {
+        status: status?,
+        stdout: stdout?,
+        stderr: stderr?,
+    })
+}
+
+async fn read_bounded_git<R: tokio::io::AsyncRead + Unpin>(
+    reader: &mut R,
+) -> std::io::Result<Vec<u8>> {
+    let mut output = Vec::with_capacity(MAX_GIT_OUTPUT_BYTES.min(16 * 1024));
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        let read = reader.read(&mut chunk).await?;
+        if read == 0 {
+            break;
+        }
+        if output.len() <= MAX_GIT_OUTPUT_BYTES {
+            output.extend_from_slice(&chunk[..read.min(MAX_GIT_OUTPUT_BYTES + 1 - output.len())]);
+        }
+    }
+    Ok(output)
 }
 
 fn bounded_output(bytes: &[u8]) -> (String, bool) {
@@ -832,6 +878,23 @@ mod tests {
                 "accepted unsafe remote: {remote}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn git_reader_keeps_output_bounded() {
+        let (mut writer, mut reader) = tokio::io::duplex(64);
+        let payload = vec![b'x'; MAX_GIT_OUTPUT_BYTES + 1_024];
+        let writer_task = tokio::spawn(async move {
+            tokio::io::AsyncWriteExt::write_all(&mut writer, &payload)
+                .await
+                .unwrap();
+            tokio::io::AsyncWriteExt::shutdown(&mut writer)
+                .await
+                .unwrap();
+        });
+        let output = read_bounded_git(&mut reader).await.unwrap();
+        writer_task.await.unwrap();
+        assert_eq!(output.len(), MAX_GIT_OUTPUT_BYTES + 1);
     }
 
     #[tokio::test]
