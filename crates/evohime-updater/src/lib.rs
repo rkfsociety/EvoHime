@@ -576,6 +576,7 @@ fn validate_component_marker_for(staging: &Path, selected: Option<&[String]>) ->
 }
 
 const MAX_COMPONENT_MARKER_BYTES: usize = 256 * 1024;
+const MAX_TRANSACTION_STATE_BYTES: usize = 64 * 1024;
 
 fn read_bounded_file(path: &Path, limit: usize) -> io::Result<Vec<u8>> {
     let metadata = fs::metadata(path)?;
@@ -853,8 +854,11 @@ impl UpdateTransaction {
         if !state_path.exists() {
             return Ok(RecoveryResult { recovered: false });
         }
-        let state: TransactionState = serde_json::from_slice(&fs::read(&state_path)?)
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        let state: TransactionState = serde_json::from_slice(&read_bounded_file(
+            &state_path,
+            MAX_TRANSACTION_STATE_BYTES,
+        )?)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         let transaction = Self {
             operation_id: if state.operation_id.is_empty() {
                 "legacy".to_owned()
@@ -1483,6 +1487,22 @@ mod tests {
 
         let error = super::validate_component_marker_for(&staging, None)
             .expect_err("oversized marker must be rejected");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_oversized_transaction_state_before_parsing() {
+        let root = temp_dir("oversized-state");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("transaction.json"),
+            vec![b'x'; super::MAX_TRANSACTION_STATE_BYTES + 1],
+        )
+        .unwrap();
+
+        let error = UpdateTransaction::recover(&root)
+            .expect_err("oversized transaction state must be rejected");
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
         fs::remove_dir_all(root).unwrap();
     }
