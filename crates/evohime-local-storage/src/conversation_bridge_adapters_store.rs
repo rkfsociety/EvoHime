@@ -136,17 +136,9 @@ pub fn put_inbound(
     json: &[u8],
     created_at_ms: i64,
 ) -> rusqlite::Result<bool> {
-    let count: i64 = c.query_row(
-        "SELECT COUNT(*) FROM conversation_bridge_inbound",
-        [],
-        |r| r.get(0),
-    )?;
-    if count >= MAX_QUEUE {
-        return Ok(false);
-    }
     Ok(c.execute(
-        "INSERT OR IGNORE INTO conversation_bridge_inbound VALUES(?1,?2,?3,?4)",
-        params![id, binding_id, json, created_at_ms],
+        "INSERT OR IGNORE INTO conversation_bridge_inbound SELECT ?1,?2,?3,?4 WHERE (SELECT COUNT(*) FROM conversation_bridge_inbound) < ?5",
+        params![id, binding_id, json, created_at_ms, MAX_QUEUE],
     )? == 1)
 }
 

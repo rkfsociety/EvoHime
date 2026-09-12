@@ -36,18 +36,9 @@ pub fn put_event(
     j: &[u8],
     now: i64,
 ) -> rusqlite::Result<bool> {
-    let count: i64 = c.query_row("SELECT COUNT(*) FROM telemetry_queue", [], |r| r.get(0))?;
-    let bytes: i64 = c.query_row(
-        "SELECT COALESCE(SUM(length(event_json)), 0) FROM telemetry_queue",
-        [],
-        |r| r.get(0),
-    )?;
-    if count >= MAX_QUEUE || bytes.saturating_add(j.len() as i64) > MAX_BYTES {
-        return Ok(false);
-    }
     let n = c.execute(
-        "INSERT OR IGNORE INTO telemetry_queue VALUES(?1,?2,?3,?4)",
-        params![id, cat, j, now],
+        "INSERT OR IGNORE INTO telemetry_queue SELECT ?1,?2,?3,?4 WHERE (SELECT COUNT(*) FROM telemetry_queue) < ?5 AND (SELECT COALESCE(SUM(length(event_json)), 0) FROM telemetry_queue) + length(?3) <= ?6",
+        params![id, cat, j, now, MAX_QUEUE, MAX_BYTES],
     )?;
     Ok(n == 1)
 }
