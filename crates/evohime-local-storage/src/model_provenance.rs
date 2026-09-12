@@ -19,7 +19,7 @@ use std::{
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const MODEL_PROVENANCE_SCHEMA_VERSION: u32 = 2;
+pub const MODEL_PROVENANCE_SCHEMA_VERSION: u32 = 3;
 pub const PROVENANCE_RETENTION_MS: i64 = PROVENANCE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 #[derive(Debug, Error)]
@@ -926,7 +926,7 @@ impl<'a> ModelProvenanceRepository<'a> {
             _ if record.payload_mode == "full" => "valid",
             _ => "legacy_hash_only",
         };
-        let manifest = serde_json::json!({"export_id":Uuid::now_v7().to_string(),"created_at":now_ms().unwrap_or_default(),"bundle_schema_version":1,"schema_versions":{"model_request":1,"storage":2},"selection":{"request_id":request_id},"request_count":1,"receipt_count":receipts.len(),"chain_roots":[],"chain_checkpoints":[],"request_states":[{"request_id":request_id,"payload_mode":record.payload_mode,"status":record.status,"verification_state":verification_state,"tombstone_ids":tombstones.iter().filter_map(|row| row.get("tombstone_id").cloned()).collect::<Vec<_>>(),"missing_or_pruned_subjects":[]}],"files":files,"file_sizes":file_sizes,"bundle_content_sha256":bundle_content_sha256,"signer":{"key_id":signer.key_id(),"algorithm":"Ed25519","public_key_hex":signer.public_key_hex(),"signature_path":"bundle.sig"}});
+        let manifest = serde_json::json!({"export_id":Uuid::now_v7().to_string(),"created_at":now_ms().unwrap_or_default(),"bundle_schema_version":1,"schema_versions":{"model_request":1,"storage":MODEL_PROVENANCE_SCHEMA_VERSION},"selection":{"request_id":request_id},"request_count":1,"receipt_count":receipts.len(),"chain_roots":[],"chain_checkpoints":[],"request_states":[{"request_id":request_id,"payload_mode":record.payload_mode,"status":record.status,"verification_state":verification_state,"tombstone_ids":tombstones.iter().filter_map(|row| row.get("tombstone_id").cloned()).collect::<Vec<_>>(),"missing_or_pruned_subjects":[]}],"files":files,"file_sizes":file_sizes,"bundle_content_sha256":bundle_content_sha256,"signer":{"key_id":signer.key_id(),"algorithm":"Ed25519","public_key_hex":signer.public_key_hex(),"signature_path":"bundle.sig"}});
         let manifest_bytes =
             evohime_receipts::canonicalize_json(&serde_json::to_vec(&manifest)?)
                 .map_err(|error| ModelProvenanceError::CommitFailed(error.to_string()))?;
@@ -1409,6 +1409,10 @@ mod tests {
         repo.commit_envelope(&second, CommitMode::FullForDispatch)
             .expect("the same stable source reference may be reused by another request");
 
+        assert_eq!(
+            MODEL_PROVENANCE_SCHEMA_VERSION, 3,
+            "schema constant must match the installed migration"
+        );
         assert_eq!(
             db.query_row(
                 "SELECT COUNT(*) FROM model_request_sources WHERE source_ref_id='instruction:workspace'",
