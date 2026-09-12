@@ -4,6 +4,7 @@ use serde::{
 };
 use sha2::Digest;
 use std::cmp::Ordering;
+use std::io::Read;
 use std::path::Path;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -128,17 +129,43 @@ pub fn validate_component_manifest(
         if metadata.len() != component.size {
             return Err(format!("size mismatch for {}", component.id));
         }
-        let bytes = std::fs::read(&path).map_err(|error| format!("{}: {error}", component.id))?;
-        let digest = sha2::Sha256::digest(&bytes);
-        let actual = digest
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
-        if actual != component.sha256.to_ascii_lowercase() {
+        let file =
+            std::fs::File::open(&path).map_err(|error| format!("{}: {error}", component.id))?;
+        if !hash_reader_matches(file, component.size, &component.sha256)
+            .map_err(|error| format!("{}: {error}", component.id))?
+        {
             return Err(format!("sha256 mismatch for {}", component.id));
         }
     }
     Ok(())
+}
+
+fn hash_reader_matches<R: Read>(
+    mut reader: R,
+    expected_size: u64,
+    expected_sha256: &str,
+) -> std::io::Result<bool> {
+    let mut digest = sha2::Sha256::new();
+    let mut total = 0u64;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        total = total.saturating_add(read as u64);
+        if total > expected_size {
+            return Ok(false);
+        }
+        digest.update(&buffer[..read]);
+    }
+    Ok(total == expected_size
+        && digest
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+            == expected_sha256.to_ascii_lowercase())
 }
 
 pub fn select_outdated(
@@ -486,6 +513,17 @@ mod tests {
         };
         let error = validate_component_manifest(&manifest, directory.path()).unwrap_err();
         assert!(error.contains("size mismatch") || error.contains("sha256 mismatch"));
+    }
+
+    #[test]
+    fn streamed_hash_rejects_truncated_and_oversized_content() {
+        let hash = sha2::Sha256::digest(b"core")
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        assert!(hash_reader_matches(std::io::Cursor::new(b"core"), 4, &hash).unwrap());
+        assert!(!hash_reader_matches(std::io::Cursor::new(b"cor"), 4, &hash).unwrap());
+        assert!(!hash_reader_matches(std::io::Cursor::new(b"core!"), 4, &hash).unwrap());
     }
 
     #[test]
