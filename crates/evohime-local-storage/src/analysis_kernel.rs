@@ -473,24 +473,27 @@ impl<'a> AnalysisKernelStore<'a> {
         let mut statement = self.connection.prepare(
             "SELECT id,kernel_id,logical_name,type_hint,size,sensitivity,persistence,content_hash,
                     artifact_locator,provenance,created_at_ms,invalidated_at_ms
-             FROM analysis_kernel_objects WHERE kernel_id=?1 ORDER BY created_at_ms,id",
+             FROM analysis_kernel_objects WHERE kernel_id=?1 ORDER BY created_at_ms,id LIMIT ?2",
         )?;
-        let rows = statement.query_map([kernel_id], |row| {
-            Ok(KernelObjectRefV1 {
-                id: row.get(0)?,
-                kernel_id: row.get(1)?,
-                logical_name: row.get(2)?,
-                type_hint: row.get(3)?,
-                size: row.get::<_, i64>(4)? as u64,
-                sensitivity: parse_sensitivity(&row.get::<_, String>(5)?),
-                persistence: parse_persistence(&row.get::<_, String>(6)?),
-                content_hash: row.get(7)?,
-                artifact_locator: row.get(8)?,
-                provenance: row.get(9)?,
-                created_at_ms: row.get(10)?,
-                invalidated_at_ms: row.get(11)?,
-            })
-        })?;
+        let rows = statement.query_map(
+            rusqlite::params![kernel_id, ANALYSIS_KERNEL_MAX_OBJECTS as i64],
+            |row| {
+                Ok(KernelObjectRefV1 {
+                    id: row.get(0)?,
+                    kernel_id: row.get(1)?,
+                    logical_name: row.get(2)?,
+                    type_hint: row.get(3)?,
+                    size: row.get::<_, i64>(4)? as u64,
+                    sensitivity: parse_sensitivity(&row.get::<_, String>(5)?),
+                    persistence: parse_persistence(&row.get::<_, String>(6)?),
+                    content_hash: row.get(7)?,
+                    artifact_locator: row.get(8)?,
+                    provenance: row.get(9)?,
+                    created_at_ms: row.get(10)?,
+                    invalidated_at_ms: row.get(11)?,
+                })
+            },
+        )?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(StorageError::from)
     }
@@ -715,6 +718,36 @@ mod tests {
         assert_eq!(
             store.list_running_sessions().unwrap().len(),
             ANALYSIS_KERNEL_MAX_RUNNING_SESSIONS
+        );
+    }
+
+    #[test]
+    fn object_listing_is_bounded() {
+        let connection = Connection::open_in_memory().unwrap();
+        install_schema(&connection).unwrap();
+        let store = AnalysisKernelStore::new(&connection);
+        store.create_session(&session()).unwrap();
+        for index in 0..(ANALYSIS_KERNEL_MAX_OBJECTS + 1) {
+            store
+                .put_object(&KernelObjectRefV1 {
+                    id: format!("object-{index:04}"),
+                    kernel_id: "kernel-1".into(),
+                    logical_name: format!("object-{index:04}"),
+                    type_hint: "json".into(),
+                    size: 0,
+                    sensitivity: KernelSensitivity::Public,
+                    persistence: KernelObjectPersistence::Ephemeral,
+                    content_hash: None,
+                    artifact_locator: None,
+                    provenance: "core:test".into(),
+                    created_at_ms: index as i64 + 1,
+                    invalidated_at_ms: None,
+                })
+                .unwrap();
+        }
+        assert_eq!(
+            store.list_objects("kernel-1").unwrap().len(),
+            ANALYSIS_KERNEL_MAX_OBJECTS
         );
     }
 }
