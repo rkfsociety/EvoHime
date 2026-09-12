@@ -24,7 +24,7 @@ pub fn upsert_preset(
     connection: &Connection,
     input: UpsertPresetInput<'_>,
 ) -> Result<bool, StorageError> {
-    Ok(connection.execute("INSERT INTO external_agent_presets(id,revision,protocol,executable_ref,capabilities_json,credential_slots_json,control_level,enabled,content_hash,updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,protocol=excluded.protocol,executable_ref=excluded.executable_ref,capabilities_json=excluded.capabilities_json,credential_slots_json=excluded.credential_slots_json,control_level=excluded.control_level,enabled=excluded.enabled,content_hash=excluded.content_hash,updated_at_ms=excluded.updated_at_ms", params![input.id, input.revision as i64, input.protocol, input.executable_ref, input.capabilities_json, input.slots_json, input.control_level, input.enabled as i64, input.content_hash, input.now_ms])? == 1)
+    Ok(connection.execute("INSERT INTO external_agent_presets(id,revision,protocol,executable_ref,capabilities_json,credential_slots_json,control_level,enabled,content_hash,updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,protocol=excluded.protocol,executable_ref=excluded.executable_ref,capabilities_json=excluded.capabilities_json,credential_slots_json=excluded.credential_slots_json,control_level=excluded.control_level,enabled=excluded.enabled,content_hash=excluded.content_hash,updated_at_ms=excluded.updated_at_ms WHERE excluded.revision >= external_agent_presets.revision", params![input.id, input.revision as i64, input.protocol, input.executable_ref, input.capabilities_json, input.slots_json, input.control_level, input.enabled as i64, input.content_hash, input.now_ms])? == 1)
 }
 
 #[derive(Clone, Copy)]
@@ -63,5 +63,43 @@ mod tests {
         };
         assert!(record_event(&c, input).unwrap());
         assert!(!record_event(&c, RecordEventInput { now_ms: 2, ..input }).unwrap());
+    }
+
+    #[test]
+    fn stale_preset_revision_cannot_rewind_current_preset() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        let current = UpsertPresetInput {
+            id: "preset-1",
+            revision: 2,
+            protocol: "stdio",
+            executable_ref: "new-agent",
+            capabilities_json: "[]",
+            slots_json: "[]",
+            control_level: "supervised",
+            enabled: true,
+            content_hash: "new",
+            now_ms: 2,
+        };
+        assert!(upsert_preset(&c, current).unwrap());
+        assert!(!upsert_preset(
+            &c,
+            UpsertPresetInput {
+                revision: 1,
+                executable_ref: "old-agent",
+                content_hash: "old",
+                now_ms: 3,
+                ..current
+            }
+        )
+        .unwrap());
+        let row: (i64, String, String) = c
+            .query_row(
+                "SELECT revision,executable_ref,content_hash FROM external_agent_presets WHERE id=?1",
+                ["preset-1"],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(row, (2, "new-agent".into(), "new".into()));
     }
 }
