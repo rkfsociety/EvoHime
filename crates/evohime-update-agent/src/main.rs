@@ -1565,7 +1565,10 @@ fn schedule_updater_replacement(
         install_dir,
     };
     let content = updater_bootstrap_script(std::process::id(), &paths);
-    fs::write(&script, content).map_err(|error| error.to_string())?;
+    if let Err(error) = fs::write(&script, content) {
+        cleanup_bootstrap_files(&script, &marker);
+        return Err(error.to_string());
+    }
     if let Err(error) = fs::write(&marker, format!("{}\n", update.available)) {
         cleanup_bootstrap_files(&script, &marker);
         return Err(error.to_string());
