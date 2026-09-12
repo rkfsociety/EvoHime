@@ -217,10 +217,12 @@ pub fn build_manifest(
     let mut entries = Vec::new();
     let mut total_bytes: usize = 0;
     for path in paths.into_iter().take(max_files) {
-        let content = fs::read(&path)?;
-        if total_bytes.saturating_add(content.len()) > max_bytes {
-            break;
-        }
+        let remaining = max_bytes.saturating_sub(total_bytes);
+        let content = match read_bounded_bytes(&path, remaining) {
+            Ok(content) => content,
+            Err(error) if error.kind() == std::io::ErrorKind::InvalidData => break,
+            Err(error) => return Err(error),
+        };
         let relative_path = path
             .strip_prefix(&root)
             .expect("manifest path is inside root")
@@ -371,6 +373,19 @@ mod tests {
         let manifest = build_manifest(&root, 1, 6).unwrap();
         assert_eq!(manifest.entries.len(), 1);
         assert_eq!(manifest.total_bytes, 5);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn manifest_does_not_fully_buffer_a_file_over_remaining_budget() {
+        let root = temp_root("manifest-physical-bound");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("large.txt"), vec![b'x'; MAX_READ_BYTES + 1]).unwrap();
+
+        let manifest = build_manifest(&root, 1, MAX_READ_BYTES).unwrap();
+        assert!(manifest.entries.is_empty());
+        assert_eq!(manifest.total_bytes, 0);
         fs::remove_dir_all(root).unwrap();
     }
 
