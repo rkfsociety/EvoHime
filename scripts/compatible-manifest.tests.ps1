@@ -5,6 +5,8 @@ $workflow = Get-Content -LiteralPath (Join-Path $root '.github\workflows\compati
 foreach ($marker in @(
     "schema = 'evohime.compatible-set.v1'",
     'gh api --paginate --slurp',
+    '-not $_.draft',
+    '-not $_.prerelease',
     'release_tag = $release.tag_name',
     'minimum_version = $updaterVersion',
     'sha256 = ([string]$moduleManifest.sha256).ToLowerInvariant()',

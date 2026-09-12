@@ -21,7 +21,11 @@ function Parse-Version([string]$value) {
 function Get-ModuleRelease([string]$module) {
     $prefix = "module-$module-v"
     $candidates = @($releases | Where-Object {
-        $_.tag_name -is [string] -and $_.tag_name.StartsWith($prefix) -and $null -ne (Parse-Version $_.tag_name.Substring($prefix.Length))
+        $_.tag_name -is [string] -and
+        -not $_.draft -and
+        -not $_.prerelease -and
+        $_.tag_name.StartsWith($prefix) -and
+        $null -ne (Parse-Version $_.tag_name.Substring($prefix.Length))
     } | Sort-Object @{ Expression = { Parse-Version $_.tag_name.Substring($prefix.Length) }; Descending = $true })
     if ($candidates.Count -eq 0) { throw "Не найден опубликованный релиз модуля: $module" }
     return $candidates[0]
