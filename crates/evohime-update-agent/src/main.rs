@@ -796,6 +796,7 @@ fn validate_runtime_manifest(manifest: &RuntimeReleaseManifest) -> Result<(), St
             || entry.name.len() > 260
             || !names.insert(entry.name.as_str())
             || entry.name.contains('\\')
+            || entry.name.contains(':')
             || entry.name.contains("..")
             || Path::new(&entry.name).is_absolute()
             || entry.size == 0
@@ -2195,6 +2196,12 @@ mod tests {
         let error = validate_runtime_manifest(&manifest)
             .expect_err("duplicate runtime file names must be rejected");
         assert!(error.contains("повторная запись"));
+
+        let mut safe_manifest = manifest;
+        safe_manifest.models[0].name = "models/other.bin".into();
+        assert!(validate_runtime_manifest(&safe_manifest).is_ok());
+        safe_manifest.files[0].name = "models/base.bin:stream".into();
+        assert!(validate_runtime_manifest(&safe_manifest).is_err());
     }
 
     #[test]
