@@ -432,7 +432,6 @@ pub fn apply_ui_bundle_staged_with_restart(
         wait_for_process_exit(pid, WAIT_FOR_SHELL);
     }
     wait_until_writable(install_root, WAIT_FOR_UNLOCK)?;
-    clear_health_file(health_file)?;
     validate_component_marker_for(staging, Some(&["ui-bundle.zip".to_owned()]))?;
     if !is_safe_version(version) {
         return Err(io::Error::new(
@@ -471,6 +470,7 @@ pub fn apply_ui_bundle_staged_with_restart(
             "UI bundle version already exists",
         ));
     }
+    clear_health_file(health_file)?;
     fs::rename(temporary, &target)?;
     let active_tmp = active.with_extension("json.tmp");
     let pointer =
@@ -1808,6 +1808,30 @@ mod tests {
 
         assert!(restore_file(&source, &destination).is_err());
         assert!(!destination.with_extension("rollback.tmp").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ui_bundle_validation_failure_keeps_health_marker() {
+        let root = temp_dir("ui-health-preserve");
+        let staging = root.join("staging");
+        let install = root.join("install");
+        let health = root.join("health.json");
+        fs::create_dir_all(staging.join("ui-bundle")).unwrap();
+        fs::write(staging.join("ui-bundle/index.html"), "new").unwrap();
+        fs::write(&health, r#"{"healthy":true}"#).unwrap();
+
+        let error = super::apply_ui_bundle_staged_with_restart(
+            &staging,
+            &install,
+            "../invalid",
+            None,
+            None,
+            Some(&health),
+        )
+        .expect_err("invalid UI version must be rejected");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(health.is_file());
         fs::remove_dir_all(root).unwrap();
     }
 }
