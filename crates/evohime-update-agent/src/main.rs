@@ -739,7 +739,7 @@ fn read_installed_module_manifest(install_dir: &Path) -> Result<InstalledManifes
             components: Vec::new(),
         });
     }
-    serde_json::from_str::<InstalledManifest>(&read_bounded_text(&path)?)
+    parse_json_text::<InstalledManifest>(&read_bounded_text(&path)?)
         .map_err(|error| format!("updater: component manifest повреждён: {error}"))
 }
 
@@ -768,7 +768,7 @@ fn read_runtime_version(data_dir: &Path) -> Result<Option<ModuleRecord>, String>
     if !path.is_file() {
         return Ok(None);
     }
-    let manifest = serde_json::from_str::<RuntimeReleaseManifest>(&read_bounded_text(&path)?)
+    let manifest = parse_json_text::<RuntimeReleaseManifest>(&read_bounded_text(&path)?)
         .map_err(|error| format!("updater: manifest listener-runtime повреждён: {error}"))?;
     validate_runtime_manifest(&manifest)?;
     Ok(Some(ModuleRecord {
@@ -1442,10 +1442,12 @@ fn write_status(data_dir: &Path, phase: &'static str, message: &str, updates: &[
 }
 
 fn read<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, String> {
-    read_bounded_text(Path::new(path)).and_then(|text| {
-        serde_json::from_str(text.strip_prefix('\u{feff}').unwrap_or(&text))
-            .map_err(|error| error.to_string())
-    })
+    read_bounded_text(Path::new(path)).and_then(|text| parse_json_text(&text))
+}
+
+fn parse_json_text<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, String> {
+    serde_json::from_str(text.strip_prefix('\u{feff}').unwrap_or(text))
+        .map_err(|error| error.to_string())
 }
 
 fn read_bounded_text(path: &Path) -> Result<String, String> {
