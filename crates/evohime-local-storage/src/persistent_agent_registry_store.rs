@@ -228,7 +228,8 @@ pub fn save_goal_binding(
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
          ON CONFLICT(agent_id, goal_id, goal_revision, responsibility) DO UPDATE SET
            scope_json=excluded.scope_json, binding_json=excluded.binding_json,
-           created_at_ms=excluded.created_at_ms",
+           created_at_ms=excluded.created_at_ms
+         WHERE persistent_agent_goal_bindings.binding_json = excluded.binding_json",
         params![
             input.agent_id,
             input.goal_id,
@@ -496,5 +497,38 @@ mod tests {
             load_reporting_history(&connection, "agent", 10).unwrap(),
             vec![(2, Some("parent".into()), "created".into(), "user".into(), 2)]
         );
+    }
+
+    #[test]
+    fn goal_binding_does_not_change_for_same_identity_key() {
+        let connection = Connection::open_in_memory().unwrap();
+        install_schema(&connection).unwrap();
+        let input = SaveGoalBindingInput {
+            agent_id: "agent",
+            goal_id: "goal",
+            goal_revision: 2,
+            responsibility: "owner",
+            scope_json: None,
+            binding_json: br#"{"scope":"original"}"#,
+            now_ms: 2,
+        };
+        assert!(save_goal_binding(&connection, input).unwrap());
+        assert!(!save_goal_binding(
+            &connection,
+            SaveGoalBindingInput {
+                binding_json: br#"{"scope":"tampered"}"#,
+                now_ms: 3,
+                ..input
+            }
+        )
+        .unwrap());
+        let stored: Vec<u8> = connection
+            .query_row(
+                "SELECT binding_json FROM persistent_agent_goal_bindings WHERE agent_id='agent'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, br#"{"scope":"original"}"#.to_vec());
     }
 }
