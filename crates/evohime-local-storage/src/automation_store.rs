@@ -455,7 +455,7 @@ pub fn insert_definition(
     record: &AutomationDefinitionRecord,
     now_ms: i64,
 ) -> rusqlite::Result<()> {
-    connection.execute("INSERT INTO automation_definitions (definition_id, revision, owner_scope, definition_json, definition_hash, created_at_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![record.definition_id, record.revision as i64, record.owner_scope, record.definition_json, record.definition_hash, now_ms])?;
+    connection.execute("INSERT INTO automation_definitions (definition_id, revision, owner_scope, definition_json, definition_hash, created_at_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(definition_id, revision, owner_scope) DO NOTHING", params![record.definition_id, record.revision as i64, record.owner_scope, record.definition_json, record.definition_hash, now_ms])?;
     Ok(())
 }
 
@@ -677,6 +677,17 @@ mod tests {
             definition_hash: "h".into(),
         };
         insert_definition(&c, &d, 1).unwrap();
+        insert_definition(
+            &c,
+            &AutomationDefinitionRecord {
+                definition_json: "{\"replacement\":true}".into(),
+                definition_hash: "replacement".into(),
+                ..d.clone()
+            },
+            2,
+        )
+        .unwrap();
+        assert_eq!(get_definition(&c, "d", 1, "o").unwrap().unwrap(), d);
         let r = AutomationRunRecord {
             run_id: "run".into(),
             definition_id: "d".into(),
