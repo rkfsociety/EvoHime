@@ -2,6 +2,8 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{de::DeserializeOwned, Serialize};
 
+const MAX_DEFINITION_BYTES: usize = 64 * 1024;
+
 pub fn install_schema(connection: &Connection) -> Result<(), rusqlite::Error> {
     connection.execute_batch("CREATE TABLE IF NOT EXISTS event_trigger_definitions (trigger_id TEXT NOT NULL, owner_scope TEXT NOT NULL, definition_json BLOB NOT NULL, content_hash TEXT NOT NULL, version INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(trigger_id, version)); CREATE TABLE IF NOT EXISTS event_trigger_events (event_id TEXT PRIMARY KEY, trigger_id TEXT NOT NULL, envelope_json BLOB NOT NULL, outcome TEXT NOT NULL, correlation_id TEXT NOT NULL, accepted_at_ms INTEGER NOT NULL, expires_at_ms INTEGER NOT NULL); CREATE INDEX IF NOT EXISTS idx_event_trigger_events_trigger ON event_trigger_events(trigger_id, accepted_at_ms); CREATE TABLE IF NOT EXISTS event_trigger_dedup (trigger_id TEXT NOT NULL, dedup_key TEXT NOT NULL, event_id TEXT NOT NULL, expires_at_ms INTEGER NOT NULL, PRIMARY KEY(trigger_id, dedup_key));")
 }
@@ -17,6 +19,11 @@ pub fn put_definition<T: Serialize>(
 ) -> Result<(), rusqlite::Error> {
     let json = serde_json::to_vec(definition)
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    if json.len() > MAX_DEFINITION_BYTES {
+        return Err(rusqlite::Error::ToSqlConversionFailure(
+            "trigger definition exceeds 64 KiB".into(),
+        ));
+    }
     connection.execute("INSERT INTO event_trigger_definitions(trigger_id,owner_scope,definition_json,content_hash,version,updated_at_ms) VALUES(?1,?2,?3,?4,?5,?6)", params![trigger_id, owner_scope, json, hash, version as i64, now_ms])?;
     Ok(())
 }
@@ -116,5 +123,13 @@ mod tests {
             .unwrap(),
             "pending"
         );
+    }
+
+    #[test]
+    fn definition_payload_is_bounded() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        let oversized = "x".repeat(MAX_DEFINITION_BYTES);
+        assert!(put_definition(&c, "t", "scope", &oversized, "hash", 1, 1).is_err());
     }
 }
