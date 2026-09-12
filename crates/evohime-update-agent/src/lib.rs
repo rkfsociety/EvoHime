@@ -85,6 +85,8 @@ pub struct ComponentManifest {
     pub components: Vec<InstalledComponent>,
 }
 
+const MAX_AVAILABLE_MODULES: usize = 64;
+
 /// Validate the immutable package manifest before starting any product process.
 /// A mismatch is fatal: running a partially replaced installation would make
 /// dependency and rollback guarantees impossible.
@@ -119,6 +121,18 @@ pub fn select_outdated(
     installed: &InstalledManifest,
     available: &[ModuleRecord],
 ) -> Result<UpdatePlan, String> {
+    if available.len() > MAX_AVAILABLE_MODULES {
+        return Err("available module list is too large".into());
+    }
+    let mut available_ids = std::collections::HashSet::with_capacity(available.len());
+    for item in available {
+        if item.id.is_empty() || item.id.len() > 64 || !available_ids.insert(item.id.as_str()) {
+            return Err(format!("duplicate or invalid module id: {}", item.id));
+        }
+        if !is_valid_semver(&item.version) {
+            return Err(format!("invalid version for {}", item.id));
+        }
+    }
     let current = installed
         .components
         .iter()
@@ -126,9 +140,6 @@ pub fn select_outdated(
         .collect::<std::collections::HashMap<_, _>>();
     let mut selected = std::collections::BTreeSet::new();
     for item in available {
-        if !is_valid_semver(&item.version) {
-            return Err(format!("invalid version for {}", item.id));
-        }
         if current
             .get(item.id.as_str())
             .is_none_or(|version| compare_semver(version, &item.version) == Ordering::Less)
@@ -271,6 +282,26 @@ mod tests {
             select_outdated(&installed, &available).unwrap().modules,
             vec!["core", "shell"]
         );
+    }
+
+    #[test]
+    fn rejects_duplicate_available_module_ids() {
+        let available = vec![
+            ModuleRecord {
+                id: "core".into(),
+                version: "1.0.0".into(),
+                dependencies: vec![],
+            },
+            ModuleRecord {
+                id: "core".into(),
+                version: "1.1.0".into(),
+                dependencies: vec![],
+            },
+        ];
+
+        let error = select_outdated(&InstalledManifest { components: vec![] }, &available)
+            .expect_err("duplicate module ids must be rejected");
+        assert!(error.contains("duplicate or invalid module id"));
     }
 
     #[test]
