@@ -137,7 +137,6 @@ pub fn clear_bridge(c: &Connection, bridge_id: &str) -> rusqlite::Result<()> {
         "DELETE FROM conversation_bridges WHERE bridge_id=?1",
         params![bridge_id],
     )?;
-    c.execute("DELETE FROM conversation_bridge_idempotency", [])?;
     Ok(())
 }
 
@@ -176,8 +175,10 @@ mod tests {
         assert!(get_binding(&c, "bind").unwrap().is_some());
         assert!(put_inbound(&c, "m", "bind", b"{}", 1).unwrap());
         assert!(!put_inbound(&c, "m", "bind", b"{}", 1).unwrap());
+        assert!(claim_idempotency(&c, "other-bridge-key", "create").unwrap());
         clear_bridge(&c, "b").unwrap();
         assert!(list_inbound(&c).unwrap().is_empty());
+        assert!(!claim_idempotency(&c, "other-bridge-key", "create").unwrap());
     }
 
     #[test]
