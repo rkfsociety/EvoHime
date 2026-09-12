@@ -1,4 +1,5 @@
 use rusqlite::{params, Connection};
+const MAX_PROFILES: i64 = 256;
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS approval_policy_profiles (id TEXT PRIMARY KEY, version INTEGER NOT NULL, enabled INTEGER NOT NULL, profile_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
@@ -22,8 +23,9 @@ pub fn put(
 }
 
 pub fn list(c: &Connection) -> rusqlite::Result<Vec<Vec<u8>>> {
-    let mut s = c.prepare("SELECT profile_json FROM approval_policy_profiles ORDER BY id")?;
-    let rows = s.query_map([], |r| r.get(0))?.collect();
+    let mut s =
+        c.prepare("SELECT profile_json FROM approval_policy_profiles ORDER BY id LIMIT ?1")?;
+    let rows = s.query_map([MAX_PROFILES], |r| r.get(0))?.collect();
     rows
 }
 
@@ -38,5 +40,15 @@ mod tests {
         assert!(put(&c, "policy", 2, true, br#"{"version":2}"#, 2).unwrap());
         assert!(!put(&c, "policy", 1, false, br#"{"version":1}"#, 3).unwrap());
         assert_eq!(list(&c).unwrap(), vec![br#"{"version":2}"#.to_vec()]);
+    }
+
+    #[test]
+    fn list_is_bounded() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        for index in 0..300 {
+            assert!(put(&c, &format!("policy-{index:03}"), 1, true, b"{}", index).unwrap());
+        }
+        assert_eq!(list(&c).unwrap().len(), MAX_PROFILES as usize);
     }
 }
