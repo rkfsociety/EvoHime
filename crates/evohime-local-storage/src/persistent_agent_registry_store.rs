@@ -373,22 +373,22 @@ pub fn record_command_outcome(
     if outcome_json.len() > MAX_RECORD_BYTES {
         return Ok(None);
     }
-    let existing: Option<(String, Vec<u8>)> = connection
+    let inserted = connection.execute(
+        "INSERT INTO persistent_agent_commands(idempotency_key, command_hash, outcome_json, created_at_ms)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(idempotency_key) DO NOTHING",
+        params![idempotency_key, command_hash, outcome_json, now_ms],
+    )?;
+    if inserted == 1 {
+        return Ok(None);
+    }
+    connection
         .query_row(
             "SELECT command_hash, outcome_json FROM persistent_agent_commands WHERE idempotency_key=?1",
             [idempotency_key],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
-        .optional()?;
-    if existing.is_some() {
-        return Ok(existing);
-    }
-    connection.execute(
-        "INSERT INTO persistent_agent_commands(idempotency_key, command_hash, outcome_json, created_at_ms)
-         VALUES (?1, ?2, ?3, ?4)",
-        params![idempotency_key, command_hash, outcome_json, now_ms],
-    )?;
-    Ok(None)
+        .optional()
 }
 
 #[cfg(test)]
@@ -458,6 +458,21 @@ mod tests {
         assert_eq!(
             load_assignment(&connection, "assignment-1").unwrap(),
             Some(br#"{"revision":2}"#.to_vec())
+        );
+    }
+
+    #[test]
+    fn command_outcome_replay_is_atomic_on_duplicate() {
+        let connection = Connection::open_in_memory().unwrap();
+        install_schema(&connection).unwrap();
+        assert!(
+            record_command_outcome(&connection, "key", "hash", br#"{"ok":true}"#, 1)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            record_command_outcome(&connection, "key", "other", br#"{"ok":false}"#, 2).unwrap(),
+            Some(("hash".into(), br#"{"ok":true}"#.to_vec()))
         );
     }
 }
