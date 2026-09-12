@@ -73,7 +73,8 @@ pub fn save_idempotent_command(
         return Err(rusqlite::Error::InvalidQuery);
     }
     connection.execute(
-        "INSERT INTO execution_environment_idempotency(owner_scope,idempotency_key,command_hash,response_json,created_at_ms) VALUES(?1,?2,?3,?4,?5)",
+        "INSERT INTO execution_environment_idempotency(owner_scope,idempotency_key,command_hash,response_json,created_at_ms) VALUES(?1,?2,?3,?4,?5)
+         ON CONFLICT(owner_scope,idempotency_key) DO NOTHING",
         params![owner_scope, idempotency_key, command_hash, response, now_ms],
     )?;
     Ok(())
@@ -440,6 +441,19 @@ mod tests {
             "a",
             br#"{"ok":true}"#,
             1,
+        )
+        .unwrap();
+        assert_eq!(
+            load_idempotent_command(&db, "application:application", "create-1").unwrap(),
+            Some(("a".into(), br#"{"ok":true}"#.to_vec()))
+        );
+        save_idempotent_command(
+            &db,
+            "application:application",
+            "create-1",
+            "different",
+            br#"{"ok":false}"#,
+            2,
         )
         .unwrap();
         assert_eq!(
