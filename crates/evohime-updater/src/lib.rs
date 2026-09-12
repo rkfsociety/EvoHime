@@ -465,9 +465,6 @@ pub fn apply_ui_bundle_staged_with_restart(
     }
     let target = bundles.join(version);
     if target.exists() {
-        fs::remove_dir_all(&target)?;
-    }
-    if target.exists() {
         let _ = fs::remove_dir_all(&temporary);
         return Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
@@ -1771,6 +1768,26 @@ mod tests {
             r#"{"version":"old"}"#
         );
         assert!(!install.join("ui-bundles/1.2.3").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ui_bundle_apply_rejects_existing_version_without_replacing_it() {
+        let root = temp_dir("ui-duplicate");
+        let staging = root.join("staging");
+        let install = root.join("install");
+        fs::create_dir_all(staging.join("ui-bundle")).unwrap();
+        fs::write(staging.join("ui-bundle/index.html"), "new").unwrap();
+        fs::create_dir_all(install.join("ui-bundles/1.2.3")).unwrap();
+        fs::write(install.join("ui-bundles/1.2.3/index.html"), "published").unwrap();
+
+        let error = super::apply_ui_bundle_staged(&staging, &install, "1.2.3")
+            .expect_err("published UI versions must be immutable");
+        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(
+            fs::read_to_string(install.join("ui-bundles/1.2.3/index.html")).unwrap(),
+            "published"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }
