@@ -1,5 +1,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
+const MAX_CONNECTION_JSON_BYTES: usize = 64 * 1024;
+
 #[derive(Clone, Copy)]
 pub struct ConnectionInput<'a> {
     pub id: &'a str,
@@ -14,6 +16,9 @@ pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS remote_conversation_channels (connection_id TEXT PRIMARY KEY, owner_scope TEXT NOT NULL, connection_json BLOB NOT NULL, content_hash TEXT NOT NULL, version INTEGER NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS remote_conversation_pairing_claims (connection_id TEXT PRIMARY KEY, code_hash TEXT NOT NULL, expires_at_ms INTEGER NOT NULL, consumed INTEGER NOT NULL DEFAULT 0, external_identity TEXT NOT NULL); CREATE TABLE IF NOT EXISTS remote_conversation_inbound_dedup (connection_id TEXT NOT NULL, message_id TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(connection_id,message_id));")
 }
 pub fn save(c: &Connection, i: ConnectionInput<'_>) -> rusqlite::Result<bool> {
+    if i.connection_json.len() > MAX_CONNECTION_JSON_BYTES {
+        return Ok(false);
+    }
     let old:Option<(u64,Vec<u8>,String)>=c.query_row("SELECT version,connection_json,idempotency_key FROM remote_conversation_channels WHERE connection_id=?1",[i.id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
     if let Some((v, j, k)) = old {
         if v == i.expected_version && j == i.connection_json && k == i.idempotency_key {
@@ -95,5 +100,25 @@ mod tests {
         .unwrap());
         assert!(claim_message(&c, "c", "m", 1).unwrap());
         assert!(!claim_message(&c, "c", "m", 2).unwrap());
+    }
+
+    #[test]
+    fn oversized_connection_json_is_rejected_before_storage() {
+        let c = Connection::open_in_memory().unwrap();
+        install_schema(&c).unwrap();
+        assert!(!save(
+            &c,
+            ConnectionInput {
+                id: "channel",
+                owner_scope: "scope",
+                connection_json: &vec![b'x'; MAX_CONNECTION_JSON_BYTES + 1],
+                content_hash: "hash",
+                expected_version: 0,
+                idempotency_key: "key",
+                now_ms: 1,
+            }
+        )
+        .unwrap());
+        assert!(load(&c, "channel").unwrap().is_none());
     }
 }
