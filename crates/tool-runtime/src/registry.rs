@@ -1423,8 +1423,24 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn cancellation_propagates_into_shell_execution() {
+    #[test]
+    fn cancellation_propagates_into_shell_execution() {
+        std::thread::Builder::new()
+            .name("evohime-shell-cancellation-test".into())
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("test runtime builds")
+                    .block_on(cancellation_propagates_into_shell_execution_inner());
+            })
+            .expect("test thread starts")
+            .join()
+            .expect("test thread completes");
+    }
+
+    async fn cancellation_propagates_into_shell_execution_inner() {
         let dir = tempfile::tempdir().expect("tempdir");
         let permissions = PermissionEngine::new();
         permissions
