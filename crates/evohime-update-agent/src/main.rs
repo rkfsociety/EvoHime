@@ -1471,6 +1471,10 @@ fn merge_installed_manifest_to(
     };
     let mut root =
         serde_json::from_str::<serde_json::Value>(&existing).map_err(|error| error.to_string())?;
+    let installed = serde_json::from_value::<InstalledManifest>(root.clone())
+        .map_err(|error| format!("updater: component manifest повреждён: {error}"))?;
+    select_outdated(&installed, &[])
+        .map_err(|error| format!("updater: component manifest повреждён: {error}"))?;
     let components = root
         .get_mut("components")
         .and_then(serde_json::Value::as_array_mut)
@@ -1795,6 +1799,30 @@ mod tests {
         let error = merge_installed_manifest_to(&root, &[], &destination)
             .expect_err("corrupt manifest must not be replaced with an empty one");
         assert!(!error.is_empty());
+        assert!(!destination.exists());
+        fs::remove_dir_all(root).expect("remove temporary install directory");
+    }
+
+    #[test]
+    fn manifest_merge_rejects_duplicate_existing_components() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-duplicate-manifest-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("create temporary install directory");
+        fs::write(
+            root.join("evohime.components.json"),
+            br#"{"components":[{"id":"core","version":"1.0.0"},{"id":"core","version":"1.0.0"}]}"#,
+        )
+        .expect("write duplicate manifest");
+        let destination = root.join("evohime.components.json.next");
+
+        let error = merge_installed_manifest_to(&root, &[], &destination)
+            .expect_err("duplicate installed components must be rejected");
+        assert!(error.contains("duplicate or invalid installed module id"));
         assert!(!destination.exists());
         fs::remove_dir_all(root).expect("remove temporary install directory");
     }
