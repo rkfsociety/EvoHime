@@ -86,6 +86,7 @@ pub struct ComponentManifest {
 }
 
 const MAX_AVAILABLE_MODULES: usize = 64;
+const MAX_MODULE_DEPENDENCIES: usize = 64;
 
 /// Validate the immutable package manifest before starting any product process.
 /// A mismatch is fatal: running a partially replaced installation would make
@@ -131,6 +132,17 @@ pub fn select_outdated(
         }
         if !is_valid_semver(&item.version) {
             return Err(format!("invalid version for {}", item.id));
+        }
+        let mut dependencies = std::collections::HashSet::with_capacity(item.dependencies.len());
+        if item.dependencies.len() > MAX_MODULE_DEPENDENCIES
+            || item.dependencies.iter().any(|dependency| {
+                dependency.is_empty()
+                    || dependency.len() > 64
+                    || !dependencies.insert(dependency.as_str())
+                    || dependency == &item.id
+            })
+        {
+            return Err(format!("invalid dependencies for {}", item.id));
         }
     }
     let current = installed
@@ -302,6 +314,19 @@ mod tests {
         let error = select_outdated(&InstalledManifest { components: vec![] }, &available)
             .expect_err("duplicate module ids must be rejected");
         assert!(error.contains("duplicate or invalid module id"));
+    }
+
+    #[test]
+    fn rejects_ambiguous_available_dependencies() {
+        let available = vec![ModuleRecord {
+            id: "core".into(),
+            version: "1.0.0".into(),
+            dependencies: vec!["supervisor".into(), "supervisor".into()],
+        }];
+
+        let error = select_outdated(&InstalledManifest { components: vec![] }, &available)
+            .expect_err("duplicate dependencies must be rejected");
+        assert!(error.contains("invalid dependencies"));
     }
 
     #[test]
