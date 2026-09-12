@@ -632,7 +632,13 @@ impl MemoryStoreSql {
         }
         validate_required("scope_id", scope_id, MAX_SCOPE_ID_BYTES)?;
         validate_required("now", now, MAX_TIMESTAMP_BYTES)?;
-        let pattern = format!("%{}%", query.replace('%', "\\%").replace('_', "\\_"));
+        let pattern = format!(
+            "%{}%",
+            query
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_")
+        );
         let mut statement = connection.prepare(&Self::search_sql())?;
         let records = statement
             .query_map(
@@ -1402,6 +1408,11 @@ mod tests {
             .expect("insert literal");
         MemoryStoreSql::insert(&connection, &record("wildcard", "budget is 100X fixed"))
             .expect("insert wildcard candidate");
+        MemoryStoreSql::insert(
+            &connection,
+            &record("windows-path", r#"path C:\temp\agent"#),
+        )
+        .expect("insert path");
 
         let found = MemoryStoreSql::search(
             &connection,
@@ -1418,6 +1429,22 @@ mod tests {
                 .map(|item| item.id.as_str())
                 .collect::<Vec<_>>(),
             ["literal"]
+        );
+        let path_found = MemoryStoreSql::search(
+            &connection,
+            MemoryScope::Project,
+            "project-1",
+            r#"C:\temp\agent"#,
+            "2026-09-01T00:00:00Z",
+            10,
+        )
+        .expect("search literal backslashes");
+        assert_eq!(
+            path_found
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            ["windows-path"]
         );
     }
 
