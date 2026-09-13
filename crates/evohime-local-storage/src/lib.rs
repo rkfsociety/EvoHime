@@ -2224,6 +2224,29 @@ impl LocalDatabase {
         Ok(self.connection.last_insert_rowid())
     }
 
+    /// Appends one journal row with explicit timing boundaries for the Core
+    /// journal writer. SQL execution and transaction commit are intentionally
+    /// reported separately from the legacy autocommit helper above.
+    pub fn append_event_timed(
+        &mut self,
+        task_id: &str,
+        event_type: &str,
+        payload: &[u8],
+    ) -> Result<(i64, f64, f64), StorageError> {
+        let transaction = self.connection.transaction()?;
+        let sql_started = std::time::Instant::now();
+        transaction.execute(
+            "INSERT INTO events(task_id, event_type, payload) VALUES (?1, ?2, ?3)",
+            rusqlite::params![task_id, event_type, payload],
+        )?;
+        let sql_ms = sql_started.elapsed().as_secs_f64() * 1000.0;
+        let sequence = transaction.last_insert_rowid();
+        let commit_started = std::time::Instant::now();
+        transaction.commit()?;
+        let commit_ms = commit_started.elapsed().as_secs_f64() * 1000.0;
+        Ok((sequence, sql_ms, commit_ms))
+    }
+
     pub fn record_tool_metric(&self, input: ToolMetricInput<'_>) -> Result<i64, StorageError> {
         self.connection.execute(
             "INSERT INTO run_tool_metrics(task_id, tool_name, iteration, ok, failure_kind, recovery_hint, escalated)

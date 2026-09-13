@@ -256,8 +256,8 @@ impl EventJournal {
             let (result_sender, result_receiver) = std::sync::mpsc::channel();
             let queue_wait_ms = queue_started.elapsed().as_secs_f64() * 1000.0;
             writer.send(JournalWrite(Box::new(move |database| {
-            let mut last_sequence =
-                database.append_event(&task_id, &event_type_for_sql, &payload)?;
+            let (mut last_sequence, mut sql_ms, mut commit_ms) =
+                database.append_event_timed(&task_id, &event_type_for_sql, &payload)?;
             if let Some((conversation_id, client_message_id, workspace_id)) =
                 evohime_local_storage::domains::audit::task_binding(
                     database.connection(),
@@ -287,13 +287,17 @@ impl EventJournal {
                     )?;
                     let renderer = crate::conversation_event_log::renderer_event(&stored)
                         .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
-                    last_sequence = database.append_event(
+                    let (sequence, event_sql_ms, event_commit_ms) = database.append_event_timed(
                         &task_id,
                         "conversation.event",
                         &serde_json::to_vec(&renderer)?,
                     )?;
+                    last_sequence = sequence;
+                    sql_ms += event_sql_ms;
+                    commit_ms += event_commit_ms;
                 }
             }
+            tracing::debug!(sql_ms, commit_ms, "core event journal SQL and commit completed");
             Ok(last_sequence)
             }), result_sender)).map_err(|_| StorageError::InvalidInput("journal writer stopped".into()))?;
             let result = result_receiver.recv().map_err(|_| StorageError::InvalidInput("journal writer stopped".into()))?;
