@@ -255,61 +255,73 @@ impl EventJournal {
         let result = tokio::task::spawn_blocking(move || -> Result<i64, StorageError> {
             let (result_sender, result_receiver) = std::sync::mpsc::channel();
             let queue_wait_ms = queue_started.elapsed().as_secs_f64() * 1000.0;
-            writer.send(JournalWrite(Box::new(move |database| {
-            let (mut last_sequence, mut sql_ms, mut commit_ms) =
-                database.append_event_timed(&task_id, &event_type_for_sql, &payload)?;
-            if let Some((conversation_id, client_message_id, workspace_id)) =
-                evohime_local_storage::domains::audit::task_binding(
-                    database.connection(),
-                    &task_id,
-                )?
-            {
-                for draft in projected {
-                    let stored = evohime_local_storage::domains::audit::append_event(
-                        database.connection(),
-                        evohime_local_storage::domains::audit::NewConversationEvent {
-                            conversation_id: &conversation_id,
-                            workspace_id: &workspace_id,
-                            kind: &draft.kind,
-                            category: &draft.category,
-                            authoritative_payload: &draft.authoritative_payload,
-                            renderer_payload: &draft.renderer_payload,
-                            correlation_id: Some(&client_message_id),
-                            causation_id: Some(&client_message_id),
-                            task_id: Some(&task_id),
-                            run_id: Some(&task_id),
-                            turn_id: Some(&task_id),
-                            client_message_id: Some(&client_message_id),
-                            persistence_class: &draft.persistence_class,
-                            sensitivity: &draft.sensitivity,
-                            timestamp_ms: task_memory::now_millis() as i64,
-                        },
-                    )?;
-                    let renderer = crate::conversation_event_log::renderer_event(&stored)
-                        .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
-                    let (sequence, event_sql_ms, event_commit_ms) = database.append_event_timed(
-                        &task_id,
-                        "conversation.event",
-                        &serde_json::to_vec(&renderer)?,
-                    )?;
-                    last_sequence = sequence;
-                    sql_ms += event_sql_ms;
-                    commit_ms += event_commit_ms;
-                }
-            }
-            tracing::debug!(sql_ms, commit_ms, "core event journal SQL and commit completed");
-            Ok(last_sequence)
-            }), result_sender)).map_err(|_| StorageError::InvalidInput("journal writer stopped".into()))?;
-            let result = result_receiver.recv().map_err(|_| StorageError::InvalidInput("journal writer stopped".into()))?;
+            writer
+                .send(JournalWrite(
+                    Box::new(move |database| {
+                        let (mut last_sequence, mut sql_ms, mut commit_ms) =
+                            database.append_event_timed(&task_id, &event_type_for_sql, &payload)?;
+                        if let Some((conversation_id, client_message_id, workspace_id)) =
+                            evohime_local_storage::domains::audit::task_binding(
+                                database.connection(),
+                                &task_id,
+                            )?
+                        {
+                            for draft in projected {
+                                let stored = evohime_local_storage::domains::audit::append_event(
+                                    database.connection(),
+                                    evohime_local_storage::domains::audit::NewConversationEvent {
+                                        conversation_id: &conversation_id,
+                                        workspace_id: &workspace_id,
+                                        kind: &draft.kind,
+                                        category: &draft.category,
+                                        authoritative_payload: &draft.authoritative_payload,
+                                        renderer_payload: &draft.renderer_payload,
+                                        correlation_id: Some(&client_message_id),
+                                        causation_id: Some(&client_message_id),
+                                        task_id: Some(&task_id),
+                                        run_id: Some(&task_id),
+                                        turn_id: Some(&task_id),
+                                        client_message_id: Some(&client_message_id),
+                                        persistence_class: &draft.persistence_class,
+                                        sensitivity: &draft.sensitivity,
+                                        timestamp_ms: task_memory::now_millis() as i64,
+                                    },
+                                )?;
+                                let renderer =
+                                    crate::conversation_event_log::renderer_event(&stored)
+                                        .map_err(|error| {
+                                            StorageError::InvalidInput(error.to_string())
+                                        })?;
+                                let (sequence, event_sql_ms, event_commit_ms) = database
+                                    .append_event_timed(
+                                        &task_id,
+                                        "conversation.event",
+                                        &serde_json::to_vec(&renderer)?,
+                                    )?;
+                                last_sequence = sequence;
+                                sql_ms += event_sql_ms;
+                                commit_ms += event_commit_ms;
+                            }
+                        }
+                        tracing::debug!(
+                            sql_ms,
+                            commit_ms,
+                            "core event journal SQL and commit completed"
+                        );
+                        Ok(last_sequence)
+                    }),
+                    result_sender,
+                ))
+                .map_err(|_| StorageError::InvalidInput("journal writer stopped".into()))?;
+            let result = result_receiver
+                .recv()
+                .map_err(|_| StorageError::InvalidInput("journal writer stopped".into()))?;
             tracing::debug!(queue_wait_ms, "core event journal queue wait completed");
             result
         })
         .await
         .map_err(|error| StorageError::InvalidInput(format!("journal worker failed: {error}")))?;
-        tracing::debug!(
-            event_type,
-            "core event SQL write completed"
-        );
+        tracing::debug!(event_type, "core event SQL write completed");
         result
     }
 

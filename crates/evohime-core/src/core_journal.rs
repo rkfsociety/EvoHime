@@ -7,8 +7,12 @@ pub struct EventJournal {
     pub(crate) writer: Arc<std::sync::mpsc::SyncSender<JournalWrite>>,
 }
 
-pub(crate) type JournalWriteFn = Box<dyn FnOnce(&mut LocalDatabase) -> Result<i64, StorageError> + Send + 'static>;
-pub(crate) struct JournalWrite(pub JournalWriteFn, pub std::sync::mpsc::Sender<Result<i64, StorageError>>);
+pub(crate) type JournalWriteFn =
+    Box<dyn FnOnce(&mut LocalDatabase) -> Result<i64, StorageError> + Send + 'static>;
+pub(crate) struct JournalWrite(
+    pub JournalWriteFn,
+    pub std::sync::mpsc::Sender<Result<i64, StorageError>>,
+);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DurableReplayBatch {

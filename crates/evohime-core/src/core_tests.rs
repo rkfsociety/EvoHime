@@ -1320,8 +1320,7 @@ mod tests {
                 .execute_batch("DROP TABLE events")
                 .expect("test removes journal table");
         }
-        let (coordinator, mut notifications) =
-            TaskCoordinator::new_with_journal(2, None, journal);
+        let (coordinator, mut notifications) = TaskCoordinator::new_with_journal(2, None, journal);
 
         coordinator
             .emit(CoreEvent::TaskStarted {
@@ -1330,13 +1329,10 @@ mod tests {
             })
             .await;
 
-        let event = tokio::time::timeout(
-            std::time::Duration::from_secs(1),
-            notifications.recv(),
-        )
-        .await
-        .expect("journal failure is reported without deadlock")
-        .expect("failure notification is sent");
+        let event = tokio::time::timeout(std::time::Duration::from_secs(1), notifications.recv())
+            .await
+            .expect("journal failure is reported without deadlock")
+            .expect("failure notification is sent");
         assert!(matches!(
             event,
             CoreEvent::EventPersistenceFailed { source, .. } if source == "journal"

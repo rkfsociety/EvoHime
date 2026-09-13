@@ -52,6 +52,7 @@ export function titleFromPrompt(prompt: string): string {
 export class ChatStore {
   private cached: StoredDocument | undefined
   private loadPromise: Promise<StoredDocument> | undefined
+  private mutationQueue: Promise<void> = Promise.resolve()
   private writeQueue: Promise<void> = Promise.resolve()
 
   constructor(
@@ -88,19 +89,21 @@ export class ChatStore {
       messages: []
       , workbenchPresentation: DEFAULT_WORKBENCH
     }
-    const current = (await this.read()).chats
-    const siblings = current.filter((item) => samePath(item.workspacePath, normalized))
-    // Oldest chats of this workspace fall off rather than growing without end.
-    const dropped =
-      siblings.length >= MAX_CHATS_PER_WORKSPACE
-        ? new Set(
-            [...siblings]
-              .sort((left, right) => left.updatedMs - right.updatedMs)
-              .slice(0, siblings.length - MAX_CHATS_PER_WORKSPACE + 1)
-              .map((item) => item.id)
-          )
-        : new Set<string>()
-    await this.write({ chats: [chat, ...current.filter((item) => !dropped.has(item.id))] })
+    await this.mutate(async () => {
+      const current = (await this.read()).chats
+      const siblings = current.filter((item) => samePath(item.workspacePath, normalized))
+      // Oldest chats of this workspace fall off rather than growing without end.
+      const dropped =
+        siblings.length >= MAX_CHATS_PER_WORKSPACE
+          ? new Set(
+              [...siblings]
+                .sort((left, right) => left.updatedMs - right.updatedMs)
+                .slice(0, siblings.length - MAX_CHATS_PER_WORKSPACE + 1)
+                .map((item) => item.id)
+            )
+          : new Set<string>()
+      await this.write({ chats: [chat, ...current.filter((item) => !dropped.has(item.id))] })
+    })
     return chat
   }
 
@@ -112,29 +115,33 @@ export class ChatStore {
   async appendPrompt(chatId: string, taskId: string, prompt: string, clientMessageId?: string): Promise<ChatRecord | null> {
     const text = prompt.trim().slice(0, MAX_PROMPT_CHARS)
     if (text.length === 0) return null
-    const current = (await this.read()).chats
-    const chat = current.find((item) => item.id === chatId)
-    if (!chat) return null
-    const message: ChatMessage = {
-      taskId,
-      clientMessageId: clientMessageId?.slice(0, 128) || taskId,
-      prompt: text,
-      atMs: this.now()
-    }
-    const next: ChatRecord = {
-      ...chat,
-      title: chat.messages.length === 0 ? titleFromPrompt(text) : chat.title,
-      updatedMs: message.atMs,
-      taskIds: [...new Set([...chat.taskIds, taskId])].slice(-MAX_MESSAGES_PER_CHAT),
-      messages: [...chat.messages, message].slice(-MAX_MESSAGES_PER_CHAT)
-    }
-    await this.write({ chats: current.map((item) => (item.id === chatId ? next : item)) })
-    return next
+    return this.mutate(async () => {
+      const current = (await this.read()).chats
+      const chat = current.find((item) => item.id === chatId)
+      if (!chat) return null
+      const message: ChatMessage = {
+        taskId,
+        clientMessageId: clientMessageId?.slice(0, 128) || taskId,
+        prompt: text,
+        atMs: this.now()
+      }
+      const next: ChatRecord = {
+        ...chat,
+        title: chat.messages.length === 0 ? titleFromPrompt(text) : chat.title,
+        updatedMs: message.atMs,
+        taskIds: [...new Set([...chat.taskIds, taskId])].slice(-MAX_MESSAGES_PER_CHAT),
+        messages: [...chat.messages, message].slice(-MAX_MESSAGES_PER_CHAT)
+      }
+      await this.write({ chats: current.map((item) => (item.id === chatId ? next : item)) })
+      return next
+    })
   }
 
   async remove(chatId: string): Promise<void> {
-    const current = (await this.read()).chats
-    await this.write({ chats: current.filter((chat) => chat.id !== chatId) })
+    await this.mutate(async () => {
+      const current = (await this.read()).chats
+      await this.write({ chats: current.filter((chat) => chat.id !== chatId) })
+    })
   }
 
   async getWorkbenchPresentation(chatId: string): Promise<WorkbenchPresentation> {
@@ -142,24 +149,34 @@ export class ChatStore {
   }
 
   async saveWorkbenchPresentation(chatId: string, value: WorkbenchPresentation): Promise<WorkbenchPresentation> {
-    const current = (await this.read()).chats
-    const chat = current.find((item) => item.id === chatId)
-    if (!chat) return DEFAULT_WORKBENCH
-    const presentation: WorkbenchPresentation = {
-      activeTab: ['files', 'diff', 'tasks', 'terminal', 'browser', 'usage'].includes(value.activeTab) ? value.activeTab : 'tasks',
-      splitRatio: Number.isFinite(value.splitRatio) ? Math.min(0.8, Math.max(0.2, value.splitRatio)) : 0.5,
-      collapsed: Boolean(value.collapsed)
-    }
-    await this.write({ chats: current.map((item) => item.id === chatId ? { ...item, workbenchPresentation: presentation } : item) })
-    return presentation
+    return this.mutate(async () => {
+      const current = (await this.read()).chats
+      const chat = current.find((item) => item.id === chatId)
+      if (!chat) return DEFAULT_WORKBENCH
+      const presentation: WorkbenchPresentation = {
+        activeTab: ['files', 'diff', 'tasks', 'terminal', 'browser', 'usage'].includes(value.activeTab) ? value.activeTab : 'tasks',
+        splitRatio: Number.isFinite(value.splitRatio) ? Math.min(0.8, Math.max(0.2, value.splitRatio)) : 0.5,
+        collapsed: Boolean(value.collapsed)
+      }
+      await this.write({ chats: current.map((item) => item.id === chatId ? { ...item, workbenchPresentation: presentation } : item) })
+      return presentation
+    })
   }
 
   /** Drops every chat of a workspace the user stopped tracking. */
   async removeWorkspace(workspacePath: string): Promise<void> {
     const normalized = normalizeWorkspacePath(workspacePath)
     if (normalized === null) return
-    const current = (await this.read()).chats
-    await this.write({ chats: current.filter((chat) => !samePath(chat.workspacePath, normalized)) })
+    await this.mutate(async () => {
+      const current = (await this.read()).chats
+      await this.write({ chats: current.filter((chat) => !samePath(chat.workspacePath, normalized)) })
+    })
+  }
+
+  private mutate<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationQueue.then(operation)
+    this.mutationQueue = result.then(() => undefined, () => undefined)
+    return result
   }
 
   private read(): Promise<StoredDocument> {

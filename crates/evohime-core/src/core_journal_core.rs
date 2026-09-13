@@ -6,12 +6,17 @@ impl EventJournal {
         let database = Arc::new(Mutex::new(LocalDatabase::open(&path)?));
         let worker_database = database.clone();
         let (sender, receiver) = std::sync::mpsc::sync_channel::<JournalWrite>(256);
-        std::thread::Builder::new().name("evohime-journal-writer".into()).spawn(move || {
-            while let Ok(JournalWrite(write, result)) = receiver.recv() {
-                let mut database = worker_database.blocking_lock();
-                let _ = result.send(write(&mut database));
-            }
-        }).map_err(|error| StorageError::InvalidInput(format!("journal writer failed to start: {error}")))?;
+        std::thread::Builder::new()
+            .name("evohime-journal-writer".into())
+            .spawn(move || {
+                while let Ok(JournalWrite(write, result)) = receiver.recv() {
+                    let mut database = worker_database.blocking_lock();
+                    let _ = result.send(write(&mut database));
+                }
+            })
+            .map_err(|error| {
+                StorageError::InvalidInput(format!("journal writer failed to start: {error}"))
+            })?;
         Ok(Self {
             database,
             database_path: Arc::new(path),
