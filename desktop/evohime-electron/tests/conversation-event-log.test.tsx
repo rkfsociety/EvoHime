@@ -5,6 +5,7 @@ import {
   applyConversationEvents,
   batchAssistantDeltas,
   createConversationProjection,
+  prependConversationEvents,
   projectUsage,
   resumeAtRetainedBoundary
 } from '../src/renderer/src/conversation-projection'
@@ -82,6 +83,13 @@ describe('conversation projection', () => {
     const resumed = applyConversationEvents(resumeAtRetainedBoundary(expired, 5), [event(5, 'event-5', 'task_started')])
     expect(resumed.lastSequence).toBe(5)
     expect(resumed.sync.state).toBe('complete')
+  })
+
+  it('prepends an older page without moving the live cursor', () => {
+    const current = applyConversationEvents(createConversationProjection('conversation-1'), [event(1, 'event-1', 'task_started')])
+    const projected = prependConversationEvents(current, [event(0, 'event-0', 'task_started')])
+    expect(projected.events.map((item) => item.sequence)).toEqual([0, 1])
+    expect(projected.lastSequence).toBe(1)
   })
 
   it('bounds projected history and isolates Core generations in the cache key', () => {

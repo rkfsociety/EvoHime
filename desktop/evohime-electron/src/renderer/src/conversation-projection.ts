@@ -114,6 +114,18 @@ export function applyConversationEvents(
   return next
 }
 
+/** Adds a page fetched with `beforeSequence` without moving the live cursor. */
+export function prependConversationEvents(
+  state: ConversationProjectionState,
+  incoming: readonly ConversationEventProjection[]
+): ConversationProjectionState {
+  const known = new Set(state.events.map((event) => event.eventId))
+  const older = incoming
+    .filter((event) => event.conversationId === state.conversationId && event.schemaVersion === 1 && !known.has(event.eventId))
+    .sort((left, right) => left.sequence - right.sequence)
+  return older.length === 0 ? state : { ...state, events: [...older, ...state.events] }
+}
+
 function sameConversationEvent(
   left: ConversationEventProjection,
   right: ConversationEventProjection

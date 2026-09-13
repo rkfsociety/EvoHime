@@ -21,6 +21,7 @@ import {
   createConversationProjection,
   markOptimisticFailed,
   markOptimisticRetry,
+  prependConversationEvents,
   resumeAtRetainedBoundary,
   type ConversationProjectionState
 } from './conversation-projection'
@@ -84,6 +85,7 @@ export function TaskTimeline({
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const [projects, setProjects] = useState<readonly WorkspaceOption[]>([])
   const [conversationLog, setConversationLog] = useState<ConversationProjectionState | null>(null)
+  const [loadingOlderHistory, setLoadingOlderHistory] = useState(false)
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const entryTimes = useRef(new Map<string, number>())
@@ -192,7 +194,9 @@ export function TaskTimeline({
           next = resumeAtRetainedBoundary(next, page.oldestSequence)
         }
         const previousSequence = next.lastSequence
-        next = applyConversationEvents(next, page.events)
+        const isOlderPage = next.events.length > 0 && page.events.length > 0
+          && page.events.every((event) => event.sequence < (next.events[0]?.sequence ?? Number.MAX_SAFE_INTEGER))
+        next = isOlderPage ? prependConversationEvents(next, page.events) : applyConversationEvents(next, page.events)
         if (next.sync.state === 'complete' && next.lastSequence > previousSequence) {
           resumeAfter = next.lastSequence
         }
@@ -224,6 +228,18 @@ export function TaskTimeline({
     })
   }, [api, chatId, conversationLog])
 
+  const loadOlderHistory = useCallback(() => {
+    if (!api || chatId === null || !conversationLog || loadingOlderHistory || conversationLog.events.length === 0) return
+    const beforeSequence = conversationLog.events[0]?.sequence
+    if (beforeSequence === undefined || beforeSequence <= 1) return
+    setLoadingOlderHistory(true)
+    void api.invoke('core.getConversationEvents', {
+      conversationId: chatId,
+      beforeSequence,
+      limit: 200
+    }).finally(() => setLoadingOlderHistory(false))
+  }, [api, chatId, conversationLog, loadingOlderHistory])
+
   useLayoutEffect(() => {
     const textarea = promptRef.current
     if (!textarea) return
@@ -243,11 +259,9 @@ export function TaskTimeline({
     if (conversationLog?.events.length) {
       return [...conversationEventsToCoreEvents(conversationLog.events)]
         .reverse()
-        .slice(0, MAX_RENDERED_ITEMS)
     }
     return events
       .filter((event) => event.taskId.length > 0 && known.has(event.taskId))
-      .slice(0, MAX_RENDERED_ITEMS)
   }, [chat?.taskIds, conversationLog?.events, events, taskId])
 
   const activeTaskEvents = useMemo(
@@ -485,6 +499,13 @@ export function TaskTimeline({
           />
         ) : (
           <ol className="chat__stream">
+            {conversationLog?.events[0]?.sequence && conversationLog.events[0].sequence > 1 ? (
+              <li>
+                <button type="button" onClick={loadOlderHistory} disabled={loadingOlderHistory}>
+                  {loadingOlderHistory ? 'Загружаю историю…' : 'Загрузить более старую историю'}
+                </button>
+              </li>
+            ) : null}
             {conversation.flatMap(({ message, transcript, delivery }) => {
               const messageId = `user-${message.taskId}-${message.atMs}`
               return [
@@ -513,10 +534,10 @@ export function TaskTimeline({
                   renderTranscriptEntry(entry, `${message.taskId}-${index}`, entryTimes, copiedMessageId, setCopiedMessageId)
                 )
               ]
-            })}
+            }).slice(-MAX_RENDERED_ITEMS)}
 
             {conversation.length === 0
-              ? entries.map((entry, index) =>
+              ? entries.slice(-MAX_RENDERED_ITEMS).map((entry, index) =>
                   renderTranscriptEntry(entry, String(index), entryTimes, copiedMessageId, setCopiedMessageId)
                 )
               : null}

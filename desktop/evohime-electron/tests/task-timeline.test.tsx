@@ -62,6 +62,43 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe('task timeline', () => {
+  it('projects the complete streamed answer before limiting rendered items', async () => {
+    const chat = {
+      id: 'chat-1',
+      workspacePath: 'C:\\work\\repo',
+      title: 'Чат',
+      createdMs: 1,
+      updatedMs: 1,
+      taskIds: ['task-1', 'task-2'],
+      messages: [
+        { taskId: 'task-1', prompt: 'Первый вопрос', atMs: 1 },
+        { taskId: 'task-2', prompt: 'Второй вопрос', atMs: 2 }
+      ]
+    }
+    respond = (command) => command === 'chat.open' ? ok(chat) : ok([])
+    const firstAnswer = Array.from({ length: 100 }, (_, index) => event(
+      'agent.message.delta',
+      { content: String(index).padStart(2, '0') + 'аб' },
+      'task-1'
+    ))
+    render(
+      <TaskTimeline
+        connection="connected"
+        events={firstAnswer.slice().reverse().concat(event('agent.message.delta', { content: 'Второй ответ' }, 'task-2'))}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    const fullAnswer = Array.from({ length: 100 }, (_, index) => String(index).padStart(2, '0') + 'аб').join('')
+    await waitFor(() => expect(screen.getByText(fullAnswer)).toBeTruthy())
+    expect(screen.getByText('Второй ответ')).toBeTruthy()
+  })
+
   it('keeps the composer usable without a project', async () => {
     const view = render(
       <TaskTimeline
