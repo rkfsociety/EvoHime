@@ -36,7 +36,9 @@ describe('frame reader', () => {
     const reader = new FrameReader()
     const frame = encodeFrame(text('streamed'))
     expect(reader.push(frame.subarray(0, 3))).toEqual([])
+    expect(reader.pendingBytes).toBe(3)
     expect(reader.push(frame.subarray(3, 6))).toEqual([])
+    expect(reader.pendingBytes).toBe(6)
     expect(reader.push(frame.subarray(6))).toEqual([text('streamed')])
     expect(reader.pendingBytes).toBe(0)
   })
@@ -45,10 +47,57 @@ describe('frame reader', () => {
     const reader = new FrameReader()
     const first = encodeFrame(text('one'))
     const second = encodeFrame(text('two'))
-    const chunk = new Uint8Array(first.byteLength + second.byteLength)
+    const third = encodeFrame(text('three'))
+    const chunk = new Uint8Array(
+      first.byteLength + second.byteLength + third.byteLength
+    )
     chunk.set(first)
     chunk.set(second, first.byteLength)
-    expect(reader.push(chunk)).toEqual([text('one'), text('two')])
+    chunk.set(third, first.byteLength + second.byteLength)
+    expect(reader.push(chunk)).toEqual([
+      text('one'),
+      text('two'),
+      text('three')
+    ])
+    expect(reader.pendingBytes).toBe(0)
+  })
+
+  it('returns an empty frame when its header is the final input', () => {
+    const reader = new FrameReader()
+
+    expect(reader.push(encodeFrame(new Uint8Array(0)))).toEqual([
+      new Uint8Array(0)
+    ])
+    expect(reader.pendingBytes).toBe(0)
+  })
+
+  it('reassembles a maximum-size frame from highly fragmented chunks', () => {
+    const reader = new FrameReader()
+    const payload = new Uint8Array(MAX_FRAME_BYTES)
+    for (let offset = 0; offset < payload.byteLength; offset += 4096) {
+      payload[offset] = (offset / 4096) % 251
+    }
+    const frame = encodeFrame(payload)
+    const frames: Uint8Array[] = []
+
+    for (let offset = 0; offset < frame.byteLength; offset += 4096) {
+      frames.push(...reader.push(frame.subarray(offset, offset + 4096)))
+    }
+
+    expect(frames).toHaveLength(1)
+    expect(frames[0]?.byteLength).toBe(payload.byteLength)
+    expect(frames[0]?.[payload.byteLength - 1]).toBe(
+      payload[payload.byteLength - 1]
+    )
+    let matches = true
+    for (let offset = 0; offset < payload.byteLength; offset += 4096) {
+      if (frames[0]?.[offset] !== payload[offset]) {
+        matches = false
+        break
+      }
+    }
+    expect(matches).toBe(true)
+    expect(reader.pendingBytes).toBe(0)
   })
 
   it('fails fast on an announced length above the frame limit', () => {

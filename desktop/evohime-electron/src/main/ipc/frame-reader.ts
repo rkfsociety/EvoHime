@@ -6,7 +6,10 @@ import { FrameError, LENGTH_PREFIX_BYTES, MAX_FRAME_BYTES, readLength } from './
  * instead of accumulating attacker-controlled bytes.
  */
 export class FrameReader {
-  private buffered: Uint8Array = new Uint8Array(0)
+  private readonly header = new Uint8Array(LENGTH_PREFIX_BYTES)
+  private headerBytes = 0
+  private payload: Uint8Array | undefined
+  private payloadBytes = 0
   private failed = false
 
   /** Appends a chunk and returns every complete frame payload it produced. */
@@ -14,45 +17,73 @@ export class FrameReader {
     if (this.failed) {
       throw new FrameError('too-large')
     }
-    this.buffered = concat(this.buffered, chunk)
 
     const frames: Uint8Array[] = []
-    for (;;) {
-      if (this.buffered.byteLength < LENGTH_PREFIX_BYTES) {
+    let offset = 0
+    while (offset < chunk.byteLength) {
+      if (this.payload === undefined) {
+        const headerBytes = Math.min(
+          LENGTH_PREFIX_BYTES - this.headerBytes,
+          chunk.byteLength - offset
+        )
+        this.header.set(chunk.subarray(offset, offset + headerBytes), this.headerBytes)
+        this.headerBytes += headerBytes
+        offset += headerBytes
+
+        if (this.headerBytes < LENGTH_PREFIX_BYTES) {
+          return frames
+        }
+
+        const length = readLength(this.header)
+        this.headerBytes = 0
+        if (length > MAX_FRAME_BYTES) {
+          this.failed = true
+          this.payload = undefined
+          this.payloadBytes = 0
+          throw new FrameError('too-large')
+        }
+        this.payload = new Uint8Array(length)
+        this.payloadBytes = 0
+        if (length === 0) {
+          frames.push(this.payload)
+          this.payload = undefined
+          continue
+        }
+      }
+
+      const payload = this.payload
+      const payloadBytes = Math.min(
+        payload.byteLength - this.payloadBytes,
+        chunk.byteLength - offset
+      )
+      payload.set(chunk.subarray(offset, offset + payloadBytes), this.payloadBytes)
+      this.payloadBytes += payloadBytes
+      offset += payloadBytes
+
+      if (this.payloadBytes < payload.byteLength) {
         return frames
       }
-      const length = readLength(this.buffered)
-      if (length > MAX_FRAME_BYTES) {
-        this.failed = true
-        this.buffered = new Uint8Array(0)
-        throw new FrameError('too-large')
-      }
-      const total = LENGTH_PREFIX_BYTES + length
-      if (this.buffered.byteLength < total) {
-        return frames
-      }
-      frames.push(this.buffered.slice(LENGTH_PREFIX_BYTES, total))
-      this.buffered = this.buffered.slice(total)
+
+      frames.push(payload)
+      this.payload = undefined
+      this.payloadBytes = 0
     }
+
+    return frames
   }
 
   /** Bytes held for an incomplete frame; used by backpressure diagnostics. */
   get pendingBytes(): number {
-    return this.buffered.byteLength
+    return (
+      this.headerBytes +
+      (this.payload === undefined ? 0 : LENGTH_PREFIX_BYTES + this.payloadBytes)
+    )
   }
 
   reset(): void {
-    this.buffered = new Uint8Array(0)
+    this.headerBytes = 0
+    this.payload = undefined
+    this.payloadBytes = 0
     this.failed = false
   }
-}
-
-function concat(left: Uint8Array, right: Uint8Array): Uint8Array {
-  if (left.byteLength === 0) {
-    return right.slice()
-  }
-  const merged = new Uint8Array(left.byteLength + right.byteLength)
-  merged.set(left, 0)
-  merged.set(right, left.byteLength)
-  return merged
 }
