@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { CommandOutcome, EvoHimeApiV1, RendererCommand } from '../src/shared/api'
 import { ProviderForm } from '../src/renderer/src/ProviderForm'
+import { ProviderStateProvider } from '../src/renderer/src/provider-state'
 
 /**
  * The credentials surface is the one place a user types a secret. These tests
@@ -73,9 +74,17 @@ beforeEach(() => {
 
 afterEach(() => cleanup())
 
+function renderProviderForm(): void {
+  render(
+    <ProviderStateProvider>
+      <ProviderForm />
+    </ProviderStateProvider>
+  )
+}
+
 describe('provider form', () => {
   it('sends the key once and clears the field afterwards', async () => {
-    render(<ProviderForm />)
+    renderProviderForm()
     expect(await screen.findByText('Ключ не задан')).toBeTruthy()
 
     const field = screen.getByLabelText('Ключ API') as HTMLInputElement
@@ -100,13 +109,13 @@ describe('provider form', () => {
   })
 
   it('keeps the provider settings block free of a separate coding-engine switch', async () => {
-    render(<ProviderForm />)
+    renderProviderForm()
     expect(await screen.findByLabelText('Провайдер')).toBeTruthy()
     expect(screen.queryByLabelText('Движок coding-задач')).toBeNull()
   })
 
   it('automatically selects, persists and applies a configured provider', async () => {
-    render(<ProviderForm />)
+    renderProviderForm()
 
     const provider = await screen.findByLabelText('Провайдер')
     await userEvent.selectOptions(provider, 'ollama')
@@ -119,7 +128,7 @@ describe('provider form', () => {
 
   it('surfaces a rejected write instead of reporting success', async () => {
     saveOutcome = { ok: false, code: 'invalid-payload', message: 'Адрес должен быть https.' }
-    render(<ProviderForm />)
+    renderProviderForm()
 
     await userEvent.type(await screen.findByLabelText('Ключ API'), 'sk-value')
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить ключ и применить' }))
@@ -134,7 +143,7 @@ describe('provider form', () => {
       summary: { provider: 'literouter', model: '', baseUrl: '', tier: 'free', configured: true },
       restarted: false
     })
-    render(<ProviderForm />)
+    renderProviderForm()
 
     await userEvent.type(await screen.findByLabelText('Ключ API'), 'sk-value')
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить ключ и применить' }))

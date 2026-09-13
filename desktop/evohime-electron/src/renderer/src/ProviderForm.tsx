@@ -11,6 +11,7 @@ import {
 import { useShellApi } from './shell-api'
 import type { ConnectionState, CoreEvent } from '@shared/api'
 import { OllamaModelDownloadPanel } from './OllamaModelDownloadPanel'
+import { useProviderState } from './provider-state'
 
 /**
  * Credentials surface.
@@ -46,7 +47,7 @@ export interface ProviderFormProps {
 
 export function ProviderForm({ connection = 'starting', events = [] }: ProviderFormProps): React.JSX.Element {
   const api = useShellApi()
-  const [summary, setSummary] = useState<ProviderSummary | null>(null)
+  const { summary, apply: applySummary } = useProviderState()
   const [provider, setProvider] = useState<ProviderKind>('literouter')
   const [apiKey, setApiKey] = useState('')
   const [model, setModel] = useState('')
@@ -56,12 +57,15 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
 
   // Fields stay controlled even if a summary arrives with a missing member.
   const apply = useCallback((value: ProviderSummary) => {
-    setSummary(value)
     setProvider(PROVIDER_KINDS.includes(value.provider) ? value.provider : 'literouter')
     setModel(value.model ?? '')
     setTier(value.tier === 'paid' ? 'paid' : 'free')
     setBaseUrl(value.baseUrl ?? (value.provider === 'ollama' ? OLLAMA_DEFAULT_BASE_URL : ''))
   }, [])
+
+  useEffect(() => {
+    if (summary) apply(summary)
+  }, [apply, summary])
 
   const selectProvider = useCallback(async (nextProvider: ProviderKind) => {
     if (!api || nextProvider === provider) return
@@ -78,17 +82,11 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       setStatus({ kind: 'failed', message: outcome.message })
       return
     }
+    applySummary(outcome.value.summary)
     apply(outcome.value.summary)
     setApiKey('')
     setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'provider' })
-  }, [api, apply, provider, summary])
-
-  useEffect(() => {
-    if (!api) return
-    void api.invoke('provider.get', {}).then((outcome) => {
-      if (outcome.ok) apply(outcome.value)
-    })
-  }, [api, apply])
+  }, [api, apply, applySummary, provider, summary])
 
   const save = useCallback(async () => {
     if (!api) return
@@ -105,10 +103,11 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       setStatus({ kind: 'failed', message: outcome.message })
       return
     }
+    applySummary(outcome.value.summary)
     apply(outcome.value.summary)
     setApiKey('')
     setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'settings' })
-  }, [api, apiKey, apply, baseUrl, model, provider, tier])
+  }, [api, apiKey, apply, applySummary, baseUrl, model, provider, tier])
 
   const clearKey = useCallback(async () => {
     if (!api) return
@@ -118,10 +117,11 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       setStatus({ kind: 'failed', message: outcome.message })
       return
     }
+    applySummary(outcome.value.summary)
     apply(outcome.value.summary)
     setApiKey('')
     setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'settings' })
-  }, [api, apply, provider])
+  }, [api, apply, applySummary, provider])
 
   const busy = status.kind === 'saving'
   const selectedProfile = summary?.profiles?.[provider]

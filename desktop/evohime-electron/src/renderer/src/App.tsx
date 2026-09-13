@@ -34,6 +34,7 @@ import { ConversationalWorkflowComposerPanel } from './ConversationalWorkflowCom
 import { HumanWorkItemsPanel } from './HumanWorkItemsPanel'
 import { WorkbenchPanel } from './WorkbenchPanel'
 import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
+import { ProviderStateProvider } from './provider-state'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -211,6 +212,7 @@ export function App(): React.JSX.Element {
   const title = view === 'chat' ? 'Диалог' : (VIEWS.find((item) => item.id === view)?.label ?? 'Диалог')
 
   return (
+    <ProviderStateProvider>
     <div className={`shell${traceOpen ? ' shell--trace-open' : ''}${sidebarCollapsed ? ' shell--sidebar-collapsed' : ''}`}>
       <nav className="sidebar" aria-label="Чаты и навигация">
         <div className="sidebar__brand">
@@ -427,6 +429,7 @@ export function App(): React.JSX.Element {
 
       {update ? <UpdateGate status={update} /> : null}
     </div>
+    </ProviderStateProvider>
   )
 }
 

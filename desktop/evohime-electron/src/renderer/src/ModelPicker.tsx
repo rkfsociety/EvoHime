@@ -5,6 +5,7 @@ import type { ChatProviderMode, ConnectionState, CoreEvent, CodexModel, CodexRat
 import { useShellApi } from './shell-api'
 import { CodexRateLimits } from './CodexRateLimits'
 import { capabilityForModel, sortModelsForUse, type ModelUse } from '@shared/model-capabilities'
+import { useProviderState } from './provider-state'
 
 /**
  * Model selection for the next task, shown in the composer.
@@ -28,8 +29,9 @@ export interface ModelPickerProps {
 
 export function ModelPicker({ connection, events, provider = 'literouter', use = 'agent', onModelChange, disabled = false }: ModelPickerProps & { readonly provider?: ChatProviderMode }): React.JSX.Element | null {
   const api = useShellApi()
+  const { shared, summary } = useProviderState()
   const connected = CONNECTED_STATES.includes(connection)
-  const [tier, setTier] = useState<ModelTier | null>(null)
+  const [fallbackTier, setFallbackTier] = useState<ModelTier | null>(null)
   const [models, setModels] = useState<readonly string[]>([])
   const [current, setCurrent] = useState('')
   const [codexModels, setCodexModels] = useState<readonly CodexModel[]>([])
@@ -37,7 +39,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    setTier(null)
+    setFallbackTier(null)
     setModels([])
     setCurrent('')
     setCodexModels([])
@@ -47,11 +49,15 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   }, [onModelChange, provider])
 
   useEffect(() => {
-    if (!api || provider === 'codex_cli') return
+    if (shared || !api || provider === 'codex_cli') return
     void api.invoke('provider.get', {}).then((outcome) => {
-      if (outcome.ok) setTier(outcome.value.tier === 'paid' ? 'paid' : 'free')
+      if (outcome.ok) setFallbackTier(outcome.value.tier === 'paid' ? 'paid' : 'free')
     })
-  }, [api, provider])
+  }, [api, provider, shared])
+
+  const tier = shared && provider !== 'codex_cli'
+    ? (summary?.profiles?.[provider]?.tier ?? (summary?.provider === provider ? summary.tier : null))
+    : fallbackTier
 
   useEffect(() => {
     if (!api || !connected || provider === 'codex_cli' || tier === null) return

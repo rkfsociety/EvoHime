@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { PROVIDER_KINDS, type ChatProviderMode, type CodexStatus, type ConnectionState, type ProviderSummary } from '@shared/api'
+import { PROVIDER_KINDS, type ChatProviderMode, type CodexStatus, type ConnectionState } from '@shared/api'
 
 import { useShellApi } from './shell-api'
+import { useProviderState } from './provider-state'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 
@@ -24,15 +25,12 @@ export interface ChatProviderPickerProps {
 /** One provider/mode choice for the next chat task. */
 export function ChatProviderPicker({ connection, value, onChange, disabled = false }: ChatProviderPickerProps): React.JSX.Element {
   const api = useShellApi()
-  const [summary, setSummary] = useState<ProviderSummary | null>(null)
+  const { summary, apply } = useProviderState()
   const [codex, setCodex] = useState<CodexStatus | null>(null)
   const connected = CONNECTED_STATES.includes(connection)
 
   useEffect(() => {
     if (!api) return
-    void api.invoke('provider.get', {}).then((outcome) => {
-      if (outcome.ok) setSummary(outcome.value)
-    })
     void api.invoke('codex.getStatus', {}).then((outcome) => {
       if (outcome.ok) setCodex(outcome.value)
     })
@@ -59,6 +57,7 @@ export function ChatProviderPicker({ connection, value, onChange, disabled = fal
     if (next !== 'codex_cli') {
       const outcome = await api.invoke('provider.select', { provider: next })
       if (!outcome.ok) return
+      apply(outcome.value.summary)
     }
     window.localStorage.setItem('evohime.chat-provider-mode', next)
     onChange(next)
