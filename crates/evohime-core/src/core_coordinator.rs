@@ -210,7 +210,8 @@ impl TaskCoordinator {
         let journalled_for_worker = Arc::clone(&journalled);
         tokio::spawn(async move {
             while let Some(event) = event_rx.recv().await {
-                if let Some(journal) = journal_state.lock().await.journal.clone() {
+                let journal = { journal_state.lock().await.journal.clone() };
+                if let Some(journal) = journal {
                     match journal.record(&event).await {
                         Ok(sequence) => {
                             let _ = journalled_for_worker.send(sequence.max(0) as u64);

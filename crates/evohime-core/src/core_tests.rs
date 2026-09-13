@@ -1305,6 +1305,49 @@ mod tests {
             .is_some_and(|error| error.starts_with("audit:")));
     }
 
+    #[tokio::test]
+    async fn journal_persistence_failure_does_not_deadlock_coordinator() {
+        let path = std::env::temp_dir().join(format!(
+            "evohime-core-journal-failure-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        {
+            let mut database = journal.database.lock().await;
+            database
+                .connection_mut()
+                .execute_batch("DROP TABLE events")
+                .expect("test removes journal table");
+        }
+        let (coordinator, mut notifications) =
+            TaskCoordinator::new_with_journal(2, None, journal);
+
+        coordinator
+            .emit(CoreEvent::TaskStarted {
+                task_id: "journal-failure".into(),
+                prompt: "exercise journal error".into(),
+            })
+            .await;
+
+        let event = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            notifications.recv(),
+        )
+        .await
+        .expect("journal failure is reported without deadlock")
+        .expect("failure notification is sent");
+        assert!(matches!(
+            event,
+            CoreEvent::EventPersistenceFailed { source, .. } if source == "journal"
+        ));
+        assert!(coordinator
+            .persistence_error()
+            .await
+            .is_some_and(|error| error.starts_with("journal:")));
+        let _ = std::fs::remove_file(path);
+    }
+
     #[test]
     fn approval_denied_outcome_has_ok_false() {
         let outcome =
