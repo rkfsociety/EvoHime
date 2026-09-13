@@ -24,7 +24,7 @@ import type { ShellLog } from './diagnostics/logger'
 import type { CodexService } from './codex-service'
 import type { RepairService } from './repair-service'
 import type { CorePipeClient } from './ipc/pipe-client'
-import type { ChatStore } from './chat-store'
+import { ChatStoreError, type ChatStore } from './chat-store'
 import { normalizeWorkspacePath } from './workspace-store'
 import { resolveIdentity, resolveRepository } from './identity'
 import {
@@ -1464,21 +1464,21 @@ function dispatch(
     case 'chat.list': {
       const workspacePath = asOptionalWorkspacePath(asRecord(payload)['workspacePath'])
       if (workspacePath === undefined) return failure('invalid-payload', 'Некорректный путь проекта.')
-      return { ok: true, value: chats.list(workspacePath) }
+      return chatOperation(chats.list(workspacePath), log, (value) => ({ ok: true, value }))
     }
 
     case 'chat.create': {
       const workspacePath = asOptionalWorkspacePath(asRecord(payload)['workspacePath'])
       if (workspacePath === undefined) return failure('invalid-payload', 'Некорректный путь проекта.')
-      const chat = chats.create(workspacePath)
-      if (chat === null) return failure('invalid-payload', 'Некорректный путь проекта.')
-      return { ok: true, value: chat }
+      return chatOperation(chats.create(workspacePath), log, (chat) =>
+        chat === null ? failure('invalid-payload', 'Некорректный путь проекта.') : { ok: true, value: chat }
+      )
     }
 
     case 'chat.open': {
       const chatId = asBoundedString(asRecord(payload)['chatId'])
       if (chatId === null) return failure('invalid-payload', 'Некорректный идентификатор чата.')
-      return { ok: true, value: chats.open(chatId) }
+      return chatOperation(chats.open(chatId), log, (value) => ({ ok: true, value }))
     }
 
     case 'chat.appendPrompt': {
@@ -1490,22 +1490,24 @@ function dispatch(
       if (chatId === null || taskId === null || clientMessageId === null || prompt === null) {
         return failure('invalid-payload', 'Некорректное сообщение чата.')
       }
-      return { ok: true, value: chats.appendPrompt(chatId, taskId, prompt, clientMessageId) }
+      return chatOperation(chats.appendPrompt(chatId, taskId, prompt, clientMessageId), log, (value) => ({ ok: true, value }))
     }
 
     case 'chat.remove': {
       const value = asRecord(payload)
       const chatId = asBoundedString(value['chatId'])
       if (chatId === null) return failure('invalid-payload', 'Некорректный идентификатор чата.')
-      const chat = chats.open(chatId)
-      chats.remove(chatId)
-      return { ok: true, value: chat ? chats.list(chat.workspacePath) : [] }
+      return chatOperation(
+        chats.open(chatId).then((chat) => chats.remove(chatId).then(() => chat ? chats.list(chat.workspacePath) : [])),
+        log,
+        (result) => ({ ok: true, value: result })
+      )
     }
 
     case 'chat.getWorkbenchPresentation': {
       const chatId = asBoundedString(asRecord(payload)['chatId'])
       if (chatId === null) return failure('invalid-payload', 'Некорректный идентификатор чата.')
-      return { ok: true, value: chats.getWorkbenchPresentation(chatId) }
+      return chatOperation(chats.getWorkbenchPresentation(chatId), log, (value) => ({ ok: true, value }))
     }
 
     case 'chat.saveWorkbenchPresentation': {
@@ -1515,7 +1517,11 @@ function dispatch(
       const activeTab = asBoundedString(presentation['activeTab'])
       const splitRatio = typeof presentation['splitRatio'] === 'number' ? presentation['splitRatio'] : Number.NaN
       if (chatId === null || activeTab === null || !Number.isFinite(splitRatio)) return failure('invalid-payload', 'Некорректное состояние Workbench.')
-      return { ok: true, value: chats.saveWorkbenchPresentation(chatId, { activeTab, splitRatio, collapsed: presentation['collapsed'] === true }) }
+      return chatOperation(
+        chats.saveWorkbenchPresentation(chatId, { activeTab, splitRatio, collapsed: presentation['collapsed'] === true }),
+        log,
+        (value) => ({ ok: true, value })
+      )
     }
 
     case 'review.pickPlan':
@@ -2698,6 +2704,22 @@ function asQuietHours(value: unknown): { startMinute: number; endMinute: number 
   return windows.every((window): window is { startMinute: number; endMinute: number } => window !== null)
     ? windows
     : null
+}
+
+function chatOperation<T>(operation: Promise<T>, log: ShellLog, map: (value: T) => unknown): Promise<unknown> {
+  return operation.then(map).catch((error: unknown) => {
+    const kind = error instanceof ChatStoreError ? error.kind : 'unknown'
+    log('error', 'shell.chat_store_failed', { kind })
+    if (error instanceof ChatStoreError && error.kind === 'corrupt') {
+      return failure(
+        'protocol-error',
+        error.recoveryPath
+          ? 'Файл чатов повреждён; исходная копия сохранена рядом для восстановления.'
+          : 'Файл чатов повреждён; не удалось сохранить копию для восстановления.'
+      )
+    }
+    return failure('protocol-error', 'Не удалось прочитать или сохранить чаты.')
+  })
 }
 
 function accepted(result: 'queued' | 'queue-full'): unknown {

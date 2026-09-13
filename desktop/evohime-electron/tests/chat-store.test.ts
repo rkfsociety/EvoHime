@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -38,89 +38,107 @@ afterEach(() => {
 })
 
 describe('chat store', () => {
-  it('keeps chats of different projects apart', () => {
+  it('keeps chats of different projects apart', async () => {
     const store = newStore()
-    store.create('C:\\work\\alpha')
-    store.create('C:\\work\\beta')
+    await store.create('C:\\work\\alpha')
+    await store.create('C:\\work\\beta')
 
-    expect(store.list('C:\\work\\alpha')).toHaveLength(1)
-    expect(store.list('C:\\work\\beta')).toHaveLength(1)
+    expect(await store.list('C:\\work\\alpha')).toHaveLength(1)
+    expect(await store.list('C:\\work\\beta')).toHaveLength(1)
     // Windows paths are case-insensitive: one project, not two.
-    expect(store.list('c:\\work\\ALPHA')).toHaveLength(1)
+    expect(await store.list('c:\\work\\ALPHA')).toHaveLength(1)
   })
 
-  it('keeps standalone chats separate from project chats', () => {
+  it('keeps standalone chats separate from project chats', async () => {
     const store = newStore()
-    const standalone = store.create(null)!
-    store.create('C:\\work\\repo')
+    const standalone = (await store.create(null))!
+    await store.create('C:\\work\\repo')
 
-    expect(store.list(null).map((chat) => chat.id)).toEqual([standalone.id])
-    expect(store.list('C:\\work\\repo')).toHaveLength(1)
+    expect((await store.list(null)).map((chat) => chat.id)).toEqual([standalone.id])
+    expect(await store.list('C:\\work\\repo')).toHaveLength(1)
     expect(standalone.workspacePath).toBeNull()
   })
 
-  it('names a chat after its first prompt and remembers the task', () => {
+  it('names a chat after its first prompt and remembers the task', async () => {
     const store = newStore()
-    const chat = store.create('C:\\work\\repo')
+    const chat = await store.create('C:\\work\\repo')
 
-    const updated = store.appendPrompt(chat!.id, 'task-1', 'Изучи проект\nи расскажи о нём')
+    const updated = await store.appendPrompt(chat!.id, 'task-1', 'Изучи проект\nи расскажи о нём')
 
     expect(updated?.title).toBe('Изучи проект')
     expect(updated?.taskIds).toEqual(['task-1'])
     expect(updated?.messages).toHaveLength(1)
 
     // A later prompt joins the same chat without renaming it.
-    const second = store.appendPrompt(chat!.id, 'task-2', 'Почини тесты')
+    const second = await store.appendPrompt(chat!.id, 'task-2', 'Почини тесты')
     expect(second?.title).toBe('Изучи проект')
     expect(second?.taskIds).toEqual(['task-1', 'task-2'])
   })
 
-  it('orders the list by last use', () => {
+  it('orders the list by last use', async () => {
     const store = newStore()
-    const first = store.create('C:\\work\\repo')
-    const second = store.create('C:\\work\\repo')
-    store.appendPrompt(first!.id, 'task-1', 'Снова первый')
+    const first = await store.create('C:\\work\\repo')
+    const second = await store.create('C:\\work\\repo')
+    await store.appendPrompt(first!.id, 'task-1', 'Снова первый')
 
-    expect(store.list('C:\\work\\repo').map((chat) => chat.id)).toEqual([first!.id, second!.id])
+    expect((await store.list('C:\\work\\repo')).map((chat) => chat.id)).toEqual([first!.id, second!.id])
   })
 
-  it('drops the oldest chat once the project is full', () => {
+  it('drops the oldest chat once the project is full', async () => {
     const store = newStore()
-    const created = Array.from({ length: MAX_CHATS_PER_WORKSPACE }, () =>
+    const created = await Promise.all(Array.from({ length: MAX_CHATS_PER_WORKSPACE }, () =>
       store.create('C:\\work\\repo')
-    )
-    store.create('C:\\work\\repo')
+    ))
+    await store.create('C:\\work\\repo')
 
-    const ids = new Set(store.list('C:\\work\\repo').map((chat) => chat.id))
+    const ids = new Set((await store.list('C:\\work\\repo')).map((chat) => chat.id))
     expect(ids.size).toBe(MAX_CHATS_PER_WORKSPACE)
     expect(ids.has(created[0]!.id)).toBe(false)
   })
 
-  it('removes a chat and every chat of a forgotten project', () => {
+  it('removes a chat and every chat of a forgotten project', async () => {
     const store = newStore()
-    const kept = store.create('C:\\work\\alpha')
-    const dropped = store.create('C:\\work\\alpha')
-    store.create('C:\\work\\beta')
+    const kept = await store.create('C:\\work\\alpha')
+    const dropped = await store.create('C:\\work\\alpha')
+    await store.create('C:\\work\\beta')
 
-    store.remove(dropped!.id)
-    expect(store.list('C:\\work\\alpha').map((chat) => chat.id)).toEqual([kept!.id])
+    await store.remove(dropped!.id)
+    expect((await store.list('C:\\work\\alpha')).map((chat) => chat.id)).toEqual([kept!.id])
 
-    store.removeWorkspace('C:\\work\\alpha')
-    expect(store.list('C:\\work\\alpha')).toEqual([])
-    expect(store.list('C:\\work\\beta')).toHaveLength(1)
+    await store.removeWorkspace('C:\\work\\alpha')
+    expect(await store.list('C:\\work\\alpha')).toEqual([])
+    expect(await store.list('C:\\work\\beta')).toHaveLength(1)
   })
 
-  it('refuses a relative project path', () => {
+  it('refuses a relative project path', async () => {
     const store = newStore()
-    expect(store.create('..\\elsewhere')).toBeNull()
-    expect(store.list('..\\elsewhere')).toEqual([])
+    expect(await store.create('..\\elsewhere')).toBeNull()
+    expect(await store.list('..\\elsewhere')).toEqual([])
   })
 
-  it('starts empty instead of failing on a corrupt file', () => {
+  it('treats a missing file as empty and creates it on the first mutation', async () => {
     const path = storePath()
-    writeFileSync(path, '{ not json', 'utf8')
+    const store = newStore(path)
 
-    expect(newStore(path).list('C:\\work\\repo')).toEqual([])
+    expect(await store.list('C:\\work\\repo')).toEqual([])
+    await store.create('C:\\work\\repo')
+
+    expect(JSON.parse(readFileSync(path, 'utf8')).version).toBe(1)
+  })
+
+  it('preserves a corrupt file and rejects reads and mutations', async () => {
+    const path = storePath()
+    const original = '{ not json'
+    writeFileSync(path, original, 'utf8')
+    const store = newStore(path)
+
+    await expect(store.list('C:\\work\\repo')).rejects.toMatchObject({ kind: 'corrupt' })
+
+    const recoveryFiles = readdirSync(dirname(path)).filter((name) => name.startsWith('chats.json.corrupt-'))
+    expect(recoveryFiles).toHaveLength(1)
+    expect(readFileSync(join(dirname(path), recoveryFiles[0]!), 'utf8')).toBe(original)
+    await expect(store.create('C:\\work\\repo')).rejects.toMatchObject({ kind: 'corrupt' })
+    expect(readFileSync(path, 'utf8')).toBe(original)
   })
 
   it('bounds a title taken from a long prompt', () => {
@@ -128,15 +146,15 @@ describe('chat store', () => {
     expect(titleFromPrompt('   ')).toBe('Без названия')
   })
 
-  it('keeps bounded Workbench presentation state per conversation', () => {
+  it('keeps bounded Workbench presentation state per conversation', async () => {
     const store = newStore()
-    const first = store.create('C:\\work\\repo')!
-    const second = store.create('C:\\work\\repo')!
+    const first = (await store.create('C:\\work\\repo'))!
+    const second = (await store.create('C:\\work\\repo'))!
 
-    expect(store.getWorkbenchPresentation(first.id)).toEqual({ activeTab: 'tasks', splitRatio: 0.5, collapsed: false })
-    expect(store.saveWorkbenchPresentation(first.id, { activeTab: 'usage', splitRatio: 9, collapsed: true })).toEqual({ activeTab: 'usage', splitRatio: 0.8, collapsed: true })
-    expect(store.getWorkbenchPresentation(first.id).activeTab).toBe('usage')
-    expect(store.getWorkbenchPresentation(second.id).activeTab).toBe('tasks')
-    expect(store.saveWorkbenchPresentation(first.id, { activeTab: 'secret', splitRatio: -1, collapsed: false })).toEqual({ activeTab: 'tasks', splitRatio: 0.2, collapsed: false })
+    expect(await store.getWorkbenchPresentation(first.id)).toEqual({ activeTab: 'tasks', splitRatio: 0.5, collapsed: false })
+    expect(await store.saveWorkbenchPresentation(first.id, { activeTab: 'usage', splitRatio: 9, collapsed: true })).toEqual({ activeTab: 'usage', splitRatio: 0.8, collapsed: true })
+    expect((await store.getWorkbenchPresentation(first.id)).activeTab).toBe('usage')
+    expect((await store.getWorkbenchPresentation(second.id)).activeTab).toBe('tasks')
+    expect(await store.saveWorkbenchPresentation(first.id, { activeTab: 'secret', splitRatio: -1, collapsed: false })).toEqual({ activeTab: 'tasks', splitRatio: 0.2, collapsed: false })
   })
 })

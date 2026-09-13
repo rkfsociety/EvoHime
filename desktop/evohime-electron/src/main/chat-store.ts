@@ -1,4 +1,6 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 
 import type { ChatMessage, ChatRecord, ChatSummary, WorkbenchPresentation } from '@shared/api'
@@ -27,6 +29,19 @@ interface StoredDocument {
 const EMPTY: StoredDocument = { chats: [] }
 const DEFAULT_WORKBENCH: WorkbenchPresentation = { activeTab: 'tasks', splitRatio: 0.5, collapsed: false }
 
+export type ChatStoreErrorKind = 'read-failed' | 'corrupt' | 'write-failed'
+
+export class ChatStoreError extends Error {
+  constructor(
+    readonly kind: ChatStoreErrorKind,
+    message: string,
+    readonly recoveryPath?: string
+  ) {
+    super(message)
+    this.name = 'ChatStoreError'
+  }
+}
+
 /** First line of the prompt, bounded — enough to recognise a chat in a list. */
 export function titleFromPrompt(prompt: string): string {
   const line = prompt.trim().split('\n')[0]?.trim() ?? ''
@@ -35,6 +50,10 @@ export function titleFromPrompt(prompt: string): string {
 }
 
 export class ChatStore {
+  private cached: StoredDocument | undefined
+  private loadPromise: Promise<StoredDocument> | undefined
+  private writeQueue: Promise<void> = Promise.resolve()
+
   constructor(
     private readonly filePath: string,
     private readonly now: () => number = Date.now,
@@ -46,16 +65,16 @@ export class ChatStore {
   }
 
   /** Chats of one workspace, or standalone chats, most recently used first. */
-  list(workspacePath: string | null): ChatSummary[] {
+  async list(workspacePath: string | null): Promise<ChatSummary[]> {
     const normalized = normalizeChatWorkspacePath(workspacePath)
     if (normalized === undefined) return []
-    return this.read()
+    return (await this.read())
       .chats.filter((chat) => samePath(chat.workspacePath, normalized))
       .sort((left, right) => right.updatedMs - left.updatedMs)
       .map(summarize)
   }
 
-  create(workspacePath: string | null): ChatRecord | null {
+  async create(workspacePath: string | null): Promise<ChatRecord | null> {
     const normalized = normalizeChatWorkspacePath(workspacePath)
     if (normalized === undefined) return null
     const stamp = this.now()
@@ -69,7 +88,7 @@ export class ChatStore {
       messages: []
       , workbenchPresentation: DEFAULT_WORKBENCH
     }
-    const current = this.read().chats
+    const current = (await this.read()).chats
     const siblings = current.filter((item) => samePath(item.workspacePath, normalized))
     // Oldest chats of this workspace fall off rather than growing without end.
     const dropped =
@@ -81,19 +100,19 @@ export class ChatStore {
               .map((item) => item.id)
           )
         : new Set<string>()
-    this.write({ chats: [chat, ...current.filter((item) => !dropped.has(item.id))] })
+    await this.write({ chats: [chat, ...current.filter((item) => !dropped.has(item.id))] })
     return chat
   }
 
-  open(chatId: string): ChatRecord | null {
-    return this.read().chats.find((chat) => chat.id === chatId) ?? null
+  async open(chatId: string): Promise<ChatRecord | null> {
+    return (await this.read()).chats.find((chat) => chat.id === chatId) ?? null
   }
 
   /** Records a prompt and the task it started, naming the chat on first use. */
-  appendPrompt(chatId: string, taskId: string, prompt: string, clientMessageId?: string): ChatRecord | null {
+  async appendPrompt(chatId: string, taskId: string, prompt: string, clientMessageId?: string): Promise<ChatRecord | null> {
     const text = prompt.trim().slice(0, MAX_PROMPT_CHARS)
     if (text.length === 0) return null
-    const current = this.read().chats
+    const current = (await this.read()).chats
     const chat = current.find((item) => item.id === chatId)
     if (!chat) return null
     const message: ChatMessage = {
@@ -109,21 +128,21 @@ export class ChatStore {
       taskIds: [...new Set([...chat.taskIds, taskId])].slice(-MAX_MESSAGES_PER_CHAT),
       messages: [...chat.messages, message].slice(-MAX_MESSAGES_PER_CHAT)
     }
-    this.write({ chats: current.map((item) => (item.id === chatId ? next : item)) })
+    await this.write({ chats: current.map((item) => (item.id === chatId ? next : item)) })
     return next
   }
 
-  remove(chatId: string): void {
-    const current = this.read().chats
-    this.write({ chats: current.filter((chat) => chat.id !== chatId) })
+  async remove(chatId: string): Promise<void> {
+    const current = (await this.read()).chats
+    await this.write({ chats: current.filter((chat) => chat.id !== chatId) })
   }
 
-  getWorkbenchPresentation(chatId: string): WorkbenchPresentation {
-    return this.open(chatId)?.workbenchPresentation ?? DEFAULT_WORKBENCH
+  async getWorkbenchPresentation(chatId: string): Promise<WorkbenchPresentation> {
+    return (await this.open(chatId))?.workbenchPresentation ?? DEFAULT_WORKBENCH
   }
 
-  saveWorkbenchPresentation(chatId: string, value: WorkbenchPresentation): WorkbenchPresentation {
-    const current = this.read().chats
+  async saveWorkbenchPresentation(chatId: string, value: WorkbenchPresentation): Promise<WorkbenchPresentation> {
+    const current = (await this.read()).chats
     const chat = current.find((item) => item.id === chatId)
     if (!chat) return DEFAULT_WORKBENCH
     const presentation: WorkbenchPresentation = {
@@ -131,35 +150,50 @@ export class ChatStore {
       splitRatio: Number.isFinite(value.splitRatio) ? Math.min(0.8, Math.max(0.2, value.splitRatio)) : 0.5,
       collapsed: Boolean(value.collapsed)
     }
-    this.write({ chats: current.map((item) => item.id === chatId ? { ...item, workbenchPresentation: presentation } : item) })
+    await this.write({ chats: current.map((item) => item.id === chatId ? { ...item, workbenchPresentation: presentation } : item) })
     return presentation
   }
 
   /** Drops every chat of a workspace the user stopped tracking. */
-  removeWorkspace(workspacePath: string): void {
+  async removeWorkspace(workspacePath: string): Promise<void> {
     const normalized = normalizeWorkspacePath(workspacePath)
     if (normalized === null) return
-    const current = this.read().chats
-    this.write({ chats: current.filter((chat) => !samePath(chat.workspacePath, normalized)) })
+    const current = (await this.read()).chats
+    await this.write({ chats: current.filter((chat) => !samePath(chat.workspacePath, normalized)) })
   }
 
-  private read(): StoredDocument {
+  private read(): Promise<StoredDocument> {
+    // The shell owns one store instance, so disk state is loaded once and all
+    // subsequent reads use the in-memory snapshot.
+    if (this.cached) return Promise.resolve(this.cached)
+    if (!this.loadPromise) {
+      this.loadPromise = this.readFromDisk().then((document) => {
+        this.cached = document
+        return document
+      })
+    }
+    return this.loadPromise
+  }
+
+  private async readFromDisk(): Promise<StoredDocument> {
     let raw: string
     try {
-      raw = readFileSync(this.filePath, 'utf8')
-    } catch {
-      return EMPTY
+      raw = await readFile(this.filePath, 'utf8')
+    } catch (error: unknown) {
+      if (isNodeError(error) && error.code === 'ENOENT') return EMPTY
+      throw new ChatStoreError('read-failed', 'Unable to read the chat store.')
     }
     let parsed: unknown
     try {
       parsed = JSON.parse(raw)
     } catch {
-      // A corrupt file must not take the shell down; the user starts empty.
-      return EMPTY
+      throw await this.corruptFileError()
     }
-    if (typeof parsed !== 'object' || parsed === null) return EMPTY
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw await this.corruptFileError()
+    }
     const list = (parsed as Record<string, unknown>)['chats']
-    if (!Array.isArray(list)) return EMPTY
+    if (!Array.isArray(list)) throw await this.corruptFileError()
     const chats: ChatRecord[] = []
     for (const item of list) {
       const chat = parseChat(item)
@@ -168,12 +202,40 @@ export class ChatStore {
     return { chats }
   }
 
-  private write(document: StoredDocument): void {
-    mkdirSync(dirname(this.filePath), { recursive: true })
-    const temporary = `${this.filePath}.tmp`
-    writeFileSync(temporary, JSON.stringify({ version: STORE_VERSION, ...document }), 'utf8')
-    renameSync(temporary, this.filePath)
+  private write(document: StoredDocument): Promise<void> {
+    // Update the cache before waiting so concurrent mutations build on the
+    // latest logical state while physical writes remain ordered.
+    this.cached = document
+    const operation = this.writeQueue.then(() => this.writeOnce(document))
+    this.writeQueue = operation.catch(() => undefined)
+    return operation
   }
+
+  private async writeOnce(document: StoredDocument): Promise<void> {
+    const temporary = `${this.filePath}.${randomUUID()}.tmp`
+    try {
+      await mkdir(dirname(this.filePath), { recursive: true })
+      await writeFile(temporary, JSON.stringify({ version: STORE_VERSION, ...document }), 'utf8')
+      await rename(temporary, this.filePath)
+    } catch {
+      await unlink(temporary).catch(() => undefined)
+      throw new ChatStoreError('write-failed', 'Unable to write the chat store.')
+    }
+  }
+
+  private async corruptFileError(): Promise<ChatStoreError> {
+    const recoveryPath = `${this.filePath}.corrupt-${this.now()}-${randomUUID()}`
+    try {
+      await copyFile(this.filePath, recoveryPath, constants.COPYFILE_EXCL)
+      return new ChatStoreError('corrupt', 'The chat store is corrupt.', recoveryPath)
+    } catch {
+      return new ChatStoreError('corrupt', 'The chat store is corrupt.')
+    }
+  }
+}
+
+function isNodeError(value: unknown): value is NodeJS.ErrnoException {
+  return value instanceof Error && 'code' in value
 }
 
 function summarize(chat: ChatRecord): ChatSummary {
