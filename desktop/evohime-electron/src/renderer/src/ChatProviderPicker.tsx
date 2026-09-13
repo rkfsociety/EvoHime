@@ -52,6 +52,16 @@ export function ChatProviderPicker({ connection, value, onChange, disabled = fal
     if (preferred) onChange(preferred)
   }, [onChange, options, summary?.provider, value])
 
+  // The settings surface changes the active provider for the next task too.
+  // Keep the composer selection tied to that same Core-backed snapshot rather
+  // than leaving a valid but stale localStorage choice selected.
+  useEffect(() => {
+    const preferred = summary?.provider
+    if (!preferred || !options.some((option) => option.value === preferred) || preferred === value) return
+    window.localStorage.setItem('evohime.chat-provider-mode', preferred)
+    onChange(preferred)
+  }, [onChange, options, summary?.provider, value])
+
   const select = async (next: ChatProviderMode): Promise<void> => {
     if (!api || next === value) return
     if (next !== 'codex_cli') {

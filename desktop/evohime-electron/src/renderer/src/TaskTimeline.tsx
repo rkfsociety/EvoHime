@@ -77,7 +77,7 @@ export function TaskTimeline({
   const [busy, setBusy] = useState(false)
   const [providerMode, setProviderMode] = useState<ChatProviderMode>(() => {
     const stored = window.localStorage.getItem('evohime.chat-provider-mode')
-    return stored === 'codex_cli' || stored === 'openai_compatible' || stored === 'openai_responses' || stored === 'literouter'
+    return stored === 'codex_cli' || stored === 'openai_compatible' || stored === 'openai_responses' || stored === 'literouter' || stored === 'ollama'
       ? stored
       : 'literouter'
   })

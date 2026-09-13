@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import type { CommandOutcome, EvoHimeApiV1, ProviderSummary, RendererCommand } from '../src/shared/api'
+import type { ChatProviderMode, CommandOutcome, EvoHimeApiV1, ProviderSummary, RendererCommand } from '../src/shared/api'
 import { ChatProviderPicker } from '../src/renderer/src/ChatProviderPicker'
 import { ProviderForm } from '../src/renderer/src/ProviderForm'
 import { ProviderStateProvider } from '../src/renderer/src/provider-state'
@@ -58,11 +59,16 @@ afterEach(() => cleanup())
 
 describe('shared provider state', () => {
   it('updates the chat provider list immediately after settings save', async () => {
-    const onChange = () => undefined
+    const selected: string[] = []
+    function ChatPickerHarness(): React.JSX.Element {
+      const [provider, setProvider] = useState<ChatProviderMode>('ollama')
+      return <ChatProviderPicker connection="connected" value={provider} onChange={(next) => { selected.push(next); setProvider(next) }} />
+    }
+
     render(
       <ProviderStateProvider>
         <ProviderForm />
-        <ChatProviderPicker connection="connected" value="ollama" onChange={onChange} />
+        <ChatPickerHarness />
       </ProviderStateProvider>
     )
 
@@ -75,6 +81,8 @@ describe('shared provider state', () => {
       expect(picker.querySelector('option[value="literouter"]')).toBeTruthy()
     })
     expect(picker.querySelector('option[value="ollama"]')).toBeTruthy()
+    expect((picker as HTMLSelectElement).value).toBe('literouter')
+    expect(selected).toContain('literouter')
     expect(calls.filter((call) => call.command === 'provider.get')).toHaveLength(1)
   })
 })
